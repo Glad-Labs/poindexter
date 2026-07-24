@@ -35,6 +35,7 @@ from uuid import UUID
 from services.logger_config import get_logger
 from services.niche_service import Niche, NicheService
 from services.site_config import SiteConfig
+from services.topic_grounding import internal_grounding
 from services.topic_length import pick_target_length
 from services.topic_ranking import (
     ScoredCandidate,
@@ -47,7 +48,6 @@ from services.topic_sanity import (
     evaluate_topic_sanity,
     resolve_min_alpha_words,
 )
-from services.topic_grounding import internal_grounding
 from utils.findings import emit_finding
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
@@ -133,13 +133,23 @@ class _DedupCandidate:
     shapes (fresh ``{"data": ...}`` vs carry-forward ``{"row": ...}``), so
     we wrap each one — remembering its pool and the original item — for the
     pass, then rebuild the filtered pools from the survivors.
+
+    ``summary`` feeds the content engine's recent-coverage composite pass
+    (title + angle is what separates re-treads from neighbours — see
+    ``services/topic_recent_coverage.py``); ``duplicate_of`` receives the
+    NAMED match dict when that pass drops the candidate, so the sweep can
+    tell the operator which post blocked what.
     """
 
-    __slots__ = ("title", "is_duplicate", "pool", "item")
+    __slots__ = ("title", "summary", "is_duplicate", "duplicate_of", "pool", "item")
 
-    def __init__(self, title: str, pool: str, item: Any) -> None:
+    def __init__(
+        self, title: str, pool: str, item: Any, summary: str = "",
+    ) -> None:
         self.title = title
+        self.summary = summary
         self.is_duplicate = False
+        self.duplicate_of: dict[str, Any] | None = None
         self.pool = pool  # "external" | "internal"
         self.item = item
 
@@ -194,6 +204,7 @@ class TopicBatchService:
             combined_external, combined_internal = await self._dedupe_candidates(
                 external + carried["external"],
                 internal + carried["internal"],
+                niche=niche,
             )
 
             # Deterministic topic-sanity filter BEFORE embed/rank, so a
@@ -485,6 +496,7 @@ class TopicBatchService:
         self,
         external: list,
         internal: list,
+        niche: Niche | None = None,
     ) -> tuple[list, list]:
         """Drop duplicate candidates before they reach the batch.
 
@@ -499,7 +511,15 @@ class TopicBatchService:
           ids). Fresh candidates are listed before carry-forwards, so a
           fresh/carried collision keeps the fresh copy.
         - vs-existing: drops candidates whose title already matches a
-          published post or in-flight content_task.
+          published post or in-flight content_task; the content engine's
+          recent-coverage pass additionally matches the title+angle
+          composite against recent published/in-flight composites and
+          NAMES the colliding post (incident 2026-07-23: internal_rag
+          re-proposed the Grafana-telemetry theme 5× after it published).
+
+        Candidates dropped with a named match are surfaced as ONE
+        aggregated ``topic_duplicate_suppressed`` finding per sweep
+        (severity info — the system working, board-visible, never pages).
 
         Fail-open: a deduplicator error must never sink the sweep — log and
         return the candidates un-deduped. A duplicate is a far smaller
@@ -511,16 +531,25 @@ class TopicBatchService:
         wrappers: list[_DedupCandidate] = []
         for item in external:
             wrappers.append(
-                _DedupCandidate(self._external_title(item), "external", item)
+                _DedupCandidate(
+                    self._external_title(item), "external", item,
+                    summary=self._external_summary(item),
+                )
             )
         for item in internal:
             wrappers.append(
-                _DedupCandidate(self._internal_title(item), "internal", item)
+                _DedupCandidate(
+                    self._internal_title(item), "internal", item,
+                    summary=self._internal_angle(item),
+                )
             )
         if not wrappers:
             return external, internal
 
-        deduper = get_deduplicator(self._pool, site_config=self._site_config)
+        deduper = get_deduplicator(
+            self._pool, site_config=self._site_config,
+            niche_slug=niche.slug if niche else None,
+        )
         try:
             await deduper.mark_duplicates(wrappers)
         except Exception:
@@ -546,6 +575,41 @@ class TopicBatchService:
                 dropped, len(external), len(fresh_external),
                 len(internal), len(fresh_internal),
             )
+        named = [
+            (w, w.duplicate_of)
+            for w in wrappers
+            if w.is_duplicate and w.duplicate_of is not None
+        ]
+        if named:
+            niche_slug = niche.slug if niche else "?"
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_duplicate_suppressed",
+                title=(
+                    f"Suppressed {len(named)} candidate(s) near-duplicating "
+                    f"recent coverage (niche {niche_slug})"
+                ),
+                body="\n".join(
+                    f"- {w.title!r} ≈ {match.get('title')!r} "
+                    f"({match.get('kind')}, "
+                    f"cosine {match.get('similarity')})"
+                    for w, match in named
+                ),
+                severity="info",
+                dedup_key=f"topic-duplicate-suppressed:{niche_slug}",
+                extra={
+                    "stage": "sweep_dedup",
+                    "niche_slug": niche_slug,
+                    "suppressed": [
+                        {
+                            "pool": w.pool,
+                            "title": w.title[:200],
+                            "match": match,
+                        }
+                        for w, match in named
+                    ],
+                },
+            )
         return fresh_external, fresh_internal
 
     @staticmethod
@@ -561,6 +625,20 @@ class TopicBatchService:
             row = item
         if isinstance(row, dict):
             return (row.get("title") or "").strip()
+        return ""
+
+    @staticmethod
+    def _external_summary(item: Any) -> str:
+        """Summary of an external candidate across the same shapes
+        ``_external_title`` handles — feeds the recent-coverage composite."""
+        if isinstance(item, dict) and "row" in item:
+            row = item["row"]
+        elif isinstance(item, dict) and "data" in item:
+            row = item["data"]
+        else:
+            row = item
+        if isinstance(row, dict):
+            return (row.get("summary") or "").strip()
         return ""
 
     @staticmethod
@@ -581,6 +659,23 @@ class TopicBatchService:
         if topic is None and isinstance(data, dict):
             topic = data.get("distilled_topic") or data.get("title")
         return (topic or "").strip()
+
+    @staticmethod
+    def _internal_angle(item: Any) -> str:
+        """Distilled angle of an internal candidate across the same shapes
+        ``_internal_title`` handles — feeds the recent-coverage composite
+        (the angle text is what internal_rag re-states near-verbatim when it
+        re-proposes an already-published theme)."""
+        if isinstance(item, dict) and "data" in item:
+            data = item["data"]
+        elif isinstance(item, dict) and "row" in item:
+            data = item["row"]
+        else:
+            data = item
+        angle = getattr(data, "distilled_angle", None)
+        if angle is None and isinstance(data, dict):
+            angle = data.get("distilled_angle") or data.get("summary")
+        return (angle or "").strip()
 
     def _drop_contentless_candidates(
         self,
@@ -1249,6 +1344,62 @@ class TopicBatchService:
                 },
             )
             raise TopicSanityError(topic, verdict)
+
+        # Recent-coverage gate — the last dedup seam before a winner becomes
+        # a pipeline_tasks row (incident 2026-07-23: "Ditching Grafana for
+        # Native Telemetry" auto-resolved into a full generation although
+        # "The Shift to Native Telemetry" had published 8 days earlier; the
+        # operator was the one who caught it). Judges the composite that
+        # actually ships (operator edits win) against recently published
+        # posts + in-flight tasks, so it also protects batches that were
+        # swept BEFORE a similar post published. Raises before any DB write;
+        # topic_auto_resolve catches the typed error and expires the batch
+        # (self-heal), operator resolve paths surface it as a 400 / CLI
+        # error. Fail-open on infra errors inside the checker — only a real
+        # match blocks.
+        from services.topic_recent_coverage import (
+            RecentCoverageError,
+            assert_no_recent_coverage,
+            compose_text,
+        )
+
+        try:
+            await assert_no_recent_coverage(
+                compose_text(topic, angle),
+                topic=topic,
+                pool=self._pool,
+                site_config=self._site_config,
+                niche_slug=niche.slug,
+            )
+        except RecentCoverageError as dup_err:
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_duplicate_rejected",
+                title=(
+                    f"Blocked near-duplicate topic at batch handoff "
+                    f"(niche {niche.slug})"
+                ),
+                body=(
+                    f"Batch {batch_id} winner candidate {winner.id} "
+                    f"({winner.kind}) near-duplicates recent coverage:\n\n"
+                    f"- topic: {topic!r}\n"
+                    f"- matches: {dup_err.match.title!r} "
+                    f"({dup_err.match.kind}, cosine "
+                    f"{dup_err.match.similarity:.3f})"
+                ),
+                severity="warn",
+                dedup_key=f"topic-duplicate-handoff:{batch_id}",
+                extra={
+                    "stage": "batch_handoff",
+                    "batch_id": str(batch_id),
+                    "niche_slug": niche.slug,
+                    "candidate_id": str(winner.id),
+                    "candidate_kind": winner.kind,
+                    "topic": (topic or "")[:200],
+                    "match": dup_err.match.as_dict(),
+                },
+            )
+            raise
 
         task_id = str(uuid4())
 

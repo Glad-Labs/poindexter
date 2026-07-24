@@ -49,11 +49,31 @@ class ContentEmbeddingDeduplicator:
     """Mark candidate topics as duplicates by CONTENT-embedding similarity to
     published posts. API-compatible with ``services.topic_dedup.TopicDeduplicator``
     and ``services.topic_dedup_semantic.SemanticDeduplicator``.
+
+    Two vs-existing passes (2026-07-24, incident task ``342a26b7``):
+
+    1. **Recent-coverage** (:mod:`services.topic_recent_coverage`) — the
+       candidate composite (title + summary/angle when the wrapper exposes a
+       ``summary`` attr) against composites of recently published posts and
+       in-flight tasks. Like-for-like short text separates true re-treads
+       (0.79-0.86) from same-domain neighbours (≤0.70) where title-vs-content
+       cannot; matches are NAMED (``duplicate_of`` annotation + log line).
+    2. **Content-embedding** — the original title-vs-post-content pgvector
+       search at ``topic_dedup_existing_threshold_content`` (0.70, calibrated
+       on the VRAM cluster), kept unchanged for the re-tread-with-new-angle
+       class the composite pass can't see.
+
+    ``niche_slug`` scopes the recent-coverage refs to the candidate's niche
+    (+ niche-less legacy refs) so a dev_diary founder-log entry never blocks
+    a glad-labs evergreen treatment of the same work.
     """
 
-    def __init__(self, pool: Any, *, site_config: Any) -> None:
+    def __init__(
+        self, pool: Any, *, site_config: Any, niche_slug: str | None = None,
+    ) -> None:
         self.pool = pool
         self._site_config = site_config
+        self._niche_slug = niche_slug
 
     def _threshold(self) -> float:
         try:
@@ -92,7 +112,10 @@ class ContentEmbeddingDeduplicator:
             from poindexter.memory import MemoryClient
 
             async with MemoryClient() as mem:
+                await self._mark_recent_coverage(fresh, mem)
                 for topic in fresh:
+                    if topic.is_duplicate:
+                        continue
                     title = topic.title.strip()
                     try:
                         hits = await mem.find_similar_posts(
@@ -108,10 +131,12 @@ class ContentEmbeddingDeduplicator:
                         continue
                     if hits:
                         topic.is_duplicate = True
+                        hit_meta = getattr(hits[0], "metadata", None) or {}
                         logger.info(
                             "[DEDUP/content] vs-existing: %r ~ published post "
-                            "(content cosine >= %.2f)",
+                            "%r (content cosine >= %.2f)",
                             title[:40],
+                            (hit_meta.get("title") or "(untitled)")[:40],
                             threshold,
                         )
         except Exception as exc:  # noqa: BLE001 — MemoryClient construction failed
@@ -121,6 +146,56 @@ class ContentEmbeddingDeduplicator:
                 exc,
             )
         return topics
+
+    async def _mark_recent_coverage(
+        self, fresh: list[_TopicLike], memory_client: Any,
+    ) -> None:
+        """Recent-coverage pass — composite candidate text vs recent
+        published/in-flight composites. Marks + annotates in place; every
+        failure path inside is fail-open (the index loader logs + returns
+        ``None``)."""
+        from services.topic_recent_coverage import RecentCoverageIndex
+
+        index = await RecentCoverageIndex.load(
+            self.pool,
+            site_config=self._site_config,
+            memory_client=memory_client,
+            niche_slug=self._niche_slug,
+        )
+        if index is None:
+            return
+        from services.topic_recent_coverage import compose_text
+
+        for topic in fresh:
+            if topic.is_duplicate:
+                continue
+            # Angle/summary attr varies by wrapper: the batch sweep's
+            # _DedupCandidate exposes .summary; DiscoveredTopic (tap
+            # ingest) carries the internal_rag angle in .description.
+            text = compose_text(
+                topic.title,
+                getattr(topic, "summary", None)
+                or getattr(topic, "description", None),
+            )
+            match = await index.embed_and_match(text)
+            if match is None:
+                continue
+            topic.is_duplicate = True
+            # Wrappers that declare the field (the batch sweep's
+            # _DedupCandidate) get the named match for the operator-facing
+            # finding; foreign topic shapes (DiscoveredTopic) just get the
+            # flag + log line.
+            if hasattr(topic, "duplicate_of"):
+                topic.duplicate_of = match.as_dict()  # type: ignore[attr-defined]
+            when = (
+                match.published_at.date().isoformat()
+                if match.published_at else "in flight"
+            )
+            logger.info(
+                "[DEDUP/recent-coverage] %r ≈ %r (%s, %s; cosine=%.3f ≥ %.2f)",
+                topic.title[:40], match.title[:40], match.kind, when,
+                match.similarity, index.threshold,
+            )
 
     def mark_intra_batch(self, topics: list[_TopicLike]) -> list[_TopicLike]:
         """Same-scrape near-duplicate candidates. Candidates have no content

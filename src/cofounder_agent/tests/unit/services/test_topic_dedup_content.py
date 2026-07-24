@@ -5,7 +5,7 @@ over post CONTENT; the client is stubbed so the suite needs no DB / model.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -129,6 +129,116 @@ class TestMarkAgainstExisting:
             await dedup.mark_against_existing([already, blank])
         # Neither should have hit the search.
         assert fake.calls == []
+
+
+class _FakeCoverageIndex:
+    """Stand-in for RecentCoverageIndex — matches texts by substring."""
+
+    def __init__(self, match_on: str, match: object):
+        self._match_on = match_on
+        self._match = match
+        self.checked: list[str] = []
+
+    async def embed_and_match(self, text):
+        self.checked.append(text)
+        return self._match if self._match_on in text else None
+
+
+class _Match:
+    def __init__(self, title: str):
+        self.kind = "published_post"
+        self.ref_id = "post-1"
+        self.title = title
+        self.similarity = 0.86
+        self.published_at = None
+
+    def as_dict(self):
+        return {"kind": self.kind, "ref_id": self.ref_id, "title": self.title,
+                "similarity": self.similarity, "published_at": None}
+
+
+class _AnnotatableTopic(_Topic):
+    """Wrapper shape the batch sweep uses — accepts the named-match
+    annotation (plain _Topic instances just get the flag)."""
+
+    def __init__(self, title: str, summary: str = "") -> None:
+        super().__init__(title)
+        self.summary = summary
+        self.duplicate_of = None
+
+
+@pytest.mark.unit
+class TestRecentCoveragePass:
+    @pytest.mark.asyncio
+    async def test_composite_match_marks_and_names_duplicate(self):
+        # The 2026-07-23 incident shape: title alone misses (no content
+        # hit) but the title+angle composite matches recent coverage.
+        dedup = _make_dedup()
+        topic = _AnnotatableTopic(
+            "Ditching Grafana for Native Telemetry",
+            summary="The shift from generic monitoring tools to a native console",
+        )
+        index = _FakeCoverageIndex(
+            match_on="generic monitoring tools",
+            match=_Match("The Shift to Native Telemetry"),
+        )
+        load = AsyncMock(return_value=index)
+        fake = _FakeMem()  # content search finds nothing
+        with patch("poindexter.memory.MemoryClient", lambda: fake), \
+             patch("services.topic_recent_coverage.RecentCoverageIndex.load", load):
+            await dedup.mark_against_existing([topic])
+        assert topic.is_duplicate is True
+        assert topic.duplicate_of["title"] == "The Shift to Native Telemetry"
+        # Composite (title + summary) was what got checked, not the bare title.
+        assert index.checked == [
+            "Ditching Grafana for Native Telemetry — The shift from generic "
+            "monitoring tools to a native console"
+        ]
+        # Already marked → the content search is skipped for this candidate.
+        assert fake.calls == []
+
+    @pytest.mark.asyncio
+    async def test_description_attr_feeds_composite(self):
+        # DiscoveredTopic (tap ingest) carries the internal_rag angle in
+        # .description, not .summary.
+        dedup = _make_dedup()
+        topic = _Topic("Some Title")
+        topic.description = "angle text living in description"
+        index = _FakeCoverageIndex(match_on="<nothing>", match=None)
+        with patch("poindexter.memory.MemoryClient", lambda: _FakeMem()), \
+             patch(
+                 "services.topic_recent_coverage.RecentCoverageIndex.load",
+                 AsyncMock(return_value=index),
+             ):
+            await dedup.mark_against_existing([topic])
+        assert index.checked == ["Some Title — angle text living in description"]
+
+    @pytest.mark.asyncio
+    async def test_no_index_falls_through_to_content_check(self):
+        # Guard disabled / infra down → load returns None; the original
+        # content-embedding check still runs.
+        title = "GPU VRAM Budgeting for Local AI Inference"
+        dedup = _make_dedup()
+        topics = [_Topic(title)]
+        fake = _FakeMem(hits_by_title={title: [{"title": "The VRAM Currency Problem"}]})
+        with patch("poindexter.memory.MemoryClient", lambda: fake), \
+             patch(
+                 "services.topic_recent_coverage.RecentCoverageIndex.load",
+                 AsyncMock(return_value=None),
+             ):
+            await dedup.mark_against_existing(topics)
+        assert topics[0].is_duplicate is True
+
+    @pytest.mark.asyncio
+    async def test_niche_slug_threaded_into_index_load(self):
+        dedup = ContentEmbeddingDeduplicator(
+            pool=None, site_config=_site_config(), niche_slug="glad-labs",
+        )
+        load = AsyncMock(return_value=None)
+        with patch("poindexter.memory.MemoryClient", lambda: _FakeMem()), \
+             patch("services.topic_recent_coverage.RecentCoverageIndex.load", load):
+            await dedup.mark_against_existing([_Topic("Anything at all")])
+        assert load.call_args.kwargs["niche_slug"] == "glad-labs"
 
 
 @pytest.mark.unit

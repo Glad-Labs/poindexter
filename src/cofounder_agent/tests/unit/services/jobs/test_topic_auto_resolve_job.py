@@ -272,3 +272,76 @@ async def test_contentless_winner_expires_batch_instead_of_wedging(
     assert status == "expired"
     assert task_count == 0
     assert audit_count == 1
+
+
+async def test_near_duplicate_winner_expires_batch_instead_of_wedging(
+    db_pool, _no_queue_throttle, monkeypatch,
+):
+    """2026-07-23 duplicate-topic incident, auto-resolve seam.
+
+    A batch whose rank-1 winner near-duplicates recently published coverage
+    raises ``RecentCoverageError`` inside ``_handoff_to_pipeline`` (the
+    incident: internal_rag re-proposed the Grafana-telemetry theme 8 days
+    after "The Shift to Native Telemetry" published, and auto-resolve
+    promoted it into a full generation the operator had to reject). Like
+    the topic-sanity case, the job must self-heal: expire the batch, write
+    a ``topic_batch_auto_expired`` audit row with ``reason=
+    recent_coverage``, create NO pipeline task.
+
+    The coverage check itself is stubbed (it builds a MemoryClient +
+    embeds); the gate wiring inside the REAL ``_handoff_to_pipeline`` is
+    what's under test.
+    """
+    from services.topic_recent_coverage import RecentCoverageMatch
+
+    match = RecentCoverageMatch(
+        kind="published_post",
+        ref_id="36a2c300",
+        title="The Shift to Native Telemetry",
+        similarity=0.86,
+        published_at=datetime(2026, 7, 15, tzinfo=timezone.utc),
+    )
+
+    async def _match_everything(text, **kwargs):
+        return match
+
+    monkeypatch.setattr(
+        "services.topic_recent_coverage.check_recent_coverage",
+        _match_everything,
+    )
+
+    await _enable_auto_resolve(db_pool)
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(
+        slug="auto-resolve-recent-coverage", name="Coverage Heal", batch_size=5,
+    )
+    batch_id = await _seed_open_batch(
+        db_pool, n.id, internal=0, external=1,
+        external_title="Ditching Grafana for Native Telemetry",
+    )
+
+    result = await TopicAutoResolveJob().run(
+        db_pool, {"_site_config": SiteConfig()},
+    )
+
+    # The expiry counts as the cycle's change; it is not an error.
+    assert result.ok is True, result.detail
+    assert result.changes_made == 1, result.detail
+
+    async with db_pool.acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM topic_batches WHERE id = $1", batch_id,
+        )
+        task_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM pipeline_tasks WHERE topic_batch_id = $1",
+            batch_id,
+        )
+        expiry_reason = await conn.fetchval(
+            "SELECT details::jsonb ->> 'reason' FROM audit_log "
+            "WHERE event_type = 'topic_batch_auto_expired' "
+            "  AND details::jsonb ->> 'batch_id' = $1",
+            str(batch_id),
+        )
+    assert status == "expired"
+    assert task_count == 0
+    assert expiry_reason == "recent_coverage"

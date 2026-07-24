@@ -300,14 +300,17 @@ class SemanticDeduplicator:
 # ---------------------------------------------------------------------------
 
 
-def get_deduplicator(pool: Any, *, site_config: Any) -> Any:
+def get_deduplicator(
+    pool: Any, *, site_config: Any, niche_slug: str | None = None,
+) -> Any:
     """Return the operator-selected deduplicator engine.
 
     ``app_settings.topic_dedup_engine`` picks between:
     - ``content_embedding`` / ``content`` (default) →
       ``services.topic_dedup_content.ContentEmbeddingDeduplicator`` — compares
       the candidate against published-post CONTENT (catches re-treads whose
-      title differs).
+      title differs) plus the recent-coverage composite pass
+      (``services.topic_recent_coverage``).
     - ``bertopic`` / ``semantic`` → ``SemanticDeduplicator`` (title-embedding).
     - ``word_overlap`` → ``services.topic_dedup.TopicDeduplicator`` (lexical).
 
@@ -316,6 +319,10 @@ def get_deduplicator(pool: Any, *, site_config: Any) -> Any:
     can swap without conditional logic. The hardcoded fallback stays
     ``word_overlap`` (cheapest, no model/DB) for when no setting row exists at
     all; real installs read ``content_embedding`` from the seeded default.
+
+    ``niche_slug`` scopes the content engine's recent-coverage refs to the
+    candidate's niche; the other engines don't use it (their corpus is
+    already title-global by design).
     """
     try:
         engine = (site_config.get("topic_dedup_engine", "word_overlap") or "word_overlap").lower()
@@ -325,7 +332,9 @@ def get_deduplicator(pool: Any, *, site_config: Any) -> Any:
     if engine in ("content", "content_embedding"):
         from services.topic_dedup_content import ContentEmbeddingDeduplicator
 
-        return ContentEmbeddingDeduplicator(pool, site_config=site_config)
+        return ContentEmbeddingDeduplicator(
+            pool, site_config=site_config, niche_slug=niche_slug,
+        )
 
     if engine in ("bertopic", "semantic"):
         return SemanticDeduplicator(pool, site_config=site_config)

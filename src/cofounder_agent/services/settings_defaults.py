@@ -975,6 +975,25 @@ DEFAULTS: dict[str, str] = {
     # 'cpu' so dedup never competes with the inference pipeline for VRAM
     # (mirrors rag_rerank_device). Set 'cuda' only on a box with spare VRAM.
     'topic_dedup_device': 'cpu',
+    # Recent-coverage guard (services/topic_recent_coverage.py, 2026-07-23
+    # incident: internal_rag re-proposed the already-published Grafana-
+    # telemetry theme and it auto-resolved into a full generation the
+    # operator had to reject). Compares the candidate composite (title +
+    # angle) against composites of recently published posts + in-flight
+    # tasks — like-for-like short text, which separates true re-treads
+    # (0.79-0.86 on the incident pairs) from same-domain neighbours
+    # (<=0.70) where title-vs-content cosine cannot. Runs inside the
+    # content_embedding dedup engine at sweep/tap intake AND as a hard
+    # gate at batch handoff (auto-resolve expires a blocked batch).
+    'topic_recent_coverage_enabled': 'true',
+    # Cosine at/above which a candidate near-duplicates recent coverage.
+    # Calibrated 2026-07-24: incident dups 0.79-0.86, same-domain control
+    # 0.70, legitimately-coexisting published pairs <=0.61.
+    'topic_recent_coverage_threshold': '0.80',
+    # Only posts published within this many days block re-coverage (0 = all
+    # time). Older themes are fair game for a deliberate refresh; in-flight
+    # tasks are always checked regardless of this window.
+    'topic_recent_coverage_lookback_days': '90',
     'topic_discovery_length_distribution': '',
     # Topic-sanity gate (services/topic_sanity.py, 2026-06-30 dots-topic
     # incident): minimum count of alphabetic words (letter-runs of >=2

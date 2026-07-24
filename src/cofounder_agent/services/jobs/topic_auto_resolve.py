@@ -217,6 +217,7 @@ class TopicAutoResolveJob:
         # pulls in plenty of pipeline machinery; jobs/__init__ stays
         # light).
         from services.topic_batch_service import TopicBatchService
+        from services.topic_recent_coverage import RecentCoverageError
         from services.topic_sanity import TopicSanityError
 
         # #272 Phase-2d: TopicBatchService requires an explicit site_config.
@@ -286,19 +287,23 @@ class TopicAutoResolveJob:
                     "[topic_auto_resolve] resolved batch=%s niche=%s (candidate_count=%d)",
                     batch_id, batch["niche_slug"], batch["candidate_count"],
                 )
-            except TopicSanityError as exc:
-                # Self-heal (feedback_self_heal_not_suppress): a contentless
-                # winner (2026-06-30: a dots-only headline the LLM ranked
-                # top of its batch) fails identically every retry cycle
-                # while its open batch blocks new sweeps — the recurring
+            except (TopicSanityError, RecentCoverageError) as exc:
+                # Self-heal (feedback_self_heal_not_suppress): a winner the
+                # handoff gates reject — contentless (2026-06-30: a dots-only
+                # headline the LLM ranked top of its batch) or near-duplicate
+                # of recent coverage (2026-07-23: internal_rag re-proposing an
+                # already-published theme) — fails identically every retry
+                # cycle while its open batch blocks new sweeps — the recurring
                 # "content dark" niche wedge. Expire the batch so the next
-                # sweep starts fresh; the sweep-intake filter keeps new
-                # batches clean. The topic_sanity_rejected finding was
-                # already emitted at the handoff gate.
+                # sweep starts fresh; the sweep-intake filters keep new
+                # batches clean. The topic_sanity_rejected /
+                # topic_duplicate_rejected finding was already emitted at the
+                # handoff gate.
                 logger.warning(
                     "[topic_auto_resolve] batch=%s niche=%s winner failed "
-                    "topic sanity — expiring batch instead of retrying: %s",
-                    batch_id, batch["niche_slug"], exc,
+                    "handoff gate (%s) — expiring batch instead of "
+                    "retrying: %s",
+                    batch_id, batch["niche_slug"], type(exc).__name__, exc,
                 )
                 try:
                     await svc.reject_batch(
@@ -371,13 +376,23 @@ def _audit_details(batch: dict[str, Any]) -> str:
 
 
 def _expiry_details(batch: dict[str, Any], exc: Exception) -> str:
-    """JSON details for a ``topic_batch_auto_expired`` audit_log row."""
+    """JSON details for a ``topic_batch_auto_expired`` audit_log row.
+
+    ``reason`` names the handoff gate that rejected the winner —
+    ``topic_sanity`` (contentless title) or ``recent_coverage``
+    (near-duplicate of a recently published post / in-flight task).
+    """
     import json
+    reason = (
+        "recent_coverage"
+        if type(exc).__name__ == "RecentCoverageError"
+        else "topic_sanity"
+    )
     return json.dumps({
         "batch_id": str(batch["batch_id"]),
         "niche_id": str(batch["niche_id"]),
         "niche_slug": batch["niche_slug"],
-        "reason": "topic_sanity",
+        "reason": reason,
         "error": str(exc)[:300],
         "triggered_by": "topic_auto_resolve_job",
     })

@@ -169,6 +169,41 @@ poindexter settings set topic_discovery_auto_enabled false \
 
 Glad Labs operators running niches should set this to `false`.
 
+## Duplicate suppression — the dedup layers
+
+Candidates are deduplicated at three seams before any GPU run starts:
+
+1. **Tap ingest + sweep intake** — the engine selected by
+   `topic_dedup_engine` (default `content_embedding`) runs two passes:
+   - **Recent-coverage** (`services/topic_recent_coverage.py`): the
+     candidate's title+angle composite is embedded and compared against
+     composites of recently published posts (title + source-task topic +
+     winning candidate's angle) **and in-flight tasks**. Like-for-like
+     short text is what separates a re-tread from a same-domain neighbour
+     — the 2026-07-23 incident pair ("Ditching Grafana for Native
+     Telemetry" vs the published "The Shift to Native Telemetry") scored
+     0.79–0.86 here while sitting _below_ the content threshold on the
+     title-vs-content signal. Matches are **named**: the sweep emits one
+     aggregated `topic_duplicate_suppressed` finding listing each dropped
+     candidate and the post that blocked it.
+   - **Content-embedding**: the bare title against published-post content
+     chunks at `topic_dedup_existing_threshold_content` (catches re-treads
+     whose angle is new but whose body would re-state an existing post).
+2. **Batch handoff** (`resolve-batch` / auto-resolve) — the winner that
+   actually ships (operator edits included) is re-checked against recent
+   coverage. A match raises a 400 (CLI/HTTP) naming the colliding post; the
+   auto-resolver self-heals by expiring the batch (audit row
+   `topic_batch_auto_expired`, reason `recent_coverage`) so the niche never
+   wedges. This seam also protects batches swept _before_ a similar post
+   published, and operator picks made from the phone.
+3. **QA rail backstop** — `qa.content_originality` compares the finished
+   draft's chunks against published posts (advisory by default; see the
+   anti-hallucination doc for graduation via `qa_gates`).
+
+Dev-diary founder-log posts never block glad-labs evergreen treatments of
+the same work (refs are niche-scoped; niche-less legacy posts participate
+everywhere).
+
 ## Tuning knobs you'll actually touch
 
 Most of these live in `app_settings` and are seeded with sane defaults. The
@@ -184,6 +219,9 @@ two `niches` table columns at the top are per-niche, not app_setting.
 | `niche_top_n_per_pool`                     | `app_settings`        | `5`                    | Top-N per pool fed to the LLM final-score stage                   |
 | `niche_internal_rag_per_kind_limit`        | `app_settings`        | `4`                    | Items per source-kind fed into the internal RAG candidate pool    |
 | `niche_batch_expires_days`                 | `app_settings`        | `7`                    | How long an open batch can sit before it expires                  |
+| `topic_recent_coverage_enabled`            | `app_settings`        | `true`                 | Master switch for the recent-coverage dedup guard                 |
+| `topic_recent_coverage_threshold`          | `app_settings`        | `0.80`                 | Cosine floor for a composite near-duplicate (calibrated 2026-07)  |
+| `topic_recent_coverage_lookback_days`      | `app_settings`        | `90`                   | Published-post window that blocks re-coverage (0 = all time)      |
 | `niche_embedding_model`                    | `app_settings`        | `nomic-embed-text`     | Ollama embedding model (must match embeddings dim)                |
 | `niche_ollama_chat_timeout_seconds`        | `app_settings`        | `60`                   | Per-call HTTP timeout for the LLM scorer / distillation calls     |
 | `niche_goal_descriptions`                  | `app_settings` (JSON) | (7-key dict)           | Prose anchors for each `goal_type` — drives goal-vector embedding |
@@ -225,6 +263,8 @@ set isn't checked individually; it's only covered by the site-wide check.
 | Writer keeps citing the wrong source                                                                      | `TOPIC_ONLY` has no enforcement; you may want `CITATION_BUDGET`                         | Switch the niche's `writer_rag_mode`, or refine the niche's prompt override (see follow-up table below) |
 | `TWO_PASS` keeps hitting the revision cap and ships drafts with `[EXTERNAL_NEEDED]` markers still in them | Hard cap of 3 loops reached                                                             | Bump `writer_rag_two_pass_max_revision_loops` cautiously — high values risk runaway cost                |
 | Scoring LLM call times out                                                                                | Local Ollama model is slow or wedged                                                    | Bump `niche_ollama_chat_timeout_seconds` or check Ollama health                                         |
+| `resolve-batch` 400s with "near-duplicates recent coverage"                                               | The winner re-treads a recently published post / in-flight task (named in the error)    | Rank a different candidate or `edit-winner` to a fresh angle; tune `topic_recent_coverage_*` knobs      |
+| A batch expired on its own with audit reason `recent_coverage`                                            | Auto-resolve hit the same guard and self-healed instead of wedging the niche            | Nothing — next sweep starts clean; the `topic_duplicate_rejected` finding names the colliding post      |
 
 ## What's not yet built
 

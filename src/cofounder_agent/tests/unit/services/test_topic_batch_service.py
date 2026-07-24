@@ -32,6 +32,21 @@ def _clear_goal_vec_cache():
     _GOAL_VEC_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_recent_coverage(monkeypatch):
+    """Neutralize the recent-coverage handoff gate for this file's tests.
+
+    The real ``check_recent_coverage`` builds a ``MemoryClient`` (eager DB
+    connect + embed calls) — a side channel no unit test should open, and a
+    nondeterminism source for the db-backed ones. Gate-specific tests
+    re-patch with their own return value / side effect.
+    """
+    monkeypatch.setattr(
+        "services.topic_recent_coverage.check_recent_coverage",
+        AsyncMock(return_value=None),
+    )
+
+
 async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch):
     """End-to-end happy-path (b2 pool-reader):
 
@@ -1079,6 +1094,201 @@ class TestHandoffTopicSanityGate:
         )
 
         assert conn.execute.await_count == 2
+
+
+@pytest.mark.unit
+class TestHandoffRecentCoverageGate:
+    """Incident 2026-07-23: internal_rag re-proposed the already-published
+    Grafana-telemetry theme ("Ditching Grafana for Native Telemetry" vs
+    "The Shift to Native Telemetry", published 8 days earlier) and it
+    auto-resolved into a full generation the operator had to reject.
+    ``_handoff_to_pipeline`` is the last dedup seam before a winner becomes
+    a ``pipeline_tasks`` row — a near-duplicate must be blocked HERE,
+    before any DB write, with a ``topic_duplicate_rejected`` finding."""
+
+    def _match(self):
+        from services.topic_recent_coverage import RecentCoverageMatch
+
+        return RecentCoverageMatch(
+            kind="published_post",
+            ref_id="36a2c300",
+            title="The Shift to Native Telemetry",
+            similarity=0.86,
+            published_at=datetime(2026, 7, 15, tzinfo=timezone.utc),
+        )
+
+    async def test_near_duplicate_blocked_before_any_insert(self, monkeypatch):
+        from services.topic_recent_coverage import RecentCoverageError
+
+        monkeypatch.setattr(
+            "services.topic_recent_coverage.check_recent_coverage",
+            AsyncMock(return_value=self._match()),
+        )
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            with pytest.raises(RecentCoverageError) as exc_info:
+                await svc._handoff_to_pipeline(
+                    winner=_make_candidate(
+                        title="Ditching Grafana for Native Telemetry",
+                    ),
+                    niche=_make_niche("glad-labs"),
+                    batch_id=uuid4(),
+                )
+
+        # Gate fired before the task/version INSERTs.
+        assert conn.execute.await_count == 0
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["kind"] == "topic_duplicate_rejected"
+        assert kwargs["severity"] == "warn"
+        assert kwargs["extra"]["match"]["title"] == "The Shift to Native Telemetry"
+        # Operator-facing message names the colliding post.
+        assert "The Shift to Native Telemetry" in str(exc_info.value)
+
+    async def test_gate_judges_operator_edited_composite(self, monkeypatch):
+        """The gate must judge what actually ships — the operator-edited
+        topic + angle composite, not the raw candidate title."""
+        seen: list[str] = []
+
+        async def _check(text, **kwargs):
+            seen.append(text)
+            return None
+
+        monkeypatch.setattr(
+            "services.topic_recent_coverage.check_recent_coverage", _check,
+        )
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        winner = _make_candidate(title="Original Title")
+        winner.operator_edited_topic = "Edited Topic"
+        winner.operator_edited_angle = "Edited angle"
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        assert seen == ["Edited Topic — Edited angle"]
+        assert conn.execute.await_count == 2  # gate passed → both INSERTs
+
+    async def test_no_match_hands_off_normally(self):
+        # The autouse _no_recent_coverage fixture already stubs the check
+        # to None — the plain handoff path must be unaffected by the gate.
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(), niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        assert conn.execute.await_count == 2
+
+
+@pytest.mark.unit
+class TestDedupeCandidatesRecentCoverage:
+    """``_dedupe_candidates`` threads the angle/summary + niche into the
+    dedup engine (the composite is what separates re-treads from
+    neighbours) and surfaces NAMED drops as one aggregated
+    ``topic_duplicate_suppressed`` finding per sweep."""
+
+    class _FakeDeduper:
+        def __init__(self):
+            self.wrappers = None
+
+        async def mark_duplicates(self, wrappers):
+            self.wrappers = wrappers
+            for w in wrappers:
+                if "Ditching Grafana" in w.title:
+                    w.is_duplicate = True
+                    w.duplicate_of = {
+                        "kind": "published_post",
+                        "ref_id": "36a2c300",
+                        "title": "The Shift to Native Telemetry",
+                        "similarity": 0.86,
+                        "published_at": "2026-07-15T00:00:00+00:00",
+                    }
+            return wrappers
+
+    async def test_summaries_and_niche_threaded_named_drop_surfaced(
+        self, monkeypatch,
+    ):
+        deduper = self._FakeDeduper()
+        captured_kwargs: dict = {}
+
+        def _get_deduper(pool, *, site_config, niche_slug=None):
+            captured_kwargs["niche_slug"] = niche_slug
+            return deduper
+
+        monkeypatch.setattr(
+            "services.topic_dedup_semantic.get_deduplicator", _get_deduper,
+        )
+        pool, _conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        external = [
+            {"kind": "external", "data": {
+                "title": "Some external headline", "summary": "external summary",
+            }},
+        ]
+        internal = [
+            {"kind": "internal", "data": {
+                "distilled_topic": "Ditching Grafana for Native Telemetry",
+                "distilled_angle": "The shift from generic monitoring tools",
+            }},
+        ]
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            kept_ext, kept_int = await svc._dedupe_candidates(
+                external, internal, niche=_make_niche("glad-labs"),
+            )
+
+        # Niche threaded into the engine factory.
+        assert captured_kwargs["niche_slug"] == "glad-labs"
+        # Wrappers carried the composite inputs.
+        by_title = {w.title: w for w in deduper.wrappers}
+        assert by_title["Some external headline"].summary == "external summary"
+        assert (
+            by_title["Ditching Grafana for Native Telemetry"].summary
+            == "The shift from generic monitoring tools"
+        )
+        # The named duplicate was dropped; the external survivor kept.
+        assert kept_ext == external
+        assert kept_int == []
+        # One aggregated finding naming candidate + matched post.
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["kind"] == "topic_duplicate_suppressed"
+        assert kwargs["severity"] == "info"
+        assert "The Shift to Native Telemetry" in kwargs["body"]
+        assert kwargs["extra"]["suppressed"][0]["match"]["similarity"] == 0.86
+
+    async def test_unnamed_drops_emit_no_finding(self, monkeypatch):
+        """Lexical/semantic engines mark duplicates without a named match —
+        the finding only fires when there's something to tell the operator."""
+
+        class _Anon:
+            async def mark_duplicates(self, wrappers):
+                wrappers[0].is_duplicate = True  # no duplicate_of annotation
+                return wrappers
+
+        monkeypatch.setattr(
+            "services.topic_dedup_semantic.get_deduplicator",
+            lambda pool, *, site_config, niche_slug=None: _Anon(),
+        )
+        pool, _conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            kept_ext, _ = await svc._dedupe_candidates(
+                [{"kind": "external", "data": {"title": "T", "summary": ""}}],
+                [],
+                niche=_make_niche(),
+            )
+
+        assert kept_ext == []
+        emit.assert_not_called()
 
 
 @pytest.mark.unit

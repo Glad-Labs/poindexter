@@ -94,8 +94,12 @@ async def builtin_topic_source(
 
     # Fuzzy/semantic dedup (honours topic_dedup_engine). DiscoveredTopic
     # already exposes .title + .is_duplicate, so the deduper marks in place.
+    # niche_slug scopes the content engine's recent-coverage pass to this
+    # tap's niche (a dev_diary post must not block a glad-labs candidate).
     if topics:
-        deduper = get_deduplicator(pool, site_config=site_config)
+        deduper = get_deduplicator(
+            pool, site_config=site_config, niche_slug=niche.slug,
+        )
         try:
             await deduper.mark_duplicates(topics)
         except Exception:
