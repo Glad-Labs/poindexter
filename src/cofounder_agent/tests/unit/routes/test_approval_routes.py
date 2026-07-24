@@ -76,6 +76,28 @@ APPROVED_TASK = {
     "status": "approved",
 }
 
+REJECTED_RETRY_TASK = {
+    **AWAITING_TASK,
+    "status": "rejected_retry",
+}
+
+REJECTED_FINAL_TASK = {
+    **AWAITING_TASK,
+    "status": "rejected_final",
+}
+
+FINAL_BODY = {
+    "reason": "Duplicate topic",
+    "feedback": "Topic already covered — close it out",
+    "allow_revisions": False,
+}
+
+RETRY_BODY = {
+    "reason": "Weak draft",
+    "feedback": "Regenerate with more depth",
+    "allow_revisions": True,
+}
+
 
 # ---------------------------------------------------------------------------
 # POST /api/tasks/{task_id}/reject
@@ -229,6 +251,200 @@ class TestRejectTask:
         call_args = mock_db.update_task.call_args
         updates = call_args[0][1]
         assert updates["approval_status"] == "rejected"
+        # The CLI has always documented --feedback as landing on
+        # error_message; since the 2026-07-24 finalize fix the route
+        # actually writes it.
+        assert updates["error_message"] == "Rejected (rejected_retry): Need improvement"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/tasks/{task_id}/reject — finalize escalation (2026-07-24)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRejectFinalizeEscalation:
+    """rejected_retry → rejected_final via a second reject call.
+
+    Contract (2026-07-24 — operator rejected a duplicate topic with the CLI
+    default --retry, then couldn't finalize it without a manual DB UPDATE):
+
+    - rejected_retry  + allow_revisions=false → 200, rejected_final (NEW)
+    - rejected_final  + allow_revisions=false → 200, idempotent re-finalize (NEW)
+    - rejected_retry|rejected_final + allow_revisions=true → 409 (forbidden:
+      re-queueing is the regen flow's seam, not this endpoint's)
+    - escalation lost the race with the regen claim (guarded CAS returns
+      None) → 409
+    - every other non-awaiting status → 409, unchanged
+    """
+
+    def test_finalize_rejected_retry_returns_200_rejected_final(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_RETRY_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_retry")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "rejected_final"
+        assert data["previous_status"] == "rejected_retry"
+
+        # Status flip went through the guarded CAS, not a blind update.
+        guard_call = mock_db.update_task_status_guarded.await_args
+        assert guard_call.args[:2] == ("task-001", "rejected_final")
+        assert guard_call.kwargs["allowed_from"] == (
+            "rejected_retry", "rejected_final",
+        )
+        assert guard_call.kwargs["error_message"].startswith(
+            "Rejected (rejected_final):"
+        )
+
+        # The enrichment write carries feedback/metadata but never status —
+        # only the CAS may transition the row.
+        updates = mock_db.update_task.call_args[0][1]
+        assert "status" not in updates
+        assert updates["approval_status"] == "rejected"
+        assert updates["human_feedback"] == FINAL_BODY["feedback"]
+        assert updates["metadata"]["finalized_from_status"] == "rejected_retry"
+
+    def test_finalize_rejected_final_is_idempotent(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_FINAL_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_final")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "rejected_final"
+        assert data["previous_status"] == "rejected_final"
+
+    @pytest.mark.parametrize("task", [REJECTED_RETRY_TASK, REJECTED_FINAL_TASK])
+    def test_retry_reject_on_already_rejected_task_still_409(self, task):
+        """Downgrading / re-queueing an already-rejected task via reject
+        stays forbidden — only the terminal finalize is permitted."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=task)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=RETRY_BODY)
+
+        assert resp.status_code == 409
+        assert "--final" in resp.json()["detail"]
+        mock_db.update_task.assert_not_called()
+        mock_db.update_task_status_guarded.assert_not_called()
+
+    def test_finalize_race_with_regen_claim_returns_409(self):
+        """The regen flow claimed the row (rejected_retry → in_progress)
+        between the route's read and the CAS — the guard returns None and
+        the route must 409, not report a finalize that never landed."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_RETRY_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 409
+        assert "regeneration" in resp.json()["detail"]
+        mock_db.update_task.assert_not_called()
+
+    def test_finalize_skips_double_count_outcome_side_effects(self):
+        """The first reject already nudged variant weights (EWMA) and flipped
+        model_performance for this human decision — the escalation must not
+        fire them again."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_RETRY_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_retry")
+        client = TestClient(_build_app(mock_db))
+
+        with patch(
+            "services.router_outcome_feedback.record_task_outcome",
+            new=AsyncMock(),
+        ) as mock_outcome:
+            resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 200
+        mock_outcome.assert_not_awaited()
+        mock_db.mark_model_performance_outcome.assert_not_called()
+
+    def test_normal_reject_still_fires_outcome_side_effects(self):
+        """Companion to the skip test: the awaiting_approval path keeps the
+        #361 outcome feedback loop."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=AWAITING_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        with patch(
+            "services.router_outcome_feedback.record_task_outcome",
+            new=AsyncMock(),
+        ) as mock_outcome:
+            resp = client.post("/api/tasks/task-001/reject", json=RETRY_BODY)
+
+        assert resp.status_code == 200
+        mock_outcome.assert_awaited_once()
+        mock_db.mark_model_performance_outcome.assert_called_once()
+        # And the plain path never touches the guarded CAS.
+        mock_db.update_task_status_guarded.assert_not_called()
+
+    def test_finalize_writes_rejected_final_gate_history_row(self):
+        """pipeline_gate_history must gain a fresh rejected_final row so the
+        content_tasks view's latest-row subqueries agree with the new task
+        status; the metadata records the escalation provenance."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_RETRY_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_retry")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 200
+        insert_args = mock_db.pool.execute.await_args.args
+        assert "pipeline_gate_history" in insert_args[0]
+        assert insert_args[3] == "rejected_final"  # event_kind
+        import json as _json
+
+        gate_meta = _json.loads(insert_args[6])
+        assert gate_meta["escalated"] is True
+        assert gate_meta["previous_status"] == "rejected_retry"
+
+    def test_finalize_writes_audit_log_event(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=REJECTED_RETRY_TASK)
+        mock_db.update_task_status_guarded = AsyncMock(return_value="rejected_retry")
+        client = TestClient(_build_app(mock_db))
+
+        with patch("routes.approval_routes.audit_log_bg") as mock_audit:
+            resp = client.post("/api/tasks/task-001/reject", json=FINAL_BODY)
+
+        assert resp.status_code == 200
+        assert mock_audit.call_count == 1
+        kwargs = mock_audit.call_args.kwargs
+        assert kwargs["event_type"] == "approval_gate_rejected"
+        assert kwargs["details"]["escalated"] is True
+        assert kwargs["details"]["new_status"] == "rejected_final"
+        assert kwargs["details"]["previous_status"] == "rejected_retry"
+
+    @pytest.mark.parametrize(
+        "status", ["pending", "in_progress", "approved", "published", "failed"],
+    )
+    @pytest.mark.parametrize("body", [FINAL_BODY, RETRY_BODY])
+    def test_other_statuses_still_409_for_both_reject_shapes(self, status, body):
+        """The escalation only opens rejected_retry|rejected_final →
+        rejected_final. Every other non-awaiting status keeps the 409 for
+        BOTH allow_revisions shapes (poindexter#743 contract)."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value={**AWAITING_TASK, "status": status})
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/reject", json=body)
+
+        assert resp.status_code == 409
+        mock_db.update_task.assert_not_called()
+        mock_db.update_task_status_guarded.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

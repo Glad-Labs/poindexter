@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
 from schemas.task_schemas import PendingApprovalListResponse
+from services.audit_log import audit_log_bg
 from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
@@ -78,11 +79,20 @@ async def reject_task(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """Reject a task and send it back for revisions.
+    """Reject a task and send it back for revisions — or finalize a rejection.
 
-    Only tasks with status 'awaiting_approval' can be rejected.
-    If allow_revisions=true, status becomes 'rejected_retry'.
-    If allow_revisions=false, status becomes 'rejected_final'.
+    Legal transitions:
+    - awaiting_approval → rejected_retry   (allow_revisions=true, the default)
+    - awaiting_approval → rejected_final   (allow_revisions=false)
+    - rejected_retry    → rejected_final   (allow_revisions=false — finalize
+      escalation: closes out a task the operator first rejected with retry,
+      before the regen flow re-claims it)
+    - rejected_final    → rejected_final   (allow_revisions=false — idempotent
+      re-finalize; refreshes feedback/audit)
+
+    Everything else 409s, including re-rejecting an already-rejected task
+    with allow_revisions=true (re-queueing is the regen flow's job, not
+    this endpoint's).
     """
     try:
         operator = get_operator_identity()
@@ -105,17 +115,41 @@ async def reject_task(
         # in awaiting_approval. Preserved from b87dc38d.
         full_task_id = str(task.get("task_id") or task.get("id") or task_id)
 
-        # Verify task is awaiting approval
+        # Verify the task is in a rejectable state. Two shapes are legal:
+        #   1. awaiting_approval → rejected_retry | rejected_final (normal)
+        #   2. rejected_retry | rejected_final → rejected_final (finalize
+        #      escalation, 2026-07-24): the operator rejected with --retry,
+        #      then realized the topic itself is dead (duplicate, off-brand)
+        #      and must close it out before the regen flow re-claims the row
+        #      (content_generation claims status IN ('pending',
+        #      'rejected_retry')). Re-finalizing an already-final task is
+        #      idempotent. Downgrading back to rejected_retry stays forbidden
+        #      — re-queueing is the regen flow's seam, not this endpoint's.
         current_status = task.get("status")
-        if current_status != "awaiting_approval":
-            raise HTTPException(
-                status_code=409,
-                detail=f"Cannot reject task with status '{current_status}' — expected 'awaiting_approval'",
-            )
+        requested_final = not request.allow_revisions
+        escalation = (
+            current_status in ("rejected_retry", "rejected_final") and requested_final
+        )
+        if current_status != "awaiting_approval" and not escalation:
+            if current_status in ("rejected_retry", "rejected_final"):
+                detail = (
+                    f"Cannot re-reject task with status '{current_status}' for retry"
+                    " — only a terminal finalize (allow_revisions=false /"
+                    " --final) is permitted once a task is already rejected"
+                )
+            else:
+                detail = (
+                    f"Cannot reject task with status '{current_status}'"
+                    " — expected 'awaiting_approval'"
+                )
+            raise HTTPException(status_code=409, detail=detail)
 
         # Determine final status based on revision allowance
         final_status = "rejected_retry" if request.allow_revisions else "rejected_final"
         rejection_date = datetime.now(timezone.utc)
+        # Surfaced in `tasks list` / the console task card. The CLI has always
+        # documented --feedback as landing on error_message; make that true.
+        error_message = f"Rejected ({final_status}): {request.feedback}"[:2048]
 
         # Update task with rejection metadata
         metadata_updates: dict[str, Any] = {
@@ -127,16 +161,52 @@ async def reject_task(
             "allow_revisions": request.allow_revisions,
         }
 
-        await db_service.update_task(
-            full_task_id,
-            {
-                "status": final_status,
-                "approval_status": "rejected",
-                "human_feedback": request.feedback,
-                "metadata": metadata_updates,
-                "updated_at": rejection_date.isoformat(),
-            },
-        )
+        if escalation:
+            metadata_updates["finalized_from_status"] = current_status
+            # Atomic CAS (GH-90): if the regen flow claimed the row
+            # (rejected_retry → in_progress) between our read above and this
+            # write, the guard refuses and we 409 instead of flipping a task
+            # whose pipeline is already running.
+            previous_status = await db_service.update_task_status_guarded(
+                full_task_id,
+                "rejected_final",
+                allowed_from=("rejected_retry", "rejected_final"),
+                error_message=error_message,
+            )
+            if previous_status is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Task {full_task_id} was claimed for regeneration before"
+                        " the finalize landed — reject it again once it returns"
+                        " to awaiting_approval"
+                    ),
+                )
+            # Feedback/metadata enrichment rides a second write: the guarded
+            # CAS only accepts whitelisted scalar columns. Status is already
+            # rejected_final here, so this write can't resurrect the task.
+            await db_service.update_task(
+                full_task_id,
+                {
+                    "approval_status": "rejected",
+                    "human_feedback": request.feedback,
+                    "metadata": metadata_updates,
+                    "updated_at": rejection_date.isoformat(),
+                },
+            )
+        else:
+            previous_status = current_status
+            await db_service.update_task(
+                full_task_id,
+                {
+                    "status": final_status,
+                    "approval_status": "rejected",
+                    "human_feedback": request.feedback,
+                    "error_message": error_message,
+                    "metadata": metadata_updates,
+                    "updated_at": rejection_date.isoformat(),
+                },
+            )
 
         # Operator rejection revokes the durable QA-approval marker
         # (qa_approved_snapshot on pipeline_versions, 2026-07-03): without
@@ -158,8 +228,10 @@ async def reject_task(
         # resolve non-NULL. The view's scalar subqueries pull the latest
         # row per task. event_kind reflects the revision policy so the
         # learning signal can distinguish `rejected_retry` (regen) from
-        # `rejected_final` (closed out).
-        event_kind = "rejected_retry" if request.allow_revisions else "rejected_final"
+        # `rejected_final` (closed out) — on a finalize escalation the fresh
+        # `rejected_final` row becomes the latest, keeping the view's
+        # approval columns consistent with the task's new status.
+        event_kind = final_status
         try:
             await db_service.pool.execute(
                 """
@@ -178,6 +250,8 @@ async def reject_task(
                         "reason": request.reason,
                         "allow_revisions": request.allow_revisions,
                         "decision": "rejected",
+                        "previous_status": previous_status,
+                        "escalated": escalation,
                     },
                     default=str,
                 ),
@@ -188,38 +262,64 @@ async def reject_task(
                 full_task_id, review_err,
             )
 
+        # Durable audit_log record, same `approval_gate_rejected` family the
+        # gate-aware HITL flow writes (services/approval_service.py) — this
+        # is what lets the learning loop distinguish a retried reject from a
+        # closed-out one long after the task row itself churns.
+        audit_log_bg(
+            event_type="approval_gate_rejected",
+            source="approval_routes",
+            details={
+                "gate_name": LEGACY_APPROVAL_GATE,
+                "reason": request.reason,
+                "new_status": final_status,
+                "previous_status": previous_status,
+                "escalated": escalation,
+            },
+            task_id=full_task_id,
+            severity="info",
+        )
+
         # Outcome → variant-weight feedback loop (#361 part 1). The reject
         # path was the gap: before this it did NO atom_runs.decision backfill,
         # so a rejected run never became negative training signal. This
         # backfills the decision AND nudges the variant weight(s) down.
         # Best-effort — never breaks the rejection.
-        try:
-            from services.router_outcome_feedback import record_task_outcome
+        #
+        # Skipped on a finalize escalation: the first reject already
+        # backfilled atom_runs, nudged the variant weights (EWMA — a second
+        # call would double-count the SAME human decision as two negative
+        # signals), and flipped model_performance. Escalation is bookkeeping
+        # on that decision, not a new judgment of the content.
+        if not escalation:
+            try:
+                from services.router_outcome_feedback import record_task_outcome
 
-            await record_task_outcome(
-                pool=db_service.pool,
-                task_id=full_task_id,
-                decision="rejected",
-            )
-        except Exception as rfb_err:  # noqa: BLE001
-            logger.debug(
-                "[reject_task] router outcome feedback failed: %s", rfb_err,
-            )
+                await record_task_outcome(
+                    pool=db_service.pool,
+                    task_id=full_task_id,
+                    decision="rejected",
+                )
+            except Exception as rfb_err:  # noqa: BLE001
+                logger.debug(
+                    "[reject_task] router outcome feedback failed: %s", rfb_err,
+                )
 
-        try:
-            await db_service.mark_model_performance_outcome(
-                full_task_id, human_approved=False,
-            )
-        except Exception as mp_err:
-            logger.debug(
-                "[reject_task] mark_model_performance_outcome failed: %s", mp_err,
-            )
+            try:
+                await db_service.mark_model_performance_outcome(
+                    full_task_id, human_approved=False,
+                )
+            except Exception as mp_err:
+                logger.debug(
+                    "[reject_task] mark_model_performance_outcome failed: %s", mp_err,
+                )
 
         logger.info("Task %s rejected by %s: %s", full_task_id, operator['id'], request.reason)
 
         return {
             "task_id": full_task_id,
             "status": final_status,
+            "previous_status": previous_status,
             "approval_status": "rejected",
             "rejection_date": rejection_date.isoformat(),
             "rejected_by": operator["id"],

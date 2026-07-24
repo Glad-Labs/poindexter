@@ -268,16 +268,21 @@ def tasks_approve(task_id: str) -> None:
 )
 @click.option(
     "--final/--retry",
-    default=False,
+    "final_flag",
+    default=None,
     help=(
         "--final → terminal rejection (status=rejected_final, no regen). "
         "--retry → send back for revisions (status=rejected_retry, the "
         "worker re-runs the pipeline and the task lands back in "
-        "awaiting_approval). Default is --retry to match the API default. "
-        "Use --final for stale or off-topic posts you don't want regenerated."
+        "awaiting_approval). Omitting the flag defaults to --retry (with a "
+        "warning) to match the API default. Use --final for stale or "
+        "off-topic posts you don't want regenerated — including a task you "
+        "already rejected with --retry: a second `tasks reject --final` "
+        "escalates rejected_retry → rejected_final, provided the regen "
+        "hasn't re-claimed the task yet."
     ),
 )
-def tasks_reject(task_id: str, feedback: str, final: bool) -> None:
+def tasks_reject(task_id: str, feedback: str, final_flag: bool | None) -> None:
     """Reject a task (full id or 8-char prefix). --feedback is required by the worker API."""
     if not feedback:
         click.echo(
@@ -286,9 +291,21 @@ def tasks_reject(task_id: str, feedback: str, final: bool) -> None:
             err=True,
         )
         sys.exit(2)
-    # Two different /reject handlers exist on /api/tasks/{id}/reject (one
-    # in approval_routes.py wants `feedback`, one in task_publishing_routes.py
-    # wants `reason`). Send both so whichever FastAPI routes to is satisfied.
+    final = bool(final_flag)
+    if final_flag is None:
+        # The implicit default has burned the operator before (2026-07-24:
+        # a duplicate topic got --retry by omission, and finalizing it then
+        # required an escalation call). Make the choice visible.
+        click.secho(
+            "No --retry/--final given — defaulting to --retry: the task will "
+            "regenerate and come back for review. Use --final to close the "
+            "topic out for good (still possible after this: a second "
+            "`tasks reject --final` escalates rejected_retry → rejected_final).",
+            fg="yellow",
+            err=True,
+        )
+    # The live handler (approval_routes.py) requires BOTH `reason` and
+    # `feedback` in the body — send the same text for each.
     payload: dict[str, Any] = {
         "feedback": feedback,
         "reason": feedback,
@@ -523,10 +540,12 @@ def _execute_batch(
 )
 @click.option(
     "--final/--retry",
-    default=False,
+    "final_flag",
+    default=None,
     help=(
         "--final → terminal rejection (rejected_final, no regen). "
-        "--retry → send back for revisions (rejected_retry). Default --retry."
+        "--retry → send back for revisions (rejected_retry). Omitting the "
+        "flag defaults to --retry, with a warning."
     ),
 )
 @click.option(
@@ -548,7 +567,7 @@ def tasks_reject_batch(
     filter_clause: str | None,
     from_stdin: bool,
     feedback: str,
-    final: bool,
+    final_flag: bool | None,
     dry_run: bool,
     yes: bool,
 ) -> None:
@@ -565,6 +584,15 @@ def tasks_reject_batch(
             err=True,
         )
         sys.exit(2)
+    final = bool(final_flag)
+    if final_flag is None:
+        click.secho(
+            "No --retry/--final given — defaulting to --retry: every task in "
+            "this batch will regenerate and come back for review. Use --final "
+            "to close the topics out for good.",
+            fg="yellow",
+            err=True,
+        )
 
     ids = _gather_batch_ids(task_ids, filter_clause, from_stdin)
     if not ids:

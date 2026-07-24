@@ -1,11 +1,13 @@
 """
-Task Publishing Routes - Approve, publish, reject, and image generation.
+Task Publishing Routes - Approve, publish, and image generation.
 
 Sub-router for task_routes.py. Handles:
 - POST /{task_id}/approve — Approve task for publishing
 - POST /{task_id}/publish — Publish approved task
-- POST /{task_id}/reject — Reject task for revision
 - POST /{task_id}/generate-image — Generate or fetch image for task
+
+NOTE: POST /{task_id}/reject lives in routes/approval_routes.py (the only
+reject handler — approval_routes registers before this sub-router).
 """
 
 import asyncio

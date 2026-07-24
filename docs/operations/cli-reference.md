@@ -169,10 +169,26 @@ poindexter tasks create "Self-hosting Qwen 3 on a 5090" \
 
 ```bash
 poindexter tasks approve 842
-poindexter tasks reject 842 --feedback "Off-topic for the brand"
+poindexter tasks reject 842 --feedback "Off-topic for the brand" --retry
+poindexter tasks reject 842 --feedback "Duplicate topic" --final
 ```
 
 `--feedback` is required on reject — the worker API enforces it.
+
+`--retry` (the default, with a warning when omitted) sets
+`rejected_retry`: the regen flow re-claims the task, re-runs the
+pipeline with your feedback, and it lands back in `awaiting_approval`.
+`--final` sets `rejected_final`: terminal, no regen.
+
+**Changed your mind after a `--retry`?** Re-run the reject with
+`--final` — the endpoint permits the `rejected_retry → rejected_final`
+escalation (and re-finalizing a `rejected_final` task is an idempotent
+no-op), so a duplicate/off-brand topic can be closed out without a
+manual DB update. The escalation races the regen claim: once the flow
+has picked the task up (`in_progress`) you get a 409 — wait for it to
+land back in `awaiting_approval` and reject `--final` there.
+Re-rejecting an already-rejected task with `--retry` stays a 409;
+re-queueing is the regen flow's job.
 
 ### `tasks publish <task_id>`
 
