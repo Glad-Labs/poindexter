@@ -77,7 +77,28 @@
     clientId: LS.getItem('px_client_id') ?? '',
     clientSecret: LS.getItem('px_client_secret') ?? '',
     scope: LS.getItem('px_scope') ?? '',
-    live: (window.PX_API_LIVE ?? false) || LS.getItem('px_live') === '1',
+    // LIVE is the DEFAULT when the console is served from the worker (the
+    // /console/ mount — page origin == API origin). A fresh browser profile
+    // must show real state or honest per-panel errors, never the silently
+    // ticking mock simulation: on Windows→Pop the operator's new browser had
+    // an empty localStorage and the console quietly rendered fake data as if
+    // connected (2026-07-23). Mock/demo now requires explicit opt-in —
+    // PX.api.setLive(false) (persists px_live='0'), or window.PX_API_LIVE =
+    // false, or opening the files outside the worker mount (OSS demo case:
+    // file:// or a static host serves mock by default, unchanged).
+    live: (() => {
+      if (window.PX_API_LIVE !== undefined && window.PX_API_LIVE !== null)
+        return !!window.PX_API_LIVE;
+      const ls = LS.getItem('px_live');
+      if (ls === '1') return true;
+      if (ls === '0') return false;
+      const loc = window.location;
+      return !!(
+        loc &&
+        /^https?:$/.test(loc.protocol || '') &&
+        (loc.pathname || '').startsWith('/console')
+      );
+    })(),
     // DEV-ONLY: simulate real-world async on the MOCK branch so we can test
     // loading / error / empty states without a backend. Ignored when live.
     sim: LS.getItem('px_sim') ?? 'normal', // normal | slow | error | empty
@@ -1646,7 +1667,11 @@
   // Tiny boot hint in the console for whoever wires this up.
   if (!cfg.live) {
     console.info(
-      '[PX.api] MOCK mode. PX.api.setClient("client_id","client_secret"); PX.api.setBase("http://localhost:8002"); PX.api.setLive(true) to go live.'
+      '[PX.api] MOCK mode (demo data — NOT your stack). Served-from-worker pages default to live; this page is either hosted elsewhere or explicitly opted out (px_live="0"). PX.api.setClient("client_id","client_secret"); PX.api.setLive(true) to go live.'
+    );
+  } else if (!cfg.clientId || !cfg.clientSecret) {
+    console.warn(
+      '[PX.api] LIVE mode without OAuth creds — panels will error until you set them: App Settings → Connection (client from `poindexter auth register-client --name poindexter-console`).'
     );
   }
 })();
