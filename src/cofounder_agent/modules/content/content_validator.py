@@ -548,6 +548,12 @@ REASONING_TOKEN_LEAK_PATTERNS = [
 # content_normalize_draft._SCAFFOLD_TELL_RE (strip there, detect here), the same
 # split-of-duties the reasoning-leak case uses (strip in thinking_models, detect
 # here).
+# 2026-07-23 (task 342a26b7): extended with the qa.rewrite revision-briefing
+# vocabulary — the rescue reviser echoed its briefing ("Task: Revise a draft
+# article…", "Constraints: …", "Fix 1: …", "Return Markdown body only") and,
+# because the rescue loop re-enters at qa.programmatic (never re-running
+# normalize_draft), the echo reached awaiting_approval. Keep in sync with
+# atoms/_scaffold_helpers.SCAFFOLD_TELL_RE (strip there, detect here).
 LEAKED_PLANNING_SCAFFOLD_RE = re.compile(
     r"(?im)(?:"
     r"key\s+elements?\s+from\s+sources"
@@ -556,9 +562,12 @@ LEAKED_PLANNING_SCAFFOLD_RE = re.compile(
     r"|no\s+placeholder\s+brackets"
     r"|avoid\s+[\"'“]?delve"
     r"|concluding\s+paragraph"
+    r"|revise\s+a\s+draft\s+article"
+    r"|return\s+markdown\s+body\s+only"
     r"|\*\s*(?:voice|citations?|structure)\s*:\s*\*"
     r"|^[ \t]*[*+\-][ \t]+\*?(?:topic|voice|citations?|structure|tone|audience"
-    r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?)\b[ \t]*:"
+    r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?"
+    r"|task|constraints|fix\s+\d+)\b[ \t]*:"
     r")"
 )
 

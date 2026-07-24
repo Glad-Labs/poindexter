@@ -179,3 +179,58 @@ class TestQaRewriteAtom:
         }
         await qa_rewrite.run(state)
         assert seen["model"] == "glm-writer"
+
+
+@pytest.mark.unit
+class TestQaRewriteBriefingLeakStrip:
+    """The reviser can echo its revision briefing before the article (prod
+    task 342a26b7, 2026-07-23) — and the rescue loop re-enters at
+    qa.programmatic, never re-running normalize_draft, so qa.rewrite itself
+    must strip the scaffold before returning content."""
+
+    _BRIEFING_ECHO = (
+        "*   Task: Revise a draft article based on specific fixes.\n"
+        "    *   Constraints: Preserve structure, headings, length, links. "
+        "Return Markdown body only.\n"
+        "    *   Fix 1: Unlinked citation — rephrase as an observation.\n"
+        "    *   Fix 2: Terminology contradiction.\n\n"
+        "## The Real Article\n\nActual prose the reader should see.\n"
+    )
+
+    async def test_briefing_echo_is_stripped_from_revision(self, monkeypatch):
+        async def _fake_chat(prompt, **kw):
+            return self._BRIEFING_ECHO
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        state = {
+            "task_id": "t-leak",
+            "content": "# Draft\n\nweak body.\n",
+            "qa_rewrite_attempts": 0,
+            "site_config": _site_config(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+            ],
+        }
+        out = await qa_rewrite.run(state)
+        assert out["content"].startswith("## The Real Article")
+        assert "Fix 1" not in out["content"]
+        assert "Revise a draft article" not in out["content"]
+
+    async def test_clean_revision_is_untouched(self, monkeypatch):
+        async def _fake_chat(prompt, **kw):
+            return "## Clean Heading\n\nNo scaffold here, just prose.\n"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        state = {
+            "task_id": "t-clean",
+            "content": "# Draft\n\nweak body.\n",
+            "qa_rewrite_attempts": 0,
+            "site_config": _site_config(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+            ],
+        }
+        out = await qa_rewrite.run(state)
+        assert out["content"] == "## Clean Heading\n\nNo scaffold here, just prose."

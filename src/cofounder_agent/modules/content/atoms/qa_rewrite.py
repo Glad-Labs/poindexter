@@ -214,6 +214,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             phase="qa_rewrite",
         )
         revised = (raw or "").strip()
+        # The reviser can echo its revision briefing ("Task: Revise a draft
+        # article… Fix 1: …") before the article, exactly like the writer's
+        # #1963 planning-scaffold leak — and this path NEVER re-enters
+        # content.normalize_draft (the rescue loop resumes at qa.programmatic),
+        # so the strip must happen here (prod task 342a26b7, 2026-07-23:
+        # the briefing echo rode all the way to awaiting_approval).
+        if revised:
+            from modules.content.atoms._scaffold_helpers import (
+                strip_leaked_planning_scaffold,
+            )
+            from services.llm_providers.thinking_models import (
+                strip_reasoning_artifacts,
+            )
+
+            cleaned = strip_leaked_planning_scaffold(
+                strip_reasoning_artifacts(revised)
+            ).strip()
+            if len(cleaned) != len(revised):
+                logger.info(
+                    "[qa.rewrite] stripped %d chars of leaked briefing/"
+                    "reasoning scaffold from the revision (task=%s)",
+                    len(revised) - len(cleaned), str(task_id or "?")[:8],
+                )
+            revised = cleaned
     except Exception as exc:  # noqa: BLE001 — a failed revise must not crash the graph
         logger.warning(
             "[qa.rewrite] revise call failed (%s) — keeping prior draft", exc,

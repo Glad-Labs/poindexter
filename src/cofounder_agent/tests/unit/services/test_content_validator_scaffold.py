@@ -78,3 +78,34 @@ class TestLeakedPlanningScaffold:
             assert _scaffold_issues(result) == []
         finally:
             reset_cache()
+
+
+class TestRevisionBriefingLeak:
+    """qa.rewrite briefing echo (prod task 342a26b7, 2026-07-23): the rescue
+    reviser restated its revision instructions before the article and the
+    residue reached awaiting_approval at quality 76. These tells make the
+    programmatic gate hard-reject any residue the qa.rewrite strip misses."""
+
+    def test_flags_revision_briefing_as_critical(self):
+        content = (
+            "*   Task: Revise a draft article based on specific fixes.\n"
+            "    *   Constraints: Preserve structure, headings, length.\n"
+            "    *   Fix 1: Unlinked citation — rephrase.\n"
+            "    *   Fix 2: Terminology contradiction.\n\n"
+            "## Real Section\n\nThe article body goes here with real prose.\n"
+        )
+        result = validate_content("Title", content, "topic", site_config=_SC)
+        issues = _scaffold_issues(result)
+        assert issues, "expected a leaked_planning_scaffold issue"
+        assert issues[0].severity == "critical"
+
+    def test_single_benign_task_bullet_does_not_fire(self):
+        content = (
+            "## How We Plan Sprints\n\n"
+            "Every card carries one line:\n\n"
+            "- Task: ship the exporter swap\n\n"
+            "That single label keeps standups honest, and the rest of the "
+            "board stays prose-first.\n"
+        )
+        result = validate_content("Title", content, "topic", site_config=_SC)
+        assert not _scaffold_issues(result)
