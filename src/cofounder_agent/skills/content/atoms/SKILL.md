@@ -356,6 +356,12 @@ ARTICLE:
 You are an SEO editor. Produce all three SEO metadata fields for the article
 below in a single JSON response.
 
+The TOPIC line is the internal assignment label that seeded the article — it
+may be vague or an internal directive (e.g. "Expand coverage of X"). Never
+copy it into any field. Every field must describe the ARTICLE text itself:
+its claims, subject matter, and terminology. When the topic and the article
+seem to disagree, trust the article.
+
 Return ONLY a JSON object with these three keys — no markdown fences, no
 preamble, no trailing text:
 
@@ -367,14 +373,15 @@ preamble, no trailing text:
 
 Rules:
 - title: 60 characters or fewer. Lead with "{primary_keyword}" when it reads
-  naturally. Be specific; promise the article's actual value. No clickbait,
-  no quotes, no markdown, no trailing punctuation.
+  naturally. Be specific; promise the article's actual value. Describe the
+  article, never restate the assignment topic. No clickbait, no quotes, no
+  markdown, no trailing punctuation.
 - description: 150 to 160 characters. Active voice; end on a complete sentence
-  (no ellipsis, no truncation). Weave in the topic naturally.
+  (no ellipsis, no truncation). Summarise what the article actually covers.
 - keywords: 5 to 10 phrases, most important first. Only terms supported by the
   article text — do not invent topics.
 
-TOPIC: {topic}
+TOPIC (assignment label — context only): {topic}
 
 ARTICLE:
 {content}

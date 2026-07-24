@@ -169,18 +169,37 @@ async def test_returns_none_when_json_title_field_blank():
 
 # --------------------------------------------------------------------------- #
 # Prompt contract — the seo.generate_title default must REQUEST a JSON object
-# (so the structured-extraction path has something to parse) while keeping
-# {topic} as its only required placeholder (several prompt-manager tests render
-# it with topic alone).
+# (so the structured-extraction path has something to parse) AND ground the
+# title in the ARTICLE, not the topic label (2026-07-24: the template used to
+# render {topic} only, so an ambiguous topic shipped a wrong-domain title —
+# task 1149dfc8's gaming-hardware title over an operator-console essay).
 # --------------------------------------------------------------------------- #
 
 
 def test_seo_generate_title_prompt_requests_json_object():
     pm = UnifiedPromptManager()
-    rendered = pm.get_prompt("seo.generate_title", topic="vector databases")
-    # {topic} is still the (only) substituted placeholder.
+    rendered = pm.get_prompt(
+        "seo.generate_title",
+        topic="vector databases",
+        content="An article that is actually about pgvector operations.",
+        primary_keyword="pgvector",
+    )
+    # All three placeholders substitute — topic AND the article grounding.
     assert "vector databases" in rendered
+    assert "pgvector operations" in rendered
+    assert "pgvector" in rendered
     # The prompt asks for a JSON object keyed on "title".
     assert '"title"' in rendered
     assert "{" in rendered and "}" in rendered
     assert "JSON" in rendered.upper()
+
+
+def test_seo_generate_title_prompt_frames_topic_as_label_only():
+    """The topic must be presented as the assignment label, not the thing to
+    title — the article text is the grounding source."""
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        "seo.generate_title", topic="T", content="C", primary_keyword="K",
+    )
+    assert "assignment label" in rendered
+    assert "ARTICLE" in rendered

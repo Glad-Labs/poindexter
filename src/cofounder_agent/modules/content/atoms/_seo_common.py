@@ -92,13 +92,21 @@ async def run_seo_llm(
     *,
     max_attempts: int = 2,
     backoff_s: float = 2.0,
+    prompt_suffix: str = "",
     **prompt_vars: Any,
 ) -> str:
     """Render ``prompt_key`` with ``prompt_vars``, call the LLM at the SEO tier,
     and return stripped text. Retries transient failures up to ``max_attempts``;
     raises the last exception on persistent failure (the calling atom catches it
-    and degrades to a programmatic fallback)."""
+    and degrades to a programmatic fallback).
+
+    ``prompt_suffix`` is appended verbatim after the rendered template — the
+    seam corrective-retry callers use to add a "your previous answer did X
+    wrong" instruction without a second prompt key.
+    """
     prompt = get_prompt_manager().get_prompt(prompt_key, **prompt_vars)
+    if prompt_suffix:
+        prompt += prompt_suffix
     site_config = state.get("site_config")
     pool = resolve_pool(state, atom="seo")
     # Per-step pin: ``pipeline_seo_model`` when set; EMPTY = follow the writer
@@ -150,6 +158,62 @@ def fallback_title(state: dict[str, Any]) -> str:
     return derive_seo_title(canonical, max_len=60)
 
 
+def resolve_primary_keyword(state: dict[str, Any]) -> str:
+    """The keyword the SEO/title prompts are told to lead with.
+
+    ``tags[0]`` when the task carries tags; else the top frequency keyword
+    extracted from the draft itself; else the raw topic (legacy last resort).
+
+    The middle rung is the 2026-07-24 fix: with no tags, the raw topic used to
+    become the "lead with primary keyword '...'" instruction verbatim — and a
+    directive-shaped topic ("Expand coverage of the Insights category — only
+    Insights (3)") was then dutifully echoed as the seo_title. A keyword
+    extracted from the article grounds the instruction in what the article
+    actually says.
+    """
+    tags = state.get("tags") or []
+    if tags and str(tags[0]).strip():
+        return str(tags[0]).strip()
+    content_keywords = extract_keywords_from_text(state.get("content") or "", count=1)
+    if content_keywords:
+        return content_keywords[0]
+    return str(state.get("topic") or "").strip()
+
+
+# Normalization for the topic-echo compare: drop everything but letters and
+# digits so punctuation/case/whitespace differences never mask an echo.
+_ECHO_NORM_RE = re.compile(r"[^a-z0-9]+")
+
+# A truncated echo shorter than this many normalized chars is too little
+# signal to call an echo — a short legit title could prefix-match a longer
+# topic by coincidence ("Insights" vs "Insights category: ...").
+_ECHO_MIN_PREFIX_CHARS = 20
+
+
+def _echo_norm(text: str) -> str:
+    return _ECHO_NORM_RE.sub("", (text or "").casefold())
+
+
+def is_topic_echo(candidate: str, topic: str) -> bool:
+    """True when ``candidate`` is the topic string parroted back (optionally
+    clipped by the 60-char SEO truncation) rather than a written title.
+
+    An seo_title that merely *discusses* the topic is NOT an echo — only a
+    verbatim (normalized) copy, or a copy truncated at the SEO length cap,
+    counts. Pure function — no LLM calls, no I/O.
+    """
+    norm_c = _echo_norm(candidate)
+    norm_t = _echo_norm(topic)
+    if not norm_c or not norm_t:
+        return False
+    if norm_c == norm_t:
+        return True
+    # Clipped echo: derive_seo_title truncates at 60 chars, so a long topic
+    # arrives as its own prefix. Require a meaningful prefix length so a
+    # short generic title can't false-positive against a long topic.
+    return len(norm_c) >= _ECHO_MIN_PREFIX_CHARS and norm_t.startswith(norm_c)
+
+
 def fallback_description(state: dict[str, Any]) -> str:
     content = state.get("content") or ""
     topic = state.get("topic") or ""
@@ -175,4 +239,6 @@ __all__ = [
     "fallback_title",
     "fallback_description",
     "fallback_keywords",
+    "resolve_primary_keyword",
+    "is_topic_echo",
 ]

@@ -279,7 +279,12 @@ def test_get_prompt_falls_through_to_yaml_when_langfuse_disabled():
     pm = UnifiedPromptManager()
     pm._langfuse_enabled = False  # short-circuits Langfuse lookup
     # Should NOT raise — falls through to the YAML-loaded prompt
-    result = pm.get_prompt("seo.generate_title", topic="AI healthcare")
+    result = pm.get_prompt(
+        "seo.generate_title",
+        topic="AI healthcare",
+        content="An article about AI healthcare.",
+        primary_keyword="AI healthcare",
+    )
     assert "AI healthcare" in result
 
 
@@ -335,7 +340,12 @@ def test_get_prompt_ignores_langfuse_by_default(monkeypatch):
     pm._site_config = sc
     pm._langfuse_secret_key = "sk-test"
 
-    result = pm.get_prompt("seo.generate_title", topic="hardware")
+    result = pm.get_prompt(
+        "seo.generate_title",
+        topic="hardware",
+        content="An article about hardware.",
+        primary_keyword="hardware",
+    )
     assert "STALE" not in result
     assert "hardware" in result  # the SKILL.md default served
     client.get_prompt.assert_not_called()  # Langfuse never consulted
@@ -355,7 +365,10 @@ def test_resolution_source_is_yaml_by_default(monkeypatch):
     pm._site_config = sc
     pm._langfuse_secret_key = "sk-test"
 
-    r = pm.get_prompt_resolution("seo.generate_title", topic="AI")
+    r = pm.get_prompt_resolution(
+        "seo.generate_title", topic="AI", content="An article about AI.",
+        primary_keyword="AI",
+    )
     assert r.source == "yaml"
 
 

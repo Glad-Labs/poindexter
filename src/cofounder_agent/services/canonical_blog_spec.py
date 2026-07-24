@@ -41,7 +41,8 @@ The qa.* rail block and seo.* atom chain are unchanged from #355 except:
 - ``cross_model_qa`` → qa.programmatic → qa.critic → qa.deepeval →
   qa.ragas → qa.vision → qa.topic_delivery →
   qa.citations → qa.unlinked_attribution → qa.consistency →
-  qa.self_consistency → qa.web_factcheck → qa.aggregate
+  qa.self_consistency → qa.content_originality → qa.title_coherence →
+  qa.web_factcheck → qa.aggregate
 
 A deterministic citation-repair atom (``content.reconcile_citations``, #765)
 runs after the writer block (before quality_evaluation), and an advisory rail
@@ -127,6 +128,13 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # cluster). Advisory-first (DB-gated via qa_gates.content_originality) —
         # SCORES on every run, does not veto until graduated.
         {"id": "qa_content_originality", "atom": "qa.content_originality"},
+        # Title↔body honesty check (2026-07-24): an LLM verdict on whether the
+        # display title represents the article — catches wrong-domain titles
+        # ("The Console Transition" titled as gaming hardware), directive
+        # leaks, and unrecognizably generic titles. Inside the QA loop, so a
+        # qa.rewrite rescue re-judges the title against the revised body.
+        # Advisory-first (DB-gated via qa_gates.title_coherence).
+        {"id": "qa_title_coherence", "atom": "qa.title_coherence"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
         # QA rescue cycle: qa.aggregate emits _goto="qa_rewrite" on a rescuable
@@ -198,7 +206,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_unlinked_attribution", "to": "qa_consistency"},
         {"from": "qa_consistency", "to": "qa_self_consistency"},
         {"from": "qa_self_consistency", "to": "qa_content_originality"},
-        {"from": "qa_content_originality", "to": "qa_web_factcheck"},
+        {"from": "qa_content_originality", "to": "qa_title_coherence"},
+        {"from": "qa_title_coherence", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         # seo.* collapsed (#734) — single structured call
         {"from": "qa_aggregate", "to": "seo_all_metadata"},

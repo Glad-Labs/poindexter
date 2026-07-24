@@ -906,7 +906,26 @@ DEFAULTS: dict[str, str] = {
     # nits should nudge the score, not sink a clean post under the QA gate.
     'qa_validator_warning_penalty': '5.0',
     'title_max_length': '90',
+    # Draft excerpt size for the TITLE-GENERATION digest (content.generate_title
+    # + seo.generate_all_metadata prompts; excerpt + section-heading skeleton).
+    # The pre-2026-07 hardcoded 500 chars was the root cause of topic-label
+    # titling: the model never saw enough of the article to title it.
+    'title_content_excerpt_chars': '1500',
     'qa_topic_dedup_hours': '48',
+    # --- Title↔body coherence rail (qa.title_coherence, 2026-07-24) ----------
+    # Advisory-first LLM verdict on whether the display title honestly
+    # represents the article (wrong-domain titles, directive leaks, generic
+    # mush — the task-1149dfc8/1afabaf9 class). Scores on every run; veto is
+    # DB-gated via qa_gates.title_coherence.
+    'qa_title_coherence_enabled': 'true',
+    # Judge model. EMPTY = pipeline_seo_model → pipeline_local_writer_model.
+    # Deliberately never pipeline_writer_model — a cloud writer canary must
+    # not be silently billed by a QA rail.
+    'qa_title_coherence_model': '',
+    # Draft digest size handed to the judge (opening excerpt + section
+    # headings). 3000 was the calibrated setup (2026-07-24) that separated
+    # the known-bad titles from the legit corpus 10/10.
+    'qa_title_coherence_digest_chars': '3000',
     # Web fact-check rail (qa.web_factcheck) claim-verification heuristics.
     # A claim is treated as VERIFIED when at least `match_ratio` of its key
     # terms (tokens longer than `min_term_len` chars) appear in the first
@@ -2466,6 +2485,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_originality_chunk_min_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_chunk_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_excluded_series': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_title_coherence_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'qa_title_coherence_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'qa_title_coherence_digest_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'title_content_excerpt_chars': {'owner': 'title_generation', 'value_type': 'integer'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_director_disable_thinking': {'owner': 'video_director', 'value_type': 'boolean'},

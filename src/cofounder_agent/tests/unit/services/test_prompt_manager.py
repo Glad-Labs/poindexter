@@ -85,7 +85,12 @@ class TestInitialization:
 @pytest.mark.unit
 class TestGetPrompt:
     def test_seo_title_formats_correctly(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt("seo.generate_title", topic="AI healthcare")
+        result = pm.get_prompt(
+            "seo.generate_title",
+            topic="AI healthcare",
+            content="An article about AI healthcare.",
+            primary_keyword="AI healthcare",
+        )
         assert "AI healthcare" in result
 
     def test_blog_initial_draft_substitutes_all_vars(self, pm: UnifiedPromptManager):

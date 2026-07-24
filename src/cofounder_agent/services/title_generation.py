@@ -22,7 +22,6 @@ generate_content stage uses back-to-back:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import string
@@ -92,6 +91,58 @@ def strip_qa_batch_suffix(title: str) -> str:
 # its template uses a different outline convention. Anything deeper (H3+)
 # is body structure, not the post title.
 _H1_HEADING_RE = re.compile(r"^\s{0,3}#{1,2}\s+(.+?)\s*$")
+
+
+# Default size of the draft excerpt handed to the title prompt. Overrideable
+# via the ``title_content_excerpt_chars`` app_settings key. The pre-2026-07
+# hardcoded 500 chars was the root cause of the topic-label titling failures
+# (task 1149dfc8: topic "The Console Transition" titled as gaming hardware
+# over an operator-console essay) — the model never saw enough of the article
+# to know what it was about.
+DEFAULT_TITLE_EXCERPT_CHARS: int = 1500
+
+# Inline image directives the writer leaves in the pre-normalize draft. They
+# are generation plumbing, not article content — strip them from the digest so
+# the title model reads prose, not markers.
+_IMAGE_MARKER_LINE_RE = re.compile(r"(?m)^\s*\[(?:HERO-)?IMAGE:[^\]]*\]\s*$")
+
+# H2/H3 section headings — the article's structural skeleton. H1 is the
+# working title line; deeper levels are sub-structure noise.
+_SECTION_HEADING_RE = re.compile(r"(?m)^\s{0,3}(#{2,3})\s+(.+?)\s*$")
+
+# Cap on the number of section headings appended to the digest. Enough to
+# cover any real post's outline; prevents a pathological draft from turning
+# the digest into a heading dump.
+_DIGEST_MAX_HEADINGS: int = 12
+
+
+def build_title_grounding_digest(
+    content: str, *, max_chars: int = DEFAULT_TITLE_EXCERPT_CHARS
+) -> str:
+    """Compact, title-relevant representation of the FULL draft.
+
+    Opening excerpt (``max_chars`` of prose, image markers stripped) plus the
+    section-heading skeleton of the whole article. The excerpt tells the
+    model what the article opens with; the headings tell it where the article
+    actually goes — so a title grounded on this digest reflects the article's
+    real subject even when the opening is scene-setting or the topic label is
+    ambiguous ("The Console Transition") or an internal directive ("Expand
+    coverage of X").
+
+    Pure function — no LLM calls, no I/O.
+    """
+    text = _IMAGE_MARKER_LINE_RE.sub("", content or "").strip()
+    if not text:
+        return ""
+    headings = [
+        m.group(2).strip()
+        for m in _SECTION_HEADING_RE.finditer(text)
+    ][:_DIGEST_MAX_HEADINGS]
+    digest = text[:max_chars]
+    if headings:
+        skeleton = "\n".join(f"- {h}" for h in headings)
+        digest += f"\n\nSECTION HEADINGS (full article):\n{skeleton}"
+    return digest
 
 
 def extract_h1_title(content: str) -> str | None:
@@ -533,48 +584,21 @@ def sanitize_generated_title(raw: str) -> str | None:
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
-    """Extract a JSON object from ``text``, tolerating markdown code fences and
-    leading/trailing prose the model may emit around the object.
+    """Extract a JSON object from ``text`` — thin delegate to
+    :func:`utils.json_extract.extract_json_object` (the canonical ladder),
+    kept under this name because callers and tests reference it here.
 
-    Mirrors ``modules/content/atoms/seo_generate_all_metadata._extract_json``.
-    The substrate must not import the content atom (the engine never imports a
-    business module), so the small helper is replicated here. Returns the parsed
-    ``dict`` or ``None`` when no JSON object can be recovered — the caller treats
-    ``None`` as "no usable title" and degrades to the H1 / topic fallback.
+    Returns the parsed ``dict`` or ``None`` when no JSON object can be
+    recovered — the caller treats ``None`` as "no usable title" and degrades
+    to the H1 / topic fallback.
 
     Reading the title out of the parsed object is what makes the title path
-    leak-proof by construction (#1280/#1821): any deliberation a reasoning model
-    emits *outside* the ``{...}`` is never seen by the caller.
+    leak-proof by construction (#1280/#1821): any deliberation a reasoning
+    model emits *outside* the ``{...}`` is never seen by the caller.
     """
-    if not text:
-        return None
-    # Strip ```json ... ``` fences if present, else scan the raw text.
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    candidate = fence_match.group(1) if fence_match else text
-    # Try a direct parse first, then fall back to the first {...} block — this
-    # is what discards a reasoning preamble that precedes the object.
-    for chunk in (candidate, text):
-        chunk = chunk.strip()
-        try:
-            parsed = json.loads(chunk)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            # silent-ok: not valid JSON as-is; fall through to the {...} scan
-            # below. Exhausting every strategy returns None, which the caller
-            # surfaces as a WARNING ("No usable title in JSON response").
-            pass
-        brace_match = re.search(r"\{[\s\S]*\}", chunk)
-        if brace_match:
-            try:
-                parsed = json.loads(brace_match.group())
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                # silent-ok: this {...} slice isn't valid JSON; try the next
-                # chunk. Exhausting all chunks returns None → caller WARNs.
-                pass
-    return None
+    from utils.json_extract import extract_json_object
+
+    return extract_json_object(text)
 
 
 async def generate_canonical_title(

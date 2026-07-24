@@ -39,7 +39,18 @@ Default prompts — basic but functional; production-quality prompt packs ship a
 ## seo.generate_title
 
 ```text
-Generate one SEO-friendly blog post title for the topic below.
+You are titling a finished blog article. Read the article material below and
+write one compelling, SEO-friendly title that describes what the article
+actually says.
+
+The TOPIC line is the internal assignment label that seeded the article. It
+may be vague, ambiguous, or an internal directive (e.g. "Expand coverage of
+X"). Never copy the topic verbatim and never title the topic alone — ground
+the title in the ARTICLE text: its claims, subject matter, and terminology.
+When the topic and the article seem to disagree, trust the article.
+
+Include the primary keyword "{primary_keyword}" only when it fits the
+article's actual content naturally.
 
 Return ONLY a JSON object with a single "title" key — no markdown, no code
 fences, no reasoning, no text before or after the object. The first character
@@ -47,7 +58,10 @@ of your reply is `{{` and the last is `}}`:
 
 {{"title": "<the title — plain text, no quotes or markdown inside>"}}
 
-TOPIC: {topic}
+TOPIC (assignment label — context only): {topic}
+
+ARTICLE:
+{content}
 ```
 
 ## seo.generate_meta_description

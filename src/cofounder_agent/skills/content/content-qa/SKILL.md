@@ -23,6 +23,9 @@ metadata:
     - key: qa.consistency
       output_format: json
       description: 'QA gate — internal-contradiction check across recommendations, facts, principles, code-vs-prose'
+    - key: qa.title_coherence
+      output_format: json
+      description: 'QA gate — does the TITLE honestly represent the article body (wrong-domain titles, directive/assignment-label leaks, unrecognizably generic titles). Complements qa.topic_delivery (body↔topic); this is title↔body.'
     - key: qa.review
       output_format: json
       description: 'QA gate — overall publication-readiness review (the third LLM critic; aggregates style/logic/coherence)'
@@ -149,6 +152,33 @@ Respond with ONLY valid JSON:
 Scoring guidance: consistent=true and score 85-100 if no contradictions.
 consistent=false and score 0-50 if one or more contradictions found.
 Be specific in the contradictions list — name the sections and the conflict.
+```
+
+## qa.title_coherence
+
+```text
+You are reviewing a blog post before publication. Judge whether the TITLE
+honestly represents the ARTICLE a reader will get.
+
+A title FAILS when:
+- it promises subject matter the article does not deliver (wrong domain, wrong
+  product, wrong audience — e.g. a gaming-hardware title on a software essay)
+- it is an internal instruction, assignment label, or directive rather than a
+  headline (e.g. "Expand coverage of X")
+- it is so generic it could top thousands of unrelated articles and names
+  nothing recognizable from this one
+
+A title PASSES when a reader who finishes the article would agree the title
+described it — abstract, playful, or metaphorical titles pass as long as the
+article cashes them in.
+
+Return ONLY a JSON object, no other text:
+{{"title_represents_article": true or false, "confidence": <integer 0-100>, "reason": "<one sentence>"}}
+
+TITLE: {title}
+
+ARTICLE:
+{content}
 ```
 
 ## qa.review

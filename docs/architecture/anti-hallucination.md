@@ -22,7 +22,7 @@ to the LLM and HTTP reviewers.
 `qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
 `qa.consistency` → `qa.self_consistency` → `qa.content_originality` →
-`qa.web_factcheck` → `qa.aggregate`.
+`qa.title_coherence` → `qa.web_factcheck` → `qa.aggregate`.
 Each rail atom delegates to the matching `MultiModelQA` rail methods (the
 `_review_with_cloud_model` critic plus the per-rail DeepEval, Ragas, vision,
 topic-delivery, citation, consistency, self-consistency, and web-factcheck
@@ -46,6 +46,26 @@ calibration (2026-07-07: opening-vs-stored median ~0.73, p95 ~0.83) and
 provisional for the broadened whole-post scan — max-over-chunks shifts the
 distribution up, so recalibrate with
 `scripts/calibrate_content_originality_threshold.py` before graduating.
+`qa.title_coherence` (2026-07-24) is the second self-contained rail: an LLM
+verdict on whether the display TITLE honestly represents the article body —
+wrong-domain titles (topic "The Console Transition" titled as gaming hardware
+over an operator-console essay, task 1149dfc8), directive/assignment-label
+leaks, and unrecognizably generic titles. It complements `qa.topic_delivery`
+(body↔topic) with the title↔body seam that failure passed through. The
+mechanism is an LLM judge, deliberately NOT embedding cosine — calibration
+against the live corpus (2026-07-24) falsified the embedding approach: every
+real failure's title↔body cosine sat inside or above the legit corpus band
+(the bad gaming title scored 0.629 vs the legit median 0.612; legit abstract
+titles go as low as 0.42), because the failures are topically-overlapping
+framing mismatches. The judge runs on the local-model chain
+(`qa_title_coherence_model` → `pipeline_seo_model` →
+`pipeline_local_writer_model`; never the possibly-cloud writer pin), reads a
+draft digest (opening excerpt + section headings,
+`qa_title_coherence_digest_chars`), and returns
+`{title_represents_article, confidence, reason}`. Advisory-first via
+`qa_gates.title_coherence`; sits inside the QA loop so a `qa.rewrite` rescue
+re-judges the title against the revised body. Fail-open per the
+`qa_rail_degraded` convention below.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

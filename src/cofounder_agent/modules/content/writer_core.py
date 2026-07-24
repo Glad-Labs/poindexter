@@ -270,14 +270,38 @@ class GenerateContentStage:
 
         # Generate canonical title with recent-titles avoidance prompt.
         logger.info("Generating title from content...")
-        primary_keyword = tags[0] if tags else topic
+        from modules.content.atoms._seo_common import resolve_primary_keyword
+        from services.title_generation import (
+            DEFAULT_TITLE_EXCERPT_CHARS,
+            build_title_grounding_digest,
+        )
+
+        # tags[0] → content-derived keyword → topic (2026-07-24 topic-echo fix).
+        primary_keyword = resolve_primary_keyword(
+            {"tags": tags, "content": content_text, "topic": topic}
+        )
+        # Ground the title prompt in the article (excerpt + section headings),
+        # not the topic label — the atom-path twin of this fix lives in
+        # content.generate_title.
+        _sc = context.get("site_config")
+        excerpt_chars = DEFAULT_TITLE_EXCERPT_CHARS
+        if _sc is not None:
+            try:
+                excerpt_chars = _sc.get_int(
+                    "title_content_excerpt_chars", DEFAULT_TITLE_EXCERPT_CHARS
+                )
+            except Exception:  # noqa: BLE001 — stubbed site_config
+                excerpt_chars = DEFAULT_TITLE_EXCERPT_CHARS
+        content_digest = build_title_grounding_digest(
+            content_text, max_chars=excerpt_chars
+        )
         existing_titles = await self._fetch_existing_titles(database_service)
         # Thread the DB pool so generate_canonical_title routes through the
         # dispatcher — a cloud pipeline_writer_model then reaches LiteLLM
         # instead of 404-ing against local Ollama (glad-labs-stack#2194).
         pool = getattr(database_service, "pool", None)
         llm_title = await _generate_canonical_title(
-            topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
+            topic, primary_keyword, content_digest, existing_titles=existing_titles,
             site_config=context.get("site_config"),  # type: ignore[arg-type]
             pool=pool,
         )
@@ -303,7 +327,7 @@ class GenerateContentStage:
             for dup_title in originality["similar_titles"][:5]:
                 avoid_list += f"\n- {dup_title}"
             title_v2 = await _generate_canonical_title(
-                topic, primary_keyword, content_text[:500],
+                topic, primary_keyword, content_digest,
                 existing_titles=avoid_list,
                 site_config=context.get("site_config"),  # type: ignore[arg-type]
                 pool=pool,

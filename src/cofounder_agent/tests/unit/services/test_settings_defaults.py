@@ -533,8 +533,11 @@ class TestGroupingMakesSense:
         # (poindexter#806), a 4-line sibling of writer_min_draft_chars in the
         # same already-tolerated writer_* interleave. Bumped 319→323 for a
         # 3-line comment on rag_hybrid_enabled (glad-labs-stack#2133), same
-        # already-tolerated RAG-section interleave.
-        assert span < 323, (
+        # already-tolerated RAG-section interleave. Bumped 323→345 for the
+        # qa.title_coherence rail block (2026-07-24): three qa_title_coherence_*
+        # keys with their comments plus the title_content_excerpt_chars sibling,
+        # all inside the existing qa cluster's tolerated interleave.
+        assert span < 345, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

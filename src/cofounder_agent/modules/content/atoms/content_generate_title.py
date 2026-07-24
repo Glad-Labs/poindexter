@@ -51,6 +51,11 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Generate and persist the canonical title, including originality check."""
+    from modules.content.atoms._seo_common import resolve_primary_keyword
+    from services.title_generation import (
+        DEFAULT_TITLE_EXCERPT_CHARS,
+        build_title_grounding_digest,
+    )
     from services.title_generation import (
         check_title_originality as _check_title_originality,
     )
@@ -67,7 +72,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     task_id = state.get("task_id")
     topic = state.get("topic", "")
-    tags = state.get("tags") or []
     database_service = state.get("database_service")
     site_config = state.get("site_config")
     # Thread the DB pool so generate_canonical_title routes through the
@@ -75,13 +79,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # of 404-ing against local Ollama (Sonnet-canary fix; glad-labs-stack#2194).
     pool = getattr(database_service, "pool", None)
 
-    primary_keyword = tags[0] if tags else topic
+    # tags[0] → content-derived keyword → topic. Never the raw topic when the
+    # article itself can supply a keyword (2026-07-24 topic-echo fix).
+    primary_keyword = resolve_primary_keyword(state)
+
+    # Ground the title prompt in the ARTICLE, not the topic label: opening
+    # excerpt + full-article section headings. The old 500-char slice let the
+    # model title the topic's most likely reading instead of the actual draft
+    # (task 1149dfc8: "The Console Transition" → gaming-hardware title over an
+    # operator-console essay).
+    excerpt_chars = DEFAULT_TITLE_EXCERPT_CHARS
+    if site_config is not None:
+        try:
+            excerpt_chars = site_config.get_int(
+                "title_content_excerpt_chars", DEFAULT_TITLE_EXCERPT_CHARS
+            )
+        except Exception:  # noqa: BLE001 — stubbed site_config
+            excerpt_chars = DEFAULT_TITLE_EXCERPT_CHARS
+    content_digest = build_title_grounding_digest(content_text, max_chars=excerpt_chars)
 
     # Fetch recent titles for avoidance prompt.
     existing_titles = await _fetch_existing_titles(database_service)
 
     llm_title = await _generate_canonical_title(
-        topic, primary_keyword, content_text[:500],
+        topic, primary_keyword, content_digest,
         existing_titles=existing_titles,
         site_config=site_config,  # type: ignore[arg-type]
         pool=pool,
@@ -99,7 +120,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         for dup in originality["similar_titles"][:5]:
             avoid_list += f"\n- {dup}"
         title_v2 = await _generate_canonical_title(
-            topic, primary_keyword, content_text[:500],
+            topic, primary_keyword, content_digest,
             existing_titles=avoid_list,
             site_config=site_config,  # type: ignore[arg-type]
             pool=pool,

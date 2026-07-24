@@ -28,7 +28,13 @@ logger = get_logger(__name__)
 # providers default to 0.5 (matches multi_model_qa.review()).
 _VALIDATOR_PROVIDERS = ("programmatic",)
 _CRITIC_PROVIDERS = ("anthropic", "google", "ollama")
-_GATE_PROVIDERS = ("consistency_gate", "vision_gate", "web_factcheck", "url_verifier")
+_GATE_PROVIDERS = (
+    "consistency_gate",
+    "vision_gate",
+    "web_factcheck",
+    "url_verifier",
+    "title_coherence_gate",
+)
 
 # Providers whose veto a text revision can NEVER fix (bad image / dead link).
 # Under broaden=True these stay surface-direct (no regen) — see is_rescuable_reject.

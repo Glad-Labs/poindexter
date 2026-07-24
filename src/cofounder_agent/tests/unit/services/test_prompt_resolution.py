@@ -56,6 +56,8 @@ class TestPromptResolution:
         # seo.generate_title is one of the well-known seed prompts
         r = pm.get_prompt_resolution(
             "seo.generate_title", topic="AI healthcare",
+            content="An article about AI healthcare.",
+            primary_keyword="AI healthcare",
         )
         assert isinstance(r, PromptResolution)
         assert r.key == "seo.generate_title"
@@ -68,7 +70,9 @@ class TestPromptResolution:
     def test_get_prompt_still_returns_str(self, pm: UnifiedPromptManager):
         """Backwards compat — existing call sites that use the plain
         ``get_prompt`` API must keep getting a string back."""
-        out = pm.get_prompt("seo.generate_title", topic="X")
+        out = pm.get_prompt(
+            "seo.generate_title", topic="X", content="Y", primary_keyword="Z",
+        )
         assert isinstance(out, str)
         assert "X" in out
 
@@ -78,8 +82,12 @@ class TestPromptResolution:
         """``get_prompt`` should produce the same string as
         ``get_prompt_resolution(...).text`` — they share the same
         resolution path."""
-        legacy = pm.get_prompt("seo.generate_title", topic="X")
-        new = pm.get_prompt_resolution("seo.generate_title", topic="X").text
+        legacy = pm.get_prompt(
+            "seo.generate_title", topic="X", content="Y", primary_keyword="Z",
+        )
+        new = pm.get_prompt_resolution(
+            "seo.generate_title", topic="X", content="Y", primary_keyword="Z",
+        ).text
         assert legacy == new
 
     def test_missing_key_raises_keyerror(self, pm: UnifiedPromptManager):
