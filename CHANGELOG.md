@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.108.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.107.1...v0.108.0) (2026-07-24)
+
+
+### Features
+
+* **migration:** port deploy-checkout-sync to Linux — restore pull+bounce(+rebuild) deploys ([#2759](https://github.com/Glad-Labs/glad-labs-stack/issues/2759)) ([aed42e3](https://github.com/Glad-Labs/glad-labs-stack/commit/aed42e3b8655e38f3068d4d187481011fc9f14a9))
+* **migration:** re-source Hardware & Power to Linux sensors + fix the voice-agent build ([#2756](https://github.com/Glad-Labs/glad-labs-stack/issues/2756)) ([d0d535b](https://github.com/Glad-Labs/glad-labs-stack/commit/d0d535b1be4060c1870b694a33b71f6fda9d11df))
+* **migration:** swap host metrics to node_exporter (Task 5.2) ([#2749](https://github.com/Glad-Labs/glad-labs-stack/issues/2749)) ([7ff0e93](https://github.com/Glad-Labs/glad-labs-stack/commit/7ff0e931f4061fe6dffc9974cff86cc48b9973cc))
+* **migration:** wire the Linux docker watchdog + profile-gate the broken voice-agent build (Task 5.3) ([#2750](https://github.com/Glad-Labs/glad-labs-stack/issues/2750)) ([2e46482](https://github.com/Glad-Labs/glad-labs-stack/commit/2e46482f65682545ccc754163b9d1578b87b3378))
+
+
+### Bug Fixes
+
+* **console:** live by default when served from the worker — never silently mock ([#2760](https://github.com/Glad-Labs/glad-labs-stack/issues/2760)) ([406d2f1](https://github.com/Glad-Labs/glad-labs-stack/commit/406d2f178a62934d0fd95e6ac38b172f8ad51f21))
+* **content:** strip the qa.rewrite briefing echo — the rescue path skipped normalize_draft ([#2761](https://github.com/Glad-Labs/glad-labs-stack/issues/2761)) ([4cef6f6](https://github.com/Glad-Labs/glad-labs-stack/commit/4cef6f65a8b4f5e1ee373044c424a267e1548743))
+* **migration:** exclude brain-regenerated prometheus secrets from the DR backup ([#2751](https://github.com/Glad-Labs/glad-labs-stack/issues/2751)) ([1147fc9](https://github.com/Glad-Labs/glad-labs-stack/commit/1147fc91ca06422ce1921c4fc687b65ff1dc6033))
+* **migration:** post-cutover functional-audit fixes — singer taps, MCP HTTP re-home ([#2758](https://github.com/Glad-Labs/glad-labs-stack/issues/2758)) ([f278688](https://github.com/Glad-Labs/glad-labs-stack/commit/f27868886eed165870686759f9c236c3469a75d9))
+* **migration:** resolve host bind-mounts to $HOME on Linux, not the repo dir ([#2747](https://github.com/Glad-Labs/glad-labs-stack/issues/2747)) ([a191bfa](https://github.com/Glad-Labs/glad-labs-stack/commit/a191bfaa56174c867903f81852a3145775fe0546))
+* **migration:** restore Shelly true wall power on the containerized exporter path ([#2757](https://github.com/Glad-Labs/glad-labs-stack/issues/2757)) ([86daeaa](https://github.com/Glad-Labs/glad-labs-stack/commit/86daeaa64f36bba78148ddb8fd27e007744a1480))
+
 ## [0.107.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.107.0...v0.107.1) (2026-07-23)
 
 
