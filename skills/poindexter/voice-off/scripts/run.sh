@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Debian-family hosts (incl. Pop!_OS) ship only `python3` — shim the bare name.
+if ! command -v python >/dev/null 2>&1; then python() { python3 "$@"; }; fi
+
 SESSION_ID="${1:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

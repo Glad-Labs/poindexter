@@ -25,8 +25,17 @@
 # Then paste the printed env block into ~/.openclaw/openclaw.json so
 # every skill subprocess inherits both vars.
 
-# Bash 3.2-compatible (no associative arrays). The script itself
-# doesn't run anything on source — it only defines functions.
+# Bash 3.2-compatible (no associative arrays). Sourcing runs nothing
+# beyond the interpreter probe below — it only defines functions.
+
+# Debian-family distros (incl. Pop!_OS) ship only `python3`; the bare
+# `python` name needs the python-is-python3 package. Shim it so this
+# helper — and every skill run.sh that sources it — works on hosts
+# without the alias. No-op where `python` already resolves (CI images,
+# Git-Bash, python-is-python3 boxes).
+if ! command -v python >/dev/null 2>&1; then
+    python() { python3 "$@"; }
+fi
 
 # ---------------------------------------------------------------------------
 # Internals

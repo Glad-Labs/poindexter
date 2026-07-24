@@ -8,6 +8,9 @@
 
 set -euo pipefail
 
+# Debian-family hosts (incl. Pop!_OS) ship only `python3` — shim the bare name.
+if ! command -v python >/dev/null 2>&1; then python() { python3 "$@"; }; fi
+
 VERCEL_API="https://api.vercel.com"
 ACTION="${1:-overview}"
 LIMIT_ARG="${2:-5}"
