@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [0.108.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.108.0...v0.108.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* **approval:** permit rejected_retry → rejected_final finalize on the reject endpoint ([#2763](https://github.com/Glad-Labs/glad-labs-stack/issues/2763)) ([b2e0fd0](https://github.com/Glad-Labs/glad-labs-stack/commit/b2e0fd0776bea1358c91c17980429bcf97a25ebe))
+* **content:** ground titles in the draft, guard seo_title topic echo, add qa.title_coherence rail ([#2766](https://github.com/Glad-Labs/glad-labs-stack/issues/2766)) ([e0ec2f2](https://github.com/Glad-Labs/glad-labs-stack/commit/e0ec2f2bb3424dae1b0bb2dcab0bf81120601e00))
+* **skills:** shim bare python → python3 in OpenClaw skill scripts ([#2765](https://github.com/Glad-Labs/glad-labs-stack/issues/2765)) ([611f39c](https://github.com/Glad-Labs/glad-labs-stack/commit/611f39ce2464bf9687774abc7fff93fc85875a92))
+* **topics:** recent-coverage dedup at proposal + handoff — stop re-proposing published themes ([#2764](https://github.com/Glad-Labs/glad-labs-stack/issues/2764)) ([fd7b306](https://github.com/Glad-Labs/glad-labs-stack/commit/fd7b3061b2f6ab16dded541f350d7d3024703632))
+
 ## [0.108.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.107.1...v0.108.0) (2026-07-24)
 
 
