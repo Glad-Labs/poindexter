@@ -5,12 +5,14 @@ adapters delegate, they don't hold business SQL): a `conn.fetch*/execute*` (or
 `pool.*`) call whose first argument is a string literal that *looks like SQL*
 is an inline-SQL violation, while opening a pool/connection
 (`asyncpg.create_pool`/`connect`), delegating to a service, or passing a
-non-literal query is not. A `# noqa: adapter-ok` marker exempts an intentional
-case. This is the ratchet that stops inline SQL from re-rotting back into the
-route / CLI / MCP adapters.
+non-literal query is not. A `# adapter-ok: <reason>` marker exempts an
+intentional case (the legacy `noqa:`-prefixed spelling still works — see
+TestOverride). This is the ratchet that stops inline SQL from re-rotting back
+into the route / CLI / MCP adapters.
 """
 
 import importlib.util
+import tokenize
 from pathlib import Path
 
 
@@ -139,9 +141,58 @@ class TestOverride:
     def test_adapter_ok_override_exempts(self, tmp_path):
         src = (
             'async def f(c):\n'
+            '    return await c.fetch("SELECT 1")  # adapter-ok: bootstrap probe\n'
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_legacy_noqa_prefixed_override_still_exempts(self, tmp_path):
+        """Backcompat: the pre-2026-07-26 ``# noqa: adapter-ok`` spelling.
+
+        Matching is a plain substring test, so the legacy form keeps working
+        and no migration is forced. It is no longer the documented spelling
+        because ``# noqa:`` expects rule codes and ruff warns on it, but an
+        existing marker must never start failing the ratchet.
+        """
+        src = (
+            'async def f(c):\n'
             '    return await c.fetch("SELECT 1")  # noqa: adapter-ok bootstrap probe\n'
         )
         assert _scan_src(tmp_path, src) == 0
+
+    def test_no_source_file_uses_the_ruff_colliding_spelling(self):
+        """Ratchet: no ``.py`` in the tree may spell the marker ``# noqa: adapter-ok``.
+
+        ``# noqa:`` expects a comma-separated list of ruff rule codes, so that
+        spelling is parsed as a malformed directive and ruff prints an
+        ``Invalid `# noqa` directive`` warning on every run — permanent noise
+        that buries real findings. The legacy form still *functions* (see the
+        backcompat test above); this stops it being written anew.
+        """
+        root = _find_repo_root(Path(__file__))
+        offenders = []
+        for path in root.rglob("*.py"):
+            if ".git" in path.parts or "node_modules" in path.parts:
+                continue
+            # Inspect real COMMENT tokens only — the same thing ruff's noqa
+            # parser looks at. Prose inside a docstring (this lint's own
+            # module docstring explains the deprecated spelling) and fixture
+            # strings in this test are not comments, so they must not trip.
+            try:
+                with path.open("rb") as fh:
+                    tokens = list(tokenize.tokenize(fh.readline))
+            except (SyntaxError, tokenize.TokenError, UnicodeDecodeError):
+                continue
+            offenders += [
+                f"{path.relative_to(root)}:{tok.start[0]}"
+                for tok in tokens
+                if tok.type == tokenize.COMMENT
+                and "noqa" in tok.string
+                and "adapter-ok" in tok.string
+            ]
+        assert not offenders, (
+            "Use `# adapter-ok: <reason>` instead of `# noqa: adapter-ok` — the "
+            f"latter collides with ruff's noqa parsing. Offenders: {offenders}"
+        )
 
 
 class TestBaselineRatchet:

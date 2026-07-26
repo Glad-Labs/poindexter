@@ -47,9 +47,17 @@ or a previously-clean file grows one. The baseline may only shrink — lower a
 file's number when you route its SQL into a service and re-run with
 ``--update-baseline``.
 
-Escape hatch: a ``# noqa: adapter-ok <reason>`` comment on the call line (or
+Escape hatch: a ``# adapter-ok: <reason>`` comment on the call line (or
 anywhere in its span) exempts a genuinely-direct case (a bootstrap probe, a
 diagnostic).
+
+Write it as ``# adapter-ok:`` and NOT as ``# noqa: adapter-ok`` — the latter
+collides with ruff's ``# noqa:`` namespace, which expects a comma-separated
+list of rule codes, so ruff rejects it as a malformed directive and warns on
+every run. Matching is a plain substring test for ``adapter-ok`` (see
+``_node_has_override``), so the legacy ``# noqa: adapter-ok`` form still
+exempts correctly and needs no migration — it just re-introduces the ruff
+warning wherever it is used.
 
 Run:
     python scripts/ci/adapter_purity_lint.py                  # check
@@ -256,7 +264,7 @@ def main() -> int:
             "\nThe service / module layer is the contract — an adapter (route / "
             "CLI / MCP tool) must delegate, not run SQL. Move the query into a "
             "service function and call it. If this is a genuinely-direct case "
-            "(a bootstrap probe), add `# noqa: adapter-ok <reason>`. If you "
+            "(a bootstrap probe), add `# adapter-ok: <reason>`. If you "
             "intentionally reduced a count, re-run with --update-baseline. See "
             "docs/architecture/2026-06-10-transport-adapter-contract.md."
         )

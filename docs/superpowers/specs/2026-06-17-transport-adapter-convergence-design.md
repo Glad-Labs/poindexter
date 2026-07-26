@@ -212,7 +212,7 @@ Modeled directly on
 - Calls into `services.*` / `modules.*` (delegation).
 
 **Mechanics:** per-file `scripts/ci/adapter_purity_baseline.json` (ratchet — may
-only shrink); `# noqa: adapter-ok <reason>` inline override; exit 0 = no new
+only shrink); `# adapter-ok: <reason>` inline override; exit 0 = no new
 violations, exit 1 = new violation, printed as `file:line` + the SQL snippet.
 
 ### 2.3 Graduation to required
@@ -282,7 +282,7 @@ code dependency and could be built in parallel; PR C must be last.
 
 - **Unit:** service CRUD + validation + injection-rejection; guard AST detection
   (fixture files: a pure delegation, a `create_pool`-passthrough that must
-  _not_ flag, an inline-SQL adapter that _must_ flag, a `# noqa: adapter-ok`
+  _not_ flag, an inline-SQL adapter that _must_ flag, a `# adapter-ok:`
   that must be respected).
 - **Contract:** data-plane routes (auth, 404, CRUD) following #1491.
 - **CI:** `migrations-smoke` unaffected (no schema change expected — verify);
@@ -319,7 +319,7 @@ code dependency and could be built in parallel; PR C must be last.
 
 - [ ] ADR + CLAUDE.md name the bootstrap allowlist.
 - [ ] `adapter_purity_lint.py` runs in CI; flags net-new inline SQL with
-      `file:line`; respects baseline + `# noqa: adapter-ok`; excludes bootstrap +
+      `file:line`; respects baseline + `# adapter-ok:`; excludes bootstrap +
       private overlay.
 - [ ] Guard is a **required** check after A + B merge.
 
