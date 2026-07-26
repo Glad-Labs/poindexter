@@ -95,10 +95,144 @@ async def test_tts_exception_is_failsoft(monkeypatch):
 
     monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
     out = await _narration_render.render_narration(
-        script="Body.", cta_key="media.cta.video",
+        script="The pipeline shipped a silent video.", cta_key="media.cta.video",
         site_config=_SC({}), task_id="t1", key="t1_long",
     )
     assert out == ""
+    # This used to pass `script="Body."` — but "Body" is a section label, so
+    # _strip_script_labels reduced it to empty and render_narration returned at
+    # the `not text` guard, never reaching the TTS call this test names. It
+    # asserted the right value for the wrong reason. Real prose fixes it
+    # (found while adding the #910 finding tests below).
+
+
+class TestNarrationFailureFinding:
+    """#910 — a narration miss ships a SILENT, caption-less video (ASR has
+    nothing to transcribe), and the only trace used to be one WARNING log line.
+    At least 4 published posts shipped that way over five weeks before anyone
+    noticed. Every failure path must now emit a finding; the fail-soft ""
+    return is unchanged (the graph must not halt).
+    """
+
+    @pytest.mark.asyncio
+    async def test_tts_exception_emits_finding(self, monkeypatch):
+        class _PS:
+            def __init__(self, *, site_config):
+                pass
+
+            async def synthesize(self, text, *, key):
+                raise RuntimeError("speaches down")
+
+        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        seen = []
+        monkeypatch.setattr(
+            _narration_render, "emit_finding",
+            lambda **kw: seen.append(kw),
+        )
+
+        out = await _narration_render.render_narration(
+            script="The pipeline shipped a silent video.", cta_key="media.cta.video",
+            site_config=_SC({}), task_id="t1", key="t1_long",
+        )
+
+        assert out == ""  # still fail-soft
+        assert len(seen) == 1
+        f = seen[0]
+        assert f["kind"] == "narration_synthesis_failed"
+        assert f["severity"] == "warn"
+        assert "speaches down" in f["extra"]["reason"]
+        assert f["extra"]["key"] == "t1_long"
+        assert f.get("dedup_key")
+
+    @pytest.mark.asyncio
+    async def test_empty_path_without_exception_emits_finding(self, monkeypatch):
+        """The provider can swallow an all-voices-failed error and return an
+        empty path. Same silent-video outcome, so it needs the same finding —
+        this is why the emit can't live only in the `except` block."""
+        class _PS:
+            def __init__(self, *, site_config):
+                pass
+
+            async def synthesize(self, text, *, key):
+                return "", 0
+
+        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        seen = []
+        monkeypatch.setattr(
+            _narration_render, "emit_finding",
+            lambda **kw: seen.append(kw),
+        )
+
+        out = await _narration_render.render_narration(
+            script="The pipeline shipped a silent video.", cta_key="media.cta.video",
+            site_config=_SC({}), task_id="t1", key="t1_long",
+        )
+
+        assert out == ""
+        assert len(seen) == 1
+        assert seen[0]["kind"] == "narration_synthesis_failed"
+        assert "no audio path" in seen[0]["extra"]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_missing_site_config_emits_finding(self, monkeypatch):
+        """There IS a script and we're dropping it — a misconfiguration, not
+        'nothing to say'."""
+        seen = []
+        monkeypatch.setattr(
+            _narration_render, "emit_finding",
+            lambda **kw: seen.append(kw),
+        )
+
+        out = await _narration_render.render_narration(
+            script="The pipeline shipped a silent video.", cta_key="media.cta.video",
+            site_config=None, task_id="t1", key="t1_long",
+        )
+
+        assert out == ""
+        assert len(seen) == 1
+        assert "site_config missing" in seen[0]["extra"]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_empty_script_stays_quiet(self, monkeypatch):
+        """Nothing to narrate is a real no-op, not a degradation. Emitting here
+        would put a finding on every post with no video script."""
+        seen = []
+        monkeypatch.setattr(
+            _narration_render, "emit_finding",
+            lambda **kw: seen.append(kw),
+        )
+
+        out = await _narration_render.render_narration(
+            script="   ", cta_key="media.cta.video",
+            site_config=_SC({}), task_id="t1", key="t1_long",
+        )
+
+        assert out == ""
+        assert seen == []
+
+    @pytest.mark.asyncio
+    async def test_success_emits_nothing(self, monkeypatch):
+        class _PS:
+            def __init__(self, *, site_config):
+                pass
+
+            async def synthesize(self, text, *, key):
+                return "/tmp/n.mp3", 12
+
+        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        seen = []
+        monkeypatch.setattr(
+            _narration_render, "emit_finding",
+            lambda **kw: seen.append(kw),
+        )
+
+        out = await _narration_render.render_narration(
+            script="The pipeline shipped a silent video.", cta_key="media.cta.video",
+            site_config=_SC({}), task_id="t1", key="t1_long",
+        )
+
+        assert out == "/tmp/n.mp3"
+        assert seen == []
 
 
 class TestStripScriptLabels:

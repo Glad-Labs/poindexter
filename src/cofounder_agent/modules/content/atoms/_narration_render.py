@@ -17,8 +17,53 @@ import re
 from typing import Any
 
 from services import live_activity
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_narration_failure_finding(
+    *, key: str, task_id: Any, cta_key: str, reason: str,
+) -> None:
+    """Emit the ``narration_synthesis_failed`` finding — TTS produced no audio,
+    so this post's video will render **silent and caption-less**.
+
+    Mirrors ``shot_list_renderer``'s ``_emit_hero_fallback_finding`` /
+    ``_emit_fallback_finding``: every other degrade-gracefully path in this
+    render lane surfaces a finding, and this one didn't, so a dead TTS sidecar
+    shipped at least 4 silent videos to the public site over five weeks before
+    anyone noticed (Glad-Labs/poindexter#910).
+
+    Advisory ``warn`` — the graph still must not halt on a narration failure.
+    This buys the Findings dashboard + the existing findings-routing → Discord
+    policy for free; no new alerting plumbing.
+
+    ``reason`` carries WHY synthesis missed, because the TTS sidecar that
+    produced the miss may already be gone (recreated / recycled) by the time
+    anyone reads it.
+    """
+    emit_finding(
+        source="_narration_render",
+        kind="narration_synthesis_failed",
+        title=f"narration synthesis failed ({key}) — video will be silent",
+        body=(
+            f"TTS produced no audio for `{key}` (cta_key=`{cta_key}`, "
+            f"task=`{task_id}`), so the media graph falls through to a video "
+            f"with no voiceover AND no captions (ASR has nothing to "
+            f"transcribe).\n\nreason: {reason}\n\n"
+            "The render is fail-soft by design — a narration failure must not "
+            "halt the graph — but the resulting post ships degraded and should "
+            "be re-rendered once TTS is healthy."
+        ),
+        severity="warn",
+        dedup_key=f"narration_synthesis_failed:{task_id}:{key}",
+        extra={
+            "key": key,
+            "task_id": str(task_id) if task_id else None,
+            "cta_key": cta_key,
+            "reason": reason,
+        },
+    )
 
 
 # Structural section labels the script generator emits as spoken-looking
@@ -113,11 +158,28 @@ async def render_narration(
     Returns the temp render path, or ``""`` on any fail-soft condition (empty
     script, no ``site_config``, or a TTS exception). NEVER raises — a narration
     failure must not halt the media graph.
+
+    Every ``""`` return that represents a *failure* also emits a
+    ``narration_synthesis_failed`` finding (#910). An empty return is not
+    harmless: downstream, ``media.transcribe_narration`` skips ASR and the video
+    renders silent AND caption-less, so without a finding the degradation is
+    invisible until someone watches the published video. The one genuinely
+    harmless case — an empty script, i.e. nothing to narrate — stays quiet.
     """
     text = compose_narration_text(
         script=script, cta_key=cta_key, site_config=site_config,
     )
-    if not text or site_config is None:
+    if not text:
+        # Nothing to narrate — a real no-op, not a degradation. Stay quiet.
+        return ""
+    if site_config is None:
+        # Misconfiguration, not "nothing to say": there IS a script and we are
+        # dropping it. Same silent-video outcome as a TTS failure, so it gets
+        # the same finding.
+        _emit_narration_failure_finding(
+            key=key, task_id=task_id, cta_key=cta_key,
+            reason="site_config missing — cannot resolve TTS provider",
+        )
         return ""
 
     from services.podcast_service import PodcastService
@@ -145,8 +207,25 @@ async def render_narration(
             "[_narration_render] synthesis failed (key=%s, task=%s): %s",
             key, task_id, exc,
         )
+        _emit_narration_failure_finding(
+            key=key, task_id=task_id, cta_key=cta_key, reason=str(exc),
+        )
         return ""
-    return path or ""
+    if not path:
+        # synthesize() returned empty WITHOUT raising — e.g. every configured
+        # voice failed and the provider swallowed it. Same silent-video
+        # outcome as the exception path, so it must be equally visible; this
+        # branch is why the finding can't just live in the `except`.
+        logger.warning(
+            "[_narration_render] synthesis returned no audio path "
+            "(key=%s, task=%s)", key, task_id,
+        )
+        _emit_narration_failure_finding(
+            key=key, task_id=task_id, cta_key=cta_key,
+            reason="TTS returned no audio path (no exception raised)",
+        )
+        return ""
+    return path
 
 
 __all__ = ["compose_narration_text", "render_narration"]
