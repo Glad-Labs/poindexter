@@ -1178,9 +1178,16 @@ services:
   #                                   voices the in-process path uses)
   # Voice agents become thin clients (Pipecat OpenAISTTService /
   # OpenAITTSService -> http://speaches:8000/v1) only when
-  # voice_agent_stt_mode / voice_agent_tts_mode = sidecar. WHISPER__TTL=-1
-  # keeps the model resident so a voice-container restart never reloads it
-  # (the whole point of #1088 — move the ~12s cold-start to Speaches' boot).
+  # voice_agent_stt_mode / voice_agent_tts_mode = sidecar.
+  #
+  # WHISPER__TTL history: -1 (never idle-offload) was set for the VOICE ROOM
+  # (#1088 — a live conversation can't wait ~12s for a whisper reload). The
+  # voice room went off 2026-07-26 (#2807); the only remaining consumer is
+  # BATCH caption transcription (media_transcribe_narration), which happily
+  # tolerates a cold-load. TTL restored so the ~9 GB whisper allocation
+  # frees itself after idle (GPU0 policy: load→compute→unload unless warm
+  # residency is earned — poindexter#914). Re-enabling the voice room means
+  # setting this back to -1 alongside the voice compose profile.
   # ===========================================
   speaches:
     image: ghcr.io/speaches-ai/speaches@sha256:6ec12ebf890a17e0d4b242a8ba9e0eb1fb836e60e8a3c857aea9838d541579ac
@@ -1189,8 +1196,9 @@ services:
     ports:
       - "8001:8000"
     environment:
-      # -1 = never idle-offload, so the model stays resident and warm.
-      WHISPER__TTL: "-1"
+      # Idle-offload after 5 min — batch captions cold-load in seconds; the
+      # voice-room latency need that justified -1 is gone (see header note).
+      WHISPER__TTL: "300"
       # Pin the HF cache to an explicit mount (don't guess the image user's
       # HOME); shares downloaded weights with image-gen/wan via the same host dir.
       HF_HOME: /cache/huggingface
