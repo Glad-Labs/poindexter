@@ -317,6 +317,25 @@ clone is what the running pipeline actually executes. A merge to `main` does
 restart. Leaving the deploy clone behind is how production silently drifts
 behind `main`.
 
+> **Every repo-shipped bind mount must be anchored to
+> `${POINDEXTER_DEPLOY_ROOT:-.}`.** A bare `./foo` resolves to the compose
+> _project directory_ — this dev checkout — so the container runs whatever is
+> in your working tree rather than what was deployed, with no error and no
+> gap in any metric. On 2026-07-26 that silently kept a merged GPU-exporter fix
+> from ever running (`gpu-exporter` mounted `./scripts/nvidia-smi-exporter.py`
+> while its own sibling mount was anchored) and left merged Grafana dashboard
+> JSON dark until this checkout happened to be pulled
+> (Glad-Labs/poindexter#922, #923). `:-.` makes the anchor a no-op wherever the
+> variable is unset, so there is no cost to it.
+>
+> Runtime-**written** paths are the deliberate exception and stay bare:
+> `infrastructure/prometheus/secrets` (the brain daemon writes it; all three
+> consumers must agree on one root) and `infrastructure/grafana/provisioning`
+> (mounted rw, its `alerting/` subtree written by Grafana and the worker).
+> `scripts/ci/compose_mount_deploy_root_lint.py` enforces the split in CI;
+> add a justified entry to its `RUNTIME_WRITTEN_EXEMPT` if a new path
+> genuinely belongs on the written side.
+
 The canonical one-command deploy:
 
 ```powershell

@@ -103,5 +103,14 @@ jobs:
       - name: Lint settings seed value drift
         run: python scripts/ci/settings_seed_value_drift_lint.py
 
+      # A bare './x' compose mount resolves to the compose PROJECT dir, not
+      # ${POINDEXTER_DEPLOY_ROOT}. On an operator host with a separate deploy
+      # clone that means the container runs code from the working checkout and
+      # merged changes never deploy — silently. It hid a broken GPU exporter
+      # fix and kept merged Grafana dashboards dark on the same day
+      # (poindexter#922 / #923). Static, no DB needed. (2026-07-26)
+      - name: Lint compose mounts anchored to deploy root
+        run: python scripts/ci/compose_mount_deploy_root_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py

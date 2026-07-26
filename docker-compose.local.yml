@@ -100,14 +100,23 @@ services:
       # bind survives file replacement inside it (same reason ./alerts below
       # has never staled) — config/ holds only prometheus.yml so the whole
       # dir can be mounted read-only without exposing anything else.
-      - ./infrastructure/prometheus/config:/etc/prometheus/config:ro
-      - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/config:/etc/prometheus/config:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
       # Uptime Kuma metrics API key (and any future scrape secrets)
       # written by brain/prometheus_secret_writer.py from app_settings.
       # See brain-daemon's volumes block — same host dir, mounted rw
       # there and ro here.
+      #
+      # Deliberately NOT anchored to POINDEXTER_DEPLOY_ROOT (poindexter#923),
+      # unlike the config/ + alerts/ mounts above. This dir is WRITTEN at
+      # runtime by the brain daemon, not shipped by the repo — relocating its
+      # root changes which files brain owns and re-creates, and root-owned
+      # brain-written files under here already broke a DR backup once
+      # (2026-07-23 restic incident). All three consumers (prometheus,
+      # alertmanager, brain-daemon) must agree on this root; move them
+      # together or not at all.
       - ./infrastructure/prometheus/secrets:/etc/prometheus/secrets:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -222,8 +231,14 @@ services:
         required: false
     volumes:
       - grafana-data:/var/lib/grafana
+      # provisioning/ stays bare `./` on purpose (poindexter#923): it is
+      # mounted rw and its alerting/ subtree is WRITTEN at runtime (by Grafana
+      # and by the worker, which mounts the same subtree rw). dashboards/ below
+      # IS anchored — it is repo-shipped JSON that must follow the deployed
+      # tree, and not anchoring it is why merged dashboard changes stayed dark
+      # until the operator checkout happened to be pulled.
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
-      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/grafana/dashboards:/etc/grafana/dashboards
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s
@@ -551,7 +566,7 @@ services:
       # mount) and tell voice_agent_*.py where to find it via
       # POINDEXTER_BRAIN_PARENT below.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # NOTE: The ``./.git:/app/.git:ro`` mount that #259/#348 added is
       # gone -- after the Docker Desktop upgrade ~2026-04-30 the
       # underlying overlayfs hard-rejects child mounts under a ``:ro``
@@ -573,7 +588,7 @@ services:
       # Read-only mount of the alertmanager config template so the render
       # job can read it (the worker mounts ./src at /app:ro, not the
       # infrastructure tree, so the template needs its own mount).
-      - ./infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
       # RenderGrafanaAlertsJob reads the .tmpl and writes the rendered
       # alert-rules.yml into this dir; Grafana reads it from the same host
       # path via its existing provisioning/alerting bind mount.
@@ -645,7 +660,7 @@ services:
       # mount) and tell voice_agent_*.py where to find it via
       # POINDEXTER_BRAIN_PARENT below.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -844,7 +859,7 @@ services:
       - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # This container runs as `appuser` (UID 1001), so ``~/.poindexter``
       # resolves to /home/appuser/.poindexter — and Stage-2 media flows
       # (media_pipeline: TTS narration, shot-list renders, compositor
@@ -1326,8 +1341,8 @@ services:
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
-      - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
-      - ./infrastructure/pgadmin/pgpass:/tmp/pgpass_src:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/pgadmin/pgpass:/tmp/pgpass_src:ro
     # Guard the pgpass copy (glad-labs-stack#979). ./infrastructure/pgadmin/pgpass
     # is optional and absent on fresh checkouts; when it's missing the bind
     # mounts an empty dir (or nothing), so an unconditional `cp` aborted the
@@ -1386,7 +1401,7 @@ services:
       # the local Gitea tap. Needs the symmetric key to decrypt it.
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
-      - ./scripts/auto-embed.py:/app/auto-embed.py:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
       - ${USERPROFILE:-${HOME}}/.claude/projects:/home/embedder/.claude/projects:ro
       - ${USERPROFILE:-${HOME}}/.openclaw/workspace/memory:/memory/openclaw:ro
@@ -1415,7 +1430,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./infrastructure/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki-data:/loki
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:3100/ready | grep -q ready"]
@@ -1433,7 +1448,7 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml
     volumes:
-      - ./infrastructure/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       # Read-only access to Docker's container log files.
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       # Docker socket for service discovery (container labels, names).
@@ -1496,7 +1511,7 @@ services:
       - "4317:4317"   # OTLP gRPC (worker exports traces here)
       - "4318:4318"   # OTLP HTTP (alt path)
     volumes:
-      - ./infrastructure/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
       - tempo-data:/var/tempo
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:3200/ready | grep -q ready"]

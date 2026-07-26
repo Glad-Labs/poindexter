@@ -117,8 +117,8 @@ services:
       # Directory mount (poindexter#2343), NOT a single-file mount — see
       # docker-compose.local.yml's prometheus service for the full staleness
       # explanation. config/ holds only prometheus.yml.
-      - ./infrastructure/prometheus/config:/etc/prometheus/config:ro
-      - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/config:/etc/prometheus/config:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
       # Brain writes Prometheus scrape secrets here (uptime_kuma_api_key
@@ -205,7 +205,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
-      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/grafana/dashboards:/etc/grafana/dashboards
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s
@@ -349,12 +349,12 @@ services:
       # Source code — read-only bind mount; restart picks up changes without rebuild.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # Shared volumes for dynamic Prometheus rules and AlertManager config
       # (written by the worker, read by prometheus/alertmanager).
       - prometheus-rules:/etc/prometheus/rules
       - alertmanager-config:/etc/alertmanager/config
-      - ./infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
       - ./infrastructure/grafana/provisioning/alerting:/etc/grafana-alerting:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -392,7 +392,7 @@ services:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -511,7 +511,7 @@ services:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
-      - ./scripts:/opt/scripts:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # Runs as `appuser` (UID 1001): Stage-2 media flows resolve
       # ``~/.poindexter`` to /home/appuser/.poindexter, so media output
       # needs these pinpoint-subdir mounts (mirrors the worker service —
@@ -554,7 +554,7 @@ services:
       OPENCLAW_MEMORY_DIR: __skip__
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
-      - ./scripts/auto-embed.py:/app/auto-embed.py:ro
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
       - ${USERPROFILE:-.}/.claude/projects:/home/embedder/.claude/projects:ro
       - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
