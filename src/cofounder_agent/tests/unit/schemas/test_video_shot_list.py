@@ -365,3 +365,51 @@ def test_aspect_accepts_9x16() -> None:
 def test_aspect_rejects_unknown() -> None:
     with pytest.raises(ValidationError):
         VideoShotList.model_validate(_valid_shot_list(aspect="4:3"))
+
+
+# ---------------------------------------------------------------------------
+# motion — image-to-video direction for generative shots
+# ---------------------------------------------------------------------------
+
+
+def test_generative_motion_roundtrips() -> None:
+    shot = Shot.model_validate(_valid_shot(
+        0, "generative",
+        motion="slow push-in; particles drift upward with gentle parallax",
+    ))
+    assert shot.motion == (
+        "slow push-in; particles drift upward with gentle parallax"
+    )
+
+
+def test_motion_is_optional_for_backcompat() -> None:
+    """Every shot list frozen before the field existed lacks ``motion`` —
+    the renderer substitutes a default direction, so the schema must not
+    reject its absence."""
+    shot = Shot.model_validate(_valid_shot(0, "generative"))
+    assert shot.motion is None
+
+
+def test_motion_inert_on_non_generative_sources() -> None:
+    """A stray ``motion`` on a non-hero source parses fine (it's simply
+    ignored by the renderer) — directors slip fields across sources and a
+    hard reject would throw away an otherwise-usable list."""
+    shot = Shot.model_validate(_valid_shot(0, "pexels", motion="drift"))
+    assert shot.motion == "drift"
+
+
+def test_motion_scanned_for_human_tokens(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The motion text drives generation just like the prompt — a human noun
+    there is the same AI-tell risk (soft warning, not a reject)."""
+    with caplog.at_level(logging.WARNING):
+        Shot.model_validate(_valid_shot(
+            0, "generative", motion="a person waves at the camera",
+        ))
+    assert any("human-indicator" in r.message for r in caplog.records)
+
+
+def test_motion_over_length_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Shot.model_validate(_valid_shot(0, "generative", motion="x" * 501))

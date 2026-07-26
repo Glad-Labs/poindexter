@@ -250,10 +250,10 @@ class TestWan21ProviderFetch:
         assert r.prompt == "a robot pouring coffee"
         assert r.codec == "h264"
         assert r.format == "mp4"
-        assert r.duration_s == 5  # Wan 2.1 1.3B default
-        assert r.width == 832  # Wan 2.1 1.3B native
-        assert r.height == 480
-        assert r.fps == 16
+        assert r.duration_s == 5  # server 121-frame cap ≈ 5s @ 24fps
+        assert r.width == 1280  # Wan 2.2 TI2V-5B 720P working range
+        assert r.height == 704
+        assert r.fps == 24
         assert r.metadata["local_path"] == output_path
         assert r.metadata["model"] == "wan2.1-1.3b"
         assert r.metadata["model_repo"] == "Wan-AI/Wan2.1-T2V-1.3B"
@@ -359,14 +359,15 @@ class TestWan21ProviderFetch:
                 "a scene", {"output_path": str(tmp_path / "o.mp4")},
             )
 
-        # Wan 2.1 is full-precision diffusion, not a distilled fast
-        # model — defaults are higher than Stable Diffusion XL Lightning / FLUX.1-schnell.
+        # Wan is full-precision diffusion, not a distilled fast model —
+        # steps/guidance are higher than Stable Diffusion XL Lightning /
+        # FLUX.1-schnell; geometry is TI2V-5B's 720P@24 working range.
         assert captured["json"]["steps"] == 50
         assert captured["json"]["guidance_scale"] == 5.0
         assert captured["json"]["duration_s"] == 5
-        assert captured["json"]["width"] == 832
-        assert captured["json"]["height"] == 480
-        assert captured["json"]["fps"] == 16
+        assert captured["json"]["width"] == 1280
+        assert captured["json"]["height"] == 704
+        assert captured["json"]["fps"] == 24
 
     async def test_image_path_sends_image_b64_for_i2v(self, tmp_path):
         """Piece 4: a hero shot passes its image-gen still via ``image_path``; the
@@ -498,6 +499,35 @@ class TestWan21ProviderFetch:
             )
 
         assert captured["json"]["negative_prompt"] == "blurry, low quality"
+
+    async def test_empty_negative_prompt_omitted_from_body(self, tmp_path):
+        """An unconfigured negative prompt must NOT ride the body as ''.
+
+        A present-but-empty ``negative_prompt`` CLOBBERS the wan-server's
+        own tuned default (pydantic field defaults only apply to ABSENT
+        keys) — and ``video_negative_prompt`` historically seeded empty, so
+        every render ran with no negative guidance at all.
+        """
+        captured: dict = {}
+
+        async def capture_post(url, json=None, timeout=None):
+            captured["json"] = json
+            return _video_response(content=b"\x00\x00MP4")
+
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = AsyncMock(side_effect=capture_post)
+
+        with patch(
+            "services.video_providers.wan2_1.httpx.AsyncClient",
+            return_value=client,
+        ):
+            await Wan21Provider().fetch(
+                "a scene", {"output_path": str(tmp_path / "o.mp4")},
+            )
+
+        assert "negative_prompt" not in captured["json"]
 
     async def test_server_url_override_from_config(self, tmp_path):
         captured: dict = {}

@@ -75,9 +75,16 @@ SHOT SOURCES AVAILABLE
   beats that genuinely benefit from motion the renderer can't fake — water,
   wind, drifting particles, a slow push across an abstract scene. It is capped
   per video (excess generative shots auto-downgrade to a Ken-Burns still), so
-  reserve it for true hero moments. Keep duration_s ≤ 6 seconds; longer clips
-  show seams. Requires a "prompt" field (it drives both the still and the
-  animation).
+  reserve it for true hero moments. Keep duration_s ≤ 5 seconds; longer clips
+  show seams. Requires BOTH fields:
+    * "prompt" — the still-image description (subject, scene, style), exactly
+      like an image_kenburns prompt.
+    * "motion" — one sentence of MOTION DIRECTION for the animator: the
+      camera move plus what physically moves in the scene (e.g. "slow push-in
+      as data particles drift upward; gentle parallax between depth layers").
+      Describe movement only — do not restate the scene. Keep motion smooth
+      and subtle (drift, pulse, flow, ripple, slow push/pan); fast or complex
+      action tears into artifacts.
 
 - "holdover": pure cross-fade transition from the previous shot. Use
   sparingly (max 1 per video) for breathing room between intense beats.
@@ -158,7 +165,7 @@ HARD RULES
    source="pexels" (or a faceless silhouette only if it MUST be AI).
    Never name a human noun in an AI prompt, not even as "no people".
    No photorealism.
-9. Set director_model to "{model}" and director_prompt_version to "v1.3".
+9. Set director_model to "{model}" and director_prompt_version to "v1.4".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
 SCHEMA (output this shape):
@@ -185,15 +192,24 @@ SCHEMA (output this shape):
     }},
     {{
       "idx": 2,
+      "duration_s": 5.0,
+      "intent": "hero beat — the key reveal gets real motion",
+      "source": "generative",
+      "prompt": "cinematic illustration, a river of glowing cyan data streams winding through a dark navy canyon of server towers, empty unpopulated scene",
+      "motion": "slow push-in along the canyon as the data streams flow forward; faint particles drift upward with gentle parallax",
+      "narration_offset_s": 11.0
+    }},
+    {{
+      "idx": 3,
       "duration_s": 4.0,
       "intent": "human moment — real footage routes through pexels",
       "source": "pexels",
       "query": "developer typing keyboard close up",
-      "narration_offset_s": 11.0
+      "narration_offset_s": 16.0
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "v1.3",
+  "director_prompt_version": "v1.4",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -235,7 +251,10 @@ Same five sources as the long director:
 - "image_gen": static image-gen still — title cards, poster shots. Requires "prompt".
 - "generative": AI hero shot — animates a stylized image-gen still into motion
   (image-to-video). Sparingly, for hero beats; capped per video. duration_s
-  ≤ 6s. Requires "prompt".
+  ≤ 5s. Requires "prompt" (the still description) AND "motion" (one sentence
+  of motion direction: the camera move + what physically moves, e.g. "slow
+  push-in as particles drift upward" — movement only, never a restated scene;
+  keep it smooth and subtle).
 - "holdover": cross-fade transition (max 1). No prompt/query.
 
 VERTICAL (9:16) COMPOSITION
@@ -292,7 +311,7 @@ HARD RULES (short-form)
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
    human subject → source="pexels", and never a human noun (not even
    "no people") in an image_gen / image_kenburns / generative prompt.
-10. Set director_model to "{model}", director_prompt_version to "short_v1.2",
+10. Set director_model to "{model}", director_prompt_version to "short_v1.3",
     director_decided_at to "{now_iso}".
 
 SCHEMA (output this shape):
@@ -320,7 +339,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "short_v1.2",
+  "director_prompt_version": "short_v1.3",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -353,6 +372,7 @@ REVISE it against these criteria, then output the REVISED shot list:
 3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
    reveal, the close) and upgrade them to source "generative" for real motion. Keep
    generative OFF the very first and very last shot. Never exceed 3 generative shots.
+   Every generative shot carries a "motion" sentence (see FIELD RULES).
 4. ON-BRAND - image_gen / image_kenburns / generative prompts use the dark-techno palette
    (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
    cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
@@ -364,6 +384,11 @@ CONSTRAINTS (keep the draft valid):
     * pexels                       -> "query": a stock-footage search string
     * image_gen / image_kenburns / generative -> "prompt": a non-empty, on-brand image
       description (dark-techno palette, stylized, no humans) and NO "query"
+    * generative ADDITIONALLY carries "motion": one sentence of motion
+      direction (the camera move + what physically moves, e.g. "slow push-in;
+      particles drift upward with gentle parallax"). PRESERVE the existing
+      "motion" when keeping a generative shot; WRITE one when you upgrade a
+      shot to generative.
     * holdover                     -> neither "query" nor "prompt"
   A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
@@ -409,9 +434,11 @@ REVISE for retention, then output the REVISED list:
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
 image_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
-"query"; holdover uses neither. When you change a shot's source, swap its field
-to match - a generative/image_gen/image_kenburns shot with no "prompt" makes the whole
-revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
+"query"; generative ALSO carries "motion" (one sentence: camera move + what
+physically moves - preserve it when keeping a generative shot, write one when
+upgrading to generative); holdover uses neither. When you change a shot's
+source, swap its field to match - a generative/image_gen/image_kenburns shot
+with no "prompt" makes the whole revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
 total_duration_s within 0.5s; duration_s never above 30.0 per shot and at most
 30 shots (hard schema caps); narration_offset_s REQUIRED on every shot
 (cumulative prior durations); never more than 2 consecutive shots with the

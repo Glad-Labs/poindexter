@@ -55,7 +55,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import uvicorn
@@ -280,6 +280,24 @@ def _decode_image_b64(b64: str) -> Any:
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
 
+def _fit_init_image(img: Any, width: int, height: int) -> Any:
+    """Aspect-preserving center-crop of the i2v init still to the output dims.
+
+    A bare ``resize((w, h))`` (the old behaviour) stretches non-matching
+    aspects — the worker historically sent 1024×1024 stills, so every
+    832×480 hero clip animated a 42%-vertically-squashed frame. ``fit``
+    scales-then-crops around the center instead, so geometry survives any
+    caller/server aspect mismatch.
+    """
+    from PIL import Image, ImageOps
+
+    if img.size == (width, height):
+        return img
+    return ImageOps.fit(
+        img, (width, height), method=Image.Resampling.LANCZOS,
+    )
+
+
 def _snap_dim(x: int, mod: int) -> int:
     """Snap a dimension down to the nearest multiple of ``mod`` (>= mod)."""
     return max(mod, (int(x) // mod) * mod)
@@ -298,22 +316,35 @@ def _snap_frames(n: int) -> int:
 
 class GenerateRequest(BaseModel):
     prompt: str
+    # The canonical Wan negative prompt (the model card's English list) —
+    # Wan quality leans heavily on it, and "static / still picture" directly
+    # fights the barely-animates i2v failure mode. Callers that configure
+    # their own negative override it; the provider OMITS the field when the
+    # operator hasn't configured one, so this default actually applies.
     negative_prompt: str = Field(
         default=(
-            "low quality, blurry, distorted, watermark, text, letters, "
-            "deformed, glitch"
+            "bright tones, overexposed, static, blurred details, subtitles, "
+            "style, works, paintings, images, overall gray, worst quality, "
+            "low quality, JPEG compression residue, ugly, incomplete, "
+            "extra fingers, poorly drawn hands, poorly drawn faces, "
+            "deformed, disfigured, misshapen limbs, fused fingers, "
+            "still picture, cluttered background, three legs, "
+            "many people in the background, walking backwards"
         ),
     )
     steps: int = Field(default=50, ge=1, le=100)
     guidance_scale: float = Field(default=5.0, ge=0.0, le=20.0)
     duration_s: int = Field(default=5, ge=1, le=15)
-    width: int = Field(default=832, ge=256, le=1280)
-    height: int = Field(default=480, ge=256, le=1280)
-    fps: int = Field(default=16, ge=8, le=30)
+    # Wan 2.2 TI2V-5B's documented 720P@24fps working range. (The old
+    # 832×480@16 defaults were Wan 2.1 1.3B's profile — off the 5B's
+    # training distribution.)
+    width: int = Field(default=1280, ge=256, le=1280)
+    height: int = Field(default=704, ge=256, le=1280)
+    fps: int = Field(default=24, ge=8, le=30)
     model: str = Field(default="wan2.1-1.3b")  # caller-supplied label, ignored
     # Piece 4 (spec §3.3): base64 init image (the shot's image-gen still). When
     # present the server animates it via i2v; absent → text-to-video.
-    image_b64: Optional[str] = Field(default=None)
+    image_b64: str | None = Field(default=None)
 
 
 # ============================================================================
@@ -408,7 +439,7 @@ def _generate_blocking(
     width: int,
     height: int,
     fps: int,
-    image_b64: Optional[str],
+    image_b64: str | None,
     output_path: str,
 ) -> tuple[float, int]:
     """Run the diffusion pass + export to MP4. Synchronous; called
@@ -430,9 +461,12 @@ def _generate_blocking(
         guidance_scale=guidance_scale,
     )
     if image_b64:
-        # Resize the init still to the snapped output dims so the i2v
-        # conditioning frame matches the generated frame geometry.
-        kwargs["image"] = _decode_image_b64(image_b64).resize((width, height))
+        # Fit the init still to the snapped output dims so the i2v
+        # conditioning frame matches the generated frame geometry —
+        # aspect-preserving center-crop, never a stretch.
+        kwargs["image"] = _fit_init_image(
+            _decode_image_b64(image_b64), width, height,
+        )
 
     started = time.perf_counter()
     output = pipeline(**kwargs)

@@ -194,16 +194,22 @@ class TestRenderOneShot:
         # that was the 2026-05-26 422-causing body.
         assert "output_path" in captured_config
         assert "duration_s" in captured_config
-        assert captured_config["duration_s"] <= 6  # Wan2.1 artifacts beyond
+        assert captured_config["duration_s"] <= 5  # wan-server 121-frame cap
         assert captured_config["image_path"].endswith(".png")  # i2v init still
+        # Hero geometry rides the config — TI2V-5B's 720P@24 working range
+        # (landscape lane, no site_config → code defaults).
+        assert captured_config["width"] == 1280
+        assert captured_config["height"] == 704
+        assert captured_config["fps"] == 24
         assert "image_paths" not in captured_config
         assert "audio_path" not in captured_config
         assert "ken_burns" not in captured_config
 
     @pytest.mark.asyncio
-    async def test_wan21_caps_duration_at_six_seconds(self, tmp_path):
-        """Director-specified durations beyond 6s get capped — Wan2.1
-        1.3B artifacts beyond that mark show seams."""
+    async def test_wan21_caps_duration_at_five_seconds(self, tmp_path):
+        """Director-specified durations beyond 5s get capped — the
+        wan-server truncates at 121 frames (~5s @ 24fps), so a longer ask
+        comes back short and loop-fills with a visible jump cut."""
         shot = Shot(
             idx=0,
             duration_s=10.0,
@@ -240,7 +246,7 @@ class TestRenderOneShot:
                 http_client_factory=AsyncMock,
             )
 
-        assert captured_config["duration_s"] == 6
+        assert captured_config["duration_s"] == 5
 
     @pytest.mark.asyncio
     async def test_generative_animates_image_gen_still(self, tmp_path):
@@ -257,7 +263,8 @@ class TestRenderOneShot:
                 f.write(b"\x89PNG")
             return True
 
-        async def _fake_clip(*, prompt, output_path, image_path, duration_s, site_config):
+        async def _fake_clip(*, prompt, output_path, image_path, duration_s,
+                             site_config, **kw):
             assert image_path and image_path.endswith(".png")  # the i2v init still
             with open(output_path, "wb") as f:
                 f.write(b"MP4")
@@ -2091,3 +2098,125 @@ class TestRenderShotListNarrationFit:
         assert result.success is True
         assert probe_calls == 0
         assert scene_durs == [15.0, 15.0, 15.0]
+
+
+class _HeroSC:
+    """Minimal SiteConfig stub for the hero geometry / motion tests."""
+
+    def __init__(self, cfg: dict | None = None):
+        self._cfg = cfg or {}
+
+    def get(self, k, d=None):
+        return self._cfg.get(k, d)
+
+    def get_int(self, k, d=0):
+        return int(self._cfg.get(k, d))
+
+
+class TestHeroRenderDims:
+    """_hero_render_dims — TI2V-5B geometry resolution + portrait swap."""
+
+    def test_defaults_landscape(self):
+        import services.video_renderers.shot_list_renderer as mod
+        assert mod._hero_render_dims("landscape", None) == (1280, 704, 24)
+
+    def test_portrait_swaps_width_height(self):
+        """The 9:16 short lane gets a vertical hero clip — before this,
+        shorts letterboxed a landscape clip into a 1080×1920 canvas."""
+        import services.video_renderers.shot_list_renderer as mod
+        assert mod._hero_render_dims("portrait", None) == (704, 1280, 24)
+
+    def test_settings_override(self):
+        import services.video_renderers.shot_list_renderer as mod
+        sc = _HeroSC({
+            "video_hero_width": "832",
+            "video_hero_height": "480",
+            "video_hero_fps": "16",
+        })
+        assert mod._hero_render_dims("landscape", sc) == (832, 480, 16)
+        assert mod._hero_render_dims("portrait", sc) == (480, 832, 16)
+
+
+class TestComposeHeroWanPrompt:
+    """_compose_hero_wan_prompt — the i2v prompt = still description + motion."""
+
+    def test_directors_motion_rides_the_prompt(self):
+        import services.video_renderers.shot_list_renderer as mod
+        out = mod._compose_hero_wan_prompt(
+            "flat vector illustration, data river",
+            "slow push-in; particles drift upward",
+            None,
+        )
+        assert out == (
+            "flat vector illustration, data river. "
+            "Camera and motion: slow push-in; particles drift upward"
+        )
+
+    def test_missing_motion_gets_default_direction(self):
+        """A frozen pre-motion-field list still gets motion language —
+        re-sending only the still's description animates nothing."""
+        import services.video_renderers.shot_list_renderer as mod
+        out = mod._compose_hero_wan_prompt("neon GPU die", None, None)
+        assert out.startswith("neon GPU die. Camera and motion: ")
+        assert mod._HERO_MOTION_FALLBACK in out
+
+    def test_default_direction_is_operator_tunable(self):
+        import services.video_renderers.shot_list_renderer as mod
+        sc = _HeroSC({"video_hero_motion_default": "gentle ripple only"})
+        out = mod._compose_hero_wan_prompt("neon GPU die", "", sc)
+        assert out == "neon GPU die. Camera and motion: gentle ripple only"
+
+    def test_blank_still_prompt_returns_direction_alone(self):
+        import services.video_renderers.shot_list_renderer as mod
+        assert mod._compose_hero_wan_prompt("", "drift", None) == "drift"
+
+
+class TestHeroMotionThreading:
+    """The composed prompt + lane geometry reach Wan21Provider.fetch."""
+
+    @pytest.mark.asyncio
+    async def test_provider_receives_motion_composed_prompt(self, tmp_path):
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_providers import wan2_1 as wan21_mod
+
+        shot = Shot(
+            idx=0, duration_s=5.0, intent="hero", source="generative",
+            prompt="cinematic illustration, data canyon",
+            motion="slow dolly forward as streams flow",
+            narration_offset_s=0.0,
+        )
+        captured: dict = {}
+
+        async def _fake_fetch(self, prompt, config):
+            captured["prompt"] = prompt
+            captured.update(config)
+            with open(config["output_path"], "wb") as f:
+                f.write(b"MP4")
+            return [MagicMock(file_path=config["output_path"])]
+
+        async def _fake_image_gen(*, prompt, output_path, **kw):
+            captured["still_prompt"] = prompt
+            captured["still_dims"] = (kw.get("width"), kw.get("height"))
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
+                patch.object(mod, "_render_image_gen_image", _fake_image_gen):
+            result = await _render_one_shot(
+                shot, prior_clip=None, work_dir=tmp_path,
+                image_gen_url="http://x", site_config=None,
+                http_client_factory=AsyncMock, orientation="portrait")
+
+        assert result.success is True
+        # The still keeps the raw image prompt; the wan call gets the
+        # motion-composed one.
+        assert captured["still_prompt"] == "cinematic illustration, data canyon"
+        assert captured["prompt"] == (
+            "cinematic illustration, data canyon. "
+            "Camera and motion: slow dolly forward as streams flow"
+        )
+        # Portrait lane: the still AND the clip are requested vertical.
+        assert captured["still_dims"] == (704, 1280)
+        assert (captured["width"], captured["height"]) == (704, 1280)
+        assert captured["fps"] == 24

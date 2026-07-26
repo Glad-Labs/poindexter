@@ -109,6 +109,14 @@ class Shot(BaseModel):
     one of the two is required for those sources (validated below).
     ``holdover`` shots need neither — they're pure transitions.
 
+    ``motion`` is the image-to-video direction for ``generative`` shots:
+    one sentence describing the camera move and what animates. The still
+    image already carries composition/subject/style, so the i2v model
+    needs motion language — re-sending the still's own description gives
+    it nothing to animate. Optional (frozen pre-motion lists lack it;
+    the renderer substitutes a configurable default), inert on other
+    sources.
+
     ``narration_offset_s`` is where in the podcast audio this shot
     starts. The renderer slices the audio rather than re-narrating
     per shot — keeps the podcast as the single source of voice.
@@ -119,6 +127,11 @@ class Shot(BaseModel):
     intent: str = Field(..., min_length=1, max_length=200, description="Director's note on why this shot exists")
     source: ShotSource = Field(..., description="Which plugin renders this shot")
     prompt: str | None = Field(None, max_length=2000, description="Generation prompt for image-gen/Wan2.1 sources")
+    motion: str | None = Field(
+        None,
+        max_length=500,
+        description="Camera + subject motion direction for generative (i2v) shots",
+    )
     query: str | None = Field(None, max_length=200, description="Stock-library search query for Pexels source")
     kenburns_zoom: tuple[float, float] | None = Field(
         None,
@@ -177,16 +190,19 @@ class Shot(BaseModel):
             if start <= 0 or end <= 0:
                 raise ValueError("kenburns_zoom values must be positive")
 
-        if self.source in ("image_gen", "image_kenburns", "wan21", "generative") and self.prompt:
-            human_tokens = scan_for_human_tokens(self.prompt)
-            if human_tokens:
-                logger.warning(
-                    "video shot idx=%s source=%s prompt has human-indicator "
-                    "tokens %s — AI-generated humans are the worst AI-tell "
-                    "zone. Route human shots through source='pexels' (real "
-                    "footage) or rephrase as 'faceless silhouette'.",
-                    self.idx, self.source, human_tokens,
-                )
+        if self.source in ("image_gen", "image_kenburns", "wan21", "generative"):
+            for field_name, text in (("prompt", self.prompt), ("motion", self.motion)):
+                if not text:
+                    continue
+                human_tokens = scan_for_human_tokens(text)
+                if human_tokens:
+                    logger.warning(
+                        "video shot idx=%s source=%s %s has human-indicator "
+                        "tokens %s — AI-generated humans are the worst AI-tell "
+                        "zone. Route human shots through source='pexels' (real "
+                        "footage) or rephrase as 'faceless silhouette'.",
+                        self.idx, self.source, field_name, human_tokens,
+                    )
 
         return self
 

@@ -389,6 +389,22 @@ DEFAULTS: dict[str, str] = {
     # excess hero shots to image_kenburns (see shot_list_renderer._cap_hero_shots).
     'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
     'video_hero_shots_max': '3',
+    # Hero (i2v) render geometry — Wan 2.2 TI2V-5B's documented 720P@24fps
+    # working range. Authored landscape-first; the renderer swaps
+    # width/height for the portrait (9:16) short lane
+    # (shot_list_renderer._hero_render_dims). Drop back to 832x480@16 to
+    # trade quality for VRAM headroom / render time on smaller cards.
+    'video_hero_width': '1280',
+    'video_hero_height': '704',
+    'video_hero_fps': '24',
+    # Motion direction appended to the i2v prompt when a shot list predates
+    # the Shot.motion field (frozen Stage-1 lists are re-read weeks later).
+    # The i2v model needs motion language — the still's own description
+    # gives it nothing to animate.
+    'video_hero_motion_default': (
+        'slow cinematic push-in with gentle parallax; ambient particles and '
+        'light drift softly; smooth continuous motion, stable composition'
+    ),
     # Canonical short-form target length in seconds (issue #867): drives BOTH the
     # short prompt's narration ask (generate_media_scripts._build_scene_prompt)
     # AND the shot-list duration clamp (generate_video_shot_list.
@@ -1477,7 +1493,23 @@ DEFAULTS: dict[str, str] = {
     'tts_voice_rotation_enabled': 'false',
     'video_compositor': '',
     'video_feed_name': '',
-    'video_negative_prompt': '',
+    # The canonical Wan negative prompt (model-card English list). Wan
+    # quality leans heavily on it — "static / still picture" directly fights
+    # the barely-animates i2v failure mode. Historically seeded '' AND the
+    # provider always sent the key, clobbering the wan-server's own default
+    # (a present-but-empty pydantic field beats the field default), so every
+    # hero render ran with no negative guidance at all. The provider now
+    # omits the key when this is empty; the value here keeps the configured
+    # path and the server default in agreement.
+    'video_negative_prompt': (
+        'bright tones, overexposed, static, blurred details, subtitles, '
+        'style, works, paintings, images, overall gray, worst quality, '
+        'low quality, JPEG compression residue, ugly, incomplete, '
+        'extra fingers, poorly drawn hands, poorly drawn faces, '
+        'deformed, disfigured, misshapen limbs, fused fingers, '
+        'still picture, cluttered background, three legs, '
+        'many people in the background, walking backwards'
+    ),
     'video_tts_engine': '',
 
     # ----- Voice agent -----
@@ -2500,6 +2532,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_hero_width': {'owner': 'video', 'value_type': 'integer'},
+    'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
+    'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},
+    'video_hero_motion_default': {'owner': 'video', 'value_type': 'string'},
     'video_short_target_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},

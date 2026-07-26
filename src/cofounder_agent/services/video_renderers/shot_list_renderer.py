@@ -16,9 +16,11 @@ Per-source dispatch:
   renderer holds over the prior clip rather than image-gen-generating a
   person (AI faces/hands are the strongest "AI slop" tell). Ken Burns
   disabled (real photos with motion look fine static for shorter shots).
-- ``wan21`` — Wan2.1 T2V model clip via ``Wan21Provider``. Capped at
-  6 seconds per the director prompt (artifacts beyond that show
-  seams in the diffusion).
+- ``generative`` / ``wan21`` — hero image-to-video clip via
+  ``Wan21Provider`` (Wan 2.2 TI2V-5B server): renders the stylized still,
+  then animates it with the shot's ``motion`` direction. Capped at
+  5 seconds per the director prompt (the wan-server's 121-frame ceiling
+  at 24fps; longer asks come back short and loop-fill with a jump cut).
 - ``holdover`` — cross-fade transition placeholder. V1 treats this
   the same as ``image_gen`` by carrying the prior shot's prompt — a true
   cross-fade filtergraph is a follow-up.
@@ -59,11 +61,32 @@ logger = logging.getLogger(__name__)
 ProgressCb = Callable[[str, "int | None"], Awaitable[None]]
 
 
-# Wan2.1 clip-duration cap. Artifacts beyond ~6s show seams in the
-# 1.3B model's output; the director prompt also caps shot duration at
-# 6s for wan21. Defensive ceiling here in case the director sneaks
-# something through.
-_WAN21_MAX_DURATION_S = 6
+# Hero clip-duration cap. The wan-server truncates at 121 frames (its
+# _MAX_FRAMES), which is ~5s at the TI2V-5B-native 24fps — asking for more
+# yields a shorter-than-scheduled clip the compositor loop-fills with a
+# visible jump cut. The director prompt caps generative shots at 5s to
+# match; defensive ceiling here in case the director sneaks one through.
+_WAN21_MAX_DURATION_S = 5
+
+# Hero (i2v) render geometry — Wan 2.2 TI2V-5B's documented 720P working
+# range. Overridable per-install via the ``video_hero_width`` /
+# ``video_hero_height`` / ``video_hero_fps`` app_settings; portrait lanes
+# swap width/height. The prior defaults (832×480@16fps) were the Wan 2.1
+# 1.3B native profile left behind by the Piece-4 model swap — off the 5B's
+# training distribution, so clips came out soft.
+_HERO_DEFAULT_WIDTH = 1280
+_HERO_DEFAULT_HEIGHT = 704
+_HERO_DEFAULT_FPS = 24
+
+# Motion direction appended to the wan prompt when a (pre-motion-field,
+# frozen) shot list carries no ``motion``. Overridable via
+# ``video_hero_motion_default``. Deliberately generic-but-animated: the
+# failure mode it guards against is the i2v model receiving only the
+# still's own description and animating nothing.
+_HERO_MOTION_FALLBACK = (
+    "slow cinematic push-in with gentle parallax; ambient particles and "
+    "light drift softly; smooth continuous motion, stable composition"
+)
 
 # Sources worth a second try on a vision-QA miss. image_gen/wan21/generative
 # get a fresh random seed each call; pexels can't reseed a stock search, but
@@ -221,11 +244,16 @@ async def _render_image_gen_image(
     image_gen_url: str,
     http_client_factory: Any,
     render_timeout: int = 240,
+    width: int | None = None,
+    height: int | None = None,
 ) -> bool:
     """Render one image-gen image to disk via the image-gen server.
 
     Writes the PNG to a caller-supplied path. Returns True when the
-    PNG is on disk.
+    PNG is on disk. ``width``/``height`` ride the request when set (the
+    hero path asks for the video-aspect frame so the i2v init image and
+    its Ken-Burns fallback both match the lane); unset → the server's
+    default square.
     """
     import httpx
 
@@ -235,21 +263,26 @@ async def _render_image_gen_image(
         "text, words, letters, watermark, face, person, hands, blurry, "
         "low quality, distorted, ugly, deformed"
     )
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "negative_prompt": neg,
+        # steps / guidance_scale omitted — the image-gen server's
+        # per-model registry drives them (z_image_turbo is
+        # guidance-distilled: 9 steps / CFG 0). image-gen-Turbo's
+        # hardcoded 4 / 1.0 produced degraded frames. Matches the
+        # inline-image path (replace_inline_images). #image-zimage-and-variety.
+    }
+    if width:
+        body["width"] = int(width)
+    if height:
+        body["height"] = int(height)
     try:
         async with http_client_factory(
             timeout=httpx.Timeout(float(render_timeout), connect=5.0),
         ) as client:
             resp = await client.post(
                 f"{image_gen_url}/generate",
-                json={
-                    "prompt": prompt,
-                    "negative_prompt": neg,
-                    # steps / guidance_scale omitted — the image-gen server's
-                    # per-model registry drives them (z_image_turbo is
-                    # guidance-distilled: 9 steps / CFG 0). image-gen-Turbo's
-                    # hardcoded 4 / 1.0 produced degraded frames. Matches the
-                    # inline-image path (replace_inline_images). #image-zimage-and-variety.
-                },
+                json=body,
                 timeout=render_timeout,
             )
             got = await _consume_image_gen_response(
@@ -406,6 +439,57 @@ async def _render_pexels_video(
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
 
+def _hero_render_dims(
+    orientation: str, site_config: Any,
+) -> tuple[int, int, int]:
+    """Resolve the hero (i2v) render geometry as ``(width, height, fps)``.
+
+    Reads ``video_hero_width`` / ``video_hero_height`` / ``video_hero_fps``
+    (defaults = Wan 2.2 TI2V-5B's documented 720P@24fps working range) and
+    swaps width/height for the portrait (9:16) lane — the settings are
+    authored landscape-first. Before this, portrait shorts got landscape
+    832×480 hero clips letterboxed into a 1080×1920 canvas.
+    """
+    width = _HERO_DEFAULT_WIDTH
+    height = _HERO_DEFAULT_HEIGHT
+    fps = _HERO_DEFAULT_FPS
+    if site_config is not None:
+        width = site_config.get_int("video_hero_width", _HERO_DEFAULT_WIDTH)
+        height = site_config.get_int("video_hero_height", _HERO_DEFAULT_HEIGHT)
+        fps = site_config.get_int("video_hero_fps", _HERO_DEFAULT_FPS)
+    if orientation == "portrait":
+        width, height = height, width
+    return width, height, fps
+
+
+def _compose_hero_wan_prompt(
+    still_prompt: str, motion: str | None, site_config: Any,
+) -> str:
+    """Build the i2v prompt: the still's description + explicit motion.
+
+    The init image already fixes composition/subject/style, so the text
+    prompt's job is telling the model what MOVES — re-sending only the
+    still's own description (the pre-motion-field behaviour) gave it
+    nothing to animate, which is exactly how hero clips came out static
+    or randomly morphing. A shot without ``motion`` (every list frozen
+    before the field existed) gets the configurable default direction
+    (``video_hero_motion_default``).
+    """
+    direction = (motion or "").strip()
+    if not direction:
+        fallback = _HERO_MOTION_FALLBACK
+        if site_config is not None:
+            fallback = str(
+                site_config.get("video_hero_motion_default", fallback)
+                or fallback
+            )
+        direction = fallback
+    base = (still_prompt or "").strip().rstrip(".")
+    if not base:
+        return direction
+    return f"{base}. Camera and motion: {direction}"
+
+
 async def _render_generative_clip(
     *,
     prompt: str,
@@ -413,6 +497,9 @@ async def _render_generative_clip(
     image_path: str | None,
     duration_s: int,
     site_config: Any,
+    width: int | None = None,
+    height: int | None = None,
+    fps: int | None = None,
 ) -> tuple[bool, str]:
     """Render one hero clip to ``output_path`` via the Wan provider.
 
@@ -420,7 +507,9 @@ async def _render_generative_clip(
     as the image-to-video init frame (animating the brand still keeps visual
     consistency — spec §3.3). Absent → text-to-video. Delegates to the
     existing ``Wan21Provider`` so the request body shape is the correct one
-    for the wan-server. Returns ``(success, reason)`` — ``reason`` is empty on
+    for the wan-server. ``width``/``height``/``fps`` override the provider's
+    defaults when set (the caller passes the lane-aspect hero geometry).
+    Returns ``(success, reason)`` — ``reason`` is empty on
     success, else a short operator-facing string so a miss is diagnosable from
     the ``hero_render_fallback`` finding alone (the wan-server container that
     produced the miss may already be gone by the time anyone looks).
@@ -428,15 +517,22 @@ async def _render_generative_clip(
     from services.video_providers.wan2_1 import Wan21Provider
 
     provider = Wan21Provider()
+    config: dict[str, Any] = {
+        "output_path": output_path,
+        "duration_s": min(duration_s, _WAN21_MAX_DURATION_S),
+        "image_path": image_path or "",
+        "_site_config": site_config,
+    }
+    if width:
+        config["width"] = int(width)
+    if height:
+        config["height"] = int(height)
+    if fps:
+        config["fps"] = int(fps)
     try:
         results = await provider.fetch(
             prompt,
-            {
-                "output_path": output_path,
-                "duration_s": min(duration_s, _WAN21_MAX_DURATION_S),
-                "image_path": image_path or "",
-                "_site_config": site_config,
-            },
+            config,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -851,7 +947,10 @@ async def _render_one_shot(
         # Render the stylized image-gen still FIRST — it's both the image-to-video
         # init frame and the Ken-Burns fallback if the clip render misses
         # (spec §3.3). If even the still fails there's nothing to animate or
-        # fall back to, so the shot hard-fails.
+        # fall back to, so the shot hard-fails. The still is requested at the
+        # lane's hero geometry so the i2v init frame needs no crop/stretch and
+        # the Ken-Burns fallback fills the frame.
+        hero_w, hero_h, hero_fps = _hero_render_dims(orientation, site_config)
         still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
         render_timeout = (
             site_config.get_int("image_render_timeout_seconds", 240)
@@ -863,6 +962,8 @@ async def _render_one_shot(
             image_gen_url=image_gen_url,
             http_client_factory=http_client_factory,
             render_timeout=render_timeout,
+            width=hero_w,
+            height=hero_h,
         )
         if not still_ok:
             return ShotRenderResult(
@@ -873,11 +974,14 @@ async def _render_one_shot(
             )
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
         clip_ok, clip_error = await _render_generative_clip(
-            prompt=shot.prompt,
+            prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
             output_path=clip_path,
             image_path=still_path,
             duration_s=int(shot.duration_s),
             site_config=site_config,
+            width=hero_w,
+            height=hero_h,
+            fps=hero_fps,
         )
         if clip_ok:
             return ShotRenderResult(

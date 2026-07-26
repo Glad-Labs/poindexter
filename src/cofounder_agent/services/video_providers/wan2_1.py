@@ -28,12 +28,14 @@ accepts these keys via the dispatcher's per-call forwarding):
 - ``output_path`` — where to write the MP4. When absent a tempfile is
   used. The dispatcher always passes ``output_path`` so callers get
   the file at the path they asked for.
-- ``num_inference_steps`` (default 50 — Wan 2.1 is full-precision
+- ``num_inference_steps`` (default 50 — Wan is full-precision
   diffusion, not a distilled fast model)
-- ``guidance_scale`` (default 5.0 — Wan 2.1 paper default)
-- ``duration_s`` (default 5 — short clips fit comfortably in 32GB)
-- ``width`` / ``height`` (default 832 x 480 — Wan 2.1 1.3B native)
-- ``fps`` (default 16 — Wan 2.1 native framerate)
+- ``guidance_scale`` (default 5.0 — Wan paper default)
+- ``duration_s`` (default 5 — the deployed TI2V-5B server caps at 121
+  frames ≈ 5s @ 24fps)
+- ``width`` / ``height`` (default 1280 x 704 — Wan 2.2 TI2V-5B 720P
+  working range; callers pass 704 x 1280 for the portrait lane)
+- ``fps`` (default 24 — TI2V-5B native framerate)
 - ``upload_to`` — ``""`` / ``"r2"`` / ``"cloudinary"``. Same shape as
   the image providers; the VideoResult.file_url reflects the upload.
 
@@ -61,15 +63,19 @@ logger = logging.getLogger(__name__)
 # image-gen/FLUX image servers (9836/9838) so they can run side-by-side.
 _DEFAULT_SERVER_URL = "http://host.docker.internal:9840"
 
-# Wan 2.1 1.3B defaults. The model is full-precision diffusion (not a
-# distilled fast model) so steps + guidance are higher than the image-gen
-# Lightning / FLUX.1-schnell defaults.
+# Generation defaults — Wan 2.2 TI2V-5B's documented 720P working range
+# (1280×704 @ 24fps; the deployed wan-server caps at 121 frames ≈ 5s).
+# The previous 832×480@16fps values were Wan 2.1 1.3B's native profile,
+# left behind when the server was upgraded to TI2V-5B (Piece 4) — running
+# the 5B off its training resolution/framerate produced visibly soft
+# clips. Steps + guidance are the Wan paper defaults (full-precision
+# diffusion, not a distilled fast model).
 _DEFAULT_STEPS = 50
 _DEFAULT_GUIDANCE = 5.0
 _DEFAULT_DURATION_S = 5
-_DEFAULT_WIDTH = 832
-_DEFAULT_HEIGHT = 480
-_DEFAULT_FPS = 16
+_DEFAULT_WIDTH = 1280
+_DEFAULT_HEIGHT = 704
+_DEFAULT_FPS = 24
 
 # Per-call HTTP cap. Wan 2.1 1.3B at 50 inference steps renders 5s of
 # video in ~3min on a 5090 (warm). Cold-start adds another 30-60s
@@ -367,7 +373,6 @@ async def _generate_to_path(
     """
     body: dict[str, Any] = {
         "prompt": prompt,
-        "negative_prompt": negative,
         "steps": steps,
         "guidance_scale": guidance,
         "duration_s": duration,
@@ -376,6 +381,13 @@ async def _generate_to_path(
         "fps": fps,
         "model": "wan2.1-1.3b",
     }
+    # Only send negative_prompt when the operator actually configured one.
+    # A present-but-empty field CLOBBERS the server's own tuned default
+    # (pydantic field defaults only apply to ABSENT keys), and
+    # ``video_negative_prompt`` historically seeded empty — so every render
+    # ran with no negative guidance at all.
+    if negative:
+        body["negative_prompt"] = negative
     if image_b64:
         body["image_b64"] = image_b64
     try:
