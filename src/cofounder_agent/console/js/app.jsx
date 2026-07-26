@@ -33,7 +33,26 @@ function App() {
   // Migrated to usePolledResource (Task 9 — see the "Live poll resources"
   // block below): services, cost, logs, findings, seo, newsletter, traces,
   // media, schedule, topics.
-  const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
+  // Brain state has TWO live writers (memory-stats + brain-activity effects
+  // below), each owning a disjoint slice. Live starts the brain-daemon fields
+  // honest-empty instead of the mock's fabricated rows (feedback_no_dummy_data):
+  // decisions belong to /api/brain/stats from its first resolve; growth /
+  // recent / queueDepth / lastCycle have no HTTP route at all. This one-time
+  // wipe replaces the stub fields the memoryStats mapper used to emit — those
+  // re-blanked `decisions` on every 60s resolve, clobbering the real rows the
+  // 5-min brain-activity effect wrote ("no decisions yet" ~80% of the time).
+  const [brain, setBrain] = useS(() =>
+    PX.api.isLive()
+      ? {
+          ...PX.brain,
+          decisions: [],
+          growth: [],
+          recent: [],
+          queueDepth: null,
+          lastCycle: null,
+        }
+      : PX.brain
+  );
   const [social, setSocial] = useS({ drafts: [] }); // live: GET /api/social/drafts
   const [logFilter, setLogFilter] = useS({ service: '', level: '' });
   // live: KPI-strip reads with no home panel — GET /api/posts (published 30d
@@ -409,7 +428,10 @@ function App() {
   // effects — this corpus fetch AND the brain-daemon-activity fetch below — each
   // a functional merge into the shared state. Two resources can't own one state,
   // so both stay hand-rolled (a future combine-into-one-resource could migrate them).
-  // Maps total + by_source_table + by_writer onto the Brain panel.
+  // Maps total + by_source_table + by_writer onto the Brain panel. The spread
+  // below is safe ONLY because memoryStats() maps just the embedding-corpus
+  // slice (contract-pinned in contracts.manifest.js) — a key outside that slice
+  // would clobber the brain-activity effect's fields on every resolve.
   // Mock mode keeps PX.brain. 60s cadence (the corpus grows slowly).
   useE(() => {
     if (!PX.api.isLive()) return;

@@ -279,6 +279,18 @@ module.exports = [
       );
       assert.ok(Array.isArray(out.bySource), 'bySource is an array');
       assert.ok(Array.isArray(out.byWriter), 'byWriter is an array');
+      // Exact owned key set — the shared `brain` state has a SECOND writer
+      // (brainActivity → /api/brain/stats owns decisions/decisions24h/…) and
+      // app.jsx spreads this mapper's result into that state. Stub daemon
+      // fields emitted here (decisions/growth/recent/queueDepth/lastCycle)
+      // blanked the Brain panel's real decisions on every 60s resolve ("no
+      // decisions yet" ~80% of the time, fixed 2026-07-25). A new key means
+      // a deliberate slice-ownership decision, never a spread ride-along.
+      assert.deepEqual(
+        Object.keys(out).sort(),
+        ['bySource', 'byWriter', 'dim', 'model', 'totalEmbeddings'],
+        'memoryStats maps ONLY the embedding-corpus slice'
+      );
     },
   },
   {

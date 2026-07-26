@@ -898,11 +898,16 @@
 
     // ── brain / memory ──────────────────────────────────────
     // GET /api/memory/stats → {total, embed_model, embed_dim, by_source_table[],
-    // by_writer[]}. Map it onto the BrainPanel shape (totalEmbeddings / bySource
-    // / byWriter). queueDepth / lastCycle / decisions / growth / recent are
-    // brain-daemon internals (brain_queue / brain_decisions) with NO HTTP route,
-    // so live mode leaves them null/[] and the panel renders an honest-empty
-    // state — never the mock's queue/decisions (feedback_no_dummy_data).
+    // by_writer[]}. Map it onto the BrainPanel shape. This mapper owns ONLY the
+    // embedding-corpus slice (totalEmbeddings / model / dim / bySource /
+    // byWriter): the shared `brain` state has a second writer — brainActivity()
+    // below owns decisions/decisions24h/… from /api/brain/stats — and app.jsx
+    // spreads this result into that state, so any key emitted outside this
+    // slice clobbers the other writer on every 60s resolve. (Stub decisions:[]
+    // here predated /api/brain/stats and kept blanking the Brain panel's real
+    // decisions; the live-mode wipe of the mock's daemon-internal fields now
+    // happens once at state init in app.jsx.) Key set is contract-pinned in
+    // contracts.manifest.js — extend both together, deliberately.
     memoryStats() {
       return pick(
         async () => {
@@ -920,12 +925,6 @@
               age: r.age_seconds,
               stale: !!r.stale,
             })),
-            // brain-daemon internals — no HTTP route → honest-empty in live.
-            queueDepth: null,
-            lastCycle: null,
-            decisions: [],
-            growth: [],
-            recent: [],
           };
         },
         () => mock().brain

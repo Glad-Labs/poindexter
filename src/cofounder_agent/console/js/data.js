@@ -725,10 +725,11 @@
   // ── Brain / embeddings ──────────────────────────────────────
   // Shape mirrors GET /api/memory/stats (see memory_dashboard_routes.py):
   //   totalEmbeddings ← total · bySource ← by_source_table · byWriter ← by_writer
-  // Live mode replaces those three from the real read. queueDepth / lastCycle /
-  // growth / decisions / recent are brain-daemon internals (brain_queue /
-  // brain_decisions) with NO HTTP route — they stay mock-only and render an
-  // honest-empty state in live (feedback_no_dummy_data). Corpus keys are the
+  // Live mode replaces those from the real read, and `decisions` (+ the
+  // decisions24h/7d counters) from GET /api/brain/stats. queueDepth / lastCycle
+  // / growth / recent are brain-daemon internals (brain_queue) with NO HTTP
+  // route — mock-only; live wipes them once at state init in app.jsx and
+  // renders honest-empty (feedback_no_dummy_data). Corpus keys are the
   // real source_tables (posts/issues/audit/memory/brain/claude_sessions).
   const brain = {
     totalEmbeddings: 16932,
