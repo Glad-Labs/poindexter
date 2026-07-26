@@ -635,6 +635,12 @@ function Drawer({ entity, onClose, actions }) {
                       ['Title', a.title || '—'],
                       ['Slug', a.post_slug || '—'],
                       ['Target query', a.target_query || '(page-level)'],
+                      // Lock-2 graduation progress ("3/5 trailing clean
+                      // approvals toward auto-publish") — present only on
+                      // gates with a graduation_setting configured.
+                      ...(a.graduation_progress
+                        ? [['Autonomy', a.graduation_progress]]
+                        : []),
                     ]}
                   />
                 </>

@@ -618,6 +618,11 @@ class PipelineState(TypedDict, total=False):
     awaiting_gate: str
     gate_artifact: dict
     gate_artifact_keys: list
+    # Lock-2 graduation opt-in: app_settings key naming the gate's clean-run
+    # threshold. Config-seeded per node like gate_name; declared so a value
+    # arriving via initial state survives the graph_def merge (same
+    # undeclared-channel trap as niche_slug, 2026-07-11).
+    graduation_setting: str
 
     # Plumbing the runner needs but doesn't constrain:
     database_service: object

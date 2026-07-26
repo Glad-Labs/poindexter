@@ -18,7 +18,12 @@ from an existing published post and re-optimizes only its title/meta:
                                                 seeded ENABLED, unlike draft_gate;
                                                 resume via `poindexter pipeline
                                                 resume <task_id>`). This IS the
-                                                Lock 2 graduation mechanism.
+                                                Lock 2 graduation mechanism:
+                                                graduation_setting wires
+                                                seo.refresh.auto_publish_after_clean_runs
+                                                so N trailing clean human
+                                                approvals earn auto-approval
+                                                (0 = never graduate).
       → republish (content.republish_post)    — apply meta_only, R2 export, ISR
                                                 revalidate, stamp opportunity
 
@@ -56,7 +61,10 @@ SEO_REFRESH_GRAPH_DEF: dict[str, Any] = {
             # topic/title/excerpt/… — don't include seo_title/seo_description, which
             # ARE the thing being approved on a meta refresh). post_slug + title give
             # the reviewer the post identity; the live DB row holds the pre-edit meta
-            # for comparison. Node `config` seeds the atom's state (see
+            # for comparison. graduation_setting is the Lock-2 seam: once the gate's
+            # trailing streak of clean human approvals reaches that setting's value,
+            # the atom auto-approves (auto_approved history row) instead of pausing.
+            # Node `config` seeds the atom's state (see
             # pipeline_architect.build_graph_from_spec).
             "config": {
                 "gate_name": "seo_refresh_gate",
@@ -67,6 +75,7 @@ SEO_REFRESH_GRAPH_DEF: dict[str, Any] = {
                     "seo_description",
                     "target_query",
                 ],
+                "graduation_setting": "seo.refresh.auto_publish_after_clean_runs",
             },
         },
         {"id": "republish", "atom": "content.republish_post"},

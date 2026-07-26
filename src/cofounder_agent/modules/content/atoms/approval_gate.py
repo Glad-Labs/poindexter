@@ -37,11 +37,34 @@ Two resume patterns are handled defensively:
   the legacy re-run path and any caller that records approval before
   resuming. A ``rejected`` row halts the graph instead.
 
+Lock-2 graduation (autonomy earned, #763 later-increment)
+----------------------------------------------------------
+
+A gate node may opt in to *graduation* by naming an ``app_settings`` key in
+its spec config (``graduation_setting`` — e.g. the ``seo_refresh`` graph sets
+``seo.refresh.auto_publish_after_clean_runs``). When the trailing streak of
+clean **human** approvals at this gate (across all tasks — see
+:func:`services.approval_service.count_trailing_clean_approvals`) reaches the
+setting's value, the gate auto-approves instead of pausing: it records an
+``auto_approved`` history row (actor ``graduation``) and passes through, so
+the run publishes without sign-off. Sign-off first, autonomy earned.
+
+- The setting's value ``0`` (or unset/unparseable) disables graduation — the
+  gate always pauses. Every failure path is fail-closed to a pause.
+- A ``rejected``/``dismissed`` row (operator veto or the staleness sweep)
+  breaks the streak, so trust re-arms to manual review after any veto. To
+  revoke earned autonomy, set the graduation setting to ``0`` (re-enables
+  pausing) — reject a proposal to reset the streak — then restore the
+  threshold.
+- Pre-graduation pauses surface progress in the review artifact
+  (``graduation_progress: "3/5 …"``) so the operator watches trust accrue.
+
 Issue: Glad-Labs/poindexter#363.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -56,13 +79,17 @@ logger = logging.getLogger(__name__)
 ATOM_META = AtomMeta(
     name="atoms.approval_gate",
     type="approval_gate",
-    version="2.0.0",
+    version="2.1.0",
     description=(
         "Pause pipeline execution pending operator approval at a named gate "
         "via LangGraph interrupt(). On open: persists gate state, notifies the "
         "operator (critical/Telegram), and calls interrupt() so the graph "
         "durably checkpoints and pauses. On resume (Command(resume=...) or an "
-        "approved gate_history row): passes through. A rejected row halts."
+        "approved gate_history row): passes through. A rejected row halts. "
+        "Optional Lock-2 graduation: when config names a graduation_setting "
+        "and the gate's trailing streak of clean human approvals reaches that "
+        "setting's value, the gate auto-approves (auto_approved history row) "
+        "instead of pausing — autonomy earned through operator sign-offs."
     ),
     inputs=(
         FieldSpec(
@@ -89,6 +116,19 @@ ATOM_META = AtomMeta(
             description="Used to look up pipeline_gate_<gate_name> enable flag.",
             required=False,
         ),
+        FieldSpec(
+            name="graduation_setting", type="str",
+            description=(
+                "Optional app_settings key naming this gate's Lock-2 "
+                "graduation threshold (e.g. "
+                "'seo.refresh.auto_publish_after_clean_runs'). When set and "
+                "the trailing streak of clean human approvals at this gate "
+                ">= the setting's integer value, the gate auto-approves "
+                "instead of pausing. Absent/0/unparseable = always pause. "
+                "Usually seeded from the spec node's static config."
+            ),
+            required=False,
+        ),
     ),
     outputs=(
         FieldSpec(
@@ -113,6 +153,7 @@ ATOM_META = AtomMeta(
         "writes pipeline_tasks.awaiting_gate",
         "calls notify_operator (critical)",
         "calls langgraph interrupt() — checkpoints + pauses the graph",
+        "may write an auto_approved pipeline_gate_history row (Lock-2 graduation)",
     ),
     retry=RetryPolicy(max_attempts=1),
     fallback=(),
@@ -131,7 +172,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
       1. Disabled gate → pass-through ``{}`` (prod-safe default).
       2. ``rejected`` gate_history row → ``{"_halt": True}``.
       3. ``approved`` gate_history row → pass-through (resume case).
-      4. Otherwise → persist gate state, notify (critical), and
+      4. Lock-2 graduation (``state['graduation_setting']`` configured AND
+         trailing clean-human-approval streak >= the setting's value) →
+         record an ``auto_approved`` history row and pass through WITHOUT
+         pausing. Explicit decisions (2/3) outrank graduation; every
+         graduation failure path falls back to a pause (fail-closed).
+      5. Otherwise → persist gate state, notify (critical), and
          ``interrupt()``. On resume, ``interrupt()`` returns the resume
          value and we pass through.
     """
@@ -210,6 +256,42 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             )
             return {}
 
+    # Lock-2 graduation. Only evaluated when THIS task has no explicit
+    # decision (a reject halted above; an approve passed through above) and
+    # the spec node opted in via ``graduation_setting``. ``None`` means "not
+    # configured / disabled / check failed" — all of which fall through to
+    # the normal pause (fail-closed).
+    graduation: tuple[int, int] | None = None
+    if pool is not None:
+        graduation = await _graduation_status(
+            pool, gate_name=gate_name, state=state, site_config=site_config,
+        )
+        if graduation is not None:
+            threshold, streak = graduation
+            if streak >= threshold:
+                recorded = await _record_graduated_pass(
+                    pool,
+                    task_id=str(task_id),
+                    gate_name=gate_name,
+                    threshold=threshold,
+                    streak=streak,
+                    setting_key=str(state.get("graduation_setting")),
+                )
+                if recorded:
+                    logger.info(
+                        "[atoms.approval_gate:%s] graduated — auto-approved "
+                        "task %s (%d/%d trailing clean human approvals)",
+                        gate_name, task_id, streak, threshold,
+                    )
+                    return {}
+                # Could not write the audit row — an unrecorded autonomous
+                # pass would break the decision trail, so pause instead.
+                logger.warning(
+                    "[atoms.approval_gate:%s] graduation met but the "
+                    "auto_approved row write failed — pausing for review",
+                    gate_name,
+                )
+
     # Build the operator-review artifact. Keys to surface come from
     # ``state['gate_artifact_keys']`` (list[str]) when set; otherwise
     # we surface a minimal default summary.
@@ -220,6 +302,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     for key in artifact_keys:
         if key in state and state[key] not in (None, "", [], {}):
             artifact[key] = state[key]
+    if graduation is not None:
+        threshold, streak = graduation
+        artifact["graduation_progress"] = (
+            f"{streak}/{threshold} trailing clean approvals toward auto-publish"
+        )
 
     if pool is None:
         logger.error("[atoms.approval_gate:%s] no DB pool — cannot pause", gate_name)
@@ -396,6 +483,140 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
             dedup_key="approval_gate_read_failed:gate_decision",
         )
         return None
+
+
+async def _graduation_status(
+    pool: Any,
+    *,
+    gate_name: str,
+    state: dict[str, Any],
+    site_config: Any,
+) -> tuple[int, int] | None:
+    """Return ``(threshold, streak)`` when graduation is configured, else None.
+
+    ``None`` covers every non-participating case — no ``graduation_setting``
+    in the node config, no site_config, the setting valued ``0``/negative/
+    unparseable (graduation disabled), or the streak read failing. All of
+    them mean "behave exactly as before graduation existed": pause.
+    """
+    setting_key = state.get("graduation_setting")
+    if not setting_key or site_config is None:
+        return None
+    raw = site_config.get(str(setting_key), "0")
+    try:
+        threshold = int(float(str(raw).strip() or "0"))
+    except (TypeError, ValueError):
+        logger.warning(
+            "[atoms.approval_gate:%s] graduation setting %s=%r is not a "
+            "number — graduation disabled, pausing as usual",
+            gate_name, setting_key, raw,
+        )
+        return None
+    if threshold <= 0:
+        return None
+    try:
+        from services.approval_service import count_trailing_clean_approvals
+
+        streak = await count_trailing_clean_approvals(
+            pool,
+            gate_name=gate_name,
+            scan_limit=max(25, threshold * 5),
+        )
+    except Exception as exc:  # noqa: BLE001
+        emit_finding(
+            source="atoms.approval_gate",
+            kind="approval_gate_read_failed",
+            title="graduation streak check failed — pausing for review",
+            body=(
+                f"count_trailing_clean_approvals({gate_name!r}) failed: {exc}. "
+                "Fail-safe: the gate pauses for operator review instead of "
+                "auto-approving on unknown trust."
+            ),
+            dedup_key="approval_gate_read_failed:graduation",
+        )
+        return None
+    return threshold, streak
+
+
+async def _record_graduated_pass(
+    pool: Any,
+    *,
+    task_id: str,
+    gate_name: str,
+    threshold: int,
+    streak: int,
+    setting_key: str,
+) -> bool:
+    """Write the ``auto_approved`` history row + finding for a graduated pass.
+
+    Returns False when the history row could not be written — the caller
+    then falls back to a normal pause, because an autonomous publish that
+    left no decision record would be unauditable. The ``auto_approved``
+    event_kind is deliberately OUTSIDE both ``_gate_decision``'s read set
+    (a crash-and-rerun re-evaluates graduation instead of trusting the old
+    row) and the streak scan (graduated passes are trust-neutral, so
+    graduation cannot un-graduate itself).
+    """
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, actor, metadata)
+                VALUES ($1, $2, 'auto_approved', $3, 'graduation', $4::jsonb)
+                """,
+                str(task_id),
+                gate_name,
+                f"Lock-2 graduation: {streak} trailing clean human approvals "
+                f">= {setting_key}={threshold}",
+                json.dumps(
+                    {
+                        "clean_runs": streak,
+                        "threshold": threshold,
+                        "graduation_setting": setting_key,
+                    }
+                ),
+            )
+    except Exception as exc:  # noqa: BLE001
+        emit_finding(
+            source="atoms.approval_gate",
+            kind="approval_gate_read_failed",
+            title="graduated pass could not be recorded — pausing for review",
+            body=(
+                f"auto_approved history insert failed for task {task_id} at "
+                f"gate {gate_name!r}: {exc}. The gate pauses instead of "
+                "passing unrecorded."
+            ),
+            dedup_key="approval_gate_read_failed:graduation_record",
+        )
+        return False
+    emit_finding(
+        source="atoms.approval_gate",
+        kind="approval_gate_graduated",
+        title=(
+            f"gate {gate_name!r} auto-approved task {task_id[:8]} "
+            "(Lock-2 graduation)"
+        ),
+        body=(
+            f"{streak} trailing clean human approvals reached the "
+            f"{setting_key}={threshold} threshold, so the run passed the "
+            f"gate without pausing and will publish autonomously. To revoke: "
+            f"set {setting_key}=0 (gate pauses again), reject a proposal to "
+            "reset the streak, then restore the threshold."
+        ),
+        # 'warn' = router-fetchable routine notification (the findings alert
+        # router filters out 'info'), same posture as seo_refresh_queued.
+        severity="warn",
+        dedup_key=f"approval_gate_graduated:{gate_name}",
+        extra={
+            "gate_name": gate_name,
+            "task_id": str(task_id),
+            "clean_runs": streak,
+            "threshold": threshold,
+            "graduation_setting": setting_key,
+        },
+    )
+    return True
 
 
 def _regen_output(component: str, regen_targets: dict[str, Any]) -> dict[str, Any]:

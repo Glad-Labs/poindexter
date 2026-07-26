@@ -1941,6 +1941,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.seo_refresh_gate_expired.fallback': 'log_only',
     'findings.seo_refresh_gate_expired.cooldown_minutes': '1440',
     'findings.seo_refresh_gate_expired.min_severity': 'warn',
+    # atoms.approval_gate emits approval_gate_graduated when a gate's Lock-2
+    # graduation fires (trailing clean human approvals >= the gate's
+    # graduation_setting) and a run auto-approves instead of pausing. A
+    # trust-posture change Matt should see, but routine-severity → Discord;
+    # dedup_key is per-gate so steady-state graduated passes ping at most
+    # once per cooldown window.
+    'findings.approval_gate_graduated.delivery': 'discord',
+    'findings.approval_gate_graduated.fallback': 'log_only',
+    'findings.approval_gate_graduated.cooldown_minutes': '1440',
+    'findings.approval_gate_graduated.min_severity': 'warn',
     # Settings-lifecycle orphan candidates (#756). ProbeZeroReaderSettingsJob
     # emits settings_zero_reader_keys at severity='warn' with a stable dedup_key;
     # delivery='discord' pins the routine ops channel (feedback_telegram_vs_discord).
@@ -2412,9 +2422,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Approval-FIRST: the refresh_gate ships ENABLED, so re-publishing a live
     # post pauses for operator sign-off (unlike draft_gate, which ships off).
     # is_gate_enabled reads pipeline_gate_<gate_name>; gate_name='seo_refresh_gate'.
-    # Lock-2 graduation flips this to auto-publish once the trailing clean-run
-    # count below is met.
     'pipeline_gate_seo_refresh_gate': 'true',
+    # Lock-2 graduation (wired 2026-07-25 — atoms.approval_gate reads this via
+    # the seo_refresh spec's graduation_setting config): once the gate's
+    # trailing streak of clean HUMAN approvals (pipeline_gate_history,
+    # event_kind='approved', actor='human'; any rejected/dismissed row —
+    # operator veto or staleness sweep — resets it) reaches this count, the
+    # gate auto-approves (auto_approved history row, actor='graduation') and
+    # the refresh republishes without sign-off. 0 disables graduation — the
+    # gate always pauses. Revoke earned autonomy: set 0, reject a proposal to
+    # reset the streak, then restore.
     'seo.refresh.auto_publish_after_clean_runs': '5',
     # Phase-2 / Task-8 forward-decls (seeded for completeness):
     'seo.query_ingestion.enabled': 'false',
@@ -2674,6 +2691,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Pipeline gates -----
     'pipeline_gate_draft_gate': {'owner': 'template_runner', 'value_type': 'string'},
     'pipeline_gate_seo_refresh_gate': {'owner': 'seo_refresh', 'value_type': 'boolean'},
+    'seo.refresh.auto_publish_after_clean_runs': {'owner': 'approval_gate', 'value_type': 'integer'},
     'pipeline_gate_preview_gate': {'owner': 'approval_gate', 'value_type': 'string'},
     'regen_images_max_attempts': {'owner': 'regen_at_gate', 'value_type': 'integer'},
     'regen_text_max_attempts': {'owner': 'regen_at_gate', 'value_type': 'integer'},

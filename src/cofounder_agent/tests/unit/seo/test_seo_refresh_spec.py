@@ -58,3 +58,17 @@ def test_gate_surfaces_proposed_meta_for_review():
     keys = gate["config"].get("gate_artifact_keys") or []
     assert "seo_title" in keys
     assert "seo_description" in keys
+
+
+def test_gate_wires_lock2_graduation_setting():
+    # Lock-2 graduation (wired 2026-07-25): the gate node must name the
+    # clean-run threshold setting so atoms.approval_gate can auto-approve
+    # once the trailing clean-human-approval streak reaches it. Without this
+    # config key the setting has no reader and the gate pauses forever.
+    gate = next(
+        n for n in SEO_REFRESH_GRAPH_DEF["nodes"] if n["atom"] == "atoms.approval_gate"
+    )
+    assert (
+        gate["config"]["graduation_setting"]
+        == "seo.refresh.auto_publish_after_clean_runs"
+    )

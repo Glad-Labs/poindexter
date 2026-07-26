@@ -75,10 +75,12 @@ async def test_seeded_graph_defs_pass_runtime_contract_gate(test_pool) -> None:
     assert rows, "expected active pipeline_templates rows on a fresh baseline DB"
 
     # Non-vacuous: at least one row must carry FROZEN stamps (else the gate would
-    # trivially pass by skipping everything). The baseline seeds seo_refresh
-    # stamped and no reseed migration un-stamps it; after the next squash folds
-    # the pending reseeds in, canonical_blog joins it. If this ever fails, the
-    # whole seeded set is mid-reseed (all unstamped) — the gate has gone
+    # trivially pass by skipping everything). The 20260726 gate-graduation reseed
+    # un-stamped the last baseline-stamped row (seo_refresh) and therefore ends by
+    # running ensure_active_graph_defs_stamped itself, so in this full-dep env
+    # every active row regains registry stamps at migration time (only the
+    # dependency-light smoke env leaves rows raw for the boot self-heal). If this
+    # ever fails, the whole seeded set is unstamped — the gate has gone
     # temporarily blind and the failure is the signal to notice.
     gated = [
         slug

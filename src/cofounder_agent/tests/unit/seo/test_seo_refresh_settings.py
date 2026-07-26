@@ -33,9 +33,12 @@ def test_seo_refresh_findings_route_to_discord():
     # delivery='discord' pins the channel; min_severity must admit the 'warn'
     # severity the jobs emit at (the router floors out 'info' at the SQL layer,
     # so 'warn' is the load-bearing contract — see the job tests).
+    # approval_gate_graduated (Lock-2 graduation firing) shares the posture:
+    # a trust-posture change Matt should see, but routine, not a page.
     for kind, cooldown in (
         ("seo_refresh_queued", "360"),
         ("seo_refresh_outcome", "1440"),
+        ("approval_gate_graduated", "1440"),
     ):
         assert DEFAULTS[f"findings.{kind}.delivery"] == "discord"
         assert DEFAULTS[f"findings.{kind}.fallback"] == "log_only"

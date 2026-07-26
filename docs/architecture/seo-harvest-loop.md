@@ -100,21 +100,45 @@ Unlike `draft_gate` (which ships disabled), `seo_refresh_gate` ships **enabled**
 (`pipeline_gate_seo_refresh_gate=true`) — re-publishing a live post pauses for
 sign-off. The gate uses a true LangGraph `interrupt()`: the graph durably
 checkpoints and pauses; approve with `poindexter pipeline resume <task_id>`.
-Auto-publish graduation (re-publishing without sign-off once the trailing
-edit-distance trust threshold `seo.refresh.auto_publish_after_clean_runs` is met)
-reuses the main auto-publish mechanism and is wired in a later increment.
 Sign-off first, autonomy earned.
+
+**Auto-publish graduation (Lock 2 — wired 2026-07-25).** The gate node opts in
+via its spec config (`graduation_setting:
+'seo.refresh.auto_publish_after_clean_runs'`), and `atoms.approval_gate` does
+the rest: before pausing, it counts the gate's trailing streak of clean
+**human** approvals (`pipeline_gate_history` rows with `event_kind='approved'`,
+`actor='human'`, across all tasks; counted per distinct task; any
+`rejected`/`dismissed` row — an operator veto or the staleness sweep — resets
+the streak). Once the streak reaches the setting's value (default `5`), the
+gate stops pausing: it records an `auto_approved` history row
+(`actor='graduation'`), emits an `approval_gate_graduated` finding (Discord,
+per-gate dedup), and the refresh republishes autonomously. Mechanics worth
+knowing:
+
+- **`0` disables graduation** — the gate pauses forever. Every failure path
+  (unparseable setting, streak-read error, history-row write failure) also
+  falls back to a pause, never to an unrecorded auto-pass.
+- Graduated passes are **trust-neutral**: `auto_approved` rows are excluded
+  from the streak scan, so graduation sustains itself without inflating the
+  count, and non-human approvals never build trust.
+- Pre-graduation pauses surface progress in the review artifact
+  (`graduation_progress: "3/5 trailing clean approvals toward auto-publish"`)
+  in the console gate lane.
+- **Revoking autonomy**: set the setting to `0` (pauses resume immediately),
+  reject the next bad proposal (resets the streak), then restore the
+  threshold — the gate re-graduates only after a fresh streak of clean
+  sign-offs.
 
 ### Settings (`app_settings`)
 
-| Key                                         | Default     | Meaning                                         |
-| ------------------------------------------- | ----------- | ----------------------------------------------- |
-| `seo.refresh.enabled`                       | `false`     | Master switch for auto-enqueueing refreshes.    |
-| `seo.refresh.scope`                         | `meta_only` | Refresh aggressiveness.                         |
-| `pipeline_gate_seo_refresh_gate`            | `true`      | Approval-first gate.                            |
-| `seo.refresh.auto_publish_after_clean_runs` | `5`         | Clean-run count before auto-publish graduation. |
-| `seo.refresh.outcome_measure_after_days`    | `14`        | Delay before measuring the refresh's effect.    |
-| `seo.refresh.max_per_run`                   | `3`         | Max refresh tasks auto-enqueued per run.        |
+| Key                                         | Default     | Meaning                                                                                      |
+| ------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| `seo.refresh.enabled`                       | `false`     | Master switch for auto-enqueueing refreshes.                                                 |
+| `seo.refresh.scope`                         | `meta_only` | Refresh aggressiveness.                                                                      |
+| `pipeline_gate_seo_refresh_gate`            | `true`      | Approval-first gate.                                                                         |
+| `seo.refresh.auto_publish_after_clean_runs` | `5`         | Trailing clean human approvals before the gate auto-approves (Lock 2). `0` = never graduate. |
+| `seo.refresh.outcome_measure_after_days`    | `14`        | Delay before measuring the refresh's effect.                                                 |
+| `seo.refresh.max_per_run`                   | `3`         | Max refresh tasks auto-enqueued per run.                                                     |
 
 ### Running one refresh by hand
 
@@ -204,7 +228,12 @@ topic source.
   source. **Pending operator activation:** run
   `scripts/enable_gsc_query_dimension.py` against prod, spot-check a tap run,
   then set `seo.query_ingestion.enabled=true`.
-- **Next:** auto-publish graduation for `seo_refresh` (republish without
-  sign-off once the edit-distance trust threshold is met); once query data has
-  been live a few weeks, consider feeding real per-query `target_query` values
-  into `seo_opportunities` for sharper `seo_refresh` targeting.
+- **Shipped (Lock-2 graduation, 2026-07-25):** auto-publish graduation for
+  `seo_refresh` — `atoms.approval_gate` grew a generic `graduation_setting`
+  config seam, the `seo_refresh` graph wires it to
+  `seo.refresh.auto_publish_after_clean_runs`, and the gate auto-approves once
+  the trailing clean-human-approval streak reaches the threshold (see
+  "Approval (and earning autonomy)" above).
+- **Next:** once query data has been live a few weeks, consider feeding real
+  per-query `target_query` values into `seo_opportunities` for sharper
+  `seo_refresh` targeting.

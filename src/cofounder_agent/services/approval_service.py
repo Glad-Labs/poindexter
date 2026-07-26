@@ -671,6 +671,62 @@ async def latest_approved_gate(pool: Any, task_id: str) -> str | None:
     return row["gate_name"] if row else None
 
 
+async def count_trailing_clean_approvals(
+    pool: Any,
+    *,
+    gate_name: str,
+    trusted_actor: str = "human",
+    scan_limit: int = 50,
+) -> int:
+    """Count the gate's trailing streak of clean operator approvals.
+
+    The Lock-2 graduation signal (``atoms.approval_gate``): how many of the
+    most-recent operator *decisions* at ``gate_name`` — across ALL tasks —
+    were approvals by ``trusted_actor``, scanning newest-first and stopping
+    at the first ``rejected``/``dismissed`` row. Semantics:
+
+    - ``approved`` by ``trusted_actor`` → counts toward the streak (distinct
+      tasks, so a crash-and-reapprove double row for one task counts once).
+    - ``approved`` by any OTHER actor (``auto_publish`` etc.) → trust-neutral:
+      skipped, neither counts nor breaks. Only operator sign-offs earn trust.
+    - ``rejected`` / ``dismissed`` by ANY actor (including the staleness
+      sweep) → breaks the streak. Conservative by design: an expired or
+      vetoed proposal means the trust clock restarts.
+    - ``auto_approved`` rows (graduated passes) are excluded from the scan
+      entirely, so graduation does not un-graduate itself.
+
+    Failed resumes never inflate the count — ``rollback_resume_approval``
+    deletes the dangling ``approved`` row.
+
+    ``scan_limit`` bounds the scan window; callers only need to know whether
+    the streak reached a small threshold, so a window of a few multiples of
+    that threshold is plenty. No index covers (gate_name, created_at) alone,
+    but the table is small (typed gate events) and the LIMIT is tiny.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT task_id, event_kind, actor
+              FROM pipeline_gate_history
+             WHERE gate_name = $1
+               AND event_kind IN ('approved', 'rejected', 'dismissed')
+             ORDER BY created_at DESC
+             LIMIT $2
+            """,
+            gate_name,
+            int(scan_limit),
+        )
+    clean_tasks: set[str] = set()
+    for row in rows:
+        if row["event_kind"] != "approved":
+            break
+        actor = str(row["actor"] or "").strip().lower()
+        if actor != trusted_actor.strip().lower():
+            continue
+        clean_tasks.add(str(row["task_id"]))
+    return len(clean_tasks)
+
+
 # ---------------------------------------------------------------------------
 # Reject — operator vetoes the artifact
 # ---------------------------------------------------------------------------
@@ -1378,6 +1434,7 @@ __all__ = [
     "approve",
     "rollback_resume_approval",
     "latest_approved_gate",
+    "count_trailing_clean_approvals",
     "reject",
     "list_pending",
     "show_pending",
