@@ -169,6 +169,55 @@ poindexter backup verify      # restic check --read-data-subset now
 poindexter backup snapshots   # list remote snapshots
 ```
 
+### ⚠️ Store the offsite credentials OFF the machine
+
+**A backup you cannot open is not a backup.** The offsite repository's
+credentials are stored as encrypted `app_settings` rows
+(`offsite_backup_restic_password`, `offsite_backup_s3_access_key_id`,
+`offsite_backup_s3_secret_access_key`) — that is, **inside the database the
+backup contains** — and the key that decrypts them (`poindexter_secret_key`)
+lives only in `~/.poindexter/bootstrap.toml`, which **the runner does not back
+up**. The runner streams exactly one `pg_dump` and nothing else.
+
+So after a total loss the only surviving artifact is the restic repository, and
+opening it requires three values that existed only on the machine you lost:
+
+| Needed to open the repo                      | Where it lives today           | Survives total loss? |
+| -------------------------------------------- | ------------------------------ | -------------------- |
+| restic password                              | encrypted `app_settings` row   | ❌ inside the backup |
+| S3 access key id / secret                    | encrypted `app_settings` rows  | ❌ inside the backup |
+| `poindexter_secret_key` (decrypts the above) | `~/.poindexter/bootstrap.toml` | ❌ never backed up   |
+
+This is easy to miss because **every signal stays green**: `backup run` succeeds,
+snapshots are created and retained, and `backup verify` passes. Those prove the
+repo is _writable and intact_ — never that it is _reachable without this
+machine_.
+
+**Copy the restic password, the S3 key pair, and the repository URL into a
+password manager (or print them) the day you run `backup setup`.**
+
+### Recovery drill — prove you can actually get back in
+
+```bash
+export RESTIC_PASSWORD=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+poindexter backup verify-recovery --repository s3:https://s3.us-east-005.backblazeb2.com/my-bucket
+```
+
+`verify-recovery` reads **nothing** from this install — not the database, not
+`bootstrap.toml`, not `app_settings`. You supply the credentials you keep
+off-machine and it lists the snapshots they can open. Any option you omit is
+prompted for with hidden input, so nothing lands in shell history.
+
+A pass means the recovery path is real. A failure means you have just found out
+your backup is unrecoverable _while you still have a working machine to fix it
+from_ — which is the entire point of running it. Run it from a different machine
+for a true drill; running it here still proves the credentials are correct and
+complete, which is the part that actually gets missed.
+
+Re-run it after any credential rotation, and periodically regardless — a backup
+is only proven by a recovery drill performed without access to the source
+machine.
+
 ### Settings (`app_settings`)
 
 All Tier 2 tunables are DB-backed (seeded every boot, so they reach

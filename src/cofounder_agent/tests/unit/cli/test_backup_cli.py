@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 
 import pytest
 
@@ -288,3 +289,116 @@ def test_docker_image_present_false_on_nonzero_rc(monkeypatch):
         lambda *a, **k: _FakeProc(returncode=1, stderr="No such image"),
     )
     assert bk._docker_image_present("poindexter-backup:latest") is False
+
+
+class TestVerifyRecoveryDrill:
+    """`backup verify-recovery` (poindexter#889).
+
+    The offsite repo's credentials live as encrypted app_settings rows INSIDE
+    the database the backup contains, decrypted by a key that exists only in
+    bootstrap.toml — which the runner never backs up. So after a total loss the
+    repository cannot be opened, while every monitoring signal stays green.
+
+    This command is the drill that catches that, and its defining property is a
+    negative one: it must read NOTHING from this install. These tests pin that.
+    """
+
+    def _invoke(self, monkeypatch, *, returncode=0, stdout="[]", stderr=""):
+        from click.testing import CliRunner
+
+        seen = {}
+
+        def _fake_run_restic(image, repo, args, *, env, source_mount=None):
+            seen["image"] = image
+            seen["repo"] = repo
+            seen["args"] = args
+            seen["env"] = env
+            return subprocess.CompletedProcess(
+                args=[], returncode=returncode, stdout=stdout, stderr=stderr,
+            )
+
+        monkeypatch.setattr(bk, "_run_restic", _fake_run_restic)
+        result = CliRunner().invoke(
+            bk.backup_verify_recovery,
+            [
+                "--repository", "s3:https://s3.example.com/bucket",
+                "--restic-password", "pw",
+                "--s3-access-key-id", "akid",
+                "--s3-secret-access-key", "secret",
+                "--region", "us-east-005",
+            ],
+        )
+        return result, seen
+
+    def test_never_touches_the_database(self, monkeypatch):
+        """The whole point: a drill that reads app_settings proves nothing,
+        because app_settings is what you have lost."""
+        def _boom(*_a, **_kw):
+            raise AssertionError(
+                "verify-recovery resolved a DSN — it must not read the DB"
+            )
+
+        monkeypatch.setattr("brain.bootstrap.resolve_database_url", _boom)
+        monkeypatch.setattr(bk, "_get_setting", _boom)
+        monkeypatch.setattr(bk, "_resolved_secret_env", _boom)
+        monkeypatch.setattr(bk, "_run_or_die", _boom)
+
+        result, _seen = self._invoke(monkeypatch, stdout='[{"id":"a"}]')
+
+        assert result.exit_code == 0, result.output
+
+    def test_passes_supplied_credentials_through_to_restic(self, monkeypatch):
+        result, seen = self._invoke(monkeypatch, stdout='[{"id":"a"},{"id":"b"}]')
+
+        assert result.exit_code == 0, result.output
+        assert seen["env"]["RESTIC_PASSWORD"] == "pw"
+        assert seen["env"]["AWS_ACCESS_KEY_ID"] == "akid"
+        assert seen["env"]["AWS_SECRET_ACCESS_KEY"] == "secret"
+        assert seen["env"]["AWS_DEFAULT_REGION"] == "us-east-005"
+        assert seen["repo"] == "s3:https://s3.example.com/bucket"
+        assert seen["args"][0] == "snapshots"
+        assert "2 snapshot(s) readable" in result.output
+
+    def test_failure_surfaces_restic_stderr(self, monkeypatch):
+        """'wrong password' vs 'bucket not found' vs 'access denied' are three
+        different recovery problems — the operator must be told which."""
+        result, _seen = self._invoke(
+            monkeypatch, returncode=1, stdout="",
+            stderr="Fatal: wrong password or no key found",
+        )
+
+        assert result.exit_code != 0
+        assert "RECOVERY DRILL FAILED" in result.output
+        assert "wrong password" in result.output
+
+    def test_zero_snapshots_warns_even_though_creds_work(self, monkeypatch):
+        """Opening an empty repo means the credentials are right and the
+        backups are not landing — a pass that still needs flagging."""
+        result, _seen = self._invoke(monkeypatch, stdout="[]")
+
+        assert result.exit_code == 0, result.output
+        assert "RECOVERY DRILL PASSED" in result.output
+        assert "ZERO snapshots" in result.output
+
+    def test_unparseable_json_still_passes_without_inventing_a_count(
+        self, monkeypatch
+    ):
+        result, _seen = self._invoke(monkeypatch, stdout="not json")
+
+        assert result.exit_code == 0, result.output
+        assert "RECOVERY DRILL PASSED" in result.output
+        assert "unparsed" in result.output
+
+
+@pytest.mark.parametrize(
+    "stdout,expected",
+    [
+        ("[]", 0),
+        ('[{"id":"a"}]', 1),
+        ("", 0),            # empty stdout defaults to an empty list
+        ("not json", None),  # unparseable -> decline to report a number
+        ('{"id":"a"}', None),  # object, not a list
+    ],
+)
+def test_snapshot_count(stdout, expected):
+    assert bk._snapshot_count(stdout) == expected

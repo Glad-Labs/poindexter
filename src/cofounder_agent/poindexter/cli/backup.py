@@ -739,3 +739,137 @@ def backup_snapshots() -> None:
     if not dsn:
         raise click.ClickException("No database_url — run `poindexter setup` first.")
     click.echo(_run_or_die(dsn, ["snapshots"]))
+
+
+# --- recovery drill ---------------------------------------------------------
+#
+# Glad-Labs/poindexter#889. Every other command in this file resolves its
+# credentials THROUGH THE DATABASE (`_run_or_die` → `_resolved_secret_env` →
+# `get_secret`), because on a healthy machine that is the convenient path. That
+# convenience hides a circular dependency: the restic password and S3 keys live
+# as encrypted `app_settings` rows *inside the database the backup contains*,
+# and the key that decrypts them (`poindexter_secret_key`) lives only in
+# `~/.poindexter/bootstrap.toml`, which the runner never backs up. After a total
+# loss the operator holds a verified, current, retained repository that nobody
+# can open — and every monitoring signal stayed green the whole time, because
+# `run` / `verify` / `snapshots` only ever prove the repo is *writable and
+# intact*, never that it is *reachable without this machine*.
+#
+# So this command's defining property is a NEGATIVE one: it does not read the
+# database, at all. No `bootstrap.resolve_database_url()`, no `_get_setting`,
+# no `get_secret`. Credentials come from the operator's own off-machine copy.
+# That is the whole test — if it passes, the recovery path is real; if the
+# operator cannot supply the values, they have just discovered their backup is
+# unrecoverable while they still have a working machine to fix it from.
+
+
+@backup_group.command(name="verify-recovery")
+@click.option(
+    "--repository", envvar="POINDEXTER_RECOVERY_REPOSITORY", required=True,
+    help="restic repository URL, e.g. s3:https://s3.us-east-005.backblazeb2.com/my-bucket",
+)
+@click.option(
+    "--restic-password", envvar="RESTIC_PASSWORD", prompt="restic password",
+    hide_input=True, help="Reads $RESTIC_PASSWORD; prompts if unset.",
+)
+@click.option(
+    "--s3-access-key-id", envvar="AWS_ACCESS_KEY_ID", prompt="S3 access key id",
+    hide_input=True, help="Reads $AWS_ACCESS_KEY_ID; prompts if unset.",
+)
+@click.option(
+    "--s3-secret-access-key", envvar="AWS_SECRET_ACCESS_KEY",
+    prompt="S3 secret access key", hide_input=True,
+    help="Reads $AWS_SECRET_ACCESS_KEY; prompts if unset.",
+)
+@click.option(
+    "--region", envvar="AWS_DEFAULT_REGION", default="",
+    help="SigV4 region. Required by non-us-east-1 buckets (e.g. B2 us-east-005).",
+)
+@click.option(
+    "--image", default=_DEFAULT_RESTIC_IMAGE, show_default=True,
+    help="restic docker image to run the drill with.",
+)
+def backup_verify_recovery(
+    repository: str,
+    restic_password: str,
+    s3_access_key_id: str,
+    s3_secret_access_key: str,
+    region: str,
+    image: str,
+) -> None:
+    """Prove the offsite repo opens with OFF-MACHINE credentials (recovery drill).
+
+    Simulates total loss: reads NOTHING from this install — not the database,
+    not bootstrap.toml, not app_settings. You supply the credentials you keep
+    off-machine, and this lists the snapshots they can actually open.
+
+    A backup is only proven by a recovery drill performed WITHOUT access to the
+    source machine. `backup verify` proves the repo is intact; only this proves
+    you can get back in.
+
+    Credentials are read from the environment when set, so the normal shape is:
+
+        export RESTIC_PASSWORD=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+        poindexter backup verify-recovery --repository s3:https://...
+
+    Any option left unset is prompted for with hidden input, which keeps it out
+    of shell history. Run it from a DIFFERENT machine for a true drill — running
+    it here still proves the credentials are correct and complete, which is the
+    part operators actually get wrong.
+    """
+    env = {
+        "RESTIC_PASSWORD": restic_password,
+        "AWS_ACCESS_KEY_ID": s3_access_key_id,
+        "AWS_SECRET_ACCESS_KEY": s3_secret_access_key,
+    }
+    if region:
+        env["AWS_DEFAULT_REGION"] = region
+
+    click.echo(f"Opening {repository} with supplied credentials…")
+    res = _run_restic(image, repository, ["snapshots", "--json"], env=env)
+    if res.returncode != 0:
+        # Fail loud with restic's own stderr — "wrong password" vs "bucket not
+        # found" vs "access denied" are three different recovery problems and
+        # the operator needs to know which one they have.
+        raise click.ClickException(
+            "RECOVERY DRILL FAILED — these credentials do NOT open the "
+            f"repository.\n\nrestic said:\n{res.stderr.strip()}\n\n"
+            "This is the failure that would have surfaced during a real "
+            "restore. Fix it now, then re-run this command."
+        )
+
+    count = _snapshot_count(res.stdout)
+    click.secho("RECOVERY DRILL PASSED", fg="green", bold=True)
+    if count is None:
+        # Opened fine but the JSON didn't parse — still a pass (restic
+        # authenticated), just don't fabricate a number.
+        click.echo("  repository opened; snapshot list returned (unparsed)")
+    else:
+        click.echo(f"  repository opened; {count} snapshot(s) readable")
+        if count == 0:
+            click.secho(
+                "  WARNING: the repo opens but holds ZERO snapshots — "
+                "credentials are right, backups are not landing.",
+                fg="yellow",
+            )
+    click.echo(
+        "\nThese credentials are sufficient to recover. Keep them somewhere "
+        "that survives losing this machine — a password manager or printed "
+        "copy, NOT only in app_settings (which lives inside the backup)."
+    )
+
+
+def _snapshot_count(stdout: str) -> int | None:
+    """Count snapshots in ``restic snapshots --json`` output.
+
+    Returns ``None`` when the payload isn't the expected JSON list — the drill
+    still passed (restic authenticated and listed), so this must not turn a
+    pass into a failure; it just declines to report a number it doesn't have.
+    """
+    import json
+
+    try:
+        parsed = json.loads(stdout or "[]")
+    except ValueError:
+        return None
+    return len(parsed) if isinstance(parsed, list) else None
