@@ -194,6 +194,115 @@ class TestGatesRoutes:
             resp = TestClient(app).get("/api/gates/pending/t-1")
         assert resp.status_code == 409
 
+    # -- POST /api/gates/pending/{task_id}/approve (approve + background resume)
+
+    def test_approve_pending_returns_202_and_threads_feedback(self):
+        app, _ = _app_gates()
+        result = {
+            "ok": True,
+            "task_id": "t-1",
+            "gate_name": "seo_refresh_gate",
+            "template_slug": "seo_refresh",
+            "mode": "approve_resume_started",
+        }
+        mock = AsyncMock(return_value=result)
+        with patch("services.gate_resume.approve_and_schedule_resume", new=mock):
+            resp = TestClient(app).post(
+                "/api/gates/pending/t-1/approve", json={"feedback": "ship it"}
+            )
+        assert resp.status_code == 202
+        assert resp.json()["mode"] == "approve_resume_started"
+        kwargs = mock.await_args.kwargs
+        assert kwargs["task_id"] == "t-1"
+        assert kwargs["feedback"] == "ship it"
+        assert kwargs["actor"] == "human"
+
+    def test_approve_pending_body_optional(self):
+        app, _ = _app_gates()
+        mock = AsyncMock(return_value={"ok": True, "mode": "approve_resume_started"})
+        with patch("services.gate_resume.approve_and_schedule_resume", new=mock):
+            resp = TestClient(app).post("/api/gates/pending/t-1/approve")
+        assert resp.status_code == 202
+        assert mock.await_args.kwargs["feedback"] is None
+
+    def test_approve_pending_not_found_returns_404(self):
+        app, _ = _app_gates()
+        from services.approval_service import TaskNotFoundError
+
+        with patch(
+            "services.gate_resume.approve_and_schedule_resume",
+            new=AsyncMock(side_effect=TaskNotFoundError("Task t-x not found")),
+        ):
+            resp = TestClient(app).post("/api/gates/pending/t-x/approve")
+        assert resp.status_code == 404
+
+    def test_approve_pending_inflight_returns_409(self):
+        app, _ = _app_gates()
+        from services.gate_resume import ResumeInFlightError
+
+        with patch(
+            "services.gate_resume.approve_and_schedule_resume",
+            new=AsyncMock(side_effect=ResumeInFlightError("already resuming")),
+        ):
+            resp = TestClient(app).post("/api/gates/pending/t-1/approve")
+        assert resp.status_code == 409
+
+    def test_approve_pending_not_paused_returns_409(self):
+        app, _ = _app_gates()
+        from services.approval_service import TaskNotPausedError
+
+        with patch(
+            "services.gate_resume.approve_and_schedule_resume",
+            new=AsyncMock(side_effect=TaskNotPausedError("not paused")),
+        ):
+            resp = TestClient(app).post("/api/gates/pending/t-1/approve")
+        assert resp.status_code == 409
+
+    # -- POST /api/gates/pending/{task_id}/reject
+
+    def test_reject_pending_returns_200_and_threads_reason(self):
+        app, _ = _app_gates()
+        result = {
+            "ok": True,
+            "task_id": "t-1",
+            "gate_name": "seo_refresh_gate",
+            "new_status": "rejected",
+        }
+        mock = AsyncMock(return_value=result)
+        with patch("services.approval_service.reject", new=mock):
+            resp = TestClient(app).post(
+                "/api/gates/pending/t-1/reject", json={"reason": "title too spammy"}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["new_status"] == "rejected"
+        kwargs = mock.await_args.kwargs
+        assert kwargs["task_id"] == "t-1"
+        assert kwargs["reason"] == "title too spammy"
+        assert kwargs["actor"] == "human"
+        assert kwargs["gate_name"] is None  # active-gate semantics
+
+    def test_reject_pending_not_found_returns_404(self):
+        app, _ = _app_gates()
+        from services.approval_service import TaskNotFoundError
+
+        with patch(
+            "services.approval_service.reject",
+            new=AsyncMock(side_effect=TaskNotFoundError("Task t-x not found")),
+        ):
+            resp = TestClient(app).post("/api/gates/pending/t-x/reject")
+        assert resp.status_code == 404
+
+    def test_reject_pending_not_paused_returns_409(self):
+        app, _ = _app_gates()
+        from services.approval_service import TaskNotPausedError
+
+        with patch(
+            "services.approval_service.reject",
+            new=AsyncMock(side_effect=TaskNotPausedError("not paused")),
+        ):
+            resp = TestClient(app).post("/api/gates/pending/t-1/reject")
+        assert resp.status_code == 409
+
 
 # ---------------------------------------------------------------------------
 # Posts-approval routes

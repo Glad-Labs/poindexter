@@ -44,6 +44,9 @@
                    · GET /{post_id}/{medium}/preview (raw asset bytes, for the drawer player)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
+     gates         GET  /api/gates/pending  (tasks paused at a graph gate, e.g.
+                   seo_refresh_gate) · POST /pending/{task_id}/{approve|reject}
+                   (approve = 202: records approval + background checkpoint resume)
      social        GET  /api/social/drafts (filterable; per-post per-platform breakdown)
                    POST /api/social/drafts/{id}/{approve|reject}
      voice         GET  /api/settings (voice_agent_public_join_url; operator config)
@@ -1196,6 +1199,50 @@
       return pick(
         () => http('GET', '/api/seo'),
         () => mock().seo
+      );
+    },
+
+    // ── graph approval gates (gates_routes.py) ──────────────
+    // GET /api/gates/pending → canonical {items,…} envelope of tasks paused
+    // at an interrupt() gate (awaiting_gate IS NOT NULL): task_id, gate_name,
+    // artifact (the operator-review payload — for seo_refresh_gate that's the
+    // proposed seo_title/seo_description), gate_paused_at, status, topic,
+    // title. Feeds the NEEDS YOU kind='gate' lane. Mock: honest-empty.
+    gatesPending() {
+      return pick(
+        () => http('GET', '/api/gates/pending?limit=50'),
+        () => pair({ items: [] }, { items: [] })
+      );
+    },
+
+    // POST /api/gates/pending/{task_id}/approve — records the approval and
+    // resumes the paused LangGraph from its checkpoint in the background
+    // (202 accepted; a failed resume rolls the approval back, so the row
+    // reappears on the next gatesPending poll). Body: optional feedback note.
+    gateApprove(taskId, feedback = '') {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/gates/pending/${encodeURIComponent(taskId)}/approve`,
+            { feedback: feedback || '' }
+          ),
+        () => ({ ok: true })
+      );
+    },
+
+    // POST /api/gates/pending/{task_id}/reject — rejects the paused task.
+    // Body: optional reason. For seo_refresh_gate the server also dismisses
+    // the linked seo_opportunities row so the post isn't re-proposed.
+    gateReject(taskId, reason = '') {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/gates/pending/${encodeURIComponent(taskId)}/reject`,
+            { reason: reason || '' }
+          ),
+        () => ({ ok: true })
       );
     },
 

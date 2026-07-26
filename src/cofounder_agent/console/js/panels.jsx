@@ -78,6 +78,7 @@ const INBOX_ICON = {
   drift: 'link',
   media: 'play',
   social: 'pulse',
+  gate: 'refresh',
 };
 function ActionInbox({
   items,
@@ -92,6 +93,8 @@ function ActionInbox({
   onSocialReject,
   onMediaApprove,
   onMediaReject,
+  onGateApprove,
+  onGateReject,
   filter,
   setFilter,
 }) {
@@ -104,6 +107,7 @@ function ActionInbox({
   const chips = [
     ['all', 'All', items.length],
     ['approve', 'Approvals', counts.approve || 0],
+    ['gate', 'Gates', counts.gate || 0],
     ['media', 'Media', counts.media || 0],
     ['social', 'Social', counts.social || 0],
     ['fail', 'Failures', counts.fail || 0],
@@ -292,6 +296,25 @@ function ActionInbox({
                       className="mbtn mbtn--ghost"
                       onClick={() => onSocialReject && onSocialReject(it)}
                       title="Reject"
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  </>
+                )}
+                {it.kind === 'gate' && (
+                  <>
+                    <button
+                      className="mbtn mbtn--primary"
+                      onClick={() => onGateApprove && onGateApprove(it)}
+                      title="Approve — resume the paused pipeline"
+                    >
+                      <Icon name="check" size={12} />
+                      Approve
+                    </button>
+                    <button
+                      className="mbtn mbtn--ghost"
+                      onClick={() => onGateReject && onGateReject(it)}
+                      title="Reject — dismiss this run"
                     >
                       <Icon name="x" size={12} />
                     </button>

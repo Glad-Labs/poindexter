@@ -6,6 +6,13 @@ Operator surfaces that were previously only reachable in-process via CLI/MCP:
 - ``PATCH /api/gates/{gate_name}``      → enable or disable a gate
 - ``GET  /api/gates/pending``           → list tasks paused at any gate
 - ``GET  /api/gates/pending/{task_id}`` → inspect a single paused task
+- ``POST /api/gates/pending/{task_id}/approve`` → approve + resume the graph
+  (202 — the checkpoint resume runs in the background; see
+  ``services.gate_resume``). This is the console NEEDS-YOU gate lane's action;
+  the CLI equivalent is ``poindexter pipeline resume <task_id>``.
+- ``POST /api/gates/pending/{task_id}/reject``  → reject the paused task
+  (``poindexter reject`` equivalent; per-gate rejection handlers fire, e.g.
+  seo_refresh_gate dismisses its linked seo_opportunities row)
 """
 
 from typing import Any
@@ -30,6 +37,18 @@ router = APIRouter(
 
 class SetGateRequest(BaseModel):
     enabled: bool
+
+
+class GateApproveRequest(BaseModel):
+    """Optional operator note recorded on the approval's gate_history row."""
+
+    feedback: str | None = None
+
+
+class GateRejectRequest(BaseModel):
+    """Optional veto reason recorded on the rejection's gate_history row."""
+
+    reason: str | None = None
 
 
 @router.get(
@@ -108,6 +127,95 @@ async def list_pending(
         limit=limit,
         offset=0,
     )
+
+
+@router.post(
+    "/pending/{task_id}/approve",
+    summary="Approve a paused task's gate and resume its graph",
+    response_model=dict[str, Any],
+    status_code=202,
+)
+async def approve_pending(
+    task_id: str,
+    body: GateApproveRequest | None = None,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Record the approval and schedule the LangGraph checkpoint resume.
+
+    Returns 202 immediately (``mode='approve_resume_started'``) — the resume
+    runs as a background task on the worker. If it fails, the approval is
+    rolled back and the task reappears in ``GET /api/gates/pending`` (the
+    console's next poll picks it up); the operator gets a Discord note either
+    way. HTTP mirror of ``poindexter pipeline resume <task_id>``.
+    """
+    from services.approval_service import (
+        ApprovalServiceError,
+        TaskNotFoundError,
+        TaskNotPausedError,
+    )
+    from services.gate_resume import (
+        ResumeInFlightError,
+        approve_and_schedule_resume,
+    )
+
+    try:
+        return await approve_and_schedule_resume(
+            task_id=task_id,
+            feedback=(body.feedback if body else None),
+            actor="human",
+            db_service=db_service,
+            site_config=site_config,
+        )
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TaskNotPausedError, ResumeInFlightError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApprovalServiceError as exc:
+        # e.g. no template_slug to resume — a data problem, not a race.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/pending/{task_id}/reject",
+    summary="Reject a task paused at an approval gate",
+    response_model=dict[str, Any],
+    status_code=200,
+)
+async def reject_pending(
+    task_id: str,
+    body: GateRejectRequest | None = None,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Reject the active gate on a paused task (HTTP mirror of ``poindexter
+    reject``). Per-gate rejection handlers fire — for ``seo_refresh_gate``
+    that dismisses the linked ``seo_opportunities`` row so it is never
+    re-proposed."""
+    from services.approval_service import (
+        GateMismatchError,
+        TaskNotFoundError,
+        TaskNotPausedError,
+    )
+    from services.approval_service import (
+        reject as _reject,
+    )
+
+    try:
+        return await _reject(
+            task_id=task_id,
+            gate_name=None,
+            reason=(body.reason if body else None),
+            actor="human",
+            site_config=site_config,
+            pool=db_service.pool,
+        )
+    except TaskNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TaskNotPausedError, GateMismatchError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get(

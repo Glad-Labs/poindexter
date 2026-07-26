@@ -24,6 +24,7 @@ from services.rejection_handlers import (
     list_registered_handlers,
     preview_approval_handler,
     register_handler,
+    seo_refresh_gate_handler,
     topic_decision_handler,
 )
 
@@ -51,6 +52,14 @@ class FakeConnection:
                 "confidence": confidence, "source": source,
             })
             return "INSERT 0 1"
+        if sql_norm.startswith("UPDATE seo_opportunities"):
+            # seo_refresh_gate_handler: only rows still 'queued' move.
+            opportunity_id, new_status = args
+            current = self._store.seo_opportunities.get(opportunity_id)
+            if current == "queued":
+                self._store.seo_opportunities[opportunity_id] = new_status
+                return "UPDATE 1"
+            return "UPDATE 0"
         if sql_norm.startswith("INSERT INTO pipeline_gate_history"):
             task_id, post_id, gate_name, event_kind, feedback, metadata = args
             self._store.gate_history.append({
@@ -65,6 +74,9 @@ class FakeConnection:
 
     async def fetchval(self, sql: str, *args):
         sql_norm = " ".join(sql.split())
+        if sql_norm.startswith("SELECT stage_data -> 'task_metadata' ->> 'seo_opportunity_id'"):
+            (task_id,) = args
+            return self._store.task_opportunity.get(task_id)
         if sql_norm.startswith("SELECT COUNT(*) FROM pipeline_gate_history WHERE task_id"):
             task_id, gate_name, event_kind = args
             return sum(
@@ -90,6 +102,10 @@ class FakeStore:
     def __init__(self) -> None:
         self.brain_knowledge: list[dict[str, Any]] = []
         self.gate_history: list[dict[str, Any]] = []
+        # seo_refresh_gate_handler seams: task_id → seo_opportunity_id (the
+        # pipeline_versions task_metadata lookup) and opportunity_id → status.
+        self.task_opportunity: dict[str, str | None] = {}
+        self.seo_opportunities: dict[str, str] = {}
 
 
 class FakePool:
@@ -139,6 +155,7 @@ class TestRegistry:
         assert "topic_decision" in registered
         assert "preview_approval" in registered
         assert "final_publish_approval" in registered
+        assert "seo_refresh_gate" in registered
 
     def test_register_and_get_roundtrip(self):
         async def _custom(_ctx):
@@ -419,3 +436,81 @@ class TestDispatchRejection:
         )
         # Must not raise.
         await dispatch_rejection(ctx)
+
+
+# ---------------------------------------------------------------------------
+# seo_refresh_gate_handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestSeoRefreshGateHandler:
+    def _ctx(self, fake_pool, *, actor: str = "human", task_id: str = "t-seo"):
+        return RejectionContext(
+            gate_name="seo_refresh_gate",
+            task_id=task_id,
+            post_id=None,
+            reason="stale meta",
+            artifact={"title": "T", "post_slug": "t-slug"},
+            pool=fake_pool,
+            site_config=None,
+            actor=actor,
+        )
+
+    async def test_operator_reject_dismisses_opportunity(self, fake_pool):
+        fake_pool.store.task_opportunity["t-seo"] = "opp-1"
+        fake_pool.store.seo_opportunities["opp-1"] = "queued"
+        await seo_refresh_gate_handler(self._ctx(fake_pool, actor="human"))
+        # Operator said no → terminal; the analyzer's status latch keeps it.
+        assert fake_pool.store.seo_opportunities["opp-1"] == "dismissed"
+
+    async def test_sweep_expiry_reopens_opportunity(self, fake_pool):
+        fake_pool.store.task_opportunity["t-seo"] = "opp-1"
+        fake_pool.store.seo_opportunities["opp-1"] = "queued"
+        await seo_refresh_gate_handler(
+            self._ctx(fake_pool, actor="staleness_sweep")
+        )
+        # Nobody judged it → back to open for a fresh future proposal.
+        assert fake_pool.store.seo_opportunities["opp-1"] == "open"
+
+    async def test_non_queued_opportunity_untouched(self, fake_pool):
+        """A row another path already moved (refreshed) is never clobbered."""
+        fake_pool.store.task_opportunity["t-seo"] = "opp-1"
+        fake_pool.store.seo_opportunities["opp-1"] = "refreshed"
+        await seo_refresh_gate_handler(self._ctx(fake_pool))
+        assert fake_pool.store.seo_opportunities["opp-1"] == "refreshed"
+
+    async def test_missing_opportunity_id_is_noop(self, fake_pool):
+        fake_pool.store.task_opportunity["t-seo"] = None
+        await seo_refresh_gate_handler(self._ctx(fake_pool))
+        assert fake_pool.store.seo_opportunities == {}
+
+    async def test_missing_task_id_is_noop(self, fake_pool):
+        ctx = RejectionContext(
+            gate_name="seo_refresh_gate",
+            task_id=None,
+            post_id=None,
+            reason="x",
+            artifact={},
+            pool=fake_pool,
+            site_config=None,
+        )
+        await seo_refresh_gate_handler(ctx)
+        assert fake_pool.store.seo_opportunities == {}
+
+    async def test_default_actor_is_human(self, fake_pool):
+        """Backcompat: a context built without actor behaves as an operator
+        veto (posts_approval_service still constructs without the field)."""
+        fake_pool.store.task_opportunity["t-seo"] = "opp-1"
+        fake_pool.store.seo_opportunities["opp-1"] = "queued"
+        ctx = RejectionContext(
+            gate_name="seo_refresh_gate",
+            task_id="t-seo",
+            post_id=None,
+            reason=None,
+            artifact={},
+            pool=fake_pool,
+            site_config=None,
+        )
+        await seo_refresh_gate_handler(ctx)
+        assert fake_pool.store.seo_opportunities["opp-1"] == "dismissed"

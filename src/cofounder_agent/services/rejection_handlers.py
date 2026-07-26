@@ -90,6 +90,11 @@ class RejectionContext:
     artifact: dict[str, Any]   # the gate_artifact at time of rejection
     pool: Any                  # asyncpg pool
     site_config: Any           # SiteConfig (DI seam)
+    # Who rejected: 'human' (CLI/MCP/REST) or an automated caller such as
+    # 'staleness_sweep' (gate-expiry job). Lets a handler distinguish an
+    # operator veto (terminal intent) from queue hygiene (recyclable) —
+    # e.g. seo_refresh_gate dismisses vs. reopens its opportunity row.
+    actor: str = "human"
 
     def primary_id(self) -> str:
         """Return whichever ID is set — both ``task_id`` and ``post_id``
@@ -484,6 +489,83 @@ async def final_publish_approval_handler(ctx: RejectionContext) -> None:
     )
 
 
+async def seo_refresh_gate_handler(ctx: RejectionContext) -> None:
+    """seo_refresh rejected → unstick the linked ``seo_opportunities`` row.
+
+    ``enqueue_seo_refreshes`` parks the opportunity at ``status='queued'``
+    when it creates the gated task; only ``content.republish_post`` (approve
+    path) moves it on, to ``'refreshed'``. Without this handler a rejection
+    leaves the row ``'queued'`` forever — never re-proposed (the enqueue job
+    selects ``'open'`` only) and never measured. Disposition follows intent:
+
+    - **Operator veto** (``actor='human'``) → ``'dismissed'``: the operator
+      looked at the proposal and said no. Terminal — the analyzer's daily
+      re-upsert latches dismissed rows (striking_distance.py) so the post is
+      not re-proposed.
+    - **Staleness expiry** (``actor='staleness_sweep'``) → ``'open'``: nobody
+      judged the proposal, it just aged out. Reopening lets the enqueue job
+      re-propose the post later with fresh GSC metrics and a fresh meta
+      rewrite, instead of silently abandoning the opportunity.
+
+    The opportunity id rides the same seam the enqueue job wrote it to:
+    ``pipeline_versions.stage_data->'task_metadata'->>'seo_opportunity_id'``.
+    Only rows still ``'queued'`` are touched — a rejection can never clobber
+    a row another path already moved to ``'refreshed'``.
+    """
+    if not ctx.task_id:
+        logger.warning(
+            "[seo_refresh_gate_handler] no task_id in context — cannot "
+            "resolve the linked seo_opportunities row"
+        )
+        return
+
+    opportunity_id = await ctx.pool.fetchval(
+        """
+        SELECT stage_data -> 'task_metadata' ->> 'seo_opportunity_id'
+          FROM pipeline_versions
+         WHERE task_id::text = $1
+         ORDER BY version DESC
+         LIMIT 1
+        """,
+        str(ctx.task_id),
+    )
+    if not opportunity_id:
+        logger.info(
+            "[seo_refresh_gate_handler] task=%s has no seo_opportunity_id "
+            "on its task_metadata — nothing to unstick",
+            str(ctx.task_id)[:8],
+        )
+        return
+
+    new_status = "open" if ctx.actor == "staleness_sweep" else "dismissed"
+    result = await ctx.pool.execute(
+        """
+        UPDATE seo_opportunities
+           SET status = $2
+         WHERE id = $1::uuid
+           AND status = 'queued'
+        """,
+        str(opportunity_id),
+        new_status,
+    )
+
+    audit_log_bg(
+        event_type="rejection_handler_seo_refresh_gate",
+        source="rejection_handlers",
+        details={
+            "gate_name": ctx.gate_name,
+            "task_id": ctx.task_id,
+            "opportunity_id": str(opportunity_id),
+            "opportunity_status": new_status,
+            "actor": ctx.actor,
+            "updated": str(result),
+            "reason": (ctx.reason or "")[:500],
+        },
+        task_id=ctx.task_id,
+        severity="info",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Side-effect: register the bundled handlers at import time
 # ---------------------------------------------------------------------------
@@ -491,6 +573,7 @@ async def final_publish_approval_handler(ctx: RejectionContext) -> None:
 register_handler("topic_decision", topic_decision_handler)
 register_handler("preview_approval", preview_approval_handler)
 register_handler("final_publish_approval", final_publish_approval_handler)
+register_handler("seo_refresh_gate", seo_refresh_gate_handler)
 
 
 __all__ = [
@@ -504,4 +587,5 @@ __all__ = [
     "topic_decision_handler",
     "preview_approval_handler",
     "final_publish_approval_handler",
+    "seo_refresh_gate_handler",
 ]

@@ -535,6 +535,39 @@ function App() {
     };
   }, []);
 
+  // ── Live: graph approval-gate queue (GET /api/gates/pending) ─
+  // Task 9 exception (stays a bespoke effect): replace-by-kind merge into the
+  // shared `inbox` state (same shape as the social-drafts effect above).
+  // Tasks paused at an interrupt() gate — today that's seo_refresh runs at
+  // seo_refresh_gate (approval-FIRST by design; the proposed title/meta wait
+  // for operator sign-off before republish) — surface as kind='gate' for
+  // inline approve/reject. Before this lane they only showed on the Trace
+  // board with no action path, and parked runs silently accumulated. Mock:
+  // honest-empty. 60s cadence (gate parks move on operator timescales).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.gatesPending();
+        if (!alive || !res) return;
+        const items = (res && res.items) || [];
+        setInbox((prev) => {
+          const nonGate = prev.filter((i) => i.kind !== 'gate');
+          return [...nonGate, ...items.map(gateToInbox)];
+        });
+      } catch (e) {
+        pushToast(`Gate queue load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   // ── Live: merge the Gate-2 media queue into the Action Inbox ──
   // `media` (mediaR, above) already polls GET /api/media-approval/pending on
   // its own 60s cadence for the MediaPanel card — this closes the gap noted
@@ -965,6 +998,47 @@ function App() {
       } catch (err) {
         mediaR.mutate(() => prev);
         pushToast(`Media reject failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    // Graph approval gates (kind='gate' — POST /api/gates/pending/{id}/…).
+    // Approve records the approval and the server resumes the paused graph
+    // from its checkpoint in the background (202). Optimistic remove; a
+    // FAILED resume rolls the approval back server-side, so the row honestly
+    // reappears on the next 60s gatesPending poll — no client bookkeeping.
+    gateApprove: async (e) => {
+      const prev = inbox;
+      removeInbox(e.id);
+      closeDrawer();
+      try {
+        await PX.api.gateApprove(e.id);
+        pushToast(
+          `Approved — resuming past ${e.detail?.gate_name || 'gate'}`,
+          'mint',
+          '✓'
+        );
+        pushFeed(
+          ['mint', 'GATE'],
+          `operator approved <b>${escHtml(trunc(e.title))}</b> → pipeline resuming`
+        );
+      } catch (err) {
+        setInbox(prev);
+        pushToast(`Gate approve failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    gateReject: async (e) => {
+      const prev = inbox;
+      removeInbox(e.id);
+      closeDrawer();
+      try {
+        await PX.api.gateReject(e.id, e.detail?.feedback || '');
+        pushToast(`Rejected — run dismissed`, 'amber', '⚠');
+        pushFeed(
+          ['amber', 'GATE'],
+          `operator rejected <b>${escHtml(trunc(e.title))}</b> at ${e.detail?.gate_name || 'gate'}`
+        );
+      } catch (err) {
+        setInbox(prev);
+        pushToast(`Gate reject failed — ${err.message}`, 'red', '✕');
       }
     },
     // Reschedule a scheduled post by a duration (PATCH /api/scheduling/shift).
@@ -1506,6 +1580,8 @@ function App() {
                   onSocialReject={(it) => A.socialRejectDraft(it)}
                   onMediaApprove={(it) => A.mediaApprove(it.detail)}
                   onMediaReject={(it) => A.mediaReject(it.detail)}
+                  onGateApprove={(it) => A.gateApprove(it)}
+                  onGateReject={(it) => A.gateReject(it)}
                 />
               </div>
               {approved.length > 0 && (
@@ -1843,6 +1919,31 @@ function mediaToInbox(m) {
       ],
     ],
     detail: { ...m, stage: 'gate_2_review' },
+  };
+}
+
+// Map a /api/gates/pending row → Action Inbox item shape (kind='gate').
+// `g.artifact` is the operator-review payload the approval_gate atom captured
+// (gate_artifact_keys) — for seo_refresh_gate: title, post_slug, and the
+// PROPOSED seo_title/seo_description under review. detail carries the whole
+// row for the drawer branch.
+function gateToInbox(g) {
+  const PX = window.PX;
+  const a = g.artifact || {};
+  return {
+    id: g.task_id,
+    kind: 'gate',
+    priority: 1,
+    title:
+      a.title || g.title || g.topic || `Task ${String(g.task_id).slice(0, 8)}`,
+    sub: [
+      ['GATE', g.gate_name || '—'],
+      ['QUERY', a.target_query || '—'],
+      ['TASK', String(g.task_id).slice(0, 8)],
+    ],
+    age: g.gate_paused_at ? PX.ago(minsSince(g.gate_paused_at)) : '',
+    tags: [['amber', 'PAUSED']],
+    detail: { ...g, artifact: a, task: g.task_id },
   };
 }
 

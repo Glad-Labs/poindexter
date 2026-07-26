@@ -551,6 +551,96 @@ class TestReject:
                 pool=fake_pool,
             )
 
+    async def test_status_override_beats_settings(self, fake_pool, patched_audit):
+        """An explicit status_override (automated callers, e.g. the gate-expiry
+        sweep) outranks the per-gate reject-status setting."""
+        fake_pool.store.tasks["t-1"] = {
+            "status": "awaiting_gate",
+            "awaiting_gate": "seo_refresh_gate",
+            "gate_artifact": "{}",
+            "gate_paused_at": datetime.now(timezone.utc),
+        }
+        cfg = _make_site_config({
+            "approval_gate_seo_refresh_gate_reject_status": "rejected",
+        })
+        result = await reject(
+            task_id="t-1",
+            site_config=cfg,
+            pool=fake_pool,
+            status_override="dismissed",
+        )
+        assert result["new_status"] == "dismissed"
+        assert fake_pool.store.tasks["t-1"]["status"] == "dismissed"
+
+    async def test_record_outcome_false_skips_learning_loop(
+        self, fake_pool, patched_audit,
+    ):
+        """record_outcome=False (automated expiry) must not feed the
+        variant-weight loop; the default (True) must."""
+        fake_pool.store.tasks["t-1"] = {
+            "status": "awaiting_gate",
+            "awaiting_gate": "seo_refresh_gate",
+            "gate_artifact": "{}",
+            "gate_paused_at": datetime.now(timezone.utc),
+        }
+        from unittest.mock import AsyncMock
+
+        outcome = AsyncMock()
+        with patch(
+            "services.router_outcome_feedback.record_task_outcome", new=outcome,
+        ):
+            await reject(
+                task_id="t-1",
+                site_config=_make_site_config(),
+                pool=fake_pool,
+                record_outcome=False,
+            )
+        outcome.assert_not_awaited()
+
+        fake_pool.store.tasks["t-2"] = {
+            "status": "awaiting_gate",
+            "awaiting_gate": "seo_refresh_gate",
+            "gate_artifact": "{}",
+            "gate_paused_at": datetime.now(timezone.utc),
+        }
+        with patch(
+            "services.router_outcome_feedback.record_task_outcome", new=outcome,
+        ):
+            await reject(
+                task_id="t-2",
+                site_config=_make_site_config(),
+                pool=fake_pool,
+            )
+        outcome.assert_awaited_once()
+
+    async def test_actor_threads_into_rejection_context(
+        self, fake_pool, patched_audit,
+    ):
+        """The reject actor reaches the per-gate rejection handler so it can
+        distinguish an operator veto from an automated sweep."""
+        fake_pool.store.tasks["t-1"] = {
+            "status": "awaiting_gate",
+            "awaiting_gate": "seo_refresh_gate",
+            "gate_artifact": "{}",
+            "gate_paused_at": datetime.now(timezone.utc),
+        }
+        from unittest.mock import AsyncMock
+
+        dispatched = AsyncMock()
+        with patch(
+            "services.rejection_handlers.dispatch_rejection", new=dispatched,
+        ):
+            await reject(
+                task_id="t-1",
+                actor="staleness_sweep",
+                site_config=_make_site_config(),
+                pool=fake_pool,
+            )
+        dispatched.assert_awaited_once()
+        ctx = dispatched.await_args.args[0]
+        assert ctx.actor == "staleness_sweep"
+        assert ctx.gate_name == "seo_refresh_gate"
+
 
 @pytest.mark.asyncio
 class TestListPending:

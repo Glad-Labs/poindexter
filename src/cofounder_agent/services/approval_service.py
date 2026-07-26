@@ -684,6 +684,8 @@ async def reject(
     actor: str = "human",
     site_config: Any,
     pool: Any,
+    status_override: str | None = None,
+    record_outcome: bool = True,
 ) -> dict[str, Any]:
     """Reject the artifact at the named gate.
 
@@ -698,9 +700,18 @@ async def reject(
         task_id: UUID of the content_tasks row.
         gate_name: Optional name to assert.
         reason: Optional operator-supplied veto reason.
-        actor: Who triggered the rejection — 'human' for CLI/MCP/REST.
+        actor: Who triggered the rejection — 'human' for CLI/MCP/REST,
+            'staleness_sweep' for the gate-expiry job.
         site_config: SiteConfig (DI).
         pool: asyncpg pool.
+        status_override: Explicit terminal status for THIS rejection,
+            bypassing the per-gate ``approval_gate_<gate>_reject_status``
+            setting. Used by automated callers (the gate-expiry sweep sets
+            ``dismissed``) so their semantics don't hinge on a setting that
+            also governs manual rejects.
+        record_outcome: When False, skip the outcome→variant-weight feedback
+            loop. An automated expiry is queue hygiene, not a human quality
+            judgment — it must not count as negative training signal.
 
     Returns:
         ``{"ok": True, "task_id": ..., "gate_name": ...,
@@ -727,8 +738,11 @@ async def reject(
     # value via app_settings (``approval_gate_<gate>_reject_status``).
     # Fallback is the global ``rejected``. This lets a topic_decision
     # gate dismiss-not-reject (so the task is closed cleanly) while a
-    # final_media gate fully rejects (so retry logic kicks in).
-    new_status = resolve_reject_status(site_config, rejected_gate, DEFAULT_REJECT_STATUS)
+    # final_media gate fully rejects (so retry logic kicks in). An explicit
+    # ``status_override`` (automated callers) outranks both.
+    new_status = status_override or resolve_reject_status(
+        site_config, rejected_gate, DEFAULT_REJECT_STATUS
+    )
 
     async with pool.acquire() as conn:
         await conn.execute(
@@ -776,11 +790,14 @@ async def reject(
     # Outcome → variant-weight feedback loop (#361 part 1). Gate-based
     # rejection surface. Backfills atom_runs.decision (the reject path's
     # historic gap) + nudges the task's variant weight(s) down.
-    # Best-effort — never breaks the rejection.
-    await _record_router_outcome(
-        pool=pool, task_id=str(task_id), decision="rejected",
-        site_config=site_config,
-    )
+    # Best-effort — never breaks the rejection. Skipped when the caller is
+    # automated (record_outcome=False): a staleness expiry says nothing
+    # about the content's quality.
+    if record_outcome:
+        await _record_router_outcome(
+            pool=pool, task_id=str(task_id), decision="rejected",
+            site_config=site_config,
+        )
 
     # Per-gate rejection handler — turns the rejection into a learning
     # signal (#148). Topic decisions weight-down the brain; preview
@@ -801,6 +818,7 @@ async def reject(
             artifact=_coerce_artifact(row.get("gate_artifact")),
             pool=pool,
             site_config=site_config,
+            actor=actor,
         )
         await dispatch_rejection(ctx)
     except Exception as exc:  # pragma: no cover — defensive

@@ -784,6 +784,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # SEO Harvest Loop Phase 2c — measure GSC position/CTR delta N days after
         # a refresh (read-only). Proves the loop works.
         ("jobs", "services.jobs.measure_seo_refresh_outcomes", "MeasureSeoRefreshOutcomesJob"),
+        # SEO Harvest gate hygiene — dismiss seo_refresh runs parked at the
+        # approval gate past seo.refresh.gate_max_parked_days (default 14; 0
+        # disables) and reopen their opportunity rows. The gate-parked
+        # complement of the flow's reclaim_stale_inprogress_tasks sweep.
+        ("jobs", "services.jobs.expire_stale_seo_refresh_gates", "ExpireStaleSeoRefreshGatesJob"),
         # Niche topic-discovery sweep — calls TopicBatchService.run_sweep
         # per active niche on a 30-min cadence. Per-niche cadence floor
         # (niches.discovery_cadence_minute_floor) gates the actual work.

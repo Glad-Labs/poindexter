@@ -1933,6 +1933,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.seo_refresh_outcome.fallback': 'log_only',
     'findings.seo_refresh_outcome.cooldown_minutes': '1440',
     'findings.seo_refresh_outcome.min_severity': 'warn',
+    # expire_stale_seo_refresh_gates emits seo_refresh_gate_expired when
+    # unreviewed gate-parked runs age out (seo.refresh.gate_max_parked_days)
+    # and are dismissed with their opportunities reopened. Routine hygiene →
+    # Discord, same posture as the two kinds above.
+    'findings.seo_refresh_gate_expired.delivery': 'discord',
+    'findings.seo_refresh_gate_expired.fallback': 'log_only',
+    'findings.seo_refresh_gate_expired.cooldown_minutes': '1440',
+    'findings.seo_refresh_gate_expired.min_severity': 'warn',
     # Settings-lifecycle orphan candidates (#756). ProbeZeroReaderSettingsJob
     # emits settings_zero_reader_keys at severity='warn' with a stable dedup_key;
     # delivery='discord' pins the routine ops channel (feedback_telegram_vs_discord).
@@ -2416,6 +2424,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # schedules themselves are auto-persisted by PluginScheduler from each job's
     # `schedule` class attribute (plugin.job.<name>), not seeded here.
     'seo.refresh.max_per_run': '3',
+    # Gate hygiene — seo_refresh runs parked at seo_refresh_gate longer than
+    # this are dismissed by ExpireStaleSeoRefreshGatesJob and their
+    # opportunity rows reopened for a fresh future proposal. 0 disables.
+    'seo.refresh.gate_max_parked_days': '14',
+    # Ceiling on one background gate resume (POST /api/gates/pending/…/approve
+    # → services.gate_resume). On timeout the graph run is cancelled and the
+    # approval rolled back — the task re-parks for review.
+    'gate_resume_timeout_seconds': '900',
 
     # ----- R2 media orphan-reaper (design 2026-07-11) -----
     # Dry-run by default: computes + reports orphans but deletes NOTHING until an

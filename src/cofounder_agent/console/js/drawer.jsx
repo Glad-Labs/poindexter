@@ -589,6 +589,103 @@ function Drawer({ entity, onClose, actions }) {
               </button>
             </>
           );
+        } else if (e.kind === 'gate') {
+          // Graph approval gate (kind='gate' — /api/gates/pending rows). The
+          // artifact is the operator-review payload the approval_gate atom
+          // captured; for seo_refresh_gate that's the PROPOSED seo_title /
+          // seo_description (the actual thing approval republishes). Other
+          // gates fall back to a generic artifact listing so a future gate
+          // never opens a blank drawer (the #2363 lesson).
+          const a = d.artifact || {};
+          const gateName = d.gate_name || 'gate';
+          const isSeoMeta = !!(a.seo_title || a.seo_description);
+          const generic = Object.entries(a)
+            .filter(([k]) => !['gate', 'task_id'].includes(k))
+            .map(([k, v]) => [
+              k,
+              typeof v === 'object' ? JSON.stringify(v) : String(v),
+            ]);
+          eyebrow = `PIPELINE · PAUSED · ${String(gateName).toUpperCase()}`;
+          title = a.title || e.title;
+          body = (
+            <>
+              {isSeoMeta ? (
+                <>
+                  <div className="section-label">
+                    Proposed meta · goes live on approve
+                  </div>
+                  <div
+                    className="preview"
+                    style={{ borderLeftColor: 'var(--gl-amber)' }}
+                  >
+                    <h4 style={{ fontSize: 15 }}>
+                      {a.seo_title || (
+                        <span className="c-dim">(title unchanged)</span>
+                      )}
+                    </h4>
+                    <p style={{ margin: 0, lineHeight: 1.5 }}>
+                      {a.seo_description || (
+                        <span className="c-dim">(description unchanged)</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="section-label">Current post</div>
+                  <DL
+                    rows={[
+                      ['Title', a.title || '—'],
+                      ['Slug', a.post_slug || '—'],
+                      ['Target query', a.target_query || '(page-level)'],
+                    ]}
+                  />
+                </>
+              ) : generic.length ? (
+                <>
+                  <div className="section-label">Under review</div>
+                  <DL rows={generic} />
+                </>
+              ) : (
+                <div className="preview">
+                  <p className="c-dim" style={{ margin: 0 }}>
+                    No review artifact on this gate.
+                  </p>
+                </div>
+              )}
+              <div className="section-label">Routing</div>
+              <DL
+                rows={[
+                  ['Gate', gateName],
+                  ['Task', String(d.task_id || e.id).slice(0, 8)],
+                  ['Status', d.status || 'awaiting_gate'],
+                  ['Paused', e.age || '—'],
+                ]}
+              />
+            </>
+          );
+          // Approve → records the approval and resumes the paused graph from
+          // its checkpoint server-side (202; a failed resume rolls back and
+          // the row reappears on the next poll). Reject → dismisses the run.
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                title="Approve — resume the paused pipeline"
+                onClick={() => actions.gateApprove(e)}
+              >
+                <Icon name="check" size={13} />
+                Approve · resume pipeline
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                title="Reject — dismiss this run"
+                onClick={() => actions.gateReject(e)}
+              >
+                <Icon name="x" size={13} />
+                Reject
+              </button>
+            </>
+          );
         }
         break;
       }
