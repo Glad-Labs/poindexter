@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-24.**  
+> **Auto-generated from live `app_settings` table on 2026-07-26.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 689 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -562,7 +562,7 @@ The worker re-reads on every poll; no restart needed.
 | `use_ollama` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_feed_name` | `` |  | Video RSS feed title |
-| `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `video_negative_prompt` | `bright tones, overexposed, static, bl...` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |
