@@ -1729,7 +1729,14 @@ services:
       # Empty = no-op; the software estimate covers wall power.
       SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
     volumes:
-      - ./scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
+      # Anchored to POINDEXTER_DEPLOY_ROOT like the /brain mount below it.
+      # A bare `./` resolves to the compose PROJECT dir, which on this host is
+      # the operator working checkout — so the container ran whatever code
+      # happened to be in Matt's tree (2 commits behind and dirty at the time
+      # of writing) and merged exporter changes never reached the running
+      # process, no matter what the deploy rebuild map said. `:-.` keeps it a
+      # no-op wherever the var is unset.
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
