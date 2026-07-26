@@ -2,8 +2,14 @@
 
 The first concrete :class:`VideoProvider <plugins.video_provider.VideoProvider>`
 implementation. Tracks GitHub #124 — adds a true T2V engine alongside
-the legacy Ken Burns slideshow pipeline so a single
-``app_settings.video_engine`` flip can swap between them.
+the legacy Ken Burns slideshow pipeline.
+
+**Live as of 2026-07.** ``services/video_renderers/shot_list_renderer.py``
+imports this provider directly to render hero clips (image-to-video from
+the shot's stylized still when one exists, else text-to-video); Ken Burns
+composes the remainder of the timeline. There is no global engine switch —
+the ``app_settings.video_engine`` flip earlier docstrings promised was never
+implemented and has no readers (Glad-Labs/poindexter#669).
 
 License: **Apache-2.0** (`Wan-AI/Wan2.1-T2V-1.3B`). The 14B variant
 (also Apache-2.0) ships in a follow-up ticket once 1.3B is producing
@@ -406,10 +412,10 @@ async def _generate_to_path(
         # GH#124 acceptance criteria + the no-silent-defaults rule.
         logger.error(
             "[Wan21Provider] inference server unreachable at %s: %s. "
-            "Stand up the Wan 2.1 1.3B inference server (default port "
-            "9840) or set plugin.video_provider.wan2.1-1.3b.server_url. "
-            "Until then, leave app_settings.video_engine on the legacy "
-            "engine to avoid pipeline regressions.",
+            "Stand up the Wan inference server (default port 9840) or set "
+            "plugin.video_provider.wan2.1-1.3b.server_url. Until then the "
+            "shot-list renderer falls back to the Ken Burns slideshow for "
+            "the hero clip (hero_render_fallback finding).",
             server_url, e,
         )
         return False

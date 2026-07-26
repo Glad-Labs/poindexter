@@ -14,9 +14,12 @@ Two implementation styles, mirroring the ImageProvider split:
   images + audio into an MP4. Read ``image_paths`` + ``audio_path``
   from config; ignore the prompt argument (or use it as a title).
 
-Both paths produce the same ``list[VideoResult]`` shape so
-``video_service`` can swap between them via a single
-``app_settings.video_engine`` flip.
+Both paths produce the same ``list[VideoResult]`` shape, so a caller can
+swap between them without changing how it consumes the result. Which
+provider runs is decided **per call site** today — the shot-list renderer
+imports ``Wan21Provider`` directly for hero clips — not by a global
+setting (Glad-Labs/poindexter#669 retired the never-implemented
+``app_settings.video_engine`` flip that earlier docstrings promised).
 
 Register a VideoProvider via ``pyproject.toml``:
 
@@ -136,9 +139,10 @@ class VideoProvider(Protocol):
       a slideshow MP4. Faster (5-30s) but requires the caller to supply
       ``image_paths`` + ``audio_path`` in config.
 
-    Both paths produce the same ``list[VideoResult]`` shape so
-    ``video_service`` can swap between them via a single
-    ``app_settings.video_engine`` flip.
+    Both paths produce the same ``list[VideoResult]`` shape, so the two
+    are interchangeable from the caller's side. The choice is made at the
+    call site (see the module docstring) — there is no global engine
+    setting.
 
     Attributes:
         name: Unique plugin name (matches the entry_point key + the
