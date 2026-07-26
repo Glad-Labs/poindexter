@@ -50,9 +50,11 @@
      rebuild       POST /api/export/rebuild  (full static re-export + ISR revalidate)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
-   NOTE: /api/modules/probes returns {count:0,probes:[]} today — it is module
-   discovery, NOT service health. Service health = cAdvisor container_last_seen
-   (covers all ~39 containers; up{} only has the ~12 scrape targets) + /api/health.
+   NOTE: /api/modules/probes is Module-v1 probe discovery — brain probes
+   registered by installed modules, so count follows the module set (0 only
+   when no installed module registers one) — NOT service health. Service
+   health = cAdvisor container_last_seen (covers all ~39 containers; up{}
+   only has the ~12 scrape targets) + /api/health.
    ══════════════════════════════════════════════════════════════ */
 (function () {
   const LS = window.localStorage;
@@ -66,7 +68,8 @@
     prometheus:
       LS.getItem('px_prom') ??
       `http://${(window.location && window.location.hostname) || 'localhost'}:9091`,
-    // Grafana embed/deeplink base — same host-relative default as prometheus.
+    // Grafana deeplink base — same host-relative default as prometheus. (No
+    // embeds remain — the Telemetry charts are native; see console README §4.)
     grafana:
       LS.getItem('px_grafana') ??
       `http://${(window.location && window.location.hostname) || 'localhost'}:3000`,

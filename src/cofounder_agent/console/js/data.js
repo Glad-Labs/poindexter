@@ -1029,6 +1029,8 @@
       { rail: 'qa.unlinked_attribution', gate: 'advisory' },
       { rail: 'qa.consistency', gate: 'advisory' },
       { rail: 'qa.self_consistency', gate: 'advisory' },
+      { rail: 'qa.content_originality', gate: 'advisory' },
+      { rail: 'qa.title_coherence', gate: 'advisory' },
       { rail: 'qa.web_factcheck', gate: 'advisory' },
     ],
     reasons: [

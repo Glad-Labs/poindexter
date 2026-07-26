@@ -157,7 +157,7 @@ without a backend.
 
 ---
 
-## 4. Telemetry surface (logs · traces · embedded Grafana)
+## 4. Telemetry surface (logs · traces · native history charts)
 
 The **Telemetry** rail tab brings the deep-dive surfaces into the console so
 day-to-day operation no longer requires opening Grafana directly:
@@ -177,19 +177,33 @@ day-to-day operation no longer requires opening Grafana directly:
   Docker-internal name (`http://langfuse-web:3000`) the worker uses server-side
   and the browser can't resolve. Set `langfuse_public_url` to your tailnet URL
   if you drive the console from another device.
-- **Grafana** — embedded `/d-solo` iframes for the rich time-series history
-  charts and the Database internals board (the views the console's instant
-  Prometheus queries can't render). Base URL is the client-side `px_grafana`
-  Connection setting (default `http://localhost:3000`), set via
-  `PX.api.setGrafanaEmbed(url)` like `px_prom`.
+- **History charts — native, zero iframes.** Three sections of time-series
+  charts rendered by the console's own zero-dep SVG `TimeChart`
+  (`js/charts.jsx`; chart math in `js/timeseries.js`, colorblind-safe via
+  dash + end-label rather than hue):
+  - **HISTORY** — API request/error rate + p95/p99 latency, pipeline
+    throughput, LLM spend, QA pass-rate, findings by severity.
+  - **GPU & POWER** — GPU utilization / temperature / VRAM / power draw,
+    system power, electricity cost.
+  - **DATABASE** — connections (total + by state), cache-hit ratio,
+    transaction rate, database size, dead tuples.
 
-**Grafana embed prerequisite:** the Grafana service must allow framing —
-`GF_SECURITY_ALLOW_EMBEDDING=true` plus anonymous Viewer
-(`GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`), already
-wired into the `grafana` service in the compose files. Safe because Grafana is
-local/tailnet-only. Recreate Grafana after a fresh pull to apply:
-`docker compose -f docker-compose.local.yml up -d grafana`. Until embedding is
-enabled the iframes are refused with `X-Frame-Options: deny`.
+  Each section has its own range control (1h / 6h / 24h / 7d, ~240 points per
+  range) and every chart polls on a 30s cadence with an explicit
+  freshness/stale marker. Series come from Prometheus
+  `GET /api/v1/query_range` (the `:9091` base from the Connection panel) for
+  the API/GPU/power/database reads, and from worker trend routes
+  (`GET /api/qa/trend`, `GET /api/findings/trend`) for the QA + findings
+  reads.
+
+- **Grafana** — a **deeplink now, not an embed**: the LAUNCH panel tiles and
+  the ⌘K Launch group open Grafana (alongside Prefect / Langfuse / GlitchTip /
+  Pyroscope / pgAdmin / Prometheus) host-relative in a new tab. The embedded
+  `/d-solo` iframes this section used to document are gone — see the "Killing
+  the Iframe" dev-diary post — so `GF_SECURITY_ALLOW_EMBEDDING` is **no longer
+  a console prerequisite** (the compose files still set it, and anonymous
+  Viewer still makes the deeplinked boards render sign-in-free, but the
+  console renders fully without either).
 
 ---
 
