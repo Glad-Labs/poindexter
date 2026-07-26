@@ -32,6 +32,15 @@ Set ``app_settings.sentry_dsn`` to a GlitchTip DSN to enable:
 Set ``sentry_enabled=false`` to disable reporting (e.g. local dev without
 GlitchTip running). The legacy ``SENTRY_DSN`` env var is also honoured for
 bootstrap paths that run before app_settings is reachable.
+
+Sampling and SDK-debug knobs (all read from ``app_settings``):
+
+* ``sentry_traces_sample_rate`` (default ``0.1``) — fraction of requests
+  captured as performance traces.
+* ``sentry_profiles_sample_rate`` (default ``0.1``) — fraction captured as
+  CPU profiles.
+* ``sentry_sdk_debug`` (default ``false``) — the SDK's own diagnostic
+  logging. Legacy alias ``sentry_debug_logging`` is still honoured.
 """
 
 import logging
@@ -141,10 +150,25 @@ class SentryIntegration:
         # error counter in Grafana picks them all up as false positives.
         # Operators flip this on only when actively troubleshooting the
         # SDK; default off everywhere.
-        sentry_debug_logging = (
-            (site_config.get("sentry_debug_logging", "false") or "false").lower()
-            in ("true", "1", "yes")
-        )
+        # ``sentry_sdk_debug`` is the seeded/documented key; ``sentry_debug_logging``
+        # is the legacy name this code used to read. Only the legacy one was ever
+        # read and only the canonical one was ever seeded, so neither did anything
+        # on a default install. Canonical wins when explicitly set (non-empty —
+        # '' is the unset sentinel); otherwise fall back to the legacy alias so an
+        # operator who set it by hand keeps working.
+        if (site_config.get("sentry_sdk_debug", "") or "").strip():
+            sentry_debug_logging = site_config.get_bool("sentry_sdk_debug", False)
+        else:
+            sentry_debug_logging = site_config.get_bool("sentry_debug_logging", False)
+
+        # Sampling rates are operator-tunable, NOT hardcoded. Defaults match the
+        # seeded values (0.1) so an unconfigured install behaves identically in
+        # every environment. The previous literal was
+        # ``0.1 if environment == "production" else 1.0``, which meant the DB rows
+        # were inert and every non-production process traced at 100% — ~50 DEBUG
+        # lines/sec, and a suspected contributor to the 2026-05-15 event-loop hang.
+        traces_sample_rate = site_config.get_float("sentry_traces_sample_rate", 0.1)
+        profiles_sample_rate = site_config.get_float("sentry_profiles_sample_rate", 0.1)
 
         # Skip initialization if DSN not configured or explicitly disabled.
         # Do NOT set _initialized here — lifespan re-runs this after site_config
@@ -181,20 +205,17 @@ class SentryIntegration:
                 # Environment and release information
                 environment=environment,
                 release=release,
-                # Performance monitoring configuration
-                traces_sample_rate=(
-                    0.1 if environment == "production" else 1.0
-                ),  # 10% in prod, 100% in dev
-                profiles_sample_rate=(
-                    0.1 if environment == "production" else 1.0
-                ),  # Profile 10% of transactions
+                # Performance monitoring configuration — app_settings-driven
+                # (sentry_traces_sample_rate / sentry_profiles_sample_rate).
+                traces_sample_rate=traces_sample_rate,
+                profiles_sample_rate=profiles_sample_rate,
                 # Before sending event to Sentry (filter sensitive data)
                 before_send=cls._before_send,  # type: ignore[arg-type]
                 # Include local variables in stack traces
                 include_local_variables=True,
                 # Error attachment configurations
                 max_value_length=4096,  # Max value length for variable inspection
-                # SDK-internal debug logging — gated by app_settings.sentry_debug_logging
+                # SDK-internal debug logging — gated by app_settings.sentry_sdk_debug
                 # (default false). Avoids the ~290k/day false-positive
                 # "error" count from `sentry_sdk.errors` DEBUG chatter.
                 debug=sentry_debug_logging,
@@ -209,6 +230,7 @@ class SentryIntegration:
             # shouldn't go in logs. Log only host+path.
             try:
                 from urllib.parse import urlparse
+
                 _parsed = urlparse(sentry_dsn)
                 _safe_endpoint = f"{_parsed.scheme}://{_parsed.hostname or '?'}"
                 if _parsed.port:
@@ -220,7 +242,8 @@ class SentryIntegration:
             logger.info("[SENTRY] SDK initialized — endpoint=%s", _safe_endpoint)
             logger.info("   Environment: %s", environment)
             logger.info("   Release: %s", release)
-            logger.info("   Traces Sample Rate: %s", 0.1 if environment == 'production' else 1.0)
+            logger.info("   Traces Sample Rate: %s", traces_sample_rate)
+            logger.info("   Profiles Sample Rate: %s", profiles_sample_rate)
 
             cls._initialized = True
             cls._sentry_enabled = True

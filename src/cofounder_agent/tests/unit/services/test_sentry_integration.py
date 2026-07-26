@@ -9,11 +9,18 @@ _has_sentry = find_spec("sentry_sdk") is not None
 
 
 def _stub_site_config(values: dict | None = None) -> MagicMock:
-    """Build a SiteConfig stub that responds to ``.get(key, default)``.
+    """Build a SiteConfig stub responding to ``.get``/``.get_float``/``.get_bool``.
 
     Mirrors the DI seam introduced in Phase H — sentry_integration no
     longer reaches for the deprecated module-level singleton, so tests
     inject a per-test stub instead of patching env vars.
+
+    The typed accessors delegate to the same dict and reproduce the real
+    ``SiteConfig`` coercion, including falling back to the default when the
+    stored value is unparseable or the empty-string unset sentinel. A stub
+    defining only ``.get`` would hand back a bare ``MagicMock`` from
+    ``get_float`` and sail straight into ``sentry_sdk.init`` — assertions
+    would pass while the real call site was broken.
     """
     cfg = MagicMock()
     data = values or {}
@@ -21,7 +28,18 @@ def _stub_site_config(values: dict | None = None) -> MagicMock:
     def _get(key, default=""):
         return data.get(key, default)
 
+    def _get_float(key, default=0.0):
+        try:
+            return float(data.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    def _get_bool(key, default=False):
+        return str(data.get(key, default)).lower() in ("true", "1", "yes", "on")
+
     cfg.get = _get
+    cfg.get_float = _get_float
+    cfg.get_bool = _get_bool
     return cfg
 
 
@@ -115,8 +133,12 @@ class TestSentryIntegration:
 
     @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
     @patch("services.sentry_integration.sentry_sdk")
-    def test_sdk_debug_opt_in_via_app_settings(self, mock_sentry):
-        """Operator can flip on SDK debug for active troubleshooting."""
+    def test_sdk_debug_opt_in_via_legacy_alias(self, mock_sentry):
+        """Legacy ``sentry_debug_logging`` still works (backcompat shim).
+
+        This was the only name the code ever read, so an operator who set it
+        by hand must keep working after the switch to ``sentry_sdk_debug``.
+        """
         from services.sentry_integration import SentryIntegration
 
         cfg = _stub_site_config({
@@ -128,6 +150,42 @@ class TestSentryIntegration:
         SentryIntegration.initialize(MagicMock(), cfg)
         kwargs = mock_sentry.init.call_args.kwargs
         assert kwargs["debug"] is True
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_sdk_debug_opt_in_via_canonical_key(self, mock_sentry):
+        """``sentry_sdk_debug`` is the seeded key and must actually be read.
+
+        Before this wiring it was seeded and documented but read by nothing,
+        while the code read the never-seeded ``sentry_debug_logging`` — so the
+        knob did nothing on any default install.
+        """
+        from services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            "environment": "production",
+            "sentry_sdk_debug": "true",
+        })
+        SentryIntegration.initialize(MagicMock(), cfg)
+        assert mock_sentry.init.call_args.kwargs["debug"] is True
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_sdk_debug_canonical_key_wins_over_legacy(self, mock_sentry):
+        """An explicit canonical value overrides the legacy alias."""
+        from services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            "environment": "production",
+            "sentry_sdk_debug": "false",
+            "sentry_debug_logging": "true",
+        })
+        SentryIntegration.initialize(MagicMock(), cfg)
+        assert mock_sentry.init.call_args.kwargs["debug"] is False
 
     @patch("services.sentry_integration.sentry_sdk")
     def test_initialize_already_initialized_skips(self, mock_sentry):
@@ -629,3 +687,124 @@ class TestInitializeSdkUnavailable:
         assert result is False
         # Should not have set _initialized=True (returns early)
         assert SentryIntegration._initialized is False
+
+
+@pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
+class TestSentrySampleRates:
+    """Sample rates must come from app_settings, not a hardcoded literal.
+
+    Both keys were seeded and documented in the settings reference, so an
+    operator could set them — but ``sentry_sdk.init`` hardcoded
+    ``0.1 if environment == "production" else 1.0`` and never read the rows.
+    Setting either silently did nothing (Glad-Labs/poindexter#918), and every
+    non-production process traced at 100%.
+    """
+
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._initialized = False
+        SentryIntegration._sentry_enabled = False
+
+    def _init(self, mock_sentry, extra: dict) -> dict:
+        from services.sentry_integration import SentryIntegration
+
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            **extra,
+        })
+        SentryIntegration.initialize(MagicMock(), cfg)
+        return mock_sentry.init.call_args.kwargs
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_operator_set_rates_are_honoured(self, mock_sentry):
+        kwargs = self._init(mock_sentry, {
+            "environment": "production",
+            "sentry_traces_sample_rate": "0.5",
+            "sentry_profiles_sample_rate": "0.25",
+        })
+        assert kwargs["traces_sample_rate"] == 0.5
+        assert kwargs["profiles_sample_rate"] == 0.25
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    @pytest.mark.parametrize("environment", ["production", "development"])
+    def test_unset_defaults_to_seeded_value_in_every_environment(
+        self, mock_sentry, environment
+    ):
+        """Unset -> 0.1, matching the seeded default, in ALL environments.
+
+        Deliberately NOT the old ``1.0`` outside production: the seed
+        description records that literal as producing ~50 DEBUG lines/sec and
+        a suspected contributor to the 2026-05-15 event-loop hang. The
+        ``development`` case is the one that actually pins the fix — in
+        production the old literal and the seeded default coincide at 0.1.
+        """
+        kwargs = self._init(mock_sentry, {"environment": environment})
+        assert kwargs["traces_sample_rate"] == 0.1
+        assert kwargs["profiles_sample_rate"] == 0.1
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_unparseable_and_empty_values_fall_back(self, mock_sentry):
+        """'' is the documented unset sentinel; garbage must not crash init."""
+        kwargs = self._init(mock_sentry, {
+            "environment": "production",
+            "sentry_traces_sample_rate": "",
+            "sentry_profiles_sample_rate": "not-a-number",
+        })
+        assert kwargs["traces_sample_rate"] == 0.1
+        assert kwargs["profiles_sample_rate"] == 0.1
+
+    @patch("services.sentry_integration.SqlAlchemyIntegration", MagicMock())
+    @patch("services.sentry_integration.sentry_sdk")
+    def test_rates_are_real_floats_not_mocks(self, mock_sentry):
+        """Guards the stub-shape trap that would make this suite vacuous.
+
+        If the call site reads a typed accessor the stub does not define, the
+        value silently becomes a ``MagicMock`` and the equality assertions
+        above would still pass by identity.
+        """
+        kwargs = self._init(mock_sentry, {"environment": "production"})
+        assert isinstance(kwargs["traces_sample_rate"], float)
+        assert isinstance(kwargs["profiles_sample_rate"], float)
+        assert isinstance(kwargs["debug"], bool)
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("sentry_traces_sample_rate", "0.1"),
+        ("sentry_profiles_sample_rate", "0.1"),
+        ("sentry_sdk_debug", "false"),
+    ],
+)
+def test_inline_default_matches_seeded_default(key: str, expected: str) -> None:
+    """The call-site fallback must equal the seeded value.
+
+    ``settings_seed_value_drift_lint`` locks the seed files to each other but
+    structurally cannot see an inline ``site_config.get_float(key, <literal>)``
+    fallback — an expression is not a seed row. If the two disagree, a fresh
+    install (which gets the seeded row) and an install whose row was deleted
+    (which gets the inline default) behave differently for the same key. Same
+    rationale as ``test_inline_defaults_match_seed.py``.
+    """
+    import re
+    from pathlib import Path
+
+    seeds = (
+        Path(__file__).resolve().parents[5]
+        / "src"
+        / "cofounder_agent"
+        / "services"
+        / "migrations"
+        / "0000_baseline.seeds.sql"
+    ).read_text(encoding="utf-8")
+    m = re.search(rf"VALUES \('{re.escape(key)}',\s*'([^']*)'", seeds)
+    assert m, f"{key!r} is no longer seeded in 0000_baseline.seeds.sql"
+    assert m.group(1) == expected, (
+        f"seeded default for {key!r} is {m.group(1)!r} but the inline fallback in "
+        f"services/sentry_integration.py is {expected!r} — make them agree"
+    )
