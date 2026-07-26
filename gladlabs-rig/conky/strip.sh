@@ -102,10 +102,21 @@ done < <(nvidia-smi --query-gpu=temperature.gpu,power.draw,power.limit,utilizati
 LOOP_COOL="--" LOOP_BLOCK="--" LOOP_PUMP="--" LOOP_FN=0 LOOP_FMIN="--" LOOP_FMAX="--" LOOP_FAVG="--" LOOP_AIR="--"
 eval "$(python3 "$HOME/.config/conky/loop-poll.py" 2>/dev/null)"
 
-# graph caches (execgraph reads these; numbers only, 0 on missing)
+# graph caches — execgraph only accepts 0-100, so everything is a percent:
+# gpu0 = util %, gpu1 = power % of its limit (util is ~always 0 on the
+# compute-only 3090), watts = % of the PSU's 1500 W capacity (matches the PSU bar)
 [[ $G0U =~ ^[0-9]+$ ]] && printf '%s' "$G0U" > "$RD/strip-gpu0" || printf '0' > "$RD/strip-gpu0"
-[[ $G1U =~ ^[0-9]+$ ]] && printf '%s' "$G1U" > "$RD/strip-gpu1" || printf '0' > "$RD/strip-gpu1"
-[[ $PTOT =~ ^[0-9]+$ ]] && printf '%s' "$PTOT" > "$RD/strip-watts" || printf '0' > "$RD/strip-watts"
+if [[ $G1P =~ ^[0-9]+$ && $G1L =~ ^[0-9]+$ && $G1L -gt 0 ]]; then
+  printf '%s' $(( G1P*100/G1L )) > "$RD/strip-gpu1"
+else
+  printf '0' > "$RD/strip-gpu1"
+fi
+if [[ $PTOT =~ ^[0-9]+$ ]]; then
+  WPCT=$(( PTOT*100/1500 )); [ "$WPCT" -gt 100 ] && WPCT=100
+  printf '%s' "$WPCT" > "$RD/strip-watts"
+else
+  printf '0' > "$RD/strip-watts"
+fi
 
 C1=28 C2=512 C3=992 C4=1464
 
