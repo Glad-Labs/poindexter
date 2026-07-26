@@ -1,7 +1,7 @@
 # GPU scheduler: queue + admission semantics — design
 
 **Date:** 2026-07-26
-**Status:** proposed — pending Matt review
+**Status:** phase 0 (observe) + phase 1 (contracts + admission) landed — P1 inert behind `gpu_sched_enabled=false` with zero contract callers; P2 caller migration pending soak
 **Author:** Claude (with Matt)
 **Issue:** Glad-Labs/poindexter#914
 

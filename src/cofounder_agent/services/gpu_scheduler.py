@@ -60,10 +60,13 @@ Usage:
 """
 
 import asyncio
+import itertools
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -249,6 +252,120 @@ def _emit_cfg_fetch_finding(
         )
 
 
+# Priority classes for the in-process wait queue (poindexter#914 P1, spec §2):
+# pipeline (graph nodes) > operator (console/MCP-triggered) > background
+# (scheduled jobs: taps, SEO, newsletter). Lower rank wakes first. Unknown
+# strings map to the pipeline rank — a typo must never demote a graph node.
+_PRIORITY_RANKS: dict[str, int] = {"pipeline": 0, "operator": 1, "background": 2}
+
+
+def _default_aging_seconds() -> int:
+    return _cfg_int("gpu_sched_aging_seconds", 300)
+
+
+@dataclass
+class _GateWaiter:
+    rank: int
+    seq: int
+    enqueued: float
+    fut: "asyncio.Future[bool]" = field(compare=False)
+
+
+class _PriorityGate:
+    """asyncio.Lock-compatible gate with priority-class wakeup + aging.
+
+    Surface-identical to ``asyncio.Lock`` (``acquire``/``release``/``locked``)
+    because ``lock()`` and several tests use exactly that trio — including
+    direct ``gpu._lock.acquire()`` pokes, which enter at the default (pipeline)
+    rank. **Neutrality proof (P1):** every legacy caller acquires at one rank,
+    so the wake order is ``(rank, seq)`` with a constant rank — strict FIFO,
+    behaviorally identical to ``asyncio.Lock``. Priority only reorders once
+    callers opt into ``gpu.lock(..., priority=...)`` classes.
+
+    Aging (spec §2): a parked waiter's effective rank drops by 1 per full
+    ``gpu_sched_aging_seconds`` waited (floored at 0), so a ``background``
+    waiter is eventually promoted past a stream of later ``pipeline`` arrivals
+    — starvation-proof without ever jumping a same-rank elder (ties break on
+    enqueue sequence). The aging window is read lazily at each wake so the DB
+    setting applies without a restart; tests inject their own callable.
+    """
+
+    def __init__(self, *, aging_seconds: Callable[[], int] | None = None):
+        self._held = False
+        self._waiters: list[_GateWaiter] = []
+        self._seq = itertools.count()
+        self._aging_seconds = aging_seconds or _default_aging_seconds
+
+    def locked(self) -> bool:
+        return self._held
+
+    async def acquire(self, *, rank: int = 0) -> bool:
+        if not self._held and not self._waiters:
+            self._held = True
+            return True
+        waiter = _GateWaiter(
+            rank=rank,
+            seq=next(self._seq),
+            enqueued=time.monotonic(),
+            fut=asyncio.get_running_loop().create_future(),
+        )
+        self._waiters.append(waiter)
+        try:
+            await waiter.fut
+        except asyncio.CancelledError:
+            if waiter.fut.done() and not waiter.fut.cancelled():
+                # The grant landed concurrently with our cancellation (the
+                # classic asyncio.Lock race): we technically held the gate for
+                # an instant — hand it straight to the next waiter so the
+                # grant chain never wedges.
+                self._held = False
+                self._wake_next()
+            else:
+                self._discard(waiter)
+            raise
+        return True
+
+    def release(self) -> None:
+        if not self._held:
+            raise RuntimeError("_PriorityGate.release() called on an unheld gate")
+        self._held = False
+        self._wake_next()
+
+    def _discard(self, waiter: _GateWaiter) -> None:
+        try:
+            self._waiters.remove(waiter)
+        except ValueError:
+            # silent-ok: already dropped by a concurrent _wake_next sweep —
+            # double-removal is the expected race, not a fault.
+            pass
+
+    def _effective_rank(self, waiter: _GateWaiter, now: float, aging_s: int) -> int:
+        if aging_s <= 0 or waiter.rank <= 0:
+            return waiter.rank
+        promoted = int((now - waiter.enqueued) // aging_s)
+        return max(0, waiter.rank - promoted)
+
+    def _wake_next(self) -> None:
+        # Sweep waiters whose future is already done (cancelled while parked).
+        self._waiters = [w for w in self._waiters if not w.fut.done()]
+        if self._held or not self._waiters:
+            return
+        try:
+            aging_s = int(self._aging_seconds())
+        except Exception:
+            # silent-ok: a broken cfg read degrades to no aging (strict class
+            # order); the cfg reader itself already emits the operator finding.
+            aging_s = 0
+        now = time.monotonic()
+        winner = min(
+            self._waiters,
+            key=lambda w: (self._effective_rank(w, now, aging_s), w.seq),
+        )
+        self._waiters.remove(winner)
+        self._held = True
+        winner.fut.set_result(True)
+
+
 class GPUScheduler:
     """Async-safe GPU resource coordinator with gaming detection.
 
@@ -260,10 +377,15 @@ class GPUScheduler:
         this Postgres-level lock even though they run in separate processes.
     """
 
-    def __init__(self):
-        self._lock = asyncio.Lock()
+    def __init__(self) -> None:
+        # _PriorityGate is asyncio.Lock-surface-compatible; all legacy callers
+        # enter at one rank so ordering stays strict FIFO (poindexter#914 P1).
+        self._lock = _PriorityGate()
         self._current_owner: str | None = None  # "ollama", "image_gen", or "video"
         self._current_model: str | None = None
+        self._current_phase: str | None = None
+        # Lazily-built GPURegistry for admission's free/evictable VRAM reads.
+        self._registry: Any = None
         self._acquired_at: float = 0
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
@@ -349,8 +471,8 @@ class GPUScheduler:
         ``None``/0 keeps the legacy unbounded wait.
         """
         try:
-            import asyncpg
-            from brain.bootstrap import resolve_database_url
+            import asyncpg  # type: ignore[import-untyped]
+            from brain.bootstrap import resolve_database_url  # type: ignore[import-untyped]
         except ImportError:
             logger.debug("[GPU] asyncpg/brain.bootstrap unavailable — skipping pg advisory lock")
             return
@@ -376,7 +498,7 @@ class GPUScheduler:
                 await conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY)
             self._pg_lock_conn = conn
             logger.debug("[GPU] pg_advisory_lock acquired (key=%d)", GPU_ADVISORY_LOCK_KEY)
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             # terminate() (not close()) — the session is mid-`pg_advisory_lock`
             # wait, so a graceful close would block behind the same wait.
             # Dropping the socket makes Postgres abandon the lock request.
@@ -440,7 +562,7 @@ class GPUScheduler:
                     "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
                 )
             logger.debug("[GPU] pg_advisory_lock released (key=%d)", GPU_ADVISORY_LOCK_KEY)
-        except (TimeoutError, asyncio.TimeoutError):
+        except TimeoutError:
             logger.warning(
                 "[GPU] pg_advisory_unlock timed out after %ss — terminating "
                 "connection (server releases session advisory locks on "
@@ -519,17 +641,36 @@ class GPUScheduler:
         model: str | None = None,
         task_id: str | None = None,
         phase: str | None = None,
+        max_wait_s: float | None = None,
+        priority: str = "pipeline",
     ):
         """Acquire exclusive GPU access.
 
         Two-tier locking (poindexter#731):
-          1. asyncio.Lock — in-process serialization (cheap, fast).
+          1. _PriorityGate (asyncio.Lock-equivalent for legacy callers) —
+             in-process serialization (cheap, fast).
           2. pg_advisory_lock — cross-process serialization via Postgres
              (blocks a second container from acquiring the GPU while the
              first holds it).  Held on a dedicated asyncpg connection for
              the full duration of the GPU session.
 
         Waits for any gaming/external workload to finish before acquiring.
+
+        Wait contracts (poindexter#914 P1 — spec: docs/superpowers/specs/
+        2026-07-26-gpu-scheduler-queue-admission-design.md):
+          - ``max_wait_s`` opts this call into ADMISSION: before any wait, the
+            pure calculator (``services.gpu_admission.decide``) estimates the
+            holder's remaining time from its ``gpu_lease_stats`` p90 and
+            checks VRAM fit; a hopeless wait raises :class:`GpuBusyError`
+            IMMEDIATELY (honest skip) instead of burning the budget, and the
+            budget also caps the actual lock wait. ``None`` (the default) is
+            the legacy unbounded-contract path — admission never runs.
+          - ``priority`` orders the in-process wait queue: ``pipeline`` >
+            ``operator`` > ``background``, FIFO within a class, background
+            aged upward after ``gpu_sched_aging_seconds``.
+          - Both are DOUBLY inert until ``app_settings.gpu_sched_enabled``
+            is true AND a caller passes a budget — no production call site
+            does yet (P2 migrates them group by group).
 
         Args:
             owner: "ollama" or "image_gen"
@@ -540,6 +681,8 @@ class GPUScheduler:
                 utilisation + electricity cost to the originating task.
             phase: optional pipeline phase label (e.g. "generate_content",
                 "featured_image"). Defaults to ``owner`` when unset.
+            max_wait_s: this caller's wait budget in seconds (None = legacy).
+            priority: wait-queue class — "pipeline" | "operator" | "background".
         """
         # Reentrancy (GPU-serialize fix): if this async call chain already
         # holds the GPU session, a nested acquire is a pass-through no-op — no
@@ -552,6 +695,19 @@ class GPUScheduler:
         if _gpu_session_active.get():
             yield
             return
+
+        # Admission (poindexter#914 P1) — BEFORE any wait, including the
+        # gaming check. Doubly gated: the caller must declare a budget AND
+        # the operator must have flipped gpu_sched_enabled. A reject raises
+        # GpuBusyError here; "grant_after_unload" defers its eviction until
+        # the lock is actually held (racing an unload against the current
+        # holder would evict the model it is mid-inference on).
+        evict_before_yield = False
+        if max_wait_s is not None and _cfg_bool("gpu_sched_enabled", False):
+            decision = await self._admission_check(
+                owner=owner, model=model, phase=phase, max_wait_s=max_wait_s
+            )
+            evict_before_yield = decision.action == "grant_after_unload"
 
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
@@ -577,7 +733,9 @@ class GPUScheduler:
             try:
                 from services.gpu_queue_mirror import enqueue as _queue_enqueue
 
-                queue_row_id = await _queue_enqueue(owner, model=model, phase=phase)
+                queue_row_id = await _queue_enqueue(
+                    owner, model=model, phase=phase, priority=priority
+                )
             except Exception:
                 # silent-ok: mirroring is observability — the wait itself is
                 # untouched; the orphan reap covers anything half-written.
@@ -591,16 +749,31 @@ class GPUScheduler:
         # The outer try/finally dequeues the P0 queue-mirror row on EVERY
         # wait outcome — acquire, timeout, or cancellation (poindexter#914).
         try:
-            acquire_timeout = _cfg_int(
+            acquire_timeout: float = _cfg_int(
                 "gpu_lock_acquire_timeout_seconds", _DEFAULT_LOCK_ACQUIRE_TIMEOUT_S
             )
+            # An admission-contract caller's budget also CAPS the real wait
+            # (min with the operator ceiling) — poindexter#914 P1. Only under
+            # the same double gate as admission itself, so legacy behavior is
+            # untouched while gpu_sched_enabled is false.
+            if (
+                max_wait_s is not None
+                and max_wait_s > 0
+                and _cfg_bool("gpu_sched_enabled", False)
+            ):
+                acquire_timeout = (
+                    min(acquire_timeout, max_wait_s) if acquire_timeout > 0 else max_wait_s
+                )
+            rank = _PRIORITY_RANKS.get(priority, 0)
             acquire_started = time.monotonic()
 
             # Acquire in-process lock first (fast path for same-process callers)
             if acquire_timeout > 0:
                 try:
-                    await asyncio.wait_for(self._lock.acquire(), timeout=acquire_timeout)
-                except (TimeoutError, asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        self._lock.acquire(rank=rank), timeout=acquire_timeout
+                    )
+                except TimeoutError:
                     self._emit_lock_timeout_finding(
                         owner=owner,
                         stage="in_process",
@@ -613,7 +786,7 @@ class GPUScheduler:
                         f"{self._current_owner!r} ({self._current_model!r})"
                     ) from None
             else:
-                await self._lock.acquire()
+                await self._lock.acquire(rank=rank)
 
             # Then acquire the cross-process pg advisory lock so a second
             # container blocks here until we release. Spend whatever remains of
@@ -653,8 +826,9 @@ class GPUScheduler:
 
         self._current_owner = owner
         self._current_model = model
+        self._current_phase = phase or owner
         self._acquired_at = time.monotonic()
-        session_start = datetime.now(timezone.utc)
+        session_start = datetime.now(UTC)
 
         # Mark the GPU session active so nested gpu.lock() calls within this
         # async chain (e.g. dispatch_complete inside a stage) are no-ops.
@@ -667,12 +841,19 @@ class GPUScheduler:
             # stayed resident and starved wan+image-gen, failing the render.
             if owner in ("image_gen", "video"):
                 await self._unload_ollama_models()
+            elif evict_before_yield:
+                # Admission said the model only fits with the resident Ollama
+                # models evicted (grant_after_unload) — load→compute→unload
+                # doctrine, poindexter#914 P1. Safe here: the lock is held, so
+                # nothing is mid-inference on what we evict.
+                await self._unload_ollama_models()
             yield
         finally:
             duration = time.monotonic() - self._acquired_at
             logger.info("GPU released", owner=owner, model=model, duration_s=round(duration, 1))
             self._current_owner = None
             self._current_model = None
+            self._current_phase = None
             # Release pg advisory lock BEFORE releasing the in-process lock
             # so that the cross-process barrier stays up until we are done.
             await self._release_pg_advisory_lock()
@@ -739,6 +920,160 @@ class GPUScheduler:
                         # failure here can't itself be surfaced without
                         # recursing, and must never gate the lock release.
                         logger.debug("gpu_task_sessions write failed", error=str(exc))
+
+    # ------------------------------------------------------------------
+    # Admission (poindexter#914 P1)
+    # ------------------------------------------------------------------
+
+    def _get_registry(self) -> Any:
+        """Lazily-built GPURegistry sharing the scheduler's SiteConfig seam."""
+        if getattr(self, "_registry", None) is None:
+            from services.gpu_registry import GPURegistry
+
+            self._registry = GPURegistry(site_config=_sc())
+        return self._registry
+
+    async def _admission_check(self, *, owner: str, model: str | None,
+                               phase: str | None, max_wait_s: float):
+        """Assemble live telemetry, run the pure calculator, act on a reject.
+
+        Every read here is individually fail-open (None / 0.0) so admission
+        can only ever be as strict as its data is real — a Prometheus blip or
+        missing stats row degrades to "grant", never to a false reject.
+        Returns the AdmissionDecision; raises GpuBusyError on reject.
+        """
+        from services import gpu_admission
+
+        inputs = await self._assemble_admission_inputs(
+            model=model, max_wait_s=max_wait_s
+        )
+        decision = gpu_admission.decide(inputs)
+        if decision.action == "reject":
+            self._emit_admission_rejected_finding(
+                owner=owner,
+                phase=phase or owner,
+                reason=decision.reason or "unknown",
+                eta_seconds=decision.eta_seconds,
+                max_wait_s=max_wait_s,
+            )
+            logger.info(
+                "GPU admission rejected",
+                owner=owner,
+                phase=phase or owner,
+                reason=decision.reason,
+                eta_seconds=decision.eta_seconds,
+                max_wait_s=max_wait_s,
+            )
+            raise gpu_admission.GpuBusyError(
+                decision.reason or "unknown", decision.eta_seconds
+            )
+        return decision
+
+    async def _assemble_admission_inputs(self, *, model: str | None,
+                                         max_wait_s: float):
+        from services.gpu_admission import AdmissionInputs
+
+        holder_key = holder_elapsed = holder_stats = None
+        if self._lock.locked() and self._current_owner is not None:
+            h_owner = self._current_owner
+            h_phase = self._current_phase or h_owner
+            holder_key = (h_owner, h_phase)
+            holder_elapsed = time.monotonic() - self._acquired_at
+            try:
+                from services import gpu_lease_stats as _lease_stats
+
+                holder_stats = await _lease_stats.read_stats(h_owner, h_phase)
+            except Exception:
+                # silent-ok: stats degrade to the fallback ETA inside decide().
+                holder_stats = None
+
+        free_gb: float | None = None
+        evictable_gb = 0.0
+        try:
+            registry = self._get_registry()
+            gpu_index = _cfg_int("pipeline_gpu_index", 0)
+            free_gb = await registry.free_gb(gpu_index)
+            evictable_gb = await registry.evictable_ollama_gb(gpu_index)
+        except Exception:
+            # silent-ok: missing VRAM telemetry skips the fit gate (fail-open);
+            # a persistent outage already pages via nvidia_exporter_unreachable.
+            free_gb, evictable_gb = None, 0.0
+
+        estimate_gb: float | None = None
+        if model:
+            try:
+                from services.llm_providers.dispatcher import _read_arch_for_budget
+                from services.vram_budget import estimate_model_vram_gb
+
+                arch = await _read_arch_for_budget(model)
+                if arch is not None:
+                    # Floor estimate: weights + fixed overhead, no KV term (the
+                    # caller's num_ctx isn't known at admission time). Under-
+                    # estimating errs toward "grant" — consistent with fail-open;
+                    # the dispatcher's own num_ctx clamp remains the load-time
+                    # backstop. Non-Ollama models (image_gen/video) have no
+                    # /api/show arch → None → fit gate skipped.
+                    estimate_gb = estimate_model_vram_gb(arch, 0.0)
+            except Exception:
+                # silent-ok: unknown model size skips the fit gate (fail-open).
+                estimate_gb = None
+
+        return AdmissionInputs(
+            max_wait_s=max_wait_s,
+            holder_key=holder_key,
+            holder_elapsed_s=holder_elapsed,
+            holder_stats=holder_stats,
+            eta_fallback_s=_cfg_float("gpu_sched_eta_fallback_seconds", 120.0),
+            free_gpu0_gb=free_gb,
+            evictable_gpu0_gb=evictable_gb,
+            headroom_gb=_cfg_float("gpu0_headroom_gb", 6.0),
+            model_estimate_gb=estimate_gb,
+        )
+
+    def _emit_admission_rejected_finding(
+        self, *, owner: str, phase: str, reason: str,
+        eta_seconds: float | None, max_wait_s: float,
+    ) -> None:
+        """Emit an info ``gpu_admission_rejected`` finding. Never raises.
+
+        Info, not warn: a reject is the mechanism WORKING (an honest skip
+        instead of a doomed wait). Dedup folds repeats per (owner, phase,
+        reason) so a busy render window produces one row, not one per rail.
+        """
+        try:
+            from utils.findings import emit_finding
+
+            eta_txt = (
+                f"holder ETA ~{eta_seconds:.0f}s vs budget {max_wait_s:.0f}s"
+                if eta_seconds is not None
+                else f"budget {max_wait_s:.0f}s"
+            )
+            emit_finding(
+                source="gpu_scheduler",
+                kind="gpu_admission_rejected",
+                severity="info",
+                title=f"GPU admission rejected ({owner}, {phase}): {reason}",
+                body=(
+                    f"gpu.lock({owner!r}, phase={phase!r}) was admission-rejected "
+                    f"({reason}; {eta_txt}) and raised GpuBusyError before "
+                    "waiting. The caller skips honestly this cycle instead of "
+                    "burning its budget behind the current holder "
+                    "(poindexter#914 P1)."
+                ),
+                dedup_key=f"gpu-admission:{owner}:{phase}:{reason}",
+                extra={
+                    "owner": owner,
+                    "phase": phase,
+                    "reason": reason,
+                    "eta_seconds": eta_seconds,
+                    "max_wait_s": max_wait_s,
+                },
+            )
+        except Exception:
+            # silent-ok: the finding IS the observability path; a failure
+            # emitting it can't be surfaced without recursing, and must never
+            # gate admission.
+            logger.debug("emit gpu_admission_rejected finding failed", exc_info=True)
 
     async def _record_task_session(
         self,
@@ -909,7 +1244,7 @@ class GPUScheduler:
             f'nvidia_gpu_utilization_percent{{gpu="{idx}"}}'
         )
 
-    async def _wait_for_gaming_clear(self):
+    async def _wait_for_gaming_clear(self) -> None:
         """Block until GPU is not being used by an external workload (gaming).
 
         Uses consecutive checks to avoid false positives from brief GPU spikes.
@@ -980,7 +1315,7 @@ class GPUScheduler:
         logger.info("[GPU] External GPU workload cleared — resuming pipeline (paused %.0fs)", pause_duration)
         self._gaming_detected = False
 
-    async def _unload_ollama_models(self):
+    async def _unload_ollama_models(self) -> None:
         """Unload all Ollama models to free VRAM for image-gen / the video render.
 
         Delegates to the unified ``unload_loaded_ollama_models`` so the

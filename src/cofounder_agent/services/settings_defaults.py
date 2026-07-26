@@ -553,6 +553,45 @@ DEFAULTS: dict[str, str] = {
     # locks server-side. Read via _cfg_int in services/gpu_scheduler.py.
     'gpu_lock_acquire_timeout_seconds': '900',
     'gpu_lock_release_timeout_seconds': '15',
+    # --- GPU scheduler P1: queue admission + wait contracts (poindexter#914,
+    # spec docs/superpowers/specs/2026-07-26-gpu-scheduler-queue-admission-design.md).
+    # Master switch for the admission step in gpu.lock(): when true AND a caller
+    # passes a max_wait_s budget, the calculator (services/gpu_admission.py::decide)
+    # estimates the current holder's remaining time from its gpu_lease_stats p90
+    # and checks VRAM fit, raising GpuBusyError pre-wait on a hopeless request
+    # (honest skip) instead of burning the caller's budget behind a long render.
+    # DOUBLY inert at ship: default false, and no production call site passes
+    # max_wait_s yet (grep-proofed in tests/unit/services/
+    # test_gpu_admission_wiring.py) — P2 migrates callers group by group.
+    # Flipping true on a stock install therefore changes nothing until then.
+    'gpu_sched_enabled': 'false',
+    # Holder-remaining ETA assumed when the (owner, phase) key has no
+    # gpu_lease_stats row yet (fresh install, brand-new phase). Conservative on
+    # purpose: unknown holders look expensive, so short-budget callers skip
+    # rather than gamble. Read via _cfg_float in gpu_scheduler.
+    'gpu_sched_eta_fallback_seconds': '120',
+    # Anti-starvation aging for the in-process priority queue (_PriorityGate):
+    # a parked waiter is promoted one priority class (background→operator→
+    # pipeline) per full window waited, so a stream of pipeline arrivals can
+    # delay but never starve a background job. 0 disables aging (strict class
+    # ordering). Read lazily at each wake, so changes apply without restart.
+    'gpu_sched_aging_seconds': '300',
+    # VRAM (GB) the admission fit-check holds back on the pipeline GPU for
+    # mid-hold invisible claims Prometheus can't see at decision time: desktop
+    # compositor transients plus an idle-unloaded resident (e.g. whisper ~3GB)
+    # that reloads on its next request. estimate ≤ free−headroom grants;
+    # ≤ free−headroom+evictable grants after evicting resident Ollama models;
+    # larger rejects (no_fit). Sized for Matt's 32GB RTX 5090 + desktop; a
+    # dedicated headless card can drop this toward 2.
+    'gpu0_headroom_gb': '6',
+    # Case-insensitive substring that identifies the primary Ollama runner in
+    # the per-process VRAM series (nvidia_gpu_process_memory_mib{process=...})
+    # when computing the admission eviction credit — the per-card share the
+    # scheduler could reclaim via unload_loaded_ollama_models. The exporter
+    # labels processes by executable basename ("ollama" covers the stock
+    # server; set to e.g. "llama-server" for a bare llama.cpp install). Read
+    # by services/gpu_registry.py::evictable_ollama_gb.
+    'gpu_evictable_process_pattern': 'ollama',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer

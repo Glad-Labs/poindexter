@@ -386,3 +386,51 @@ def test_gpu_exporter_still_scraped_under_the_nvidia_smi_job():
     nvidia_job = next(j for j in jobs if j["job_name"] == "nvidia-smi")
     targets = [t for sc in nvidia_job["static_configs"] for t in sc["targets"]]
     assert any("gpu-exporter" in t for t in targets), targets
+
+
+# ---------------------------------------------------------------------------
+# Per-process memory series (poindexter#914 P1, Task B2) — the admission fit
+# gate's per-card eviction credit. compute-apps rows carry a GPU UUID, not an
+# index, so _format_process_rows joins them through a uuid→index map.
+# ---------------------------------------------------------------------------
+UUID_MAP = "0, GPU-aaaa\n1, GPU-bbbb"
+
+
+def test_process_rows_join_uuid_to_index_and_basename_process():
+    apps = (
+        "GPU-aaaa, 4242, /usr/local/bin/ollama, 18432\n"
+        "GPU-bbbb, 4242, /usr/local/bin/ollama, 8192\n"
+        "GPU-aaaa, 900, /opt/imagegen/server.py, 6144"
+    )
+    series = _series(EXPORTER._format_process_rows(UUID_MAP, apps))
+    # Spilled model: one row PER CARD, each with its own share — the property
+    # gpu_registry.evictable_ollama_gb depends on (never a cross-card total).
+    assert series['nvidia_gpu_process_memory_mib{gpu="0",pid="4242",process="ollama"}'] == "18432.0"
+    assert series['nvidia_gpu_process_memory_mib{gpu="1",pid="4242",process="ollama"}'] == "8192.0"
+    assert series['nvidia_gpu_process_memory_mib{gpu="0",pid="900",process="server.py"}'] == "6144.0"
+
+
+def test_process_rows_windows_path_becomes_basename():
+    apps = r"GPU-aaaa, 77, C:\Program Files\Ollama\ollama.exe, 1024"
+    series = _series(EXPORTER._format_process_rows(UUID_MAP, apps))
+    assert series['nvidia_gpu_process_memory_mib{gpu="0",pid="77",process="ollama.exe"}'] == "1024.0"
+
+
+def test_process_rows_skip_malformed_and_unknown_uuid():
+    apps = (
+        "GPU-cccc, 1, /bin/mystery, 512\n"  # uuid not in map → skipped
+        "not,enough,fields\n"               # malformed → skipped
+        "GPU-aaaa, 2, /bin/ok, notanumber\n"  # bad memory value → skipped
+        "GPU-aaaa, 3, /bin/kept, 256"
+    )
+    series = _series(EXPORTER._format_process_rows(UUID_MAP, apps))
+    assert list(series) == ['nvidia_gpu_process_memory_mib{gpu="0",pid="3",process="kept"}']
+
+
+def test_process_rows_no_compute_apps_emits_header_only():
+    """Idle GPU (no compute apps) → header-only block, no series — absence of
+    the series is the honest signal, distinct from an exporter that predates
+    the metric entirely (no header)."""
+    text = EXPORTER._format_process_rows(UUID_MAP, "")
+    assert "# TYPE nvidia_gpu_process_memory_mib gauge" in text
+    assert _series(text) == {}

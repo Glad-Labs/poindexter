@@ -179,6 +179,94 @@ def get_gpu_metrics():
         return f"# error: {e}\n"
 
 
+_PROCESS_METRIC_HEADER = (
+    "# HELP nvidia_gpu_process_memory_mib Per-process GPU memory (compute apps)\n"
+    "# TYPE nvidia_gpu_process_memory_mib gauge\n"
+)
+
+
+def _format_process_rows(uuid_map_stdout: str, apps_stdout: str) -> str:
+    """Join --query-compute-apps rows to gpu indices → per-process series.
+
+    ``--query-compute-apps`` labels rows by GPU **UUID** (it has no index
+    field), so a uuid→index map from ``--query-gpu=index,uuid`` joins them
+    back onto the ``gpu="N"`` label convention every other nvidia series uses.
+    Pure function (no subprocess) so it's directly unit-testable, mirroring
+    ``_format_gpu_rows``. A malformed or unmappable row is logged and skipped
+    rather than blanking the block.
+
+    The ``process`` label is the executable basename (full paths differ
+    between host and container views of the same process and would fragment
+    the series). Consumed by ``services/gpu_registry.evictable_ollama_gb`` —
+    the admission fit gate's per-card eviction credit (poindexter#914 P1),
+    which this per-card metric feeds precisely BECAUSE Ollama's own ``/api/ps``
+    size is a cross-card total.
+    """
+    uuid_to_index = {}
+    for line in uuid_map_stdout.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 2 and parts[1]:
+            uuid_to_index[parts[1]] = parts[0]
+
+    lines = [_PROCESS_METRIC_HEADER.rstrip("\n")]
+    for line in apps_stdout.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) != 4:
+            logger.warning(
+                "compute-apps row has %d fields, expected 4 — skipping: %r",
+                len(parts), line,
+            )
+            continue
+        gpu_uuid, pid, name, mem = parts
+        gpu_index = uuid_to_index.get(gpu_uuid)
+        if gpu_index is None:
+            logger.warning("compute-apps row has unknown GPU uuid %r — skipping", gpu_uuid)
+            continue
+        try:
+            mem_val = float(mem)
+        except ValueError:
+            continue
+        process = name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or "unknown"
+        process = process.replace('"', "_")
+        lines.append(
+            f'nvidia_gpu_process_memory_mib{{gpu="{gpu_index}",pid="{pid}",'
+            f'process="{process}"}} {mem_val}'
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def get_gpu_process_metrics():
+    """Per-process GPU memory series via nvidia-smi --query-compute-apps.
+
+    Secondary telemetry: failures return a comment line and never trip the
+    #319 watchdog (that guards the primary gauge query — a broken compute-apps
+    read shouldn't restart the whole exporter while gauges still work).
+    """
+    try:
+        uuid_map = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=_NVIDIA_SMI_TIMEOUT_SEC,
+            **_SUBPROCESS_KWARGS,
+        )
+        apps = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=_NVIDIA_SMI_TIMEOUT_SEC,
+            **_SUBPROCESS_KWARGS,
+        )
+        if uuid_map.returncode != 0 or apps.returncode != 0:
+            return "# nvidia-smi compute-apps query failed\n"
+        return _format_process_rows(uuid_map.stdout, apps.stdout)
+    except subprocess.TimeoutExpired:
+        return "# nvidia-smi compute-apps timeout\n"
+    except Exception as e:
+        return f"# compute-apps error: {e}\n"
+
+
 def get_cpu_power_metrics():
     """Read CPU power from Windows Energy Meter performance counters (AMD RAPL).
     Returns Prometheus-format metrics string.
@@ -845,13 +933,14 @@ def _collect_all_metrics() -> bytes:
     Runs in the background collector thread, never on the request path.
     """
     gpu = get_gpu_metrics()
+    procs = get_gpu_process_metrics()
     cpu = get_cpu_power_metrics()
     shelly = get_shelly_psu_metrics()
     aida = get_aida64_metrics()
     hwinfo = get_hwinfo_metrics()
     lm = get_lm_sensors_metrics()
     total = get_total_power_metrics(gpu, cpu)
-    combined = gpu + cpu + shelly + aida + hwinfo + lm + total
+    combined = gpu + procs + cpu + shelly + aida + hwinfo + lm + total
     return _dedupe_psu_metric(combined).encode()
 
 
