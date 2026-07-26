@@ -421,11 +421,18 @@ module.exports = [
   {
     name: 'costSeries',
     invoke: (api) => api.costSeries('1h'),
-    request: {
-      host: 'prometheus',
-      rangeQuery: true,
-      query: 'poindexter_daily_spend_usd',
-    },
+    request: [
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'poindexter_daily_api_spend_usd',
+      },
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'poindexter_daily_electricity_spend_usd',
+      },
+    ],
   },
 
   // ── D: GPU / hardware / power trends (Prometheus range) — request-only ──

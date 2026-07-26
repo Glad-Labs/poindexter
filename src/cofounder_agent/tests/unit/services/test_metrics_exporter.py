@@ -37,6 +37,10 @@ def _reset_gauges():
         mx.POSTS_PUBLISHED,
         mx.DAILY_SPEND_USD,
         mx.MONTHLY_SPEND_USD,
+        mx.DAILY_API_SPEND_USD,
+        mx.DAILY_ELECTRICITY_SPEND_USD,
+        mx.MONTHLY_API_SPEND_USD,
+        mx.MONTHLY_ELECTRICITY_SPEND_USD,
     ):
         g.set(0)
     # Labeled gauges — clear the series so each test starts absent.
@@ -134,19 +138,24 @@ class TestRefreshMetrics:
         assert mx.WORKER_UP._value.get() == 1  # type: ignore[attr-defined]
 
     async def test_spend_gauges_route_through_cost_ledger(self):
-        """The exported spend gauges are the cost_ledger total (paid API +
-        measured electricity), not a raw blended SUM(cost_usd) — so the
-        Prometheus mirror agrees with the cap, dashboards, and MCP get_budget
-        that all read the same seam. Per-window: day and month."""
+        """The exported spend gauges are the cost_ledger axes — blended total
+        (paid API + measured electricity) plus the per-axis api/electricity
+        pair — not a raw blended SUM(cost_usd). The Prometheus mirror agrees
+        with the cap, dashboards, and MCP get_budget that all read the same
+        seam, and axis-named surfaces (console spend chart) get real per-axis
+        series. Per-window: day and month."""
         from services import cost_ledger
         from services import metrics_exporter as mx
 
         pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
 
         async def _fake_get_spend(_pool, *, window, strict=False, site_config=None):
-            total = 1.25 if window == "day" else 34.5
+            if window == "day":
+                return cost_ledger.SpendBreakdown(
+                    api_usd=0.25, electricity_usd=1.0, total_usd=1.25,
+                )
             return cost_ledger.SpendBreakdown(
-                api_usd=0.0, electricity_usd=total, total_usd=total,
+                api_usd=9.5, electricity_usd=25.0, total_usd=34.5,
             )
 
         with patch(
@@ -159,6 +168,10 @@ class TestRefreshMetrics:
 
         assert mx.DAILY_SPEND_USD._value.get() == 1.25  # type: ignore[attr-defined]
         assert mx.MONTHLY_SPEND_USD._value.get() == 34.5  # type: ignore[attr-defined]
+        assert mx.DAILY_API_SPEND_USD._value.get() == 0.25  # type: ignore[attr-defined]
+        assert mx.DAILY_ELECTRICITY_SPEND_USD._value.get() == 1.0  # type: ignore[attr-defined]
+        assert mx.MONTHLY_API_SPEND_USD._value.get() == 9.5  # type: ignore[attr-defined]
+        assert mx.MONTHLY_ELECTRICITY_SPEND_USD._value.get() == 25.0  # type: ignore[attr-defined]
 
     async def test_postgres_latency_recorded_on_success(self):
         from services import metrics_exporter as mx

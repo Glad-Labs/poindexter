@@ -1603,9 +1603,21 @@
       );
     },
     costSeries(range) {
+      // Two axes, never blended: on the total gauge a paid-provider leak
+      // hides under the ~$1.4/day electricity baseline.
       const o = rangeOpts(range);
       return pick(
-        () => labelledRange('poindexter_daily_spend_usd', o, '$/day'),
+        async () => {
+          const [apiUsd, elecUsd] = await Promise.all([
+            labelledRange('poindexter_daily_api_spend_usd', o, 'API'),
+            labelledRange(
+              'poindexter_daily_electricity_spend_usd',
+              o,
+              'electricity'
+            ),
+          ]);
+          return { series: [...apiUsd.series, ...elecUsd.series] };
+        },
         () => ({ series: [] })
       );
     },

@@ -268,7 +268,11 @@ function HistoryPanel() {
       fn: (x) => api.throughputSeries(x),
       unit: '',
     },
-    { title: 'LLM spend', fn: (x) => api.costSeries(x), unit: '$' },
+    {
+      title: 'Spend (API vs electricity)',
+      fn: (x) => api.costSeries(x),
+      unit: '$',
+    },
     { title: 'QA pass-rate', fn: (x) => api.qaTrend(x), unit: '%' },
     {
       title: 'Findings by severity',

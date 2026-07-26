@@ -58,8 +58,12 @@ Content pipeline:
   currently-skipping rails emit a series, so a healthy rail is absent.
 
 Cost:
-- ``poindexter_daily_spend_usd`` — gauge
-- ``poindexter_monthly_spend_usd`` — gauge
+- ``poindexter_daily_spend_usd`` / ``poindexter_monthly_spend_usd`` — gauges,
+  blended total axis (paid cloud API + measured electricity)
+- ``poindexter_daily_api_spend_usd`` / ``poindexter_monthly_api_spend_usd`` —
+  gauges, paid-cloud-API axis only
+- ``poindexter_daily_electricity_spend_usd`` /
+  ``poindexter_monthly_electricity_spend_usd`` — gauges, electricity axis only
 
 Self-monitoring:
 - ``poindexter_metrics_refresh_errors_total`` — counter by ``phase`` (audit
@@ -292,6 +296,28 @@ MONTHLY_SPEND_USD = Gauge(
     "poindexter_monthly_spend_usd",
     "Total cost this month in USD via cost_ledger: paid cloud API + measured "
     "electricity. See the Cost dashboard for the honest API-vs-electricity split.",
+)
+
+# Per-axis companions to the blended totals above. Surfaces that NAME an axis
+# (the console's spend chart, a paid-provider-leak alert) must plot these —
+# on the total a real API leak hides under the ~$1.4/day electricity baseline.
+DAILY_API_SPEND_USD = Gauge(
+    "poindexter_daily_api_spend_usd",
+    "Paid cloud API cost today in USD (cost_ledger api axis; $0 unless a paid "
+    "provider is enabled).",
+)
+DAILY_ELECTRICITY_SPEND_USD = Gauge(
+    "poindexter_daily_electricity_spend_usd",
+    "Measured electricity cost today in USD (cost_ledger electricity axis, "
+    "idle + active).",
+)
+MONTHLY_API_SPEND_USD = Gauge(
+    "poindexter_monthly_api_spend_usd",
+    "Paid cloud API cost this month in USD (cost_ledger api axis).",
+)
+MONTHLY_ELECTRICITY_SPEND_USD = Gauge(
+    "poindexter_monthly_electricity_spend_usd",
+    "Measured electricity cost this month in USD (cost_ledger electricity axis).",
 )
 
 # poindexter#553 — per-QA-rail skip ratio over the last N passes. A value of
@@ -840,8 +866,8 @@ async def refresh_metrics(
     # a paid provider is enabled) + measured electricity. The old inline query
     # was a raw blended SUM(cost_usd) — since local inference is $0 by the P1
     # write invariant it read electricity-only yet was labelled "LLM spend". The
-    # honest API-vs-electricity split lives on the Cost & Analytics dashboard
-    # (SQL panels); these Prometheus gauges are the total for scraping/alerting.
+    # per-axis gauges keep that mistake structural to avoid: axis-named surfaces
+    # plot api/electricity directly; the blended totals stay for budget alerting.
     # strict=True so a DB error surfaces via _note_refresh_error rather than
     # silently reading $0.
     try:
@@ -851,6 +877,10 @@ async def refresh_metrics(
         month = await get_spend(pool, window="month", strict=True)
         DAILY_SPEND_USD.set(day.total_usd)
         MONTHLY_SPEND_USD.set(month.total_usd)
+        DAILY_API_SPEND_USD.set(day.api_usd)
+        DAILY_ELECTRICITY_SPEND_USD.set(day.electricity_usd)
+        MONTHLY_API_SPEND_USD.set(month.api_usd)
+        MONTHLY_ELECTRICITY_SPEND_USD.set(month.electricity_usd)
     except Exception as e:
         _note_refresh_error("cost_logs", e)
 

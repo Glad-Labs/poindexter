@@ -1194,9 +1194,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -1220,7 +1218,7 @@
       "id": 211,
       "type": "timeseries",
       "title": "Daily spend vs budget",
-      "description": "Spend-throttle daily total vs the configured daily budget. gap-fill (poindexter#855): live Prometheus metric that was on no dashboard",
+      "description": "Spend-throttle daily total vs the configured daily budget, plus the per-axis split (API vs electricity) — a paid-provider leak is invisible in the blended total under the electricity baseline.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1285,6 +1283,24 @@
           "expr": "poindexter_spend_throttle_daily_budget_usd",
           "legendFormat": "daily budget",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_daily_api_spend_usd",
+          "legendFormat": "API (paid cloud)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_daily_electricity_spend_usd",
+          "legendFormat": "electricity",
+          "refId": "D"
         }
       ]
     },
@@ -1292,7 +1308,7 @@
       "id": 212,
       "type": "timeseries",
       "title": "Monthly spend vs budget",
-      "description": "Spend-throttle monthly total vs the configured monthly budget. gap-fill (poindexter#855): live Prometheus metric that was on no dashboard",
+      "description": "Spend-throttle monthly total vs the configured monthly budget, plus the per-axis split (API vs electricity) — the axis pair shows WHICH meter is burning the budget.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1357,6 +1373,24 @@
           "expr": "poindexter_spend_throttle_monthly_budget_usd",
           "legendFormat": "monthly budget",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_monthly_api_spend_usd",
+          "legendFormat": "API (paid cloud)",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_monthly_electricity_spend_usd",
+          "legendFormat": "electricity",
+          "refId": "D"
         }
       ]
     },

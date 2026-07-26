@@ -191,7 +191,8 @@ day-to-day operation no longer requires opening Grafana directly:
   (`js/charts.jsx`; chart math in `js/timeseries.js`, colorblind-safe via
   dash + end-label rather than hue):
   - **HISTORY** — API request/error rate + p95/p99 latency, pipeline
-    throughput, LLM spend, QA pass-rate, findings by severity.
+    throughput, spend (API vs electricity axes, never blended), QA
+    pass-rate, findings by severity.
   - **GPU & POWER** — GPU utilization / temperature / VRAM / power draw,
     system power, electricity cost.
   - **DATABASE** — connections (total + by state), cache-hit ratio,
