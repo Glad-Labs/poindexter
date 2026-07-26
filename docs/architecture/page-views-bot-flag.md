@@ -8,13 +8,17 @@ page_views`) is inflated by stealth scrapers that present a browser
 
 ## Two surfaces
 
-| Question             | Reads                               | Consumers                                                                                                                                   |
-| -------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Is the pipe flowing? | raw `page_views`                    | Grafana traffic-anomaly + capture-dead alerts, Mission-Control "Page-views received", pipeline funnel `is_viewed`, DB freshness + row-count |
-| How many readers?    | `page_views_human` (`is_bot=false`) | console `/api/analytics/views`, `posts.view_count`, `lab_outcomes_v1.views_*_post_publish`                                                  |
+| Question             | Reads                               | Consumers                                                                                                                 |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Is the pipe flowing? | raw `page_views`                    | Grafana capture-dead alert, Mission-Control "Page-views received", pipeline funnel `is_viewed`, DB freshness + row-count  |
+| How many readers?    | `page_views_human` (`is_bot=false`) | console `/api/analytics/views`, `posts.view_count`, `lab_outcomes_v1.views_*_post_publish`, Grafana traffic-anomaly alert |
 
 A bot hit still proves the URL is live and ingest is fresh, so liveness stays on
-raw. Only reader counts move to the human view.
+raw. Reader counts move to the human view — and so does the traffic-anomaly
+alert (2026-07-25): it detects _relative drops_, and a bot flood inflates its
+7-day baseline so the flood's retreat reads as a week of phantom drops (113
+false fires 2026-06-26→07-26 while human traffic was flat). Capture-dead keeps
+the raw read and owns the pipe-liveness case.
 
 ## Tunables (`app_settings`)
 

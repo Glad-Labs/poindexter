@@ -302,23 +302,30 @@ groups:
                   reducer:
                     type: last
 
-      # 7. TRAFFIC ANOMALY — page_views dropped >0.5 vs previous 24h
+      # 7. TRAFFIC ANOMALY — human page_views dropped >0.5 vs previous 24h
+      #    Reads the `page_views_human` view (is_bot=false), NOT raw page_views:
+      #    a bot flood inflates the 7-day baseline, then its retreat reads as a
+      #    "drop" for a week — 113 false fires 2026-06-26→07-26 while human
+      #    traffic was flat (2026-07-25 alarm audit). Relative-drop detection
+      #    only means anything over the audience that doesn't arrive in floods;
+      #    raw-feed liveness is owned by Page-View Capture Dead (#7b) below.
       - uid: brain-traffic-anomaly
         title: Traffic Anomaly
         condition: C
         for: 0s
         # The CTE cross-join always yields one ratio row when healthy;
-        # no-data means `page_views` was renamed/dropped or the datasource
-        # is down — exactly the "site is dark but the alert stayed green"
-        # failure this audit is about. Surface it. See #581.
+        # no-data means `page_views_human` (view over page_views) was
+        # renamed/dropped or the datasource is down — exactly the "site is
+        # dark but the alert stayed green" failure this audit is about.
+        # Surface it. See #581.
         noDataState: Alerting
         execErrState: Error
         labels:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Page views dropped over 50% compared to 7-day rolling average"
-          description: "Today: {{ $values.B.Value }} ratio vs 7-day avg. Possible site issue, SEO penalty, or CDN problem."
+          summary: "Human page views dropped over 50% compared to 7-day rolling average"
+          description: "Today: {{ $values.B.Value }} ratio vs 7-day avg (bot traffic excluded). Possible site issue, SEO penalty, or CDN problem."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -328,13 +335,13 @@ groups:
             model:
               rawSql: >
                 WITH today AS (
-                  SELECT COUNT(*) as cnt FROM page_views
+                  SELECT COUNT(*) as cnt FROM page_views_human
                   WHERE created_at > NOW() - INTERVAL '24 hours'
                 ), baseline AS (
                   SELECT GREATEST(AVG(daily_cnt), 1.0) as avg_cnt
                   FROM (
                     SELECT DATE(created_at) as day, COUNT(*) as daily_cnt
-                    FROM page_views
+                    FROM page_views_human
                     WHERE created_at BETWEEN NOW() - INTERVAL '8 days' AND NOW() - INTERVAL '24 hours'
                     GROUP BY DATE(created_at)
                   ) daily

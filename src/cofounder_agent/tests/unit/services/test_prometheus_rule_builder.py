@@ -198,18 +198,22 @@ class TestContainerMemoryRule:
 class TestHostMemoryPressureRules:
     """Host RAM-pressure alerts (2026-07-10 desktop-freeze investigation).
 
-    The worker host oversubscribes RAM — WSL2 (memory-capped in ~/.wslconfig),
-    the container stack, the host-native inference fleet, and the operator
-    desktop all compete for the same physical RAM. Measured over 14 days: the
-    minimum available RAM reached ~0 GB and the pagefile write rate peaked at
-    ~33,767 pages/s (~135 MB/s) against a ~0.08 pages/s idle median — the box
-    pages its working set to disk and the desktop compositor stalls (the
-    recurring freeze that escalates to a hard reset). There was NO host-memory
-    alert before this — only per-container (cAdvisor) and GPU-VRAM rules — so
-    the pressure that actually caused the freezes was invisible to Alertmanager.
-    node_exporter (job="node") exports both signals directly — the rules were
-    calibrated on their windows_exporter twins pre-migration (available bytes /
-    swap page-out rate carry the same semantics).
+    The worker host oversubscribes RAM — the container stack, the host-native
+    inference fleet, and the operator desktop all compete for the same
+    physical RAM, and when available RAM approaches zero the desktop
+    compositor stalls (the recurring freeze that escalates to a hard reset).
+    There was NO host-memory alert before this — only per-container (cAdvisor)
+    and GPU-VRAM rules — so the pressure that actually caused the freezes was
+    invisible to Alertmanager.
+
+    Two signals, both from node_exporter (job="node"): available bytes for
+    the warning-level headroom floor, and PSI full-stall for the critical
+    thrash detector. The thrash rule originally read the swap page-out rate
+    (windows_exporter pagefile writes, then node_vmstat_pswpout), but that
+    calibration died with the Pop!_OS migration — zram at priority 1000 makes
+    page-outs cheap and chronic (~131 false criticals in two weeks), while
+    PSI measures the stall time the freeze actually consists of (2026-07-25
+    alarm audit).
     """
 
     def test_rules_and_thresholds_registered(self):
@@ -218,8 +222,8 @@ class TestHostMemoryPressureRules:
         # Calibrated from real telemetry, but every value stays DB-tunable.
         assert rb.DEFAULT_THRESHOLDS["host_memory_available_warning_gb"] == "4"
         assert (
-            rb.DEFAULT_THRESHOLDS["host_memory_paging_critical_pages_per_sec"]
-            == "2000"
+            rb.DEFAULT_THRESHOLDS["host_memory_psi_full_stall_critical_ratio"]
+            == "0.25"
         )
 
     @pytest.mark.asyncio
@@ -237,19 +241,21 @@ class TestHostMemoryPressureRules:
         assert "severity: warning" in section
 
     @pytest.mark.asyncio
-    async def test_thrashing_is_critical_and_targets_swap_pageouts(self):
+    async def test_thrashing_is_critical_and_targets_psi_full_stall(self):
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "alert: PoindexterHostMemoryThrashing" in out
         section = out.split("alert: PoindexterHostMemoryThrashing")[1].split(
             "alert:", 1
         )[0]
-        # pswpout = pages swapped out specifically (memory-pressure
-        # eviction), NOT ordinary buffered file I/O.
-        assert "node_vmstat_pswpout" in section
-        assert "> 2000" in section
-        # Critical → Telegram: it IS the freeze-in-progress signal and is rare
-        # (idle median ~0.08 pages/s), so it only fires during a real episode.
+        # PSI full-stall (all non-idle tasks blocked on memory), NOT the swap
+        # page-out rate — zram makes page-outs cheap and chronic on Linux, so
+        # pswpout no longer implies thrash (2026-07-25 alarm audit).
+        assert "node_pressure_memory_stalled_seconds_total" in section
+        assert "node_vmstat_pswpout" not in section
+        assert "> 0.25" in section
+        # Critical → Telegram: healthy full-stall is <0.01, so it only fires
+        # during a real episode.
         assert "severity: critical" in section
 
     def test_no_absent_guard_so_exporter_death_doesnt_false_fire(self):
@@ -275,12 +281,12 @@ class TestHostMemoryPressureRules:
         pool = _FakePool([
             {"key": "prometheus.threshold.host_memory_available_warning_gb",
              "value": "6"},
-            {"key": "prometheus.threshold.host_memory_paging_critical_pages_per_sec",
-             "value": "5000"},
+            {"key": "prometheus.threshold.host_memory_psi_full_stall_critical_ratio",
+             "value": "0.6"},
         ])
         out = await rb.build_current(pool)
         assert "1024*1024*1024) < 6" in out
-        assert "> 5000" in out
+        assert "> 0.6" in out
 
 
 # ---------------------------------------------------------------------------

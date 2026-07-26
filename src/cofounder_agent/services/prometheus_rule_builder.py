@@ -104,19 +104,22 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # max_connections value (currently 300 in docker-compose.local.yml).
     "postgres_connection_warning_ratio": "0.80",
     "postgres_connection_critical_ratio": "0.95",
-    # Host RAM pressure (2026-07-10 desktop-freeze investigation). The worker
-    # host runs the container stack (WSL2, memory-capped in ~/.wslconfig), a
-    # host-native inference fleet, AND the operator desktop on shared physical
-    # RAM. When available RAM approaches zero the OS pages the working set to
-    # disk and the desktop compositor stalls — the recurring freeze that can
-    # escalate to a hard reset. Calibrated from 14 days of windows_exporter
-    # telemetry: available RAM bottomed at ~0 GB and the pagefile write rate
-    # peaked at ~33,767 pages/s vs a ~0.08 pages/s idle median. 4 GB is a
-    # comfortable warning floor (normal idle headroom is higher); 2000 pages/s
-    # (~8 MB/s sustained page-out) sits far above noise yet well under the
-    # freeze peak, so the paging alert fires only during a real episode.
+    # Host RAM pressure (2026-07-10 desktop-freeze investigation; thrash
+    # detector reworked to PSI 2026-07-25). The worker host runs the container
+    # stack, a host-native inference fleet, AND the operator desktop on shared
+    # physical RAM. When available RAM approaches zero the OS stalls on
+    # reclaim and the desktop compositor freezes. 4 GB is a comfortable
+    # warning floor (normal idle headroom is higher). The thrash signal is
+    # PSI full-stall — the fraction of wall-clock time ALL non-idle tasks
+    # were simultaneously blocked on memory. The original pages/s threshold
+    # (2000/s, calibrated on windows_exporter pagefile writes) did not
+    # survive the Pop!_OS migration: zram swap at priority 1000 makes
+    # pswpout count cheap compressed-RAM page-outs, and the rule flapped
+    # ~131 criticals in its first two Linux weeks while PSI stayed under 3%.
+    # 0.25 = the system stalled on memory a quarter of the time, sustained;
+    # healthy baseline is <0.01.
     "host_memory_available_warning_gb": "4",
-    "host_memory_paging_critical_pages_per_sec": "2000",
+    "host_memory_psi_full_stall_critical_ratio": "0.25",
 }
 
 
@@ -534,28 +537,33 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-infrastructure",
         "interval": "30s",
-        # pswpout = pages swapped out specifically (memory-pressure eviction),
-        # NOT ordinary buffered file I/O — the node_exporter twin of the
-        # windows_memory_swap_pages_written_total signal this rule was
-        # calibrated on. Idle median ~0.08 pages/s, so a 2000 pages/s floor
-        # only trips during a genuine thrash episode — the minutes before a
-        # desktop lock-up, which is the lead time the box never gave before.
-        # Critical → Telegram because it IS the freeze-in-progress signal and
-        # it's rare, not chronic noise.
+        # PSI full-stall: rate() over the kernel's cumulative "all non-idle
+        # tasks blocked on memory" clock = fraction of wall-clock the whole
+        # system spent stalled on reclaim — the desktop-freeze mechanism
+        # itself, and indifferent to WHERE swapped pages land. The previous
+        # expr (rate(node_vmstat_pswpout[5m]) > 2000, calibrated on
+        # windows_exporter pagefile writes) broke on Pop!_OS: zram at
+        # priority 1000 absorbs swap first, so pswpout counts cheap
+        # compressed-RAM page-outs and the rule flapped ~131 criticals in
+        # its first two Linux weeks while PSI full-stall stayed under 3%.
+        # Healthy baseline is <0.01; a genuine episode climbs past 0.25 in
+        # the minutes before the desktop locks — the lead time this rule
+        # exists to give. Critical → Telegram: rare by construction again.
         "expr": (
-            "rate(node_vmstat_pswpout[5m]) > "
-            "{threshold.host_memory_paging_critical_pages_per_sec}"
+            "rate(node_pressure_memory_stalled_seconds_total[5m]) > "
+            "{threshold.host_memory_psi_full_stall_critical_ratio}"
         ),
         "for": "2m",
         "severity": "critical",
         "category": "infrastructure",
-        "summary": "Host is thrashing — sustained page-out to disk",
+        "summary": "Host is thrashing — sustained full memory-pressure stall",
         "description": (
-            "The host has paged out to swap at over "
-            "prometheus.threshold.host_memory_paging_critical_pages_per_sec "
-            "(default 2000) pages/s for 2m — active memory-pressure eviction, "
-            "the precursor to a desktop freeze / hard reset. Physical RAM is "
-            "exhausted and the working set is spilling to swap. "
+            "PSI full memory pressure has exceeded "
+            "prometheus.threshold.host_memory_psi_full_stall_critical_ratio "
+            "(default 0.25 = all runnable tasks stalled on memory reclaim "
+            "25% of wall-clock) for 2m — the precursor to a desktop freeze / "
+            "hard reset. Physical RAM is exhausted; compressed-swap headroom "
+            "is no longer keeping up. "
             "Intervene now: close browser/Electron apps to free RAM, or pause "
             "heavy pipeline work (image/video generation). If this recurs, the "
             "host is structurally oversubscribed — reduce resident load or move "

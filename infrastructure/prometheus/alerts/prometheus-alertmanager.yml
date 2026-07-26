@@ -93,15 +93,31 @@ groups:
 
       # Alertmanager notification failures — routes are reachable but sends
       # are failing (bad webhook URL, Telegram bot token revoked, etc.).
+      #
+      # delivery_plane label (2026-07-25 alarm audit): this rule watches the
+      # worker-webhook path — the front door for every other alert — so it
+      # must not deliver THROUGH that path. During the 2026-07-23 webhook
+      # outage (67 failed sends) it fired but only reached the operator
+      # after the webhook recovered. The label routes it via Alertmanager's
+      # native Telegram receiver instead (same out-of-band posture as
+      # BrainDeliveryDeadMansSwitch; see alertmanager.yml.tmpl). Trade-off,
+      # accepted: no alert_events audit row for this one alert — the row
+      # write rides the exact path being reported broken. A failing-telegram
+      # failure mode can still self-mask, but that arm has no independent
+      # channel left to borrow.
       - alert: AlertmanagerNotificationErrors
         expr: increase(alertmanager_notifications_failed_total[5m]) > 0
         for: 5m
         labels:
           severity: warning
           category: infrastructure
+          delivery_plane: dead_mans_switch
         annotations:
           summary: "Alertmanager notification send failures"
           description: |
             {{ $value }} failed notification attempt(s) in the last 5 min.
             Alerts are routing but receiver delivery is failing.
             Check: Alertmanager UI → Status for the failing receiver config.
+            (Delivered out-of-band via the dead-man's-switch Telegram
+            receiver — the worker-webhook path this alert reports on may
+            be the thing that's broken.)
