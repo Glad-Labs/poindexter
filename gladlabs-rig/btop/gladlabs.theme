@@ -1,0 +1,87 @@
+#* Glad Labs — deuteranomaly-safe btop theme
+#* Rule: cool = blue/teal, hot = amber/orange. No green-vs-red encoding anywhere.
+#* Ramp hues from Paul Tol's colorblind-safe "vibrant/muted" sets + Glad Labs mint-teal accent.
+
+# Main background, empty for terminal default, need to be empty if you want transparent background
+theme[main_bg]="#0b1116"
+
+# Main text color
+theme[main_fg]="#c8d3dc"
+
+# Title color for boxes
+theme[title]="#e6edf3"
+
+# Highlight color for keyboard shortcuts
+theme[hi_fg]="#00e5d6"
+
+# Background color of selected item in processes box
+theme[selected_bg]="#0e4a54"
+
+# Foreground color of selected item in processes box
+theme[selected_fg]="#eafcff"
+
+# Color of inactive/disabled text
+theme[inactive_fg]="#3c4a54"
+
+# Color of text appearing on top of graphs, i.e uptime and current network graph scaling
+theme[graph_text]="#9fb1bd"
+
+# Background color of the percentage meters
+theme[meter_bg]="#1a242c"
+
+# Misc colors for processes box including mini cpu graphs, details memory graph and details status text
+theme[proc_misc]="#00b8d4"
+
+# CPU, Memory, Network, Proc box outline colors
+theme[cpu_box]="#28545e"
+theme[mem_box]="#28545e"
+theme[net_box]="#28545e"
+theme[proc_box]="#28545e"
+
+# Box divider line and small boxes line color
+theme[div_line]="#22323c"
+
+# Temperature graph colors (cool blue -> amber -> hot orange)
+theme[temp_start]="#33bbee"
+theme[temp_mid]="#eecc66"
+theme[temp_end]="#ee7733"
+
+# CPU graph colors (teal -> amber -> orange)
+theme[cpu_start]="#009988"
+theme[cpu_mid]="#eecc66"
+theme[cpu_end]="#ee7733"
+
+# Mem/Disk free meter (cool blues — more free = brighter blue)
+theme[free_start]="#155e8a"
+theme[free_mid]="#2196c9"
+theme[free_end]="#33bbee"
+
+# Mem/Disk cached meter (steel blue)
+theme[cached_start]="#3d6a8f"
+theme[cached_mid]="#5b8db4"
+theme[cached_end]="#7fb3d5"
+
+# Mem/Disk available meter (teal)
+theme[available_start]="#0e6e64"
+theme[available_mid]="#2b9d8f"
+theme[available_end]="#44aa99"
+
+# Mem/Disk used meter (warm ramp — fuller = hotter)
+theme[used_start]="#ccaa44"
+theme[used_mid]="#ee9944"
+theme[used_end]="#ee7733"
+
+# Download graph colors (blue family — pairs against orange upload)
+theme[download_start]="#0077bb"
+theme[download_mid]="#2196c9"
+theme[download_end]="#33bbee"
+
+# Upload graph colors (orange family)
+theme[upload_start]="#b45c1f"
+theme[upload_mid]="#d96f28"
+theme[upload_end]="#ee7733"
+
+# Process box color gradient for threads, mem and cpu usage (teal -> amber -> orange)
+theme[process_start]="#009988"
+theme[process_mid]="#eecc66"
+theme[process_end]="#ee7733"

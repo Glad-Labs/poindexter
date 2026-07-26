@@ -106,6 +106,7 @@ _STRIP_DIR_PREFIXES = (
     "docs/superpowers/",
     "src/cofounder_agent/writing_samples/",
     "mcp-server-gladlabs/",
+    "gladlabs-rig/",
     "src/cofounder_agent/modules/finance/",
     "src/cofounder_agent/tests/unit/modules/finance/",
     ".gitea/",

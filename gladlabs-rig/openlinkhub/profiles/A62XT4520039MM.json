@@ -1,0 +1,15 @@
+{
+  "Active": true,
+  "Path": "/opt/OpenLinkHub/database/profiles/A62XT4520039MM.json",
+  "Product": "XC7 ELITE LCD",
+  "Serial": "A62XT4520039MM",
+  "LCDMode": 0,
+  "LCDRotation": 3,
+  "LCDImage": "",
+  "Brightness": 0,
+  "BrightnessSlider": 100,
+  "OriginalBrightness": 100,
+  "RGBProfile": "static",
+  "Label": "CPU Block",
+  "RgbOff": false
+}

@@ -100,6 +100,7 @@ git rm --cached --quiet docs/architecture/module-v1-phase-2-plan-2026-05-13.md 2
 git rm --cached --quiet docs/architecture/declarative-data-plane-rfc-2026-04-24.md 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || true  # private writing style training data
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
+git rm -r --cached --quiet gladlabs-rig/ 2>/dev/null || true                 # operator PC sensor/lighting config snapshot (hub serials, machine paths)
 
 # === Module v1 private business modules (Glad-Labs/poindexter#490) ===
 # Modules declared visibility="private" live only in the glad-labs-stack
