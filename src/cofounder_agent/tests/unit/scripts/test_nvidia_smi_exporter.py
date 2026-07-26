@@ -434,3 +434,28 @@ def test_process_rows_no_compute_apps_emits_header_only():
     text = EXPORTER._format_process_rows(UUID_MAP, "")
     assert "# TYPE nvidia_gpu_process_memory_mib gauge" in text
     assert _series(text) == {}
+
+
+def test_process_rows_full_cmdline_becomes_executable_basename():
+    """Current Linux drivers report the FULL command line as process_name
+    (flags, base64 blobs and all — commas inside it arrive pre-replaced with
+    '?'). The label must collapse to the executable basename, or every
+    Chromium-style process mints a giant unbounded-cardinality label
+    (observed live 2026-07-26)."""
+    apps = (
+        "GPU-aaaa, 50032, /usr/lib/claude-desktop/claude-desktop"
+        " --type=gpu-process --user-data-dir=/home/mattm/.config/Claude"
+        " --gpu-preferences=UAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAA --shared-files, 171\n"
+        "GPU-aaaa, 7, /usr/local/bin/ollama runner --model /models/gemma, 18432"
+    )
+    series = _series(EXPORTER._format_process_rows(UUID_MAP, apps))
+    assert (
+        series['nvidia_gpu_process_memory_mib{gpu="0",pid="50032",process="claude-desktop"}']
+        == "171.0"
+    )
+    # Subcommand token dropped: "ollama runner" → "ollama" (what the registry's
+    # gpu_evictable_process_pattern default matches).
+    assert (
+        series['nvidia_gpu_process_memory_mib{gpu="0",pid="7",process="ollama"}']
+        == "18432.0"
+    )

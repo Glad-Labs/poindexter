@@ -229,7 +229,18 @@ def _format_process_rows(uuid_map_stdout: str, apps_stdout: str) -> str:
             mem_val = float(mem)
         except ValueError:
             continue
-        process = name.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or "unknown"
+        # process_name is the FULL COMMAND LINE on current Linux drivers
+        # ("/usr/lib/claude-desktop/claude-desktop --type=gpu-process
+        # --gpu-preferences=<base64> …"), not just an executable path. Naive
+        # basename-of-last-slash over that produced garbage labels ('Claude
+        # --gpu-preferences=UAAA…', hundreds of chars, unbounded cardinality —
+        # verified live 2026-07-26). Strip the flag tail, basename the
+        # executable, then drop any subcommand token ("ollama runner" →
+        # "ollama").
+        head = name.split(" --", 1)[0]
+        base = head.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        tokens = base.split()
+        process = (tokens[0] if tokens else "unknown") or "unknown"
         process = process.replace('"', "_")
         lines.append(
             f'nvidia_gpu_process_memory_mib{{gpu="{gpu_index}",pid="{pid}",'
