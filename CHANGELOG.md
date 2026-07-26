@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## [0.109.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.108.1...v0.109.0) (2026-07-26)
+
+
+### Features
+
+* **rig:** snapshot operator PC sensor-strip + thermal lighting stack ([#2767](https://github.com/Glad-Labs/glad-labs-stack/issues/2767)) ([7b7e4d1](https://github.com/Glad-Labs/glad-labs-stack/commit/7b7e4d1329305cf23b0d8ba75bcaa1afd7479578))
+
+
+### Bug Fixes
+
+* **alerts:** PSI thrash rule, bot-immune traffic anomaly, out-of-band webhook-failure page ([#2775](https://github.com/Glad-Labs/glad-labs-stack/issues/2775)) ([786c681](https://github.com/Glad-Labs/glad-labs-stack/commit/786c681d871238947097c1dee80dfb9c501bf53a))
+* **api:** apply the declared search/environment/tags filters in GET /api/settings ([#2777](https://github.com/Glad-Labs/glad-labs-stack/issues/2777)) ([5f5ca44](https://github.com/Glad-Labs/glad-labs-stack/commit/5f5ca44a4a09cf34a90385d8d11a6474c17741f8))
+* **console:** brain panel decisions no longer clobbered by memoryStats stub fields ([#2779](https://github.com/Glad-Labs/glad-labs-stack/issues/2779)) ([21dc5a9](https://github.com/Glad-Labs/glad-labs-stack/commit/21dc5a9657d7a2883cbdc43af1dccf4237666edb))
+* **console:** heal version/QA-rails/README drift + un-wedge release-please extra-files ([#2781](https://github.com/Glad-Labs/glad-labs-stack/issues/2781)) ([05f6509](https://github.com/Glad-Labs/glad-labs-stack/commit/05f6509013b4651c09f6b77d5e78280ba60b8274))
+* **content:** catch the label-free qa.rewrite briefing-echo dialect in the scaffold strip ([#2773](https://github.com/Glad-Labs/glad-labs-stack/issues/2773)) ([49f3ece](https://github.com/Glad-Labs/glad-labs-stack/commit/49f3ecee2223023a19c1239d2c223abf5ec6c4b9))
+* **rig:** execgraph accepts only 0-100 — graph caches emit percentages ([#2772](https://github.com/Glad-Labs/glad-labs-stack/issues/2772)) ([566e08b](https://github.com/Glad-Labs/glad-labs-stack/commit/566e08bcf22a10d80b4f452dd3c289693fab645e))
+* **scripts:** track shell scripts and git hooks as executable ([#2780](https://github.com/Glad-Labs/glad-labs-stack/issues/2780)) ([3ede859](https://github.com/Glad-Labs/glad-labs-stack/commit/3ede8599fd16e6ebfb867bec761d042541f0c184))
+* **video:** motion-directed i2v prompts, TI2V-5B native geometry, real negative prompt ([#2774](https://github.com/Glad-Labs/glad-labs-stack/issues/2774)) ([fa89f1b](https://github.com/Glad-Labs/glad-labs-stack/commit/fa89f1b97212d93061d258aa6be85a234004d653))
+
 ## [0.108.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.108.0...v0.108.1) (2026-07-25)
 
 

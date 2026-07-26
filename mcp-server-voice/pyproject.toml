@@ -1,6 +1,6 @@
 [project]
 name = "poindexter-voice-bridge"
-version = "0.5.0"
+version = "0.109.0"
 description = "LiveKit voice bridge — voice as a session-agnostic UI surface for any Claude Code session."
 requires-python = ">=3.13,<3.15"
 dependencies = [
