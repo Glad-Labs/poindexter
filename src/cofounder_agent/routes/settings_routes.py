@@ -40,6 +40,65 @@ def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
     return getattr(setting, attr, default)
 
 
+def _effective_environment(setting: Any) -> str:
+    """Normalized environment for a setting row.
+
+    `app_settings` carries no environment column, so rows default to the same
+    PRODUCTION the response serializer renders — filter and output must agree.
+    """
+    raw = _setting_attr(setting, "environment", SettingEnvironmentEnum.PRODUCTION)
+    return str(getattr(raw, "value", raw) or "").strip().lower()
+
+
+def _apply_list_filters(
+    settings: list[Any],
+    *,
+    search: str | None,
+    environment: SettingEnvironmentEnum | None,
+    tags: str | None,
+) -> list[Any]:
+    """Apply the list_settings query filters in-process.
+
+    `get_all_settings` filters only by category at the SQL layer (its 60s TTL
+    cache is keyed per category — keying it per search string would fragment
+    it); search/environment/tags narrow the cached list here, BEFORE
+    pagination, so `total` is the filtered count. Until 2026-07 these params
+    were declared but never applied, so needle-in-haystack console lookups
+    (?search=voice_agent_public_join_url&limit=10) got page 1 of the full
+    alphabetical list and missed the key entirely.
+
+    Semantics:
+    - search: case-insensitive substring over key and description.
+    - environment: exact match on the row's effective environment; the "all"
+      value matches every row from either side (filter or row).
+    - tags: comma-separated, case-insensitive; a row must carry every
+      requested tag.
+    """
+    needle = (search or "").strip().lower()
+    if needle:
+        settings = [
+            s
+            for s in settings
+            if needle in str(_setting_attr(s, "key", "") or "").lower()
+            or needle in str(_setting_attr(s, "description", "") or "").lower()
+        ]
+
+    if environment is not None and environment != SettingEnvironmentEnum.ALL:
+        wanted = {environment.value, SettingEnvironmentEnum.ALL.value}
+        settings = [s for s in settings if _effective_environment(s) in wanted]
+
+    requested_tags = {t.strip().lower() for t in (tags or "").split(",") if t.strip()}
+    if requested_tags:
+        settings = [
+            s
+            for s in settings
+            if requested_tags
+            <= {str(t).strip().lower() for t in (_setting_attr(s, "tags", []) or [])}
+        ]
+
+    return settings
+
+
 # Create router
 router = APIRouter(
     prefix="/api/settings",
@@ -99,11 +158,17 @@ async def list_settings(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """List all settings with optional category/environment filtering and pagination."""
+    """List settings with optional category/search/environment/tags filtering and pagination."""
     try:
         # Get all active settings from database (optionally filtered by category)
         all_settings = await db_service.get_all_settings(
             category=category if category else None
+        )
+
+        # Narrow by search/environment/tags before pagination so `total`
+        # reflects the filtered count and small-limit lookups can't miss.
+        all_settings = _apply_list_filters(
+            all_settings, search=search, environment=environment, tags=tags
         )
 
         # Apply pagination. offset/limit are the canonical API params (#635);

@@ -175,6 +175,148 @@ class TestListSettings:
         assert resp.status_code == 401
 
 
+def _row(key: str, description: str = "", **extra) -> dict:
+    """A dict-shaped settings row (the shape admin_db rows expose)."""
+    return {**SETTING_DICT, "key": key, "description": description, **extra}
+
+
+@pytest.mark.unit
+class TestListSettingsFilters:
+    """search/environment/tags were declared but never applied (dead Query
+    params) — ?search=X silently returned page 1 of the full alphabetical
+    list, breaking the console's needle-in-haystack lookups
+    (PX.api.voiceJoinUrl / PX.api.electricityRateKwh in console/js/api.js)."""
+
+    def _client(self, rows):
+        mock_db = _make_settings_db()
+        mock_db.get_all_settings = AsyncMock(return_value=rows)
+        return TestClient(_build_app(mock_db))
+
+    # ── search ──────────────────────────────────────────────────────────
+
+    def test_search_filters_by_key_substring(self):
+        rows = [_row("log_level"), _row("voice_agent_public_join_url")]
+        data = self._client(rows).get("/api/settings?search=voice").json()
+        assert data["total"] == 1
+        assert data["items"][0]["key"] == "voice_agent_public_join_url"
+
+    def test_search_matches_description_case_insensitive(self):
+        rows = [_row("log_level", "Log VERBOSITY level"), _row("other_key", "unrelated")]
+        data = self._client(rows).get("/api/settings?search=verbosity").json()
+        assert data["total"] == 1
+        assert data["items"][0]["key"] == "log_level"
+
+    def test_search_miss_returns_empty(self):
+        rows = [_row("log_level"), _row("other_key")]
+        data = self._client(rows).get("/api/settings?search=zz_no_such_needle").json()
+        assert data["total"] == 0
+        assert data["items"] == []
+
+    def test_search_total_is_filtered_count_and_paginates(self):
+        """`total` must be the FILTERED count; offset/limit slice the
+        filtered list, not the raw one."""
+        rows = [_row(f"aaa_filler_{i:03d}") for i in range(20)]
+        rows += [_row(f"zzz_match_{i}") for i in range(3)]
+        client = self._client(rows)
+
+        page1 = client.get("/api/settings?search=zzz_match&limit=2").json()
+        assert page1["total"] == 3
+        assert [s["key"] for s in page1["items"]] == ["zzz_match_0", "zzz_match_1"]
+
+        page2 = client.get("/api/settings?search=zzz_match&limit=2&offset=2").json()
+        assert page2["total"] == 3
+        assert [s["key"] for s in page2["items"]] == ["zzz_match_2"]
+
+    def test_console_voice_join_url_lookup_hits_first_page(self):
+        """Mirror of PX.api.voiceJoinUrl(): the key sorts far past the first
+        alphabetical page, so the lookup only works if search is applied."""
+        rows = [_row(f"aaa_setting_{i:03d}") for i in range(30)]
+        rows.append(_row("voice_agent_public_join_url", "Tap-to-join voice URL"))
+        data = (
+            self._client(rows)
+            .get("/api/settings?search=voice_agent_public_join_url&limit=10")
+            .json()
+        )
+        assert any(s["key"] == "voice_agent_public_join_url" for s in data["items"])
+
+    def test_console_electricity_rate_lookup_returns_value(self):
+        """Mirror of PX.api.electricityRateKwh(): the matching row (and its
+        value) must land in the first page."""
+        rows = [_row(f"aaa_setting_{i:03d}") for i in range(30)]
+        rows.append(_row("electricity_rate_kwh", value="0.2579"))
+        data = (
+            self._client(rows)
+            .get("/api/settings?search=electricity_rate_kwh&limit=10")
+            .json()
+        )
+        hits = [s for s in data["items"] if s["key"] == "electricity_rate_kwh"]
+        assert hits and hits[0]["value"] == "0.2579"
+
+    # ── environment ─────────────────────────────────────────────────────
+
+    def test_environment_filter_excludes_nonmatching(self):
+        """Rows without an environment column are effectively production —
+        same default the response serializer renders."""
+        rows = [_row("log_level"), _row("other_key")]
+        client = self._client(rows)
+        assert client.get("/api/settings?environment=development").json()["total"] == 0
+        assert client.get("/api/settings?environment=production").json()["total"] == 2
+
+    def test_environment_all_matches_from_either_side(self):
+        rows = [_row("log_level"), _row("dev_only", environment="development")]
+        client = self._client(rows)
+        # Filter value "all" → no narrowing.
+        assert client.get("/api/settings?environment=all").json()["total"] == 2
+        # Row value "all" → matches any requested environment.
+        rows_all = [_row("everywhere", environment="all")]
+        assert (
+            self._client(rows_all).get("/api/settings?environment=development").json()["total"]
+            == 1
+        )
+
+    def test_environment_explicit_row_value_matches(self):
+        rows = [_row("log_level"), _row("dev_only", environment="development")]
+        data = self._client(rows).get("/api/settings?environment=development").json()
+        assert [s["key"] for s in data["items"]] == ["dev_only"]
+
+    def test_environment_invalid_value_is_422(self):
+        assert (
+            self._client([_row("log_level")]).get("/api/settings?environment=bogus").status_code
+            == 422
+        )
+
+    # ── tags ────────────────────────────────────────────────────────────
+
+    def test_tags_filter_requires_all_requested_tags(self):
+        rows = [
+            _row("voice_url", tags=["voice", "infra"]),
+            _row("voice_flag", tags=["voice"]),
+            _row("untagged"),
+        ]
+        client = self._client(rows)
+        assert client.get("/api/settings?tags=voice").json()["total"] == 2
+        data = client.get("/api/settings?tags=voice,infra").json()
+        assert [s["key"] for s in data["items"]] == ["voice_url"]
+
+    def test_tags_filter_case_insensitive_and_trims(self):
+        rows = [_row("voice_url", tags=["Voice", "Infra"]), _row("untagged")]
+        data = self._client(rows).get("/api/settings?tags=%20voice%20,INFRA").json()
+        assert data["total"] == 1
+        assert data["items"][0]["key"] == "voice_url"
+
+    # ── composition ─────────────────────────────────────────────────────
+
+    def test_search_and_tags_compose(self):
+        rows = [
+            _row("voice_agent_public_join_url", tags=["voice"]),
+            _row("voice_agent_model", tags=["models"]),
+            _row("log_level", tags=["voice"]),
+        ]
+        data = self._client(rows).get("/api/settings?search=voice_agent&tags=voice").json()
+        assert data["total"] == 1
+        assert data["items"][0]["key"] == "voice_agent_public_join_url"
+
+
 # ---------------------------------------------------------------------------
 # GET /api/settings/{setting_id}
 # ---------------------------------------------------------------------------
