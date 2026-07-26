@@ -161,7 +161,7 @@ def _settings_row(key: str, value: str) -> dict[str, Any]:
 class _FakeConn:
     """Fake asyncpg connection — delegates execute recording to the pool."""
 
-    def __init__(self, pool: "_FakePool") -> None:
+    def __init__(self, pool: _FakePool) -> None:
         self._pool = pool
 
     async def execute(self, sql: str, *args: Any) -> str:

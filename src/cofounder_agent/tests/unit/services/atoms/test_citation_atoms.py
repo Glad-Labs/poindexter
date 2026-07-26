@@ -124,7 +124,7 @@ async def test_reconcile_attributes_bare_youtube_url(monkeypatch):
     from modules.content.atoms import content_reconcile_citations as mod
 
     async def _stub(urls, site_config):
-        return {u: "ImWateringPSUs" for u in urls}
+        return dict.fromkeys(urls, "ImWateringPSUs")
 
     monkeypatch.setattr(mod, "_resolve_youtube_authors", _stub)
     state = {

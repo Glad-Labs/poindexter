@@ -103,15 +103,21 @@ def ensure_blank_line_before_lists(content: str) -> str:
 # Moved to ``atoms/_scaffold_helpers.py`` (2026-07-23): the qa.rewrite rescue
 # path needs the same strip (its revision-briefing echo never re-enters this
 # node — the loop resumes at qa.programmatic), and atoms must not import
-# sibling atoms, so the logic lives in a shared ``_``-library now. The names
-# below stay re-exported for existing imports/tests.
+# sibling atoms, so the logic lives in a shared ``_``-library now.
+#
+# The two ``_RE`` names below are re-exported for backcompat only — they are
+# not referenced in this module, so F401 is expected here rather than a signal
+# of dead logic. The live strip is ``strip_leaked_planning_scaffold``;
+# content_validator documents the strip-here/detect-there pairing against these
+# names. isort splits this into one statement per name because of the per-name
+# suppression comments below; that is cosmetic and the split is stable.
 from modules.content.atoms._scaffold_helpers import (  # noqa: E402
-    # Re-exported for backcompat only (see note above) — not referenced in this
-    # module, so F401 is expected here rather than a signal of dead logic. The
-    # live strip is ``strip_leaked_planning_scaffold`` below; content_validator
-    # documents the strip-here/detect-there pairing against these names.
     FIRST_HEADING_RE as _FIRST_HEADING_RE,  # noqa: F401
+)
+from modules.content.atoms._scaffold_helpers import (
     SCAFFOLD_TELL_RE as _SCAFFOLD_TELL_RE,  # noqa: F401
+)
+from modules.content.atoms._scaffold_helpers import (
     strip_leaked_planning_scaffold,
 )
 

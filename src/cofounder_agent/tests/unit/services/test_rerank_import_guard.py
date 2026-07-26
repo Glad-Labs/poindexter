@@ -68,9 +68,9 @@ def test_rerank_stack_imports_cleanly() -> None:
     ``src/cofounder_agent/Dockerfile``.
     """
     import huggingface_hub  # noqa: F401
+    import sentence_transformers  # noqa: F401
     import tokenizers  # noqa: F401
     import transformers  # noqa: F401
-    import sentence_transformers  # noqa: F401
 
     # CrossEncoder is exactly what the rag_engine reranker constructs. Assert it
     # resolved to a class so a partial/shimmed import can't pass vacuously.

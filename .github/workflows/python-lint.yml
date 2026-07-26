@@ -1,0 +1,94 @@
+# Ruff gate for the Python tree.
+#
+# Until 2026-07-26 no workflow ran a Python linter at all — `npm run
+# lint:python` existed but nothing enforced it, so findings accumulated
+# silently (27 in the backend by the time #2835 cleared them).
+#
+# Two jobs, deliberately different in scope:
+#
+#   backend-lint  — the FULL configured rule set (see [tool.ruff] in
+#                   src/cofounder_agent/pyproject.toml) over the tree that
+#                   config actually governs. Zero tolerance: this is green as
+#                   of #2835 and must stay green.
+#
+#   syntax-check  — E9 (syntax errors) over EVERY .py in the repo, including
+#                   scripts/ and infrastructure/ which no ruff config covers.
+#                   This is the gap that let
+#                   infrastructure/grafana/scripts/optimize_portrait.py sit
+#                   unparseable for two months (broken 2026-05-14 by a
+#                   public-mirror strip that re-indented code into column 0,
+#                   found 2026-07-26). Syntax-only is intentional — those
+#                   trees carry ~51 style findings that are not worth gating,
+#                   but a file that cannot be parsed is never acceptable.
+#
+# Ruff is pinned to the same version poetry resolves (0.15.20) so CI and a
+# local `poetry run ruff` can never disagree about what is a violation.
+name: python-lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'src/cofounder_agent/pyproject.toml'
+      - '.github/workflows/python-lint.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'src/cofounder_agent/pyproject.toml'
+      - '.github/workflows/python-lint.yml'
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — a read-only checkout is all this needs.
+permissions:
+  contents: read
+
+env:
+  # Keep in lockstep with `ruff = "^0.15.20"` in src/cofounder_agent/pyproject.toml.
+  RUFF_VERSION: '0.15.20'
+
+jobs:
+  backend-lint:
+    # Source-repo only — same rationale as ports-lint.yml / grafana-panels-lint.yml.
+    # The public mirror is force-pushed (checks gate nothing there). A FORK
+    # (repo name != Glad-Labs/poindexter) still runs it.
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+      - name: Install ruff
+        run: pip install "ruff==${RUFF_VERSION}"
+      - name: Ruff (full rule set, backend tree)
+        working-directory: src/cofounder_agent
+        run: ruff check --output-format=github .
+
+  syntax-check:
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+      - name: Install ruff
+        run: pip install "ruff==${RUFF_VERSION}"
+      - name: Ruff (syntax errors only, whole repo)
+        run: ruff check --select E9 --output-format=github .

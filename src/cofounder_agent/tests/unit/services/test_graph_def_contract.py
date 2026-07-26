@@ -1,8 +1,8 @@
 """graph_def contract stamping + drift gate (poindexter#755)."""
 import pytest
 
-from plugins.atom import AtomMeta, FieldSpec
 import services.pipeline_architect as pa
+from plugins.atom import AtomMeta, FieldSpec
 
 
 def _meta(

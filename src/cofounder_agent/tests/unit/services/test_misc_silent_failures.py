@@ -37,8 +37,14 @@ import pytest
 from modules.content.internal_link_coherence import get_tag_slugs_for_post
 from plugins.llm_providers.gemini import GeminiProvider
 from plugins.scheduler import PluginScheduler
-from services import content_revisions_logger, experiment_runner, profiling
-from services import publishing_adapters_db, research_context, task_failure_alerts
+from services import (
+    content_revisions_logger,
+    experiment_runner,
+    profiling,
+    publishing_adapters_db,
+    research_context,
+    task_failure_alerts,
+)
 from services import tasks_db as tasks_db_module
 from services.integrations import operator_notify
 from services.jobs import run_dev_diary_post

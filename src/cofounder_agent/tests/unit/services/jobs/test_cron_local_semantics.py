@@ -1,8 +1,8 @@
 """The three wall-clock jobs are authored in operator-local time now."""
 from __future__ import annotations
 
-from services.jobs.morning_brief import MorningBriefJob
 from services.jobs.findings_daily_digest import FindingsDailyDigestJob
+from services.jobs.morning_brief import MorningBriefJob
 from services.jobs.run_dev_diary_post import RunDevDiaryPostJob
 
 

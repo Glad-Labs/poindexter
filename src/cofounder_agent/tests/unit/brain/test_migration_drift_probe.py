@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
 from brain import migration_drift_probe as md
@@ -69,5 +70,5 @@ def test_blocking_health_fetch_does_not_block_event_loop():
     # A blocking health fetch on the brain loop starves the ticker; an
     # offloaded one lets it keep ticking during the 0.4 s wait.
     assert len(stamps) > 5, "event loop was starved during the blocking health fetch"
-    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    gaps = [b - a for a, b in pairwise(stamps)]
     assert max(gaps) < 0.3, f"event loop blocked ~{max(gaps):.2f}s during health fetch"

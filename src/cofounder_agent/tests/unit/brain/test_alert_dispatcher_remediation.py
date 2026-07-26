@@ -1,9 +1,8 @@
 import json
 from unittest.mock import AsyncMock
 
-import pytest
-
 import brain.alert_dispatcher as ad
+import pytest
 from brain.remediation.engine import RemediationDecision
 from brain.remediation.registry import ActionResult
 

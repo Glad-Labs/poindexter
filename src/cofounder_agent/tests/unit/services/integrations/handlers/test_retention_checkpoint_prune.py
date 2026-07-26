@@ -17,7 +17,6 @@ import pytest
 
 from services.integrations.handlers.retention_checkpoint_prune import checkpoint_prune
 
-
 # ---------------------------------------------------------------------------
 # Fake pool / connection helpers
 # ---------------------------------------------------------------------------

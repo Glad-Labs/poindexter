@@ -14,6 +14,7 @@ test sleeps for real.
 """
 from __future__ import annotations
 
+from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -167,7 +168,7 @@ def test_retry_sleep_does_not_block_event_loop():
         "event loop was starved during the retry wait — a synchronous sleep is "
         "running on the brain loop"
     )
-    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    gaps = [b - a for a, b in pairwise(stamps)]
     assert max(gaps) < 0.5, (
         f"event loop blocked ~{max(gaps):.2f}s during the retry wait"
     )

@@ -9,7 +9,8 @@ returns a relevance score per pair. The encoder is built through an injectable
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from services.model_eval.metrics import mrr, ndcg_at_k
 from services.model_eval.types import GoldenSet, MetricResult

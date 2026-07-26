@@ -34,7 +34,6 @@ from pipecat.processors.frame_processor import FrameDirection  # noqa: E402
 
 from services.voice_agent import VoiceCostTrackerProcessor  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,7 +70,6 @@ def _mock_pool() -> tuple[MagicMock, AsyncMock]:
 
 
 from typing import Any
-
 
 # ---------------------------------------------------------------------------
 # Tests

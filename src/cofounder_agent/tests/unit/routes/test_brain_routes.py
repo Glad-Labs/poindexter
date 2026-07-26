@@ -19,7 +19,6 @@ from routes.brain_routes import router
 from services.brain_stats import _iso
 from utils.route_utils import get_database_dependency
 
-
 # ---------------------------------------------------------------------------
 # Helper tests
 # ---------------------------------------------------------------------------

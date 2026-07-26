@@ -103,8 +103,8 @@ async def test_missing_source_table_raises():
 async def test_default_batch_size_used_when_not_specified():
     """config without batch_size uses the default of 1000."""
     from services.integrations.handlers.retention_embeddings_orphan_prune import (
-        embeddings_orphan_prune,
         _DEFAULT_BATCH_SIZE,
+        embeddings_orphan_prune,
     )
 
     pool, conn = _make_pool("DELETE 0")

@@ -23,7 +23,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # retention_summarize_to_table._resolve_summary_model
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import pytest
-
 from brain.remediation import rules as R
+
 from tests.unit.brain._remediation_fakes import FakePool
 
 

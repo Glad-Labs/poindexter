@@ -12,9 +12,9 @@ FinanceModule need the worker's heavy deps; their conformance is covered in CI +
 
 from __future__ import annotations
 
-from tests.unit._fake_platform import FakePlatform
 from plugins.module import Module, ModuleManifest
 from plugins.platform import Capability, ScopedPlatform, scope_for_module
+from tests.unit._fake_platform import FakePlatform
 
 
 def _stub_module(capabilities: tuple[Capability, ...] = ()) -> object:
