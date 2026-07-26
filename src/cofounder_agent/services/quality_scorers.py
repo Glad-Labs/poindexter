@@ -7,6 +7,19 @@ dimensions (0-10 scale) using pattern-based analysis.
 
 All functions that previously accessed self._qa_cfg() now accept a
 ``cfg`` dict parameter or call ``qa_cfg()`` directly.
+
+**These are a fast pre-QA lint, not a quality measurement** (glad-labs-stack
+#2129). Baselines start high and subtract for detected red flags (missing
+citations, no headings, short length) — they catch gross defects cheaply
+BEFORE the expensive multi-model QA rails run, but they cannot judge whether
+content is actually good: ``score_seo`` / ``score_engagement`` /
+``score_accuracy`` are baseline constants nudged by keyword/structure
+pattern-matching, not semantic assessment. The real per-dimension judgment
+comes from the ``qa.*`` rail atoms (``modules/content/atoms/qa_*.py`) —
+``llm_critic``, DeepEval, Ragas — which actually read and reason about the
+content. ``qa.aggregate`` promotes their weighted score as the canonical
+``quality_score``; this module's output only fills the gap when a custom
+graph_def runs no QA rails at all.
 """
 
 import re
@@ -129,8 +142,13 @@ def score_accuracy(
     *,
     site_config: SiteConfig,
 ) -> float:
-    """Score accuracy based on citation patterns and factual anchors.
-    Thresholds tunable via qa_accuracy_* app_settings keys.
+    """Heuristic pre-QA accuracy PROXY — link/citation-pattern presence, NOT
+    a factual-correctness check. Starts at ``accuracy_baseline`` and nudges
+    for citation/link patterns; can't tell a true claim from a false one.
+    Actual fact-checking is ``qa.programmatic`` (fabrication patterns),
+    ``qa.web_factcheck``, and ``llm_critic`` — this is a cheap pre-filter,
+    not a substitute (glad-labs-stack#2129). Thresholds tunable via
+    qa_accuracy_* app_settings keys.
 
     ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``
     and the inline ``site_domain`` / ``trusted_source_domains`` reads."""
@@ -327,7 +345,9 @@ def score_seo(
     *,
     site_config: SiteConfig,
 ) -> float:
-    """Score SEO quality. Baseline tunable via qa_seo_baseline.
+    """Heuristic pre-QA SEO structure check — markdown/keyword PRESENCE, not
+    real SEO quality (search intent, competitiveness, semantic relevance are
+    unmeasured). Baseline tunable via qa_seo_baseline (glad-labs-stack#2129).
 
     Awards points for:
     - Markdown headers (+1.0)
@@ -405,8 +425,11 @@ def score_engagement(
     *,
     site_config: SiteConfig,
 ) -> float:
-    """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline.
-    ``site_config`` is REQUIRED (#272 Phase-2c) — threads to ``qa_cfg``."""
+    """Heuristic pre-QA engagement PROXY — surface structure/style markers
+    (lists, questions, code blocks), not whether content is actually
+    compelling. Baseline tunable via qa_engagement_baseline (glad-labs-stack
+    #2129). ``site_config`` is REQUIRED (#272 Phase-2c) — threads to
+    ``qa_cfg``."""
     cfg = cfg or qa_cfg(site_config=site_config)
     score = cfg["engagement_baseline"]
 

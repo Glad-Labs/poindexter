@@ -176,17 +176,25 @@ class AIContentGenerator:
         self, content: str, topic: str, target_length: int
     ) -> ContentValidationResult:
         """
-        Self-check: Validate generated content against quality rubric.
+        Internal writer self-revision gate — a cheap keyword/structure LINT,
+        not a real readability/completeness measurement (glad-labs-stack
+        #2129). Used only to decide whether THIS writer pass should retry
+        with feedback (see the two call sites below); its score is never
+        promoted as the operator-facing quality_score — that comes from the
+        real ``qa.*`` judge rails via ``qa.aggregate``.
 
         Checks:
         1. Content length (target ±30%)
         2. Structure (has headings, sections)
-        3. Content quality (readability, completeness)
+        3. Heading count + presence of a conclusion/bullet/CTA keyword
+           (a structural proxy for "readability, completeness" — not an
+           actual readability or completeness assessment)
         4. Markdown formatting
         5. Presence of practical examples
 
         Returns:
-            ContentValidationResult with quality score and issues
+            ContentValidationResult with a lint score and issues, for the
+            writer's own retry decision.
         """
         issues = []
         score = 10.0

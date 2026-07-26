@@ -163,16 +163,36 @@ class TestQaAggregateParity:
         }
         out = await qa_aggregate.run(state)
         assert out["qa_final_verdict"] == "approve"
-        assert out["quality_score"] == 90.0          # promoted = max(60, 90)
+        assert out["quality_score"] == 90.0          # promoted = real judge-rail score (90), not the 60 early estimate
         assert out["qa_reviews"] == state["qa_rail_reviews"]  # populated for finalize_task
         assert out["qa_rewrite_attempts"] == 0
         assert "_halt" not in out
 
-    async def test_approve_keeps_higher_early_score(self):
+    async def test_approve_ignores_higher_early_score(self):
+        # Regression for glad-labs-stack#2129: a cheap pre-QA pattern-based
+        # heuristic must never outrank what the real judge rails concluded.
+        # The early estimate (95) is HIGHER than the real judged score (80) —
+        # the real score must win, not the heuristic.
         state = {"platform": FakePlatform(), "quality_score": 95.0,
                  "qa_rail_reviews": [{"reviewer": "x", "approved": True, "score": 80.0, "provider": "ollama", "advisory": False, "feedback": ""}]}
         out = await qa_aggregate.run(state)
-        assert out["quality_score"] == 95.0  # max(95, 80)
+        assert out["quality_score"] == 80.0
+
+    async def test_falls_back_to_early_when_no_reviews_at_all(self):
+        # Degenerate case: a custom architect-composed graph_def with zero
+        # qa.* nodes produces no reviews — aggregate_rail_reviews([]) always
+        # rejects at score 0 (empty reviews can't clear a positive threshold),
+        # so this exercises the reject path. `quality_score` still falls back
+        # to the early pattern-based estimate (65) rather than collapsing to
+        # the artificial 0 `qa_final_score` — better a rough number than none.
+        state = {
+            "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
+            "quality_score": 65.0,
+        }
+        out = await qa_aggregate.run(state)
+        assert out["qa_final_verdict"] == "reject"
+        assert out["qa_final_score"] == 0.0     # no rail scored anything
+        assert out["quality_score"] == 65.0     # falls back to the early estimate
 
     async def test_reject_does_db_writes_and_halts(self, monkeypatch):
         class _FakePipelineDB:

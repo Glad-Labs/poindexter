@@ -6,8 +6,14 @@ DB-configurable weighted-score + non-advisory-veto + threshold aggregation
 the cross_model_qa stage used to be:
 
 - APPROVE: emit qa_final_score / qa_final_verdict, promote
-  quality_score = max(early, qa) and populate qa_reviews (read by
-  finalize_task for the approval-UI feedback).
+  quality_score = the real judge-rail score (falling back to the early
+  pattern-based estimate only when no rail produced a review at all) and
+  populate qa_reviews (read by finalize_task for the approval-UI feedback).
+  Prior to glad-labs-stack#2129 this promoted max(early, qa) — a cheap
+  pre-QA heuristic (SEO/engagement/accuracy pattern-matching) could outrank
+  what the real critics/DeepEval/etc. actually concluded, so the
+  operator-visible number and the auto-publish gate sometimes saw an
+  inflated score the judges never approved.
 - REJECT: do the same DB writes the legacy stage did (via _qa_persist) —
   status=rejected + rejected-draft + model_performance + gate_history —
   then set _halt so build_graph_from_spec's halt-aware router short-circuits
@@ -42,7 +48,7 @@ ATOM_META = AtomMeta(
     outputs=(
         FieldSpec(name="qa_final_score", type="float", description="weighted QA score"),
         FieldSpec(name="qa_final_verdict", type="str", description="approve|reject"),
-        FieldSpec(name="quality_score", type="float", description="promoted max(early, qa)"),
+        FieldSpec(name="quality_score", type="float", description="promoted real judge-rail score (early estimate only if no rail reviewed)"),
         FieldSpec(name="qa_reviews", type="list[dict]", description="reviews for the approval UI"),
     ),
     requires=("qa_rail_reviews",),
@@ -159,8 +165,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             str(state.get("task_id") or "?")[:8],
         )
 
-    # Promote the canonical quality_score (max of early-eval + QA), mirroring
-    # the legacy stage so downstream finalize_task / auto-publish use the QA score.
+    # Early pattern-based estimate (stage.quality_evaluation, runs before any
+    # qa.* rail). Used ONLY as a fallback below when no rail reviewed the
+    # content at all — otherwise the real judge-rail score is authoritative
+    # (glad-labs-stack#2129: a heuristic must never outrank real QA signal).
     early = 0.0
     try:
         early = float(state.get("quality_score") or 0.0)
@@ -279,7 +287,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             float(final_score), best_score, str(state.get("task_id") or "?")[:8],
         )
 
-    promoted = max(early, kept_score)
+    # The real judge-rail score is authoritative whenever any rail reviewed
+    # the content — a cheap pre-QA heuristic must never outrank what the
+    # actual critics/DeepEval/etc. concluded (glad-labs-stack#2129). Fall
+    # back to the early estimate only in the degenerate case of an
+    # architect-composed graph_def with zero qa.* nodes (empty `reviews`).
+    promoted = kept_score if reviews else early
 
     out: dict[str, Any] = {
         "qa_final_score": kept_score,
