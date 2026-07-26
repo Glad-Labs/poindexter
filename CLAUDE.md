@@ -90,7 +90,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 > DB-derived numbers sat frozen at their 2026-06-10 values for six weeks until
 > the 2026-07-26 manual refresh. The repo-derived half syncs fine.
 
-- 159 live posts on gladlabs.io (333 posts total; 1,974 pipeline_tasks across all generation runs)
+- 159 live posts on gladlabs.io (333 posts total; 1,975 pipeline_tasks across all generation runs)
 - 379 Python files under `src/cofounder_agent/services/` (~291 substantive after `__init__.py` stubs)
 - **Deleted trees** (May 2026 cleanup wave; full detail in git) — if a doc or commit references one, it is gone and should not be recreated: the whole `workflow_executor` chain (plus `phases/`, `agents/`, `schemas/custom_workflow_schemas.py`, ~3,800 LOC); `services/task_executor.py` (~1,500 LOC, replaced by `services/flows/content_generation.py` on Prefect); and `plugins/stage_runner.py` with the legacy chunked `content_router_service` path.
 - **Cutover gates are all `true` on prod** — Prefect is the dispatcher, `canonical_blog` is the pipeline, LiteLLM is the LLM router, LlamaIndex + Ragas + DeepEval + Guardrails are all on. `atom_runs` + `services/atom_runs.py` capture per-atom run + outcome, gated by `atom_runs_capture_enabled`.
@@ -100,7 +100,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 - 1,279 app_settings keys live on prod (68 secret; drifts as keys are added). Three sources seed the table — `settings_defaults.py` 769, `0000_baseline.seeds.sql` 694 (= 692 non-secret + 2 placeholders), `brain/seed_app_settings.json` 80 free-tier — and overlapping keys must agree, enforced by `scripts/ci/settings_seed_value_drift_lint.py`.
 - `plugins/registry.py` `_SAMPLES` holds 103 core-sample plugins, of which 61 are job-type (taps + retention + memory hygiene + content surfaces); the rest are 14 stages / 8 taps / 8 topic_sources / 5 image / 4 llm / 1 probe / 1 video / 1 audio. Several jobs are dormant behind master switches, so the live scheduled count is lower.
 - 5 declarative-data-plane tables (`external_taps` / `retention_policies` / `webhook_endpoints` / `publishing_adapters` / `qa_gates`) feeding the integrations handler registry's 14 handlers across 4 handler surfaces (`tap` ×4 / `retention` ×6 / `outbound` ×2 / `publishing` ×2). `webhook_endpoints` is a declarative _table_ with no handler surface of its own — its rows are consumed by `integrations/outbound_dispatcher.py` + `operator_notify.py`. A 6th `services.declarative_config_service`-managed table, `alert_rules` (`poindexter alerts`), is CRUD'd through the same generic service but synced by the bespoke `brain/alert_sync.py` loop rather than the handler registry.
-- 54,712 embeddings across posts / issues / audit / memory / brain / claude_sessions (retention prunes claude_sessions/brain vectors, so this drifts)
+- 54,764 embeddings across posts / issues / audit / memory / brain / claude_sessions (retention prunes claude_sessions/brain vectors, so this drifts)
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
