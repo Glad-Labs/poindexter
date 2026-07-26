@@ -40,6 +40,17 @@ _GAP_SECONDS = 0.25
 # Empty/unset => the built-in default voice.
 _DEFAULT_PROMPT_WAV = os.environ.get("CHATTERBOX_PROMPT_WAV", "").strip() or None
 
+# Bitrate for lossy encodes. MUST be explicit: ffmpeg's libmp3lame default for a
+# mono 24 kHz input (Chatterbox's native rate) resolves to 32 kbps, which is
+# audibly artifacty on speech — and the client then re-encodes that already-
+# damaged stream to its own delivery bitrate, so the loss is permanent
+# (measured 2026-07-26: every cloned-voice episode shipped through a 32 kbps
+# first pass). 128 kbps mono is transparent for speech and keeps the
+# sidecar->client hop from being the weak link. Chatterbox is 24 kHz natively;
+# deliberately NOT resampling here — the client's loudnorm pass already
+# resamples to its delivery rate, and upsampling twice adds nothing.
+_ENCODE_BITRATE = os.environ.get("CHATTERBOX_ENCODE_BITRATE", "128k").strip() or "128k"
+
 
 def _get_model():
     global _model
@@ -50,14 +61,20 @@ def _get_model():
 
 
 def _encode(samples, sample_rate: int, fmt: str) -> bytes:
-    """WAV samples -> requested container via ffmpeg (mp3/wav/opus/aac)."""
+    """WAV samples -> requested container via ffmpeg (mp3/wav/opus/aac).
+
+    Lossy formats carry an explicit ``-b:a`` (see ``_ENCODE_BITRATE``) —
+    without it ffmpeg picks a bitrate off the input geometry and lands at
+    32 kbps for mono 24 kHz, wrecking the audio before the client ever
+    sees it.
+    """
     wav_buf = io.BytesIO()
     sf.write(wav_buf, samples, sample_rate, format="WAV")
     if fmt == "wav":
         return wav_buf.getvalue()
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-         "-i", "pipe:0", "-f", fmt, "pipe:1"],
+         "-i", "pipe:0", "-b:a", _ENCODE_BITRATE, "-f", fmt, "pipe:1"],
         input=wav_buf.getvalue(), capture_output=True,
     )
     if proc.returncode != 0:
