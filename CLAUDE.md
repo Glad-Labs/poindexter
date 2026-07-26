@@ -76,19 +76,24 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | image-gen server | http://localhost:9836 | Local image generation backend |
 | Postiz | http://localhost:5003 | Self-hosted social distribution hub (opt-in: `--profile postiz`). Connect X/LinkedIn/Reddit/Mastodon/TikTok/Instagram OAuth accounts here; copy integration UUIDs into `postiz_integration_id_*` app_settings. |
 
-### Key Numbers (repo-derived stats auto-synced daily by CI; DB-derived counts hand-refreshed 2026-07-26)
+### Key Numbers (repo-derived stats auto-synced daily by CI; DB-derived counts last refreshed 2026-07-26)
 
 > **Editing note:** `.github/workflows/sync-claude-md.yml` rewrites exactly three
 > phrases in this section by regex — `<N> Python files under
 > `src/cofounder_agent/services/``, `<N> test files`, and `<N> Grafana
 > dashboards` (first match only). Keep those wordings intact or the sync
-> silently stops updating.
+> silently stops updating — that is not hypothetical: rewording the
+> `app_settings` bullet here killed its anchor, and the very next nightly run
+> (#2825) refreshed `pipeline_tasks` and `embeddings` while leaving that count
+> frozen, with nothing in the log to say so. A missed anchor now prints a
+> `WARNING:` into the PR body instead of passing as "already correct".
 >
-> **Known gap:** the daily `claude-md-sync` session computes fresh DB counts and
-> logs "opened CLAUDE.md sync PR", but no such PR exists — the run emits
-> `rc=1 stderr=must be on a branch named differently than "main"`. The
-> DB-derived numbers sat frozen at their 2026-06-10 values for six weeks until
-> the 2026-07-26 manual refresh. The repo-derived half syncs fine.
+> The heading's own `DB-derived counts last refreshed <date>` clause is an
+> anchor too: `scripts/sync_claude_md_db_stats.py` restamps the date whenever it
+> moves a DB count, so the marker tracks the numbers rather than the last human
+> edit. The nightly PR itself was broken from 2026-06-10 to 2026-07-26 (`gh pr
+> create` ran against the shared checkout instead of the session worktree, fixed
+> in #2809; first clean unattended run #2825, 2026-07-26).
 
 - 159 live posts on gladlabs.io (333 posts total; 1,975 pipeline_tasks across all generation runs)
 - 379 Python files under `src/cofounder_agent/services/` (~291 substantive after `__init__.py` stubs)
