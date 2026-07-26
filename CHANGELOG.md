@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## [0.110.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.109.0...v0.110.0) (2026-07-26)
+
+
+### Features
+
+* **console:** wire the Restart button + list the full container roster ([#2797](https://github.com/Glad-Labs/glad-labs-stack/issues/2797)) ([673d9bb](https://github.com/Glad-Labs/glad-labs-stack/commit/673d9bb13c96d60bb2f2092ef97b7c2a1911b57d))
+* **observability:** stamp model + task_id onto Langfuse TRACE metadata ([#2788](https://github.com/Glad-Labs/glad-labs-stack/issues/2788)) ([2c96937](https://github.com/Glad-Labs/glad-labs-stack/commit/2c969376aca315c6cce5e356b74db94aab03cd07))
+* **seo:** surface gate-parked seo_refresh runs — console lane, HTTP approve/resume, staleness sweep ([#2785](https://github.com/Glad-Labs/glad-labs-stack/issues/2785)) ([8f82cca](https://github.com/Glad-Labs/glad-labs-stack/commit/8f82ccaf170b4a8f6b038526b192bda26b8c5308))
+* **seo:** wire Lock-2 auto-publish graduation for seo_refresh_gate ([#2789](https://github.com/Glad-Labs/glad-labs-stack/issues/2789)) ([116a8e6](https://github.com/Glad-Labs/glad-labs-stack/commit/116a8e6975ddb0102930eb52f5fa6fbdaae65008))
+
+
+### Bug Fixes
+
+* **chatterbox:** move TTS sidecar to a Blackwell-compatible torch build, fix double GPU-visibility pin ([#2798](https://github.com/Glad-Labs/glad-labs-stack/issues/2798)) ([d02c34d](https://github.com/Glad-Labs/glad-labs-stack/commit/d02c34d4a53cad909f2b9654a30e70e0d416df57))
+* **compose:** expandable_segments on wan-server — reclaim VAE-decode fragmentation headroom ([#2792](https://github.com/Glad-Labs/glad-labs-stack/issues/2792)) ([b1f0df3](https://github.com/Glad-Labs/glad-labs-stack/commit/b1f0df333e8d36ebe8b66070f1edf165c36a201d))
+* **compose:** give prefect-worker the appuser media mounts (Linux media-output stranding) ([#2787](https://github.com/Glad-Labs/glad-labs-stack/issues/2787)) ([3808e91](https://github.com/Glad-Labs/glad-labs-stack/commit/3808e9123c5435644e5efb4d3223f71ea272d035))
+* **qa:** flag citation_verifier dead-link vetoes directly (no futile rewrite) ([#2790](https://github.com/Glad-Labs/glad-labs-stack/issues/2790)) ([133bd14](https://github.com/Glad-Labs/glad-labs-stack/commit/133bd140e815cead9ea2fc854d036424cbca0fe8))
+* **qa:** stop the pre-QA heuristic from outranking the real judge-rail score ([#2795](https://github.com/Glad-Labs/glad-labs-stack/issues/2795)) ([a19197d](https://github.com/Glad-Labs/glad-labs-stack/commit/a19197d7804dcaa0c49bf8caf77f6db98c8daf04))
+* **rig:** graph band clearance — full-height traces overlapped footer text ([#2778](https://github.com/Glad-Labs/glad-labs-stack/issues/2778)) ([7165d5c](https://github.com/Glad-Labs/glad-labs-stack/commit/7165d5c5c08582a9c4955301d7437196dd4557e7))
+* **seo:** add demand floor to seo_refresh targeting ([#2793](https://github.com/Glad-Labs/glad-labs-stack/issues/2793)) ([654c188](https://github.com/Glad-Labs/glad-labs-stack/commit/654c188ff6831f17a13f15aaafa58762cbac7492))
+* **topics:** stop throttling auto-resolve on a phantom max_approval_queue=3 ([#2786](https://github.com/Glad-Labs/glad-labs-stack/issues/2786)) ([dfe5a40](https://github.com/Glad-Labs/glad-labs-stack/commit/dfe5a40e0c09e9e7a1240ee8915fa9eb92a2319b))
+
 ## [0.109.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.108.1...v0.109.0) (2026-07-26)
 
 

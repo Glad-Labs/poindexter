@@ -23,7 +23,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "poindexter"
-version = "0.109.0"
+version = "0.110.0"
 description = "Poindexter — unified CLI for the public AI content pipeline (memory, tasks, posts, settings, vercel, costs). Built by Glad Labs LLC."
 readme = "README.md"
 requires-python = ">=3.13,<3.15"
