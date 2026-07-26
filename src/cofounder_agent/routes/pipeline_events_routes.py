@@ -18,6 +18,12 @@ network as the worker, or via Tailscale if you're remote.
 Consumed by Grafana (via the pipeline_events audit_log view) and
 future Discord ops-channel notifier, so the structured field shape
 matters — don't rename keys without bumping a version.
+
+The default event-type filter lives in ``_PIPELINE_EVENT_TYPES`` below;
+the ``pipeline_event_stream_types`` app_setting (CSV) overrides it
+per-install. The console's EVENT STREAM panel (console/js/api.js
+``eventToFeedLine``) renders the same rows — keep the two renderers'
+type coverage in sync.
 """
 
 from __future__ import annotations
@@ -31,7 +37,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -51,19 +57,58 @@ router = APIRouter(
 
 
 # The audit_log event types that represent QA / pipeline decisions.
-# Add to this list when a new structured event type is emitted.
+# Add to this list when a new structured event type is emitted (and give it
+# a rendering branch in the /pipeline HTML below + the console's
+# eventToFeedLine in console/js/api.js — unknown types render generically).
+# Operators can override the list per-install via the
+# `pipeline_event_stream_types` app_setting (CSV) without a deploy.
 _PIPELINE_EVENT_TYPES = (
+    # ── Legacy names (pre atom-cutover #355). The monolithic cross_model_qa
+    #    stage that emitted the qa_* / rewrite / *_complete rows was deleted
+    #    2026-06-01; these stay so historical rows still query + render. ──
     "qa_decision",
     "qa_aggregate",
     "qa_passed",
     "qa_failed",
     "rewrite_decision",
     "qa_rewrite_triggered",  # legacy name, same meaning as rewrite_decision
-    "task_started",
-    "task_created",
     "pipeline_complete",
     "generation_complete",
+    # ── Task lifecycle (still emitted) ────────────────────────────────────
+    "task_started",
+    "task_created",
+    # ── Modern graph_def pipeline (post #355 — what actually fires today;
+    #    shapes verified against live audit_log rows 2026-07-25) ──────────
+    "qa_pass_completed",  # qa.aggregate verdict (shape: audit_event_schemas)
+    "qa_rescue_scheduled",  # bounded qa.rewrite rescue loop scheduled
+    "qa_flagged_surfaced",  # QA-flagged post rode through to operator review
+    "writer_self_review_pass",
+    "ragas_score",
+    "image_style_picked",
+    "image_ocr_gate_result",
+    "video_shot_rendered",
+    "template_completed",
+    "auto_publish_gate",
+    "approval_gate_paused",  # HITL gate wait (atoms.approval_gate)
+    "approval_gate_approved",
 )
+
+
+def _resolve_event_types(site_config: Any | None) -> list[str]:
+    """Effective event-type filter for the stream surfaces.
+
+    DB-first config: the ``pipeline_event_stream_types`` app_setting (CSV)
+    overrides the built-in tuple so an operator can widen/narrow the feed
+    without a deploy. Empty/unset ('' is the unset sentinel) means the
+    built-in ``_PIPELINE_EVENT_TYPES`` — the seed stays empty on purpose so
+    new event types added in code reach existing installs (a seeded frozen
+    CSV would starve the feed again the next time the pipeline evolves).
+    """
+    raw = ""
+    if site_config is not None:
+        raw = str(site_config.get("pipeline_event_stream_types", "") or "")
+    parsed = [t.strip() for t in raw.split(",") if t.strip()]
+    return parsed or list(_PIPELINE_EVENT_TYPES)
 
 
 def _format_event(row: dict) -> dict:
@@ -97,6 +142,7 @@ async def list_pipeline_events(
         60, ge=1, le=1440, description="Only events from the last N minutes (default 60)"
     ),
     _principal: str = Depends(verify_api_token),
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> JSONResponse:
     """List recent pipeline events (QA decisions, rewrites, approvals).
 
@@ -118,7 +164,7 @@ async def list_pipeline_events(
                 idx += 1
             else:
                 where.append(f"event_type = ANY(${idx})")
-                params.append(list(_PIPELINE_EVENT_TYPES))
+                params.append(_resolve_event_types(site_config))
                 idx += 1
 
             if task_id:
@@ -153,6 +199,7 @@ async def list_pipeline_events(
 async def task_pipeline_events(
     task_id: str,
     _principal: str = Depends(verify_api_token),
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> JSONResponse:
     """Every pipeline event for a single task, oldest first — the
     full decision trail for one post from creation to approval or
@@ -170,7 +217,7 @@ async def task_pipeline_events(
                 ORDER BY timestamp ASC
                 """,
                 task_id,
-                list(_PIPELINE_EVENT_TYPES),
+                _resolve_event_types(site_config),
             )
             events = [_format_event(dict(r)) for r in rows]
             return JSONResponse(
@@ -272,10 +319,11 @@ async def pipeline_dashboard(
 </header>
 <div class="controls">
   <button data-type="" class="active">all</button>
-  <button data-type="qa_decision">qa decisions</button>
-  <button data-type="qa_aggregate">aggregate</button>
-  <button data-type="rewrite_decision">rewrites</button>
-  <button data-type="qa_failed">failures</button>
+  <button data-type="task_started">tasks</button>
+  <button data-type="qa_pass_completed">qa verdicts</button>
+  <button data-type="qa_rescue_scheduled">rescues</button>
+  <button data-type="auto_publish_gate">publish gate</button>
+  <button data-type="template_completed">completed</button>
 </div>
 <main id="events"><div class="empty">Loading...</div></main>
 <footer>
@@ -291,40 +339,97 @@ const lastUpdate = document.getElementById("lastUpdate");
 function severityClass(ev) {
   const t = ev.event_type || "";
   const d = ev.details || {};
-  if (t === "qa_decision") {
+  if (t === "qa_decision" || t === "qa_aggregate" || t === "qa_pass_completed") {
     return d.approved === false ? "event failed" : "event passed";
   }
-  if (t === "qa_aggregate") {
-    return d.approved === false ? "event failed" : "event passed";
-  }
-  if (t.includes("rewrite")) return "event rewrite";
+  if (t === "qa_rescue_scheduled" || t.includes("rewrite")) return "event rewrite";
   if (t === "qa_failed") return "event failed";
   if (t === "qa_passed") return "event passed";
+  if (t === "qa_flagged_surfaced" || t === "approval_gate_paused") return "event severity-warning";
+  if (t === "template_completed") return d.ok === false ? "event failed" : "event passed";
+  if (t === "auto_publish_gate") return d.would_fire ? "event passed" : "event severity-info";
+  if (t === "writer_self_review_pass") return d.revised ? "event rewrite" : "event severity-info";
+  if (t === "image_ocr_gate_result") return d.passed ? "event passed" : "event severity-warning";
+  if (t === "video_shot_rendered") return d.success === false ? "event failed" : "event passed";
+  if (t === "approval_gate_approved") return "event passed";
   return "event severity-" + (ev.severity || "info");
 }
 
+// Escape detail-derived values before innerHTML interpolation — details
+// carry LLM/research-derived text (reviewer feedback, topics, styles),
+// never trusted markup. Mirrors escHtml in console/js/api.js.
+function esc(v) {
+  return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+function fmt2(v) { return typeof v === "number" ? v.toFixed(2) : "?"; }
+
 function renderEvent(ev) {
   const d = ev.details || {};
+  const t = ev.event_type;
   const time = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : "?";
   const task = ev.task_id ? ev.task_id.substring(0, 8) : "-";
   const div = document.createElement("div");
   div.className = severityClass(ev);
 
-  let headline = ev.event_type || "event";
+  let headline = "";
   let body = "";
 
-  if (ev.event_type === "qa_decision") {
-    headline = `${d.reviewer || "?"} — ${d.approved ? "PASS" : "FAIL"}`;
-    body = `score: ${d.score ?? "?"}\\nprovider: ${d.provider || "?"}\\n${d.feedback || ""}`;
-  } else if (ev.event_type === "qa_aggregate") {
-    headline = `multi-model QA — ${d.approved ? "APPROVED" : "REJECTED"} (${d.final_score ?? "?"}/100)`;
+  if (t === "qa_decision") {
+    headline = `${esc(d.reviewer || "?")} — ${d.approved ? "PASS" : "FAIL"}`;
+    body = `score: ${esc(d.score ?? "?")}\\nprovider: ${esc(d.provider || "?")}\\n${esc(d.feedback || "")}`;
+  } else if (t === "qa_aggregate") {
+    headline = `multi-model QA — ${d.approved ? "APPROVED" : "REJECTED"} (${esc(d.final_score ?? "?")}/100)`;
     const failed = (d.failed_reviewers || []).join(", ") || "none";
-    body = `rewrites: ${d.rewrite_attempts ?? 0} / failed: ${failed}`;
-  } else if (ev.event_type === "rewrite_decision" || ev.event_type === "qa_rewrite_triggered") {
-    headline = `rewrite attempt ${d.attempt}/${d.max_attempts || "?"}`;
-    body = `issues: ${d.issue_count ?? "?"} / prior score: ${d.prior_score ?? "?"}\\n${d.issues_sample || ""}`;
+    body = `rewrites: ${esc(d.rewrite_attempts ?? 0)} / failed: ${esc(failed)}`;
+  } else if (t === "rewrite_decision" || t === "qa_rewrite_triggered") {
+    headline = `rewrite attempt ${esc(d.attempt)}/${esc(d.max_attempts || "?")}`;
+    body = `issues: ${esc(d.issue_count ?? "?")} / prior score: ${esc(d.prior_score ?? "?")}\\n${esc(d.issues_sample || "")}`;
+  } else if (t === "qa_pass_completed") {
+    const n = (d.reviews || []).length || d.reviewer_count || 0;
+    headline = `QA ${d.approved === false ? "REJECTED" : "APPROVED"} — ${esc(d.final_score ?? "?")}/100`;
+    const vetoed = (d.reviews || [])
+      .filter((r) => r && r.approved === false && !r.advisory)
+      .map((r) => r.reviewer);
+    body = `${esc(n)} reviewers / threshold ${esc(d.approval_threshold ?? "?")}` +
+      (d.rescued ? " / rescued by rewrite" : "") +
+      (vetoed.length ? `\\nvetoed by: ${esc(vetoed.join(", "))}` : "");
+  } else if (t === "qa_rescue_scheduled") {
+    headline = `QA rescue — rewrite ${esc(d.attempt ?? "?")}/${esc(d.max_attempts ?? "?")}`;
+    body = `score ${esc(d.final_score ?? "?")} below ${esc(d.threshold ?? "?")}\\nvetoed by: ${esc((d.vetoed_by || []).join(", ") || "?")}`;
+  } else if (t === "qa_flagged_surfaced") {
+    headline = "QA-flagged — operator review required";
+    body = `score ${esc(d.final_score ?? "?")} after ${esc(d.attempts ?? "?")} rewrite attempt(s)\\nvetoed by: ${esc((d.vetoed_by || []).join(", ") || "?")}`;
+  } else if (t === "writer_self_review_pass") {
+    headline = `writer self-review — ${d.revised ? "revised" : "clean"}`;
+    body = `contradictions: ${esc(d.contradictions_found ?? 0)}`;
+  } else if (t === "ragas_score") {
+    headline = `ragas ${fmt2(d.score)}`;
+    body = `faithfulness ${fmt2(d.faithfulness)} / relevancy ${fmt2(d.answer_relevancy)} / precision ${fmt2(d.context_precision)}`;
+  } else if (t === "image_style_picked") {
+    headline = "image style picked";
+    body = esc(d.style || "?");
+  } else if (t === "image_ocr_gate_result") {
+    headline = `image OCR gate — ${d.passed ? "PASS" : "FAIL"}`;
+    body = `attempts: ${esc(d.attempts ?? "?")} / text chars: ${esc(d.text_chars ?? "?")} (limit ${esc(d.threshold ?? "?")})`;
+  } else if (t === "video_shot_rendered") {
+    headline = `video shot ${esc(d.shot_idx ?? "?")} — ${d.success === false ? "FAILED" : esc(d.qa_outcome || "rendered")}`;
+    body = `${esc(d.source || "?")} (${esc(d.rung || "?")}) / ${esc(d.duration_s ?? "?")}s / qa ${esc(d.qa_score ?? "?")}`;
+  } else if (t === "template_completed") {
+    headline = `pipeline ${d.ok === false ? "FAILED" : "complete"}`;
+    body = `${esc((d.records || []).length)} nodes ran`;
+  } else if (t === "auto_publish_gate") {
+    headline = `auto-publish gate — ${d.would_fire ? "FIRES" : "holds"}${d.dry_run ? " (dry-run)" : ""}`;
+    body = `${esc(d.gate_state || "")}${d.reason ? "\\n" + esc(d.reason) : ""}`;
+  } else if (t === "approval_gate_paused") {
+    headline = `paused at ${esc(d.gate_name || "gate")} — needs you`;
+  } else if (t === "approval_gate_approved") {
+    headline = `${esc(d.gate_name || "gate")} approved`;
+    body = d.previous_status ? `was: ${esc(d.previous_status)}` : "";
   } else {
-    body = JSON.stringify(d, null, 2);
+    headline = esc(t || "event");
+    body = esc(JSON.stringify(d, null, 2));
   }
 
   div.innerHTML = `

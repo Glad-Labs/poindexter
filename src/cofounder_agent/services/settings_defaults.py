@@ -2373,6 +2373,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'regen_images_max_attempts': '3',
     'regen_text_max_attempts': '2',
 
+    # ----- Pipeline event stream (console EVENT STREAM + /pipeline dashboard) -----
+    # CSV of audit_log event_types the live-events surfaces show
+    # (GET /api/pipeline/events). Empty = the built-in default list in
+    # routes/pipeline_events_routes.py::_PIPELINE_EVENT_TYPES — deliberately an
+    # empty sentinel, NOT a frozen copy of that list: seeding today's CSV would
+    # recreate the exact starvation this key was added to fix (the seeded row
+    # wins forever, so event types added in code later would never appear).
+    # Set a CSV only to deliberately narrow/widen the feed on this install.
+    'pipeline_event_stream_types': '',
+
     # ----- SEO Harvest Loop (Phase 1) -----
     # The read-only analyzer is safe-on so the opportunity list populates day
     # one. Content-mutating refresh (Phase 2) gates separately on

@@ -411,6 +411,91 @@
         tag = ['mint', 'PIPELINE'];
         html = `<span class="c-mint">${type === 'pipeline_complete' ? 'pipeline complete' : 'generation complete'}</span>${tail}`;
         break;
+      // ── Modern graph_def pipeline types (post atom-cutover #355) —
+      // shapes documented per-emitter; qa_pass_completed is the one
+      // schema-validated type (services/audit_event_schemas.py). Keep in
+      // sync with the /pipeline HTML dashboard's renderEvent branches.
+      case 'qa_pass_completed': {
+        const ok = d.approved !== false;
+        tag = [ok ? 'mint' : 'red', 'QA'];
+        const score = d.final_score != null ? Math.round(d.final_score) : '?';
+        const n =
+          Array.isArray(d.reviews) && d.reviews.length
+            ? d.reviews.length
+            : d.reviewer_count;
+        const rescued = d.rescued
+          ? ' · <span class="c-amber">rescued</span>'
+          : '';
+        html = `QA <span class="c-${ok ? 'mint' : 'red'}">${ok ? 'APPROVED' : 'REJECTED'}</span> · <b>${escHtml(score)}</b>/100${n ? ` · ${escHtml(n)} reviewers` : ''}${rescued}${tail}`;
+        break;
+      }
+      case 'qa_rescue_scheduled': {
+        tag = ['amber', 'REWRITE'];
+        const att = `attempt <b>${escHtml(d.attempt ?? '?')}</b>${d.max_attempts ? '/' + escHtml(d.max_attempts) : ''}`;
+        const veto =
+          Array.isArray(d.vetoed_by) && d.vetoed_by.length
+            ? ` · vetoed by ${escHtml(d.vetoed_by.join(', '))}`
+            : '';
+        html = `QA rescue ${att} · score <b>${escHtml(d.final_score ?? '?')}</b>${veto}${tail}`;
+        break;
+      }
+      case 'qa_flagged_surfaced':
+        tag = ['amber', 'QA'];
+        html = `flagged for operator review · score <b>${escHtml(d.final_score ?? '?')}</b>${tail}`;
+        break;
+      case 'writer_self_review_pass': {
+        const c = d.contradictions_found;
+        tag = [d.revised ? 'amber' : 'cyan', 'WRITER'];
+        html = `self-review <span class="c-${d.revised ? 'amber' : 'mint'}">${d.revised ? 'revised' : 'clean'}</span>${c ? ` · ${escHtml(c)} contradictions` : ''}${tail}`;
+        break;
+      }
+      case 'ragas_score': {
+        tag = ['cyan', 'QA'];
+        const f = (v) => (typeof v === 'number' ? v.toFixed(2) : '?');
+        html = `ragas <b>${escHtml(f(d.score))}</b> · faith ${escHtml(f(d.faithfulness))} · relevancy ${escHtml(f(d.answer_relevancy))}${tail}`;
+        break;
+      }
+      case 'image_style_picked':
+        tag = ['cyan', 'IMAGE'];
+        html = `style <b>“${escHtml(d.style || '?')}”</b>${tail}`;
+        break;
+      case 'image_ocr_gate_result': {
+        const ok = d.passed !== false;
+        tag = [ok ? 'mint' : 'amber', 'IMAGE'];
+        html = `OCR gate <span class="c-${ok ? 'mint' : 'amber'}">${ok ? 'PASS' : 'FAIL'}</span>${d.attempts != null ? ` · ${escHtml(d.attempts)} attempt(s)` : ''}${tail}`;
+        break;
+      }
+      case 'video_shot_rendered': {
+        const ok = d.success !== false;
+        tag = [ok ? 'mint' : 'red', 'VIDEO'];
+        const shot =
+          d.shot_idx != null ? `shot <b>${escHtml(d.shot_idx)}</b>` : 'shot';
+        html = `${shot} ${ok ? `<span class="c-mint">${escHtml(d.qa_outcome || 'rendered')}</span>` : '<span class="c-red">failed</span>'}${d.source ? ` · ${escHtml(d.source)}` : ''}${tail}`;
+        break;
+      }
+      case 'template_completed': {
+        const ok = d.ok !== false;
+        tag = [ok ? 'mint' : 'red', 'PIPELINE'];
+        const nodes = Array.isArray(d.records)
+          ? ` · ${d.records.length} nodes`
+          : '';
+        html = `template <span class="c-${ok ? 'mint' : 'red'}">${ok ? 'complete' : 'failed'}</span>${nodes}${tail}`;
+        break;
+      }
+      case 'auto_publish_gate': {
+        const fire = d.would_fire === true;
+        tag = [fire ? 'mint' : 'cyan', 'PUBLISH'];
+        html = `auto-publish <span class="c-${fire ? 'mint' : 'cyan'}">${fire ? 'fires' : 'holds'}</span>${d.gate_state ? ` · ${escHtml(d.gate_state)}` : ''}${d.dry_run ? ' · dry-run' : ''}${tail}`;
+        break;
+      }
+      case 'approval_gate_paused':
+        tag = ['amber', 'GATE'];
+        html = `paused at <b>${escHtml(d.gate_name || 'gate')}</b> — needs you${tail}`;
+        break;
+      case 'approval_gate_approved':
+        tag = ['mint', 'GATE'];
+        html = `<b>${escHtml(d.gate_name || 'gate')}</b> <span class="c-mint">approved</span>${tail}`;
+        break;
       default: {
         const sev = (ev && ev.severity) || 'info';
         const tone =

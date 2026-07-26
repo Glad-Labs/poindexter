@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 from routes.pipeline_events_routes import (
     _PIPELINE_EVENT_TYPES,
     _format_event,
+    _resolve_event_types,
     router,
 )
 
@@ -405,7 +406,30 @@ class TestPipelineDashboard:
         assert "Poindexter Pipeline" in html
         assert "fetchEvents" in html
         assert "/api/pipeline/events" in html
-        assert "qa_decision" in html
+        assert "qa_decision" in html  # legacy renderer retained for history
+
+    def test_renders_modern_graph_def_types(self):
+        """The dashboard must carry renderer branches for the post-#355
+        types, or the feed regresses to raw JSON dumps for every event."""
+        pool, _ = _mock_pool_with_rows([])
+        client = _make_client(pool)
+        html = client.get("/pipeline").text
+        for t in (
+            "qa_pass_completed",
+            "qa_rescue_scheduled",
+            "auto_publish_gate",
+            "template_completed",
+            "writer_self_review_pass",
+            "video_shot_rendered",
+        ):
+            assert t in html, f"dashboard HTML lost its {t} renderer"
+
+    def test_details_are_escaped_before_innerhtml(self):
+        """LLM-derived details go through esc() before innerHTML."""
+        pool, _ = _mock_pool_with_rows([])
+        client = _make_client(pool)
+        html = client.get("/pipeline").text
+        assert "function esc(" in html
 
     def test_has_noindex_meta(self):
         """Dashboard should not be indexed by search engines."""
@@ -433,10 +457,104 @@ class TestPipelineEventTypes:
     def test_is_tuple(self):
         assert isinstance(_PIPELINE_EVENT_TYPES, tuple)
 
-    def test_contains_core_types(self):
+    def test_contains_legacy_types(self):
+        """Pre-#355 names stay queryable so historical rows still render."""
         for t in ("qa_decision", "qa_aggregate", "qa_passed", "qa_failed",
                    "rewrite_decision", "pipeline_complete"):
             assert t in _PIPELINE_EVENT_TYPES
 
+    def test_contains_modern_graph_def_types(self):
+        """The types the post-#355 pipeline actually writes (the 2026-06-01
+        starvation: only task_started survived the atom-cutover, so the LIVE
+        feed showed one line per task and nothing else)."""
+        for t in (
+            "qa_pass_completed",
+            "qa_rescue_scheduled",
+            "qa_flagged_surfaced",
+            "writer_self_review_pass",
+            "ragas_score",
+            "image_style_picked",
+            "image_ocr_gate_result",
+            "video_shot_rendered",
+            "template_completed",
+            "auto_publish_gate",
+            "approval_gate_paused",
+            "approval_gate_approved",
+        ):
+            assert t in _PIPELINE_EVENT_TYPES
+
     def test_no_duplicates(self):
         assert len(_PIPELINE_EVENT_TYPES) == len(set(_PIPELINE_EVENT_TYPES))
+
+
+# ---------------------------------------------------------------------------
+# _resolve_event_types (pipeline_event_stream_types override)
+# ---------------------------------------------------------------------------
+
+
+class _FakeSiteConfig:
+    """Minimal SiteConfig stand-in: .get(key, default) over a fixed dict."""
+
+    def __init__(self, values: dict | None = None):
+        self._values = values or {}
+
+    def get(self, key, default=None):
+        return self._values.get(key, default)
+
+
+class TestResolveEventTypes:
+    """The pipeline_event_stream_types app_setting (CSV) overrides the
+    built-in tuple; empty/unset falls back to it ('' is the unset sentinel)."""
+
+    def test_none_config_returns_defaults(self):
+        assert _resolve_event_types(None) == list(_PIPELINE_EVENT_TYPES)
+
+    def test_empty_setting_returns_defaults(self):
+        cfg = _FakeSiteConfig({"pipeline_event_stream_types": ""})
+        assert _resolve_event_types(cfg) == list(_PIPELINE_EVENT_TYPES)
+
+    def test_unset_key_returns_defaults(self):
+        assert _resolve_event_types(_FakeSiteConfig()) == list(_PIPELINE_EVENT_TYPES)
+
+    def test_csv_parsed_and_trimmed(self):
+        cfg = _FakeSiteConfig(
+            {"pipeline_event_stream_types": " qa_pass_completed, template_completed ,,task_started"}
+        )
+        assert _resolve_event_types(cfg) == [
+            "qa_pass_completed",
+            "template_completed",
+            "task_started",
+        ]
+
+    def test_whitespace_only_returns_defaults(self):
+        cfg = _FakeSiteConfig({"pipeline_event_stream_types": " , , "})
+        assert _resolve_event_types(cfg) == list(_PIPELINE_EVENT_TYPES)
+
+
+class TestSettingsOverrideWire:
+    """The CSV override must reach the SQL ANY() param on both endpoints."""
+
+    def _override_cfg(self, client, csv: str):
+        from utils.route_utils import get_site_config_dependency
+
+        client.app.dependency_overrides[get_site_config_dependency] = (
+            lambda: _FakeSiteConfig({"pipeline_event_stream_types": csv})
+        )
+
+    def test_list_endpoint_uses_csv_override(self):
+        pool, conn = _mock_pool_with_rows([])
+        client = _make_client(pool)
+        self._override_cfg(client, "qa_pass_completed,auto_publish_gate")
+        resp = client.get("/api/pipeline/events")
+        assert resp.status_code == 200
+        params = conn.fetch.call_args[0][1:]
+        assert params[1] == ["qa_pass_completed", "auto_publish_gate"]
+
+    def test_task_endpoint_uses_csv_override(self):
+        pool, conn = _mock_pool_with_rows([])
+        client = _make_client(pool)
+        self._override_cfg(client, "template_completed")
+        resp = client.get(f"/api/pipeline/events/task/{TASK_ID}")
+        assert resp.status_code == 200
+        params = conn.fetch.call_args[0][1:]
+        assert params[1] == ["template_completed"]
