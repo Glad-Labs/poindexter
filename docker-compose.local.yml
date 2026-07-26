@@ -1141,6 +1141,12 @@ services:
       # so the 5B model fits the 32GB card. Override per-host via this env.
       WAN_MODEL_ID: "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
       WAN_IDLE_TIMEOUT_S: "900"
+      # The model is ~24GB resident on a 32GB card that also drives the
+      # desktop — margin is a few hundred MB at the VAE-decode spike.
+      # Measured 2026-07-26: a 480p render OOM'd needing 426MiB with
+      # 759MiB sitting reserved-but-unallocated; expandable segments
+      # let PyTorch return that fragmentation instead of stranding it.
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
     volumes:
       # Mount under /home/appuser — Dockerfile.wan runs as USER appuser, so the
       # server's OUTPUT_DIR (expanduser("~")/.poindexter/generated-videos) and HF
