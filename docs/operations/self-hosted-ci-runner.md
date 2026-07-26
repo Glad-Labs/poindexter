@@ -22,8 +22,9 @@ always-available liveness check.
                                     │         ──unset?─▶ runs on ubuntu-latest (hosted)
                                     ▲
         runner-healthcheck.yml (hosted, cron) ──reconciles── live runner status
+                                    │                        └─prunes─▶ offline registrations
                                     ▲
-        docker-compose.local.yml: github-runner-1  (the runner)
+        docker-compose.local.yml: github-runner-1, github-runner-2
 ```
 
 1. **The `runs-on` seam.** `unit-tests.yml` resolves its runner like this:
@@ -37,14 +38,19 @@ always-available liveness check.
    public `poindexter` mirror**) it falls back to `ubuntu-latest`. The
    `&&`/`||` short-circuit means `fromJSON` never receives an empty string.
 
-2. **The runner.** One persistent container (`github-runner-1`) in
-   `docker-compose.local.yml`, behind the `ci-runner` compose profile so it
-   never starts with the default stack. Image: `myoung34/github-runner`.
+2. **The runners.** Two persistent containers (`github-runner-1`,
+   `github-runner-2`) in `docker-compose.local.yml`, behind the `ci-runner`
+   compose profile so they never start with the default stack. Image:
+   `myoung34/github-runner`. They register under independent auto-generated
+   `glads-pc-*` names sharing one label set, so GitHub dispatches each queued
+   job to whichever is idle. Two is sized for the common case: a PR push plus
+   the `main` push it triggers, which used to serialize on a single runner
+   while `unit-tests` — a **required** check — sat "Queued".
 
 3. **The self-healing control loop.** `runner-healthcheck.yml` runs **hosted**
-   (it must — a "is the PC up?" probe can't run on the PC) every 6 hours and
-   reconciles `CI_RUNNER` against live runner status. See the control surface
-   below.
+   (it must — a "is the PC up?" probe can't run on the PC) every 6 hours. It
+   reconciles `CI_RUNNER` against live runner status (see the control surface
+   below), then prunes dead runner registrations (see below).
 
 ## One-time setup
 
@@ -80,7 +86,7 @@ mv ~/Downloads/glad-labs-ci-runner.*.private-key.pem ~/.poindexter/ci-runner-app
 #    bootstrap.toml (not .env); start-stack.sh exports each key as an upper-case
 #    env var. The multiline PEM is NOT put here — start-stack.sh sources it from
 #    ~/.poindexter/ci-runner-app.pem at `up` time (step 3). compose_profiles
-#    starts the runner with the stack.
+#    starts the runners with the stack.
 cat >> ~/.poindexter/bootstrap.toml <<'TOML'
 ci_runner_app_id = "123456"      # the numeric App ID (not secret)
 compose_profiles = "ci-runner"
@@ -94,20 +100,20 @@ gh secret set CI_RUNNER_APP_PRIVATE_KEY --repo Glad-Labs/glad-labs-stack < ~/.po
 gh secret set DISCORD_OPS_WEBHOOK_URL --repo Glad-Labs/glad-labs-stack --body "$DISCORD_OPS_WEBHOOK_URL"
 ```
 
-### 3. Bring the runner up
+### 3. Bring the runners up
 
-`compose_profiles` includes `ci-runner`, so the runner comes up with the rest of
+`compose_profiles` includes `ci-runner`, so the runners come up with the rest of
 the stack — and **`start-stack.sh` exports the multiline PEM into the container's
 `APP_PRIVATE_KEY` for you** (it sources `~/.poindexter/ci-runner-app.pem`, the
 same file-sourced-secret pattern it uses for the grafana webhook token). So the
 normal bring-up is just:
 
 ```bash
-bash scripts/start-stack.sh up -d                            # whole stack, runner included
-# …or recreate just the runner:
-bash scripts/start-stack.sh up -d --force-recreate github-runner-1
-docker compose -f docker-compose.local.yml ps github-runner-1
-# Confirm registration:
+bash scripts/start-stack.sh up -d                            # whole stack, runners included
+# …or recreate just the runners:
+bash scripts/start-stack.sh up -d --force-recreate github-runner-1 github-runner-2
+docker compose -f docker-compose.local.yml ps github-runner-1 github-runner-2
+# Confirm registration — expect two `online` rows:
 gh api repos/Glad-Labs/glad-labs-stack/actions/runners --jq '.runners[] | {name, status, busy}'
 ```
 
@@ -117,12 +123,12 @@ each time.** That is exactly why `start-stack.sh` has to source the PEM itself: 
 one-off manual `export` does **not** survive a recreate. Before this was
 automated, a start-stack-driven deploy brought the runner up with an empty
 `APP_PRIVATE_KEY` and the entrypoint crash-looped (`All of APP_ID,
-APP_PRIVATE_KEY and APP_LOGIN must be specified`). If you ever bring the runner
+APP_PRIVATE_KEY and APP_LOGIN must be specified`). If you ever bring the runners
 up _without_ start-stack (direct compose), pass the key yourself:
 
 ```bash
 CI_RUNNER_APP_PRIVATE_KEY="$(cat ~/.poindexter/ci-runner-app.pem)" \
-  docker compose -f docker-compose.local.yml --profile ci-runner up -d github-runner-1
+  docker compose -f docker-compose.local.yml --profile ci-runner up -d github-runner-1 github-runner-2
 ```
 
 ### 4. Enable self-hosted
@@ -157,54 +163,78 @@ gh variable set CI_RUNNER_MODE --repo Glad-Labs/glad-labs-stack --body off
 gh variable set CI_RUNNER_MODE --repo Glad-Labs/glad-labs-stack --body auto
 ```
 
-**PC-down behaviour:** in `auto` mode, if the runner goes offline the healthcheck
-unsets `CI_RUNNER` within its cron window (≤6h), so `unit-tests` — a required
-check — falls back to hosted and PRs don't hang. For instant failover after a
-known outage, run `gh workflow run runner-healthcheck.yml` (or bump the cron).
+**PC-down behaviour:** in `auto` mode, if **all** runners go offline the
+healthcheck unsets `CI_RUNNER` within its cron window (≤6h), so `unit-tests` — a
+required check — falls back to hosted and PRs don't hang. One runner dying is
+_not_ a failover event: the reconcile keys on "≥1 online", so the survivor keeps
+serving jobs (at half throughput). For instant failover after a known outage,
+run `gh workflow run runner-healthcheck.yml` (or bump the cron).
+
+### Registration pruning
+
+Each runner container **wipes its config and re-registers under a fresh random
+name on every start** — that's what makes it self-recover from a corrupt-config
+crash loop (see Troubleshooting). The cost is one permanently-offline
+registration per container start: 22 had piled up by 2026-07-26.
+
+They're functionally harmless (the reconcile counts only `status=="online"`),
+but they bury the live runners in the API and in the repo's runner-settings
+page — exactly where you look first when CI is stuck "Queued". So the same
+6-hourly healthcheck deletes them after it reconciles. Safe by construction:
+names are never reused, so an offline row can never come back to life. The step
+warns rather than fails on a delete error — a red housekeeping step on the
+workflow that keeps a required check unblocked is worse noise than the ghosts.
 
 ## Tuning
 
-All in `docker-compose.local.yml` / `.env`. **The budget that matters is the
-WSL2 VM, not the 64 GB host.** `.wslconfig` pins WSL2 to **24 GB / 16 procs**,
-and the entire Docker stack lives in it — `docker info` shows the cap, and
-`docker stats --no-stream` shows the stack already using ~14–15 GB (so ~8–9 GB
-free, less when image-gen spikes). Size the runner to fit that, not the host.
+All in `docker-compose.local.yml` / `.env`. The budget is the **host** —
+60 GB RAM / 32 threads, with the full Docker stack resident. (Pre-Pop!_OS this
+section warned that the real cap was a 24 GB WSL2 VM pinned by `.wslconfig`;
+that VM is gone, so size against the host directly.)
 
 - **Resource caps:** `CI_RUNNER_CPUS` (default 8) and `CI_RUNNER_MEM` (default
-  **8g**) for the one runner. `unit-tests` is serial (`pytest --forked` runs one
-  subprocess at a time, no xdist), so real peak is only a few GB; 8g is generous
-  and fits the free headroom. Lower `CI_RUNNER_MEM` if image-gen/Wan and CI ever
-  pressure the VM together.
-- **Concurrency / a second runner:** one runner handles unit-tests fine — a
-  second concurrent run just queues behind it. Only add a `github-runner-2` if
-  you first give WSL2 more room: bump `memory=` in `~/.wslconfig` (you have
-  64 GB physical — 36–40 GB is reasonable), `wsl --shutdown`, then copy the
-  `github-runner-1` block (new `container_name` + a `ci-runner-2-cache` volume).
+  **8g**), applied to **each** runner. `unit-tests` is serial (`pytest --forked`
+  runs one subprocess at a time, no xdist), so real peak is only a few GB; 8g is
+  generous. Two runners is ~16 GB worst case against ~33 GB free, which leaves
+  headroom for an image-gen/Wan spike. Lower `CI_RUNNER_MEM` if CI and a render
+  ever pressure the host together.
+- **Concurrency / a third runner:** two cover a PR push plus the `main` push it
+  triggers. If you routinely see jobs queue behind both, copy the
+  `github-runner-2` block — new `container_name`, a new `ci-runner-N-cache`
+  volume (**one cache volume per runner**: concurrent agents sharing a
+  pip/poetry cache risks corrupting it, and the cache is only a speedup), and a
+  matching entry in the top-level `volumes:` map. Watch host free RAM before
+  going past three.
 - **Failover latency vs cost:** the healthcheck cron (`0 */6 * * *`) bills ~1
   rounded-up minute per run (~120 min/month at 6h). Tighten for faster failover,
   loosen for fewer minutes.
 
 ## Troubleshooting
 
-- **Job stuck "Queued" / "Waiting for a runner":** no online runner matches the
-  labels. `docker compose -f docker-compose.local.yml logs github-runner-1`;
+- **Job stuck "Queued" / "Waiting for a runner":** first check whether both
+  runners are simply busy (two concurrent runs is the designed capacity — a
+  third queues). If not, no online runner matches the labels:
+  `docker compose -f docker-compose.local.yml logs github-runner-1 github-runner-2`;
   check the App private key is valid and the App install still has Administration
   access. Immediate unblock: `gh variable set CI_RUNNER_MODE off`.
 - **Runner registers then immediately deregisters:** usually a bad App private
   key, or the App install is missing `Administration: write`.
 - **Runner crash-loops with "already configured" / "Value cannot be null
-  (Parameter 'configuredSettings')":** an ungraceful restart (Docker/WSL restart,
-  PC sleep, a job killed mid-run) left a corrupt `/actions-runner/.runner`. The
+  (Parameter 'configuredSettings')":** an ungraceful restart (Docker restart, PC
+  sleep, a job killed mid-run) left a corrupt `/actions-runner/.runner`. The
   service `entrypoint` now wipes stale config on every start, so this
   self-recovers on the next restart. A container created _before_ that change
   needs one `bash scripts/start-stack.sh up -d --force-recreate github-runner-1`
   to adopt the new entrypoint.
+- **A pile of `offline` `glads-pc-*` registrations:** expected between
+  healthcheck runs — see [Registration pruning](#registration-pruning). Force an
+  immediate sweep with `gh workflow run runner-healthcheck.yml`.
 - **`unit-tests` red only on self-hosted, green on hosted:** a hosted-image
   assumption. The two `Free … disk` steps are already guarded behind
   `!vars.CI_RUNNER`; if a new step assumes the ubuntu image, guard it the same
   way.
 - **Disk creep:** persistent runners accumulate caches. `docker exec
-poindexter-ci-runner-1 df -h`; prune the `gladlabs-ci-runner-*-cache` volumes
+poindexter-ci-runner-1 df -h` (and `-2`); prune the `gladlabs-ci-runner-*-cache` volumes
   if needed.
 
 ## Extending to another workflow

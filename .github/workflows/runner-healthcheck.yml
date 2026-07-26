@@ -153,3 +153,66 @@ jobs:
             payload="$(printf '{"content":"⚙️ CI runner auto-flip: %s (mode=%s, online=%s)"}' "$change" "$mode" "$online")"
             curl -fsS -H 'Content-Type: application/json' -d "$payload" "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
           fi
+
+      # Ghost registrations accumulate because each runner container WIPES its
+      # /actions-runner/.runner on every start and re-registers under a fresh
+      # random name (RUNNER_NAME_PREFIX + suffix — see the entrypoint rationale
+      # in docker-compose.local.yml). That self-heals a corrupt-config crash
+      # loop, but the cost is one permanently-offline registration per container
+      # start; 22 had piled up by 2026-07-26. They're functionally harmless (the
+      # reconcile above counts only status=="online"), but they bury the live
+      # runners in `gh api .../actions/runners` and in the repo's runner settings
+      # page, which is exactly where you look first when CI is stuck "Queued".
+      #
+      # Deleting an offline registration is safe BY CONSTRUCTION here: names are
+      # never reused, so an offline row can never come back to life — the
+      # container that owned it will register a new name next start. No grace
+      # period is needed for the same reason.
+      #
+      # Runs AFTER the reconcile so a prune failure can never break failover,
+      # and warns rather than failing the job for the same reason: a red
+      # housekeeping step on a workflow whose real job is keeping a required
+      # check unblocked is worse noise than the ghosts.
+      - name: Prune offline runner registrations
+        if: ${{ env.RUNNER_APP_ID != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::no runner App token — nothing to prune."
+            exit 0
+          fi
+
+          # id<TAB>name, offline only. `|| true` on the read so a transient API
+          # error yields an empty list (prune nothing) instead of a red job.
+          stale="$(gh api "/repos/$REPO/actions/runners" --paginate \
+            --jq '.runners[] | select(.status=="offline") | "\(.id)\t\(.name)"' 2>/dev/null || true)"
+
+          if [ -z "$stale" ]; then
+            echo "no offline registrations to prune"
+            echo "- offline registrations pruned: **0**" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          pruned=0
+          failed=0
+          while IFS=$'\t' read -r id name; do
+            [ -n "$id" ] || continue
+            if gh api -X DELETE "/repos/$REPO/actions/runners/$id" >/dev/null 2>&1; then
+              echo "pruned $name (id=$id)"
+              pruned=$((pruned + 1))
+            else
+              echo "::warning::failed to prune runner $name (id=$id)"
+              failed=$((failed + 1))
+            fi
+          done <<< "$stale"
+
+          summary="- offline registrations pruned: **$pruned**"
+          if [ "$failed" -gt 0 ]; then
+            summary="$summary (failed: $failed)"
+            echo "::warning::$failed offline registration(s) could not be deleted — check the runner App still has Administration: read+write."
+          fi
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"

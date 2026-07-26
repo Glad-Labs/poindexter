@@ -2191,14 +2191,21 @@ services:
   # ===========================================
   # GitHub Actions self-hosted CI runners (cloud CI minutes → $0)
   # ===========================================
-  # One persistent runner that executes the `unit-tests` workflow on this PC
+  # Two persistent runners that execute the `unit-tests` workflow on this PC
   # instead of paying GitHub-hosted minutes — unit-tests alone was ~60% of a
   # ~30k-min/month bill. Scope is deliberately just unit-tests; every other
-  # workflow stays on ubuntu-latest. The runner stays registered and runs jobs
-  # back-to-back; the Actions agent cleans the workspace between runs and the
-  # pip/poetry cache volume stays warm so multi-GB wheels (torch /
-  # sentence-transformers) download once. (Sized for one runner because the
-  # WSL2 VM is the real budget — see the cpus/mem_limit note below.)
+  # workflow stays on ubuntu-latest. Each runner stays registered and runs jobs
+  # back-to-back; the Actions agent cleans the workspace between runs and each
+  # runner's own pip/poetry cache volume stays warm so multi-GB wheels (torch /
+  # sentence-transformers) download once.
+  #
+  # WHY TWO: with a single runner, concurrent unit-tests runs serialize — a PR
+  # push while `main` is mid-run sat "Queued" until the first finished, and
+  # unit-tests is a REQUIRED check, so that latency lands on every merge. Two
+  # runners cover the common case (a PR + the main push it triggers). The old
+  # one-runner sizing was a WSL2 constraint (`.wslconfig` capped the VM at
+  # 24 GB / 16 procs and the whole stack shared it); the Pop!_OS migration
+  # retired that VM, so the budget is now the 60 GB / 32-thread host directly.
   #
   # Opt-in by design: the `ci-runner` profile keeps this OUT of the default
   # `docker compose -f docker-compose.local.yml up -d`, so the stack is
@@ -2249,16 +2256,12 @@ services:
     # "$@", the runner configures then has nothing to run, and it exits right
     # after "Settings Saved" (a register→exit→restart crash loop).
     command: ["./bin/Runner.Listener", "run", "--startuptype", "service"]
-    # IMPORTANT — caps are relative to the WSL2 VM, NOT the 64 GB host.
-    # `.wslconfig` pins WSL2 to 24 GB / 16 procs, and the ENTIRE Docker stack
-    # (postgres, grafana, image-gen, worker, langfuse, observability…) shares that
-    # VM — ~14-15 GB is already in use, leaving ~8-9 GB free (less when image-gen
-    # spikes). So this is ONE runner sized to fit that headroom, not two at
-    # 16 GB. unit-tests is a SERIAL workload (pytest --forked runs one
-    # subprocess at a time, no xdist), so its real peak is only a few GB and a
-    # single runner suffices — a second concurrent run just queues behind it.
-    # Want true concurrency? Raise `.wslconfig` memory (you have 64 GB
-    # physical) and add a github-runner-2 — see the runbook.
+    # Caps are relative to the host directly (60 GB / 32 threads) — the WSL2 VM
+    # that used to be the real budget went away with the Pop!_OS migration.
+    # unit-tests is a SERIAL workload (pytest --forked runs one subprocess at a
+    # time, no xdist), so each runner's real peak is only a few GB; 8g is
+    # generous. Two runners at 8g is ~16 GB worst case against ~33 GB free with
+    # the full stack up, which leaves headroom for an image-gen/Wan spike.
     cpus: ${CI_RUNNER_CPUS:-8}
     mem_limit: ${CI_RUNNER_MEM:-8g}
     environment:
@@ -2294,6 +2297,44 @@ services:
     extra_hosts:
       # Lets a job reach host-native services (e.g. Ollama on 11434) the same
       # way the rest of the stack does.
+      - "host.docker.internal:host-gateway"
+
+  # Second runner — identical to github-runner-1 except for its container name
+  # and its own cache volume. Everything else (App creds, labels, entrypoint
+  # rationale, the deliberately-absent docker.sock) is documented on
+  # github-runner-1 above; keep the two blocks in lockstep when either changes.
+  #
+  # The two register under DIFFERENT auto-generated names (the myoung34 image
+  # appends a random suffix to RUNNER_NAME_PREFIX), so they appear as two
+  # independent `glads-pc-*` runners sharing the self-hosted,linux,x64 label
+  # set — GitHub dispatches queued jobs to whichever is idle. Caches are NOT
+  # shared: one volume per runner, because two Actions agents writing the same
+  # pip/poetry cache concurrently is a corruption risk for a purely
+  # best-effort optimization.
+  github-runner-2:
+    image: myoung34/github-runner:latest
+    container_name: poindexter-ci-runner-2
+    profiles: ["ci-runner"]
+    restart: unless-stopped
+    entrypoint:
+      - /bin/bash
+      - -c
+      - 'rm -f /actions-runner/.runner /actions-runner/.credentials /actions-runner/.credentials_rsaparams 2>/dev/null; exec /entrypoint.sh "$@"'
+      - --
+    command: ["./bin/Runner.Listener", "run", "--startuptype", "service"]
+    cpus: ${CI_RUNNER_CPUS:-8}
+    mem_limit: ${CI_RUNNER_MEM:-8g}
+    environment:
+      APP_ID: ${CI_RUNNER_APP_ID:-}
+      APP_PRIVATE_KEY: ${CI_RUNNER_APP_PRIVATE_KEY:-}
+      REPO_URL: https://github.com/Glad-Labs/glad-labs-stack
+      RUNNER_SCOPE: repo
+      RUNNER_NAME_PREFIX: glads-pc
+      LABELS: self-hosted,linux,x64
+      DISABLE_AUTO_UPDATE: "true"
+    volumes:
+      - ci-runner-2-cache:/root/.cache
+    extra_hosts:
       - "host.docker.internal:host-gateway"
 
   # ---------------------------------------------------------------------------
@@ -2444,10 +2485,13 @@ volumes:
   pyroscope-data:
     name: gladlabs-pyroscope-data
   # Warm cache (pip/poetry/tool-cache) so torch & sentence-transformers
-  # download once and persist across jobs. (Add ci-runner-2-cache if you ever
-  # scale to a second runner — see the runbook.)
+  # download once and persist across jobs. One volume PER runner — two Actions
+  # agents writing a shared pip/poetry cache concurrently risks corrupting it,
+  # and the cache is only a best-effort speedup.
   ci-runner-1-cache:
     name: gladlabs-ci-runner-1-cache
+  ci-runner-2-cache:
+    name: gladlabs-ci-runner-2-cache
   # Postiz volumes (profile: postiz)
   postiz-redis-data:
     name: gladlabs-postiz-redis-data
