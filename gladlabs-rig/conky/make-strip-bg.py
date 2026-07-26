@@ -51,7 +51,7 @@ d.line([(16, 80), (W - 16, 80)], fill=MINT + (48,))
 
 # graph wells at the bottom band (static graphs in conky.text land here)
 for x0, x1 in ((24, 472), (508, 956), (988, 1436), (1460, 1908)):
-    d.rounded_rectangle([x0, 392, x1, 462], radius=4, fill=WELL_FILL + (255,), outline=WELL_EDGE + (255,), width=1)
+    d.rounded_rectangle([x0, 398, x1, 460], radius=4, fill=WELL_FILL + (255,), outline=WELL_EDGE + (255,), width=1)
 
 # corner ticks (top-left of each column label block)
 for x in (20, 504, 984, 1456):
