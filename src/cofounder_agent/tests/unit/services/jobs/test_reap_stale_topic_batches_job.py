@@ -78,6 +78,19 @@ def _capture_findings(monkeypatch):
     return calls
 
 
+@pytest.fixture(autouse=True)
+def _queue_open(monkeypatch):
+    """Default every test to an OPEN approval queue so severity assertions
+    stay deterministic — the job consults the live throttle (back-pressure
+    colours the finding), and the shared test DB may carry
+    ``awaiting_approval`` rows from other tests. The queue-full test
+    overrides this with its own patch."""
+    async def _open(pool, **kwargs):
+        return (False, 0, 100)
+
+    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _open)
+
+
 @pytest.mark.unit
 class TestMetadata:
     def test_name(self):
@@ -189,6 +202,38 @@ async def test_non_expired_stuck_batch_is_not_reaped_even_when_enabled(
     assert f["severity"] == "warn"
     assert f["extra"]["reaped"] is False
     assert f["extra"]["is_expired"] is False
+
+
+async def test_backpressure_parked_batch_is_info_not_warn(
+    db_pool, _capture_findings, monkeypatch,
+):
+    """Back-pressure regression (2026-07-25 alarm audit): a stuck-but-live
+    batch parked behind a FULL approval queue is the throttle working —
+    ``topic_auto_resolve`` defers on purpose — so the finding drops to
+    ``info`` (dashboard-only) with the true cause in the body instead of
+    paging "niche content-dark" hourly. The batch is left untouched."""
+    async def _full(pool, **kwargs):
+        return (True, 3, 3)
+
+    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _full)
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="reaper-parked", name="Parked", batch_size=5)
+    batch_id = await _seed_batch(db_pool, n.id, age_hours=48, expires_in_hours=120)
+
+    result = await ReapStaleTopicBatchesJob().run(
+        db_pool, {"_site_config": SiteConfig()},
+    )
+
+    assert result.changes_made == 0
+    assert await _batch_status(db_pool, batch_id) == "open"
+    assert len(_capture_findings) == 1
+    f = _capture_findings[0]
+    assert f["severity"] == "info"  # throttle working → no page
+    assert "approval queue is full" in f["body"]
+    assert "Not a wedge" in f["body"]
+    assert f["extra"]["approval_queue_full"] is True
+    assert f["extra"]["approval_queue_size"] == 3
+    assert f["extra"]["reaped"] is False
 
 
 async def test_inactive_niche_batch_is_ignored(db_pool, _capture_findings):

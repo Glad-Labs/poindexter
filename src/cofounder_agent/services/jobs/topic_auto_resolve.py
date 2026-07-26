@@ -81,9 +81,17 @@ class TopicAutoResolveJob:
         # ---- Queue throttle ----
         # Don't stuff more tasks behind a full approval queue. Reuses the
         # same gate the legacy idle_worker topic-discovery path uses.
+        # site_config MUST be passed: the bare `is_queue_full(pool)` call
+        # silently fell back to the hardcoded max_approval_queue=3 while the
+        # operator's DB value was 100 — every review backlog of ≥3 posts
+        # then wedged the niche sweeps behind a phantom "queue full (3/3)"
+        # for months (found by the 2026-07-25 alarm audit; the recurring
+        # topic_batch_stuck pages were this).
         try:
             from services.pipeline_throttle import is_queue_full
-            full, queue_size, queue_limit = await is_queue_full(pool)
+            full, queue_size, queue_limit = await is_queue_full(
+                pool, site_config=config.get("_site_config"),
+            )
             if full:
                 return JobResult(
                     ok=True,

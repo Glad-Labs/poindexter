@@ -97,8 +97,9 @@ async def _seed_open_batch(
 def _no_queue_throttle(monkeypatch):
     """Pretend the approval queue is never full so the throttle gate
     doesn't short-circuit the job. ``is_queue_full`` is imported inside
-    ``run()`` so we patch the source module."""
-    async def _not_full(pool):
+    ``run()`` so we patch the source module. Accepts the ``site_config``
+    kwarg the job now passes (the phantom-cap fix)."""
+    async def _not_full(pool, **kwargs):
         return (False, 0, 100)
 
     monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _not_full)
@@ -129,6 +130,31 @@ class TestMetadata:
 
     def test_schedule_every_2h(self):
         assert TopicAutoResolveJob.schedule == "0 */2 * * *"
+
+
+async def test_queue_check_receives_di_site_config(db_pool, monkeypatch):
+    """Phantom-cap regression (2026-07-25 alarm audit): the queue-throttle
+    check MUST receive the run-bound SiteConfig. The bare
+    ``is_queue_full(pool)`` call fell back to the hardcoded
+    ``max_approval_queue=3`` while the operator's DB value was 100, so a
+    3-post review backlog deferred every auto-resolve for months and the
+    open batch paged hourly as "stuck"."""
+    await _enable_auto_resolve(db_pool)
+    seen: dict = {}
+
+    async def _spy(pool, **kwargs):
+        seen.update(kwargs)
+        # Report full so the job exits right after the check — this test
+        # is about the call contract, not the resolve path.
+        return (True, 3, 3)
+
+    monkeypatch.setattr("services.pipeline_throttle.is_queue_full", _spy)
+    cfg = SiteConfig()
+
+    result = await TopicAutoResolveJob().run(db_pool, {"_site_config": cfg})
+
+    assert "queue full" in result.detail
+    assert seen.get("site_config") is cfg
 
 
 async def test_resolves_internal_only_batch(db_pool, _no_queue_throttle, _fake_handoff):

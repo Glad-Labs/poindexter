@@ -22,10 +22,19 @@ have been open longer than ``topic_batch_stuck_hours`` (default 24), then:
 1. **Alert (always, every stuck batch).** Emits a ``topic_batch_stuck``
    finding. Severity follows the self-heal ladder
    (``feedback_self_heal_not_suppress``):
-     - **not reaped → ``warn``** so it passes ``findings_alert_router``'s
-       severity floor and routes to the seeded
+     - **not reaped, queue open → ``warn``** so it passes
+       ``findings_alert_router``'s severity floor and routes to the seeded
        ``findings.topic_batch_stuck.delivery='discord'`` ops channel —
        i.e. it pages. This is the "silent stall → ping" conversion.
+     - **not reaped, approval queue FULL → ``info``** (dashboard-only):
+       the batch is parked behind deliberate back-pressure —
+       ``topic_auto_resolve`` defers while ``is_queue_full``, so an open
+       batch aging past the stuck threshold is the throttle *working*,
+       not a wedge. It resumes on its own when the operator drains the
+       review queue (morning brief + console NEEDS YOU own that nudge);
+       paging it hourly as "niche content-dark" misdiagnoses the state
+       (2026-07-25 alarm audit — 27h of hourly pages for a batch that
+       was simply waiting behind a full review queue).
      - **reaped → ``info``** (dashboard-only, no page): the niche already
        self-healed, so paging would be noise.
 
@@ -148,6 +157,19 @@ class ReapStaleTopicBatchesJob:
                 changes_made=0,
             )
 
+        # Back-pressure vs wedge: a batch parked behind a full approval
+        # queue is the pipeline throttle working — topic_auto_resolve
+        # defers on is_queue_full and resumes when the queue drains — so
+        # it must not page as a wedge. Checked once per run; the state
+        # colours every finding this cycle. site_config passed through so
+        # the operator's max_approval_queue applies (the bare-pool call
+        # falls back to a hardcoded 3 — the phantom cap the 2026-07-25
+        # alarm audit dug out of topic_auto_resolve).
+        from services.pipeline_throttle import is_queue_full
+        queue_full, queue_size, queue_limit = await is_queue_full(
+            pool, site_config=config.get("_site_config"),
+        )
+
         # Only build the service (which mints a SiteConfig dependency) when we
         # might actually reap — the alert-only default path stays independent
         # of the run-bound site_config being present.
@@ -192,15 +214,18 @@ class ReapStaleTopicBatchesJob:
                 source="reap_stale_topic_batches",
                 kind="topic_batch_stuck",
                 # Self-heal ladder: a batch we cleaned up is quiet (info,
-                # dashboard-only — dropped by the router's severity floor); a
-                # batch still wedging the niche pages (warn → Discord).
-                severity="info" if did_reap else "warn",
+                # dashboard-only — dropped by the router's severity floor),
+                # and so is one parked behind a full approval queue (the
+                # throttle working, not a wedge); only a batch wedging an
+                # unthrottled niche pages (warn → Discord).
+                severity="info" if (did_reap or queue_full) else "warn",
                 title=(
                     f"topic batch stuck {age_hours:.0f}h on niche "
                     f"'{row['niche_slug']}'"
                 ),
                 body=_finding_body(
                     row, age_hours, is_expired, did_reap, reaper_enabled,
+                    queue_full, queue_size, queue_limit,
                 ),
                 dedup_key=f"topic_batch_stuck:{batch_id}",
                 extra={
@@ -211,6 +236,9 @@ class ReapStaleTopicBatchesJob:
                     "candidate_count": int(row["candidate_count"]),
                     "is_expired": is_expired,
                     "reaped": did_reap,
+                    "approval_queue_full": queue_full,
+                    "approval_queue_size": queue_size,
+                    "approval_queue_limit": queue_limit,
                     "expires_at": row["expires_at"].isoformat(),
                 },
             )
@@ -231,6 +259,9 @@ def _finding_body(
     is_expired: bool,
     did_reap: bool,
     reaper_enabled: bool,
+    queue_full: bool = False,
+    queue_size: int = 0,
+    queue_limit: int = 0,
 ) -> str:
     """Markdown-friendly finding body that states the facts and the action
     taken (or why none was)."""
@@ -243,6 +274,20 @@ def _finding_body(
         f"({int(row['candidate_count'])} candidate(s); "
         f"expires_at {row['expires_at']:%Y-%m-%d %H:%M UTC}, {window}).",
         "",
+    ]
+    if queue_full and not did_reap:
+        lines += [
+            f"⏸️ Not a wedge: the approval queue is full "
+            f"({queue_size}/{queue_limit}), so `topic_auto_resolve` is "
+            "deferring on purpose and this batch is parked behind "
+            "back-pressure. It resumes automatically once the queue "
+            "drains — review the pending posts (console NEEDS YOU, or "
+            "`poindexter tasks list --status awaiting_approval`). "
+            "Rejecting the batch does not help; the next one will park "
+            "behind the same queue.",
+        ]
+        return "\n".join(lines)
+    lines += [
         "A stuck open batch blocks every future discovery sweep for this "
         "niche (`uq_one_open_batch_per_niche`), so the niche goes "
         "content-dark until it is cleared.",

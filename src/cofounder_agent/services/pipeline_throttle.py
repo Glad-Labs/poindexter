@@ -25,9 +25,12 @@ knob this module needs.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,10 +117,22 @@ async def is_queue_full(
     depth is not a concern.
     """
     now = _now()
-    max_queue = (
-        site_config.get_int("max_approval_queue", 3)
-        if site_config is not None else 3
-    )
+    if site_config is not None:
+        max_queue = site_config.get_int("max_approval_queue", 3)
+    else:
+        # Loud, not silent (2026-07-25 alarm audit): topic_auto_resolve
+        # called this bare for three months and throttled at the hardcoded
+        # 3 while the operator's DB value was 100 — every ≥3-post review
+        # backlog then wedged the niche sweeps behind a phantom
+        # "queue full (3/3)". The fallback stays (tests and early-boot
+        # callers), but any production caller landing here is planning
+        # against the wrong limit and must pass the DI SiteConfig.
+        logger.warning(
+            "is_queue_full called without site_config — using fallback "
+            "max_approval_queue=3, which may not match the operator's "
+            "configured limit; pass the DI SiteConfig instance"
+        )
+        max_queue = 3
     if not pool:
         _mark_inactive(now, 0, max_queue)
         return False, 0, max_queue
