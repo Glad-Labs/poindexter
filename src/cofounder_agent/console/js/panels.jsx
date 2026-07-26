@@ -372,48 +372,70 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
 }
 
 /* ─── GPU HUD ───────────────────────────────────────────────── */
+// Renders one gauge group per card. `gpu.gpus` is the per-card array built in
+// api.gpu() (keyed by the exporter's `gpu` label); mock mode and any older
+// payload without it fall back to the flat single-card shape, so this stays
+// correct on a 1-GPU host. The title no longer hardcodes a model — the real
+// name isn't in nvidia_gpu_*, and asserting one card's model over a rig with
+// two different cards is exactly the fabrication we avoid elsewhere.
 function GpuHud({ gpu, onOpen }) {
+  const cards = gpu.gpus && gpu.gpus.length ? gpu.gpus : [gpu];
+  const multi = cards.length > 1;
   return (
     <Panel
       icon="gpu"
-      title="GPU · RTX 5090"
+      title={
+        multi ? `GPU · ${cards.length} cards` : `GPU · ${gpu.name || 'GPU 0'}`
+      }
       meta={gpu.driver ? `DRIVER ${gpu.driver}` : 'LIVE · nvidia_gpu'}
       flush
       action="Detail"
       onAction={onOpen}
     >
-      <div className="gauges">
-        <ArcGauge value={gpu.util} max={100} label="Utilization" unit="%" />
-        <ArcGauge
-          value={gpu.temp}
-          max={95}
-          label="Temp"
-          unit="°"
-          warnAt={0.74}
-          dangerAt={0.88}
-        />
-        <ArcGauge value={gpu.power} max={gpu.powerMax} label="Power" unit="W" />
-      </div>
-      <div
-        className="gauges"
-        style={{ borderTop: '1px solid var(--gl-hairline)' }}
-      >
-        <ArcGauge
-          value={gpu.vramUsed}
-          max={gpu.vramTotal}
-          label="VRAM GB"
-          warnAt={0.8}
-          dangerAt={0.92}
-        />
-        <ArcGauge value={gpu.fan} max={100} label="Fan" unit="%" />
-        <ArcGauge
-          value={gpu.clock}
-          max={gpu.clockMax}
-          label="Clock MHz"
-          warnAt={2}
-          dangerAt={3}
-        />
-      </div>
+      {cards.map((c, i) => (
+        <div key={c.index != null ? c.index : i}>
+          {multi && (
+            <div className="section-label">{c.name || `GPU ${c.index}`}</div>
+          )}
+          <div
+            className="gauges"
+            style={
+              i ? { borderTop: '1px solid var(--gl-hairline)' } : undefined
+            }
+          >
+            <ArcGauge value={c.util} max={100} label="Utilization" unit="%" />
+            <ArcGauge
+              value={c.temp}
+              max={95}
+              label="Temp"
+              unit="°"
+              warnAt={0.74}
+              dangerAt={0.88}
+            />
+            <ArcGauge value={c.power} max={c.powerMax} label="Power" unit="W" />
+          </div>
+          <div
+            className="gauges"
+            style={{ borderTop: '1px solid var(--gl-hairline)' }}
+          >
+            <ArcGauge
+              value={c.vramUsed}
+              max={c.vramTotal}
+              label="VRAM GB"
+              warnAt={0.8}
+              dangerAt={0.92}
+            />
+            <ArcGauge value={c.fan} max={100} label="Fan" unit="%" />
+            <ArcGauge
+              value={c.clock}
+              max={c.clockMax || gpu.clockMax}
+              label="Clock MHz"
+              warnAt={2}
+              dangerAt={3}
+            />
+          </div>
+        </div>
+      ))}
     </Panel>
   );
 }

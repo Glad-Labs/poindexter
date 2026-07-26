@@ -1503,43 +1503,103 @@
     // ── GPU (Prometheus :9091, not the worker) ──────────────
     // Verified against the local poindexter-gpu-exporter series (the same ones
     // the Hardware & Power dashboard reads). VRAM is exported in MiB → /1024 for
-    // the GB the gauges expect. driver/procs aren't in nvidia_gpu_* so they're
-    // left empty in live rather than carrying mock values (no fabricated data).
+    // the GB the gauges expect. driver/procs/name aren't in nvidia_gpu_* so they
+    // are left empty in live rather than carrying mock values (no fabricated
+    // data — the panel labels a card by its `gpu` index instead).
     // utilHist/tempHist seed FLAT at the current real reading; the GPU poll in
-    // app.jsx shifts real samples in each tick. clockMax/name are display
-    // scaffolding (the card really is an RTX 5090).
+    // app.jsx shifts real samples in each tick.
+    //
+    // Per-card by construction (poindexter#921). These used to be promScalar,
+    // which takes result[0] — fine while the exporter published one card, but
+    // once it published both (poindexter#919) result[0] became "whichever series
+    // Prometheus returned first", an order the HTTP API does not guarantee. That
+    // hid the 2nd card entirely AND risked pairing one card's memory_used with
+    // another's memory_total (two independent queries) to yield a VRAM % that
+    // described no real card. Keying every family by the `gpu` label makes a
+    // card's gauges structurally come from that card.
     async gpu() {
       if (!cfg.live) return mock().gpu;
       const g = mock().gpu;
       const [util, temp, power, powerMax, vu, vt, fan, clock] =
         await Promise.all([
-          promScalar('nvidia_gpu_utilization_percent').catch(() => null),
-          promScalar('nvidia_gpu_temperature_celsius').catch(() => null),
-          promScalar('nvidia_gpu_power_draw_watts').catch(() => null),
-          promScalar('nvidia_gpu_power_limit_watts').catch(() => null),
-          promScalar('nvidia_gpu_memory_used_mib').catch(() => null),
-          promScalar('nvidia_gpu_memory_total_mib').catch(() => null),
-          promScalar('nvidia_gpu_fan_speed_percent').catch(() => null),
-          promScalar('nvidia_gpu_clock_graphics_mhz').catch(() => null),
+          promVector('nvidia_gpu_utilization_percent').catch(() => []),
+          promVector('nvidia_gpu_temperature_celsius').catch(() => []),
+          promVector('nvidia_gpu_power_draw_watts').catch(() => []),
+          promVector('nvidia_gpu_power_limit_watts').catch(() => []),
+          promVector('nvidia_gpu_memory_used_mib').catch(() => []),
+          promVector('nvidia_gpu_memory_total_mib').catch(() => []),
+          promVector('nvidia_gpu_fan_speed_percent').catch(() => []),
+          promVector('nvidia_gpu_clock_graphics_mhz').catch(() => []),
         ]);
       const mibToGb = (m) =>
         m == null ? null : Math.round((m / 1024) * 10) / 10;
-      const u = Math.round(util ?? g.util);
-      const t = Math.round(temp ?? g.temp);
+      // {gpu-index -> value} for one metric family. A series with no `gpu`
+      // label is dropped rather than guessed at.
+      const byGpu = (vec) => {
+        const m = new Map();
+        (vec || []).forEach((s) => {
+          const k = s && s.labels ? s.labels.gpu : null;
+          if (k != null && s.value != null) m.set(String(k), s.value);
+        });
+        return m;
+      };
+      const fam = {
+        util: byGpu(util),
+        temp: byGpu(temp),
+        power: byGpu(power),
+        powerMax: byGpu(powerMax),
+        vu: byGpu(vu),
+        vt: byGpu(vt),
+        fan: byGpu(fan),
+        clock: byGpu(clock),
+      };
+      // Union of indices seen in ANY family, numerically ascending — so a card
+      // missing one metric still gets a row instead of vanishing.
+      const indices = [
+        ...new Set(
+          Object.keys(fam).reduce(
+            (acc, k) => acc.concat([...fam[k].keys()]),
+            []
+          )
+        ),
+      ].sort((a, b) => Number(a) - Number(b));
+      const rnd = (v) => (v != null ? Math.round(v) : null);
+      const gpus = indices.map((idx) => ({
+        index: Number(idx),
+        name: `GPU ${idx}`, // real model isn't in nvidia_gpu_* — index, not a guess
+        util: rnd(fam.util.get(idx)),
+        temp: rnd(fam.temp.get(idx)),
+        power: rnd(fam.power.get(idx)),
+        powerMax: rnd(fam.powerMax.get(idx)),
+        vramUsed: mibToGb(fam.vu.get(idx) ?? null),
+        vramTotal: mibToGb(fam.vt.get(idx) ?? null),
+        fan: rnd(fam.fan.get(idx)),
+        clock: rnd(fam.clock.get(idx)),
+      }));
+      // Top-level scalars stay for back-compat (modes.jsx tile, drawer detail,
+      // the sparkline history). They now mean "the lowest-indexed card" as a
+      // deliberate choice rather than whatever Prometheus happened to sort first.
+      const p = gpus[0] || {};
+      const u = p.util ?? g.util;
+      const t = p.temp ?? g.temp;
       return {
         ...g,
+        gpus,
+        name: '', // model isn't exported — panel falls back to the index label
         driver: '', // not exported by nvidia_gpu_* — don't fabricate a version
         procs: [], // no per-process VRAM series — empty beats fake rows
         util: u,
         temp: t,
-        power: power != null ? Math.round(power) : g.power,
-        powerMax: powerMax != null ? Math.round(powerMax) : g.powerMax,
-        vramUsed: mibToGb(vu) ?? g.vramUsed,
-        vramTotal: mibToGb(vt) ?? g.vramTotal,
-        fan: fan != null ? Math.round(fan) : g.fan,
-        clock: clock != null ? Math.round(clock) : g.clock,
-        utilHist: util != null ? Array(g.utilHist.length).fill(u) : g.utilHist,
-        tempHist: temp != null ? Array(g.tempHist.length).fill(t) : g.tempHist,
+        power: p.power ?? g.power,
+        powerMax: p.powerMax ?? g.powerMax,
+        vramUsed: p.vramUsed ?? g.vramUsed,
+        vramTotal: p.vramTotal ?? g.vramTotal,
+        fan: p.fan ?? g.fan,
+        clock: p.clock ?? g.clock,
+        utilHist:
+          p.util != null ? Array(g.utilHist.length).fill(u) : g.utilHist,
+        tempHist:
+          p.temp != null ? Array(g.tempHist.length).fill(t) : g.tempHist,
       };
     },
 
