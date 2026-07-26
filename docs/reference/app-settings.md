@@ -222,11 +222,9 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `cost_alert_threshold_pct` | `80` |  | Alert when spend exceeds this % of limit |
-| `daily_spend_limit` | `1.00` |  | Hard cap on daily AI spend in USD |
 | `daily_spend_limit_usd` | `2.0` |  | Maximum daily AI spend in USD (read by services/cost_guard.py) |
 | `electricity_rate_kwh` | `0.16` |  | Electricity rate in $/kWh for energy-cost estimates. Tune to your utility rate. |
 | `gpu_inference_watts` | `400` |  | GPU average inference power draw in watts |
-| `monthly_spend_limit` | `20.00` |  | Hard cap on monthly AI spend in USD |
 | `monthly_spend_limit_usd` | `100.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
 
 ## experiments
@@ -834,7 +832,6 @@ The worker re-reads on every poll; no restart needed.
 | `auto_publish_threshold` | `0` |  | Quality score threshold for auto-publishing (0=disabled) |
 | `brain_auto_cancel_grace_minutes` | `10` |  | Extra grace period the brain daemon adds on top of stale_task_timeout_minutes before flipping a stuck task to failed.... |
 | `create_post_dedup_threshold` | `0.75` |  | Cosine similarity at/above which a caller-supplied topic (create_post MCP tool / POST /api/tasks) is refused as a nea... |
-| `daily_budget_usd` | `1.00` |  | Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled) |
 | `daily_post_limit` | `4` |  | Maximum posts to generate per day |
 | `default_template_slug` | `canonical_blog` |  | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ... |
 | `max_approval_queue` | `100` |  | Restored 2026-04-24 after backlog cleared |
