@@ -116,12 +116,12 @@
       "targets": [
         {
           "expr": "nvidia_gpu_utilization_percent",
-          "legendFormat": "GPU Util %",
+          "legendFormat": "GPU {{gpu}} Util %",
           "refId": "A"
         },
         {
           "expr": "nvidia_gpu_temperature_celsius",
-          "legendFormat": "Temp C",
+          "legendFormat": "GPU {{gpu}} Temp C",
           "refId": "B"
         }
       ],
@@ -168,12 +168,12 @@
       "targets": [
         {
           "expr": "nvidia_gpu_memory_used_mib",
-          "legendFormat": "VRAM Used (MiB)",
+          "legendFormat": "GPU {{gpu}} VRAM Used (MiB)",
           "refId": "A"
         },
         {
           "expr": "nvidia_gpu_power_draw_watts",
-          "legendFormat": "Power (W)",
+          "legendFormat": "GPU {{gpu}} Power (W)",
           "refId": "B"
         }
       ],
@@ -296,7 +296,7 @@
             "uid": "local-prometheus"
           },
           "expr": "nvidia_gpu_utilization_percent",
-          "legendFormat": "GPU Util %",
+          "legendFormat": "GPU {{gpu}} Util %",
           "refId": "C"
         }
       ]

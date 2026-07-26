@@ -1743,7 +1743,20 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              # `all`, NOT `1` — this is the MONITORING container, so it must see
+              # every card. The workload services above (image-gen-server /
+              # wan-server / speaches / voice-agent-*) deliberately pin `count: 1`
+              # to keep one job on one GPU; this block was copy-pasted from them
+              # while the service was still profile-gated OFF for a "future Linux
+              # host", so the wrong reservation lay dormant until the Pop!_OS
+              # migration (#295) actually started it. The effect: nvidia-smi
+              # inside the container enumerated only GPU 0, so the exporter
+              # emitted one series per metric and the RTX 3090 (which holds the
+              # pinned qwen3-vl vision rail, ~20GB, KEEP_ALIVE=-1) was invisible
+              # in Prometheus/Grafana — VRAM pressure, thermals and evictions on
+              # it went unmonitored. The row-by-row parsing fix from #1956 was
+              # never the problem; it had no second row to parse.
+              count: all
               capabilities: [gpu]
     depends_on:
       postgres-local:

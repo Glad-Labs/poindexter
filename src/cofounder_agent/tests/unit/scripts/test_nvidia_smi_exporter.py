@@ -305,3 +305,57 @@ def test_collector_loop_continues_to_next_cycle_after_watchdog_systemexit():
         0.0, _refresh=fake_refresh, _sleep=lambda _: None, _stop=stop
     )
     assert len(calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# Compose contract: the exporter must be RESERVED every GPU, not just one.
+#
+# Parsing one series per card (above) is necessary but not sufficient — the
+# container also has to *see* every card. The gpu-exporter service was
+# copy-pasted from the single-GPU workload services (image-gen-server /
+# wan-server / speaches / voice-agent-*), which pin `count: 1` on purpose to
+# keep one job on one card. That reservation was harmless while the service sat
+# profile-gated OFF for a "future Linux host", but the Pop!_OS migration (#295)
+# started it for real — and nvidia-smi inside the container then enumerated only
+# GPU 0. The exporter dutifully emitted one series per metric, `up` stayed 1,
+# and nothing alerted, so the RTX 3090 holding the pinned qwen3-vl vision rail
+# (~20GB, KEEP_ALIVE=-1) was invisible in Prometheus/Grafana.
+#
+# This is the layer the #1956 parser tests could never catch: they proved the
+# code handles a second row, not that a second row is ever produced.
+# ---------------------------------------------------------------------------
+
+
+def _gpu_exporter_service() -> dict:
+    import yaml
+
+    compose = _repo_root() / "docker-compose.local.yml"
+    return yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]["gpu-exporter"]
+
+
+def test_gpu_exporter_reserves_all_gpus_not_a_fixed_count():
+    """Monitoring must see every card. `count: 1` here silently halves telemetry
+    on a multi-GPU rig — the failure mode is a *missing* series, which looks
+    identical to a healthy single-GPU host, so only this assertion catches it."""
+    devices = _gpu_exporter_service()["deploy"]["resources"]["reservations"]["devices"]
+    nvidia = [d for d in devices if d.get("driver") == "nvidia"]
+    assert nvidia, "gpu-exporter must reserve an nvidia device"
+    for dev in nvidia:
+        assert dev.get("count") == "all", (
+            "gpu-exporter must reserve count: all — it is the MONITORING "
+            f"container, not a workload pinned to one card (got {dev.get('count')!r}). "
+            "See the RTX 3090 blind-spot regression after the Pop!_OS migration."
+        )
+
+
+def test_gpu_exporter_still_scraped_under_the_nvidia_smi_job():
+    """The dashboards' bare nvidia_gpu_* queries and the GpuTemperatureHigh /
+    GpuVramHigh rules all match on job="nvidia-smi"; keep the target wired so a
+    compose rename can't orphan every GPU consumer at once."""
+    import yaml
+
+    prom = _repo_root() / "infrastructure" / "prometheus" / "config" / "prometheus.yml"
+    jobs = yaml.safe_load(prom.read_text(encoding="utf-8"))["scrape_configs"]
+    nvidia_job = next(j for j in jobs if j["job_name"] == "nvidia-smi")
+    targets = [t for sc in nvidia_job["static_configs"] for t in sc["targets"]]
+    assert any("gpu-exporter" in t for t in targets), targets
