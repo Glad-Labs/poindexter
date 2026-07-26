@@ -1481,6 +1481,37 @@ class TemplateRunner:
         ``pipeline_streaming_channel`` setting (default ``discord`` → no-op
         callback so Discord isn't double-posted; ``telegram`` → edit-stream).
         """
+        # Bind the ambient task id (services.task_context) around the whole
+        # run so every LLM dispatch inside it — however deep, whether or not
+        # the call site threads task_id — attributes to this task (Langfuse
+        # session grouping + cost_logs rows, poindexter#902).
+        from services.task_context import bind_task_id, reset_task_id
+
+        token = bind_task_id((initial_state or {}).get("task_id"))
+        try:
+            return await self._run_impl(
+                template_slug,
+                initial_state,
+                thread_id=thread_id,
+                resume=resume,
+                resume_value=resume_value,
+                on_event=on_event,
+            )
+        finally:
+            reset_task_id(token)
+
+    async def _run_impl(
+        self,
+        template_slug: str,
+        initial_state: dict[str, Any],
+        *,
+        thread_id: str | None = None,
+        resume: bool = False,
+        resume_value: Any = None,
+        on_event: OnEventCallback | None = None,
+    ) -> TemplateRunSummary:
+        """Body of :meth:`run` (see its docstring) — split out so ``run`` can
+        bind the ambient task-id context around the entire execution."""
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
         # done at top level.

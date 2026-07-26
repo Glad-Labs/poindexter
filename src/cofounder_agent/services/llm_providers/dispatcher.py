@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 from plugins.config import PluginConfig
 from plugins.registry import get_all_llm_providers
 from services.gpu_scheduler import gpu
+from services.task_context import current_task_id
 
 if TYPE_CHECKING:
     from services.vram_budget import ModelArch
@@ -566,12 +567,28 @@ async def dispatch_complete(
     values fall back to ``None`` / ``"dispatch_complete"`` so historical
     callers don't need to be updated. The write is best-effort — a
     failure never breaks the call path.
+
+    When ``task_id`` is not supplied, the ambient binding from
+    ``services.task_context`` (set by ``TemplateRunner.run`` around every
+    template run) fills it in, so calls deep inside a run that never
+    threaded ``task_id`` still group into the task's Langfuse session and
+    attribute their cost rows (poindexter#902). An explicit argument wins.
     """
+    if not task_id:
+        task_id = current_task_id()
     with _tracer.start_as_current_span("llm.dispatch_complete") as span:
         span.set_attribute("llm.tier", tier)
         span.set_attribute("llm.model", model)
+        # Trace-level metadata (poindexter#902): the console's /api/traces list
+        # reads TRACE metadata — the model the @observe wrappers stamp lands on
+        # the observation, which the trace-list API never surfaces. Reserved
+        # prefix LangfuseOtelSpanAttributes.TRACE_METADATA, verified against
+        # langfuse 4.13 — a wrong key is a silent no-op, the session.id bug
+        # class documented below.
+        span.set_attribute("langfuse.trace.metadata.model", model)
         span.set_attribute("llm.messages.count", len(messages))
         if task_id:
+            span.set_attribute("langfuse.trace.metadata.task_id", task_id)
             span.set_attribute("llm.task_id", task_id)
             # Reserved Langfuse OTEL attribute (LangfuseOtelSpanAttributes
             # .TRACE_SESSION_ID == "session.id" in langfuse 4.x): stamps the

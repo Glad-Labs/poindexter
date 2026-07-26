@@ -67,6 +67,45 @@ from __future__ import annotations
 
 from typing import Any
 
+
+def _stamp_trace_attrs(
+    metadata: dict[str, Any] | None = None,
+    session_id: str | None = None,
+    name: str | None = None,
+) -> None:
+    """Set reserved ``langfuse.trace.*`` attributes on the current OTEL span.
+
+    Langfuse 4.x is OTEL-native and has no ``update_current_trace`` client
+    method (verified against 4.13); trace-level fields are set by stamping the
+    reserved span attributes — ``langfuse.trace.metadata.<key>``, ``session.id``
+    (``LangfuseOtelSpanAttributes.TRACE_METADATA`` / ``TRACE_SESSION_ID``) —
+    on ANY span of the trace. The console's ``/api/traces`` list proxy reads
+    exactly these trace-level fields (Glad-Labs/poindexter#902): the model an
+    ``@observe`` site records via ``update_current_observation`` lands on the
+    *observation*, which the trace-list API never surfaces.
+
+    Best-effort like everything else in this shim: no OTEL, no recording span,
+    or any error → silent no-op. Observability must never break the call path.
+    """
+    try:
+        from opentelemetry import trace as _otel_trace
+
+        span = _otel_trace.get_current_span()
+        if span is None or not span.is_recording():
+            return
+        if name:
+            span.set_attribute("langfuse.trace.name", str(name))
+        if session_id:
+            span.set_attribute("session.id", str(session_id))
+        for key, value in (metadata or {}).items():
+            if value is not None:
+                span.set_attribute(f"langfuse.trace.metadata.{key}", str(value))
+    except Exception:
+        # silent-ok: best-effort trace decoration — a missing/broken OTEL stack
+        # must never break the LLM call being traced.
+        pass
+
+
 try:
     # Langfuse 4.x: observe lives at the top-level package; langfuse.decorators
     # was removed. get_client() returns the process-wide Langfuse client whose
@@ -90,17 +129,32 @@ try:
             except Exception:
                 # Swallowed intentionally — observability must never break content generation.
                 pass
+            # Mirror the model onto the TRACE (poindexter#902): every @observe
+            # site already stamps model here, but observation fields never
+            # reach the trace-list API the console reads — without this mirror
+            # the LLM TRACES panel's model column renders "—" on every row.
+            model = kwargs.get("model")
+            if model is not None:
+                _stamp_trace_attrs(metadata={"model": model})
 
         @staticmethod
-        def update_current_trace(*_args: Any, **_kwargs: Any) -> None:
-            pass
+        def update_current_trace(*_args: Any, **kwargs: Any) -> None:
+            # v3 parity via reserved OTEL attributes (no v4 client method).
+            _stamp_trace_attrs(
+                metadata=kwargs.get("metadata"),
+                session_id=kwargs.get("session_id"),
+                name=kwargs.get("name"),
+            )
 
     langfuse_context = _LangfuseContextCompat()  # type: ignore[assignment]
     LANGFUSE_AVAILABLE: bool = True
 
 except ImportError:  # pragma: no cover — try legacy v3 path
     try:
-        from langfuse.decorators import langfuse_context, observe  # type: ignore[import-not-found, no-redef]
+        from langfuse.decorators import (  # type: ignore[import-not-found, no-redef]
+            langfuse_context,
+            observe,
+        )
         LANGFUSE_AVAILABLE = True
     except ImportError:
         # langfuse not installed at all (brain daemon, minimal-dep test runs)

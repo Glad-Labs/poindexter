@@ -224,6 +224,81 @@ async def test_dispatch_complete_omits_session_when_no_task_id(monkeypatch):
 
     # No task context -> no session stamp (never mint an orphan empty session).
     assert not any(key == "session.id" for key, _ in recorded)
+    assert not any(key == "langfuse.trace.metadata.task_id" for key, _ in recorded)
+
+
+async def test_dispatch_complete_always_stamps_trace_metadata_model(monkeypatch):
+    """The console's /api/traces list reads TRACE-level metadata.model — the
+    model @observe sites stamp lands on the observation, which the trace-list
+    API never surfaces (poindexter#902). Every dispatch stamps it, task or not."""
+    import services.llm_providers.dispatcher as d
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    await d.dispatch_complete(
+        pool=object(),
+        messages=[{"role": "user", "content": "hi"}],
+        model="ollama/gemma-4-31B-it-qat:latest",
+        tier="standard",
+        num_ctx=8192,
+    )
+
+    assert (
+        "langfuse.trace.metadata.model",
+        "ollama/gemma-4-31B-it-qat:latest",
+    ) in recorded
+
+
+async def test_dispatch_complete_falls_back_to_ambient_task_context(monkeypatch):
+    """A call site inside a template run that never threaded task_id still
+    groups into the task's Langfuse session via the services.task_context
+    binding TemplateRunner.run installs (poindexter#902)."""
+    import services.llm_providers.dispatcher as d
+    from services.task_context import bind_task_id, reset_task_id
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    token = bind_task_id("ambient-task-9")
+    try:
+        await d.dispatch_complete(
+            pool=object(),
+            messages=[{"role": "user", "content": "hi"}],
+            model="ollama/gemma-4-31B-it-qat:latest",
+            tier="standard",
+            num_ctx=8192,
+        )
+    finally:
+        reset_task_id(token)
+
+    assert ("session.id", "ambient-task-9") in recorded
+    assert ("langfuse.trace.metadata.task_id", "ambient-task-9") in recorded
+
+
+async def test_dispatch_complete_explicit_task_id_beats_ambient(monkeypatch):
+    """The ambient binding is a fallback, never an override."""
+    import services.llm_providers.dispatcher as d
+    from services.task_context import bind_task_id, reset_task_id
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    token = bind_task_id("ambient-task-9")
+    try:
+        await d.dispatch_complete(
+            pool=object(),
+            messages=[{"role": "user", "content": "hi"}],
+            model="ollama/gemma-4-31B-it-qat:latest",
+            tier="standard",
+            task_id="explicit-task-1",
+            num_ctx=8192,
+        )
+    finally:
+        reset_task_id(token)
+
+    assert ("session.id", "explicit-task-1") in recorded
+    assert not any(v == "ambient-task-9" for _, v in recorded)
 
 
 async def test_dispatch_complete_captures_prompt_and_completion(monkeypatch):
