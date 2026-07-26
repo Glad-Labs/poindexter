@@ -4,9 +4,10 @@ No custom registry, no decorators, no pkgutil auto-imports. We use
 ``importlib.metadata.entry_points()`` — the same mechanism pytest,
 click, and flask use.
 
-As of 2026-05-13, **20 entry-point groups** are wired here. 19 are
+**18 entry-point groups** are wired here (see ``ENTRY_POINT_GROUPS``
+below — that dict is the source of truth, not this docstring). 17 are
 capability plugins (Tap, Stage, Reviewer, Adapter, Provider, …) and
-the 20th is ``modules`` — the Module v1 group (Glad-Labs/poindexter#490),
+the 18th is ``modules`` — the Module v1 group (Glad-Labs/poindexter#490),
 the unit of business-function composition. See ``plugins/module.py``
 and ``docs/architecture/module-v1.md`` for the Module Protocol; this
 file's ``get_modules()`` accessor is the registry side.
@@ -547,7 +548,7 @@ def get_core_samples() -> dict[str, list[Any]]:
     Import failures are logged + skipped per the same policy as
     ``_load_group()``.
 
-    ``@cache`` (poindexter#851): this runs the full ~40-entry ``_SAMPLES``
+    ``@cache`` (poindexter#851): this runs the full ~100-entry ``_SAMPLES``
     list plus a directory walk (``_scan_intree_modules``) on every call,
     regardless of which single ``group_key`` the caller wants. Every
     embed goes through ``dispatch_embed`` → ``get_provider`` →

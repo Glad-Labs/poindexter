@@ -2,7 +2,7 @@
 -- Seed data — regenerated from the fold-forward migration chain (Phase G squash, 2026-07-11).
 -- Captured after applying the full pre-squash chain (Phase F baseline + the 42 post-baseline
 -- migrations) to a throwaway DB — NOT a prod re-dump, so no operator hand-drift or secrets.
--- The 691 non-secret app_settings defaults, plus 2 empty-valued secret placeholders
+-- The 692 non-secret app_settings defaults, plus 2 empty-valued secret placeholders
 -- (cloudflare_analytics_api_token, mcp_http_probe_recovery_token) so those keys exist for the
 -- operator to fill — no secret VALUE is ever seeded — plus the declarative seed tables.
 -- Per-operator credentials + identity (telegram_chat_id, OAuth clients, etc.) are configured by
@@ -10,7 +10,7 @@
 -- already-seeded DB is a no-op (pipeline_templates upserts graph_def so the latest wins).
 --
 
--- app_settings (691 non-secret defaults + 2 empty-valued secret placeholders) — 693 row(s)
+-- app_settings (692 non-secret defaults + 2 empty-valued secret placeholders) — 694 row(s)
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('active_pipeline_experiment_key', '', 'experiments', 'Experiment key the content pipeline routes through (matches experiments.key in the experiments table). Empty = disabled. Set via `poindexter settings set active_pipeline_experiment_key <key>` to opt the pipeline into an A/B experiment. The harness is best-effort — a misconfigured experiment never halts the pipeline, just falls back to default config.', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('alert_force_telegram_event_types', '', 'alerts', 'Comma-separated list of event_type (or alertname) values that always route to Telegram regardless of severity. Use for alerts like ''cost_guard_tripped,worker_crashed_unrecoverable'' that the operator wants on their phone even at warning severity. Empty default = no overrides; pure severity routing applies (critical/error -> both, warning/info -> Discord only). Glad-Labs/poindexter#420.', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('alertmanager_url', 'http://alertmanager:9093', 'general', '', false, true) ON CONFLICT (key) DO NOTHING;
