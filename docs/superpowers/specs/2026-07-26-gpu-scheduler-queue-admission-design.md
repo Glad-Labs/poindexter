@@ -63,9 +63,9 @@ gpu.lock(kind, model=…, task_id=…, phase=…,
     ├─ ETA of current holder ≤ max_wait_s?  ← 2. ETA from gpu_task_sessions
     │     no → GpuBusyError(eta=…) NOW      ←    (reject in milliseconds,
     │                                             not after 900 dead seconds)
-    ├─ model fits target card's free VRAM   ← 3. per-card fit + resident
-    │   minus resident reserve?                  reserve (replaces pool-sum
-    │     no-but-evictable → grant_after_unload   budgeting at admission)
+    ├─ model fits target card's free VRAM   ← 3. per-card fit + headroom
+    │   (+ eviction credit − headroom)?          for mid-hold claims (replaces
+    │     no-but-evictable → grant_after_unload   pool-sum budgeting)
     │     no → GpuBusyError(no_fit)
     ▼
   QUEUE (observable)                        ← 4. waiters recorded w/ position;
@@ -146,28 +146,57 @@ waiter waited like today.
 ## 3. Per-card admission (fits where it will actually run)
 
 At admission for local-Ollama work (which lands on GPU0 — the primary
-instance; the GPU1 lane bypasses this lock entirely):
+instance; the GPU1 lane bypasses this lock entirely). Derivation, in the
+order the memory actually moves:
 
 ```
-free_gpu0 = total_gpu0 − used_gpu0 (Prometheus, via gpu_registry)
-budget    = free_gpu0 − gpu0_resident_reserve_gb + evictable_ollama_vram
-fits      = estimate_model_vram_gb(model, num_ctx) ≤ budget
+free_now       = total_gpu0 − used_gpu0        # Prometheus, via gpu_registry.
+                                               # Residents' CURRENT allocations
+                                               # (desktop, wan-idle, a loaded
+                                               # whisper) are inside used_gpu0,
+                                               # so free_now already excludes
+                                               # them — do NOT subtract them
+                                               # again anywhere below.
+after_evict    = free_now + evictable_gpu0     # what unload_loaded_ollama_models
+                                               # frees ON THIS CARD (see note)
+budget         = after_evict − gpu0_headroom_gb
+fits           = estimate_model_vram_gb(model, num_ctx) ≤ budget
 ```
 
-- `gpu0_resident_reserve_gb` (new setting, default ~4) models what admission
-  can never evict: desktop/compositor + whatever residents the operator runs.
-  With the 2026-07-26 changes (voice off, speaches `WHISPER__TTL=300`,
-  chatterbox → on-demand) the true resident floor is small; the reserve keeps
-  the answer honest anyway.
-- `evictable_ollama_vram` credits what `unload_loaded_ollama_models` can free
+- **`gpu0_headroom_gb` is NOT "the residents' memory"** (Matt's review
+  question, 2026-07-26 — the original draft's `gpu0_resident_reserve_gb`
+  name/prose invited exactly that misreading). Residents' current usage is
+  already counted in `used_gpu0`; reserving for it again would double-count
+  and make the budget wrongly conservative. The headroom covers the opposite
+  case: **claims that are invisible to `used_gpu0` right now but can appear
+  mid-hold, outside the lock's control** —
+  - desktop transients (a game launches, a browser spawns a GPU process);
+  - **idle-unloaded residents that reload on demand** — the canonical case
+    post-#2817: speaches' whisper is _unloaded_ most of the time (TTL 300),
+    contributing ~0 to `used_gpu0`, but a caption job can cold-load ~3 GB
+    while the writer holds the lock. That reload must always have room.
+
+  Default ~6 (whisper reload ~3 + desktop transient ~2, rounded up). Tunable
+  down if caption transcription ever moves under the lock itself (then the
+  reload is admission-governed and stops being headroom's problem).
+
+- `evictable_gpu0` credits what `unload_loaded_ollama_models` can free
   (primary instance only — the pinned GPU1 instance stays exempt), so a
   fits-after-eviction case admits as `grant_after_unload` rather than
-  rejecting.
+  rejecting. **Per-card measurement is mandatory:** a spilled model's
+  `/api/ps size_vram` is its total across cards (observed: gemma at 11.4 GB
+  on GPU0 + 0.25 GB on GPU1), so the credit must come from per-process
+  per-card accounting (nvidia-smi pid→card, the gpu-exporter already maps
+  this), never the Ollama-reported total.
 - Outcome set: `grant` · `grant_after_unload` · `GpuBusyError(no_fit)`.
   `no_fit` replaces today's silent CPU part-load with an explicit signal the
   caller can act on (clamp `num_ctx` and retry, defer, or skip loudly).
 - The existing pool-sum `num_ctx` clamp in the dispatcher remains as the
   pre-admission sizing pass; this check is the per-card gate it lacked.
+- Prometheus readings lag by up to one scrape interval; admission is a
+  best-effort gate, not a hard guarantee — the headroom also absorbs that
+  staleness. A wrong grant degrades exactly like today (Ollama part-loads),
+  now with the decision on record.
 
 ## 4. Observable queue
 
@@ -227,14 +256,14 @@ For callers that today catch-and-skip, a reject can instead enqueue a retry:
 
 ## Config (all app_settings, DB-first)
 
-| Key                                         | Default                           | Meaning                                                    |
-| ------------------------------------------- | --------------------------------- | ---------------------------------------------------------- |
-| `gpu_sched_enabled`                         | `false` → flip after phase 1 soak | master switch; off = today's behaviour exactly             |
-| `gpu_sched_eta_fallback_seconds`            | `120`                             | ETA when no stats exist for the holder's key               |
-| `gpu_sched_aging_seconds`                   | `300`                             | promote a starved background waiter                        |
-| `gpu0_resident_reserve_gb`                  | `4`                               | never-evictable floor on GPU0                              |
-| `gpu_warm_models`                           | `""` (CSV)                        | models allowed to stay warm between calls within a run     |
-| existing `gpu_lock_acquire_timeout_seconds` | `900`                             | unchanged; the outer ceiling for `max_wait_s=None` callers |
+| Key                                         | Default                           | Meaning                                                                                                                 |
+| ------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `gpu_sched_enabled`                         | `false` → flip after phase 1 soak | master switch; off = today's behaviour exactly                                                                          |
+| `gpu_sched_eta_fallback_seconds`            | `120`                             | ETA when no stats exist for the holder's key                                                                            |
+| `gpu_sched_aging_seconds`                   | `300`                             | promote a starved background waiter                                                                                     |
+| `gpu0_headroom_gb`                          | `6`                               | headroom for mid-hold claims invisible to `used_gpu0` (desktop transients + idle-unloaded residents reloading — see §3) |
+| `gpu_warm_models`                           | `""` (CSV)                        | models allowed to stay warm between calls within a run                                                                  |
+| existing `gpu_lock_acquire_timeout_seconds` | `900`                             | unchanged; the outer ceiling for `max_wait_s=None` callers                                                              |
 
 ## Phasing
 
@@ -269,6 +298,6 @@ that flag _is_ the regression guard.
    explicit `no_fit` decision (clamp/defer/skip — visible in findings).
 3. Advisory rails complete late rather than never: `qa.vision` coverage on
    render-heavy days rises without pipeline stalls.
-4. Idle GPU0 drains to ≤ `gpu0_resident_reserve_gb` between runs.
+4. Idle GPU0 drains to the true resident floor between runs (wan-idle + desktop; `gpu0_headroom_gb` is an admission margin, not a residency target).
 5. Console shows holder + queue truthfully (verified against
    `gpu_task_sessions` durations).
