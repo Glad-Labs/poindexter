@@ -51,24 +51,19 @@ DEFAULT_MONITORS: list[dict[str, Any]] = [
         "interval": 300,
         "tags": ["public"],
     },
-    {
-        "name": "tailnet funnel (voice)",
-        "type": "http",
-        "url": "https://nightrider.taild4f626.ts.net",
-        "interval": 300,
-        "tags": ["tailnet"],
-    },
+    # NOTE two former defaults are intentionally absent (pruned 2026-07-26
+    # after the post-Linux-migration re-bootstrap left them permanently red):
+    #   - "tailnet funnel (voice)": the voice join moved off the public Funnel
+    #     to tailnet-only Tailscale Serve (2026-06-02). Containers sit on the
+    #     Docker bridge, not the tailnet, so a Kuma container can never reach
+    #     it — unmonitorable from this vantage, times out forever.
+    #   - "brain-daemon /health": the brain daemon deliberately serves no HTTP
+    #     (asyncpg-only). Its liveness is covered by the Prometheus deadmans-
+    #     switch alerts + brain DB heartbeats, not an HTTP monitor.
     {
         "name": "worker /health",
         "type": "http",
         "url": "http://worker:8002/health",
-        "interval": 60,
-        "tags": ["internal"],
-    },
-    {
-        "name": "brain-daemon /health",
-        "type": "http",
-        "url": "http://brain-daemon:8005/health",
         "interval": 60,
         "tags": ["internal"],
     },
