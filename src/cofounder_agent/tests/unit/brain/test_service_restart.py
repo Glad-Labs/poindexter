@@ -57,9 +57,12 @@ class _FakePool:
     pool.execute() calls the per-row update/audit-write use — mirrors real
     asyncpg.Pool, which proxies execute() by acquiring its own connection."""
 
-    def __init__(self, claim_rows: list[dict]):
+    def __init__(self, claim_rows: list[dict], sweep_rows: list[dict] | None = None):
         self.conn = _FakeConn(claim_rows)
         self.pool_executed: list[tuple[str, tuple]] = []
+        # Rows the stale-claim sweep's UPDATE ... RETURNING hands back.
+        self._sweep_rows = sweep_rows or []
+        self.pool_fetched: list[tuple[str, tuple]] = []
 
     def acquire(self):
         return _AcquireCtx(self.conn)
@@ -67,6 +70,10 @@ class _FakePool:
     async def execute(self, sql: str, *args: Any) -> str:
         self.pool_executed.append((sql, args))
         return "OK"
+
+    async def fetch(self, sql: str, *args: Any) -> list:
+        self.pool_fetched.append((sql, args))
+        return self._sweep_rows
 
 
 class _FakeBrainDaemon:
@@ -173,3 +180,67 @@ async def test_multiple_claimed_rows_all_execute(monkeypatch):
     assert {c for c, _p in daemon.calls} == {"poindexter-loki", "poindexter-tempo"}
     # 2 rows x (outcome UPDATE + audit INSERT) = 4 pool.execute calls.
     assert len(pool.pool_executed) == 4
+
+
+class TestStaleClaimSweep:
+    """A row is marked `claimed` in one transaction and finalized only after the
+    restart returns. If brain dies in between, nothing reclaims it — the claim
+    query filters `status='pending'` — so it strands in `claimed` forever and
+    the console reports a permanent "still in progress". The sweep closes that
+    (Glad-Labs/glad-labs-stack#2505).
+    """
+
+    async def test_sweep_runs_before_claiming(self, monkeypatch):
+        pool = _FakePool(claim_rows=[])
+        daemon = _FakeBrainDaemon((True, "ok"))
+        monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
+
+        await sr.poll_and_execute_restart_requests(pool)
+
+        assert len(pool.pool_fetched) == 1
+        sql = pool.pool_fetched[0][0]
+        assert "status = 'claimed'" in sql
+        assert "SET status = 'failed'" in sql
+
+    async def test_sweep_runs_even_when_brain_daemon_unavailable(self, monkeypatch):
+        """The degrade path returns early — but an orphaned row must still be
+        swept, or a brain-image problem freezes the queue on BOTH axes."""
+        pool = _FakePool(claim_rows=[])
+        monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: None)
+
+        await sr.poll_and_execute_restart_requests(pool)
+
+        assert len(pool.pool_fetched) == 1
+
+    async def test_swept_rows_are_audited(self, monkeypatch):
+        rid = uuid.uuid4()
+        pool = _FakePool(
+            claim_rows=[],
+            sweep_rows=[{"id": rid, "container": "poindexter-loki"}],
+        )
+        daemon = _FakeBrainDaemon((True, "ok"))
+        monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
+
+        await sr.poll_and_execute_restart_requests(pool)
+
+        audits = [
+            args for sql, args in pool.pool_executed if "audit_log" in sql
+        ]
+        assert len(audits) == 1
+        assert "service_restart_orphaned" in audits[0]
+
+    async def test_sweep_failure_never_blocks_the_poll(self, monkeypatch):
+        """Sweep is maintenance; a DB hiccup there must not stop real restarts."""
+        rid = uuid.uuid4()
+        pool = _FakePool(claim_rows=[{"id": rid, "container": "poindexter-tempo"}])
+
+        async def _boom(*_a, **_kw):
+            raise RuntimeError("sweep query failed")
+
+        pool.fetch = _boom  # type: ignore[method-assign]
+        daemon = _FakeBrainDaemon((True, "restarted"))
+        monkeypatch.setattr(sr, "_resolve_brain_daemon_module", lambda: daemon)
+
+        await sr.poll_and_execute_restart_requests(pool)
+
+        assert [c for c, _p in daemon.calls] == ["poindexter-tempo"]

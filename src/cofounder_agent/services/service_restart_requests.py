@@ -20,22 +20,63 @@ from typing import Any
 # docker.sock to check itself.
 _CONTAINER_NAME_RE = re.compile(r"^poindexter-[a-z0-9]+(?:-[a-z0-9]+)*$")
 
+# Two containers cannot be restarted THROUGH THIS MECHANISM, because each one
+# destroys the mechanism mid-flight and so can never reach a terminal row:
+#
+# - `poindexter-brain-daemon` runs `poll_and_execute_restart_requests` itself.
+#   It marks the row `claimed` in one transaction, then calls
+#   `docker_restart_container` — which kills this very process before the
+#   `status='done'` write executes.
+# - `poindexter-postgres-local` HOLDS the queue. The terminal UPDATE would
+#   race the database's own shutdown.
+#
+# Either way the row strands in `claimed` forever: the claim query only selects
+# `status='pending'`, so nothing ever reclaims it, and the operator gets the
+# console's honest-but-useless "still in progress". Refusing up front with a
+# remediation string beats queueing an intent that is guaranteed to strand
+# (`feedback_no_silent_defaults`). Both remain restartable by hand — that is
+# what the error tells the operator to do. #2505 called this allowlist
+# load-bearing and scoped out brain self-restart explicitly.
+_SELF_DEFEATING_CONTAINERS = frozenset({
+    "poindexter-brain-daemon",
+    "poindexter-postgres-local",
+})
+
 
 class InvalidContainerName(ValueError):
     """Raised when a container name fails the shape check."""
+
+
+class SelfDefeatingRestart(ValueError):
+    """Raised for a container whose restart would destroy the queue recording it.
+
+    Distinct from :class:`InvalidContainerName`: the name is well-formed and the
+    container is real — the request just can't be serviced by this path.
+    """
 
 
 def is_valid_container_name(container: str) -> bool:
     return bool(_CONTAINER_NAME_RE.match(container or ""))
 
 
+def is_self_defeating(container: str) -> bool:
+    """True when restarting ``container`` would orphan its own intent row."""
+    return (container or "") in _SELF_DEFEATING_CONTAINERS
+
+
 async def create_restart_request(
     pool: Any, container: str, *, requested_by: str = "console"
 ) -> dict[str, Any]:
-    """Queue a restart intent. Raises :class:`InvalidContainerName` on a
-    malformed name — the route maps that to a 400, never a silent no-op."""
+    """Queue a restart intent.
+
+    Raises :class:`InvalidContainerName` on a malformed name (route → 400) and
+    :class:`SelfDefeatingRestart` for a container that would orphan its own row
+    (route → 409). Never a silent no-op.
+    """
     if not is_valid_container_name(container):
         raise InvalidContainerName(container)
+    if is_self_defeating(container):
+        raise SelfDefeatingRestart(container)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """

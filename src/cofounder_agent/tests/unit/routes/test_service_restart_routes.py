@@ -74,6 +74,24 @@ class TestPostRestart:
             )
         assert resp.status_code == 400
 
+    def test_self_defeating_container_returns_409(self):
+        """`poindexter-brain-daemon` / `poindexter-postgres-local` host the
+        queue itself, so a queued restart could never reach a terminal row.
+        Refused up front with a manual-remediation string, not queued to
+        strand (glad-labs-stack#2505)."""
+        from services.service_restart_requests import SelfDefeatingRestart
+
+        with patch(
+            "routes.service_restart_routes.create_restart_request",
+            new=AsyncMock(side_effect=SelfDefeatingRestart("poindexter-brain-daemon")),
+        ):
+            resp = TestClient(_build_app()).post(
+                "/api/services/poindexter-brain-daemon/restart"
+            )
+        assert resp.status_code == 409
+        # The operator needs to know what to do instead.
+        assert "docker restart poindexter-brain-daemon" in resp.json()["detail"]
+
     def test_requires_auth(self):
         resp = TestClient(_build_app(authed=False)).post(
             "/api/services/poindexter-worker/restart"

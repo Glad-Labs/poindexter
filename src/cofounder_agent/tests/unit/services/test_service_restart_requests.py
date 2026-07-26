@@ -9,8 +9,10 @@ import pytest
 
 from services.service_restart_requests import (
     InvalidContainerName,
+    SelfDefeatingRestart,
     create_restart_request,
     get_restart_request,
+    is_self_defeating,
     is_valid_container_name,
 )
 
@@ -114,3 +116,45 @@ class TestGetRestartRequest:
         out = await get_restart_request(pool, "not-a-uuid")
         assert out is None
         conn.fetchrow.assert_not_called()
+
+
+class TestSelfDefeatingGuard:
+    """Restarting the container that HOSTS the intent queue can never produce a
+    terminal row: brain marks `claimed`, then the restart kills either brain
+    itself (before the `done` write) or the database that write targets. The
+    claim query only selects `status='pending'`, so the row strands forever.
+    Refuse at enqueue time instead (glad-labs-stack#2505).
+    """
+
+    @pytest.mark.parametrize(
+        "container", ["poindexter-brain-daemon", "poindexter-postgres-local"]
+    )
+    async def test_self_defeating_containers_are_refused(self, container):
+        pool, conn = _fake_pool(None)
+
+        with pytest.raises(SelfDefeatingRestart):
+            await create_restart_request(pool, container)
+
+        # Refused BEFORE any write — no row to strand.
+        conn.fetchrow.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "container",
+        ["poindexter-worker", "poindexter-prefect-worker", "poindexter-loki"],
+    )
+    async def test_ordinary_containers_still_queue(self, container):
+        row = {"id": "1", "container": container, "status": "pending"}
+        pool, conn = _fake_pool(row)
+
+        out = await create_restart_request(pool, container)
+
+        assert out == row
+        conn.fetchrow.assert_called_once()
+
+    def test_guard_is_distinct_from_the_shape_check(self):
+        """A self-defeating name is a WELL-FORMED name — the two rejections map
+        to different HTTP codes (409 vs 400), so they must not collapse."""
+        assert is_valid_container_name("poindexter-brain-daemon")
+        assert is_self_defeating("poindexter-brain-daemon")
+        assert not is_self_defeating("poindexter-worker")
+        assert not issubclass(SelfDefeatingRestart, InvalidContainerName)

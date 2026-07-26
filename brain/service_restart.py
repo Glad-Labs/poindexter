@@ -25,6 +25,20 @@ logger = logging.getLogger("brain.service_restart")
 # (e.g. restarting several sidecars) shouldn't need multiple poll cycles.
 _CLAIM_BATCH_SIZE = 5
 
+# A row is claimed in one transaction and finalized after the restart returns.
+# If this process dies in between — brain itself restarted, OOM, host reboot —
+# the row strands in `claimed` forever, because the claim query only selects
+# `status='pending'`. The console then reports its honest-but-permanent "still
+# in progress". Nothing else reclaims these, so sweep them to a terminal
+# `failed` on the next poll (`feedback_no_silent_defaults`: an operator action
+# that silently never completes is exactly the failure mode to close).
+#
+# Terminal `failed`, NOT back to `pending`: a restart is side-effecting and
+# non-idempotent, and we cannot know whether the docker restart landed before
+# we died. Silently retrying could bounce a container repeatedly. Report it
+# and let the operator decide.
+_CLAIM_STALE_AFTER_MINUTES = 10
+
 
 def _resolve_brain_daemon_module() -> Any | None:
     """Identical resolution to alert_dispatcher._resolve_brain_daemon_module —
@@ -60,6 +74,51 @@ async def _write_audit(pool: Any, *, event_type: str, details: dict[str, Any], s
         logger.debug("[service_restart] audit_log write failed", exc_info=True)
 
 
+async def _sweep_stale_claims(pool: Any) -> None:
+    """Fail out rows stuck in ``claimed`` past ``_CLAIM_STALE_AFTER_MINUTES``.
+
+    Best-effort and self-contained: a sweep failure is logged and the poll
+    continues to the claim step, exactly like the per-row error posture.
+    """
+    detail = (
+        f"orphaned: brain did not finalize this restart within "
+        f"{_CLAIM_STALE_AFTER_MINUTES}m (brain likely restarted mid-flight). "
+        f"The docker restart may or may not have run — check container uptime."
+    )
+    try:
+        # Fully parameterized — the staleness window and the detail text are
+        # bind params, not interpolated SQL, so there is no injection surface
+        # to reason about (and no bandit B608 to annotate away).
+        rows = await pool.fetch(
+            """
+            UPDATE service_restart_requests
+               SET status = 'failed',
+                   detail = $2,
+                   completed_at = now()
+             WHERE status = 'claimed'
+               AND claimed_at < now() - ($1::int * interval '1 minute')
+         RETURNING id, container
+            """,
+            _CLAIM_STALE_AFTER_MINUTES,
+            detail,
+        )
+    except Exception:  # noqa: BLE001 — sweep is maintenance; never block the poll
+        logger.warning("[service_restart] stale-claim sweep failed", exc_info=True)
+        return
+
+    for row in rows or []:
+        logger.warning(
+            "[service_restart] orphaned claim swept to failed: %s (id=%s)",
+            row["container"], row["id"],
+        )
+        await _write_audit(
+            pool,
+            event_type="service_restart_orphaned",
+            severity="warning",
+            details={"request_id": str(row["id"]), "container": row["container"]},
+        )
+
+
 async def poll_and_execute_restart_requests(pool: Any) -> None:
     """Claim + execute pending operator-triggered container restarts.
 
@@ -68,6 +127,8 @@ async def poll_and_execute_restart_requests(pool: Any) -> None:
     cycle — it never raises into the caller (``service_restart_loop``'s
     watchdog exists for wholesale task death, not per-row errors).
     """
+    await _sweep_stale_claims(pool)
+
     mod = _resolve_brain_daemon_module()
     if mod is None or not hasattr(mod, "docker_restart_container"):
         logger.warning(

@@ -97,6 +97,25 @@ second-guessing). The worker has no docker.sock, so it can't act directly:
 4. Either way, an `audit_log` row (`event_type='service_restart_completed'`)
    lands next to the firefighter's own `remediation_action` rows.
 
+Two containers are **refused at enqueue time** with a `409` and a
+`docker restart <name>` remediation string — `poindexter-brain-daemon` and
+`poindexter-postgres-local` (glad-labs-stack#2505). Each one _hosts the queue_:
+brain runs the poll loop that would restart it (so the process dies between the
+`claimed` write and the `done` write), and postgres holds the table that write
+targets. A queued intent for either could never reach a terminal row, and the
+claim query only selects `status='pending'`, so nothing would reclaim it —
+the request would strand in `claimed` forever behind the console's
+honest-but-permanent "still in progress". Refusing beats queueing a request
+that is guaranteed to strand. Both stay restartable by hand; that is what the
+error tells the operator to do.
+
+For the same reason — any death between claim and finalize orphans a row —
+each poll first sweeps `claimed` rows older than 10 minutes to `failed` with an
+explanatory `detail` and a `service_restart_orphaned` audit row. It resolves to
+`failed` rather than retrying: a restart is side-effecting and non-idempotent,
+and we can't know whether the docker call landed before we died, so bouncing
+the container on a guess is worse than reporting it.
+
 ### Safety guardrails
 
 - **Master switch.** `ops_firefighter_enabled` (default `true`). Off → the loop

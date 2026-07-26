@@ -22,6 +22,7 @@ from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.service_restart_requests import (
     InvalidContainerName,
+    SelfDefeatingRestart,
     create_restart_request,
     get_restart_request,
 )
@@ -60,6 +61,7 @@ def _to_response(row: dict[str, Any]) -> RestartRequestResponse:
         202: {"description": "Restart queued — poll GET /api/services/restart/{id} for the outcome"},
         400: {"description": "container is not a valid poindexter-* name"},
         401: {"description": "Unauthorized"},
+        409: {"description": "container hosts the queue itself — restart it by hand"},
     },
 )
 async def post_restart(
@@ -83,6 +85,22 @@ async def post_restart(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{container}' is not a valid poindexter-* container name",
+        ) from e
+    except SelfDefeatingRestart as e:
+        # Same detail-leak posture as above: echo the caller's own path param.
+        # 409 (not 400) — the name is well-formed and the container is real;
+        # the request conflicts with the queue's own liveness requirement.
+        logger.warning(
+            "[service_restart] refused self-defeating restart of %r "
+            "(would orphan its own intent row)", container,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{container}' cannot be restarted through this queue — it "
+                f"hosts the queue itself, so the restart would orphan its own "
+                f"request row. Restart it by hand: docker restart {container}"
+            ),
         ) from e
     logger.info("[service_restart] queued restart for %s (id=%s)", container, row["id"])
     return _to_response(row)
