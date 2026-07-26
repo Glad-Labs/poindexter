@@ -2087,7 +2087,7 @@
     },
     {
       "id": 51,
-      "title": "Memory Usage by Container",
+      "title": "Memory Working Set by Container",
       "type": "timeseries",
       "description": "Per-container RSS memory usage in bytes from cAdvisor. Each line is one container (name label).",
       "gridPos": {
@@ -2130,7 +2130,7 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "container_memory_usage_bytes{job=\"cadvisor\",image!=\"\"}",
+          "expr": "container_memory_working_set_bytes{job=\"cadvisor\",image!=\"\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }

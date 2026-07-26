@@ -395,23 +395,38 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "up -d --force-recreate gpu-exporter`."
         ),
     },
+    # VRAM *capacity*, computed from used/total — NOT
+    # `nvidia_gpu_memory_utilization_percent`, which this rule used until
+    # Glad-Labs/poindexter#920. That metric mirrors nvidia-smi's
+    # `utilization.memory`: the percent of TIME in the sample window that memory
+    # was being read or written — a bandwidth/activity measure. It is unrelated
+    # to how full VRAM is, so a `> 95` capacity threshold on it was structurally
+    # incapable of firing. Measured on the operator stack 2026-07-26:
+    #
+    #   GPU 0 (5090): 21041/32607 MiB = 64.5% FULL, utilization.memory =  1
+    #   GPU 1 (3090): 20472/24576 MiB = 83.3% FULL, utilization.memory =  0
+    #
+    # A card at 83% capacity reported 0. The exporter already publishes the two
+    # gauges that answer the real question, so this is a pure expr fix.
     "GpuVramHigh": {
         "enabled": True,
         "group": "poindexter-infra",
         "interval": "30s",
         "expr": (
-            "nvidia_gpu_memory_utilization_percent > "
+            "100 * nvidia_gpu_memory_used_mib / nvidia_gpu_memory_total_mib > "
             "{threshold.gpu_vram_utilization_percent}"
         ),
         "for": "5m",
         "severity": "warning",
         "category": "infra",
-        "summary": "GPU VRAM utilization critically high",
+        "summary": "GPU VRAM capacity critically high",
         "description": (
-            "nvidia_gpu_memory_utilization_percent > threshold for 5m. VRAM is "
-            "nearly exhausted — the next Ollama/image-gen model load may OOM and "
-            "fail silently. Unload idle models (the gpu_scheduler should), or "
-            "reduce concurrent model residency."
+            "GPU {{ $labels.gpu }} is {{ $value | humanize }}% FULL "
+            "(nvidia_gpu_memory_used_mib / nvidia_gpu_memory_total_mib) for 5m "
+            "— VRAM capacity is nearly exhausted, so the next Ollama/image-gen/"
+            "wan model load may OOM. Unload idle models (the gpu_scheduler "
+            "should), or reduce concurrent model residency. Tune via "
+            "prometheus.threshold.gpu_vram_utilization_percent."
         ),
     },
     # Host disk space. Previously static in infrastructure.yml — moved here so
@@ -505,14 +520,31 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     # holds the i2v model) are excluded by name — their large RSS is the
     # workload, not a leak. No absent() guard: capacity warning, not a
     # liveness page (#581 no-data rule).
+    # Working set, NOT `container_memory_usage_bytes` — see #920's sibling
+    # finding. `usage_bytes` includes reclaimable page cache, so it overstates
+    # memory pressure badly for any container that reads large files: on the
+    # operator stack 2026-07-26, image-gen-server measured 10.72 GB usage vs
+    # 3.63 GB working set (3x), purely because it had streamed multi-GB model
+    # weights off disk. `working_set_bytes` (usage minus inactive file cache) is
+    # what the kernel OOM killer actually acts on, and it's what the
+    # description already claimed the rule measured ("GB RSS").
+    #
+    # That overstatement is also why the two model-loading containers were
+    # excluded here: at 10.72 GB, image-gen-server sat permanently above the
+    # 8 GB threshold. The exclusion silenced the false page but cost real
+    # coverage — image-gen and wan are the containers most likely to genuinely
+    # OOM (they're the ones loading models; cf. poindexter#907 on wan-server's
+    # OOM behaviour). On working_set they measure 3.63 GB and 0.02 GB, so the
+    # exclusion is no longer needed and the coverage comes back. Max working
+    # set across the whole stack at restore time was 3.63 GB against an 8 GB
+    # threshold, so this does not arm a new false page.
     "PoindexterContainerMemoryHigh": {
         "enabled": True,
         "group": "poindexter-infrastructure",
         "interval": "1m",
         "expr": (
-            'container_memory_usage_bytes{job="cadvisor",image!="",'
-            'name=~"poindexter-.*",'
-            'name!~"poindexter-(image-gen-server|wan-server)"}'
+            'container_memory_working_set_bytes{job="cadvisor",image!="",'
+            'name=~"poindexter-.*"}'
             " / (1024*1024*1024) > {threshold.container_memory_warning_gb}"
         ),
         "for": "30m",
@@ -520,8 +552,9 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "category": "infrastructure",
         "summary": "Container {{ $labels.name }} memory high for 30m",
         "description": (
-            "{{ $labels.name }} has held {{ $value | humanize }} GB RSS for "
-            "30 minutes (warning threshold: "
+            "{{ $labels.name }} has held {{ $value | humanize }} GB working set "
+            "(non-reclaimable — what the OOM killer counts) for 30 minutes "
+            "(warning threshold: "
             "prometheus.threshold.container_memory_warning_gb, default 8 GB). "
             "Known offenders: langfuse-clickhouse merge spikes, cadvisor "
             "unbounded growth (VM-OOM cascade, glad-labs-stack#2019). "
@@ -687,11 +720,17 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "for": "5m",
         "severity": "warning",
         "category": "business",
-        "summary": "Daily AI spend approaching the soft cap",
+        "summary": "Daily TOTAL spend (API + electricity) running high",
         "description": (
-            "cost_logs shows elevated daily spend. Check "
-            "plugin.llm_provider.primary.* — maybe a workflow flipped "
-            "to a paid provider unintentionally."
+            "poindexter_daily_spend_usd is the TOTAL axis — paid cloud API "
+            "PLUS measured electricity — against "
+            "prometheus.threshold.daily_spend_warning_usd (default $4). "
+            "Measured electricity alone runs ~$1.50-1.90/day, so this can trip "
+            "with ZERO paid calls; check the Cost dashboard's api-vs-electricity "
+            "split before assuming a provider flip. If the API axis did move, "
+            "check plugin.llm_provider.primary.* for a workflow that flipped to "
+            "a paid provider. The API-axis hard cap (daily_spend_limit_usd) is "
+            "enforced separately by cost_guard and is NOT what fired here."
         ),
     },
     "DailySpendOverBudget": {
@@ -705,10 +744,19 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "for": "2m",
         "severity": "critical",
         "category": "business",
-        "summary": "Daily AI spend exceeded hard cap",
+        "summary": "Daily TOTAL spend (API + electricity) over the critical line",
         "description": (
-            "Cost budget blown. Pipeline should have stopped itself but "
-            "didn't. Check cost_guard logic + app_settings daily_spend_limit_usd."
+            "poindexter_daily_spend_usd (TOTAL axis — paid cloud API PLUS "
+            "measured electricity) crossed "
+            "prometheus.threshold.daily_spend_critical_usd (default $5). "
+            "This does NOT mean cost_guard failed: cost_guard's hard cap gates "
+            "the API axis against daily_spend_limit_usd ($2) and never gates "
+            "this quantity. The total axis is governed by the soft throttle "
+            "(cost_throttle_daily_budget_usd, $3), which fails OPEN by design — "
+            "so the escalation ladder is throttle $3 → warn $4 → page $5. "
+            "Read the Cost dashboard's api-vs-electricity split FIRST: if "
+            "electricity dominates, this is a power/rate story, not a runaway "
+            "pipeline. Only if the API axis is high should you suspect the gate."
         ),
     },
     "MonthlySpendHigh": {

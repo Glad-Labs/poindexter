@@ -162,7 +162,7 @@ class TestBrainDbSizeRule:
 
 
 class TestContainerMemoryRule:
-    """Per-container RSS ceiling (2026-07-02 observability review): the
+    """Per-container memory ceiling (2026-07-02 observability review): the
     langfuse-clickhouse 15 GB spikes and the cadvisor VM-OOM cascade
     (glad-labs-stack#2019/#2021) had cAdvisor panels but no alert anywhere."""
 
@@ -170,17 +170,44 @@ class TestContainerMemoryRule:
         assert "PoindexterContainerMemoryHigh" in rb.DEFAULT_RULES
         assert rb.DEFAULT_THRESHOLDS["container_memory_warning_gb"] == "8"
 
-    def test_rule_renders_with_model_server_exclusion(self):
+    def test_measures_working_set_not_usage(self):
+        """The threshold is a memory-PRESSURE ceiling, so it must read the
+        non-reclaimable quantity.
+
+        `container_memory_usage_bytes` includes page cache, which is
+        reclaimable and not pressure. Measured 2026-07-26: image-gen-server
+        read 10.72 GB usage vs 3.63 GB working set — a 3x overstatement caused
+        purely by having streamed model weights off disk into page cache.
+        `working_set_bytes` (usage minus inactive file cache) is what the
+        kernel OOM killer acts on.
+        """
+        rule = rb.DEFAULT_RULES["PoindexterContainerMemoryHigh"]
+        assert "container_memory_working_set_bytes" in rule["expr"]
+        assert "container_memory_usage_bytes" not in rule["expr"]
+
+    def test_model_servers_are_not_excluded(self):
+        """image-gen and wan must be COVERED, not excluded.
+
+        They were excluded because `usage_bytes` put image-gen-server
+        permanently above the 8 GB threshold (10.72 GB of mostly page cache).
+        The exclusion silenced a false page at the cost of real coverage on
+        the two containers most likely to genuinely OOM — they're the model
+        loaders (cf. poindexter#907 on wan-server's OOM behaviour). On
+        working_set they measure 3.63 GB and 0.02 GB, so the exclusion is
+        both unnecessary and harmful.
+        """
+        expr = rb.DEFAULT_RULES["PoindexterContainerMemoryHigh"]["expr"]
+        assert "image-gen-server" not in expr
+        assert "wan-server" not in expr
+        assert 'name=~"poindexter-.*"' in expr
+
+    def test_rule_renders(self):
         rule = rb.DEFAULT_RULES["PoindexterContainerMemoryHigh"]
         out = rb.render_yaml(
             dict(rb.DEFAULT_THRESHOLDS), {"PoindexterContainerMemoryHigh": rule}
         )
         assert "- alert: PoindexterContainerMemoryHigh" in out
-        assert "container_memory_usage_bytes" in out
-        # Model-serving containers legitimately hold weights in RAM — they
-        # must be excluded by name, not by raising the shared threshold.
-        assert "image-gen-server" in out
-        assert "wan-server" in out
+        assert "container_memory_working_set_bytes" in out
         # Threshold token substituted to its default; no leftover placeholder.
         assert "{threshold.container_memory_warning_gb}" not in out
         assert "> 8" in out
@@ -427,10 +454,14 @@ class TestGpuRules:
         assert "alert: GpuTemperatureHigh" in out
         assert "alert: GpuVramHigh" in out
         assert "nvidia_gpu_temperature_celsius" in out
-        assert "nvidia_gpu_memory_utilization_percent" in out
-        # Defaults substituted: 85°C thermal, 95% VRAM.
+        # VRAM is a CAPACITY question, so it reads used/total — not
+        # nvidia_gpu_memory_utilization_percent, which is bandwidth
+        # (poindexter#920). See TestThresholdAxisCoherence.
+        assert "nvidia_gpu_memory_used_mib" in out
+        assert "nvidia_gpu_memory_total_mib" in out
+        # Defaults substituted: 85°C thermal, 95% VRAM capacity.
         assert "nvidia_gpu_temperature_celsius > 85" in out
-        assert "nvidia_gpu_memory_utilization_percent > 95" in out
+        assert "nvidia_gpu_memory_total_mib > 95" in out
 
     async def test_gpu_thresholds_overridable(self):
         pool = _FakePool([
@@ -439,7 +470,7 @@ class TestGpuRules:
         ])
         out = await rb.build_current(pool)
         assert "nvidia_gpu_temperature_celsius > 80" in out
-        assert "nvidia_gpu_memory_utilization_percent > 90" in out
+        assert "nvidia_gpu_memory_total_mib > 90" in out
 
 
 @pytest.mark.unit
@@ -775,3 +806,79 @@ class TestDiskAbsentGuards:
         assert "alert: PoindexterDiskSpaceCritical" in out
         crit_section = out.split("alert: PoindexterDiskSpaceCritical")[1].split("alert:", 1)[0]
         assert "absent(node_filesystem_free_bytes)" in crit_section
+
+
+class TestThresholdAxisCoherence:
+    """Every threshold comparison must measure the quantity its threshold names.
+
+    The 2026-07-26 sweep found four instances of one bug class — *a quantity
+    compared against the wrong thing's limit* — across cost and infra alerting:
+
+    - `cost_guard._emit_soft_alert` measured the TOTAL axis against the
+      API-only `daily_spend_limit_usd` (poindexter#912).
+    - `MonthlySpendHigh`'s threshold was set on the wrong scale.
+    - `GpuVramHigh` compared a *bandwidth* metric to a *capacity* threshold
+      (poindexter#920).
+    - `PoindexterContainerMemoryHigh` compared page-cache-inclusive usage to a
+      threshold documented as RSS.
+
+    These are cheap to reintroduce and expensive to notice, because the alert
+    keeps evaluating and just answers a different question than its name. These
+    tests pin the specific pairings that were wrong.
+    """
+
+    def test_vram_rule_measures_capacity_not_bandwidth(self):
+        """`nvidia_gpu_memory_utilization_percent` is nvidia-smi's
+        `utilization.memory` — percent of TIME memory was read/written, i.e.
+        bandwidth. A `> 95` capacity threshold on it can never fire: measured
+        2026-07-26, a 3090 at 83.3% FULL reported 0.
+        """
+        expr = rb.DEFAULT_RULES["GpuVramHigh"]["expr"]
+        assert "nvidia_gpu_memory_used_mib" in expr
+        assert "nvidia_gpu_memory_total_mib" in expr
+        assert "nvidia_gpu_memory_utilization_percent" not in expr
+
+    def test_vram_rule_yields_a_percentage(self):
+        """The threshold is a percent (default 95), so the expr must scale the
+        used/total ratio by 100 — otherwise it compares a 0..1 ratio to 95 and
+        silently never fires, which is the same defect in a new costume."""
+        expr = rb.DEFAULT_RULES["GpuVramHigh"]["expr"]
+        assert expr.startswith("100 *")
+
+    def test_gb_thresholds_are_compared_against_gb(self):
+        """Byte-valued metrics carry a `*_gb` threshold, so each such expr must
+        divide by 1024^3 exactly once. A missing divisor compares bytes to a
+        single-digit GB number and fires permanently."""
+        for name in (
+            "PoindexterContainerMemoryHigh",
+            "PoindexterHostMemoryLow",
+            "PoindexterBrainDbSizeWarning",
+        ):
+            expr = rb.DEFAULT_RULES[name]["expr"]
+            assert "_bytes" in expr, name
+            assert expr.count("(1024*1024*1024)") == 1, name
+
+    def test_spend_rules_name_the_axis_they_measure(self):
+        """`poindexter_daily_spend_usd` / `poindexter_monthly_spend_usd` are the
+        TOTAL axis (paid API + measured electricity). Their descriptions must
+        say so, and must NOT send the operator to `daily_spend_limit_usd` — the
+        API-only hard cap cost_guard enforces, which is not what fired. That
+        misdirection is what produced the July mixed-axis spend scare.
+        """
+        for name in (
+            "DailySpendApproachingLimit",
+            "DailySpendOverBudget",
+        ):
+            rule = rb.DEFAULT_RULES[name]
+            text = f"{rule['summary']} {rule['description']}"
+            assert "TOTAL" in text, name
+            assert "electricity" in text.lower(), name
+
+    def test_daily_spend_critical_does_not_claim_cost_guard_failed(self):
+        """It used to read 'Pipeline should have stopped itself but didn't.'
+        cost_guard gates the API axis against $2 and never gates this total-axis
+        quantity, so that sentence reported an enforcement bug that cannot
+        exist — and pointed triage at the wrong setting."""
+        desc = rb.DEFAULT_RULES["DailySpendOverBudget"]["description"]
+        assert "should have stopped itself" not in desc
+        assert "cost_throttle_daily_budget_usd" in desc
