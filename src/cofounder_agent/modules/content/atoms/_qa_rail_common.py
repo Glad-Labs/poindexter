@@ -38,7 +38,10 @@ _GATE_PROVIDERS = (
 
 # Providers whose veto a text revision can NEVER fix (bad image / dead link).
 # Under broaden=True these stay surface-direct (no regen) — see is_rescuable_reject.
-_NON_TEXT_FIXABLE_PROVIDERS = ("vision_gate", "url_verifier")
+# ``http_head`` is the citation_verifier dead-link-ratio rail: the writer re-runs
+# from the same research bundle and re-cites the same dead URL, so a rewrite burns
+# a pass without fixing it — flag directly, same as the single-link url_verifier.
+_NON_TEXT_FIXABLE_PROVIDERS = ("vision_gate", "url_verifier", "http_head")
 
 
 def reviewer_to_dict(r: Any) -> dict[str, Any]:
@@ -124,8 +127,9 @@ def is_rescuable_reject(
     ``programmatic_validator`` / brand / factcheck / consistency veto is now
     rescuable too. It STILL returns False for a ``missing_required:*`` veto
     (infra — a rerun won't make an absent rail emit) and for a
-    non-text-fixable gate (``vision_gate`` / ``url_verifier`` — a text revise
-    can't fix a bad image or a dead link).
+    non-text-fixable gate (``vision_gate`` / ``url_verifier`` /
+    ``citation_verifier`` (``http_head``) — a text revise can't fix a bad
+    image or a dead external link).
 
     Returns False for an empty veto whose score already clears the threshold
     (i.e. an approve) under either mode.

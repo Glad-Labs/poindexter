@@ -341,6 +341,19 @@ class TestIsRescuableReject:
             reviews, ["url_verifier"], final_score=40.0, threshold=70.0, broaden=True,
         ) is False
 
+    def test_broaden_true_citation_verifier_still_not_rescuable(self):
+        # A text revise can't resurrect a dead external link — the writer re-cites
+        # the same dead URL from the same research bundle. Surface-direct (flag,
+        # no regen) even when broadened, same as url_verifier.
+        reviews = [
+            {"reviewer": "citation_verifier", "approved": False, "score": 50.0,
+             "provider": "http_head", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["citation_verifier"], final_score=50.0, threshold=70.0,
+            broaden=True,
+        ) is False
+
     def test_broaden_true_below_threshold_still_rescuable(self):
         assert is_rescuable_reject(
             [], [], final_score=60.0, threshold=70.0, broaden=True,
