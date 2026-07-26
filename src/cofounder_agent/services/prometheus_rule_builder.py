@@ -69,19 +69,27 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # Business / cost guards
     "daily_spend_warning_usd": "4.0",
     "daily_spend_critical_usd": "5.0",
-    # $35/mo covers the ~$30 baseline of local-Ollama GPU electricity
-    # (which IS counted in cost_logs alongside paid-API spend) plus a
-    # ~$5 buffer. The alert is intended to detect RUNAWAY cloud LLM
-    # spend — abnormal, not background — so the threshold sits just
-    # above the steady-state operating cost. Tunable per-operator;
-    # raise as cloud-API use ramps up.
-    "monthly_spend_warning_usd": "35.0",
+    # Sits just ABOVE the full-cost ceiling (cost_throttle_monthly_budget_usd,
+    # default $60) because the gauge it watches — poindexter_monthly_spend_usd —
+    # is the BLENDED axis: paid API + measured electricity. It is a
+    # "the throttle failed to hold the line" backstop, not a budget echo.
+    # At $35 it false-fired 46x in July 2026 once idle electricity alone
+    # (~$1.4/day) crossed it, which is a budget being met, not an incident.
+    "monthly_spend_warning_usd": "65.0",
     # GPU hardware (audit C3). Thresholds for the container-supervised
     # nvidia-smi exporter (job="nvidia-smi", gpu-exporter:9835). 85°C is a
     # safe warning ceiling well below the ~90°C throttle point; 95% VRAM
     # catches OOM-imminent before Ollama/image-gen allocations start failing.
     "gpu_temperature_celsius": "85",
     "gpu_vram_utilization_percent": "95",
+    # How many GPUs this rig is supposed to expose. Ships "0" = rule disabled,
+    # because a 1-GPU consumer install must not inherit a 2-GPU operator's
+    # alert; each operator sets their own count. Guards a SILENT failure mode:
+    # NVIDIA device nodes are injected at container-CREATE time, so a card the
+    # gpu-exporter container was created without simply never appears — no
+    # error, no gap, just one fewer series. An RTX 3090 was missing from
+    # monitoring for 7+ days that way (2026-07-26) while still burning ~42W.
+    "expected_gpu_count": "0",
     # Host disk space. Absolute GB thresholds (not percentage) because what
     # hurts is absolute headroom — Docker images, Postgres growth, model files.
     # min_total_gb filters out USB drives / EFI partitions that always hover
@@ -359,6 +367,32 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "exporter, job=nvidia-smi). Sustained high temp risks thermal "
             "throttling or hardware damage. Check airflow/fans, pause heavy "
             "GPU jobs (Ollama/image-gen), and confirm the card isn't dust-clogged."
+        ),
+    },
+    "GpuCountBelowExpected": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "30s",
+        # Inert until an operator sets expected_gpu_count > 0: with the "0"
+        # default the expr is `nvidia_gpu_count < 0`, which never matches.
+        "expr": "nvidia_gpu_count < {threshold.expected_gpu_count}",
+        # 10m: long enough to ride out a gpu-exporter recreate (the fix for
+        # this very condition) without paging about its own remedy.
+        "for": "10m",
+        "severity": "warning",
+        "category": "infra",
+        "summary": "Fewer GPUs visible than this host expects",
+        "description": (
+            "nvidia_gpu_count is below app_settings "
+            "prometheus.threshold.expected_gpu_count. A card is present in the "
+            "machine but invisible to monitoring — usually because the "
+            "gpu-exporter container was CREATED before the card was "
+            "enumerated (NVIDIA device nodes bind at create time, so a "
+            "restart is NOT enough). Check `nvidia-smi -L` on the host against "
+            "`docker exec poindexter-gpu-exporter ls /dev | grep nvidia`; if "
+            "they disagree, recreate the container: "
+            "`docker compose -f docker-compose.local.yml --profile linux-gpu "
+            "up -d --force-recreate gpu-exporter`."
         ),
     },
     "GpuVramHigh": {

@@ -104,10 +104,37 @@ def test_malformed_row_skipped_good_row_survives():
     assert 'nvidia_gpu_temperature_celsius{gpu="0"}' not in series
 
 
-def test_no_parseable_rows_returns_comment_not_crash():
+def test_no_parseable_rows_reports_zero_count_not_silence():
+    # An absent series is invisible to a `< expected` alert, so a total
+    # enumeration failure must be an assertable 0 rather than no output.
     out = EXPORTER._format_gpu_rows("garbage,row\n\n   ")
-    assert out.startswith("# ")
-    assert "nvidia_gpu_" not in out
+    series = _series(out)
+    assert series["nvidia_gpu_count"] == "0"
+    # No per-GPU telemetry is invented alongside that 0.
+    assert not [k for k in series if k.startswith("nvidia_gpu_") and "{" in k]
+
+
+# ---------------------------------------------------------------------------
+# Cardinality canary — nvidia_gpu_count. NVIDIA device nodes bind at container
+# CREATE time, so a card the exporter container was created without vanishes
+# from monitoring with no error (an RTX 3090 was missing 7+ days, 2026-07-26).
+# ---------------------------------------------------------------------------
+def test_gpu_count_tracks_enumerated_cards():
+    assert _series(EXPORTER._format_gpu_rows(f"{GPU0}\n{GPU1}"))["nvidia_gpu_count"] == "2"
+    assert _series(EXPORTER._format_gpu_rows(GPU0))["nvidia_gpu_count"] == "1"
+
+
+def test_gpu_count_counts_parsed_rows_only():
+    # A skipped malformed row must not be counted as a present GPU — the
+    # count has to agree with the per-GPU series actually emitted.
+    series = _series(EXPORTER._format_gpu_rows(f"garbage,row\n{GPU1}"))
+    assert series["nvidia_gpu_count"] == "1"
+
+
+def test_gpu_count_declares_help_and_type_once():
+    text = EXPORTER._format_gpu_rows(f"{GPU0}\n{GPU1}")
+    assert text.count("# TYPE nvidia_gpu_count gauge") == 1
+    assert text.count("# HELP nvidia_gpu_count") == 1
 
 
 # ---------------------------------------------------------------------------

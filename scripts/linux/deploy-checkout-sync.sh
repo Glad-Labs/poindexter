@@ -21,7 +21,13 @@
 #        brain/**                                   -> brain-daemon
 #        src/cofounder_agent/pyproject.toml|poetry.lock
 #          |scripts/Dockerfile.worker               -> worker prefect-worker
-#        scripts/Dockerfile.gpu-exporter            -> gpu-exporter
+#        scripts/Dockerfile.gpu-exporter
+#          |scripts/nvidia-smi-exporter.py          -> gpu-exporter
+#          (the .py is bind-mounted, so a restart would suffice to reload it —
+#           but rebuild+recreate is deliberate: recreation is the ONLY thing
+#           that re-injects NVIDIA device nodes, which bind at container-create
+#           time. A card added after the container was created is otherwise
+#           invisible forever; that hid an RTX 3090 for 7+ days, 2026-07-26.)
 #        scripts/Dockerfile.voice-agent             -> voice-agent-livekit
 #        scripts/Dockerfile.backup|scripts/backup/**-> backup-daily backup-hourly backup-offsite
 #      (diff-uncomputable -> defensive brain-daemon rebuild, same as the ps1)
@@ -170,7 +176,7 @@ log "Code advanced $last_short -> $short_head; deploying."
 declare -A REBUILD_MAP=(
   ['^brain/']="brain-daemon"
   ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^scripts/Dockerfile\.worker$']="worker prefect-worker"
-  ['^scripts/Dockerfile\.gpu-exporter$']="gpu-exporter"
+  ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
   ['^scripts/Dockerfile\.backup$|^scripts/backup/']="backup-daily backup-hourly backup-offsite"
 )

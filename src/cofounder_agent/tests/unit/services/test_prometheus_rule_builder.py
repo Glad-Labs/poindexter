@@ -385,13 +385,13 @@ class TestBuildCurrent:
                       "DailySpendApproachingLimit", "DailySpendOverBudget",
                       "MonthlySpendHigh"):
             assert f"alert: {alert}" in out
-        # Default thresholds substituted. monthly_spend at $35 covers
-        # the ~$30 baseline of local Ollama GPU electricity tracked in
-        # cost_logs + a ~$5 buffer; the alert fires only on runaway
-        # cloud LLM spend, not on steady-state operation.
+        # Default thresholds substituted. monthly_spend at $65 sits just
+        # ABOVE the $60 full-cost ceiling (cost_throttle_monthly_budget_usd)
+        # because the gauge is the blended API+electricity axis: it means
+        # "the throttle failed to hold the line", not "the budget is in use".
         assert "> 4.0" in out
         assert "> 5.0" in out
-        assert "> 35.0" in out
+        assert "> 65.0" in out
         # EmbeddingsStale uses the seconds threshold as a Prometheus
         # duration literal (``[21600s]``), not a bare comparison.
         assert "[21600s]" in out
@@ -556,7 +556,7 @@ class TestRestartGapBridging:
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "last_over_time(poindexter_embeddings_missing_posts[1h]) > 3" in out
-        assert "last_over_time(poindexter_monthly_spend_usd[1h]) > 35.0" in out
+        assert "last_over_time(poindexter_monthly_spend_usd[1h]) > 65.0" in out
         assert (
             'last_over_time(poindexter_posts_total{status=\\"published\\"}[1h]'
             " offset 24h)" in out

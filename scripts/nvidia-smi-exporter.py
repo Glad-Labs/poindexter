@@ -95,6 +95,16 @@ _GPU_METRIC_SPECS = [
 ]
 _GPU_ROW_FIELDS = len(_GPU_METRIC_SPECS) + 1  # + leading index
 
+# Cardinality canary. NVIDIA device nodes are injected into a container at
+# CREATE time, so a card added (or re-enumerated) after `docker create` is
+# invisible until the container is recreated — the per-GPU series simply stop
+# at gpu="0" with no error anywhere. That failure hid an entire RTX 3090 for
+# 7+ days (2026-07-26). Exporting the count makes the absence assertable.
+_COUNT_HEADER = (
+    "# HELP nvidia_gpu_count Number of GPUs nvidia-smi enumerated this scrape\n"
+    "# TYPE nvidia_gpu_count gauge\n"
+)
+
 
 def _format_gpu_rows(stdout: str) -> str:
     """Turn nvidia-smi CSV (one row per GPU) into Prometheus exposition text.
@@ -124,9 +134,12 @@ def _format_gpu_rows(stdout: str) -> str:
         rows.append(values)
 
     if not rows:
-        return "# nvidia-smi returned no parseable GPU rows\n"
+        # Still emit the count so a total enumeration failure is a VISIBLE 0
+        # rather than an absent series (absent = "no data", which alerts on
+        # `< expected` cannot see — the 2026-07-26 silent-missing-GPU case).
+        return _COUNT_HEADER + "nvidia_gpu_count 0\n"
 
-    lines = []
+    lines = [_COUNT_HEADER.rstrip("\n"), f"nvidia_gpu_count {len(rows)}"]
     for field_idx, (metric, help_text) in enumerate(_GPU_METRIC_SPECS):
         lines.append(f"# HELP {metric} {help_text}")
         lines.append(f"# TYPE {metric} gauge")

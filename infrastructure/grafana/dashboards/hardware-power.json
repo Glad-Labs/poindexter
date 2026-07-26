@@ -37,6 +37,78 @@
       "id": 1
     },
     {
+      "id": 68,
+      "type": "stat",
+      "title": "GPUs visible",
+      "description": "nvidia_gpu_count from the gpu-exporter. Red when below app_settings prometheus.threshold.expected_gpu_count. NVIDIA device nodes bind at container-CREATE time, so a card the exporter container was created without is invisible with no error and a plain restart will NOT fix it \u2014 recreate the container. An RTX 3090 was missing here for 7+ days (2026-07-26) while still drawing ~42W.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NONE",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "nvidia_gpu_count",
+          "legendFormat": "GPUs",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 2,
       "type": "stat",
       "title": "Gaming",
@@ -48,7 +120,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 0,
+        "x": 4,
         "y": 1
       },
       "fieldConfig": {
