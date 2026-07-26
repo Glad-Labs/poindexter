@@ -1733,6 +1733,15 @@ services:
       dockerfile: scripts/Dockerfile.gpu-exporter
     container_name: poindexter-gpu-exporter
     restart: unless-stopped
+    # Host PID namespace (poindexter#914 P1): `nvidia-smi --query-compute-apps`
+    # resolves process rows through /proc, so in a private namespace the
+    # container sees ZERO compute apps (verified 2026-07-26: host listed 5+
+    # rows, container listed none) and the per-process series
+    # nvidia_gpu_process_memory_mib — the admission fit-gate's per-card
+    # eviction credit — would serve header-only forever, silently pinning the
+    # credit at 0.0. pid:host is the standard exporter posture for
+    # process-level GPU metrics (dcgm-exporter documents the same requirement).
+    pid: "host"
     ports:
       - "9835:9835"
     environment:
