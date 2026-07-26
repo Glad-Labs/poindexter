@@ -73,19 +73,28 @@ def main() -> int:
             log.info(drift_note)
     # Step 3: PR only if the DB-count script actually changed CLAUDE.md.
     status = c.git("status", "--porcelain", cwd=roots)
+    pr_ok = True
     if status.stdout.strip():
-        c.git("add", "CLAUDE.md", cwd=roots)
-        c.git("commit", "--no-verify", "-m", "docs(CLAUDE.md): sync DB-derived counts (ops)", cwd=roots)
-        c.git("push", "-u", "origin", "HEAD", cwd=roots)
-        c.gh("pr", "create", "--repo", REPO, "--base", "main",
-             "--title", "docs(CLAUDE.md): sync DB-derived counts (ops)",
-             "--body", f"Automated DB-count refresh.\n\n{drift_note}".strip())
-        log.info("opened CLAUDE.md sync PR")
+        # stack#2809: this used to log "opened CLAUDE.md sync PR" unconditionally
+        # while `gh pr create` had been failing every night since 2026-06-10 —
+        # it ran without a cwd, so it read the *shared* checkout (on main) instead
+        # of this worktree. Six weeks of correct DB counts were committed, pushed
+        # to an `auto/*` branch, and then orphaned behind a green log line.
+        pr_ok = c.commit_and_open_pr(
+            cwd=roots,
+            repo=REPO,
+            paths=["CLAUDE.md"],
+            message="docs(CLAUDE.md): sync DB-derived counts (ops)",
+            title="docs(CLAUDE.md): sync DB-derived counts (ops)",
+            body=f"Automated DB-count refresh.\n\n{drift_note}".strip(),
+            log=log,
+            source="claude_md_sync",
+        ) is not None
     elif drift_note:
         c.notify_fail("CLAUDE.md migration drift", drift_note, "claude_md_sync")
     else:
         log.info("no CLAUDE.md changes")
-    return 0 if db_stats_ok else 1
+    return 0 if (db_stats_ok and pr_ok) else 1
 
 
 if __name__ == "__main__":

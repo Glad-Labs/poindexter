@@ -46,5 +46,11 @@ cleanup() {
 trap cleanup EXIT
 
 SCRIPT="$RUNDIR/scripts/ops_sessions/${NAME//-/_}.py"
-( cd "$MAINPKG" && poetry run python "$SCRIPT" ) >>"$LOG" 2>&1
-echo "session $NAME complete" >>"$LOG"
+# NOTE: the CWD here is the *shared* checkout's package dir (that's where the
+# poetry env lives) while NEEDS_WT sessions commit inside $WT. Session scripts
+# must therefore pass an explicit cwd to every git/gh call — a bare `gh pr
+# create` reads this CWD's branch, not the worktree's. See _common.gh().
+RC=0
+( cd "$MAINPKG" && poetry run python "$SCRIPT" ) >>"$LOG" 2>&1 || RC=$?
+echo "session $NAME complete (rc=$RC)" >>"$LOG"
+exit "$RC"

@@ -29,13 +29,16 @@ def _ops_dir() -> Path:
 sys.path.insert(0, str(_ops_dir()))
 import codebase_audit as ca  # noqa: E402
 
+SESSION_BRANCH = "auto/codebase-audit-2026-07-22-0358"
+
 
 class _FakeProc:
-    """Minimal stand-in for subprocess.CompletedProcess (returncode + stdout only)."""
+    """Minimal stand-in for subprocess.CompletedProcess."""
 
-    def __init__(self, returncode: int, stdout: str):
+    def __init__(self, returncode: int, stdout: str, stderr: str = ""):
         self.returncode = returncode
         self.stdout = stdout
+        self.stderr = stderr
 
 
 def _install_fakes(monkeypatch, *, dirty: bool, gh_spy):
@@ -50,6 +53,10 @@ def _install_fakes(monkeypatch, *, dirty: bool, gh_spy):
     def fake_git(*args, **_kwargs):
         if args and args[0] == "status":
             return _FakeProc(0, " M src/cofounder_agent/services/foo.py\n" if dirty else "")
+        # stack#2809: commit_and_open_pr refuses to commit unless HEAD resolves
+        # to the session's own worktree branch, so the fake must report one.
+        if args[:2] == ("rev-parse", "--abbrev-ref"):
+            return _FakeProc(0, f"{SESSION_BRANCH}\n")
         return _FakeProc(0, "")
 
     monkeypatch.setattr(ca.c, "git", fake_git)
@@ -65,7 +72,7 @@ class TestNoBanditIssueFiling:
         # create), proving `issue create` is absent rather than just unreached.
         seen: list[tuple] = []
 
-        def boom_gh(*args):
+        def boom_gh(*args, **_kwargs):
             seen.append(args)
             if args[:2] == ("issue", "create"):
                 raise AssertionError(
@@ -92,7 +99,7 @@ class TestNoBanditIssueFiling:
             ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit")
         )
         monkeypatch.setattr(ca.c, "run", spy_run)
-        monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, ""))
+        monkeypatch.setattr(ca.c, "gh", lambda *_a, **_k: _FakeProc(0, ""))
         monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
 
         assert ca.main() == 0
@@ -117,7 +124,7 @@ class TestRuffSweep:
             ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit")
         )
         monkeypatch.setattr(ca.c, "run", spy_run)
-        monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, ""))
+        monkeypatch.setattr(ca.c, "gh", lambda *_a, **_k: _FakeProc(0, ""))
         monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
 
         assert ca.main() == 0
@@ -130,7 +137,7 @@ class TestRuffSweep:
     def test_opens_a_pr_when_ruff_changed_files(self, monkeypatch):
         gh_calls: list[tuple] = []
         _install_fakes(
-            monkeypatch, dirty=True, gh_spy=lambda *a: (gh_calls.append(a), _FakeProc(0, ""))[1]
+            monkeypatch, dirty=True, gh_spy=lambda *a, **_k: (gh_calls.append(a), _FakeProc(0, ""))[1]
         )
         assert ca.main() == 0
         assert any(call[:2] == ("pr", "create") for call in gh_calls), "a dirty tree should open a lint PR"
@@ -138,7 +145,7 @@ class TestRuffSweep:
     def test_opens_no_pr_when_tree_is_clean(self, monkeypatch):
         gh_calls: list[tuple] = []
         _install_fakes(
-            monkeypatch, dirty=False, gh_spy=lambda *a: (gh_calls.append(a), _FakeProc(0, ""))[1]
+            monkeypatch, dirty=False, gh_spy=lambda *a, **_k: (gh_calls.append(a), _FakeProc(0, ""))[1]
         )
         assert ca.main() == 0
         assert not any(call[:2] == ("pr", "create") for call in gh_calls)

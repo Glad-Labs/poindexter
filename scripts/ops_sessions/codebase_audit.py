@@ -39,15 +39,21 @@ def main() -> int:
     c.run([sys.executable, "-m", "ruff", "check", "--fix", "--select", "F401,F841", *RUFF_TARGETS], cwd=root)
     status = c.git("status", "--porcelain", cwd=root)
     has_lint_fixes = bool(status.stdout.strip())
+    pr_ok = True
     if has_lint_fixes:
-        c.git("add", "-A", cwd=root)
-        c.git("commit", "--no-verify", "-m", "fix(lint): ruff --fix F401/F841 (ops codebase-audit)", cwd=root)
-        c.git("push", "-u", "origin", "HEAD", cwd=root)
-        c.gh("pr", "create", "--repo", REPO, "--base", "main",
-             "--title", "fix(lint): ruff F401/F841 sweep (ops)",
-             "--body", "Automated unused-import/variable fixes.")
-    log.info("%s", "opened lint PR" if has_lint_fixes else "no ruff fixes")
-    return 0
+        pr_ok = c.commit_and_open_pr(
+            cwd=root,
+            repo=REPO,
+            paths=["-A"],
+            message="fix(lint): ruff --fix F401/F841 (ops codebase-audit)",
+            title="fix(lint): ruff F401/F841 sweep (ops)",
+            body="Automated unused-import/variable fixes.",
+            log=log,
+            source="codebase_audit",
+        ) is not None
+    else:
+        log.info("no ruff fixes")
+    return 0 if pr_ok else 1
 
 
 if __name__ == "__main__":

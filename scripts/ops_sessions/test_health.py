@@ -65,15 +65,20 @@ def main() -> int:
         else:
             test_path.write_text(original, encoding="utf-8")  # re-run gate: revert
             log.info("reverted %s::%s (fix did not pass)", f["file"], f["test"])
+    pr_ok = True
     if fixed:
-        c.git("add", "-A", cwd=cwd)
-        c.git("commit", "--no-verify", "-m", f"test: repair {fixed} failing unit test(s) (ops test-health)", cwd=cwd)
-        c.git("push", "-u", "origin", "HEAD", cwd=cwd)
-        c.gh("pr", "create", "--repo", REPO, "--base", "main",
-             "--title", f"test: repair {fixed} failing unit test(s) (ops)",
-             "--body", "Local-model fixes, each verified green by re-run before inclusion.")
+        pr_ok = c.commit_and_open_pr(
+            cwd=cwd,
+            repo=REPO,
+            paths=["-A"],
+            message=f"test: repair {fixed} failing unit test(s) (ops test-health)",
+            title=f"test: repair {fixed} failing unit test(s) (ops)",
+            body="Local-model fixes, each verified green by re-run before inclusion.",
+            log=log,
+            source="test_health",
+        ) is not None
     log.info("failures=%d fixed=%d", len(failures), fixed)
-    return 0
+    return 0 if pr_ok else 1
 
 
 if __name__ == "__main__":

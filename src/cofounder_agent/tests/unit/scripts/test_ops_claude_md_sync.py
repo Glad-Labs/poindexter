@@ -88,3 +88,35 @@ class TestMainSurfacesDbStatsFailure:
 
         assert rc == 0
         notify_mock.assert_not_called()
+
+
+class TestMainSurfacesPrFailure:
+    """stack#2809: with DB stats refreshed but ``gh pr create`` failing every
+    night since 2026-06-10, ``main()`` logged "opened CLAUDE.md sync PR" and
+    returned 0 regardless. Six weeks of correct counts were pushed to orphaned
+    ``auto/*`` branches and never proposed."""
+
+    def _run(self, tmp_path, monkeypatch, *, pr_url):
+        _stub_repo(tmp_path, monkeypatch)
+        monkeypatch.setattr(cms.c, "run", lambda *a, **kw: _fake_completed(0, stdout="updated"))
+        # A dirty worktree is what puts main() on the commit-and-PR path.
+        monkeypatch.setattr(cms.c, "git", lambda *a, **kw: _fake_completed(0, stdout=" M CLAUDE.md"))
+        pr_mock = MagicMock(return_value=pr_url)
+        monkeypatch.setattr(cms.c, "commit_and_open_pr", pr_mock)
+        return cms.main(), pr_mock
+
+    def test_pr_failure_is_a_nonzero_exit(self, tmp_path, monkeypatch):
+        rc, pr_mock = self._run(tmp_path, monkeypatch, pr_url=None)
+        assert rc != 0, "a session that opened no PR must not exit green"
+        pr_mock.assert_called_once()
+
+    def test_pr_success_exits_zero(self, tmp_path, monkeypatch):
+        rc, _ = self._run(tmp_path, monkeypatch, pr_url="https://github.com/x/y/pull/1")
+        assert rc == 0
+
+    def test_pr_targets_the_repo_root_worktree(self, tmp_path, monkeypatch):
+        _, pr_mock = self._run(tmp_path, monkeypatch, pr_url="https://github.com/x/y/pull/1")
+        kwargs = pr_mock.call_args.kwargs
+        assert kwargs["cwd"] == str(tmp_path)
+        assert kwargs["paths"] == ["CLAUDE.md"]
+        assert kwargs["repo"] == cms.REPO

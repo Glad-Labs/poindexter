@@ -70,6 +70,29 @@ Full rationale: [`docs/superpowers/specs/2026-07-09-scheduled-agents-rewire-desi
   file issues, or edit labels and never mutate the local checkout.
 - **`Enabled`** — `$false` keeps the definition but skips registration.
 
+### The CWD trap (stack#2809)
+
+Those first two fields pull in opposite directions: the process CWD is the
+**shared checkout's** package dir (that's where the venv is), while a
+`NeedsWorktree` session commits inside **its worktree**. So every `git`/`gh`
+call in a session script must pass an explicit `cwd` — anything that infers the
+repo from the ambient CWD reads the shared checkout instead.
+
+`gh pr create` is exactly that kind of command, and it was the one call in the
+chain missing a `cwd`. It failed nightly for six weeks (2026-06-10 → 07-26),
+reporting whatever state the shared checkout happened to be in — `must be on a
+branch named differently than "main"`, or `you must first push the current
+branch` — while the session's own worktree branch was committed and pushed
+perfectly well. Sessions log success unconditionally no longer: use
+`_common.commit_and_open_pr(...)`, which resolves the branch from the worktree,
+pins it with an explicit `--head`, checks every step's return code, and returns
+`None` after a `notify_operator` warning if any step fails.
+
+Symptom to watch for: orphaned `auto/<session>-<stamp>` branches on `origin`
+with no PR attached. `git ls-remote --heads origin 'refs/heads/auto/*'` lists
+them; anything older than a day with no matching PR means the PR step is broken
+again.
+
 ## Operating it
 
 ```powershell
@@ -88,6 +111,9 @@ clean slate.
 - **Graceful failure:** DB- or Ollama-dependent sessions treat a connection
   failure (e.g. the stack is down after a reboot) as a `notify_operator` warning
   (→ Discord) plus a clean non-zero exit — never a crash, never a false success.
+  The same rule covers the commit → push → PR chain: a session that opened no PR
+  exits non-zero and notifies, and `run-session.sh` records that rc in the log
+  (`session <name> complete (rc=N)`) rather than always signing off green.
 
 ## Configuration
 

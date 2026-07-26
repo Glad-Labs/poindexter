@@ -93,12 +93,92 @@ def run(cmd: list[str], *, cwd: str | None = None) -> subprocess.CompletedProces
     return proc
 
 
-def gh(*args: str) -> subprocess.CompletedProcess:
-    return run(["gh", *args])
+def gh(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess:
+    """Run ``gh``. ALWAYS pass ``cwd`` for repo-context subcommands (``pr create``).
+
+    ``run-session.sh`` invokes sessions with the process CWD set to the *shared*
+    checkout's package dir (that's where the poetry env lives), while the session
+    itself commits inside an isolated worktree. A bare ``gh pr create`` therefore
+    infers its head branch from the shared checkout — which is on ``main`` — and
+    dies with ``must be on a branch named differently than "main"``.
+    """
+    return run(["gh", *args], cwd=cwd)
 
 
 def git(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess:
     return run(["git", *args], cwd=cwd)
+
+
+def current_branch(cwd: str) -> str:
+    proc = git("rev-parse", "--abbrev-ref", "HEAD", cwd=cwd)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def commit_and_open_pr(
+    *,
+    cwd: str,
+    repo: str,
+    paths: list[str],
+    message: str,
+    title: str,
+    body: str,
+    log: logging.Logger,
+    source: str,
+    base: str = "main",
+) -> str | None:
+    """Stage → commit → push → open a PR from the worktree at ``cwd``.
+
+    Returns the PR URL, or ``None`` after notifying the operator if any step
+    failed. Every step's return code is checked: the sessions that commit run
+    unattended at 02:00-05:00, so an unchecked ``rc`` is a change that quietly
+    never lands (stack#2408 was the same bug one step earlier in this chain).
+    """
+
+    def _fail(step: str, proc: subprocess.CompletedProcess) -> None:
+        detail = (proc.stderr or proc.stdout or "no output captured").strip()[:1500]
+        log.error("%s failed (rc=%s): %s", step, proc.returncode, detail)
+        notify_fail(
+            f"{source}: {step} failed — no PR opened",
+            f"`{step}` exited {proc.returncode} in {cwd}. The session's changes were "
+            f"NOT proposed; they are stranded on branch `{branch or '?'}`.\n{detail}",
+            source,
+        )
+
+    branch = current_branch(cwd)
+    if branch in ("", "main", "HEAD"):
+        # Guard the exact symptom that hid this for six weeks: if the session is
+        # somehow not on its own worktree branch, say so instead of asking gh.
+        log.error("refusing to open a PR from branch %r in %s", branch, cwd)
+        notify_fail(
+            f"{source}: not on a session branch — no PR opened",
+            f"HEAD in {cwd} resolved to {branch or '<unresolvable>'}; expected the "
+            f"session's `auto/*` worktree branch. Refusing to commit or push.",
+            source,
+        )
+        return None
+
+    for step, args in (
+        ("git add", ("add", *paths)),
+        ("git commit", ("commit", "--no-verify", "-m", message)),
+        ("git push", ("push", "-u", "origin", "HEAD")),
+    ):
+        proc = git(*args, cwd=cwd)
+        if proc.returncode != 0:
+            _fail(step, proc)
+            return None
+
+    # --head is explicit rather than inferred: with it, `gh` needs no local git
+    # context at all, so the PR can't be misaddressed by whatever CWD we inherit.
+    proc = gh(
+        "pr", "create", "--repo", repo, "--base", base, "--head", branch,
+        "--title", title, "--body", body, cwd=cwd,
+    )
+    if proc.returncode != 0:
+        _fail("gh pr create", proc)
+        return None
+    url = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else f"({branch})"
+    log.info("opened PR %s", url)
+    return url
 
 
 def notify_fail(title: str, detail: str, source: str) -> None:

@@ -48,17 +48,21 @@ def main() -> int:
             log.info("fixed %s -> %s", ref, fix)
         elif status == "flag":
             flags.append(ref)
+    pr_ok = True
     if changed:
         claude_md.write_text(text, encoding="utf-8")
-        roots = str(root)
-        c.git("add", "CLAUDE.md", cwd=roots)
-        c.git("commit", "--no-verify", "-m", "docs(CLAUDE.md): repair moved path references (ops doc-sync)", cwd=roots)
-        c.git("push", "-u", "origin", "HEAD", cwd=roots)
-        c.gh("pr", "create", "--repo", REPO, "--base", "main",
-             "--title", "docs(CLAUDE.md): repair path references (ops)",
-             "--body", f"Auto-corrected moved refs. Unresolved (need human): {flags or 'none'}")
+        pr_ok = c.commit_and_open_pr(
+            cwd=str(root),
+            repo=REPO,
+            paths=["CLAUDE.md"],
+            message="docs(CLAUDE.md): repair moved path references (ops doc-sync)",
+            title="docs(CLAUDE.md): repair path references (ops)",
+            body=f"Auto-corrected moved refs. Unresolved (need human): {flags or 'none'}",
+            log=log,
+            source="doc_sync",
+        ) is not None
     log.info("changed=%s flags=%s", changed, flags)
-    return 0
+    return 0 if pr_ok else 1
 
 
 if __name__ == "__main__":
