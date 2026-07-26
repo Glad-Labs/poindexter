@@ -2410,6 +2410,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'seo.refresh.enabled': 'false',
     'seo.striking_distance.position_min': '5',
     'seo.striking_distance.position_max': '20',
+    # Demand floor for the striking tier — the loop harvests impressions
+    # ALREADY earned, so a page-2 post with near-zero impressions is not an
+    # opportunity (matches push/low_ctr, which always had a floor). Added after
+    # a 2026-07 audit: 105/109 refreshed striking posts had <100 impressions
+    # and the corpus earned ~28 clicks total, so meta refreshes had no signal.
+    'seo.striking_distance.min_impressions': '100',
     'seo.push_candidate.position_min': '3',
     'seo.push_candidate.position_max': '10',
     'seo.push_candidate.min_impressions': '100',
@@ -2441,6 +2447,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # schedules themselves are auto-persisted by PluginScheduler from each job's
     # `schedule` class attribute (plugin.job.<name>), not seeded here.
     'seo.refresh.max_per_run': '3',
+    # Spend floor — minimum current impressions for an opportunity to be worth
+    # a refresh + operator gate review NOW. Distinct from
+    # seo.striking_distance.min_impressions (which governs classification): this
+    # governs enqueue, and also screens legacy 'open' rows classified before a
+    # floor existed. Raise it to make refreshes more selective without touching
+    # what the analyzer classifies or the SEO dashboard shows.
+    'seo.refresh.min_impressions': '100',
     # Gate hygiene — seo_refresh runs parked at seo_refresh_gate longer than
     # this are dismissed by ExpireStaleSeoRefreshGatesJob and their
     # opportunity rows reopened for a fresh future proposal. 0 disables.

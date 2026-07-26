@@ -10,10 +10,19 @@ Tier priority (each post is assigned its single highest-priority tier):
 1. ``page1_push``       — pos in [push_min, push_max] AND impressions >= push
                           floor. One optimization from page 1; the biggest,
                           fastest wins.
-2. ``striking_distance`` — pos in [striking_min, striking_max]. Ranks, but on
-                          page 2.
+2. ``striking_distance`` — pos in [striking_min, striking_max] AND impressions
+                          >= floor. Ranks, but on page 2.
 3. ``low_ctr``          — impressions >= floor AND ctr <= ceiling. Ranks
                           somewhere but the title/meta isn't earning the click.
+
+Every tier carries a minimum-impressions floor: the loop's whole premise is
+*harvesting demand already earned*, so a post with near-zero impressions has
+nothing to harvest and must not become an opportunity (it only costs an
+operator a review of a refresh that can't move a metric that is already ~0).
+The striking tier's floor was omitted at first — an empirical audit (2026-07)
+found 105 of 109 refreshed striking-distance posts had < 100 impressions and
+the corpus earned ~28 clicks total, so the meta refresh had no CTR signal to
+optimize. Unifying the floor across all three tiers is the fix.
 
 gap_score is deterministic (no LLM): estimated clicks left on the table if the
 post reached ``target_ctr``. It orders the "fix this first" list.
@@ -32,6 +41,7 @@ OPPORTUNITY_TIERS = ("page1_push", "striking_distance", "low_ctr")
 DEFAULT_THRESHOLDS: dict[str, float] = {
     "striking_position_min": 5.0,
     "striking_position_max": 20.0,
+    "striking_min_impressions": 100.0,
     "push_position_min": 3.0,
     "push_position_max": 10.0,
     "push_min_impressions": 100.0,
@@ -81,7 +91,10 @@ def classify_opportunity(
     ):
         return Opportunity(tier="page1_push", gap_score=gap)
 
-    if thresholds["striking_position_min"] <= position <= thresholds["striking_position_max"]:
+    if (
+        thresholds["striking_position_min"] <= position <= thresholds["striking_position_max"]
+        and impressions >= thresholds["striking_min_impressions"]
+    ):
         return Opportunity(tier="striking_distance", gap_score=gap)
 
     if (

@@ -20,6 +20,20 @@ def test_max_per_run_default_seeded():
     assert DEFAULTS["seo.refresh.max_per_run"] == "3"
 
 
+def test_refresh_min_impressions_floor_default_seeded():
+    # SEO targeting fix (2026-07 audit): a demand floor at enqueue time, on top
+    # of the classifier's own seo.striking_distance.min_impressions floor —
+    # screens legacy 'open' rows classified before either floor existed.
+    assert DEFAULTS["seo.refresh.min_impressions"] == "100"
+
+
+def test_striking_distance_min_impressions_floor_default_seeded():
+    # The striking tier previously had NO impression floor (unlike push/low_ctr),
+    # which let near-zero-demand page-2 posts become "opportunities" that a
+    # meta_only refresh had no CTR signal to move. See services/seo/striking_distance.py.
+    assert DEFAULTS["seo.striking_distance.min_impressions"] == "100"
+
+
 def test_no_seo_refresh_default_is_empty():
     # app_settings.value is NOT NULL; '' is the unset sentinel and would crash CI.
     for key, value in DEFAULTS.items():

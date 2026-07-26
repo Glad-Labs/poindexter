@@ -22,8 +22,23 @@ def test_page1_push_takes_priority_over_striking():
 
 
 def test_striking_distance_when_below_push_band():
-    # pos 15 → striking (5-20) but not push (<=10).
+    # pos 15, 300 impressions (>= floor) → striking (5-20) but not push (<=10).
     opp = classify_opportunity(_metrics(300, 1, 15.0), DEFAULT_THRESHOLDS)
+    assert opp is not None and opp.tier == "striking_distance"
+
+
+def test_striking_requires_min_impressions():
+    # pos 15 is in the striking band but only 80 impressions (< 100 floor) and
+    # not enough volume for low_ctr either → nothing to harvest. This is the
+    # 2026-07 targeting fix: a near-zero-demand page-2 post is NOT an
+    # opportunity (a meta refresh has no CTR signal to move).
+    assert classify_opportunity(_metrics(80, 0, 15.0), DEFAULT_THRESHOLDS) is None
+
+
+def test_striking_min_impressions_is_tunable():
+    # Lower the floor and the same 80-impression page-2 post becomes striking.
+    lenient = {**DEFAULT_THRESHOLDS, "striking_min_impressions": 50.0}
+    opp = classify_opportunity(_metrics(80, 0, 15.0), lenient)
     assert opp is not None and opp.tier == "striking_distance"
 
 
@@ -44,10 +59,10 @@ def test_no_opportunity_when_below_volume_floor():
 
 
 def test_push_requires_min_impressions():
-    # pos 6 but only 5 impressions → below push floor; falls through to
-    # striking (5-20 covers pos 6), which is the correct softer classification.
-    opp = classify_opportunity(_metrics(5, 0, 6.0), DEFAULT_THRESHOLDS)
-    assert opp is not None and opp.tier == "striking_distance"
+    # pos 6 but only 5 impressions → below the push floor AND the striking floor
+    # (both 100), and far below low_ctr volume → no opportunity. A post with 5
+    # impressions has nothing to harvest regardless of how well it ranks.
+    assert classify_opportunity(_metrics(5, 0, 6.0), DEFAULT_THRESHOLDS) is None
 
 
 def test_none_position_is_not_an_opportunity():

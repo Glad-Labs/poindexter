@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _SETTING_MAP = {
     "seo.striking_distance.position_min": "striking_position_min",
     "seo.striking_distance.position_max": "striking_position_max",
+    "seo.striking_distance.min_impressions": "striking_min_impressions",
     "seo.push_candidate.position_min": "push_position_min",
     "seo.push_candidate.position_max": "push_position_max",
     "seo.push_candidate.min_impressions": "push_min_impressions",

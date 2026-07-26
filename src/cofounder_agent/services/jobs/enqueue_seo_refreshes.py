@@ -26,10 +26,11 @@ from utils.findings import emit_finding
 logger = logging.getLogger(__name__)
 
 _SELECT_CANDIDATES_SQL = """
-SELECT o.id AS opportunity_id, o.post_id, o.slug, o.target_query, o.gap_score
+SELECT o.id AS opportunity_id, o.post_id, o.slug, o.target_query, o.gap_score, o.tier
 FROM seo_opportunities o
 WHERE o.status = 'open'
   AND o.post_id IS NOT NULL
+  AND o.impressions >= $2
   AND NOT EXISTS (
       SELECT 1
       FROM pipeline_tasks t
@@ -38,7 +39,12 @@ WHERE o.status = 'open'
         AND t.status IN ('pending','in_progress','awaiting_gate','awaiting_approval')
         AND v.stage_data->'task_metadata'->>'post_id' = o.post_id::text
   )
-ORDER BY o.gap_score DESC
+-- A meta_only refresh moves CTR, not ranking, so target the tiers where the
+-- meta IS the lever (page1_push / low_ctr) before striking_distance, whose
+-- page-2 posts are ranking-limited — meta can't lift a metric that stays ~0 at
+-- position 15. gap_score orders within each bucket. (SEO targeting audit, 2026-07.)
+ORDER BY (CASE WHEN o.tier = 'striking_distance' THEN 1 ELSE 0 END),
+         o.gap_score DESC
 LIMIT $1
 """
 
@@ -60,9 +66,17 @@ class EnqueueSeoRefreshesJob:
             return JobResult(ok=True, detail="seo.refresh.enabled is off; skipped")
 
         max_per_run = int(sc.get_float("seo.refresh.max_per_run", 3))
+        # Spend floor — a meta refresh needs real search demand to convert, and
+        # every refresh costs an operator a gate review. Distinct from the
+        # classifier's per-tier floor (which governs what becomes an
+        # opportunity at all): this governs what is worth refreshing NOW, and
+        # also screens stale 'open' rows classified before a floor existed.
+        min_impressions = int(sc.get_float("seo.refresh.min_impressions", 100))
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(_SELECT_CANDIDATES_SQL, max_per_run)
+                rows = await conn.fetch(
+                    _SELECT_CANDIDATES_SQL, max_per_run, min_impressions
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[enqueue_seo_refreshes] candidate query failed: %s", e, exc_info=True

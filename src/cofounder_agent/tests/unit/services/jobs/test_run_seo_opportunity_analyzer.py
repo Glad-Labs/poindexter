@@ -30,6 +30,16 @@ def test_thresholds_default_when_no_site_config():
     th = _thresholds(None)
     assert th["striking_position_max"] == 20.0
     assert th["push_position_max"] == 10.0
+    assert th["striking_min_impressions"] == 100.0
+
+
+def test_striking_min_impressions_maps_from_setting():
+    class _SC:
+        def get_float(self, key, default):
+            return {"seo.striking_distance.min_impressions": 250.0}.get(key, default)
+
+    th = _thresholds(_SC())
+    assert th["striking_min_impressions"] == 250.0
 
 
 def test_thresholds_from_site_config_override_one_key():

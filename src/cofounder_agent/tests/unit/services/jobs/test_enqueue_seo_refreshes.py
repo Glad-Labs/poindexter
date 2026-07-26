@@ -131,3 +131,55 @@ async def test_enqueues_capped_and_parks(monkeypatch):
     assert len(findings) == 1
     assert findings[0]["kind"] == "seo_refresh_queued"
     assert findings[0]["severity"] == "warn"
+
+
+@pytest.mark.asyncio
+async def test_min_impressions_floor_passed_to_query(monkeypatch):
+    # SEO targeting fix (2026-07): the candidate query gates on
+    # o.impressions >= $2 so a near-zero-demand opportunity is never enqueued
+    # even if a stale 'open' row predates the classifier's own floor. Assert
+    # the resolved setting actually reaches the query as $2, default and
+    # overridden.
+    from services.jobs import enqueue_seo_refreshes as mod
+
+    captured_args = []
+
+    class _Conn:
+        async def fetch(self, sql, *args):
+            captured_args.append(args)
+            return []
+
+        async def execute(self, sql, *args):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _Conn()
+
+    monkeypatch.setattr(mod, "TasksDatabase", lambda pool: None)
+    monkeypatch.setattr(mod, "emit_finding", lambda **k: None)
+
+    job = mod.EnqueueSeoRefreshesJob()
+
+    # Default floor (100) when the setting isn't overridden.
+    await job.run(
+        pool=_Pool(), config={"_site_config": _SC({"seo.refresh.enabled": True})}
+    )
+    assert captured_args[-1] == (3, 100)  # (max_per_run default, min_impressions default)
+
+    # Overridden floor reaches the query unchanged.
+    await job.run(
+        pool=_Pool(),
+        config={
+            "_site_config": _SC(
+                {"seo.refresh.enabled": True, "seo.refresh.min_impressions": 250}
+            )
+        },
+    )
+    assert captured_args[-1] == (3, 250)
