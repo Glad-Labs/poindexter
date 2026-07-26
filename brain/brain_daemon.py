@@ -176,6 +176,23 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_ALERT_DISPATCHER = False
 
 try:
+    # Operator-triggered container restart (poindexter#909) — claims
+    # service_restart_requests rows the console's Restart button queues and
+    # executes them via docker_restart_container (the same primitive the
+    # self-healing firefighter's restart_container action uses). See
+    # brain/service_restart.py.
+    from service_restart import poll_and_execute_restart_requests as _poll_service_restarts
+    _HAS_SERVICE_RESTART = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.service_restart import (
+            poll_and_execute_restart_requests as _poll_service_restarts,
+        )
+        _HAS_SERVICE_RESTART = True
+    except ImportError:
+        _HAS_SERVICE_RESTART = False
+
+try:
     # PSU wall-power source selection + watchdog transitions (pure logic
     # plus the one iCUE-fallback DB read). See brain/psu_power.py.
     from psu_power import (
@@ -467,6 +484,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Branch-drift deploy canary offline — prod checkout falling behind origin/main goes undetected (#942)"),
     ("_HAS_POST_PERFORMANCE_PROBE", "brain/post_performance_probe.py",
      "Post-performance signal detection offline — broken/fading posts go undetected (#520/#672)"),
+    ("_HAS_SERVICE_RESTART", "brain/service_restart.py",
+     "Operator-triggered container restart offline — console Restart clicks queue but never execute (#909)"),
 )
 
 
@@ -1158,6 +1177,12 @@ BRAIN_HEARTBEAT_INTERVAL_DEFAULT_SECONDS = 60
 # while idle. The loop runs as its own asyncio task so a slow dispatch
 # never stalls the main cycle.
 ALERT_DISPATCH_INTERVAL_SECONDS = 30
+
+# Operator-triggered restart poll cadence (poindexter#909) — an operator
+# clicking Restart in the console is waiting on the result, so this polls
+# faster than the main 5-min cycle (though slower than alert dispatch, since
+# a restart click isn't a page — a few seconds of extra latency is fine).
+SERVICE_RESTART_POLL_INTERVAL_SECONDS = 10
 
 # GH-28: Grafana alert sync cadence counter. Incremented each run_cycle;
 # sync_alert_rules fires when the counter hits grafana_alert_sync_interval_cycles
@@ -2645,6 +2670,51 @@ async def alert_dispatch_loop(pool, shutdown_event):
     logger.info("[BRAIN] Alert dispatcher loop stopping")
 
 
+async def service_restart_loop(pool, shutdown_event):
+    """Background task: poll service_restart_requests for pending rows.
+
+    Runs independently of the 5-min ``run_cycle`` so an operator clicking
+    Restart in the console isn't stuck waiting on the main cycle. Cadence is
+    ``SERVICE_RESTART_POLL_INTERVAL_SECONDS`` (10s by default). See
+    ``brain/service_restart.py`` (poindexter#909).
+
+    Best-effort: any exception in a single poll is logged and the loop
+    continues. ``poll_and_execute_restart_requests`` already handles
+    per-row failures; this wrapper only has to handle wholesale failures
+    (DB pool death, etc.).
+    """
+    if not _HAS_SERVICE_RESTART:
+        logger.info(
+            "[BRAIN] Service-restart poller unavailable — restart requests "
+            "will accumulate unclaimed. Check brain image build."
+        )
+        return
+
+    logger.info(
+        "[BRAIN] Service-restart loop started (interval=%ds)",
+        SERVICE_RESTART_POLL_INTERVAL_SECONDS,
+    )
+    while not shutdown_event.is_set():
+        try:
+            await _poll_service_restarts(pool)
+        except Exception as e:
+            logger.warning(
+                "[BRAIN] service_restart poll failed: %s", e, exc_info=True,
+            )
+
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(),
+                timeout=SERVICE_RESTART_POLL_INTERVAL_SECONDS,
+            )
+        except TimeoutError:
+            # silent-ok: normal interval tick — the wait timed out with no
+            # shutdown signal, so loop round and poll again.
+            pass
+
+    logger.info("[BRAIN] Service-restart loop stopping")
+
+
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
@@ -3365,6 +3435,17 @@ async def main():
             name="heartbeat_loop",
         )
 
+    # Operator-triggered restart poller (poindexter#909) — claims
+    # service_restart_requests rows the console's Restart button queues, on
+    # its own 10s cadence so a click isn't gated on the 5-min cycle. Skipped
+    # in --once mode like its siblings above.
+    service_restart_task = None
+    if not one_shot:
+        service_restart_task = asyncio.create_task(
+            service_restart_loop(pool, shutdown),
+            name="service_restart_loop",
+        )
+
     consecutive_cycle_failures = 0
     while not shutdown.is_set():
         # DB-tunable per-cycle ceiling (falls back to the constant if the read
@@ -3495,6 +3576,33 @@ async def main():
                         touch_file=_touch_heartbeat,
                     ),
                     name="heartbeat_loop",
+                )
+
+        # The service-restart poller must run until shutdown too — if it
+        # died, console Restart clicks queue rows that never get claimed.
+        # Lower severity than the two above: a stuck restart is an
+        # operator-visible inconvenience, not a dark alerting/liveness path.
+        if not one_shot:
+            sr_died, sr_exc = _alert_dispatch_died(service_restart_task)
+            if sr_died:
+                logger.error(
+                    "[BRAIN] service_restart_loop died (exc=%r) — restarting",
+                    sr_exc, exc_info=sr_exc,
+                )
+                _page_operator_failsafe(
+                    title="Brain service-restart loop died",
+                    detail=(
+                        "The brain's service_restart_loop task exited while the "
+                        "daemon is still running. Operator restart clicks from "
+                        "the console will queue but never execute. Restarting "
+                        f"it now. Last error: {sr_exc!r}"
+                    ),
+                    source="brain:service-restart-watchdog",
+                    severity="warning",
+                )
+                service_restart_task = asyncio.create_task(
+                    service_restart_loop(pool, shutdown),
+                    name="service_restart_loop",
                 )
 
         if one_shot:

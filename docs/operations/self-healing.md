@@ -76,6 +76,27 @@ Adding an action = register one more executor in `ACTION_REGISTRY` (+ the
 primitive it wraps). An unknown `action_name` is `skipped` — it never crashes the
 loop.
 
+### Operator-triggered restart — a third path into the same primitive
+
+The operator console's Service Health panel Restart button (poindexter#909)
+reaches `docker_restart_container` too, but through its own path — an
+operator click isn't an alert, so it doesn't go through the firefighter's
+allowlist/breaker/rate-cap machinery (that gating exists to bound _automated_
+action; a human clicking a specific button on a specific container needs no
+second-guessing). The worker has no docker.sock, so it can't act directly:
+
+1. `POST /api/services/{container}/restart` → `services/service_restart_requests.py`
+   inserts a `pending` row in `service_restart_requests` (worker-side, after a
+   `poindexter-*` shape check).
+2. `brain/service_restart.py`'s own poll loop (`service_restart_loop`, ~10s
+   cadence, mirrors `alert_dispatch_loop`) claims pending rows with
+   `FOR UPDATE SKIP LOCKED` and calls `docker_restart_container` — the same
+   function the `restart_container` remediation action above uses.
+3. The row's `status`/`detail` are written back; the console polls
+   `GET /api/services/restart/{id}` and reports the real outcome.
+4. Either way, an `audit_log` row (`event_type='service_restart_completed'`)
+   lands next to the firefighter's own `remediation_action` rows.
+
 ### Safety guardrails
 
 - **Master switch.** `ops_firefighter_enabled` (default `true`). Off → the loop

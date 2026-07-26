@@ -767,7 +767,7 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 **Files:** `js/data.js` (`revenue` mock zeroed + `live:false`), `js/panels2.jsx` (`RevenuePanel` empty-state — _panel lives in panels2, not panels.jsx_), `js/drawer.jsx` (revenue detail empty-state + `byType[0]` guard)
 
-- [x] **Step 1:** Replaced the fabricated $1,284/mo + fake orders/top-posts with an honest pre-revenue shape (`live:false`, all scalars 0, arrays empty). Both surfaces branch on `live`: the panel shows `$0` / "billing not live yet · Lemon Squeezy store gated" (MoM delta + daily bars + top-posts dropped, div-by-zero on `prevMonth` guarded); the drawer shows a "billing isn't live yet…" status block instead of empty charts. No live `/api/revenue` route exists, so this is genuinely honest-empty in both modes (`feedback_no_dummy_data`), not a missing wire.
+- [x] **Step 1:** Replaced the fabricated $1,284/mo + fake orders/top-posts with an honest pre-revenue shape (`live:false`, all scalars 0, arrays empty). Both surfaces branch on `live`: the panel shows `$0`/ "billing not live yet · Lemon Squeezy store gated" (MoM delta + daily bars + top-posts dropped, div-by-zero on`prevMonth`guarded); the drawer shows a "billing isn't live yet…" status block instead of empty charts. No live`/api/revenue` route exists, so this is genuinely honest-empty in both modes (`feedback_no_dummy_data`), not a missing wire.
 - [x] **Step 2: Verified + committed.**
 
 ### Task 13.2: Mobile-first pass — ✅ SHIPPED
@@ -792,7 +792,7 @@ The console's "restart service" has no backend. Add a minimal, **allow-listed** 
 
 ## ✅ PLAN COMPLETE (2026-06-13)
 
-All phases 0–13 shipped via squash-merged PRs against `main`. The operator console is live at `/console/`: real auth (OAuth2 client-credentials), real reads across approvals/tasks/pipeline-events/findings/brain/media/schedule/seo/cost/GPU/service-health, real mutations (approve/publish/retry/cancel/media-decide/reschedule/rebuild), honest empty-states everywhere a live source is absent (revenue, restart), and a verified 390px mobile layout. Remaining deferred item: the guarded restart route (Phase 5.3, brain-via-DB) — left as the single `TODO(live)`.
+All phases 0–13 shipped via squash-merged PRs against `main`. The operator console is live at `/console/`: real auth (OAuth2 client-credentials), real reads across approvals/tasks/pipeline-events/findings/brain/media/schedule/seo/cost/GPU/service-health, real mutations (approve/publish/retry/cancel/media-decide/reschedule/rebuild), honest empty-states everywhere a live source is absent (revenue), and a verified 390px mobile layout. Remaining deferred item WAS the guarded restart route (Phase 5.3, brain-via-DB) — **closed 2026-07-26, poindexter#909**: `service_restart_requests` intent queue + `brain/service_restart.py` poll loop, same shape sketched here (guarded action via the brain, not a direct worker docker.sock call).
 
 ---
 

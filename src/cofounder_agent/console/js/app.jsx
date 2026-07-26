@@ -915,15 +915,55 @@ function App() {
         `operator triggered <b>${e.detail?.probe || 'probe'}</b>`
       );
     },
-    restart: (s) => {
+    // Real round-trip via the operator-triggered restart intent queue
+    // (poindexter#909) — the worker has no docker.sock, so this queues a
+    // row brain's own poll loop claims + executes, then reflects the
+    // ACTUAL outcome (never an assumed one). host:true rows (ollama) have
+    // no container to restart at all — say so instead of pretending.
+    restart: async (s) => {
       closeDrawer();
+      if (s.host || !s.container) {
+        pushToast(
+          `${s.name} runs on the host, not in docker — restart it manually`,
+          'amber',
+          '⚠'
+        );
+        return;
+      }
       pushToast(`Restarting ${s.name}…`, 'cyan', '↻');
-      pushFeed(['cyan', 'REMEDIATE'], `operator restarted <b>${s.name}</b>`);
       servicesR.mutate((arr) =>
         arr.map((x) =>
-          x.name === s.name ? { ...x, status: 'ok', metric: 'starting…' } : x
+          x.name === s.name ? { ...x, metric: 'restarting…' } : x
         )
       );
+      try {
+        const row = await PX.api.restartService(s.container);
+        if (row && row.status === 'done') {
+          pushToast(`${s.name} restarted`, 'mint', '✓');
+          pushFeed(
+            ['mint', 'REMEDIATE'],
+            `operator restarted <b>${s.name}</b>`
+          );
+        } else if (row && row.status === 'failed') {
+          pushToast(
+            `${s.name} restart failed — ${row.detail || 'see logs'}`,
+            'red',
+            '✕'
+          );
+          pushFeed(['red', 'REMEDIATE'], `restart FAILED for <b>${s.name}</b>`);
+        } else {
+          // Queued but not confirmed within the poll window — honest
+          // uncertainty, not a fabricated success (the next Service Health
+          // poll settles the real status either way).
+          pushToast(
+            `${s.name} restart still in progress — check Service Health shortly`,
+            'amber',
+            '◐'
+          );
+        }
+      } catch (err) {
+        pushToast(`Restart failed — ${err.message}`, 'red', '✕');
+      }
     },
     probe: (s) => {
       closeDrawer();

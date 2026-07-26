@@ -138,8 +138,10 @@ class TestRouteManifestStructure:
         (task-trace board + per-task deep-dive read API at /api/trace/*).
         Updated 2026-07-10 (console live-activity pulse Phase 1): added
         activity_router (running work + recent trail at /api/activity).
+        Updated 2026-07-26 (poindexter#909): added service_restart_router
+        (operator-triggered container restart intent queue).
         """
-        assert len(_WORKER_ROUTES) == 35
+        assert len(_WORKER_ROUTES) == 36
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

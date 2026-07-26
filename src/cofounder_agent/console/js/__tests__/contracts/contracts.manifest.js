@@ -208,12 +208,15 @@ module.exports = [
     request: { method: 'POST', path: '/api/social/drafts/draft_1/approve' },
   },
   {
+    // No fixture (falls through to `{}`) -> the queued row has no `id`, so
+    // restartService()'s poll loop never fires and this surface issues
+    // exactly the one queue POST — see api.restart.test.js for the fuller
+    // POST+poll multi-request flow this single-shot harness can't drive.
     name: 'restartService',
     invoke: (api) => api.restartService('poindexter-worker'),
     request: {
       method: 'POST',
-      path: '/api/admin/restart',
-      body: { service: 'poindexter-worker' },
+      path: '/api/services/poindexter-worker/restart',
     },
   },
   {

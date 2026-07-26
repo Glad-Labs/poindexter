@@ -51,6 +51,7 @@
                    POST /api/social/drafts/{id}/{approve|reject}
      voice         GET  /api/settings (voice_agent_public_join_url; operator config)
      rebuild       POST /api/export/rebuild  (full static re-export + ISR revalidate)
+     restart       POST /api/services/{container}/restart  (queue) · GET /api/services/restart/{id}  (poll, #909)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
      gpu           Prometheus GET /api/v1/query  (nvidia_gpu_* :9091)
    NOTE: /api/modules/probes is Module-v1 probe discovery — brain probes
@@ -1403,16 +1404,54 @@
         () => mock().services
       );
     },
+    // ── operator-triggered container restart (poindexter#909) ──
     // Restart is a brain/docker.sock action — the worker container has NO
-    // docker.sock mount (only poindexter-brain-daemon does), so it CANNOT
-    // restart containers directly. Phase 5.3 wires this through the brain via
-    // the DB spinal cord (write a restart intent the brain-daemon claims).
-    // Until then the live branch has no endpoint; mock stays a no-op. See
-    // docs/superpowers/plans/2026-06-13-operator-console.md.
-    restartService(name) {
+    // docker.sock mount (only poindexter-brain-daemon does), so it can't
+    // restart containers directly. POST queues an intent row; brain's own
+    // poll loop (services/service_restart_requests.py ->
+    // brain/service_restart.py) claims + executes it via the SAME
+    // docker_restart_container helper the self-healing firefighter uses.
+    // The live branch polls GET /api/services/restart/{id} until the row
+    // reaches a terminal status (or times out — the restart may still be
+    // in flight; the caller's own honest-'pending' handling covers that),
+    // so the caller gets a REAL outcome instead of an optimistic guess.
+    restartService(container) {
       return pick(
-        () => http('POST', `/api/admin/restart`, { service: name }),
-        () => ({ ok: true })
+        async () => {
+          const queued = await http(
+            'POST',
+            `/api/services/${encodeURIComponent(container)}/restart`
+          );
+          const id = queued && queued.id;
+          if (!id) return queued;
+          const POLL_MS = 1500;
+          const MAX_ATTEMPTS = 12; // ~18s — comfortably past the 10s brain poll
+          for (let i = 0; i < MAX_ATTEMPTS; i++) {
+            await wait(POLL_MS);
+            let row;
+            try {
+              row = await http(
+                'GET',
+                `/api/services/restart/${encodeURIComponent(id)}`
+              );
+            } catch {
+              continue; // transient poll failure — try again, don't abandon
+            }
+            if (row && (row.status === 'done' || row.status === 'failed')) {
+              return row;
+            }
+          }
+          // Still pending/claimed after the poll window — honest "not sure
+          // yet" rather than a fabricated success. The next serviceHealth()
+          // poll will reflect reality regardless.
+          return { id, container, status: 'pending' };
+        },
+        () => ({
+          id: 'mock',
+          container,
+          status: 'done',
+          detail: `restarted ${container} (mock)`,
+        })
       );
     },
 

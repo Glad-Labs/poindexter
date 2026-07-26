@@ -92,6 +92,7 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | newsletter        | `GET /api/newsletter/stats` (subscriber count + 30d delivery summary + recent campaigns)                     |
 | voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                        |
 | rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                          |
+| restart           | `POST /api/services/{container}/restart` (queue) · `GET /api/services/restart/{id}` (poll, #909)             |
 | posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |
 | service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                    |
 | GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                    |
@@ -136,13 +137,21 @@ real config already (graduating a rail is a `qa_gates.<rail>.required_to_pass`
 change via `poindexter qa-gates require <rail>` / `… advisory <rail>`, not a
 console edit).
 
-### One `TODO(live)` spot left
+### Service restarts (#909)
 
-- **Restart service** — there is no worker route yet; `restartService()` points
-  at a placeholder `POST /api/admin/restart`. The intended wiring (Phase 5.3) is
-  through the **brain via the DB spinal cord** — the console writes a restart
-  intent the brain-daemon claims — not a direct container kill from the API.
-  Until then, the Services panel is read-only and deep-links to Grafana/docker.
+The Service Health panel's **Restart** button is live for every container in
+the roster (the full ~44-container roster, not just the top-level services —
+db/redis/minio sidecars and backups included). It goes through the **brain
+via the DB spinal cord**, not a direct container kill from the worker (the
+worker has no docker.sock — only `poindexter-brain-daemon` does): a click
+POSTs `/api/services/{container}/restart`, which queues a
+`service_restart_requests` row; brain's own poll loop
+(`brain/service_restart.py`, ~10s cadence) claims it and restarts the
+container via the same `docker_restart_container` primitive the self-healing
+firefighter uses. The console polls the request's status and reports the
+REAL outcome — done, failed (with the reason), or still-in-progress — never
+an optimistic guess. `host:true` rows (ollama) have no container to restart
+and say so instead of pretending to act.
 
 ### Note on Prometheus
 
