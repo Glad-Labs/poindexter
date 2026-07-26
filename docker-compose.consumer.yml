@@ -766,9 +766,18 @@ services:
     ports:
       - "8011:8000"
     environment:
-      TTS_DEVICE: "cuda"
-      # Bounds torch's CPU thread pool if it ever falls back to TTS_DEVICE=cpu.
-      OMP_NUM_THREADS: "8"
+      # CPU by default (2026-07-26). This stack targets 8-16 GB VRAM, where a
+      # ~3.5 GB always-resident TTS model competes directly with image-gen
+      # for the little VRAM there is — and narration is a background batch
+      # step nothing waits on, so trading wall-clock for VRAM is the right
+      # call here even more than on the operator box. Set
+      # CHATTERBOX_TTS_DEVICE=cuda if you have headroom. Cost is roughly
+      # RTF 3-7x (a 5-min episode takes ~17-36 min depending on core count).
+      TTS_DEVICE: "${CHATTERBOX_TTS_DEVICE:-cpu}"
+      # Torch CPU thread pool. Conservative default for consumer core counts;
+      # raise it (and `cpus` below, in step) on a bigger box — measured
+      # scaling is real: 8 threads = RTF 7.08x, 32 = 3.26x.
+      OMP_NUM_THREADS: "${CHATTERBOX_CPU_THREADS:-8}"
       # No CUDA_VISIBLE_DEVICES here on purpose — do NOT re-add a "belt and
       # suspenders" pin. The device_ids reservation below is the single
       # source of GPU selection. On the nvidia-container-toolkit runtime
@@ -793,10 +802,11 @@ services:
     deploy:
       resources:
         limits:
-          # Hard cap so a CPU-only run (no spare VRAM) can't saturate the VM's
-          # vCPUs and starve the rest of the stack. Harmless on the GPU path;
-          # tune down on low-core hosts.
-          cpus: "8"
+          # Hard cap so a CPU run can't saturate every core and starve the rest
+          # of the stack. Now the PRIMARY path (TTS_DEVICE=cpu above), so keep
+          # this and OMP_NUM_THREADS in agreement — raising it past the thread
+          # count buys nothing; tune down on low-core hosts.
+          cpus: "${CHATTERBOX_CPU_LIMIT:-8}"
         reservations:
           devices:
             - driver: nvidia
