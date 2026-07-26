@@ -112,6 +112,17 @@ function App() {
   );
   const services = servicesR.data || PX.services;
 
+  // GPU scheduler queue (poindexter#914 P0) — holder + waiters + hold stats
+  // for the GPU panel's "holder / waiting" strip. 10s: queue movement is
+  // operator-watchable but not sub-second.
+  const GPU_QUEUE_EMPTY = { holder: null, waiters: [], stats: [] };
+  const gpuQueueR = window.PXR.usePolledResource(
+    () =>
+      PX.api.isLive() ? PX.api.gpuQueue() : Promise.resolve(GPU_QUEUE_EMPTY),
+    { intervalMs: 10_000, key: 'gpuQueue' }
+  );
+  const gpuQueue = gpuQueueR.data || GPU_QUEUE_EMPTY;
+
   const costR = window.PXR.usePolledResource(
     () => {
       if (!PX.api.isLive()) return Promise.resolve(PX.cost);
@@ -1672,7 +1683,11 @@ function App() {
                 <NewsletterPanel newsletter={newsletter} fresh={newsletterR} />
               </div>
               <div id="sec-gpu">
-                <GpuHud gpu={gpu} onOpen={() => open('gpu', gpu)} />
+                <GpuHud
+                  gpu={gpu}
+                  queue={gpuQueue}
+                  onOpen={() => open('gpu', gpu)}
+                />
               </div>
               <div id="sec-media">
                 <MediaPanel

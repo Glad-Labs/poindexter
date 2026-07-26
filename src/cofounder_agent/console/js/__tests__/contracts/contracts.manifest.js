@@ -98,6 +98,13 @@ module.exports = [
     openapi: { path: '/api/metrics/costs/budget', method: 'get' },
   },
   {
+    // GPU scheduler observable state (poindexter#914 P0) — the GpuHud
+    // "Scheduler" strip's read.
+    name: 'gpuQueue',
+    invoke: (api) => api.gpuQueue(),
+    request: { method: 'GET', path: '/api/gpu/queue' },
+  },
+  {
     name: 'newsletter',
     invoke: (api) => api.newsletter(),
     request: { method: 'GET', path: '/api/newsletter/stats' },

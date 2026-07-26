@@ -88,6 +88,11 @@ logger = get_logger(__name__)
 # serialization while making same-chain nesting reentrant.
 _gpu_session_active: ContextVar[bool] = ContextVar("gpu_session_active", default=False)
 
+# Strong references to in-flight gpu_lease_stats capture tasks (P0,
+# poindexter#914). asyncio only weakly references scheduled tasks; without
+# this set a capture task can be garbage-collected before it runs.
+_stats_capture_tasks: set = set()
+
 # Process-wide empty-SiteConfig fallback (#272 capstone). When no
 # AppContainer has been registered (CLI early paths, import time, tests
 # that never bootstrap), ``_sc()`` returns this empty instance — behaving
@@ -552,6 +557,7 @@ class GPUScheduler:
         await self._wait_for_gaming_clear()
 
         waited = False
+        queue_row_id: str | None = None
         if self._lock.locked():
             logger.info(
                 "GPU busy — waiting",
@@ -560,58 +566,87 @@ class GPUScheduler:
                 current_model=self._current_model,
             )
             waited = True
+            # GPU-scheduler P0 (poindexter#914): mirror this waiter into the
+            # gpu_queue table so the console/Grafana can show the queue
+            # cross-process. Contended branch only — the uncontended fast
+            # path stays zero-I/O. Best-effort: enqueue returns None on any
+            # failure and the wait proceeds regardless. (pg-advisory-stage
+            # waits are not mirrored in P0 — in practice all observed
+            # contention is in-process within prefect-worker; revisit with
+            # the P4 lease-table gate if cross-process waits become common.)
+            try:
+                from services.gpu_queue_mirror import enqueue as _queue_enqueue
+
+                queue_row_id = await _queue_enqueue(owner, model=model, phase=phase)
+            except Exception:
+                # silent-ok: mirroring is observability — the wait itself is
+                # untouched; the orphan reap covers anything half-written.
+                queue_row_id = None
 
         # poindexter#807 — bounded acquisition. An unbounded wait here let a
         # graph node block forever behind a wedged holder; the brain probe
         # then force-crashed the whole flow run and the sweep requeued the
         # task into the same wall (an invisible crash→requeue loop). Timing
         # out raises a typed error the caller can handle instead.
-        acquire_timeout = _cfg_int(
-            "gpu_lock_acquire_timeout_seconds", _DEFAULT_LOCK_ACQUIRE_TIMEOUT_S
-        )
-        acquire_started = time.monotonic()
+        # The outer try/finally dequeues the P0 queue-mirror row on EVERY
+        # wait outcome — acquire, timeout, or cancellation (poindexter#914).
+        try:
+            acquire_timeout = _cfg_int(
+                "gpu_lock_acquire_timeout_seconds", _DEFAULT_LOCK_ACQUIRE_TIMEOUT_S
+            )
+            acquire_started = time.monotonic()
 
-        # Acquire in-process lock first (fast path for same-process callers)
-        if acquire_timeout > 0:
+            # Acquire in-process lock first (fast path for same-process callers)
+            if acquire_timeout > 0:
+                try:
+                    await asyncio.wait_for(self._lock.acquire(), timeout=acquire_timeout)
+                except (TimeoutError, asyncio.TimeoutError):
+                    self._emit_lock_timeout_finding(
+                        owner=owner,
+                        stage="in_process",
+                        timeout_s=acquire_timeout,
+                        holder=self._current_owner,
+                    )
+                    raise GpuLockTimeoutError(
+                        f"gpu.lock({owner!r}) timed out after {acquire_timeout}s "
+                        f"waiting for in-process holder "
+                        f"{self._current_owner!r} ({self._current_model!r})"
+                    ) from None
+            else:
+                await self._lock.acquire()
+
+            # Then acquire the cross-process pg advisory lock so a second
+            # container blocks here until we release. Spend whatever remains of
+            # the acquire budget (floor 1s so a slow in-process wait can't turn
+            # the pg step into an instant failure).
+            pg_timeout: float | None = None
+            if acquire_timeout > 0:
+                pg_timeout = max(
+                    acquire_timeout - (time.monotonic() - acquire_started), 1.0
+                )
             try:
-                await asyncio.wait_for(self._lock.acquire(), timeout=acquire_timeout)
-            except (TimeoutError, asyncio.TimeoutError):
+                await self._acquire_pg_advisory_lock(timeout_s=pg_timeout)
+            except GpuLockTimeoutError:
+                # Never hold the in-process lock after a failed acquire — that
+                # would wedge every later caller in THIS process too.
+                self._lock.release()
                 self._emit_lock_timeout_finding(
                     owner=owner,
-                    stage="in_process",
+                    stage="pg_advisory",
                     timeout_s=acquire_timeout,
-                    holder=self._current_owner,
+                    holder=None,
                 )
-                raise GpuLockTimeoutError(
-                    f"gpu.lock({owner!r}) timed out after {acquire_timeout}s "
-                    f"waiting for in-process holder "
-                    f"{self._current_owner!r} ({self._current_model!r})"
-                ) from None
-        else:
-            await self._lock.acquire()
+                raise
+        finally:
+            if queue_row_id is not None:
+                try:
+                    from services.gpu_queue_mirror import dequeue as _queue_dequeue
 
-        # Then acquire the cross-process pg advisory lock so a second
-        # container blocks here until we release. Spend whatever remains of
-        # the acquire budget (floor 1s so a slow in-process wait can't turn
-        # the pg step into an instant failure).
-        pg_timeout: float | None = None
-        if acquire_timeout > 0:
-            pg_timeout = max(
-                acquire_timeout - (time.monotonic() - acquire_started), 1.0
-            )
-        try:
-            await self._acquire_pg_advisory_lock(timeout_s=pg_timeout)
-        except GpuLockTimeoutError:
-            # Never hold the in-process lock after a failed acquire — that
-            # would wedge every later caller in THIS process too.
-            self._lock.release()
-            self._emit_lock_timeout_finding(
-                owner=owner,
-                stage="pg_advisory",
-                timeout_s=acquire_timeout,
-                holder=None,
-            )
-            raise
+                    await _queue_dequeue(queue_row_id)
+                except Exception:
+                    # silent-ok: a leaked row is reaped by the orphan horizon;
+                    # the wait outcome itself must propagate untouched.
+                    logger.debug("gpu_queue mirror dequeue failed")
 
         wait_msg = " (waited)" if waited else ""
         logger.info("GPU acquired%s", wait_msg, owner=owner, model=model)
@@ -643,6 +678,27 @@ class GPUScheduler:
             await self._release_pg_advisory_lock()
             self._lock.release()
             _gpu_session_active.reset(token)
+            # GPU-scheduler P0 (poindexter#914): fold this hold's duration
+            # into the per-(owner, phase) rolling stats that feed the P1
+            # admission ETA. Fires on EVERY release — including task-less
+            # background jobs, which gpu_task_sessions below deliberately
+            # skips — and observability is unconditional (never flag-gated).
+            # Fire-and-forget with a strong reference held in
+            # _stats_capture_tasks: a bare create_task can be GC'd mid-flight
+            # ("Task was destroyed but it is pending"), and the write must
+            # never extend the release path's latency, let alone gate it.
+            try:
+                import services.gpu_lease_stats as _lease_stats
+
+                _t = asyncio.get_running_loop().create_task(
+                    _lease_stats.record_release(owner, phase or owner, duration * 1000.0)
+                )
+                _stats_capture_tasks.add(_t)
+                _t.add_done_callback(_stats_capture_tasks.discard)
+            except Exception:
+                # silent-ok: observability capture must never gate the lock
+                # lifecycle; a missed sample only delays ETA convergence.
+                logger.debug("gpu_lease_stats capture scheduling failed")
             # internal tracker Phase 3.A3 — record the session so model/phase
             # compute economics are queryable per task. Best-effort; a
             # write failure never breaks the GPU lock lifecycle.

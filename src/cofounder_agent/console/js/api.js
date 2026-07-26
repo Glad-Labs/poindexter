@@ -1509,6 +1509,18 @@
     // utilHist/tempHist seed FLAT at the current real reading; the GPU poll in
     // app.jsx shifts real samples in each tick.
     //
+    // GPU scheduler queue (poindexter#914 P0): holder + waiters + rolling
+    // hold-duration stats from the worker's GET /api/gpu/queue. Feeds the
+    // GPU panel's "holder / waiting" strip. Mock + empty: honest-empty —
+    // never a fabricated queue.
+    gpuQueue() {
+      const empty = { holder: null, waiters: [], stats: [] };
+      return pick(
+        () => http('GET', '/api/gpu/queue'),
+        () => pair(empty, empty)
+      );
+    },
+
     // Per-card by construction (poindexter#921). These used to be promScalar,
     // which takes result[0] — fine while the exporter published one card, but
     // once it published both (poindexter#919) result[0] became "whichever series

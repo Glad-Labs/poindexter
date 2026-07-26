@@ -140,8 +140,10 @@ class TestRouteManifestStructure:
         activity_router (running work + recent trail at /api/activity).
         Updated 2026-07-26 (poindexter#909): added service_restart_router
         (operator-triggered container restart intent queue).
+        Updated 2026-07-26 (poindexter#914 P0): added gpu_queue_router
+        (GPU scheduler holder/waiters/stats snapshot at /api/gpu/queue).
         """
-        assert len(_WORKER_ROUTES) == 36
+        assert len(_WORKER_ROUTES) == 37
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

@@ -378,9 +378,10 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
 // correct on a 1-GPU host. The title no longer hardcodes a model — the real
 // name isn't in nvidia_gpu_*, and asserting one card's model over a rig with
 // two different cards is exactly the fabrication we avoid elsewhere.
-function GpuHud({ gpu, onOpen }) {
+function GpuHud({ gpu, queue, onOpen }) {
   const cards = gpu.gpus && gpu.gpus.length ? gpu.gpus : [gpu];
   const multi = cards.length > 1;
+  const q = queue || { holder: null, waiters: [], stats: [] };
   return (
     <Panel
       icon="gpu"
@@ -436,6 +437,39 @@ function GpuHud({ gpu, onOpen }) {
           </div>
         </div>
       ))}
+      {/* GPU-scheduler queue strip (poindexter#914 P0): who holds the lock,
+          who's waiting. Live data only — honest "lock free" when idle, never
+          fabricated waiters. */}
+      <div
+        className="mono"
+        style={{
+          padding: '6px 12px',
+          borderTop: '1px solid var(--gl-hairline)',
+          fontSize: 10,
+        }}
+      >
+        <div className="section-label" style={{ marginBottom: 2 }}>
+          Scheduler
+        </div>
+        {q.holder ? (
+          <div>
+            <span className="c-cyan">HOLDER</span> {q.holder.owner}
+            {q.holder.model ? ` · ${q.holder.model}` : ''} ·{' '}
+            {Math.round(q.holder.held_for_s)}s
+          </div>
+        ) : (
+          <div className="c-dim">lock free · nothing holding the GPU</div>
+        )}
+        {(q.waiters || []).slice(0, 3).map((w, i) => (
+          <div key={i} className="c-amber">
+            → waiting {w.owner}
+            {w.phase ? ` · ${w.phase}` : ''} · {Math.round(w.waiting_s)}s
+          </div>
+        ))}
+        {(q.waiters || []).length > 3 && (
+          <div className="c-dim">+{q.waiters.length - 3} more waiting</div>
+        )}
+      </div>
     </Panel>
   );
 }

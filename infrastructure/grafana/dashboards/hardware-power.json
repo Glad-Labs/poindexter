@@ -1684,6 +1684,141 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 108
+      },
+      "id": 69,
+      "panels": [],
+      "title": "GPU Scheduler (poindexter#914 P0)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "CHARTER: live GPU-lock wait-queue depth (gpu_queue mirror rows). >0 sustained = the scheduler is arbitrating contention; pair with the wait-p90 table to judge whether waits are healthy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 109
+      },
+      "id": 70,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*)::int AS \"waiters\" FROM gpu_queue",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU queue depth (now)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "CHARTER: rolling GPU-lock hold durations per (owner, phase) from gpu_lease_stats \u2014 the same p50/p90 the P1 admission ETA uses. Sanity-check p90 against known render/writer durations during the soak.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 6,
+        "y": 109
+      },
+      "id": 71,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT owner, phase, samples, round(ewma_ms::numeric) AS ewma_ms, round(p50_ms::numeric) AS p50_ms, round(p90_ms::numeric) AS p90_ms, updated_at FROM gpu_lease_stats ORDER BY p90_ms DESC NULLS LAST LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU hold durations \u2014 p50/p90 by owner\u00b7phase",
+      "type": "table"
     }
   ],
   "description": "CHARTER: GPU/PSU/wall power + host-memory pressure \u2014 thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."

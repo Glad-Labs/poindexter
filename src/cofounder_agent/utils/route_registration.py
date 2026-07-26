@@ -91,6 +91,7 @@ _WORKER_ROUTES = [
     ("routes.voice_routes", "router", "voice_router", "voice agent web client (LiveKit web join page, poindexter#389)"),
     ("routes.module_probes_routes", "router", "module_probes_router", "Module v1 brain-probe inventory (/api/modules/probes, #239)"),
     ("routes.service_restart_routes", "router", "service_restart_router", "operator-triggered container restart intent queue (/api/services/*/restart, #909)"),
+    ("routes.gpu_queue_routes", "router", "gpu_queue_router", "GPU scheduler holder/waiters/stats snapshot (/api/gpu/queue, #914 P0)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest
