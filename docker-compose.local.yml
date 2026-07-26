@@ -1232,25 +1232,28 @@ services:
     ports:
       - "8011:8000"
     environment:
-      # CPU, deliberately (2026-07-26). Chatterbox is the ONLY GPU tenant here
-      # that isn't latency-sensitive — narration is a background batch step
-      # nothing waits on — and this host has no VRAM to spare: GPU 0 (5090)
-      # runs the writer + image-gen + wan hero renders and was measured at
-      # 107 MiB free mid-pipeline (Chatterbox OOM'd trying to load its own
-      # model there, and got SIGKILLed mid-run, silently producing no
-      # narration); GPU 1 (3090) is permanently ~22.9/24 GB held by
-      # ollama-vision's never-unload judge. Measured cost of moving to CPU:
-      # RTF 3.26x at 32 threads (~17 min for a 5-min episode) vs ~0.4x on
-      # GPU (~2 min) — quality is bit-identical, only wall-clock changes.
-      # Flip back to "cuda" if a card ever has real headroom; the sidecar
-      # also has no idle-unload, so a GPU run squats VRAM through the whole
-      # subsequent video render (see Glad-Labs/poindexter#907).
-      TTS_DEVICE: "${CHATTERBOX_TTS_DEVICE:-cpu}"
-      # Torch CPU thread pool. Measured scaling on a 32-core host:
-      # 8 threads = RTF 7.08x, 16 = 5.50x, 32 = 3.26x — real gains, so the
-      # old value of 8 (sized when this was a GPU-first sidecar) left most
-      # of the box idle. Keep this and the `cpus` limit below in agreement.
-      OMP_NUM_THREADS: "${CHATTERBOX_CPU_THREADS:-24}"
+      # GPU. A brief 2026-07-26 experiment defaulted this to CPU to dodge
+      # VRAM contention; it was REVERTED because CPU cannot finish a real
+      # episode. Measured end-to-end, not extrapolated: a full ~5,680-char
+      # script needs ~40 min on CPU, but the client abandons the request at
+      # plugin.tts_provider.chatterbox.timeout_s (600s) and the voice-pool
+      # loop retries — 5 identical attempts exactly 600s apart, 0 completed,
+      # and the sidecar keeps churning on each orphaned request (no
+      # cancellation), so retries STACK load instead of replacing it. CPU is
+      # only viable with timeout_s >= 3600 AND tolerance for ~40 min/episode;
+      # GPU is ~2 min. (Per-sentence CPU RTF of 3.26x @32 threads is NOT
+      # representative — per-chunk overhead across a real script makes it
+      # ~8x. Don't size this from a one-sentence benchmark.)
+      #
+      # KNOWN GAP (tracked separately): this sidecar has no idle-unload, so
+      # unlike wan-server (WAN_IDLE_TIMEOUT_S) and image-gen it holds VRAM
+      # after narration and squats through the whole subsequent video
+      # render. That's the real contention fix. See Glad-Labs/poindexter#907.
+      TTS_DEVICE: "${CHATTERBOX_TTS_DEVICE:-cuda}"
+      # Torch CPU thread pool — only load-bearing on a TTS_DEVICE=cpu run.
+      # Measured scaling on a 32-core host: 8 threads = RTF 7.08x per
+      # sentence, 16 = 5.50x, 32 = 3.26x. Keep in agreement with `cpus`.
+      OMP_NUM_THREADS: "${CHATTERBOX_CPU_THREADS:-8}"
       # No CUDA_VISIBLE_DEVICES here on purpose — do NOT re-add a "belt and
       # suspenders" pin. The device_ids reservation below is the single
       # source of GPU selection. On the nvidia-container-toolkit runtime
@@ -1275,14 +1278,12 @@ services:
     deploy:
       resources:
         limits:
-          # Hard cap so a CPU-only run can't saturate every core and starve the
-          # rest of the stack (torch CPU inference will otherwise grab all of
-          # them). Now the PRIMARY path (TTS_DEVICE=cpu above), so this is
-          # sized to leave headroom rather than to be a GPU-path no-op:
-          # 24 of 32 cores, matching OMP_NUM_THREADS. Raising it past the
-          # thread count buys nothing; lowering it slows narration roughly
-          # linearly (8 cores measured ~2.2x slower than 32).
-          cpus: "${CHATTERBOX_CPU_LIMIT:-24}"
+          # Hard cap so a CPU fallback run can't saturate every core and
+          # starve the rest of the stack (torch CPU inference will otherwise
+          # grab all of them). Harmless on the GPU path, which is the
+          # default. Keep in agreement with OMP_NUM_THREADS — raising it
+          # past the thread count buys nothing.
+          cpus: "${CHATTERBOX_CPU_LIMIT:-8}"
         reservations:
           devices:
             - driver: nvidia
