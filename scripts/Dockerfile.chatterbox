@@ -1,13 +1,41 @@
 # TTS bake-off sidecar — ResembleAI Chatterbox (MIT), OpenAI-compatible shim.
 # Build/verify is hardware-gated (GPU + first-run model download):
 #   docker compose --profile tts-hq up -d chatterbox
-FROM python:3.11-slim
+#
+# Base image pinned to match Dockerfile.wan's Blackwell-compatible build
+# (2026-07-26). chatterbox-tts==0.1.7 hard-pins torch==2.6.0/torchaudio==2.6.0
+# for python_version<"3.14" — but the SAME release floors torch>=2.9.0 for
+# python_version>="3.14", which only makes sense if their code doesn't
+# actually require exactly 2.6.0; the <3.14 pin reads as an untouched legacy
+# constraint, not a real technical requirement. Confirmed live: torch 2.6.0
+# genuinely cannot init on an RTX 5090 ("CUDA capability sm_120 is not
+# compatible with the current PyTorch installation"), while this base image's
+# torch 2.8.0+cu128 is proven working on this exact GPU via wan-server.
+# --no-deps + explicit reinstall of every OTHER declared dependency (every
+# chatterbox-tts requires_dist entry except torch/torchaudio, which the base
+# image already satisfies) sidesteps the stale pin without disabling
+# dependency resolution for anything that still needs it.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg wget && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir \
-    chatterbox-tts fastapi "uvicorn[standard]" soundfile
+RUN pip install --no-cache-dir --no-deps chatterbox-tts==0.1.7 && \
+    pip install --no-cache-dir \
+    "numpy>=1.24.0,<2.0.0" \
+    librosa==0.11.0 \
+    s3tokenizer \
+    transformers==5.2.0 \
+    diffusers==0.29.0 \
+    "resemble-perth>=1.0.0" \
+    conformer==0.3.2 \
+    safetensors==0.5.3 \
+    spacy-pkuseg \
+    pykakasi==2.3.0 \
+    gradio==6.8.0 \
+    pyloudnorm \
+    omegaconf \
+    fastapi "uvicorn[standard]" soundfile
 
 RUN useradd -m appuser
 USER appuser

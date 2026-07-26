@@ -769,13 +769,20 @@ services:
       TTS_DEVICE: "cuda"
       # Bounds torch's CPU thread pool if it ever falls back to TTS_DEVICE=cpu.
       OMP_NUM_THREADS: "8"
-      # Belt-and-suspenders GPU pin alongside the device_ids reservation below:
-      # under Docker Desktop/WSL2 GPU passthrough, device_ids doesn't actually
-      # mask nvidia-smi visibility inside the container (both GPUs stay
-      # visible), so CUDA_VISIBLE_DEVICES is what actually restricts which
-      # GPU torch initializes on — the CUDA runtime itself honors it
-      # regardless of container-level device filtering.
-      CUDA_VISIBLE_DEVICES: "${CHATTERBOX_GPU_DEVICE_ID:-0}"
+      # No CUDA_VISIBLE_DEVICES here on purpose — do NOT re-add a "belt and
+      # suspenders" pin. The device_ids reservation below is the single
+      # source of GPU selection. On the nvidia-container-toolkit runtime
+      # (native Linux — Poindexter's primary supported platform), device_ids
+      # DOES restrict in-container visibility to just the selected GPU,
+      # which is then renumbered to index 0 inside the container. Also
+      # setting CUDA_VISIBLE_DEVICES to the HOST device number (e.g. "1")
+      # then asks CUDA for a second, nonexistent GPU inside a
+      # single-GPU-visible container, and torch reports
+      # "No CUDA GPUs are available" — confirmed live 2026-07-26 (the
+      # chatterbox sidecar silently 500'd every synthesis call this way).
+      # A legacy Docker Desktop/WSL2 host where device_ids doesn't actually
+      # filter (both GPUs stay visible) would need this pin back — override
+      # via a host-specific .env if that setup recurs.
     volumes:
       - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
       # Optional voice-clone reference(s). Empty/absent dir = harmless no-op
@@ -793,12 +800,14 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # Defaults to GPU 0 (fine for single-GPU hosts). On a multi-GPU
-              # host where GPU 0 is newer than the installed torch build
-              # supports kernels for, model load fails with "CUDA error: no
-              # kernel image is available for execution on the device" —
-              # override CHATTERBOX_GPU_DEVICE_ID in bootstrap.toml to pin a
-              # compatible GPU instead (see scripts/tts_sidecars/assets/README.md).
+              # Defaults to GPU 0 (fine for single-GPU hosts, and the right
+              # choice on a multi-GPU host too — Dockerfile.chatterbox pins a
+              # Blackwell-compatible torch/CUDA build as of 2026-07-26, same
+              # as Dockerfile.wan). Override CHATTERBOX_GPU_DEVICE_ID only if
+              # you have a specific reason to pin elsewhere (e.g. GPU 0 is
+              # needed for something else and there's spare room on a second
+              # card) — it no longer exists to work around a kernel-image
+              # incompatibility; that was fixed at the image layer, not here.
               device_ids: ["${CHATTERBOX_GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
