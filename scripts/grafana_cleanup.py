@@ -23,7 +23,6 @@ panel id and check existence first).
 """
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 
@@ -403,7 +402,7 @@ def fix_observability(d: dict) -> dict:
     # The 'monitor_*' metric family doesn't exist in Prometheus right now.
     # Panels: 8, 9, 35, 36, 37, 38
     delete_ids = {8, 9, 35, 36, 37, 38}
-    removed = remove_panels_by_id(d, delete_ids)
+    remove_panels_by_id(d, delete_ids)
     return d
 
 

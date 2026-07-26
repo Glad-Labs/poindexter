@@ -46,7 +46,6 @@ if str(_SERVICES_PARENT) not in sys.path:
     sys.path.insert(0, str(_SERVICES_PARENT))
 
 from services.alt_text import (  # noqa: E402  (sys.path munge above)
-    iter_img_alts,
     strip_tokens_from_img_tags,
 )
 

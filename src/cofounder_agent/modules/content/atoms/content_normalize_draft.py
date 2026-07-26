@@ -106,8 +106,12 @@ def ensure_blank_line_before_lists(content: str) -> str:
 # sibling atoms, so the logic lives in a shared ``_``-library now. The names
 # below stay re-exported for existing imports/tests.
 from modules.content.atoms._scaffold_helpers import (  # noqa: E402
-    FIRST_HEADING_RE as _FIRST_HEADING_RE,
-    SCAFFOLD_TELL_RE as _SCAFFOLD_TELL_RE,
+    # Re-exported for backcompat only (see note above) — not referenced in this
+    # module, so F401 is expected here rather than a signal of dead logic. The
+    # live strip is ``strip_leaked_planning_scaffold`` below; content_validator
+    # documents the strip-here/detect-there pairing against these names.
+    FIRST_HEADING_RE as _FIRST_HEADING_RE,  # noqa: F401
+    SCAFFOLD_TELL_RE as _SCAFFOLD_TELL_RE,  # noqa: F401
     strip_leaked_planning_scaffold,
 )
 

@@ -714,7 +714,7 @@ def _post_edit(path: str, payload: dict[str, Any], timeout_key: str | None = Non
                 conn = await asyncpg.connect(resolve_dsn())
                 try:
                     val = await conn.fetchval(
-                        "SELECT value FROM app_settings WHERE key = $1 AND is_active = true",  # noqa: adapter-ok bootstrap read — CLI resolves timeout before API client exists, same pattern as credential resolution
+                        "SELECT value FROM app_settings WHERE key = $1 AND is_active = true",  # adapter-ok: bootstrap read — CLI resolves timeout before API client exists, same pattern as credential resolution
                         timeout_key,
                     )
                     timeout = float(val or "30")

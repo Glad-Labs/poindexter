@@ -40,7 +40,6 @@ import sys
 import tempfile
 import time
 import wave
-from collections import deque
 from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
@@ -881,7 +880,7 @@ async def on_ready():
     if VOICE_CHANNEL_ID:
         channel = bot.get_channel(VOICE_CHANNEL_ID)
         if channel and isinstance(channel, discord.VoiceChannel):
-            vc = await channel.connect()
+            await channel.connect()
             print(f"[BOT] Auto-joined voice channel: {channel.name}")
 
 

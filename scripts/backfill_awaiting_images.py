@@ -26,7 +26,6 @@ import logging
 import os
 import sys
 import tempfile
-import uuid
 from pathlib import Path
 
 import asyncpg

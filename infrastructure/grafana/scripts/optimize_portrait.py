@@ -1,5 +1,5 @@
 """Optimize Grafana dashboards for 960x1080 portrait monitor and take validation screenshots."""
-import json, asyncio, urllib.request
+import json, asyncio, pathlib, urllib.request
 from playwright.async_api import async_playwright
 
 GPU_LAYOUT = {
@@ -112,11 +112,10 @@ def write_local_file(filepath, layout, is_gpu=False):
 
 
 async def main():
-    # Resolve the repo root from this file's location (the script
-# lives at infrastructure/grafana/scripts/optimize_portrait.py;
-# repo root is three parents up).
-import os, pathlib
-base = str(pathlib.Path(__file__).resolve().parents[3])
+    # Resolve the repo root from this file's location (the script lives at
+    # infrastructure/grafana/scripts/optimize_portrait.py; repo root is three
+    # parents up).
+    base = str(pathlib.Path(__file__).resolve().parents[3])
     ss_dir = f"{base}/infrastructure/grafana/screenshots"
     db_dir = f"{base}/infrastructure/grafana/dashboards"
 

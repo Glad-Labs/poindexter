@@ -197,7 +197,9 @@ async def test_feed_fetch_failure_limits_sweep_to_images():
     r2 = _fake_r2(objs)
     r2.get_object_text = AsyncMock(return_value=None)
     with patch(_R2, MagicMock(return_value=r2)):
-        result = await MediaOrphanSweepJob().run(pool, _cfg(media_orphan_sweep_armed="true"))
+        # Result unused — the assertions below are about which prefixes were
+        # swept (list_objects/delete_object), not the JobResult payload.
+        await MediaOrphanSweepJob().run(pool, _cfg(media_orphan_sweep_armed="true"))
     # video/ was not swept, so the orphan under it is untouched.
     r2.list_objects.assert_awaited_once_with("images/")
     r2.delete_object.assert_not_awaited()

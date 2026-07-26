@@ -49,7 +49,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 # Make the project ``utils`` package importable when run from repo root.
 _HERE = os.path.dirname(os.path.abspath(__file__))

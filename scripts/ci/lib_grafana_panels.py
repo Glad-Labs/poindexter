@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Macro substitutions — Grafana resolves these per-dashboard at render time;

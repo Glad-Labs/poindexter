@@ -160,7 +160,10 @@ class TestRegenLegThreadsFullHandles:
             with patch("poindexter.cli.pipeline._fetch_paused_row",
                        new=AsyncMock(return_value=_preview_gate_row())), \
                  patch.object(_FakeDatabaseService, "__init__", _capturing_init):
-                runner_cls = _handle_patches(stack)
+                # Return value unused here — this test asserts on the CLI exit
+                # code and the real DatabaseService teardown, not on the state
+                # handed to ``.run``. The call is still needed for its patches.
+                _handle_patches(stack)
                 result = CliRunner().invoke(regen_command, [_TID, "--images"])
 
         assert result.exit_code == 0, result.output
