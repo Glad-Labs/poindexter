@@ -506,20 +506,11 @@
       probe: 'ready ✓',
       img: 'louislam/uptime-kuma:1',
     },
-    {
-      name: 'livekit',
-      container: 'poindexter-livekit',
-      tailnet: true,
-      port: 7880,
-      status: 'ok',
-      metric: '0 rooms',
-      sub: 'voice · tailnet',
-      uptime: '6d 4h',
-      cpu: 1,
-      mem: 180,
-      probe: 'ready ✓',
-      img: 'livekit/livekit-server:v1.7',
-    },
+    // NOTE: the voice-room tiles (livekit + voice-agent-livekit) are absent —
+    // both sit behind the opt-in `voice` compose profile (off on the operator
+    // stack since 2026-07-26). A roster tile for an intentionally-stopped
+    // container renders a permanent "DOWN" in Service Health, which is alarm
+    // noise, not signal. Re-add the two tiles if the voice profile returns.
     {
       name: 'speaches',
       container: 'poindexter-speaches',
@@ -554,7 +545,7 @@
       port: 8011,
       status: 'ok',
       metric: 'TTS idle',
-      sub: 'TTS bake-off · opt-in',
+      sub: 'podcast/video TTS',
       uptime: '1d 2h',
       cpu: 1,
       mem: 900,
@@ -601,20 +592,8 @@
       probe: 'ready ✓',
       img: 'myoung34/github-runner:latest',
     },
-    {
-      name: 'voice-agent-livekit',
-      container: 'poindexter-voice-agent-livekit',
-      tailnet: true,
-      port: null,
-      status: 'ok',
-      metric: '0 rooms',
-      sub: 'LiveKit voice agent',
-      uptime: '2d 11h',
-      cpu: 2,
-      mem: 340,
-      probe: 'ready ✓',
-      img: 'poindexter-voice-agent:latest',
-    },
+    // (voice-agent-livekit tile removed with the voice profile — see the
+    // livekit note above.)
     // ── Backups ──────────────────────────────────────────────
     {
       name: 'backup-hourly',

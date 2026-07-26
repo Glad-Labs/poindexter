@@ -2132,6 +2132,11 @@ services:
   livekit:
     image: livekit/livekit-server:v1.11.0
     container_name: poindexter-livekit
+    # Voice-room infra — only meaningful alongside voice-agent-livekit, so it
+    # shares the same opt-in profile (2026-07-26: voice off on the operator
+    # stack — unused + unreachable since the migration; add "voice" back to
+    # bootstrap compose_profiles to re-enable the room).
+    profiles: ["voice"]
     restart: unless-stopped
     # --node-ip pins what LiveKit advertises to clients in the SDP
     # answer. Without it, --dev auto-detects via STUN and picks the
