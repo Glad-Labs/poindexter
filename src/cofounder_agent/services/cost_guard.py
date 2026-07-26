@@ -26,9 +26,14 @@ policy. Callers catch :class:`CostGuardExhausted` and decide what to do
 
 Settings (read from app_settings via ``SiteConfig``):
 
-- ``daily_spend_limit_usd`` (default ``2.00``)
-- ``monthly_spend_limit_usd`` (default ``100.00``)
-- ``cost_alert_threshold_pct`` (default ``80.0``)
+- ``daily_spend_limit_usd`` (default ``2.00``) — API axis, hard cap
+- ``monthly_spend_limit_usd`` (default ``100.00``) — API axis, hard cap
+- ``cost_throttle_daily_budget_usd`` (default ``3.00``) — TOTAL axis
+  (paid API + measured electricity). Owned by ``services.spend_throttle``;
+  the soft alert here rents it as the ceiling for its total-axis check so
+  both consumers of the total axis measure against the same budget.
+- ``cost_alert_threshold_pct`` (default ``80.0``) — soft-alert trip point,
+  as a percentage of the TOTAL-axis budget above
 
 Per-model rate table lives in ``services.cost_lookup`` (LiteLLM-backed
 post-#199, 2,600+ provider/model combos). This module looks up by
@@ -238,7 +243,16 @@ class CostGuard:
 
         - the hard cap keys on ``api_usd`` (genuinely-paid cloud — local rows
           are ``$0`` by the P1 write invariant, electricity excluded by axis),
-        - the soft alert keys on ``total_usd`` (both axes).
+          measured against the API-axis caps ``daily_spend_limit_usd`` /
+          ``monthly_spend_limit_usd``,
+        - the soft alert keys on ``total_usd`` (both axes), measured against the
+          TOTAL-axis ceiling ``cost_throttle_daily_budget_usd``.
+
+        Each quantity is compared to its OWN axis's budget. Measuring
+        ``total_usd`` against an API-axis cap conflates the two and reads
+        measured electricity as if it were paid inference — that mismatch is
+        what made the soft alert fire on nearly every day with a paid call
+        (Glad-Labs/poindexter#912).
 
         ``strict=True`` re-raises on a ledger read error so the enforcement path
         fails CLOSED (budget unverifiable → refuse) rather than silently reading
@@ -266,15 +280,16 @@ class CostGuard:
         return (await self._monthly_breakdown(strict=strict)).api_usd
 
     # ------------------------------------------------------------------
-    # Soft alert — both axes, advisory
+    # Soft alert — total axis vs the throttle budget, advisory
     # ------------------------------------------------------------------
 
     def _emit_soft_alert(
         self,
         *,
         daily_total: float,
+        daily_api: float,
         estimate: float,
-        daily_limit: float,
+        api_limit: float,
         provider: str | None = None,
         model: str | None = None,
     ) -> None:
@@ -282,53 +297,91 @@ class CostGuard:
 
         Fires when projected daily **total** spend (paid API + measured
         electricity + this call's estimate) reaches ``cost_alert_threshold_pct``
-        of the daily cap. Keyed on ``total_usd`` — not the api axis the hard gate
-        uses — so combined burn approaching the budget is surfaced early. Emits a
-        ``cost_budget_alert`` finding at ``severity='warn'`` (routine → Discord,
-        not a Telegram page) with a stable ``dedup_key`` so the findings
-        dispatcher can cool it down. Purely advisory: the caller never blocks on
-        it (the hard cap gates on ``api_usd`` separately).
+        of the **total-axis** budget ``cost_throttle_daily_budget_usd``.
+
+        The ceiling is deliberately NOT ``daily_spend_limit_usd``: that key is
+        the API-only hard cap, and measured electricity alone runs most of the
+        way through it before a single paid call happens, so keying the total
+        against it made this alert fire on essentially every day with cloud
+        spend while the enforced axis sat far under its cap
+        (Glad-Labs/poindexter#912). ``cost_throttle_daily_budget_usd`` is the
+        ceiling ``services.spend_throttle`` (P3) already defers new work at, so
+        the alert now warns about crossing the same line the throttle enforces —
+        it is the early signal for that mechanism, not for the hard cap.
+
+        Both axes are named explicitly in the alert so a reader can tell which
+        one moved: API spend against the API cap, total against the throttle
+        budget. Emits a ``cost_budget_alert`` finding at ``severity='warn'``
+        (routine → Discord, not a Telegram page) with a stable ``dedup_key`` so
+        the findings dispatcher can cool it down. Purely advisory: the caller
+        never blocks on it (the hard cap gates on ``api_usd`` separately).
+
+        ``api_limit`` is passed in by the caller (it already read the key for
+        the hard gate) and is used for the API-axis context line only — never
+        as the trip threshold.
         """
-        if daily_limit <= 0:
+        # Total-axis ceiling, rented from spend_throttle. ``<= 0`` disables the
+        # axis, the same escape-hatch convention the throttle itself uses.
+        # Deliberately does NOT consult ``cost_throttle_enabled``: turning the
+        # throttle off stops the deferral, not the observability. Silence this
+        # alert with the budget key, not the throttle's master switch.
+        total_budget = self._limit("cost_throttle_daily_budget_usd", 3.0)
+        if total_budget <= 0:
             return
         alert_pct = self._limit("cost_alert_threshold_pct", 80.0) / 100.0
         projected = daily_total + estimate
-        if projected < daily_limit * alert_pct:
+        if projected < total_budget * alert_pct:
             return
 
-        pct = 100.0 * projected / daily_limit
+        pct = 100.0 * projected / total_budget
+        api_pct = (100.0 * daily_api / api_limit) if api_limit > 0 else 0.0
         suffix = f" (provider={provider} model={model})" if provider else ""
         logger.warning(
-            "[COST_GUARD] approaching daily cap (%.1f%%): total $%.4f + $%.4f "
-            "vs $%.2f%s",
-            pct, daily_total, estimate, daily_limit, suffix,
+            "[COST_GUARD] approaching daily THROTTLE budget (%.1f%%): total "
+            "$%.4f + $%.4f vs $%.2f; API axis $%.4f vs $%.2f cap (%.1f%%)%s",
+            pct, daily_total, estimate, total_budget,
+            daily_api, api_limit, api_pct, suffix,
         )
         emit_finding(
             source="cost_guard",
             kind="cost_budget_alert",
             severity="warn",
             title=(
-                f"daily spend at {pct:.0f}% of cap "
-                f"(${projected:.2f} of ${daily_limit:.2f})"
+                f"daily total spend at {pct:.0f}% of throttle budget "
+                f"(${projected:.2f} of ${total_budget:.2f}); "
+                f"API ${daily_api:.2f} of ${api_limit:.2f}"
             ),
             body=(
                 "## Daily budget alert\n\n"
-                f"Projected daily **total** spend has reached **{pct:.0f}%** of "
-                f"the `${daily_limit:.2f}` daily cap.\n\n"
-                f"- Paid API + measured electricity so far: `${daily_total:.4f}`\n"
+                "Two separate axes, two separate ceilings — this alert is about "
+                "the **total** axis:\n\n"
+                "**Total axis** (paid API + measured electricity) vs the "
+                "throttle budget `cost_throttle_daily_budget_usd`:\n"
+                f"- Spent so far: `${daily_total:.4f}`\n"
                 f"- This call's estimate: `${estimate:.4f}`\n"
-                f"- Projected total: `${projected:.4f}` / `${daily_limit:.2f}`\n\n"
-                "Advisory only — the hard cap gates on the API axis and has NOT "
-                "been exceeded. This both-axes signal surfaces combined burn "
-                "(paid API + measured electricity) approaching the daily budget."
+                f"- Projected: `${projected:.4f}` / `${total_budget:.2f}` "
+                f"(**{pct:.0f}%**)\n\n"
+                "**API axis** (genuinely-paid cloud only) vs the hard cap "
+                "`daily_spend_limit_usd`:\n"
+                f"- Spent so far: `${daily_api:.4f}` / `${api_limit:.2f}` "
+                f"({api_pct:.0f}%)\n\n"
+                "Advisory only — nothing is blocked. The hard cap gates on the "
+                "API axis and has NOT been exceeded. Crossing the total-axis "
+                "budget is what `spend_throttle` acts on: it defers claiming "
+                "NEW pipeline work while in-flight tasks finish. Measured "
+                "electricity accrues whether or not the pipeline runs, so a "
+                "high total with a low API figure means idle draw, not spend."
             ),
             dedup_key="cost_budget_alert:daily",
             extra={
                 "daily_total_usd": round(daily_total, 4),
+                "daily_api_usd": round(daily_api, 4),
                 "estimate_usd": round(estimate, 4),
                 "projected_usd": round(projected, 4),
-                "daily_limit_usd": round(daily_limit, 4),
-                "pct_of_cap": round(pct, 1),
+                "total_budget_usd": round(total_budget, 4),
+                "api_limit_usd": round(api_limit, 4),
+                "pct_of_total_budget": round(pct, 1),
+                "pct_of_api_cap": round(api_pct, 1),
                 "provider": provider,
                 "model": model,
             },
@@ -437,11 +490,13 @@ class CostGuard:
                 limit_usd=daily_limit,
             )
 
-        # Soft alert — both axes via total_usd; advisory (log + finding), never blocks.
+        # Soft alert — total axis (total_usd) against the TOTAL-axis throttle
+        # budget, not the API cap above; advisory (log + finding), never blocks.
         self._emit_soft_alert(
             daily_total=daily_bd.total_usd,
+            daily_api=daily_api,
             estimate=estimate.estimated_usd,
-            daily_limit=daily_limit,
+            api_limit=daily_limit,
         )
 
     async def record(
@@ -801,11 +856,13 @@ class CostGuard:
                 model=model,
             )
 
-        # Soft alert — both axes via total_usd; advisory (log + finding), never blocks.
+        # Soft alert — total axis (total_usd) against the TOTAL-axis throttle
+        # budget, not the API cap above; advisory (log + finding), never blocks.
         self._emit_soft_alert(
             daily_total=daily_bd.total_usd,
+            daily_api=daily_api,
             estimate=estimated,
-            daily_limit=daily_limit,
+            api_limit=daily_limit,
             provider=provider,
             model=model,
         )

@@ -105,7 +105,8 @@ class TestCostGuardEstimate:
 def _make_guard(*, daily: float, monthly: float,
                 daily_limit: float = 2.0,
                 monthly_limit: float = 100.0,
-                daily_electricity: float = 0.0) -> CostGuard:
+                daily_electricity: float = 0.0,
+                total_budget: float = 3.0) -> CostGuard:
     """Build a CostGuard whose spend lookups are mocked deterministically.
 
     The gate reads the ledger's ``SpendBreakdown`` once per window (P2): the
@@ -114,11 +115,18 @@ def _make_guard(*, daily: float, monthly: float,
     ``cost_ledger.get_spend`` boundary — so ``daily`` / ``monthly`` are the
     paid-API axis and ``daily_electricity`` stacks onto the daily total to
     drive the both-axes alert without any paid spend.
+
+    Two ceilings, one per axis, and they are NOT interchangeable:
+    ``daily_limit`` / ``monthly_limit`` (``daily_spend_limit_usd`` /
+    ``monthly_spend_limit_usd``) bound the API axis and are what the hard cap
+    enforces; ``total_budget`` (``cost_throttle_daily_budget_usd``) bounds the
+    total axis and is what the soft alert trips on.
     """
     sc = MagicMock()
     sc.get = MagicMock(side_effect=lambda key, default=None: {
         "daily_spend_limit_usd": daily_limit,
         "monthly_spend_limit_usd": monthly_limit,
+        "cost_throttle_daily_budget_usd": total_budget,
         "cost_alert_threshold_pct": 80.0,
     }.get(key, default))
     guard = CostGuard(site_config=sc, pool=None)
@@ -458,34 +466,41 @@ class TestSpendLookups:
 
 
 class TestPreflightAlertPath:
-    """Soft alert path logs a warning at >=alert_threshold_pct (line 333)."""
+    """Soft alert path logs a warning at >=alert_threshold_pct."""
 
     @pytest.mark.asyncio
     async def test_alert_fires_at_threshold(self, caplog) -> None:
-        # daily=1.6, est=0.0, daily_limit=2.0, threshold=80% -> trip
-        guard = _make_guard(daily=1.6, monthly=0.0,
-                            daily_limit=2.0, monthly_limit=100.0)
+        # total=2.5, est=0.0, total_budget=3.0, threshold=80% (=$2.40) -> trip
+        guard = _make_guard(daily=0.5, monthly=0.0, daily_electricity=2.0,
+                            daily_limit=2.0, monthly_limit=100.0,
+                            total_budget=3.0)
         with caplog.at_level("WARNING", logger="services.cost_guard"):
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
-        # The warning text starts with [COST_GUARD] approaching daily cap
-        assert any("approaching daily cap" in r.message for r in caplog.records)
+        # The warning names the throttle budget, not the API cap.
+        assert any(
+            "approaching daily THROTTLE budget" in r.message
+            for r in caplog.records
+        )
 
 
 class TestSoftAlertBothAxes:
-    """P2 — the soft alert fires on **both axes** via ``total_usd`` (api +
-    electricity) and emits an advisory finding, but NEVER blocks. The hard cap
-    stays on ``api_usd``; this alert is the earlier "combined burn is
-    approaching the daily budget" signal, routed to Discord (severity=warn).
+    """The soft alert fires on the **total** axis (api + electricity) and emits
+    an advisory finding, but NEVER blocks. The hard cap stays on ``api_usd``.
+
+    Each axis is measured against its OWN ceiling: the total against
+    ``cost_throttle_daily_budget_usd`` (what ``spend_throttle`` defers new work
+    at), the API axis against ``daily_spend_limit_usd`` (the hard cap).
     """
 
     @pytest.mark.asyncio
     async def test_preflight_alert_keys_on_total_not_api(self) -> None:
-        # api=0.5 is nowhere near the $2 cap (25%), but api+electricity=1.7 is
-        # 85% of it → the both-axes alert must fire even though paid spend is low.
-        guard = _make_guard(daily=0.5, monthly=1.0,
-                            daily_limit=2.0, daily_electricity=1.2)
+        # api=0.5 is nowhere near its $2 cap (25%), but api+electricity=2.5 is
+        # 83% of the $3 throttle budget → the total-axis alert must fire even
+        # though paid spend is low.
+        guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=2.0, total_budget=3.0)
         with patch("services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
@@ -495,13 +510,13 @@ class TestSoftAlertBothAxes:
         assert kwargs["severity"] == "warn"        # routine → Discord, not a page
         assert kwargs["source"] == "cost_guard"
         assert kwargs.get("dedup_key")             # cooldown-able so it can't spam
-        assert kwargs["extra"]["daily_total_usd"] == pytest.approx(1.7)
+        assert kwargs["extra"]["daily_total_usd"] == pytest.approx(2.5)
 
     @pytest.mark.asyncio
     async def test_preflight_no_finding_below_threshold(self) -> None:
-        # api+electricity=0.7 = 35% of the $2 cap → below the 80% threshold.
-        guard = _make_guard(daily=0.2, monthly=1.0,
-                            daily_limit=2.0, daily_electricity=0.5)
+        # api+electricity=0.7 = 23% of the $3 throttle budget → below 80%.
+        guard = _make_guard(daily=0.2, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=0.5, total_budget=3.0)
         with patch("services.cost_guard.emit_finding") as emit:
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
@@ -512,8 +527,8 @@ class TestSoftAlertBothAxes:
     async def test_preflight_alert_never_blocks(self) -> None:
         # Total over the alert threshold but api under the hard cap → advisory
         # only: preflight returns without raising.
-        guard = _make_guard(daily=0.5, monthly=1.0,
-                            daily_limit=2.0, daily_electricity=1.4)
+        guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=2.4, total_budget=3.0)
         with patch("services.cost_guard.emit_finding"):
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
@@ -521,8 +536,8 @@ class TestSoftAlertBothAxes:
 
     @pytest.mark.asyncio
     async def test_check_budget_alert_keys_on_total(self) -> None:
-        guard = _make_guard(daily=0.5, monthly=1.0,
-                            daily_limit=2.0, daily_electricity=1.2)
+        guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=2.0, total_budget=3.0)
         with patch("services.cost_guard.emit_finding") as emit:
             await guard.check_budget(
                 provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
@@ -532,13 +547,127 @@ class TestSoftAlertBothAxes:
 
     @pytest.mark.asyncio
     async def test_check_budget_no_finding_below_threshold(self) -> None:
-        guard = _make_guard(daily=0.2, monthly=1.0,
-                            daily_limit=2.0, daily_electricity=0.3)
+        guard = _make_guard(daily=0.2, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=0.3, total_budget=3.0)
         with patch("services.cost_guard.emit_finding") as emit:
             await guard.check_budget(
                 provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
             )
         emit.assert_not_called()
+
+
+class TestSoftAlertMeasuresTotalAgainstThrottleBudget:
+    """Glad-Labs/poindexter#912 — the total axis is measured against the
+    total-axis ceiling (``cost_throttle_daily_budget_usd``), never against the
+    API-only hard cap (``daily_spend_limit_usd``).
+
+    Keying the total against the API cap made this alert fire on essentially
+    any day with a paid call: measured electricity alone runs $1.5-1.9/day
+    against a $2 API cap, so the 80% threshold ($1.60) was already consumed
+    before any inference happened. Live audit_log showed 1 finding on ordinary
+    draft days and 72 on 2026-07-14.
+    """
+
+    @pytest.mark.asyncio
+    async def test_electricity_alone_does_not_trip_against_api_cap(self) -> None:
+        # The exact production shape on 2026-07-26: electricity $1.50, API
+        # $0.41. Total $1.91 is 96% of the OLD (wrong) $2 ceiling but only 64%
+        # of the correct $3 throttle budget → must stay silent.
+        guard = _make_guard(daily=0.4135, monthly=2.0, daily_limit=2.0,
+                            daily_electricity=1.5003, total_budget=3.0)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.check_budget(
+                provider="anthropic", model="claude-sonnet-5",
+                estimated_cost_usd=0.01,
+            )
+        emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_raising_api_cap_alone_does_not_move_the_threshold(self) -> None:
+        """The trip point tracks the throttle budget, not the API cap.
+
+        Same spend either way; only the API cap differs. If the alert were
+        still keyed on the API cap, widening it from $2 to $10 would silence a
+        firing alert — proving which key is in play.
+        """
+        for api_cap in (2.0, 10.0):
+            guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=api_cap,
+                                daily_electricity=2.0, total_budget=3.0)
+            with patch("services.cost_guard.emit_finding") as emit:
+                await guard.check_budget(
+                    provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
+                )
+            assert emit.call_count == 1, f"alert did not fire at api_cap={api_cap}"
+
+    @pytest.mark.asyncio
+    async def test_zero_throttle_budget_disables_the_alert(self) -> None:
+        """``<= 0`` disables the axis — the escape-hatch convention
+        ``spend_throttle`` uses for the same key."""
+        guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=99.0, total_budget=0.0)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.0, is_local=False, model="x", provider="x",
+            ))
+        emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_alert_names_both_axes_explicitly(self) -> None:
+        """A reader must be able to tell which axis moved without opening the
+        code — so both figures and both ceilings appear in the finding."""
+        guard = _make_guard(daily=0.5, monthly=1.0, daily_limit=2.0,
+                            daily_electricity=2.0, total_budget=3.0)
+        with patch("services.cost_guard.emit_finding") as emit:
+            # Non-zero: check_budget short-circuits on a $0 estimate before it
+            # ever reaches the alert.
+            await guard.check_budget(
+                provider="openai", model="gpt-4o", estimated_cost_usd=0.0001,
+            )
+        kwargs = emit.call_args.kwargs
+        extra = kwargs["extra"]
+        assert extra["daily_api_usd"] == pytest.approx(0.5)
+        assert extra["api_limit_usd"] == pytest.approx(2.0)
+        assert extra["daily_total_usd"] == pytest.approx(2.5)
+        assert extra["total_budget_usd"] == pytest.approx(3.0)
+        # 2.5/3.0 on the total axis; 0.5/2.0 on the API axis.
+        assert extra["pct_of_total_budget"] == pytest.approx(83.3, abs=0.1)
+        assert extra["pct_of_api_cap"] == pytest.approx(25.0, abs=0.1)
+        # Title and body name both ceilings so the Discord card is readable
+        # on its own.
+        assert "throttle budget" in kwargs["title"]
+        assert "API" in kwargs["title"]
+        body = kwargs["body"]
+        assert "cost_throttle_daily_budget_usd" in body
+        assert "daily_spend_limit_usd" in body
+
+    @pytest.mark.asyncio
+    async def test_default_total_budget_is_the_throttle_default(self) -> None:
+        """Unset key → $3.00, matching ``spend_throttle``'s own default. A
+        divergent default here would re-create the axis mismatch on any
+        install that never tuned the key.
+        """
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default=None: {
+            "daily_spend_limit_usd": 2.0,
+            "monthly_spend_limit_usd": 100.0,
+            "cost_alert_threshold_pct": 80.0,
+        }.get(key, default))  # cost_throttle_daily_budget_usd deliberately unset
+        guard = CostGuard(site_config=sc, pool=None)
+        guard._daily_breakdown = AsyncMock(return_value=SpendBreakdown(  # type: ignore[method-assign]
+            api_usd=0.2, electricity_usd=2.3, total_usd=2.5,
+        ))
+        guard._monthly_breakdown = AsyncMock(return_value=SpendBreakdown(  # type: ignore[method-assign]
+            api_usd=1.0, total_usd=1.0,
+        ))
+        # 2.5 is 83% of the $3.00 default → trips. Against a $4 default it
+        # would be 62% and stay silent, and the emitted ceiling below pins the
+        # exact figure.
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.0, is_local=False, model="x", provider="x",
+            ))
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["extra"]["total_budget_usd"] == pytest.approx(3.0)
 
 
 class TestRecordAuditFallback:
@@ -797,14 +926,23 @@ class TestCheckBudget:
 
     @pytest.mark.asyncio
     async def test_alert_warning_emitted_near_threshold(self, caplog) -> None:
-        guard = _make_guard(daily=1.6, monthly=10.0,
-                            daily_limit=2.0, monthly_limit=100.0)
+        # total=2.4 (api 0.4 + electricity 2.0) = 80% of the $3 throttle budget.
+        guard = _make_guard(daily=0.4, monthly=10.0, daily_electricity=2.0,
+                            daily_limit=2.0, monthly_limit=100.0,
+                            total_budget=3.0)
         with caplog.at_level("WARNING", logger="services.cost_guard"):
             await guard.check_budget(
                 provider="openai", model="gpt-4o",
                 estimated_cost_usd=0.0001,
             )
-        assert any("approaching daily cap" in r.message for r in caplog.records)
+        assert any(
+            "approaching daily THROTTLE budget" in r.message
+            for r in caplog.records
+        )
+        # The log line carries both axes so a grep of worker logs shows which
+        # one actually moved.
+        line = next(r.message for r in caplog.records if "THROTTLE" in r.message)
+        assert "API axis" in line
 
 
 class TestRecordUsage:

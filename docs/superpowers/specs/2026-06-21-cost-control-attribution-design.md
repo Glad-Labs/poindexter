@@ -254,6 +254,19 @@ The `litellm`-provider clause is what catches the `$5.60` `llama3.2:3b` pollutio
 > blocks. §9 (budget-system unification) already shipped with P1. No new config
 > keys — the unlisted finding kind routes loud by default (`_delivery_for` →
 > `route`).
+>
+> **Corrected 2026-07-26 (Glad-Labs/poindexter#912).** As shipped, the soft
+> alert measured `total_usd` against `daily_spend_limit_usd` — the API-only
+> hard-cap key from the bullet above. Since measured electricity alone runs
+> ~$1.5-1.9/day against that $2 cap, the 80% threshold was already consumed
+> before any paid call, so the finding fired on essentially every day with
+> cloud spend (1/day on ordinary draft days, 72 on 2026-07-14) while claiming a
+> cap was nearly blown that the enforced axis sat ~20% into. The alert now
+> keys the total axis against the total-axis ceiling
+> `cost_throttle_daily_budget_usd` (P3's key, §6) and names both axes in its
+> text. Still advisory / never-blocking. Restated as a rule: a quantity is
+> compared to its OWN axis's budget — same class of mistake as the recurring
+> raw `SUM(cost_usd)` vs `monthly_spend_limit_usd` trap in §1.
 
 `cost_guard.check_budget` / `preflight` replace their inline `_sum_cost` with
 `cost_ledger.get_spend(pool, window="day"|"month", strict=True)` and gate on

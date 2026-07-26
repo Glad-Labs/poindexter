@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/cost_guard.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_cost_guard.py`
-**Last reviewed:** 2026-07-07
+**Last reviewed:** 2026-07-26
 
 ## What it does
 
@@ -68,13 +68,29 @@ Lower-level legacy triplet (still exported, used by `OpenAICompatProvider`):
 
 All from `app_settings` via `site_config`:
 
-- `daily_spend_limit_usd` (default `2.00`).
-- `monthly_spend_limit_usd` (default `100.00`).
+- `daily_spend_limit_usd` (default `2.00`) — **API axis**, hard cap.
+- `monthly_spend_limit_usd` (default `100.00`) — **API axis**, hard cap.
+- `cost_throttle_daily_budget_usd` (default `3.00`) — **total axis** (paid
+  API + measured electricity). Owned by `services/spend_throttle.py`; the
+  soft alert rents it as the ceiling for its total-axis check so both
+  consumers of the total axis measure against the same budget. `<= 0`
+  disables the alert, matching the throttle's own escape-hatch convention.
 - `cost_alert_threshold_pct` (default `80.0`) — soft alert when projected
   daily **total** spend (both axes: paid API + measured electricity)
-  crosses this percentage of the daily cap. Advisory only: it logs AND
-  emits a `cost_budget_alert` finding (`severity='warn'` → Discord), never
-  blocks. The hard cap gates on the api axis separately.
+  crosses this percentage of the **total-axis** budget above. Advisory
+  only: it logs AND emits a `cost_budget_alert` finding
+  (`severity='warn'` → Discord), never blocks. The hard cap gates on the
+  api axis separately.
+
+  The trip ceiling is deliberately NOT `daily_spend_limit_usd`. Measured
+  electricity alone runs ~$1.5-1.9/day against that $2 API cap, so keying
+  the total against it left the 80% threshold already consumed before any
+  paid call — the alert fired on essentially every day with cloud spend
+  and claimed the daily cap was nearly blown while the enforced axis sat
+  around 20% (Glad-Labs/poindexter#912). Each axis is now measured against
+  its own ceiling, and the finding names both figures so a reader can tell
+  which one moved.
+
 - `electricity_rate_kwh` (default `0.16` USD/kWh — EIA 2024 US
   residential avg). Refreshed daily by `UpdateUtilityRatesJob` from
   the EIA API.
@@ -131,10 +147,13 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
     itself fails so the alert pipeline catches a budget tracker
     going dark (Glad-Labs/poindexter#322 finding 3).
   - `audit_log` (event_type `finding`, kind `cost_budget_alert`,
-    severity `warn`) — the soft both-axes budget alert, emitted via
+    severity `warn`) — the soft total-axis budget alert, emitted via
     `utils.findings.emit_finding` when projected daily total spend
-    crosses `cost_alert_threshold_pct`. Advisory; routes to Discord
-    (unlisted kind → `route` by severity); never blocks.
+    crosses `cost_alert_threshold_pct` of `cost_throttle_daily_budget_usd`.
+    Advisory; routes to Discord (unlisted kind → `route` by severity);
+    never blocks. It is the early warning for the mechanism that acts on
+    that ceiling — `spend_throttle` deferring new pipeline work — not for
+    the hard cap.
 - **External APIs:** none directly. Provider plugins call out; the
   guard only watches their wallets.
 

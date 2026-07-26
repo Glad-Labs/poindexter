@@ -45,6 +45,16 @@ The two controls fail in **opposite** directions, by design:
 `spend_throttle` is the gentle "slow down" that _precedes_ the hard cap, per
 `feedback_self_heal_not_suppress` (throttle before page).
 
+`cost_guard` also **reads `cost_throttle_daily_budget_usd`** — its advisory
+`cost_budget_alert` finding warns at `cost_alert_threshold_pct` of this daily
+budget, so the operator hears "you are approaching the line where new work gets
+deferred" before the throttle actually engages. That alert is the early signal
+for _this_ mechanism, not for the hard cap; it is the one place cost_guard
+measures against the total axis. It does not consult `cost_throttle_enabled` —
+turning the throttle off stops the deferral, not the observability; silence the
+alert by setting the budget `<= 0`. Keep the two readers of this key in sync:
+if the budget moves, the warning line moves with it automatically.
+
 ## Public API
 
 - `await should_throttle(pool, *, site_config=None) -> ThrottleDecision` — the
