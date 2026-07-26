@@ -13,6 +13,17 @@ Two producer paths can prefix a draft with non-article scaffolding:
   and because the rescue loop re-enters the graph at ``qa.programmatic``, the
   revised draft never passes back through ``content.normalize_draft``, so the
   strip must ALSO run at the rewrite boundary.
+- The reviser briefing echo has a LABEL-FREE dialect (prod task ece2f516,
+  2026-07-24, poindexter#897): a bare ``Revise a draft article about "…"``
+  opener with no "Task:" label, deep-indented unlabeled ``*`` bullets
+  restating the constraints ("Preserve structure, headings, length, links,
+  citations, and voice.", "No new sections/removals unless required by
+  fixes."), first-person deliberation ("*Wait*, the fix list also asks…",
+  "as an AI with broad knowledge…"), and the briefing fused onto the
+  article's first heading with no blank line ("…Verify Markdown
+  structure.## The startup's…"). Only one tell (the opener) matched the
+  342a26b7 vocabulary, so the >=2 bar kept the strip silent and the echo
+  reached awaiting_approval (caught in the wild by qa.title_coherence).
 
 This module is a ``_``-prefixed library (the atom registry skips it), so both
 ``content.normalize_draft`` and ``qa.rewrite`` may import it without violating
@@ -27,8 +38,13 @@ import re
 
 # Tells = echoed-instruction phrases + bulleted planning/briefing labels that
 # never appear in finished prose. Writer-scaffold tells (#1963) plus the
-# qa.rewrite revision-briefing vocabulary (2026-07-23). Mirrored by
-# content_validator.LEAKED_PLANNING_SCAFFOLD_RE — keep the two in sync.
+# qa.rewrite revision-briefing vocabulary (2026-07-23) plus its label-free
+# dialect — constraint echoes and first-person deliberation markers
+# (2026-07-24, task ece2f516 / poindexter#897). Each tell alone is allowed in
+# real prose (a post about editing may say "revise the draft"); only >=2
+# co-occurring fire the strip/gate. Mirrored by
+# content_validator.LEAKED_PLANNING_SCAFFOLD_RE — keep the two in sync
+# (test_scaffold_tell_regexes_stay_in_sync enforces it).
 SCAFFOLD_TELL_RE = re.compile(
     r"(?im)(?:"
     r"key\s+elements?\s+from\s+sources"
@@ -37,8 +53,15 @@ SCAFFOLD_TELL_RE = re.compile(
     r"|no\s+placeholder\s+brackets"
     r"|avoid\s+[\"'“]?delve"
     r"|concluding\s+paragraph"
-    r"|revise\s+a\s+draft\s+article"
+    r"|revis(?:e|ed|ing)\s+(?:a|the|this)\s+draft(?:\s+article)?\b"
     r"|return\s+markdown\s+body\s+only"
+    r"|preserve\s+(?:the\s+article['’]s\s+)?structure,?\s+headings"
+    r"|(?:no|do\s+not\s+add)\s+new\s+sections?\b"
+    r"|links,\s+citations,\s+and\s+voice"
+    r"|verify\s+markdown\s+structure"
+    r"|\*wait[,.!]?\*"
+    r"|as\s+an\s+ai,?\s+with\b"
+    r"|the\s+fix(?:es)?\s+list\b"
     r"|\*\s*(?:voice|citations?|structure)\s*:\s*\*"
     r"|^[ \t]*[*+\-][ \t]+\*?(?:topic|voice|citations?|structure|tone|audience"
     r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?"

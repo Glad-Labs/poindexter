@@ -197,6 +197,24 @@ class TestQaRewriteBriefingLeakStrip:
         "## The Real Article\n\nActual prose the reader should see.\n"
     )
 
+    # Label-free dialect (prod task ece2f516, 2026-07-24, poindexter#897):
+    # bare "Revise a draft article about…" opener, unlabeled deep-indented
+    # constraint bullets, first-person deliberation, and the briefing fused
+    # onto the article's first heading with no blank line.
+    _BARE_BRIEFING_ECHO = (
+        'Revise a draft article about "Postgres survival for startups."\n'
+        "\n"
+        "        *   Preserve structure, headings, length, links, "
+        "citations, and voice.\n"
+        "        *   No new sections/removals unless required by fixes.\n"
+        "    *   *Wait*, the fix list also asks for a tighter closing.\n"
+        "    *   Verify Markdown structure.## The startup's Postgres "
+        "survival guide\n"
+        "\n"
+        "Most seed-stage teams meet their first real outage inside "
+        "Postgres.\n"
+    )
+
     async def test_briefing_echo_is_stripped_from_revision(self, monkeypatch):
         async def _fake_chat(prompt, **kw):
             return self._BRIEFING_ECHO
@@ -216,6 +234,31 @@ class TestQaRewriteBriefingLeakStrip:
         assert out["content"].startswith("## The Real Article")
         assert "Fix 1" not in out["content"]
         assert "Revise a draft article" not in out["content"]
+
+    async def test_label_free_briefing_echo_is_stripped(self, monkeypatch):
+        # ece2f516 regression: no "Task:"/"Fix N:" labels, heading fused
+        # mid-line — the strip must still fire and re-anchor the article.
+        async def _fake_chat(prompt, **kw):
+            return self._BARE_BRIEFING_ECHO
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        state = {
+            "task_id": "t-bare-leak",
+            "content": "# Draft\n\nweak body.\n",
+            "qa_rewrite_attempts": 0,
+            "site_config": _site_config(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+            ],
+        }
+        out = await qa_rewrite.run(state)
+        assert out["content"].startswith(
+            "## The startup's Postgres survival guide"
+        )
+        assert "Most seed-stage teams" in out["content"]
+        assert "Revise a draft article" not in out["content"]
+        assert "*Wait*" not in out["content"]
 
     async def test_clean_revision_is_untouched(self, monkeypatch):
         async def _fake_chat(prompt, **kw):

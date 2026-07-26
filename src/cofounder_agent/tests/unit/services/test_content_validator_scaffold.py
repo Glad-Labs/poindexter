@@ -109,3 +109,51 @@ class TestRevisionBriefingLeak:
         )
         result = validate_content("Title", content, "topic", site_config=_SC)
         assert not _scaffold_issues(result)
+
+    def test_flags_label_free_briefing_dialect_as_critical(self):
+        # ece2f516 dialect (2026-07-24, poindexter#897): bare "Revise a
+        # draft article about…" opener, unlabeled constraint bullets, and
+        # first-person deliberation — no "Task:"/"Constraints:"/"Fix N:"
+        # labels at all. Residual net for any echo the strip misses.
+        content = (
+            'Revise a draft article about "Postgres survival for startups."\n'
+            "\n"
+            "        *   Preserve structure, headings, length, links, "
+            "citations, and voice.\n"
+            "        *   No new sections/removals unless required by fixes.\n"
+            "    *   *Wait*, the fix list also asks for a tighter closing.\n"
+            "    *   Verify Markdown structure.\n\n"
+            "## The startup's Postgres survival guide\n\n"
+            "Most seed-stage teams meet their first real outage inside "
+            "Postgres.\n"
+        )
+        result = validate_content("Title", content, "topic", site_config=_SC)
+        issues = _scaffold_issues(result)
+        assert issues, "expected a leaked_planning_scaffold issue"
+        assert issues[0].severity == "critical"
+        assert result.passed is False
+
+    def test_single_revision_mention_in_prose_does_not_fire(self):
+        # "revise the draft" is one tell — legitimate in a post about
+        # editing workflow, so it must stay below the >=2 bar.
+        content = (
+            "## The Two-Pass Rule\n\n"
+            "Our editors revise the draft twice before it ships: first "
+            "pass for facts, second pass for voice.\n"
+        )
+        result = validate_content("Title", content, "topic", site_config=_SC)
+        assert not _scaffold_issues(result)
+
+
+class TestScaffoldTellSync:
+    def test_scaffold_tell_regexes_stay_in_sync(self):
+        # The strip (atoms/_scaffold_helpers) and this gate are twins by
+        # contract ("strip there, detect here") — a tell added to one and
+        # not the other reproduces the ece2f516 class of miss, so the
+        # patterns must stay byte-identical.
+        from modules.content.atoms._scaffold_helpers import SCAFFOLD_TELL_RE
+        from modules.content.content_validator import (
+            LEAKED_PLANNING_SCAFFOLD_RE,
+        )
+
+        assert SCAFFOLD_TELL_RE.pattern == LEAKED_PLANNING_SCAFFOLD_RE.pattern

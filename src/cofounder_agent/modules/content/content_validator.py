@@ -553,7 +553,15 @@ REASONING_TOKEN_LEAK_PATTERNS = [
 # article…", "Constraints: …", "Fix 1: …", "Return Markdown body only") and,
 # because the rescue loop re-enters at qa.programmatic (never re-running
 # normalize_draft), the echo reached awaiting_approval. Keep in sync with
-# atoms/_scaffold_helpers.SCAFFOLD_TELL_RE (strip there, detect here).
+# atoms/_scaffold_helpers.SCAFFOLD_TELL_RE (strip there, detect here;
+# test_scaffold_tell_regexes_stay_in_sync enforces the sync).
+# 2026-07-24 (task ece2f516, poindexter#897): extended with the LABEL-FREE
+# briefing dialect — bare "Revise a draft article about …" opener (no "Task:"
+# label), unlabeled constraint-echo bullets ("Preserve structure, headings,
+# …", "No new sections/removals…", "Verify Markdown structure."), and
+# first-person deliberation markers ("*Wait*, the fix list also asks…", "as
+# an AI with broad knowledge…"). Only the opener matched the old vocabulary
+# (1 tell < 2), so both the strip and this gate stayed silent.
 LEAKED_PLANNING_SCAFFOLD_RE = re.compile(
     r"(?im)(?:"
     r"key\s+elements?\s+from\s+sources"
@@ -562,8 +570,15 @@ LEAKED_PLANNING_SCAFFOLD_RE = re.compile(
     r"|no\s+placeholder\s+brackets"
     r"|avoid\s+[\"'“]?delve"
     r"|concluding\s+paragraph"
-    r"|revise\s+a\s+draft\s+article"
+    r"|revis(?:e|ed|ing)\s+(?:a|the|this)\s+draft(?:\s+article)?\b"
     r"|return\s+markdown\s+body\s+only"
+    r"|preserve\s+(?:the\s+article['’]s\s+)?structure,?\s+headings"
+    r"|(?:no|do\s+not\s+add)\s+new\s+sections?\b"
+    r"|links,\s+citations,\s+and\s+voice"
+    r"|verify\s+markdown\s+structure"
+    r"|\*wait[,.!]?\*"
+    r"|as\s+an\s+ai,?\s+with\b"
+    r"|the\s+fix(?:es)?\s+list\b"
     r"|\*\s*(?:voice|citations?|structure)\s*:\s*\*"
     r"|^[ \t]*[*+\-][ \t]+\*?(?:topic|voice|citations?|structure|tone|audience"
     r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?"
