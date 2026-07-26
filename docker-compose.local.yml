@@ -845,6 +845,23 @@ services:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
+      # This container runs as `appuser` (UID 1001), so ``~/.poindexter``
+      # resolves to /home/appuser/.poindexter — and Stage-2 media flows
+      # (media_pipeline: TTS narration, shot-list renders, compositor
+      # output) run HERE, not in the legacy worker. Same failure mode the
+      # worker service fixed on 2026-05-12 (see its volumes comment): with
+      # only the /root mount above, media writes land in the container's
+      # ephemeral filesystem — invisible to the uploader jobs in
+      # poindexter-worker and lost on recreate. Windows' loose WSL bind
+      # permissions masked this; real POSIX perms on Linux surfaced it
+      # (the host dir is 0700 uid-1000, unreadable by appuser anyway).
+      # Pinpoint-subdir mounts, NOT the whole dir, so bootstrap.toml
+      # stays out of appuser's HOME (resolve_database_url would read its
+      # host DSN, which is unreachable from inside the container).
+      - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
     extra_hosts:
       # Ollama + image-gen servers run on the host machine, not in the
       # docker network. host.docker.internal resolves to host-gateway

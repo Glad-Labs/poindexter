@@ -512,6 +512,18 @@ services:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
+      # Runs as `appuser` (UID 1001): Stage-2 media flows resolve
+      # ``~/.poindexter`` to /home/appuser/.poindexter, so media output
+      # needs these pinpoint-subdir mounts (mirrors the worker service —
+      # same 2026-05-12 fix; the /root mount alone strands media writes
+      # in the container's ephemeral filesystem). Whole-dir mount is
+      # avoided on purpose: bootstrap.toml must stay out of appuser's
+      # HOME or resolve_database_url reads the host DSN, unreachable
+      # from inside the container.
+      - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
