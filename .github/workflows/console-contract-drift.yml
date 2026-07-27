@@ -49,7 +49,7 @@ jobs:
     # Source-of-truth repo only, and only when the self-hosted PC runner is
     # online (CI_RUNNER set by runner-healthcheck) — the job must reach the local
     # worker, so ubuntu-latest would be pointless. Quiet green skip otherwise.
-    if: github.repository == 'Glad-Labs/glad-labs-stack' && vars.CI_RUNNER != ''
+    if: github.repository == 'Glad-Labs/poindexter' && vars.CI_RUNNER != ''
     runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     env:
