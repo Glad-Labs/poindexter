@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-07-26.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 689 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 682 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -37,12 +37,12 @@ The worker re-reads on every poll; no restart needed.
 - [content](#content) (14 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
-- [cost](#cost) (7 keys)
+- [cost](#cost) (5 keys)
 - [experiments](#experiments) (4 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (312 keys)
+- [general](#general) (307 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -64,11 +64,11 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (26 keys)
+- [pipeline](#pipeline) (25 keys)
 - [plugins](#plugins) (38 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
-- [prometheus](#prometheus) (5 keys)
+- [prometheus](#prometheus) (6 keys)
 - [publishing](#publishing) (5 keys)
 - [qa](#qa) (8 keys)
 - [quality](#quality) (5 keys)
@@ -304,8 +304,6 @@ The worker re-reads on every poll; no restart needed.
 | `devto_top_days` | `7` |  |  |
 | `disable_auth_for_dev` | `false` |  | Disable auth in development |
 | `docker_port_forward_watch_list` | `[{"container": "poindexter-pyroscope"...` |  |  |
-| `embedding_retention_days.memory` | `` |  | Empty = no TTL. Memory embeddings are never auto-pruned — operator's curated state. |
-| `embedding_retention_days.posts` | `` |  | Empty = no TTL. Post embeddings are never auto-pruned — feed live RAG retrieval. |
 | `embed_model` | `nomic-embed-text` |  | Auto-seeded by services.settings_defaults (#379) |
 | `enabled_topic_sources` | `knowledge,codebase,hackernews,devto,w...` |  |  |
 | `enable_image_gen_warmup` | `` |  | Warm up the image-gen server on startup (lazy-loads otherwise) |
@@ -550,9 +548,6 @@ The worker re-reads on every poll; no restart needed.
 | `structured_extraction_model` | `ollama/gemma3:27b` |  |  |
 | `topic_dedup_engine` | `content_embedding` |  |  |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `topic_discovery_queue_low_threshold` | `999` |  |  |
-| `topic_discovery_rejection_streak` | `999` |  |  |
-| `topic_discovery_stale_hours` | `8760` |  |  |
 | `trusted_source_domains` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `tts_acronym_replacements` | `{"SOC": "security operations", "CRM":...` |  |  |
 | `tts_model_name_families` | `gemma,glm,qwen,phi,llama,mistral,mixt...` |  |  |
@@ -917,7 +912,8 @@ The worker re-reads on every poll; no restart needed.
 | `prometheus.threshold.daily_spend_critical_usd` | `5.0` |  | Daily LLM spend critical threshold |
 | `prometheus.threshold.daily_spend_warning_usd` | `4.0` |  | Daily LLM spend warning threshold |
 | `prometheus.threshold.embeddings_stale_seconds` | `21600` |  | Seconds without an embeddings_total change before EmbeddingsStale fires |
-| `prometheus.threshold.monthly_spend_warning_usd` | `35.0` |  | Monthly spend warning threshold (USD). Includes ALL cost_logs rows — local Ollama electricity (~$30/mo baseline) AND ... |
+| `prometheus.threshold.expected_gpu_count` | `0` |  | How many GPUs this host should expose to the gpu-exporter. 0 disables the GpuCountBelowExpected alert (the shipped de... |
+| `prometheus.threshold.monthly_spend_warning_usd` | `65.0` |  | Monthly spend warning threshold (USD) on the BLENDED gauge poindexter_monthly_spend_usd (paid API + measured electric... |
 | `prometheus.threshold.qa_rail_skip_ratio` | `1` |  | Per-rail skip ratio that fires QaRailFullySkipped (1 = skipped 100% of the last N QA passes; lower e.g. 0.9 to page e... |
 
 ## publishing
