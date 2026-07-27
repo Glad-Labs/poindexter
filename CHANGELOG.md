@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## [0.111.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.110.0...v0.111.0) (2026-07-27)
+
+
+### Features
+
+* **backup:** add `verify-recovery` — prove the offsite repo opens without this machine ([#2823](https://github.com/Glad-Labs/glad-labs-stack/issues/2823)) ([c67e3fc](https://github.com/Glad-Labs/glad-labs-stack/commit/c67e3fc2e99c1ed469a93df7172af4b3b85691d2))
+* **gpu:** P0 observe layer — lease stats, queue mirror, /api/gpu/queue, console strip, Grafana ([#2836](https://github.com/Glad-Labs/glad-labs-stack/issues/2836)) ([94b1898](https://github.com/Glad-Labs/glad-labs-stack/commit/94b1898f58932f9828671cf79031be59a73ab375))
+* **gpu:** P1 queue admission + wait contracts — inert behind gpu_sched_enabled (poindexter[#914](https://github.com/Glad-Labs/glad-labs-stack/issues/914)) ([#2837](https://github.com/Glad-Labs/glad-labs-stack/issues/2837)) ([b179159](https://github.com/Glad-Labs/glad-labs-stack/commit/b179159de82642e3e6f4c40b73c7a8cfdc9c4e03))
+
+
+### Bug Fixes
+
+* **alerts:** threshold-axis sweep — measure what the threshold actually names ([#2833](https://github.com/Glad-Labs/glad-labs-stack/issues/2833)) ([3995f1b](https://github.com/Glad-Labs/glad-labs-stack/commit/3995f1b67f8d746a319411a93b18a077ef260977))
+* **chatterbox:** run TTS on CPU — narration was losing the VRAM fight on both cards ([#2804](https://github.com/Glad-Labs/glad-labs-stack/issues/2804)) ([c6da691](https://github.com/Glad-Labs/glad-labs-stack/commit/c6da6911840cb2ab429f89f7a106139cd3103cb0))
+* **claude-md-sync:** stamp the freshness date, and stop anchors failing silently ([#2819](https://github.com/Glad-Labs/glad-labs-stack/issues/2819)) ([0eef61a](https://github.com/Glad-Labs/glad-labs-stack/commit/0eef61a7cd0176608af19434e61b71441f68153b))
+* **compose:** anchor repo-shipped bind mounts to POINDEXTER_DEPLOY_ROOT ([#2834](https://github.com/Glad-Labs/glad-labs-stack/issues/2834)) ([8bbf7bc](https://github.com/Glad-Labs/glad-labs-stack/commit/8bbf7bcd528d34ae78325b659cf3b190c96c61ef))
+* **compose:** anchor the gpu-exporter script mount to POINDEXTER_DEPLOY_ROOT ([#2827](https://github.com/Glad-Labs/glad-labs-stack/issues/2827)) ([7f32cb1](https://github.com/Glad-Labs/glad-labs-stack/commit/7f32cb1d62be72a658d0e86709d319e5cb30f922))
+* **compose:** gpu-exporter needs pid:host for per-process VRAM rows (poindexter[#914](https://github.com/Glad-Labs/glad-labs-stack/issues/914)) ([#2838](https://github.com/Glad-Labs/glad-labs-stack/issues/2838)) ([7ab581a](https://github.com/Glad-Labs/glad-labs-stack/commit/7ab581a403644cd3006cbe4058040e8ac9b6d0c6))
+* **console:** build the GPU tile per-card so both cards show and VRAM can't mix ([#2828](https://github.com/Glad-Labs/glad-labs-stack/issues/2828)) ([8dd4d26](https://github.com/Glad-Labs/glad-labs-stack/commit/8dd4d26b9e99ed661dad205c8ddbd8dc941965c3))
+* **console:** split the spend chart into API vs electricity axes — 'LLM spend' was plotting the blended total ([#2811](https://github.com/Glad-Labs/glad-labs-stack/issues/2811)) ([64af1ee](https://github.com/Glad-Labs/glad-labs-stack/commit/64af1ee755b8aa4bdd39350e3cb286fbb34a120e))
+* **cost_guard:** measure the soft alert's total axis against the throttle budget, not the API cap ([#2806](https://github.com/Glad-Labs/glad-labs-stack/issues/2806)) ([b263415](https://github.com/Glad-Labs/glad-labs-stack/commit/b2634155d4987cb6e895d133dac397fa27486e22))
+* **exporter:** collapse full-cmdline process names to executable basename (poindexter[#914](https://github.com/Glad-Labs/glad-labs-stack/issues/914)) ([#2839](https://github.com/Glad-Labs/glad-labs-stack/issues/2839)) ([ae19afc](https://github.com/Glad-Labs/glad-labs-stack/commit/ae19afc069187120b0bf21673d3c7745ea297a70))
+* **gpu-exporter:** reserve all GPUs so the 2nd card publishes telemetry ([#2816](https://github.com/Glad-Labs/glad-labs-stack/issues/2816)) ([c07d2fc](https://github.com/Glad-Labs/glad-labs-stack/commit/c07d2fc8c61c006d5ef7bf07f5806001ceecde09))
+* **lint:** clear the F401/F841 backlog + repair a script broken since May ([#2835](https://github.com/Glad-Labs/glad-labs-stack/issues/2835)) ([3d5778a](https://github.com/Glad-Labs/glad-labs-stack/commit/3d5778add6af5d1e54cf51b542cb287ce15a0603))
+* **media:** surface narration synthesis failures as a finding ([#2821](https://github.com/Glad-Labs/glad-labs-stack/issues/2821)) ([ddd2d9d](https://github.com/Glad-Labs/glad-labs-stack/commit/ddd2d9d2019264e321e52d76d668d11d194f13b4))
+* **monitoring:** make a missing GPU assertable — nvidia_gpu_count + GpuCountBelowExpected ([#2826](https://github.com/Glad-Labs/glad-labs-stack/issues/2826)) ([b85353d](https://github.com/Glad-Labs/glad-labs-stack/commit/b85353da6b418fab4b0a4018960a9872522a3701))
+* **ops:** open session PRs from the worktree, and stop logging success when they fail ([#2809](https://github.com/Glad-Labs/glad-labs-stack/issues/2809)) ([578f231](https://github.com/Glad-Labs/glad-labs-stack/commit/578f2313a029ea120a1a5671a0b23cdb0523d2ed))
+* **restart:** refuse self-defeating restarts + sweep orphaned claims ([#2815](https://github.com/Glad-Labs/glad-labs-stack/issues/2815)) ([646e5fa](https://github.com/Glad-Labs/glad-labs-stack/commit/646e5fa9881a1dc01e4f5ed4444aeff8783f379a))
+* **sentry:** wire the sample-rate + SDK-debug knobs that were seeded but never read ([#2829](https://github.com/Glad-Labs/glad-labs-stack/issues/2829)) ([c9a2113](https://github.com/Glad-Labs/glad-labs-stack/commit/c9a21130d92cfeca76771d0bedffb6feb03b8bc2))
+* **tts:** pin an explicit encode bitrate in the chatterbox sidecar (was defaulting to 32 kbps) ([#2803](https://github.com/Glad-Labs/glad-labs-stack/issues/2803)) ([6e1cdf1](https://github.com/Glad-Labs/glad-labs-stack/commit/6e1cdf1f9d69a2442fd7f6a5735c4c34ab4ceed7))
+
+
+### Performance
+
+* **speaches:** restore whisper idle-offload (TTL 300) now the voice room is off ([#2817](https://github.com/Glad-Labs/glad-labs-stack/issues/2817)) ([602a98f](https://github.com/Glad-Labs/glad-labs-stack/commit/602a98f56b64be8dd57b9632a08d5bf9757281ef))
+
 ## [0.110.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.109.0...v0.110.0) (2026-07-26)
 
 
