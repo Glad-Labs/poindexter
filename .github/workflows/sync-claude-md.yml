@@ -59,7 +59,7 @@ jobs:
         run: |
           echo "user_id=$(gh api "/users/${{ steps.app_token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
         with:
           # Push the drift branch as the App so the PR triggers required CI.
           token: ${{ steps.app_token.outputs.token }}
