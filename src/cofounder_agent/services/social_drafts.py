@@ -109,6 +109,22 @@ class SocialDraftRow:
     resolved_post_id: str | None = None
 
 
+@dataclass
+class SocialDraftPage:
+    """One window of ``list_drafts`` output plus the counts it was cut from.
+
+    ``rows`` is capped by limit/offset, so it alone cannot answer "how many
+    drafts are there?" — a consumer that counts statuses over ``rows`` reports
+    the window, not the table. ``total`` (rows matching every filter) and
+    ``status_counts`` (per-status totals for the post/task scope, ignoring the
+    status filter) are what operator KPIs must read instead.
+    """
+
+    rows: list[SocialDraftRow]
+    total: int
+    status_counts: dict[str, int]
+
+
 class SocialDraftsService:
     async def create_draft(
         self,
@@ -365,7 +381,10 @@ class SocialDraftsService:
         pipeline_task_id: str | None,
         status: str | None,
         pool: Any,
-    ) -> list[SocialDraftRow]:
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> SocialDraftPage:
         """List drafts, each carrying its resolved post_status, title, and id.
 
         post_status lets callers (the console's action inbox) distinguish a
@@ -379,19 +398,54 @@ class SocialDraftsService:
         win once a posts row exists (can resolve before social_post_drafts.
         post_id itself gets backfilled at publish time), else pipeline_tasks.
         topic is the fallback label for a task with no posts row yet.
+
+        **Live rows sort first, ahead of created_at DESC.** The table only
+        grows (one row per platform per post, and terminal rows are never
+        pruned — 67 of 77 rows were already ``posted``/``rejected`` tombstones
+        when this cap landed), so a plain recency cap would eventually push an
+        old *pending* draft out of the window — silently stranding an approval
+        that the console's action inbox derives from exactly this list. Live
+        here means ``pending``/``failed``: the two statuses ``approve_draft``
+        still accepts, so they are the rows that can still need a decision.
+        Sorting them to the front means the cap can only ever hide tombstones.
+
+        ``limit=None`` emits no LIMIT clause. The HTTP surface always passes
+        one (``routes/social_routes.py``); the unbounded form is for callers
+        that genuinely need the full set.
         """
-        conditions: list[str] = []
+        scope: list[str] = []
         args: list[Any] = []
         if post_id:
             args.append(post_id)
-            conditions.append(f"d.post_id = ${len(args)}")
+            scope.append(f"d.post_id = ${len(args)}")
         if pipeline_task_id:
             args.append(pipeline_task_id)
-            conditions.append(f"d.pipeline_task_id = ${len(args)}")
+            scope.append(f"d.pipeline_task_id = ${len(args)}")
+        # status_counts deliberately spans every status within the post/task
+        # scope, so it stays a truthful breakdown even when the caller filters
+        # to one status. `total` is the narrower "rows matching ALL filters".
+        scope_where = f"WHERE {' AND '.join(scope)}" if scope else ""
+        counts_sql = f"""
+            SELECT d.status, count(*) AS n
+            FROM social_post_drafts d
+            {scope_where}
+            GROUP BY d.status
+        """  # nosec B608 - scope entries are hardcoded column literals with computed placeholder indices; values are bind params
+
+        conditions = list(scope)
         if status:
             args.append(status)
             conditions.append(f"d.status = ${len(args)}")
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        page_args = list(args)
+        pagination = ""
+        if limit is not None:
+            page_args.append(limit)
+            pagination = f"LIMIT ${len(page_args)}"
+        if offset:
+            page_args.append(offset)
+            pagination = f"{pagination} OFFSET ${len(page_args)}".strip()
         sql = f"""
             SELECT d.*,
                    rp.status AS resolved_post_status,
@@ -408,11 +462,23 @@ class SocialDraftsService:
                 LIMIT 1
             ) rp ON true
             {where}
-            ORDER BY d.created_at DESC
+            ORDER BY (d.status IN ('pending', 'failed')) DESC, d.created_at DESC
+            {pagination}
         """  # nosec B608 - conditions entries are hardcoded column literals with computed placeholder indices; values are bind params
         async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, *args)
-        return [_row_to_dataclass(r) for r in rows]
+            rows = await conn.fetch(sql, *page_args)
+            count_rows = await conn.fetch(counts_sql, *args[: len(scope)])
+        status_counts = {r["status"]: int(r["n"]) for r in count_rows}
+        total = (
+            status_counts.get(status, 0)
+            if status
+            else sum(status_counts.values())
+        )
+        return SocialDraftPage(
+            rows=[_row_to_dataclass(r) for r in rows],
+            total=total,
+            status_counts=status_counts,
+        )
 
     async def retry_draft(
         self, draft_id: str, pool: Any, site_config: SiteConfig

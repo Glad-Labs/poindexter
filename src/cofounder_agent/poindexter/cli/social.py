@@ -35,24 +35,49 @@ def social_group() -> None:
     default=None,
     help="Filter by status (pending/approved/posted/failed/rejected)",
 )
+@click.option(
+    "--limit", default=50, show_default=True, type=int, help="Max drafts to show"
+)
+@click.option("--offset", default=0, type=int, help="Drafts to skip")
 def list_drafts(
-    post_id: str | None, task_id: str | None, status: str | None
+    post_id: str | None,
+    task_id: str | None,
+    status: str | None,
+    limit: int,
+    offset: int,
 ) -> None:
     """List social post drafts."""
     try:
-        drafts = run_service(lambda p: _svc.list_drafts(post_id, task_id, status, p))
+        page = run_service(
+            lambda p: _svc.list_drafts(
+                post_id, task_id, status, p, limit=limit, offset=offset
+            )
+        )
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
-    if not drafts:
+    if not page.rows:
         click.echo("No drafts found.")
         return
-    for d in drafts:
+    for d in page.rows:
         subreddit = d.platform_config.get("subreddit", "")
         label = f"{d.platform}:{subreddit}" if subreddit else d.platform
         click.echo(
             f"[{d.status.upper():8}] {d.id[:8]}  {label:28}  {d.content[:55]}"
         )
+    # Never let the cap read as "that's all of them" — pending/failed sort
+    # first, so what's withheld is always posted/rejected history.
+    shown = offset + len(page.rows)
+    if shown < page.total:
+        click.echo(
+            f"\nShowing {offset + 1}-{shown} of {page.total} "
+            f"(--offset {shown} for more)."
+        )
+    breakdown = ", ".join(
+        f"{s}={n}" for s, n in sorted(page.status_counts.items())
+    )
+    if breakdown:
+        click.echo(f"Totals: {breakdown}")
 
 
 @social_group.command("approve")

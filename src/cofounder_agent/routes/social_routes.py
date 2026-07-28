@@ -35,10 +35,33 @@ async def list_drafts(
     post_id: str | None = Query(None),
     task_id: str | None = Query(None),
     status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=500, description="Max drafts to return"),
+    offset: int = Query(0, ge=0, description="Drafts to skip"),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
-    drafts = await _svc.list_drafts(post_id, task_id, status, db_service.pool)
-    return {"drafts": [_serialize(d) for d in drafts]}
+    """Window of social drafts, live (pending/failed) rows first.
+
+    ``status_counts`` is per-status totals for the post/task scope, spanning
+    every status regardless of ``limit`` or the ``status`` filter — the
+    console's KPI row and rail badge read it instead of counting the returned
+    page, which would otherwise report the window and call it the table.
+
+    The body keeps its ``drafts`` key rather than the canonical ``items``
+    (#745): converting the envelope is a separate step with three consumers
+    to move, and it is not what this endpoint was unbounded for. ``total`` /
+    ``limit`` / ``offset`` already use the canonical names and semantics, so
+    that step is a rename.
+    """
+    page = await _svc.list_drafts(
+        post_id, task_id, status, db_service.pool, limit=limit, offset=offset
+    )
+    return {
+        "drafts": [_serialize(d) for d in page.rows],
+        "total": page.total,
+        "limit": limit,
+        "offset": offset,
+        "status_counts": page.status_counts,
+    }
 
 
 @router.post("/drafts/{draft_id}/approve")

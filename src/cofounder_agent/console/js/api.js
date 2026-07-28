@@ -1248,13 +1248,17 @@
     },
 
     // ── social / Postiz draft queue (social_routes.py) ───────
-    // GET /api/social/drafts → {drafts:[…]} — filterable by post_id/task_id/
-    // status. Returns id, pipeline_task_id, post_id, platform, content,
-    // platform_config, status, postiz_post_id, error, retry_count, title,
-    // resolved_post_id, and three timestamps (created_at / approved_at /
-    // posted_at). Per-post + per-platform granularity the aggregate
-    // Prometheus counters can't provide. Mock returns honest-empty (no
-    // fabricated draft rows).
+    // GET /api/social/drafts → {drafts:[…], total, limit, offset,
+    // status_counts:{status→n}} — filterable by post_id/task_id/status and
+    // paged by limit (default 50, max 500) / offset. Each draft returns id,
+    // pipeline_task_id, post_id, platform, content, platform_config, status,
+    // postiz_post_id, error, retry_count, title, resolved_post_id, and three
+    // timestamps (created_at / approved_at / posted_at). Per-post +
+    // per-platform granularity the aggregate Prometheus counters can't
+    // provide. `drafts` is a capped window, so read status_counts/total for
+    // any count — they span the whole table. Pending/failed rows sort ahead
+    // of created_at DESC, so the cap only ever drops posted/rejected
+    // tombstones. Mock returns honest-empty (no fabricated draft rows).
     socialDrafts(params = '') {
       return pick(
         () => http('GET', '/api/social/drafts' + params),

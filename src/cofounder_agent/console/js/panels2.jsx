@@ -43,13 +43,29 @@ function SocialPanel({ social, onApprove, onReject }) {
   const PX = window.PX;
   const [filter, setFilter] = React.useState('all');
   const drafts = (social && social.drafts) || [];
-  const pending = drafts.filter((d) => d.status === 'pending').length;
-  const posted = drafts.filter((d) => d.status === 'posted').length;
-  const failed = drafts.filter((d) => d.status === 'failed').length;
-  const counts = drafts.reduce(
+  // Two different numbers, each correct for its own job:
+  //   `counts`/`total` — server-sent, span every row in the table. The KPI row
+  //     summarises the table, so it reads these; counting the returned page
+  //     instead would report the window and call it the table.
+  //   `windowCounts` — derived from the returned page. A filter chip is a
+  //     control, so its number must predict what clicking it shows, and the
+  //     filter applies client-side to the page.
+  // They agree until the page is truncated, and truncation can only ever drop
+  // posted/rejected tombstones (the server sorts pending/failed first), so the
+  // numbers an operator acts on never diverge. `withheld` reconciles the two.
+  const counts =
+    (social && social.status_counts) ||
+    drafts.reduce((a, d) => ((a[d.status] = (a[d.status] || 0) + 1), a), {});
+  const total =
+    social && typeof social.total === 'number' ? social.total : drafts.length;
+  const windowCounts = drafts.reduce(
     (a, d) => ((a[d.status] = (a[d.status] || 0) + 1), a),
     {}
   );
+  const pending = counts.pending || 0;
+  const posted = counts.posted || 0;
+  const failed = counts.failed || 0;
+  const withheld = Math.max(0, total - drafts.length);
   const shown =
     filter === 'all' ? drafts : drafts.filter((d) => d.status === filter);
   return (
@@ -127,9 +143,22 @@ function SocialPanel({ social, onApprove, onReject }) {
               }}
               onClick={() => setFilter(id)}
             >
-              {lbl} · {id === 'all' ? drafts.length : counts[id] || 0}
+              {lbl} · {id === 'all' ? drafts.length : windowCounts[id] || 0}
             </button>
           ))}
+          {withheld > 0 && (
+            <span
+              className="mono c-dim"
+              style={{ fontSize: 10, marginLeft: 'auto', alignSelf: 'center' }}
+              title={
+                'Older posted/rejected drafts beyond the fetch limit. ' +
+                'Pending and failed drafts always sort first, so nothing ' +
+                'awaiting a decision is hidden here.'
+              }
+            >
+              +{withheld} older not shown
+            </span>
+          )}
         </div>
       )}
       {drafts.length === 0 ? (

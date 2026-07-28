@@ -508,9 +508,13 @@ function App() {
   // Task 9 exception (stays a bespoke effect): writes TWO states — `social` AND
   // `inbox` (pending drafts are mapped via draftToInbox and merged into the
   // action inbox). One resource can't own both, so it stays hand-rolled.
-  // Fetches all recent drafts for per-post per-platform visibility — granularity
+  // Fetches recent drafts for per-post per-platform visibility — granularity
   // the Grafana aggregate Prometheus counters don't provide. Pending drafts also
   // surface in the action inbox as kind='social' for inline approve/reject.
+  // ?limit is a real server-side cap (social_post_drafts only grows — one row
+  // per platform per post, tombstones never pruned). It's safe for the inbox
+  // because the server sorts pending/failed ahead of created_at, so the cap can
+  // only drop posted/rejected rows; counts come back as status_counts/total.
   // Mock: honest-empty (no fabricated rows per feedback_no_dummy_data). 60s cadence
   // (drafts move on the same scale as publishing tasks, not second-to-second).
   useE(() => {
@@ -1498,9 +1502,13 @@ function App() {
                 : r.id === 'topics'
                   ? ((topics && topics.items) || []).length
                   : r.id === 'social'
-                    ? ((social && social.drafts) || []).filter(
+                    ? // Server-sent count over every row, not the returned
+                      // page — a badge derived from a capped list undercounts.
+                      // Falls back to deriving in mock mode (no status_counts).
+                      (((social && social.status_counts) || {}).pending ??
+                      ((social && social.drafts) || []).filter(
                         (d) => d.status === 'pending'
-                      ).length
+                      ).length)
                     : 0;
           return (
             <button

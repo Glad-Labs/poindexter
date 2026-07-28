@@ -79,7 +79,9 @@ KERNEL_PURITY_BASELINE = {
     # publish_service — the atom it re-invokes imports SocialDraftsService
     # at module level, so a top-level import here would be circular
     # (poindexter#863, social-draft generation reliability fix).
-    "services/social_drafts.py:510",
+    # Line shifted 510 -> 576 by poindexter#927 (list_drafts pagination:
+    # SocialDraftPage dataclass + the counts query added above it).
+    "services/social_drafts.py:576",
     # research_context calls internal_link_coherence lazily.
     # Line shifted 151 -> 177 by the 2026-07-12 dropped_db_error aggregate
     # finding (silent-excepts burn-down batch 5) added above it.

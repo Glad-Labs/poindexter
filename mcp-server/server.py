@@ -1433,8 +1433,18 @@ async def list_social_drafts(
     post_id: str = "",
     task_id: str = "",
     status: str = "",
+    limit: int = 50,
+    offset: int = 0,
 ) -> str:
-    """List social post drafts. Optionally filter by post_id, task_id, or status."""
+    """List social post drafts. Optionally filter by post_id, task_id, or status.
+
+    Returns a capped page (limit 1-500, default 50) plus `total` and
+    `status_counts` spanning the whole table — count from those, not from the
+    returned `drafts` array, which is only the window. Drafts awaiting a
+    decision (pending/failed) always sort first, so the cap only ever hides
+    posted/rejected history; page through it with `offset` when `total`
+    exceeds what came back.
+    """
     params: list[str] = []
     if post_id:
         params.append(f"post_id={post_id}")
@@ -1442,8 +1452,10 @@ async def list_social_drafts(
         params.append(f"task_id={task_id}")
     if status:
         params.append(f"status={status}")
-    qs = "&".join(params)
-    path = f"/api/social/drafts{'?' + qs if qs else ''}"
+    params.append(f"limit={limit}")
+    if offset:
+        params.append(f"offset={offset}")
+    path = f"/api/social/drafts?{'&'.join(params)}"
     result = await _api("GET", path)
     return json.dumps(result)
 

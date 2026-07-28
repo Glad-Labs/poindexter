@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 import routes.social_routes as social_routes_module
 from middleware.api_token_auth import verify_api_token
 from routes.social_routes import router as social_router
-from services.social_drafts import SocialDraftRow
+from services.social_drafts import SocialDraftPage, SocialDraftRow
 from tests.unit.routes.conftest import make_mock_db
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -36,6 +36,28 @@ def _build_social_app() -> FastAPI:
     app.dependency_overrides[get_database_dependency] = lambda: make_mock_db()
     app.dependency_overrides[get_site_config_dependency] = lambda: MagicMock()
     return app
+
+
+def _draft(**overrides) -> SocialDraftRow:
+    fields = {
+        "id": "draft-1", "pipeline_task_id": "task-1", "post_id": None,
+        "platform": "bluesky", "content": "c", "platform_config": {},
+        "status": "pending", "postiz_post_id": None, "error": None,
+        "retry_count": 0, "last_retry_at": None,
+        "created_at": datetime.now(timezone.utc),
+        "approved_at": None, "posted_at": None, "post_status": None,
+    }
+    fields.update(overrides)
+    return SocialDraftRow(**fields)
+
+
+def _page(rows=None, total=None, status_counts=None) -> SocialDraftPage:
+    rows = [_draft()] if rows is None else rows
+    return SocialDraftPage(
+        rows=rows,
+        total=len(rows) if total is None else total,
+        status_counts=status_counts or {},
+    )
 
 
 @pytest.mark.unit
@@ -119,16 +141,7 @@ class TestListDraftsSerialization:
     def test_list_drafts_includes_post_status(self, monkeypatch):
         mock_svc = MagicMock()
         mock_svc.list_drafts = AsyncMock(
-            return_value=[
-                SocialDraftRow(
-                    id="draft-1", pipeline_task_id="task-1", post_id=None,
-                    platform="bluesky", content="c", platform_config={},
-                    status="pending", postiz_post_id=None, error=None,
-                    retry_count=0, last_retry_at=None,
-                    created_at=datetime.now(timezone.utc),
-                    approved_at=None, posted_at=None, post_status="published",
-                )
-            ]
+            return_value=_page([_draft(post_status="published")])
         )
         monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
         client = TestClient(_build_social_app())
@@ -141,18 +154,12 @@ class TestListDraftsSerialization:
     def test_list_drafts_includes_title_and_resolved_post_id(self, monkeypatch):
         mock_svc = MagicMock()
         mock_svc.list_drafts = AsyncMock(
-            return_value=[
-                SocialDraftRow(
-                    id="draft-1", pipeline_task_id="task-1", post_id=None,
-                    platform="bluesky", content="c", platform_config={},
-                    status="pending", postiz_post_id=None, error=None,
-                    retry_count=0, last_retry_at=None,
-                    created_at=datetime.now(timezone.utc),
-                    approved_at=None, posted_at=None, post_status=None,
+            return_value=_page([
+                _draft(
                     title="Why VRAM Bandwidth Matters",
                     resolved_post_id="post-42",
                 )
-            ]
+            ])
         )
         monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
         client = TestClient(_build_social_app())
@@ -163,3 +170,80 @@ class TestListDraftsSerialization:
         draft = resp.json()["drafts"][0]
         assert draft["title"] == "Why VRAM Bandwidth Matters"
         assert draft["resolved_post_id"] == "post-42"
+
+
+@pytest.mark.unit
+class TestListDraftsPagination:
+    """GET /drafts returned every social_post_drafts row on every console poll
+    (77 rows and growing — one per platform per post, tombstones never pruned).
+    The cap must be real, and must not cost the console honest counts."""
+
+    def test_default_limit_is_applied(self, monkeypatch):
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(return_value=_page())
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.get("/api/social/drafts")
+
+        assert resp.status_code == 200
+        assert mock_svc.list_drafts.await_args.kwargs["limit"] == 50
+        assert mock_svc.list_drafts.await_args.kwargs["offset"] == 0
+
+    def test_limit_and_offset_pass_through(self, monkeypatch):
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(return_value=_page())
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.get("/api/social/drafts?limit=10&offset=20")
+
+        assert resp.status_code == 200
+        assert mock_svc.list_drafts.await_args.kwargs["limit"] == 10
+        assert mock_svc.list_drafts.await_args.kwargs["offset"] == 20
+
+    @pytest.mark.parametrize("qs", ["limit=0", "limit=501", "offset=-1"])
+    def test_out_of_range_pagination_rejected(self, monkeypatch, qs):
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(return_value=_page())
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        assert client.get(f"/api/social/drafts?{qs}").status_code == 422
+
+    def test_body_carries_total_limit_offset_and_status_counts(self, monkeypatch):
+        """Counting the returned page would report the window and call it the
+        table — the console's KPI row and rail badge read these instead."""
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(
+            return_value=_page(
+                [_draft()],
+                total=77,
+                status_counts={"pending": 10, "posted": 26, "rejected": 41},
+            )
+        )
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        body = client.get("/api/social/drafts?limit=1").json()
+
+        assert body["total"] == 77
+        assert body["limit"] == 1
+        assert body["offset"] == 0
+        assert body["status_counts"] == {
+            "pending": 10, "posted": 26, "rejected": 41,
+        }
+        assert len(body["drafts"]) == 1
+
+    def test_keeps_drafts_key_for_existing_consumers(self, monkeypatch):
+        """Console, MCP list_social_drafts, and the CLI all read `drafts`.
+        The #745 rename to `items` is a separate step with consumers to move."""
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(return_value=_page())
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        body = client.get("/api/social/drafts").json()
+
+        assert "drafts" in body
+        assert "items" not in body

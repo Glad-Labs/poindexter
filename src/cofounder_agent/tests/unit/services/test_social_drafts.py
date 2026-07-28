@@ -69,6 +69,25 @@ def _list_row(**overrides) -> dict:
     return row
 
 
+def _make_list_pool(rows=None, counts=None):
+    """Pool for list_drafts, which issues TWO fetches: page, then status counts.
+
+    A single ``fetch`` return_value would feed draft rows to the counts reader
+    (which wants ``{status, n}``), so the two calls are scripted separately.
+    """
+    pool, conn = _make_pool()
+    count_rows = [
+        {"status": status, "n": n} for status, n in (counts or {}).items()
+    ]
+    conn.fetch.side_effect = [list(rows or []), count_rows]
+    return pool, conn
+
+
+def _page_sql(conn) -> str:
+    """The page query — call 0, since call 1 is the status-counts aggregate."""
+    return conn.fetch.call_args_list[0][0][0].lower()
+
+
 # ---------------------------------------------------------------------------
 # create_draft
 # ---------------------------------------------------------------------------
@@ -234,18 +253,18 @@ async def test_reject_draft_sets_status():
 
 @pytest.mark.asyncio
 async def test_list_drafts_includes_resolved_post_status():
-    pool, _conn = _make_pool(fetch=[_list_row(resolved_post_status="published")])
+    pool, _conn = _make_list_pool([_list_row(resolved_post_status="published")])
     svc = SocialDraftsService()
-    drafts = await svc.list_drafts(None, None, None, pool)
-    assert drafts[0].post_status == "published"
+    page = await svc.list_drafts(None, None, None, pool)
+    assert page.rows[0].post_status == "published"
 
 
 @pytest.mark.asyncio
 async def test_list_drafts_post_status_none_when_no_post_yet():
-    pool, _conn = _make_pool(fetch=[_list_row(resolved_post_status=None)])
+    pool, _conn = _make_list_pool([_list_row(resolved_post_status=None)])
     svc = SocialDraftsService()
-    drafts = await svc.list_drafts(None, None, None, pool)
-    assert drafts[0].post_status is None
+    page = await svc.list_drafts(None, None, None, pool)
+    assert page.rows[0].post_status is None
 
 
 @pytest.mark.asyncio
@@ -253,10 +272,10 @@ async def test_list_drafts_query_resolves_post_by_id_or_task_metadata():
     """The join must resolve the same way approve_draft's own _resolve_post
     does: post_id when linked, else the latest posts row matching
     pipeline_task_id metadata — one source of truth for both code paths."""
-    pool, conn = _make_pool(fetch=[])
+    pool, conn = _make_list_pool()
     svc = SocialDraftsService()
     await svc.list_drafts(None, None, None, pool)
-    sql = conn.fetch.call_args[0][0].lower()
+    sql = _page_sql(conn)
     assert "p.id = d.post_id" in sql
     assert "metadata->>'pipeline_task_id'" in sql
 
@@ -265,40 +284,143 @@ async def test_list_drafts_query_resolves_post_by_id_or_task_metadata():
 async def test_list_drafts_title_from_post_when_available():
     """Once a posts row exists, its title (possibly revised post-writing)
     wins over the task's original topic."""
-    pool, _conn = _make_pool(
-        fetch=[_list_row(article_title="Real Published Title", resolved_post_id="post-99")]
+    pool, _conn = _make_list_pool(
+        [_list_row(article_title="Real Published Title", resolved_post_id="post-99")]
     )
     svc = SocialDraftsService()
-    drafts = await svc.list_drafts(None, None, None, pool)
-    assert drafts[0].title == "Real Published Title"
-    assert drafts[0].resolved_post_id == "post-99"
+    page = await svc.list_drafts(None, None, None, pool)
+    assert page.rows[0].title == "Real Published Title"
+    assert page.rows[0].resolved_post_id == "post-99"
 
 
 @pytest.mark.asyncio
 async def test_list_drafts_title_falls_back_to_task_topic():
     """Before a posts row exists (task still awaiting_approval), the SQL
     COALESCEs to pipeline_tasks.topic — resolved_post_id stays None."""
-    pool, _conn = _make_pool(
-        fetch=[_list_row(article_title="Original Task Topic", resolved_post_id=None)]
+    pool, _conn = _make_list_pool(
+        [_list_row(article_title="Original Task Topic", resolved_post_id=None)]
     )
     svc = SocialDraftsService()
-    drafts = await svc.list_drafts(None, None, None, pool)
-    assert drafts[0].title == "Original Task Topic"
-    assert drafts[0].resolved_post_id is None
+    page = await svc.list_drafts(None, None, None, pool)
+    assert page.rows[0].title == "Original Task Topic"
+    assert page.rows[0].resolved_post_id is None
 
 
 @pytest.mark.asyncio
 async def test_list_drafts_query_joins_pipeline_tasks_for_title():
     """Locks in the join + COALESCE the title/id resolution depends on —
     same rigor as the existing post-resolution join assertion above."""
-    pool, conn = _make_pool(fetch=[])
+    pool, conn = _make_list_pool()
     svc = SocialDraftsService()
     await svc.list_drafts(None, None, None, pool)
-    sql = conn.fetch.call_args[0][0].lower()
+    sql = _page_sql(conn)
     assert "join pipeline_tasks" in sql
     assert "pt.task_id = d.pipeline_task_id" in sql
     assert "coalesce(rp.title, pt.topic)" in sql
     assert "coalesce(d.post_id, rp.id)" in sql
+
+
+# ---------------------------------------------------------------------------
+# list_drafts — pagination + counts. social_post_drafts only grows (one row
+# per platform per post, tombstones never pruned: 67 of 77 rows were already
+# posted/rejected when the cap landed), and the endpoint returned every row on
+# every console poll. The cap must not strand an approval, so live rows sort
+# first, and counts must span the table so operator KPIs don't silently report
+# the window instead.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_drafts_applies_limit_and_offset():
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, None, pool, limit=50, offset=100)
+    sql = _page_sql(conn)
+    assert "limit $1" in sql
+    assert "offset $2" in sql
+    assert conn.fetch.call_args_list[0][0][1:] == (50, 100)
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_unbounded_when_limit_none():
+    """The default stays unbounded for callers that genuinely need every row;
+    the HTTP surface is where the cap is enforced."""
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, None, pool)
+    assert "limit $" not in _page_sql(conn)
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_sorts_live_rows_ahead_of_recency():
+    """The whole point of the ordering: a cap may drop posted/rejected
+    tombstones, never a pending/failed row awaiting a decision. Without this,
+    an old pending draft ages out of the window and its approval is stranded
+    with no UI trace."""
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, None, pool, limit=50)
+    sql = _page_sql(conn)
+    assert "order by (d.status in ('pending', 'failed')) desc, d.created_at desc" in sql
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_placeholders_shift_past_filters():
+    """limit/offset bind after the filter args — an off-by-one here would
+    silently filter on the limit integer."""
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts("post-1", "task-1", "pending", pool, limit=25, offset=5)
+    sql = _page_sql(conn)
+    assert "d.post_id = $1" in sql
+    assert "d.pipeline_task_id = $2" in sql
+    assert "d.status = $3" in sql
+    assert "limit $4" in sql
+    assert "offset $5" in sql
+    assert conn.fetch.call_args_list[0][0][1:] == (
+        "post-1", "task-1", "pending", 25, 5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_returns_status_counts_and_total():
+    pool, _conn = _make_list_pool(
+        [_list_row()], counts={"pending": 10, "posted": 26, "rejected": 41}
+    )
+    svc = SocialDraftsService()
+    page = await svc.list_drafts(None, None, None, pool, limit=1)
+    assert page.status_counts == {"pending": 10, "posted": 26, "rejected": 41}
+    # total spans the table, not the one-row window it was cut to.
+    assert page.total == 77
+    assert len(page.rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_total_narrows_to_filtered_status():
+    """total is "rows matching every filter"; status_counts stays the full
+    breakdown so a status-filtered call still reports honest KPIs."""
+    pool, _conn = _make_list_pool(
+        [_list_row()], counts={"pending": 10, "posted": 26}
+    )
+    svc = SocialDraftsService()
+    page = await svc.list_drafts(None, None, "pending", pool, limit=50)
+    assert page.total == 10
+    assert page.status_counts == {"pending": 10, "posted": 26}
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_counts_query_ignores_status_filter():
+    """The counts aggregate keeps the post/task scope but drops the status
+    predicate — otherwise filtering to one status would zero out every other
+    KPI on the console's social panel."""
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, "task-1", "pending", pool, limit=50)
+    counts_sql = conn.fetch.call_args_list[1][0][0].lower()
+    assert "group by d.status" in counts_sql
+    assert "d.pipeline_task_id = $1" in counts_sql
+    assert "d.status =" not in counts_sql
+    # ...and it binds only the scope arg, not the status one.
+    assert conn.fetch.call_args_list[1][0][1:] == ("task-1",)
 
 
 # ---------------------------------------------------------------------------
