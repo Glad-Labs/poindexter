@@ -10,10 +10,27 @@ Query resolution (first match wins, §2b of the taps-ingest design):
 2. ``config.categories`` — one random seed query per category from the
    ``CATEGORY_SEARCHES`` bank. The niche-bound tap's migration seeds these
    for niches the bank covers (gaming, pc-hardware).
-3. niche ``target_audience_tags`` — ``"{niche_name} {tag}"`` per tag, for
-   niches the bank doesn't cover (AI/ML). Passed in by the tap handler.
-4. none of the above — raise ``ValueError`` (the silent "search every global
+3. neither — raise ``ValueError`` (the silent "search every global
    category" fallback is retired; feedback_no_silent_defaults).
+
+**Removed (2026-07-27): deriving queries from niche ``target_audience_tags``.**
+That branch built ``"{niche_name} {tag}"`` per tag, which conflated two
+different things: ``target_audience_tags`` describes *who reads the niche*,
+not *what the niche is about*. For the ``glad-labs`` niche
+(``name="Glad Labs"``, tags ``{indie-devs, ai-curious, prospects,
+future-matt}``) it issued literal searches for ``"Glad Labs indie-devs"`` —
+personas the search engine discards as noise, leaving brand-name entity
+lookup. The result was ten self-referential candidates in ``topic_pool``
+(the operator's own homepage, ``/product``, an already-published post, the
+brand X profile, the Crunchbase entry), one of which ranked #1 in batch
+``6322bd8b``.
+
+The intent of that branch was right — don't silently search every global
+category — but the derivation was not: no niche in practice carries
+subject-shaped audience tags, so it produced brand lookups 100% of the time.
+A tap that cannot build a meaningful query now fails loud with the
+remediation, rather than returning the operator's own site.
+``services.topic_self_reference`` is the complementary backstop.
 
 Config (``plugin.topic_source.web_search`` in app_settings, layered with the
 tap row's config + niche context):
@@ -63,13 +80,21 @@ class WebSearchSource:
 
         plan = self._resolve_queries(config)[:max_queries]
         if not plan:
-            # Niche-aware resolution found nothing AND no explicit config was
-            # given. Fail loud rather than silently searching every global
-            # category (the retired pre-niche behaviour). feedback_no_silent_defaults.
+            # No explicit query config. Fail loud rather than silently
+            # searching every global category (the retired pre-niche
+            # behaviour) or synthesising a query from the niche's audience
+            # personas (which searched for the brand name itself — see the
+            # module docstring). feedback_no_silent_defaults.
+            niche = config.get("niche_slug") or config.get("niche_name") or "<unknown>"
             raise ValueError(
-                "web_search: no seed_queries, no categories, and no niche "
-                "target_audience_tags to derive queries from — refusing to "
-                "fall back to a global all-category search"
+                f"web_search: tap for niche {niche!r} has neither "
+                "'seed_queries' nor 'categories' configured, so there is no "
+                "subject matter to search for. Set one on the tap row, e.g.: "
+                "poindexter taps update <tap-name> --config "
+                '\'{"categories": ["technology", "engineering"]}\' — valid '
+                f"categories: {', '.join(sorted(_category_names()))}. "
+                "Refusing to fall back to a global all-category search or to "
+                "derive queries from audience tags."
             )
 
         researcher = WebResearcher(
@@ -107,8 +132,13 @@ class WebSearchSource:
 
         1. explicit config.seed_queries  -> pinned, label 'custom'
         2. explicit config.categories    -> bank queries, label = category
-        3. niche target_audience_tags    -> '{niche_name} {tag}', label = tag
-        4. nothing                        -> [] (caller fails loud)
+        3. nothing                        -> [] (caller fails loud)
+
+        Both remaining branches take their query text from operator-configured
+        *subject matter*. Nothing here derives a query from the niche's
+        identity: a niche name is a brand, and ``target_audience_tags`` are
+        reader personas — neither describes what to go read about. See the
+        module docstring for the batch that taught us this.
         """
         seed_queries = config.get("seed_queries")
         if isinstance(seed_queries, list) and seed_queries:
@@ -127,9 +157,12 @@ class WebSearchSource:
                     plan.append((random.choice(queries), cat))
             return plan
 
-        tags = config.get("target_audience_tags")
-        niche_name = (config.get("niche_name") or "").strip()
-        if isinstance(tags, list) and tags and niche_name:
-            return [(f"{niche_name} {tag}", str(tag)) for tag in tags]
-
         return []
+
+
+def _category_names() -> list[str]:
+    """Category keys available to ``config.categories`` — used in the
+    fail-loud remediation so the operator gets valid values, not a guess."""
+    from services.topic_sources._filters import CATEGORY_SEARCHES
+
+    return list(CATEGORY_SEARCHES)

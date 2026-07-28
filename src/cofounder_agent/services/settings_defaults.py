@@ -1077,6 +1077,12 @@ DEFAULTS: dict[str, str] = {
     # (empty / zero-letter topics are still always rejected). Sites in
     # non-spaced scripts (CJK) should set 1.
     'topic_sanity_min_alpha_words': '2',
+    # Self-reference gate (services/topic_self_reference.py). Extra hosts the
+    # operator owns, comma-separated, beyond the site_url / public_site_url
+    # hosts that are always excluded automatically. Matching is
+    # subdomain-aware and www-insensitive, so list apex domains
+    # ('example.com', not 'www.example.com'). Empty = derived hosts only.
+    'topic_source_excluded_domains': '',
     # Stale-batch reaper (services/jobs/reap_stale_topic_batches.py). A
     # topic_batch stuck status='open' wedges its niche content-dark via the
     # one-open-batch-per-niche index. The reaper alerts on any batch open
@@ -1946,6 +1952,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.topic_sanity_rejected.fallback': 'log_only',
     'findings.topic_sanity_rejected.cooldown_minutes': '360',
     'findings.topic_sanity_rejected.min_severity': 'warn',
+    # Self-reference gate (2026-07-27 batch 6322bd8b) — a source returning the
+    # operator's own site means its queries are pointed at the brand rather
+    # than at subject matter. Same routing rationale as topic_sanity_rejected:
+    # a source-config bug worth seeing on the routine ops channel, not a page.
+    'findings.topic_self_referential.delivery': 'discord',
+    'findings.topic_self_referential.fallback': 'log_only',
+    'findings.topic_self_referential.cooldown_minutes': '360',
+    'findings.topic_self_referential.min_severity': 'warn',
     'findings.media_drift.delivery': 'log_only',
     'findings.r2_static_drift.delivery': 'discord',
     'findings.r2_static_drift.fallback': 'log_only',

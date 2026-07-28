@@ -108,6 +108,62 @@ def _set_enabled(name: str, enabled: bool) -> None:
     click.secho(f"{name}: {state}", fg="green" if enabled else "yellow")
 
 
+@taps_group.command("set-config")
+@click.argument("name")
+@click.argument("config_json")
+@click.option(
+    "--replace", is_flag=True, default=False,
+    help="Replace the whole config object instead of merging keys into it.",
+)
+def taps_set_config(name: str, config_json: str, replace: bool) -> None:
+    """Set CONFIG_JSON (a JSON object) on tap NAME.
+
+    Merges into the existing config by default, so unrelated keys
+    (weight_pct, secret_fields, …) survive; --replace overwrites wholesale.
+
+    \b
+    Give web_search taps something to search for:
+      poindexter taps set-config glad-labs_web_search \\
+        '{"categories": ["technology", "engineering", "insights"]}'
+    """
+    try:
+        parsed = json.loads(config_json)
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: CONFIG_JSON is not valid JSON ({e})", err=True)
+        sys.exit(1)
+    if not isinstance(parsed, dict):
+        click.echo(
+            f"Error: CONFIG_JSON must be a JSON object, got {type(parsed).__name__}",
+            err=True,
+        )
+        sys.exit(1)
+
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return None
+        current = row.get("config") or {}
+        if isinstance(current, str):
+            # declarative_config_service hands jsonb back as a dict, but a row
+            # written by an older path can still carry a JSON string.
+            current = json.loads(current)
+        merged = parsed if replace else {**current, **parsed}
+        await dcs.upsert_row(pool, _SURFACE, {**row, "config": merged})
+        return merged
+
+    try:
+        merged = run_service(_impl)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if merged is None:
+        click.echo(f"(no tap named {name!r})", err=True)
+        sys.exit(1)
+    click.secho(f"{name}: config updated", fg="green")
+    click.echo(json.dumps(merged, indent=2, default=str))
+
+
 @taps_group.command("run")
 @click.argument("name", required=False)
 def taps_run(name: str | None) -> None:

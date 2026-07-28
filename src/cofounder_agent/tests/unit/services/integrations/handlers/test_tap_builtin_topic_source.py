@@ -208,3 +208,135 @@ async def test_unregistered_source_fails_loud():
                 row={"tap_type": "nope", "target_table": "topic_pool", "niche_id": _niche().id},
                 pool=pool,
             )
+
+
+@pytest.mark.asyncio
+async def test_self_reference_gate_drops_own_site_and_emits_finding():
+    """Regression (#925): candidates linking at the operator's own site.
+
+    Batch 6322bd8b ranked https://www.gladlabs.io/ as its #1 external topic
+    candidate, and ten such rows had accumulated in topic_pool — including a
+    post the pipeline had already published. Applied in the handler (not in
+    any one source) so no future source can bypass it.
+    """
+    pool, _ = _make_pool()
+    src = MagicMock()
+    src.name = "web_search"
+    src.extract = AsyncMock(return_value=[
+        DiscoveredTopic(
+            title="A genuinely external article about GPUs",
+            category="ai", source="ddg_search",
+            source_url="https://news.ycombinator.com/item?id=1",
+        ),
+        DiscoveredTopic(
+            title="Glad Labs - AI & Technology Insights",
+            category="ai", source="ddg_search",
+            source_url="https://www.gladlabs.io/",
+        ),
+        DiscoveredTopic(
+            title="Glad Labs (one-person indie shop)",
+            category="ai", source="ddg_search",
+            source_url="https://www.gladlabs.io/posts/glad-labs-one-person-indie-shop",
+        ),
+    ])
+
+    site_config = MagicMock()
+    site_config.get_int = MagicMock(return_value=2)
+    site_config.get = MagicMock(side_effect=lambda k, d=None: {
+        "site_url": "https://www.gladlabs.io",
+        "topic_source_excluded_domains": "",
+    }.get(k, d))
+
+    with patch(
+        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        return_value=[src],
+    ), patch(
+        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+    ) as NS, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        AsyncMock(return_value=SimpleNamespace(config={})),
+    ), patch(
+        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+    ) as GD, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        AsyncMock(return_value=1),
+    ) as INS, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+    ) as EMIT:
+        NS.return_value.get_by_id = AsyncMock(return_value=_niche())
+        GD.return_value.mark_duplicates = AsyncMock(return_value=None)
+        await builtin_topic_source(
+            None, site_config=site_config,
+            row={
+                "tap_type": "web_search", "target_table": "topic_pool",
+                "niche_id": _niche().id,
+            },
+            pool=pool,
+        )
+
+    # Only the third-party candidate survives to the insert.
+    inserted = INS.await_args.kwargs["topics"]
+    assert [t.title for t in inserted] == ["A genuinely external article about GPUs"]
+
+    # One aggregated finding for the run, not one per dropped candidate.
+    self_ref_calls = [
+        c for c in EMIT.call_args_list
+        if c.kwargs.get("kind") == "topic_self_referential"
+    ]
+    assert len(self_ref_calls) == 1
+    kw = self_ref_calls[0].kwargs
+    assert kw["severity"] == "warn"
+    assert len(kw["extra"]["dropped"]) == 2
+    assert kw["extra"]["owned_hosts"] == ["gladlabs.io"]
+
+
+@pytest.mark.asyncio
+async def test_self_reference_gate_inert_when_site_url_unset():
+    """A fresh install with no site_url must not drop anything."""
+    pool, _ = _make_pool()
+    src = MagicMock()
+    src.name = "web_search"
+    src.extract = AsyncMock(return_value=[
+        DiscoveredTopic(
+            title="Some perfectly good external headline",
+            category="ai", source="ddg_search",
+            source_url="https://example.com/a",
+        ),
+    ])
+
+    site_config = MagicMock()
+    site_config.get_int = MagicMock(return_value=2)
+    site_config.get = MagicMock(side_effect=lambda k, d=None: d)
+
+    with patch(
+        "services.integrations.handlers.tap_builtin_topic_source.get_topic_sources",
+        return_value=[src],
+    ), patch(
+        "services.integrations.handlers.tap_builtin_topic_source.NicheService",
+    ) as NS, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.PluginConfig.load",
+        AsyncMock(return_value=SimpleNamespace(config={})),
+    ), patch(
+        "services.integrations.handlers.tap_builtin_topic_source.get_deduplicator",
+    ) as GD, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.insert_pooled_topics",
+        AsyncMock(return_value=1),
+    ) as INS, patch(
+        "services.integrations.handlers.tap_builtin_topic_source.emit_finding",
+    ) as EMIT:
+        NS.return_value.get_by_id = AsyncMock(return_value=_niche())
+        GD.return_value.mark_duplicates = AsyncMock(return_value=None)
+        await builtin_topic_source(
+            None, site_config=site_config,
+            row={
+                "tap_type": "web_search", "target_table": "topic_pool",
+                "niche_id": _niche().id,
+            },
+            pool=pool,
+        )
+
+    assert len(INS.await_args.kwargs["topics"]) == 1
+    assert not [
+        c for c in EMIT.call_args_list
+        if c.kwargs.get("kind") == "topic_self_referential"
+    ]

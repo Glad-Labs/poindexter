@@ -308,6 +308,19 @@ git commit -m "feat(topic-pool): add insert_pooled_topics + dedup_key (b1)"
 
 ## Task 3: Niche-aware `web_search` query resolution (§2b)
 
+> **PARTIALLY SUPERSEDED 2026-07-27 (Glad-Labs/poindexter#925).** The
+> tag-derived branch specified and built below — `"{niche_name} {tag}"` from
+> the niche's `target_audience_tags` — was removed. `target_audience_tags`
+> describes _who reads the niche_, not _what it is about_, so for the
+> `glad-labs` niche it issued literal searches for `"Glad Labs indie-devs"`;
+> search engines discard the persona token and do entity lookup on the brand.
+> That put ten self-referential rows in `topic_pool` (the operator's own
+> homepage, `/product`, an already-published post, the brand X and Crunchbase
+> profiles), one of which ranked #1 in batch `6322bd8b`. Resolution order is
+> now `seed_queries` → `categories` → fail loud. The rest of this plan
+> (§2 tap handler, bank categories, fail-loud posture) still describes the
+> live system.
+
 **Files:**
 
 - Modify: `src/cofounder_agent/services/topic_sources/web_search.py`

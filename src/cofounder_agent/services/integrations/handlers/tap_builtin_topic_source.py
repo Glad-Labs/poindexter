@@ -22,6 +22,7 @@ from services.niche_service import NicheService
 from services.topic_dedup_semantic import get_deduplicator
 from services.topic_pool import insert_pooled_topics
 from services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
+from services.topic_self_reference import is_self_referential, resolve_owned_hosts
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,59 @@ async def builtin_topic_source(
         )
     fresh = sane
 
+    # Self-reference gate. A candidate linking back to the operator's own site
+    # is never topic material — at best it proposes rewriting a post that is
+    # already published (batch 6322bd8b surfaced exactly that, plus the
+    # homepage itself, ranked #1). Applied here rather than inside any one
+    # source so a future source cannot bypass it. Sources that yield no URL
+    # (knowledge, internal_rag) pass through untouched.
+    owned_hosts = resolve_owned_hosts(site_config)
+    if owned_hosts:
+        kept: list[Any] = []
+        self_refs: list[tuple[str, str]] = []  # (title, url)
+        for t in fresh:
+            url = getattr(t, "source_url", "") or ""
+            if is_self_referential(url, owned_hosts):
+                self_refs.append((getattr(t, "title", "") or "", url))
+            else:
+                kept.append(t)
+        if self_refs:
+            logger.warning(
+                "[tap.builtin_topic_source] %s/%s: dropped %d self-referential "
+                "candidate(s) pointing at owned host(s) %s: %s",
+                niche.slug, source_name, len(self_refs),
+                ", ".join(sorted(owned_hosts)),
+                "; ".join(f"{t!r:.60} -> {u}" for t, u in self_refs),
+            )
+            emit_finding(
+                source="tap_builtin_topic_source",
+                kind="topic_self_referential",
+                title=(
+                    f"Dropped {len(self_refs)} self-referential topic "
+                    f"candidate(s) at tap ingest ({niche.slug}/{source_name})"
+                ),
+                body=(
+                    "These candidates linked back to the operator's own "
+                    "properties, which means the source is searching for the "
+                    "site itself rather than for subject matter. Check the "
+                    "tap's query configuration.\n\n"
+                    + "\n".join(f"- {title!r} — {url}" for title, url in self_refs)
+                ),
+                severity="warn",
+                dedup_key=f"topic-self-ref:{niche.slug}:{source_name}",
+                extra={
+                    "stage": "tap_ingest",
+                    "niche_slug": niche.slug,
+                    "source": source_name,
+                    "owned_hosts": sorted(owned_hosts),
+                    "dropped": [
+                        {"title": title[:200], "url": url[:500]}
+                        for title, url in self_refs
+                    ],
+                },
+            )
+        fresh = kept
+
     target_table = row.get("target_table") or "topic_pool"
     async with pool.acquire() as conn:
         inserted = await insert_pooled_topics(
@@ -170,7 +224,7 @@ async def builtin_topic_source(
 
     logger.info(
         "[tap.builtin_topic_source] %s/%s: %d pooled (%d fetched, %d after "
-        "dedup + sanity)",
+        "dedup + sanity + self-reference)",
         niche.slug, source_name, inserted, len(topics or []), len(fresh),
     )
     return {"records": inserted, "source": source_name}

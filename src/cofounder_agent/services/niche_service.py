@@ -65,7 +65,7 @@ class NicheSource:
 
 
 class NicheService:
-    def __init__(self, pool):
+    def __init__(self, pool: Any) -> None:
         self._pool = pool
 
     async def create(

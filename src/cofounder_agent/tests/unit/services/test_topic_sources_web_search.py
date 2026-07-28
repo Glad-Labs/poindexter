@@ -169,44 +169,78 @@ class TestWebSearchSource:
         fake.search_simple.assert_awaited_with("my exact query", num_results=3)
 
     @pytest.mark.asyncio
-    async def test_niche_tags_derive_queries_when_no_config(self):
-        # No seed_queries, no categories — derive from niche name + tags.
+    async def test_niche_identity_never_becomes_a_query(self):
+        """Regression (#925): niche name + audience tags must NOT be searched.
+
+        This derivation used to exist and issued literal DDG searches for
+        "Glad Labs indie-devs". The personas are noise to a search engine,
+        so it did entity lookup on the brand and returned the operator's own
+        homepage — which then ranked #1 in batch 6322bd8b.
+        """
+        fake = MagicMock()
+        fake.search_simple = AsyncMock(return_value=[])
+        with patch("services.web_research.WebResearcher", return_value=fake):
+            source = WebSearchSource()
+            with pytest.raises(ValueError) as exc:
+                await source.extract(
+                    pool=None,
+                    config={
+                        "niche_slug": "glad-labs",
+                        "niche_name": "Glad Labs",
+                        "target_audience_tags": [
+                            "indie-devs", "ai-curious", "prospects", "future-matt",
+                        ],
+                    },
+                )
+
+        # Fails loud rather than searching, and never issues a request.
+        assert "seed_queries" in str(exc.value)
+        assert "categories" in str(exc.value)
+        fake.search_simple.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_fail_loud_names_the_niche_and_valid_categories(self):
+        """The remediation has to be actionable: which tap, and what values."""
+        fake = MagicMock()
+        fake.search_simple = AsyncMock(return_value=[])
+        fake_categories = {"technology": ["q"], "engineering": ["q"]}
+        with patch("services.web_research.WebResearcher", return_value=fake), \
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
+            source = WebSearchSource()
+            with pytest.raises(ValueError) as exc:
+                await source.extract(pool=None, config={"niche_slug": "glad-labs"})
+
+        msg = str(exc.value)
+        assert "glad-labs" in msg
+        # Valid category values come from the live bank, not a hardcoded list.
+        assert "technology" in msg and "engineering" in msg
+
+    @pytest.mark.asyncio
+    async def test_categories_still_win_when_audience_tags_present(self):
+        """Audience tags must not interfere with a correctly-configured tap."""
         captured: list[str] = []
 
         async def _search(query, num_results=3):  # mock: num_results unused
             captured.append(query)
-            return [{"title": f"A readable article about {query} in depth", "url": "https://x/1"}]
-
-        fake = MagicMock()
-        fake.search_simple = AsyncMock(side_effect=_search)
-        with patch("services.web_research.WebResearcher", return_value=fake):
-            source = WebSearchSource()
-            topics = await source.extract(
-                pool=None,
-                config={
-                    "niche_name": "PC Gaming",
-                    "target_audience_tags": ["esports", "gpu overclocking"],
-                },
-            )
-        # One query per tag, niche name folded in for topical scoping.
-        assert captured == ["PC Gaming esports", "PC Gaming gpu overclocking"]
-        assert len(topics) == 2
-
-    @pytest.mark.asyncio
-    async def test_two_niches_get_different_queries(self):
-        seen: list[str] = []
-
-        async def _search(query, num_results=3):  # mock: num_results unused
-            seen.append(query)
             return []
 
         fake = MagicMock()
         fake.search_simple = AsyncMock(side_effect=_search)
-        with patch("services.web_research.WebResearcher", return_value=fake):
+        fake_categories = {"technology": ["latest AI developer tools"]}
+        with patch("services.web_research.WebResearcher", return_value=fake), \
+             patch("services.topic_sources._filters.CATEGORY_SEARCHES", fake_categories):
             source = WebSearchSource()
-            await source.extract(pool=None, config={"niche_name": "AI/ML", "target_audience_tags": ["llms"]})
-            await source.extract(pool=None, config={"niche_name": "PC Gaming", "target_audience_tags": ["esports"]})
-        assert seen == ["AI/ML llms", "PC Gaming esports"]
+            await source.extract(
+                pool=None,
+                config={
+                    "categories": ["technology"],
+                    "niche_name": "Glad Labs",
+                    "target_audience_tags": ["indie-devs"],
+                },
+            )
+
+        assert captured == ["latest AI developer tools"]
+        assert not any("Glad Labs" in q for q in captured)
 
 
 class TestContract:
