@@ -2178,7 +2178,8 @@
             ]
           },
           "unit": "short",
-          "min": 0
+          "min": 0,
+          "noValue": "0"
         },
         "overrides": []
       },

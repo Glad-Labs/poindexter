@@ -62,7 +62,7 @@
   "version": 1,
   "schemaVersion": 39,
   "time": {
-    "from": "now-24h",
+    "from": "now-7d",
     "to": "now"
   },
   "refresh": "1m",
