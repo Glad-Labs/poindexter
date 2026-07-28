@@ -32,6 +32,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
@@ -211,7 +212,15 @@ _SPOKEN_REPLACEMENTS = [
 _SPOKEN_REGEX_STATIC = [
     # File paths and URLs — skip entirely
     (re.compile(r"https?://\S+"), ""),
-    (re.compile(r"[\w/\\]+\.\w{2,4}(?:\s|$)"), " "),  # file.ext
+    # file.ext — the stem MUST contain a letter and the extension MUST be
+    # purely alphabetic, or this rule silently eats decimal numbers. The
+    # original `[\w/\\]+\.\w{2,4}` matched the "1.65 " inside "$1.65 trillion"
+    # (stem "1", "extension" "65") and deleted it, so a podcast announced
+    # "The $ Trillion Secret" and read the body line "hidden debt at around
+    # trillion dollars" — the episode's central figure, gone. Money, versions
+    # and stats are the whole point of a sentence; a filename is noise. Prefer
+    # leaving a stray "2024.csv" spoken over deleting a number.
+    (re.compile(r"[\w/\\]*[A-Za-z][\w/\\]*\.[A-Za-z]{2,4}(?:\s|$)"), " "),
     # Version numbers — say naturally (v2.0 → version 2.0)
     (re.compile(r"\bv(\d)"), r"version \1"),
     # Acronym with expansion in parentheses — use plain language instead
@@ -651,7 +660,7 @@ async def _build_script_with_llm(
         # #2191 paths). Only forward ``think`` when resolved; skip on None so an
         # operator opt-out leaves the backend default rather than pinning it.
         think = _resolve_podcast_think(_sc)
-        think_kwargs = {} if think is None else {"think": think}
+        think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
         messages = [{"role": "user", "content": prompt}]
         result = await dispatch_complete(
             pool=pool,

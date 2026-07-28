@@ -686,6 +686,45 @@ def test_resolve_media_title_falls_back_to_content_h1_when_no_seo_title():
     assert _resolve_media_title(ctx) == "Mechanical Keyboard Switches Explained"
 
 
+def test_resolve_media_title_accepts_h2_headline_over_seo_title():
+    """The writer emits the headline as ``##`` — an H1-only match announced the
+    wrong episode.
+
+    Regression (2026-07-27 episode): content headed ``## The invoice nobody
+    wants to show you`` had no H1 at all, so resolution fell through to
+    ``seo_title`` — a completely different headline — and the podcast opened
+    "Today's episode: Debt in AI Infrastructure: The $1.65 Trillion Secret"
+    over an article published as "The invoice nobody wants to show you".
+    """
+    ctx = {
+        "title": "The invoice nobody wants to show you",
+        "seo_title": "Debt in AI Infrastructure: The $1.65 Trillion Secret",
+        "content": (
+            "## The invoice nobody wants to show you\n\n"
+            "Five companies are currently building...\n\n"
+            "## The number is $1.65 trillion\n\nbody\n"
+        ),
+    }
+    assert _resolve_media_title(ctx) == "The invoice nobody wants to show you"
+
+
+def test_resolve_media_title_prefers_first_headline_when_h1_follows_h2():
+    """The headline is the FIRST heading, not the first H1 further down."""
+    ctx = {
+        "content": "## Real Headline\n\nbody\n\n# A Later H1 Section\n\nmore",
+    }
+    assert _resolve_media_title(ctx) == "Real Headline"
+
+
+def test_resolve_media_title_ignores_deeper_headings():
+    """H3+ are section headings, never the article headline — seo_title wins."""
+    ctx = {
+        "seo_title": "The Real SEO Title",
+        "content": "### Some Subsection\n\nbody text",
+    }
+    assert _resolve_media_title(ctx) == "The Real SEO Title"
+
+
 def test_resolve_media_title_last_resort_raw_title():
     ctx = {"title": "Only Title Here", "content": "no heading body"}
     assert _resolve_media_title(ctx) == "Only Title Here"

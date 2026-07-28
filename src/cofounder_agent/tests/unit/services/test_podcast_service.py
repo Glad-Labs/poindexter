@@ -444,6 +444,45 @@ class TestNormalizeForSpeech:
 
 
 # ===========================================================================
+# The file.ext rule must never eat a number.
+#
+# Regression: `[\w/\\]+\.\w{2,4}` treated the "1.65 " in "$1.65 trillion" as a
+# filename (stem "1", ext "65") and deleted it. A published episode announced
+# "Debt in AI Infrastructure: The $ Trillion Secret" and read its central
+# claim as "hidden debt at around trillion dollars" — figure gone, silently.
+# A filename is noise; a number is usually the point of the sentence.
+# ===========================================================================
+
+
+class TestFileExtensionRuleNeverEatsNumbers:
+    @pytest.mark.parametrize("text", [
+        # The exact strings from the 2026-07-27 episode.
+        "Debt in AI Infrastructure: The $1.65 Trillion Secret",
+        "puts this hidden debt at around 1.65 trillion dollars",
+        "higher than the 1.35 trillion dollars officially listed",
+        # Same shape, other units — 2-to-4-digit fractional parts were the trap.
+        "that's about $3.60 per month per GPU",
+        "Latency was 99.9th percentile",
+        "a 1.65x improvement",
+        "it grew 3.5 percent",
+        "the U.S. economy shrank",
+    ])
+    def test_numbers_survive_normalization(self, text):
+        from services.podcast_service import _normalize_for_speech
+        assert _normalize_for_speech(text, site_config=_TEST_SC) == text
+
+    @pytest.mark.parametrize("text,gone", [
+        ("See config.yaml for details", "config.yaml"),
+        ("Edit main.py then run it", "main.py"),
+        ("the Node.js runtime", "Node.js"),
+    ])
+    def test_real_filenames_still_stripped(self, text, gone):
+        """The rule must keep doing its job — a spoken "dot py" is noise."""
+        from services.podcast_service import _normalize_for_speech
+        assert gone not in _normalize_for_speech(text, site_config=_TEST_SC)
+
+
+# ===========================================================================
 # Model-identifier speech normalization — quant/config tails read awful
 # token-by-token. gemma-4-31B-it-qat:latest should say "gemma four thirty-one
 # B", not spell out the it-qat / :latest / -5090 config noise.

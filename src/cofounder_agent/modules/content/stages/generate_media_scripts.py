@@ -377,12 +377,23 @@ class GenerateMediaScriptsStage:
             )
 
 
-def _first_h1(content: str) -> str:
-    """Return the text of the first Markdown H1 (``# ...``), or '' if none."""
+def _first_headline(content: str) -> str:
+    """Return the first Markdown H1/H2 heading text, or '' if none.
+
+    H2 counts because the writer emits the article headline as ``## Title`` —
+    an H1-only match silently found nothing and fell through to ``seo_title``,
+    so the podcast announced a *different* headline than the published post
+    ("Debt in AI Infrastructure: The $1.65 Trillion Secret" spoken over an
+    article titled "The invoice nobody wants to show you"). The H1-only form
+    degraded as the writer drifted to ``##``: 2.5% of episodes hit the fallback
+    in April 2026, 62% by July. Measured over the 76 podcast episodes since
+    2026-06-01, the first H1-or-H2 equals the published ``posts.title`` in 73
+    (96%); the 3 misses are articles that genuinely open on a section heading.
+    """
     for line in (content or "").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            return stripped[2:].strip()
+        match = re.match(r"#{1,2}\s+(\S.*)", line.strip())
+        if match:
+            return match.group(1).strip()
     return ""
 
 
@@ -396,19 +407,21 @@ def _resolve_media_title(context: dict[str, Any]) -> str:
 
     - ``title`` can carry a polluted value: a style-rubric line leaked by
       content.generate_title lands in ``pipeline_versions.title`` even when the
-      published post recovers a clean title from its content H1.
+      published post recovers a clean title from its content headline.
     - ``seo_title`` is clamped to <=60 chars at a word boundary for the search
       snippet, so on a long title it truncates mid-phrase — the "… Testing"
       podcast-intro bug, where the full title was "… Testing Its Quality". A
       spoken intro has no character budget, so the clipped form is wrong here.
+      It is also frequently a *different* headline than the one published, so
+      reaching it at all means the intro announces the wrong episode.
 
-    Prefer the full clean title from the content H1 (the headline the reader
+    Prefer the full clean title from the content headline (the H1/H2 the reader
     sees), then the clean-but-possibly-clipped ``seo_title``, then the raw
     ``title`` channel only as a last resort.
     """
-    h1 = _first_h1(context.get("content") or "")
-    if h1:
-        return h1
+    headline = _first_headline(context.get("content") or "")
+    if headline:
+        return headline
     seo_title = (context.get("seo_title") or "").strip()
     if seo_title:
         return seo_title
