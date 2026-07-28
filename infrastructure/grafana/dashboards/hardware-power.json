@@ -682,16 +682,16 @@
       "id": 72,
       "type": "timeseries",
       "title": "Mains Voltage (Shelly, AC in)",
-      "description": "True outlet voltage from the Shelly wall-plug meter \u2014 not a PSU-internal estimate. Dashed lines mirror the MainsVoltageLow / MainsVoltageCritical alert bands at 92% / 87% of a 120V nominal (110.4V / 104.4V). Those alert thresholds live in app_settings (prometheus.threshold.psu_nominal_line_voltage_volts and the two percent keys); if you retune them there, update these lines to match. Sustained undervoltage ends in an uncommanded hard power-off that leaves no journal entry \u2014 see docs/operations/wall-power-metering.md.",
+      "description": "True outlet voltage from the Shelly wall-plug meter — not a PSU-internal estimate. Dashed lines mirror the MainsVoltageLow / MainsVoltageCritical alert bands at 92% / 87% of a 120V nominal (110.4V / 104.4V). Those alert thresholds live in app_settings (prometheus.threshold.psu_nominal_line_voltage_volts and the two percent keys); if you retune them there, update these lines to match. Sustained undervoltage ends in an uncommanded hard power-off that leaves no journal entry — see docs/operations/wall-power-metering.md.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 12,
-        "x": 12,
-        "y": 22
+        "w": 24,
+        "x": 0,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -762,7 +762,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 26
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -893,7 +893,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 26
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -947,7 +947,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 38
       },
       "fieldConfig": {
         "defaults": {
@@ -1024,7 +1024,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 46
       },
       "panels": [],
       "id": 13
@@ -1041,7 +1041,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 47
       },
       "fieldConfig": {
         "defaults": {
@@ -1081,7 +1081,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 56
       },
       "fieldConfig": {
         "defaults": {
@@ -1118,7 +1118,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 65
       }
     },
     {
@@ -1134,7 +1134,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 66
       },
       "targets": [
         {
@@ -1167,7 +1167,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 66
       },
       "targets": [
         {
@@ -1200,7 +1200,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 74
       },
       "targets": [
         {
@@ -1233,7 +1233,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 82
       },
       "targets": [
         {
@@ -1261,7 +1261,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 90
       },
       "panels": [],
       "id": 59
@@ -1279,7 +1279,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 87
+        "y": 91
       },
       "fieldConfig": {
         "defaults": {
@@ -1341,7 +1341,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 87
+        "y": 91
       },
       "fieldConfig": {
         "defaults": {
@@ -1403,7 +1403,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 87
+        "y": 91
       },
       "fieldConfig": {
         "defaults": {
@@ -1465,7 +1465,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 91
+        "y": 95
       },
       "fieldConfig": {
         "defaults": {
@@ -1532,7 +1532,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 91
+        "y": 95
       },
       "fieldConfig": {
         "defaults": {
@@ -1596,7 +1596,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 103
       },
       "panels": []
     },
@@ -1613,7 +1613,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 100
+        "y": 104
       },
       "fieldConfig": {
         "defaults": {
@@ -1678,7 +1678,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 108
+        "y": 112
       },
       "id": 69,
       "panels": [],
@@ -1721,7 +1721,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 109
+        "y": 113
       },
       "id": 70,
       "options": {
@@ -1778,7 +1778,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 109
+        "y": 113
       },
       "id": 71,
       "options": {
