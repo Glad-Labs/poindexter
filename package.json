@@ -92,7 +92,8 @@
     "minimatch": ">=9.0.7",
     "test-exclude": "^7.0.1",
     "jsonpath": ">=1.1.2",
-    "underscore": ">=1.13.7"
+    "underscore": ">=1.13.7",
+    "sharp": "^0.35.0"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0"
