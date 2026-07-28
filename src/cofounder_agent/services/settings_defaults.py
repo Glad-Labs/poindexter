@@ -1172,6 +1172,18 @@ DEFAULTS: dict[str, str] = {
     # affiliate_link_clicks every 5 min (mirrors sync_cloudflare_analytics).
     'plugin.job.sync_affiliate_clicks.enabled': 'true',
     'plugin.job.sync_affiliate_clicks.interval_seconds': '300',
+    # Case-insensitive regex marking a /go click as bot traffic at ingest, so
+    # affiliate_links.clicks and the Grafana panels count humans only
+    # (poindexter#930 — crawlers were 52% of rows). Raw rows are still stored;
+    # reader surfaces select from the affiliate_link_clicks_human view. Widen
+    # this to exclude a newly-spotted crawler without a release. An invalid
+    # regex logs loud and falls back to the built-in pattern rather than
+    # letting bots through as human.
+    'affiliate_click_bot_ua_pattern': (
+        r'(bot|crawler|spider|slurp|bingpreview|facebookexternalhit|headless|'
+        r'python-requests|python-urllib|curl|wget|scrapy|monitor|uptime|'
+        r'preview|fetch|axios|okhttp|go-http-client|java/|libwww)'
+    ),
     # Model pin for the CSV-import keyword/display-text derivation
     # (task.affiliate_derive_keywords). why: empty -> structured_extraction_model
     # (a JSON-reliable instruct model). Local by default.

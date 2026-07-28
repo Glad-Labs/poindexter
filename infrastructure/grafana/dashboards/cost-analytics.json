@@ -887,12 +887,13 @@
             "uid": "local-brain-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS clicks FROM affiliate_link_clicks WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COUNT(*) AS clicks FROM affiliate_link_clicks_human WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
       "title": "Affiliate clicks / day",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Human /go clicks per day. Reads affiliate_link_clicks_human; crawler traffic (52% of raw rows) is excluded via is_bot."
     },
     {
       "datasource": {
@@ -913,12 +914,13 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT code, COUNT(*) AS clicks FROM affiliate_link_clicks WHERE $__timeFilter(created_at) GROUP BY code ORDER BY clicks DESC",
+          "rawSql": "SELECT code, COUNT(*) AS clicks FROM affiliate_link_clicks_human WHERE $__timeFilter(created_at) GROUP BY code ORDER BY clicks DESC",
           "refId": "A"
         }
       ],
       "title": "Clicks by link",
-      "type": "table"
+      "type": "table",
+      "description": "Human clicks per affiliate code. Reads affiliate_link_clicks_human so per-link totals are not inflated by crawlers."
     },
     {
       "datasource": {
@@ -939,12 +941,13 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT post_slug, COUNT(*) AS clicks FROM affiliate_link_clicks WHERE $__timeFilter(created_at) AND post_slug IS NOT NULL GROUP BY post_slug ORDER BY clicks DESC LIMIT 25",
+          "rawSql": "SELECT COALESCE(NULLIF(regexp_replace(referrer, '^https?://[^/]+', ''), ''), '(direct)') AS source_page, COUNT(*) AS clicks FROM affiliate_link_clicks_human WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY clicks DESC LIMIT 25",
           "refId": "A"
         }
       ],
-      "title": "Clicks by post",
-      "type": "table"
+      "title": "Clicks by source page",
+      "type": "table",
+      "description": "Which page sent each human /go click, by referrer path. Replaces 'Clicks by post', which grouped by post_slug and could never populate: post_slug is derived from a /posts/<slug> referrer, and no published post carries an affiliate link yet (poindexter#930). Real traffic comes from /referrals and the homepage. Once in-post links land, their slugs appear here as /posts/<slug> rows."
     },
     {
       "type": "row",

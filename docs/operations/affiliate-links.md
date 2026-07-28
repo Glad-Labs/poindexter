@@ -103,15 +103,43 @@ README for deploy details). Flow:
 5. `SyncAffiliateClicksJob` (`services/jobs/sync_affiliate_clicks.py`, every
    5 min) pulls those points via the CF SQL HTTP API into
    `affiliate_link_clicks`, attributes each to its source post (from the
-   referrer's `/posts/<slug>` path), and rolls per-code totals into
-   `affiliate_links.clicks`. It reuses the page-views ingest credentials
+   referrer's `/posts/<slug>` path), classifies it as bot or human (below),
+   and rolls per-code **human** totals into `affiliate_links.clicks`. It reuses
+   the page-views ingest credentials
    (`cloudflare_account_id` + secret `cloudflare_analytics_api_token`) and keeps
    its own high-water mark in `affiliate_clicks_last_sync`. Because the feature
    is opt-in, the job skips quietly when Cloudflare isn't configured — it does
    not page.
 
+### Bot filtering
+
+A public `/go/<code>` endpoint is crawled heavily: when this was added,
+**210 of 403 stored clicks (52%)** carried a self-identifying crawler user
+agent (LinkupBot, AhrefsBot, SemrushBot, jscrawler, curl), and all of them
+were being rolled into `affiliate_links.clicks` — roughly doubling every
+per-link total (Glad-Labs/poindexter#930).
+
+Each click is now classified at ingest against
+`app_settings.affiliate_click_bot_ua_pattern` (a case-insensitive regex) and
+stored with `is_bot` + `bot_reason` (`ua:pattern`, `ua:missing`, or
+`ua:backfill` for rows labelled by the one-time migration). Raw rows are kept
+for forensics; **reader surfaces select from the `affiliate_link_clicks_human`
+view**, mirroring the `page_views` / `page_views_human` split.
+
+Widen the setting to exclude a newly-spotted crawler without a release. The
+tokens are deliberately broad substrings — mislabelling a human undercounts,
+letting a crawler through inflates, and inflation is the failure being fixed.
+An invalid operator regex logs loud and falls back to the built-in pattern
+rather than passing bots through as human.
+
 Clicks surface on the **Cost & Analytics** Grafana board under the "Affiliate
-Links — /go clicks" section (per-day timeseries, by-link and by-post tables).
+Links — /go clicks" section (per-day timeseries, by-link table, and a
+**Clicks by source page** table). That last panel replaced an earlier "Clicks
+by post": `post_slug` is derived from a `/posts/<slug>` referrer, and it stays
+NULL until a published post actually carries an affiliate link — so the panel
+could never populate. Real clicks arrive from `/referrals` and the homepage.
+Once in-post links land, their slugs appear in the same panel as
+`/posts/<slug>` rows.
 
 ## Disclosure banner
 
@@ -123,15 +151,16 @@ from the content itself — there is no separate stored boolean to drift.
 
 ## Settings (`app_settings`)
 
-| Key                                                 | Default       | Purpose                                                                 |
-| --------------------------------------------------- | ------------- | ----------------------------------------------------------------------- |
-| `affiliate_injection_enabled`                       | `false`       | Master switch for the injection atom.                                   |
-| `affiliate_max_links_per_post`                      | `3`           | Per-post cap on injected links.                                         |
-| `affiliate_redirect_base_url`                       | `/go`         | Link base. `/go` for a zone route; a full origin for a `go.` subdomain. |
-| `affiliate_disclosure_text`                         | (FTC default) | Banner copy shown on posts that carry a link.                           |
-| `plugin.job.sync_affiliate_clicks.enabled`          | `true`        | Whether the click-sync job runs.                                        |
-| `plugin.job.sync_affiliate_clicks.interval_seconds` | `300`         | Click-sync cadence.                                                     |
-| `affiliate_clicks_last_sync`                        | (unset)       | Job-managed high-water mark — do not hand-edit.                         |
+| Key                                                 | Default       | Purpose                                                                        |
+| --------------------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
+| `affiliate_injection_enabled`                       | `false`       | Master switch for the injection atom.                                          |
+| `affiliate_max_links_per_post`                      | `3`           | Per-post cap on injected links.                                                |
+| `affiliate_redirect_base_url`                       | `/go`         | Link base. `/go` for a zone route; a full origin for a `go.` subdomain.        |
+| `affiliate_disclosure_text`                         | (FTC default) | Banner copy shown on posts that carry a link.                                  |
+| `plugin.job.sync_affiliate_clicks.enabled`          | `true`        | Whether the click-sync job runs.                                               |
+| `plugin.job.sync_affiliate_clicks.interval_seconds` | `300`         | Click-sync cadence.                                                            |
+| `affiliate_click_bot_ua_pattern`                    | crawler regex | Case-insensitive UA regex marking a click as bot at ingest. See Bot filtering. |
+| `affiliate_clicks_last_sync`                        | (unset)       | Job-managed high-water mark — do not hand-edit.                                |
 
 Reused from the page-views ingest: `cloudflare_account_id` (non-secret) and
 `cloudflare_analytics_api_token` (secret, scope `Account → Account Analytics →
@@ -158,8 +187,11 @@ CASCADE), keyword, created_at`, `UNIQUE(link_id, keyword)` — one row per
   keyword/alias a link matches on. Uniqueness is scoped per-link, not
   global: different links CAN share a keyword string.
 - `affiliate_link_clicks` — `id, code, post_slug, referrer, country, user_agent,
-created_at`. One row per synced click; `post_slug` is derived from the
-  referrer.
+created_at, is_bot, bot_reason`. One row per synced click; `post_slug` is
+  derived from the referrer, and `is_bot` is set at ingest (see Bot filtering).
+- `affiliate_link_clicks_human` — view over the above `WHERE is_bot = false`.
+  **Read this, not the base table**, for anything the operator sees; the base
+  table is for forensics and liveness.
 
 ## Bulk import from a spreadsheet
 

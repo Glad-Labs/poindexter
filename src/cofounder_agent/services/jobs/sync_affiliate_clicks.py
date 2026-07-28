@@ -56,6 +56,48 @@ _QUERY_TEMPLATE = (
 _WATERMARK_KEY = "affiliate_clicks_last_sync"
 _SLUG_RE = re.compile(r"/posts/([^/?#]+)")
 
+# Fallback bot pattern, used only when app_settings has no override. Kept in
+# sync with the backfill in migration 20260728_024610.
+_DEFAULT_BOT_UA_PATTERN = (
+    r"(bot|crawler|spider|slurp|bingpreview|facebookexternalhit|headless|"
+    r"python-requests|python-urllib|curl|wget|scrapy|monitor|uptime|"
+    r"preview|fetch|axios|okhttp|go-http-client|java/|libwww)"
+)
+
+
+def _classify_bot(user_agent: str | None, pattern: str) -> tuple[bool, str | None]:
+    """Classify a click as bot or human from its user agent.
+
+    Crawlers hitting /go/<code> self-identify (LinkupBot, AhrefsBot,
+    SemrushBot, curl, ...) and made up 52% of rows before this was added
+    (poindexter#930). A missing user agent on an HTTP redirect is not a
+    browser either, and is labelled separately so the two causes stay
+    distinguishable in bot_reason.
+
+    The tokens are deliberately broad substrings: mislabelling a human as a
+    bot undercounts clicks, while letting a crawler through inflates them,
+    and inflation is the failure this exists to stop. Same bias the
+    page_views bot sweep documents.
+
+    Returns ``(is_bot, reason)``; reason is None for human traffic.
+    """
+    if not user_agent:
+        return True, "ua:missing"
+    try:
+        if re.search(pattern, user_agent, re.IGNORECASE):
+            return True, "ua:pattern"
+    except re.error:
+        # A bad operator-supplied regex must not silently pass bots through
+        # as human, nor break ingest -- fall back to the vetted default.
+        logger.warning(
+            "[SYNC_AFFILIATE] invalid affiliate_click_bot_ua_pattern %r — "
+            "falling back to the built-in pattern",
+            pattern,
+        )
+        if re.search(_DEFAULT_BOT_UA_PATTERN, user_agent, re.IGNORECASE):
+            return True, "ua:pattern"
+    return False, None
+
 
 def _parse_iso(value: str) -> datetime:
     """Parse ISO-8601 timestamp, tolerating a trailing Z."""
@@ -228,8 +270,15 @@ class SyncAffiliateClicksJob:
         # ------------------------------------------------------------------
         try:
             inserted = 0
+            bot_rows = 0
             skipped_bad_ts = 0
             max_ts: datetime | None = None
+            # Operator-tunable so a new crawler can be excluded without a
+            # release; falls back to the vetted built-in when unset.
+            bot_pattern = (
+                sc.get("affiliate_click_bot_ua_pattern", _DEFAULT_BOT_UA_PATTERN)
+                or _DEFAULT_BOT_UA_PATTERN
+            )
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     for raw in rows:
@@ -265,18 +314,26 @@ class SyncAffiliateClicksJob:
                         if dup:
                             continue
 
+                        is_bot, bot_reason = _classify_bot(
+                            c["user_agent"], bot_pattern
+                        )
                         await conn.execute(
                             "INSERT INTO affiliate_link_clicks "
-                            "(code, post_slug, referrer, country, user_agent, created_at) "
-                            "VALUES ($1, $2, $3, $4, $5, $6)",
+                            "(code, post_slug, referrer, country, user_agent, "
+                            "created_at, is_bot, bot_reason) "
+                            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                             c["code"],
                             c["post_slug"],
                             c["referrer"],
                             c["country"],
                             c["user_agent"],
                             ts,
+                            is_bot,
+                            bot_reason,
                         )
                         inserted += 1
+                        if is_bot:
+                            bot_rows += 1
                         if max_ts is None or ts > max_ts:
                             max_ts = ts
 
@@ -293,9 +350,17 @@ class SyncAffiliateClicksJob:
 
             return JobResult(
                 ok=True,
-                detail=f"synced {inserted} affiliate clicks",
+                detail=(
+                    f"synced {inserted} affiliate clicks "
+                    f"({inserted - bot_rows} human, {bot_rows} bot)"
+                ),
                 changes_made=inserted,
-                metrics={"rows_fetched": len(rows), "rows_inserted": inserted},
+                metrics={
+                    "rows_fetched": len(rows),
+                    "rows_inserted": inserted,
+                    "rows_bot": bot_rows,
+                    "rows_human": inserted - bot_rows,
+                },
             )
         except Exception as e:
             logger.exception("[SYNC_AFFILIATE] insert pass failed: %s", e)
@@ -310,10 +375,21 @@ class SyncAffiliateClicksJob:
         """
         try:
             async with pool.acquire() as conn:
+                # Human rows only (poindexter#930): crawlers were 52% of clicks,
+                # which roughly doubled every per-link total the operator saw.
                 await conn.execute(
                     "UPDATE affiliate_links a SET clicks = c.n, updated_at = now() "
-                    "FROM (SELECT code, COUNT(*) AS n FROM affiliate_link_clicks GROUP BY code) c "
+                    "FROM (SELECT code, COUNT(*) AS n FROM affiliate_link_clicks_human "
+                    "GROUP BY code) c "
                     "WHERE a.code = c.code AND a.clicks <> c.n"
+                )
+                # A code whose only clicks were bots has no row in the view at
+                # all, so the UPDATE above can never reach it — zero it here or
+                # it keeps a stale pre-split total forever.
+                await conn.execute(
+                    "UPDATE affiliate_links a SET clicks = 0, updated_at = now() "
+                    "WHERE a.clicks <> 0 AND NOT EXISTS ("
+                    "SELECT 1 FROM affiliate_link_clicks_human h WHERE h.code = a.code)"
                 )
         except Exception as e:  # noqa: BLE001 — rollup is best-effort
             logger.warning("[SYNC_AFFILIATE] click rollup failed: %s", e)
