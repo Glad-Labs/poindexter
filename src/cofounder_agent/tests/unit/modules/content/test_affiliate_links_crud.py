@@ -164,3 +164,111 @@ async def test_remove_link_returns_true_on_match():
 async def test_remove_link_returns_false_when_no_match():
     pool = _FakePool(execute_result="DELETE 0")
     assert await remove_link(pool, "nope") is False
+
+
+# --- add_keywords / remove_keywords (poindexter#931) -------------------------
+# add_link replaces a link's whole keyword set, so introducing one alias with
+# it silently drops the rest. These are the additive path.
+
+
+class _QueuedConn(_FakeConn):
+    """Fake conn whose fetchval returns a queued sequence of values."""
+
+    def __init__(self, fetchvals):
+        super().__init__()
+        self._queue = list(fetchvals)
+
+    async def fetchval(self, sql, *args):
+        self.calls.append(("fetchval", sql, args))
+        return self._queue.pop(0) if self._queue else None
+
+
+class _QueuedPool(_FakePool):
+    def __init__(self, fetchvals, execute_result="INSERT 0 1"):
+        super().__init__()
+        self.conn = _QueuedConn(fetchvals)
+        self._execute_result = execute_result
+
+    def acquire(self):
+        return _AcquireCtx(self.conn)
+
+
+@pytest.mark.asyncio
+async def test_add_keywords_appends_and_counts_new_rows():
+    from modules.content.affiliate_links import add_keywords
+
+    pool = _QueuedPool([7])  # link_id lookup
+    added = await add_keywords(pool, code="mercury", keywords=["Mercury Bank"])
+    assert added == 1
+    inserts = [c for c in pool.conn.calls
+               if c[0] == "execute" and "INSERT INTO affiliate_link_keywords" in c[1]]
+    assert len(inserts) == 1
+    # must not clobber the existing set the way add_link does
+    assert not any("DELETE FROM affiliate_link_keywords" in c[1]
+                   for c in pool.conn.calls if c[0] == "execute")
+    assert "ON CONFLICT" in inserts[0][1]
+
+
+@pytest.mark.asyncio
+async def test_add_keywords_dedupes_and_strips_input():
+    from modules.content.affiliate_links import add_keywords
+
+    pool = _QueuedPool([7])
+    await add_keywords(pool, code="mercury", keywords=[" Mercury ", "Mercury", ""])
+    inserts = [c for c in pool.conn.calls
+               if c[0] == "execute" and "INSERT INTO affiliate_link_keywords" in c[1]]
+    assert len(inserts) == 1
+    assert inserts[0][2][1] == "Mercury"
+
+
+@pytest.mark.asyncio
+async def test_add_keywords_unknown_code_fails_loud():
+    from modules.content.affiliate_links import add_keywords
+
+    pool = _QueuedPool([None])  # no link_id
+    with pytest.raises(LookupError, match="nope"):
+        await add_keywords(pool, code="nope", keywords=["X"])
+
+
+@pytest.mark.asyncio
+async def test_add_keywords_rejects_empty_input():
+    from modules.content.affiliate_links import add_keywords
+
+    with pytest.raises(ValueError):
+        await add_keywords(_QueuedPool([7]), code="mercury", keywords=["  "])
+
+
+@pytest.mark.asyncio
+async def test_remove_keywords_deletes_and_counts():
+    from modules.content.affiliate_links import remove_keywords
+
+    # link_id=7, total=3 keywords, 1 of them doomed
+    pool = _QueuedPool([7, 3, 1], execute_result="DELETE 1")
+    pool.conn._execute_result = "DELETE 1"
+
+    async def _execute(sql, *args):
+        pool.conn.calls.append(("execute", sql, args))
+        return "DELETE 1"
+
+    pool.conn.execute = _execute
+    removed = await remove_keywords(pool, code="mercury", keywords=["Old Alias"])
+    assert removed == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_keywords_refuses_to_strip_the_last_one():
+    from modules.content.affiliate_links import remove_keywords
+
+    # total=1, doomed=1 -> removing it would make the link uninjectable
+    pool = _QueuedPool([7, 1, 1])
+    with pytest.raises(ValueError, match="last keyword"):
+        await remove_keywords(pool, code="audible", keywords=["Audible"])
+
+
+@pytest.mark.asyncio
+async def test_remove_keywords_unknown_code_fails_loud():
+    from modules.content.affiliate_links import remove_keywords
+
+    pool = _QueuedPool([None])
+    with pytest.raises(LookupError):
+        await remove_keywords(pool, code="nope", keywords=["X"])

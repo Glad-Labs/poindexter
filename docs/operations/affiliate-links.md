@@ -51,6 +51,13 @@ starts accruing clicks.
 | `poindexter affiliate disable <code>`                                                                                    | Deactivate without deleting (stops new injections + drops it from the published map).                        |
 | `poindexter affiliate rm <code>`                                                                                         | Delete a link.                                                                                               |
 | `poindexter affiliate import-csv <path> [--force]`                                                                       | Bulk-import from a spreadsheet export (see "Bulk import" below).                                             |
+| `poindexter affiliate keyword add <code> --keyword ...`                                                                  | **Append** match phrases to an existing link (idempotent, repeatable).                                       |
+| `poindexter affiliate keyword rm <code> --keyword ...`                                                                   | Remove match phrases (refuses to remove the last one).                                                       |
+
+> Use `affiliate keyword add` — not `affiliate add` — to introduce an alias on
+> an existing link. `affiliate add` **replaces** a link's whole keyword set
+> (it deletes then re-inserts) and requires the real merchant URL, so calling
+> it with one new keyword silently drops every other keyword the link had.
 
 `--keyword` is a phrase matched in body prose (case-sensitive on the first
 letter as written) — pass it multiple times on one `add` call to give a
@@ -59,6 +66,28 @@ injection works" below for how that's resolved). `--code` is the stable
 slug used in `/go/<code>` and as the click-tracking key — keep it short and
 URL-safe. `--platform` is a free-text label (e.g. `Amazon`, `direct`) for
 your own tracking, not used by the matcher.
+
+### Choosing keywords that actually match
+
+A keyword only earns its place if a writer would plausibly type it. Seeding
+the catalog from a spreadsheet tends to produce SKU strings —
+`CMG64GX5M2D6000Z40`, `MZ-V9P2T0B/AM`, `EDA340CUR` — which are precise and
+essentially never appear in prose. Keep them (they cost nothing and do match
+on the rare occasion a spec table quotes them), but add phrases a human
+writes: the brand, the product family, the model as it's spoken.
+
+The opposite failure is worth avoiding too. A keyword must identify **one**
+product in your catalog. If two links could answer to the same phrase, the
+matcher falls back to least-recently-used rotation and attributes the mention
+arbitrarily — so with both a B550 and an X870E board seeded, `motherboard`
+links to whichever came up next, not the one being discussed. Generic
+category words (`PSU`, `DDR5`, `64GB`, `water cooling`) are the usual
+offenders. Linking a vague mention to a specific SKU in monetised content is
+misleading, so prefer a smaller, honest catalog over raw reach.
+
+To check a candidate before committing to it, count how many published posts
+it would match — the matcher is whole-word and skips code, headings, and
+existing links, so a plain `grep` over-counts.
 
 ## How injection works
 

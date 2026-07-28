@@ -205,6 +205,89 @@ async def add_link(
             )
 
 
+async def add_keywords(pool: Any, *, code: str, keywords: list[str]) -> int:
+    """Append aliases to an existing link. Returns the number newly added.
+
+    ``add_link`` replaces a link's whole keyword set (it DELETEs then
+    re-INSERTs), so using it to introduce one alias silently drops every
+    other keyword unless the caller re-supplies them all — along with the
+    real merchant URL, which is deliberately DB-only. This is the additive
+    path: idempotent, and it never touches the URL.
+
+    Raises LookupError when the code doesn't exist, so a typo fails loud
+    instead of quietly adding nothing.
+    """
+    deduped = [k for k in dict.fromkeys(k.strip() for k in keywords) if k]
+    if not deduped:
+        raise ValueError("add_keywords requires at least one non-empty keyword")
+    async with pool.acquire() as conn, conn.transaction():
+        link_id = await conn.fetchval(
+            "SELECT id FROM affiliate_links WHERE code = $1", code
+        )
+        if link_id is None:
+            raise LookupError(f"no affiliate link with code {code!r}")
+        added = 0
+        for kw in deduped:
+            tag = await conn.execute(
+                "INSERT INTO affiliate_link_keywords (link_id, keyword) "
+                "VALUES ($1, $2) ON CONFLICT (link_id, keyword) DO NOTHING",
+                link_id, kw,
+            )
+            if tag.endswith("1"):
+                added += 1
+        if added:
+            await conn.execute(
+                "UPDATE affiliate_links SET updated_at = now() WHERE id = $1",
+                link_id,
+            )
+    return added
+
+
+async def remove_keywords(pool: Any, *, code: str, keywords: list[str]) -> int:
+    """Drop aliases from a link. Returns the number removed.
+
+    Refuses to remove the last keyword: a link with none can never be
+    injected, which is a disable in disguise — use ``affiliate disable`` so
+    the intent is visible in the catalog.
+    """
+    deduped = [k for k in dict.fromkeys(k.strip() for k in keywords) if k]
+    if not deduped:
+        raise ValueError("remove_keywords requires at least one keyword")
+    async with pool.acquire() as conn, conn.transaction():
+        link_id = await conn.fetchval(
+            "SELECT id FROM affiliate_links WHERE code = $1", code
+        )
+        if link_id is None:
+            raise LookupError(f"no affiliate link with code {code!r}")
+        total = await conn.fetchval(
+            "SELECT count(*) FROM affiliate_link_keywords WHERE link_id = $1",
+            link_id,
+        )
+        doomed = await conn.fetchval(
+            "SELECT count(*) FROM affiliate_link_keywords "
+            "WHERE link_id = $1 AND keyword = ANY($2::text[])",
+            link_id, deduped,
+        )
+        if doomed and doomed >= total:
+            raise ValueError(
+                f"refusing to remove the last keyword from {code!r} — a link "
+                "with no keywords can never inject; use `affiliate disable` "
+                "instead"
+            )
+        tag = await conn.execute(
+            "DELETE FROM affiliate_link_keywords "
+            "WHERE link_id = $1 AND keyword = ANY($2::text[])",
+            link_id, deduped,
+        )
+        removed = int(tag.rsplit(" ", 1)[-1]) if tag.startswith("DELETE") else 0
+        if removed:
+            await conn.execute(
+                "UPDATE affiliate_links SET updated_at = now() WHERE id = $1",
+                link_id,
+            )
+    return removed
+
+
 async def set_active(pool: Any, code: str, active: bool) -> bool:
     tag = await pool.execute(
         "UPDATE affiliate_links SET is_active = $2, updated_at = now() WHERE code = $1",
@@ -220,5 +303,6 @@ async def remove_link(pool: Any, code: str) -> bool:
 
 __all__ = [
     "AffiliateLink", "inject_affiliate_links", "list_active", "list_all",
-    "add_link", "set_active", "remove_link", "load_link_last_used",
+    "add_link", "add_keywords", "remove_keywords", "set_active",
+    "remove_link", "load_link_last_used",
 ]

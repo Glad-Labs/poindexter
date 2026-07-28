@@ -92,6 +92,68 @@ def add_cmd(code, keywords, url, display_text, program, category, description, p
     click.secho(f"Added/updated affiliate link '{code}'.", fg="green")
 
 
+@affiliate_group.group(name="keyword")
+def keyword_group() -> None:
+    """Add or remove match phrases on an existing link.
+
+    `affiliate add` replaces a link's whole keyword set and needs the real
+    merchant URL, so it is the wrong tool for introducing one alias. These
+    commands are additive and never touch the URL.
+    """
+
+
+@keyword_group.command(name="add")
+@click.argument("code")
+@click.option(
+    "--keyword", "keywords", required=True, multiple=True,
+    help="Phrase to match in body prose (repeatable).",
+)
+def keyword_add_cmd(code, keywords):
+    """Append match phrases to an existing link (idempotent)."""
+    from modules.content.affiliate_links import add_keywords
+
+    async def _go():
+        pool = await _connect()
+        try:
+            return await add_keywords(pool, code=code, keywords=list(keywords))
+        finally:
+            await pool.close()
+
+    try:
+        added = asyncio.run(_go())
+    except (LookupError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    skipped = len(set(keywords)) - added
+    msg = f"Added {added} keyword(s) to '{code}'."
+    if skipped:
+        msg += f" {skipped} already present."
+    click.secho(msg, fg="green")
+
+
+@keyword_group.command(name="rm")
+@click.argument("code")
+@click.option(
+    "--keyword", "keywords", required=True, multiple=True,
+    help="Phrase to stop matching (repeatable).",
+)
+def keyword_rm_cmd(code, keywords):
+    """Remove match phrases from a link (never the last one)."""
+    from modules.content.affiliate_links import remove_keywords
+
+    async def _go():
+        pool = await _connect()
+        try:
+            return await remove_keywords(pool, code=code, keywords=list(keywords))
+        finally:
+            await pool.close()
+
+    try:
+        removed = asyncio.run(_go())
+    except (LookupError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.secho(f"Removed {removed} keyword(s) from '{code}'.", fg="green")
+
+
 @affiliate_group.command(name="list")
 @click.option("--all", "show_all", is_flag=True, help="Include inactive links.")
 def list_cmd(show_all):
