@@ -25,19 +25,22 @@
 # local `poetry run ruff` can never disagree about what is a violation.
 name: python-lint
 
+# NO `paths:` filter, deliberately — both jobs are REQUIRED status checks on
+# main. A path-filtered workflow simply does not run when nothing matches, and
+# a required check that never runs is never reported, so the PR sits on
+# "Expected — Waiting for status to be reported" forever. That would have
+# permanently blocked every docs-only PR, including the nightly CLAUDE.md sync
+# (which touches exactly one non-Python file).
+#
+# This matches the other three required workflows — migrations-smoke,
+# unit-tests, mcp-server-tests all run unconditionally for the same reason.
+# The cost is ~40 s of a ubuntu runner per PR, which is why the concurrency
+# group below cancels superseded runs.
 on:
   push:
     branches: [main]
-    paths:
-      - '**.py'
-      - 'src/cofounder_agent/pyproject.toml'
-      - '.github/workflows/python-lint.yml'
   pull_request:
     branches: [main]
-    paths:
-      - '**.py'
-      - 'src/cofounder_agent/pyproject.toml'
-      - '.github/workflows/python-lint.yml'
   workflow_dispatch:
 
 # Cancel older in-progress runs of the same ref/PR — saves Actions minutes
