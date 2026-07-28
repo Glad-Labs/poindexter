@@ -7160,19 +7160,19 @@ requests = ">=2.0.1,<3.0.0"
 
 [[package]]
 name = "resend"
-version = "2.32.2"
+version = "2.35.0"
 description = "Resend Python SDK"
 optional = false
 python-versions = ">=3.7"
 groups = ["main"]
 files = [
-    {file = "resend-2.32.2-py2.py3-none-any.whl", hash = "sha256:1a8df5ef54b3a5cb7bb18b745f85fda07f1fa8f79b83dd9a25f6e37fbd625ef2"},
-    {file = "resend-2.32.2.tar.gz", hash = "sha256:448001810f32e7aea39bab27318263fdc69f5764be16b7c6241ed7714dc07ea3"},
+    {file = "resend-2.35.0-py2.py3-none-any.whl", hash = "sha256:cd75299d626f4735af52910989b3f51919032ef316e2d60563c79c319e7b24a6"},
+    {file = "resend-2.35.0.tar.gz", hash = "sha256:26ced7b22cbd89f7b8c7ba9719d0708ab10c06ddd0f91ba6ec861f3a328101b3"},
 ]
 
 [package.dependencies]
 requests = ">=2.31.0"
-typing-extensions = ">=4.4.0"
+typing_extensions = ">=4.4.0"
 
 [package.extras]
 async = ["httpx (>=0.24.0)"]
@@ -9743,4 +9743,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "e9f08ec93a4b2d207c89d3c2a26d93a7cce09cd834c3bbd236ad9d38f8c82405"
+content-hash = "89cfab5592b3506880ed0b70bd5eb9e1312cb5fbdbb5fefc3ad68d231f8db526"
