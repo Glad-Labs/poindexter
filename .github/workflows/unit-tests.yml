@@ -305,9 +305,12 @@ jobs:
         run: python scripts/ci/module_purity_lint.py
 
       # Seam 2 (#666): kernel-purity guard — services/ + plugins/ must not
-      # import modules.* at top level. Exits 0 if no new violations; baselined
-      # lazy imports are allowed while the module public-service interface is
-      # built out. Pure-Python AST scan, no deps beyond stdlib.
+      # import modules.*. Exits 0 if no new violations; the lazy imports listed
+      # in KERNEL_PURITY_BASELINE are allowed while the module public-service
+      # interface is built out. That baseline is keyed on
+      # "path::imported.module.target" -> count, NOT on line number
+      # (poindexter#929), so adding lines above a baselined import does not
+      # fail your PR. Pure-Python AST scan, no deps beyond stdlib.
       - name: Kernel purity lint (Seam 2 #666)
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/kernel_purity_lint.py
