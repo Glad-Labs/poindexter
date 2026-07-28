@@ -183,7 +183,7 @@ pyroscope-io = { version = "^1.0.12", optional = true, markers = "sys_platform !
 # Declare langchain-core explicitly: template_runner.py, pipeline_architect.py,
 # and pipeline_templates/__init__.py all import it directly. It was riding in
 # transitively via langgraph; declaring it lets us own the floor (poindexter#739).
-langchain-core = ">=1.3.3,<2.0"
+langchain-core = ">=1.5.1,<2.0"
 langgraph = ">=1.2.7,<2.0"
 # Explicit floor — langgraph 1.x's resolver allows <5.0.0 but Poetry
 # prefers the older 3.x without prodding. <4.0 has a BaseCache RCE
