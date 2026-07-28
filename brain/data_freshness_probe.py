@@ -77,9 +77,13 @@ DEFAULT_FEEDS: list[dict[str, Any]] = [
      "threshold_minutes": 720},
     {"name": "page_views", "table": "page_views", "column": "created_at",
      "threshold_minutes": 2880},
-    {"name": "corsair_csv", "table": "sensor_samples", "column": "sampled_at",
-     "threshold_minutes": 30,
-     "filter_column": "source", "filter_value": "corsair_csv"},
+    # No corsair_csv feed (retired 2026-07-28). The iCUE CSV sampler is gone —
+    # it was the Windows-era path, and on Linux the same HX1500i is read
+    # natively by node_exporter's corsairpsu hwmon. PSU wall-power is therefore
+    # still covered, by Prometheus rather than by this probe: the Hardware &
+    # Power dashboard reads node_hwmon_power_watt{chip=~".*1b1c.*"} plus the
+    # Shelly psu_total_power_watts, both live. Watching sensor_samples now
+    # would only ever report a producer we deliberately retired.
 ]
 
 

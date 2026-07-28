@@ -164,22 +164,31 @@ async def test_filtered_feed_binds_value_as_parameter():
     assert feed_query_call.args[1] == "corsair_csv"
 
 
-def test_corsair_feed_rides_the_default_list():
-    """corsair_feed_probe was retired 2026-07-02 — the iCUE sensor-feed
-    watchdog (#868) now rides this probe as a filtered feed. If corsair
-    drops out of DEFAULT_FEEDS, PSU wall-power staleness goes unalerted
-    again; re-add it or resurrect the dedicated probe."""
+def test_corsair_feed_is_not_watched():
+    """The corsair_csv feed is deliberately absent (retired 2026-07-28).
+
+    History: a dedicated corsair_feed_probe was retired 2026-07-02 in favour
+    of watching the iCUE sensor feed (#868) here as a filtered feed. This test
+    used to assert the opposite — that corsair must stay in DEFAULT_FEEDS,
+    because dropping it meant "PSU wall-power staleness goes unalerted again".
+
+    That premise expired with the Pop!_OS migration. The iCUE CSV sampler was
+    the Windows-era path and no longer exists; on Linux the same HX1500i is
+    read natively by node_exporter's corsairpsu hwmon. PSU wall-power is still
+    monitored — via Prometheus (node_hwmon_power_watt{chip=~".*1b1c.*"} and
+    the Shelly psu_total_power_watts, both feeding Hardware & Power) — so the
+    coverage this guard protected is intact, just on a different rail.
+
+    Watching it here now would mean permanently alerting on a producer we
+    retired on purpose. Re-add only alongside a live sensor_samples producer.
+    """
     feeds = {f["name"]: f for f in _parse_feeds("")}
-    corsair = feeds["corsair_csv"]
-    assert corsair["table"] == "sensor_samples"
-    assert corsair["column"] == "sampled_at"
-    assert corsair["filter_column"] == "source"
-    assert corsair["filter_value"] == "corsair_csv"
-    # Fast-cadence ingest (IngestCorsairCsvJob, every 5m) keeps this feed
-    # ~5-10m fresh, so 30m pages on a genuinely dead sampler while still
-    # clearing a missed tick / short worker blip. Was 120m back when corsair
-    # only rode the hourly RunTapsJob.
-    assert corsair["threshold_minutes"] == 30
+    assert "corsair_csv" not in feeds, (
+        "corsair_csv is back in DEFAULT_FEEDS — sensor_samples has no producer "
+        "since 2026-07-28, so this feed can only ever report stale. If a new "
+        "sampler was added, update this test with what now writes the table."
+    )
+    assert "sensor_samples" not in {f["table"] for f in feeds.values()}
 
 
 def test_seeded_default_matches_in_code_fallback():

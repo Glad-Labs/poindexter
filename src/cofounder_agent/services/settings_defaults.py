@@ -2196,12 +2196,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # findings router) when it exceeds threshold_minutes — so a dead producer
     # can't leave dashboards silently serving stale data. table/column are
     # validated as SQL identifiers; a feed with zero rows is not assessed.
-    # The corsair_csv sensor feed (iCUE PSU wall-power, #868) is a filtered
-    # feed here — its dedicated corsair_feed_probe was retired 2026-07-02.
-    # 30m threshold: IngestCorsairCsvJob re-ingests this local feed every 5m
-    # (iCUE rewrites the CSV every 30s), so it stays ~5-10m fresh and 30m
-    # pages on a dead sampler while clearing a missed tick / short worker
-    # blip. Was 120m when corsair only rode the hourly RunTapsJob.
+    # The corsair_csv sensor feed (iCUE PSU wall-power, #868) was watched here
+    # as a filtered feed until 2026-07-28. The iCUE CSV sampler no longer
+    # exists — it was the Windows-era path, and on Linux the same HX1500i is
+    # read natively by node_exporter's corsairpsu hwmon, so PSU wall-power is
+    # still covered via Prometheus (node_hwmon_power_watt{chip=~".*1b1c.*"} +
+    # the Shelly psu_total_power_watts) rather than by this probe. Keep the
+    # entry out: a feed whose producer is retired can only ever report stale.
     'data_freshness_probe_enabled': 'true',
     'data_freshness_feeds': (
         '[{"name": "cost_logs", "table": "cost_logs", "column": "created_at",'
@@ -2211,10 +2212,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' {"name": "atom_runs", "table": "atom_runs", "column": "created_at",'
         ' "threshold_minutes": 720},'
         ' {"name": "page_views", "table": "page_views", "column": "created_at",'
-        ' "threshold_minutes": 2880},'
-        ' {"name": "corsair_csv", "table": "sensor_samples",'
-        ' "column": "sampled_at", "threshold_minutes": 30,'
-        ' "filter_column": "source", "filter_value": "corsair_csv"}]'
+        ' "threshold_minutes": 2880}]'
     ),
 
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
