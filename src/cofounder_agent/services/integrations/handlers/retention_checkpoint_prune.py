@@ -27,9 +27,18 @@ accumulation case.
 
 ## Config (``row.config`` JSONB)
 
-- ``terminal_statuses`` (list[str], default ``["completed", "published",
-  "failed", "cancelled"]``): task statuses that indicate a finished run
-  whose checkpoint is safe to discard.
+- ``terminal_statuses`` (list[str], default :data:`_DEFAULT_TERMINAL_STATUSES`):
+  task statuses that indicate a finished run whose checkpoint is safe to
+  discard. This list must stay in step with the task lifecycle — a terminal
+  status missing from it strands its checkpoints permanently, because nothing
+  else ever revisits them. That is not hypothetical: the original list held
+  only ``completed``/``published``/``failed``/``cancelled`` and omitted
+  ``rejected`` + ``rejected_final``, which are the two *largest* terminal
+  buckets in practice (a rejected run still executed the whole graph, so it
+  leaves a full-size checkpoint). ~20k rows across the three tables had
+  accumulated unreachable before this was caught. ``rejected_retry`` is
+  deliberately excluded — that run is going around again and still needs its
+  checkpoint.
 - ``thread_prefixes`` (list[str], default ``["", "media-", "podcast-"]``):
   prefixes prepended to each ``task_id`` when building ``thread_id`` values
   to delete. Adjust if future pipeline variants add additional prefixes.
@@ -60,7 +69,22 @@ logger = logging.getLogger(__name__)
 # Tables cleared in this order. checkpoint_migrations is intentionally absent.
 _CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
 
-_DEFAULT_TERMINAL_STATUSES = ["completed", "published", "failed", "cancelled"]
+# Every pipeline_tasks status from which a run never resumes. The first five
+# are exactly the set services/pipeline_db.py stamps ``completed_at`` for --
+# the codebase's own "this run is done" definition -- plus ``completed`` and
+# the three archival end-states. Deliberately absent: pending, in_progress,
+# approved, awaiting_approval, awaiting_gate, rejected_retry.
+_DEFAULT_TERMINAL_STATUSES = [
+    "completed",
+    "published",
+    "failed",
+    "cancelled",
+    "rejected",
+    "rejected_final",
+    "dry_run",
+    "superseded",
+    "archived",
+]
 _DEFAULT_THREAD_PREFIXES = ["", "media-", "podcast-"]
 _DEFAULT_BATCH_SIZE = 1000
 
