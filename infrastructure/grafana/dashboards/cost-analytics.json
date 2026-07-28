@@ -80,9 +80,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 8,
         "x": 0,
-        "y": 0
+        "y": 8
       },
       "id": 7,
       "targets": [
@@ -103,9 +103,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 0
+        "w": 8,
+        "x": 8,
+        "y": 8
       },
       "id": 8,
       "targets": [
@@ -125,9 +125,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
+        "w": 8,
+        "x": 16,
+        "y": 8
       },
       "id": 9,
       "targets": [
@@ -163,7 +163,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 12
       },
       "id": 12,
       "targets": [
@@ -185,7 +185,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 20
       },
       "id": 13,
       "targets": [
@@ -205,11 +205,175 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 28
       },
       "title": "LLM & Model Analytics",
       "collapsed": false,
       "panels": []
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-orange",
+            "mode": "fixed"
+          },
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "id": 50,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE cost_type LIKE 'electricity%' AND $__timeFilter(created_at)",
+          "refId": "A"
+        }
+      ],
+      "description": "Measured power cost (the brain's PSU rows). Matches cost_ledger's electricity axis (cost_type LIKE 'electricity%').",
+      "title": "Electricity",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-blue",
+            "mode": "fixed"
+          },
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "id": 51,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE COALESCE(cost_type,'inference') NOT LIKE 'electricity%' AND $__timeFilter(created_at)",
+          "refId": "A"
+        }
+      ],
+      "description": "Genuinely-paid cloud API spend (the cost_ledger api axis). Local calls are $0 by the P1 write invariant, so this reads ~$0 unless a paid cloud provider is enabled.",
+      "title": "API $ (cloud)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Whether electricity in this window comes from the brain's measured PSU rows (any present) or would fall back to the per-call kWh estimate. Mirrors cost_ledger's electricity_source signal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "text",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "id": 52,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN COUNT(*) FILTER (WHERE cost_type LIKE 'electricity%') > 0 THEN 'measured' ELSE 'estimated' END AS source FROM cost_logs WHERE $__timeFilter(created_at)",
+          "refId": "A"
+        }
+      ],
+      "title": "Electricity source",
+      "type": "stat"
     },
     {
       "id": 15,
@@ -220,10 +384,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 37,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -283,10 +447,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 12,
-        "y": 37,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 12,
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -346,10 +510,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 42,
+        "h": 8,
         "w": 24,
-        "h": 8
+        "x": 0,
+        "y": 41
       },
       "fieldConfig": {
         "defaults": {
@@ -386,10 +550,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 16,
-        "y": 50,
-        "w": 8,
-        "h": 5
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 49
       },
       "fieldConfig": {
         "defaults": {
@@ -426,10 +590,10 @@
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "x": 0,
-        "y": 55,
+        "h": 5,
         "w": 24,
-        "h": 5
+        "x": 0,
+        "y": 54
       },
       "fieldConfig": {
         "defaults": {
@@ -458,170 +622,6 @@
       ]
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "dark-orange",
-            "mode": "fixed"
-          },
-          "unit": "currencyUSD",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 0
-      },
-      "id": 50,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE cost_type LIKE 'electricity%' AND $__timeFilter(created_at)",
-          "refId": "A"
-        }
-      ],
-      "description": "Measured power cost (the brain's PSU rows). Matches cost_ledger's electricity axis (cost_type LIKE 'electricity%').",
-      "title": "Electricity",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "dark-blue",
-            "mode": "fixed"
-          },
-          "unit": "currencyUSD",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 0
-      },
-      "id": 51,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE COALESCE(cost_type,'inference') NOT LIKE 'electricity%' AND $__timeFilter(created_at)",
-          "refId": "A"
-        }
-      ],
-      "description": "Genuinely-paid cloud API spend (the cost_ledger api axis). Local calls are $0 by the P1 write invariant, so this reads ~$0 unless a paid cloud provider is enabled.",
-      "title": "API $ (cloud)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Whether electricity in this window comes from the brain's measured PSU rows (any present) or would fall back to the per-call kWh estimate. Mirrors cost_ledger's electricity_source signal.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "text",
-            "mode": "fixed"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "id": 52,
-      "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "/.*/",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawSql": "SELECT CASE WHEN COUNT(*) FILTER (WHERE cost_type LIKE 'electricity%') > 0 THEN 'measured' ELSE 'estimated' END AS source FROM cost_logs WHERE $__timeFilter(created_at)",
-          "refId": "A"
-        }
-      ],
-      "title": "Electricity source",
-      "type": "stat"
-    },
-    {
       "type": "row",
       "id": 60,
       "title": "Cost vs Electricity — local Ollama vs cloud APIs",
@@ -629,7 +629,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 59
       },
       "collapsed": false,
       "panels": []
@@ -646,7 +646,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 60
       },
       "options": {
         "showHeader": true,
@@ -750,7 +750,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -790,7 +790,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -826,7 +826,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 78
       },
       "collapsed": false,
       "panels": []
@@ -838,7 +838,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 79
       },
       "title": "Affiliate Links — /go clicks",
       "collapsed": false,
@@ -869,7 +869,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 80
       },
       "id": 202,
       "options": {
@@ -903,7 +903,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 90
+        "y": 88
       },
       "id": 203,
       "targets": [
@@ -929,7 +929,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 90
+        "y": 88
       },
       "id": 204,
       "targets": [
@@ -954,7 +954,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 98
+        "y": 96
       },
       "panels": [],
       "id": 205
@@ -979,7 +979,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 99
+        "y": 97
       },
       "id": 206,
       "options": {
@@ -1037,7 +1037,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 99
+        "y": 97
       },
       "id": 207,
       "options": {
@@ -1098,7 +1098,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 99
+        "y": 97
       },
       "id": 208,
       "options": {
@@ -1134,7 +1134,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 107
+        "y": 105
       },
       "panels": []
     },
@@ -1151,7 +1151,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 108
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -1227,7 +1227,7 @@
         "h": 6,
         "w": 9,
         "x": 6,
-        "y": 108
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -1317,7 +1317,7 @@
         "h": 6,
         "w": 9,
         "x": 15,
-        "y": 108
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -1407,7 +1407,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 114
+        "y": 112
       },
       "fieldConfig": {
         "defaults": {

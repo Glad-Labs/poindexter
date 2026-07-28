@@ -492,8 +492,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 8,
+        "x": 0,
         "y": 5
       },
       "id": 11,
@@ -554,9 +554,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 13
+        "w": 8,
+        "x": 8,
+        "y": 5
       },
       "id": 20,
       "options": {
@@ -620,9 +620,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 13
+        "w": 8,
+        "x": 16,
+        "y": 5
       },
       "id": 21,
       "options": {
@@ -662,10 +662,10 @@
         "uid": "local-prometheus"
       },
       "gridPos": {
+        "h": 10,
+        "w": 24,
         "x": 0,
-        "y": 280,
-        "w": 16,
-        "h": 10
+        "y": 9
       },
       "fieldConfig": {
         "defaults": {
@@ -833,10 +833,10 @@
         "uid": "local-prometheus"
       },
       "gridPos": {
+        "h": 4,
+        "w": 24,
         "x": 0,
-        "y": 290,
-        "w": 4,
-        "h": 4
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -879,7 +879,7 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "count(poindexter_scheduler_job_last_run_ok == 0)",
+          "expr": "count(poindexter_scheduler_job_last_run_ok == 0) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -893,7 +893,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 23
       },
       "panels": [],
       "id": 24
@@ -935,8 +935,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
-        "y": 27
+        "x": 0,
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1001,7 +1001,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 31
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1066,7 +1066,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 31
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1123,7 +1123,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 31
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1184,7 +1184,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 31
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1249,7 +1249,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 31
+        "y": 24
       },
       "options": {
         "colorMode": "background",
@@ -1288,7 +1288,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 35
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -1342,7 +1342,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 35
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -1396,7 +1396,7 @@
         "h": 5,
         "w": 8,
         "x": 16,
-        "y": 35
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -1502,7 +1502,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 33
       },
       "id": 40,
       "options": {
@@ -1562,7 +1562,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 42
       },
       "options": {
         "cellHeight": "sm",
@@ -1623,7 +1623,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 51
       },
       "options": {
         "cellHeight": "sm",
@@ -1656,7 +1656,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 60
       },
       "panels": [],
       "id": 43
@@ -1708,7 +1708,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 68
+        "y": 61
       },
       "id": 44,
       "options": {
@@ -1770,9 +1770,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 5,
         "x": 4,
-        "y": 68
+        "y": 61
       },
       "id": 45,
       "options": {
@@ -1847,9 +1847,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 68
+        "w": 5,
+        "x": 9,
+        "y": 61
       },
       "id": 46,
       "options": {
@@ -1920,9 +1920,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 68
+        "w": 5,
+        "x": 14,
+        "y": 61
       },
       "id": 47,
       "options": {
@@ -1988,9 +1988,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 68
+        "w": 5,
+        "x": 19,
+        "y": 61
       },
       "id": 48,
       "options": {
@@ -2030,7 +2030,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 65
       },
       "panels": []
     },
@@ -2043,7 +2043,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 73
+        "y": 66
       },
       "datasource": {
         "type": "prometheus",
@@ -2094,7 +2094,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 73
+        "y": 66
       },
       "datasource": {
         "type": "prometheus",
@@ -2140,12 +2140,12 @@
       "id": 52,
       "title": "Container Restarts (24h)",
       "type": "bargauge",
-      "description": "Number of container restarts in the last 24 hours from cAdvisor. Non-zero values warrant investigation.",
+      "description": "Containers that restarted in the last 24h, worst 10 first. Derived from changes() on cadvisor's container_start_time_seconds -- container_restart_count is not a metric anything exposes. Empty means nothing restarted.",
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 74
       },
       "datasource": {
         "type": "prometheus",
@@ -2199,9 +2199,11 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "increase(container_restart_count{job=\"cadvisor\",image!=\"\"}[24h])",
+          "expr": "topk(10, changes(container_start_time_seconds{job=\"cadvisor\",image!=\"\",name!=\"\"}[24h]) > 0)",
           "legendFormat": "{{name}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ]
     },
@@ -2214,7 +2216,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 90
+        "y": 82
       },
       "panels": []
     },
@@ -2227,7 +2229,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 95
+        "y": 83
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2293,7 +2295,7 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "rawSql": "SELECT\n  created_at,\n  outcome,\n  ROUND(confidence::numeric, 2) AS confidence,\n  LEFT(decision, 100)           AS decision\nFROM brain_decisions WHERE decision NOT LIKE 'Cycle complete%'\nORDER BY created_at DESC\nLIMIT 10",
+          "rawSql": "SELECT created_at, outcome, ROUND(confidence::numeric, 2) AS confidence, LEFT(decision, 100) AS decision FROM brain_decisions ORDER BY created_at DESC LIMIT 10",
           "format": "table",
           "refId": "A"
         }
@@ -2309,7 +2311,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 294
+        "y": 92
       }
     },
     {
@@ -2319,9 +2321,9 @@
       "description": "Hours since probe.restore_test_completed last passed (#441 — a backup you can't restore is not a backup). The probe failed on 2026-06-30 with no dashboard surface; this closes that gap.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 12,
         "x": 0,
-        "y": 295
+        "y": 93
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2383,9 +2385,9 @@
       "description": "probe.restore_test_failed events in the last 7 days. Anything >0 needs a look at the dump chain before you need it for real.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 295
+        "w": 12,
+        "x": 12,
+        "y": 93
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2445,7 +2447,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 299
+        "y": 97
       }
     },
     {
@@ -2460,7 +2462,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 300
+        "y": 98
       },
       "targets": [
         {
@@ -2487,7 +2489,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 300
+        "y": 98
       },
       "fieldConfig": {
         "defaults": {
@@ -2524,7 +2526,7 @@
     },
     {
       "type": "piechart",
-      "title": "Actions by type (24h)",
+      "title": "Actions by type (window)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2534,7 +2536,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 306
+        "y": 104
       },
       "targets": [
         {
@@ -2544,7 +2546,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT details->>'action_name' AS action, count(*) AS n FROM audit_log WHERE event_type='remediation_action' AND timestamp >= now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT details->>'action_name' AS action, count(*) AS n FROM audit_log WHERE event_type='remediation_action' AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
@@ -2561,7 +2563,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 306
+        "y": 104
       },
       "targets": [
         {
@@ -2578,7 +2580,7 @@
     },
     {
       "type": "piechart",
-      "title": "Rule vs LLM source split (24h)",
+      "title": "Rule vs LLM source split (window)",
       "description": "Which decision source drove remediations — deterministic rules vs the LLM long-tail (Plan B).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2589,7 +2591,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 314
+        "y": 112
       },
       "targets": [
         {
@@ -2599,14 +2601,14 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(details->>'source','?') AS source, count(*) AS n FROM audit_log WHERE event_type='remediation_action' AND timestamp >= now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT COALESCE(details->>'source','?') AS source, count(*) AS n FROM audit_log WHERE event_type='remediation_action' AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ]
     },
     {
       "type": "table",
-      "title": "LLM selector hit-rate per model (7d)",
+      "title": "LLM selector hit-rate per model (window)",
       "description": "Attempted vs resolved for llm-source remediations, per model — answers 'is the selector model good enough?' empirically (drives model_eval_loop). Wider 7d window since LLM-path actions are rarer than rule ones.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2617,7 +2619,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 314
+        "y": 112
       },
       "targets": [
         {
@@ -2627,7 +2629,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT a.details->>'model' AS model, count(*) AS attempted, count(*) FILTER (WHERE v.details->>'result'='resolved') AS resolved, round(100.0 * count(*) FILTER (WHERE v.details->>'result'='resolved') / NULLIF(count(*),0), 1) AS hit_rate_pct FROM audit_log a LEFT JOIN audit_log v ON v.event_type='remediation_verify' AND v.details->>'remediation_run_id' = a.details->>'remediation_run_id' WHERE a.event_type='remediation_action' AND a.details->>'source'='llm' AND a.timestamp >= now() - interval '7 days' GROUP BY 1 ORDER BY attempted DESC",
+          "rawSql": "SELECT a.details->>'model' AS model, count(*) AS attempted, count(*) FILTER (WHERE v.details->>'result'='resolved') AS resolved, round(100.0 * count(*) FILTER (WHERE v.details->>'result'='resolved') / NULLIF(count(*),0), 1) AS hit_rate_pct FROM audit_log a LEFT JOIN audit_log v ON v.event_type='remediation_verify' AND v.details->>'remediation_run_id' = a.details->>'remediation_run_id' WHERE a.event_type='remediation_action' AND a.details->>'source'='llm' AND $__timeFilter(a.timestamp) GROUP BY 1 ORDER BY attempted DESC",
           "refId": "A"
         }
       ]
@@ -2639,9 +2641,9 @@
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 315
+        "y": 120
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2663,8 +2665,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 120 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 120
+              }
             ]
           }
         },

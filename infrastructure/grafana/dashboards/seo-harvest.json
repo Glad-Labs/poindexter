@@ -17,7 +17,7 @@
       "type": "stat",
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 0
       },
@@ -50,8 +50,8 @@
       "type": "stat",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 8,
         "y": 0
       },
       "datasource": {
@@ -83,8 +83,8 @@
       "type": "stat",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 0
       },
       "datasource": {
@@ -185,7 +185,7 @@
       "type": "stat",
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 24,
         "x": 0,
         "y": 25
       },

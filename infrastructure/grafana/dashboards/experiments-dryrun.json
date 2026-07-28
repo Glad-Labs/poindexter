@@ -47,7 +47,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 12,
         "x": 0,
         "y": 1
       },
@@ -95,8 +95,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 12,
+        "x": 12,
         "y": 1
       },
       "fieldConfig": {
@@ -143,9 +143,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 1
+        "w": 12,
+        "x": 0,
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -200,9 +200,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 1
+        "w": 12,
+        "x": 12,
+        "y": 5
       },
       "fieldConfig": {
         "defaults": {
@@ -245,7 +245,7 @@
         "h": 9,
         "w": 16,
         "x": 0,
-        "y": 9
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -295,7 +295,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 9
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -355,7 +355,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -464,7 +464,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 32
       },
       "title": "Dry-Run Mode (gh#215)",
       "collapsed": false,
@@ -475,9 +475,9 @@
       "id": 10,
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 8,
         "x": 0,
-        "y": 29
+        "y": 33
       },
       "title": "Dry-Run (1h)",
       "datasource": {
@@ -529,9 +529,9 @@
       "id": 12,
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 29
+        "w": 8,
+        "x": 8,
+        "y": 33
       },
       "title": "Dry-Run Q",
       "datasource": {
@@ -589,9 +589,9 @@
       "id": 13,
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 29
+        "w": 8,
+        "x": 16,
+        "y": 33
       },
       "title": "Dry-Run mode",
       "datasource": {
@@ -660,7 +660,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 38
       },
       "title": "Dry-Run Generation Rate",
       "datasource": {
@@ -707,7 +707,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 46
       },
       "panels": []
     }

@@ -25,7 +25,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "GPU \u2014 live (Prometheus)",
+      "title": "GPU — live (Prometheus)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -40,14 +40,14 @@
       "id": 68,
       "type": "stat",
       "title": "GPUs visible",
-      "description": "nvidia_gpu_count from the gpu-exporter. Red when below app_settings prometheus.threshold.expected_gpu_count. NVIDIA device nodes bind at container-CREATE time, so a card the exporter container was created without is invisible with no error and a plain restart will NOT fix it \u2014 recreate the container. An RTX 3090 was missing here for 7+ days (2026-07-26) while still drawing ~42W.",
+      "description": "nvidia_gpu_count from the gpu-exporter. Red when below app_settings prometheus.threshold.expected_gpu_count. NVIDIA device nodes bind at container-CREATE time, so a card the exporter container was created without is invisible with no error and a plain restart will NOT fix it — recreate the container. An RTX 3090 was missing here for 7+ days (2026-07-26) while still drawing ~42W.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 5,
         "x": 0,
         "y": 1
       },
@@ -119,8 +119,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 5,
+        "x": 5,
         "y": 1
       },
       "fieldConfig": {
@@ -167,6 +167,113 @@
             "uid": "local-prometheus"
           },
           "expr": "poindexter_gpu_gaming_detected",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "type": "stat",
+      "title": "Detected VRAM pool",
+      "description": "Total GPU VRAM across all cards (sum of nvidia_gpu_memory_total_mib). This is the number the dispatcher's gpu_vram_total_gb=\"auto\" budget guard derives.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 7,
+        "x": 10,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decgbytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "sum(nvidia_gpu_memory_total_mib) / 1024",
+          "legendFormat": "VRAM pool",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "type": "stat",
+      "title": "Render VRAM gate — free (render GPU)",
+      "description": "Free VRAM on the render/display GPU (pipeline_gpu_index=0, the 5090) right now. Below media_render_min_free_vram_gb (default 25 GB → red) the media dispatch gate DEFERS video renders so a ~24 GB Wan render can't oversubscribe the card and spill WDDM into system RAM (the desktop freeze). Green (≥25 GB) → a render may proceed. Source: services/render_vram.py + the media_infra_health VRAM preflight (#2394). Video staying quiet during active desktop use is EXPECTED here until the VRAM-reclaim + idle-WSL-reset follow-up lands. If you retune pipeline_gpu_index, update the gpu filter in this query.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 7,
+        "x": 17,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decgbytes",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "(nvidia_gpu_memory_total_mib{gpu=\"0\"} - nvidia_gpu_memory_used_mib{gpu=\"0\"}) / 1024",
+          "legendFormat": "free",
           "refId": "A"
         }
       ]
@@ -377,7 +484,7 @@
       "id": 56,
       "type": "timeseries",
       "title": "VRAM headroom (dedicated)",
-      "description": "Per-GPU dedicated-VRAM headroom = (card total - 3 GB desktop reserve) - VRAM used, one series per GPU. Uses each card's real nvidia_gpu_memory_total_mib so it stays correct across a mixed-size multi-GPU rig (e.g. 32 GB 5090 + 24 GB 3090) instead of hardcoding the primary card's size. When a series trends toward the 0 line the NVIDIA driver is about to spill that card's VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (no host GPU-spill collector on Linux either) \u2014 a future exporter task.",
+      "description": "Per-GPU dedicated-VRAM headroom = (card total - 3 GB desktop reserve) - VRAM used, one series per GPU. Uses each card's real nvidia_gpu_memory_total_mib so it stays correct across a mixed-size multi-GPU rig (e.g. 32 GB 5090 + 24 GB 3090) instead of hardcoding the primary card's size. When a series trends toward the 0 line the NVIDIA driver is about to spill that card's VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (no host GPU-spill collector on Linux either) — a future exporter task.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -433,115 +540,8 @@
       ]
     },
     {
-      "id": 57,
-      "type": "stat",
-      "title": "Detected VRAM pool",
-      "description": "Total GPU VRAM across all cards (sum of nvidia_gpu_memory_total_mib). This is the number the dispatcher's gpu_vram_total_gb=\"auto\" budget guard derives.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 4,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "decgbytes",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "sum(nvidia_gpu_memory_total_mib) / 1024",
-          "legendFormat": "VRAM pool",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 65,
-      "type": "stat",
-      "title": "Render VRAM gate \u2014 free (render GPU)",
-      "description": "Free VRAM on the render/display GPU (pipeline_gpu_index=0, the 5090) right now. Below media_render_min_free_vram_gb (default 25 GB \u2192 red) the media dispatch gate DEFERS video renders so a ~24 GB Wan render can't oversubscribe the card and spill WDDM into system RAM (the desktop freeze). Green (\u226525 GB) \u2192 a render may proceed. Source: services/render_vram.py + the media_infra_health VRAM preflight (#2394). Video staying quiet during active desktop use is EXPECTED here until the VRAM-reclaim + idle-WSL-reset follow-up lands. If you retune pipeline_gpu_index, update the gpu filter in this query.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 10,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "decgbytes",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 25
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "area",
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "(nvidia_gpu_memory_total_mib{gpu=\"0\"} - nvidia_gpu_memory_used_mib{gpu=\"0\"}) / 1024",
-          "legendFormat": "free",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "type": "row",
-      "title": "Power \u2014 PSU / wall / CPU",
+      "title": "Power — PSU / wall / CPU",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -553,63 +553,6 @@
       "id": 6
     },
     {
-      "id": 7,
-      "type": "gauge",
-      "title": "CPU Package Power",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 22
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "max": 200,
-          "unit": "watt",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "orange",
-                "value": 150
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "system_cpu_package_power_watts",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 8,
       "type": "gauge",
       "title": "Wall Power (Shelly plug)",
@@ -619,8 +562,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 12,
+        "x": 0,
         "y": 22
       },
       "fieldConfig": {
@@ -670,20 +613,20 @@
           "legendFormat": "Wall (Shelly)"
         }
       ],
-      "description": "True AC wall power metered at the outlet by the Shelly plug (psu_total_power_watts via the gpu-exporter's /rpc/Switch.GetStatus poll). Reboot-proof and independent of the PSU's USB HID \u2014 the permanent wall-power source (see docs/operations/wall-power-metering.md). Compare with the DC-output stat beside it: wall \u2212 DC = PSU conversion loss."
+      "description": "True AC wall power metered at the outlet by the Shelly plug (psu_total_power_watts via the gpu-exporter's /rpc/Switch.GetStatus poll). Reboot-proof and independent of the PSU's USB HID — the permanent wall-power source (see docs/operations/wall-power-metering.md). Compare with the DC-output stat beside it: wall − DC = PSU conversion loss."
     },
     {
       "id": 9,
       "type": "gauge",
-      "title": "PSU DC Output \u2014 total (HX1500i)",
+      "title": "PSU DC Output — total (HX1500i)",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 22
       },
       "fieldConfig": {
@@ -733,7 +676,7 @@
           "legendFormat": "DC total"
         }
       ],
-      "description": "Total DC output power from the corsair-psu kernel driver via node_exporter hwmon. Pairs with the Shelly wall stat: wall \u2212 DC = conversion loss. (The driver's own input-power estimate reads garbage, hence the plug.)"
+      "description": "Total DC output power from the corsair-psu kernel driver via node_exporter hwmon. Pairs with the Shelly wall stat: wall − DC = conversion loss. (The driver's own input-power estimate reads garbage, hence the plug.)"
     },
     {
       "id": 72,
@@ -936,7 +879,7 @@
           "legendFormat": "+12V rail"
         }
       ],
-      "description": "Wall power (Shelly outlet meter) vs PSU DC output (corsairpsu kernel driver) over time \u2014 the gap is PSU conversion loss. +12V rail carries the GPU load."
+      "description": "Wall power (Shelly outlet meter) vs PSU DC output (corsairpsu kernel driver) over time — the gap is PSU conversion loss. +12V rail carries the GPU load."
     },
     {
       "id": 11,
@@ -1002,7 +945,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 34
       },
@@ -1075,7 +1018,7 @@
     },
     {
       "type": "row",
-      "title": "GPU \u2014 history (Postgres)",
+      "title": "GPU — history (Postgres)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1169,7 +1112,7 @@
     {
       "id": 50,
       "type": "row",
-      "title": "Sensors \u2014 AIDA64 + iCUE (live)",
+      "title": "Sensors — AIDA64 + iCUE (live)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1182,7 +1125,7 @@
       "id": 51,
       "type": "timeseries",
       "title": "Temperatures (hwmon)",
-      "description": "All labeled hwmon temperature sensors via node_exporter \u2014 k10temp (CPU Tctl/Tccd), asusec (board/VRM), corsairpsu (PSU VRM/case), nvme, amdgpu. Replaced the Windows-only AIDA64 shared-memory source (Pop!_OS migration).",
+      "description": "All labeled hwmon temperature sensors via node_exporter — k10temp (CPU Tctl/Tccd), asusec (board/VRM), corsairpsu (PSU VRM/case), nvme, amdgpu. Replaced the Windows-only AIDA64 shared-memory source (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1245,37 +1188,9 @@
       }
     },
     {
-      "id": 53,
-      "type": "timeseries",
-      "title": "Per-Core CPU Power (RAPL)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 70
-      },
-      "targets": [
-        {
-          "expr": "system_cpu_core_power_watts",
-          "legendFormat": "Core {{core}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "watt"
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 54,
       "type": "timeseries",
-      "title": "Component Power \u2014 live (hwmon)",
+      "title": "Component Power — live (hwmon)",
       "description": "PSU rail power (corsairpsu: total/+12V/+5V/+3.3V) + AMD PPT via node_exporter hwmon. GPU board power lives on the VRAM/Power panels (nvidia_gpu_*). Replaced AIDA64 CPU-Package/GPU1 (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
@@ -1283,8 +1198,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 24,
+        "x": 0,
         "y": 70
       },
       "targets": [
@@ -1309,7 +1224,7 @@
       "id": 55,
       "type": "timeseries",
       "title": "Voltages (hwmon)",
-      "description": "Labeled hwmon voltages via node_exporter \u2014 corsairpsu v_out rails (+12V/+5V/+3.3V) and board sensors. Replaced the AIDA64 source (Pop!_OS migration).",
+      "description": "Labeled hwmon voltages via node_exporter — corsairpsu v_out rails (+12V/+5V/+3.3V) and board sensors. Replaced the AIDA64 source (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1340,7 +1255,7 @@
     },
     {
       "type": "row",
-      "title": "Host Memory \u2014 pressure (Prometheus)",
+      "title": "Host Memory — pressure (Prometheus)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1362,7 +1277,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 8,
         "x": 0,
         "y": 87
       },
@@ -1417,15 +1332,15 @@
       "id": 61,
       "type": "stat",
       "title": "Commit vs RAM",
-      "description": "node_memory_Committed_AS_bytes / node_memory_CommitLimit_bytes. Over 100% means committed memory exceeds physical RAM \u2014 the host is leaning on swap. Sustained high commit is the structural oversubscription behind the freezes.",
+      "description": "node_memory_Committed_AS_bytes / node_memory_CommitLimit_bytes. Over 100% means committed memory exceeds physical RAM — the host is leaning on swap. Sustained high commit is the structural oversubscription behind the freezes.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 8,
+        "x": 8,
         "y": 87
       },
       "fieldConfig": {
@@ -1479,15 +1394,15 @@
       "id": 62,
       "type": "stat",
       "title": "Page-out rate",
-      "description": "rate(node_vmstat_pswpout[5m]) \u2014 pages/s swapped out (memory-pressure eviction, not ordinary file I/O). The PoindexterHostMemoryThrashing critical fires over 2000/s \u2014 the freeze-in-progress signal.",
+      "description": "rate(node_vmstat_pswpout[5m]) — pages/s swapped out (memory-pressure eviction, not ordinary file I/O). The PoindexterHostMemoryThrashing critical fires over 2000/s — the freeze-in-progress signal.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 8,
+        "x": 16,
         "y": 87
       },
       "fieldConfig": {
@@ -1607,8 +1522,8 @@
     {
       "id": 64,
       "type": "timeseries",
-      "title": "Pagefile write rate (thrash)",
-      "description": "rate(node_vmstat_pswpout[5m]) \u2014 sustained swap page-outs = memory-pressure eviction. The line at 2000 pages/s is the PoindexterHostMemoryThrashing critical floor; spikes here are freeze-in-progress episodes.",
+      "title": "Swap write rate (thrash)",
+      "description": "rate(node_vmstat_pswpout[5m]) — sustained swap page-outs = memory-pressure eviction. The line at 2000 pages/s is the PoindexterHostMemoryThrashing critical floor; spikes here are freeze-in-progress episodes.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1842,7 +1757,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "CHARTER: rolling GPU-lock hold durations per (owner, phase) from gpu_lease_stats \u2014 the same p50/p90 the P1 admission ETA uses. Sanity-check p90 against known render/writer durations during the soak.",
+      "description": "CHARTER: rolling GPU-lock hold durations per (owner, phase) from gpu_lease_stats — the same p50/p90 the P1 admission ETA uses. Sanity-check p90 against known render/writer durations during the soak.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1889,9 +1804,9 @@
           "refId": "A"
         }
       ],
-      "title": "GPU hold durations \u2014 p50/p90 by owner\u00b7phase",
+      "title": "GPU hold durations — p50/p90 by owner·phase",
       "type": "table"
     }
   ],
-  "description": "CHARTER: GPU/PSU/wall power + host-memory pressure \u2014 thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."
+  "description": "CHARTER: GPU/PSU/wall power + host-memory pressure — thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."
 }

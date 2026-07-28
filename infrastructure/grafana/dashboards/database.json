@@ -57,8 +57,8 @@
       "type": "stat",
       "gridPos": {
         "h": 6,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 0,
         "y": 3
       },
       "datasource": {
@@ -126,8 +126,8 @@
       "type": "piechart",
       "gridPos": {
         "h": 6,
-        "w": 6,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 3
       },
       "datasource": {
@@ -231,8 +231,8 @@
       "type": "stat",
       "gridPos": {
         "h": 6,
-        "w": 6,
-        "x": 18,
+        "w": 8,
+        "x": 16,
         "y": 3
       },
       "datasource": {
@@ -648,7 +648,7 @@
       "type": "gauge",
       "gridPos": {
         "h": 6,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 27
       },
@@ -718,8 +718,8 @@
       "type": "stat",
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 27
       },
       "datasource": {
@@ -797,7 +797,7 @@
       "type": "barchart",
       "gridPos": {
         "h": 6,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 33
       },
@@ -894,9 +894,9 @@
       "description": "Total size of poindexter_brain as reported by postgres_exporter (poindexter#735 item 2 — replaces the former SQL pg_database_size() panel that polled local-brain-db).",
       "gridPos": {
         "h": 6,
-        "w": 6,
+        "w": 12,
         "x": 0,
-        "y": 3
+        "y": 40
       },
       "datasource": {
         "type": "prometheus",
@@ -963,8 +963,8 @@
       "description": "Rate of deadlocks per second on poindexter_brain. Should be near 0.",
       "gridPos": {
         "h": 6,
-        "w": 6,
-        "x": 18,
+        "w": 12,
+        "x": 12,
         "y": 40
       },
       "datasource": {

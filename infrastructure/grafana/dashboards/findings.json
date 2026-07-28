@@ -77,7 +77,7 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 1
       },
@@ -155,8 +155,8 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 8,
         "y": 1
       },
       "id": 3,
@@ -229,8 +229,8 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 1
       },
       "id": 4,
@@ -648,7 +648,7 @@
       "description": "operator_paged events that actually went out to Telegram/Discord (cooldown-suppressed repeats excluded). The 2026-07-01 audit baseline was 504/week — sustained >70/day means a probe is crying wolf again.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 12,
         "x": 0,
         "y": 28
       },
@@ -712,8 +712,8 @@
       "description": "Repeat pages the operator_page_cooldown_minutes gate swallowed (glad-labs-stack#2042). High suppressed + low sent = the gate is earning its keep; high both = a genuinely noisy day.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 12,
+        "x": 12,
         "y": 28
       },
       "datasource": {
@@ -768,9 +768,9 @@
       "description": "Which probe/source is doing the paging. Sustained spikes from one source = tune that probe, not the channel.",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 28
+        "w": 24,
+        "x": 0,
+        "y": 32
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
