@@ -28,12 +28,30 @@ const SOCIAL_PLAT_TAG = {
   instagram: 'amber',
   tiktok: 'red',
 };
+// Status chips, in queue order (what needs you → what happened → what didn't).
+// 'all' stays the default: the scroll cap already fixes the height, so nothing
+// should vanish from the operator's view without them asking for it.
+const SOCIAL_FILTERS = [
+  ['all', 'All'],
+  ['pending', 'Pending'],
+  ['approved', 'Approved'],
+  ['posted', 'Posted'],
+  ['failed', 'Failed'],
+  ['rejected', 'Rejected'],
+];
 function SocialPanel({ social, onApprove, onReject }) {
   const PX = window.PX;
+  const [filter, setFilter] = React.useState('all');
   const drafts = (social && social.drafts) || [];
   const pending = drafts.filter((d) => d.status === 'pending').length;
   const posted = drafts.filter((d) => d.status === 'posted').length;
   const failed = drafts.filter((d) => d.status === 'failed').length;
+  const counts = drafts.reduce(
+    (a, d) => ((a[d.status] = (a[d.status] || 0) + 1), a),
+    {}
+  );
+  const shown =
+    filter === 'all' ? drafts : drafts.filter((d) => d.status === filter);
   return (
     <Panel
       icon="pulse"
@@ -89,6 +107,31 @@ function SocialPanel({ social, onApprove, onReject }) {
           </span>
         )}
       </div>
+      {drafts.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            padding: '8px 12px',
+            borderBottom: '1px solid var(--gl-hairline)',
+            flexWrap: 'wrap',
+          }}
+        >
+          {SOCIAL_FILTERS.map(([id, lbl]) => (
+            <button
+              key={id}
+              className={`tag ${filter === id ? 'tag--cyan' : ''}`}
+              style={{
+                cursor: 'pointer',
+                background: filter === id ? 'var(--gl-cyan-bg)' : 'transparent',
+              }}
+              onClick={() => setFilter(id)}
+            >
+              {lbl} · {id === 'all' ? drafts.length : counts[id] || 0}
+            </button>
+          ))}
+        </div>
+      )}
       {drafts.length === 0 ? (
         <div className="empty">
           <span className="glyph" aria-hidden="true">
@@ -98,13 +141,18 @@ function SocialPanel({ social, onApprove, onReject }) {
             ? 'No social drafts found'
             : 'Connect live to see drafts'}
         </div>
+      ) : shown.length === 0 ? (
+        <div className="empty">
+          <span className="glyph" aria-hidden="true">
+            ◌
+          </span>
+          No {filter} drafts
+        </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table
-            style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}
-          >
+        <div className="tblscroll">
+          <table className="tbl tbl--social">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--gl-hairline)' }}>
+              <tr>
                 {[
                   'Platform',
                   'Status',
@@ -115,53 +163,29 @@ function SocialPanel({ social, onApprove, onReject }) {
                   'Posted',
                   '',
                 ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '5px 10px',
-                      textAlign: 'left',
-                      fontFamily: 'var(--gl-font-mono)',
-                      fontSize: 9,
-                      letterSpacing: '.12em',
-                      color: 'var(--gl-text-dim)',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {h}
-                  </th>
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {drafts.map((d) => (
-                <tr
-                  key={d.id}
-                  style={{ borderBottom: '1px solid var(--gl-hairline)' }}
-                >
-                  <td style={{ padding: '6px 10px' }}>
+              {shown.map((d) => (
+                <tr key={d.id}>
+                  <td>
                     <span
                       className={`tag tag--${SOCIAL_PLAT_TAG[d.platform] || 'cyan'}`}
                     >
                       {d.platform}
                     </span>
                   </td>
-                  <td style={{ padding: '6px 10px' }}>
+                  <td>
                     <span
                       className={`tag tag--${SOCIAL_STATUS_TAG[d.status] || 'cyan'}`}
                     >
                       {d.status}
                     </span>
                   </td>
-                  <td style={{ padding: '6px 10px', maxWidth: 200 }}>
-                    <div
-                      style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        fontSize: 11,
-                      }}
-                      title={d.title || ''}
-                    >
+                  <td style={{ maxWidth: 200 }}>
+                    <div className="truncate" title={d.title || ''}>
                       {d.title || '—'}
                     </div>
                     <div
@@ -175,12 +199,9 @@ function SocialPanel({ social, onApprove, onReject }) {
                     </div>
                   </td>
                   <td
+                    className="truncate"
                     style={{
-                      padding: '6px 10px',
                       maxWidth: 180,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
                       color: d.error ? 'var(--gl-red)' : 'var(--gl-text-dim)',
                       fontSize: 10,
                     }}
@@ -188,34 +209,22 @@ function SocialPanel({ social, onApprove, onReject }) {
                   >
                     {d.error || '—'}
                   </td>
-                  <td className="mono c-dim" style={{ padding: '6px 10px' }}>
-                    {d.retry_count || 0}
-                  </td>
+                  <td className="mono c-dim">{d.retry_count || 0}</td>
                   <td
-                    className="mono c-dim"
-                    style={{
-                      padding: '6px 10px',
-                      fontSize: 10,
-                      maxWidth: 100,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
+                    className="mono c-dim truncate"
+                    style={{ fontSize: 10, maxWidth: 100 }}
                     title={d.postiz_post_id || ''}
                   >
                     {d.postiz_post_id
                       ? String(d.postiz_post_id).slice(0, 14)
                       : '—'}
                   </td>
-                  <td
-                    className="mono c-dim"
-                    style={{ padding: '6px 10px', fontSize: 10 }}
-                  >
+                  <td className="mono c-dim" style={{ fontSize: 10 }}>
                     {d.posted_at
                       ? new Date(d.posted_at).toLocaleDateString()
                       : '—'}
                   </td>
-                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     {d.status === 'pending' && (
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button

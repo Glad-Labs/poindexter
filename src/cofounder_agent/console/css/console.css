@@ -848,6 +848,37 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Bounded scroll box for a .tbl with no server-side row cap. SOCIAL
+   DISTRIBUTION grows one row per platform per post and never prunes (77 rows
+   by 2026-07, over half of them rejected tombstones), while `.masonry > *` is
+   `break-inside: avoid` — so an uncapped table becomes a single unsplittable
+   block far taller than the viewport and the columns balancer stretches every
+   sibling column to match it, blowing out the page. Measured at that row
+   count: 3494px panel → 576px. Same failure mode .logfeed and .nowrun__col
+   are capped for. `.tbl th` is already `position: sticky; top: 0`, so the
+   column labels pin themselves against this scroll container for free.
+   Both axes scroll here on purpose, UNLIKE .logfeed: 8 columns genuinely do
+   not fit a ~390px masonry column, so the horizontal overflow is real content
+   rather than the visible→auto quirk that caused the #2285 scrollbar thrash. */
+.tblscroll {
+  max-height: 420px;
+  overflow: auto;
+}
+.tblscroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.tblscroll::-webkit-scrollbar-thumb {
+  background: var(--gl-hairline);
+  border-radius: 3px;
+}
+/* Social rows carry their own approve/reject buttons and are not row-click
+   targets — suppress .tbl's default pointer affordance so the cursor doesn't
+   promise a drill-in that isn't wired. */
+.tbl--social tbody tr {
+  cursor: default;
+}
+
 /* Fixed layout keeps a table within its container (e.g. a masonry column):
    columns take their colgroup share and truncate cells ellipsize instead of
    the table growing to content min-width and spilling into the next column. */
