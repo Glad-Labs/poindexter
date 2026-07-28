@@ -42,6 +42,24 @@ updates:
       prefix: 'deps:'
       include: 'scope'
     rebase-strategy: 'auto'
+    # Held majors (2026-07-28). Both are major-ONLY holds — patches and minors
+    # still flow, so security fixes are unaffected.
+    #
+    # typescript: 7.0.2 breaks jest-unit and the Frontend-only Playwright specs
+    #   (#2869/#2846). Because dependabot puts a manifest change in the group's
+    #   PR even when the group is minor/patch-only, that one major sat in front
+    #   of ~10 safe updates (@sentry/nextjs, postcss, autoprefixer, rollup,
+    #   tailwindcss/postcss) and blocked all of them. Hold it until the TS 7
+    #   migration is done deliberately, then drop this entry.
+    #
+    # @types/node: the 22 -> 26 major already landed outside dependabot, so all
+    #   four manifests are on ^26.1.x today. This entry is a forward guard
+    #   against an unattended 27 rather than a fix for anything open now.
+    ignore:
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     # Group updates by type for easier review. Restricted to minor/patch
     # (matching every other grouped ecosystem below) so a major bump rides
     # alone in its own PR instead of blocking a batch of safe updates.
