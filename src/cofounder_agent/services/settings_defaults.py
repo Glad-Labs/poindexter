@@ -1960,6 +1960,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.topic_self_referential.fallback': 'log_only',
     'findings.topic_self_referential.cooldown_minutes': '360',
     'findings.topic_self_referential.min_severity': 'warn',
+    # Ranking degrade (#926) — when the LLM final-score response is unusable,
+    # the batch is ranked by raw embedding cosine instead of by judgement. The
+    # batch still forms and looks normal, so this needs a channel or it stays
+    # invisible (it ran at ~50% undetected for weeks). 6h cooldown matches the
+    # other topic findings: a persistently-degrading model is a few notes a day.
+    'findings.topic_rank_degraded.delivery': 'discord',
+    'findings.topic_rank_degraded.fallback': 'log_only',
+    'findings.topic_rank_degraded.cooldown_minutes': '360',
+    'findings.topic_rank_degraded.min_severity': 'warn',
     'findings.media_drift.delivery': 'log_only',
     'findings.r2_static_drift.delivery': 'discord',
     'findings.r2_static_drift.fallback': 'log_only',

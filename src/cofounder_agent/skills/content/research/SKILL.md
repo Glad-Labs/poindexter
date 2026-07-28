@@ -47,12 +47,28 @@ Goals (weight in pct):
 Candidates:
 {cand_block}
 
-Return STRICT JSON keyed by candidate id, of the form:
-{{"<id>": {{"score": <0-100>, "breakdown": {{"<GOAL_TYPE>": <weighted contribution 0-1>, ...}}}}, ...}}
+Return STRICT JSON keyed by candidate id, mapping each id directly to its score
+as a number from 0 to 100:
+{{"<id>": <score 0-100>, ...}}
 
-The breakdown values per candidate should approximately sum to (score / 100).
 Return ONLY the JSON, no commentary.
 ```
+
+> **Why score-only (Glad-Labs/poindexter#926).** This prompt used to also ask for
+> a nested `breakdown` object keyed by `"<GOAL_TYPE>"`. Asking the model to
+> invent those key names was the single biggest failure surface: Langfuse traces
+> show 10 of 19 real calls over 14 days failing to parse, and the short failures
+> die inside a degenerate repetition loop on a breakdown key —
+> `"BRAND own own own own …"`, `"EDU//////////////…"`. Even calls that *did*
+> parse carried invented keys (`"BREAKDOWN"`, `"BRAND own"`, `"BREAKING_NEWS"`).
+> Every failure fell back to the raw embedding pre-rank for the whole batch.
+>
+> The breakdown was never worth generating: `topic_ranking.weighted_cosine_score`
+> already computes a real per-goal breakdown from the goal vectors (plus a
+> `_grounding` observability key), stores it on the candidate — and the LLM's
+> hallucinated version then overwrote it. Asking only for the score removes the
+> failure surface *and* keeps the better, calculated data
+> (`feedback_machine_rules`: prefer calculated over generated).
 
 ## research.distill_topic_angle
 

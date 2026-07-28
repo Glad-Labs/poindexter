@@ -200,9 +200,11 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
     scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
 
     assert scored["present"].llm_score == 91.0
-    # Backfilled: embedding_score (0.42) * 100 = 42.0; breakdown is {}
+    # Backfilled: embedding_score (0.42) * 100 = 42.0.
     assert scored["missing"].llm_score == pytest.approx(42.0)
-    assert scored["missing"].score_breakdown == {}
+    # #926: the pre-rank's calculated breakdown is preserved, never clobbered.
+    # These candidates were built without one, so it stays None.
+    assert scored["missing"].score_breakdown is None
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +219,11 @@ async def test_llm_final_score_recovers_from_truncated_json(monkeypatch):
 
     Before this guard, ``json.loads`` raised ``JSONDecodeError`` ('Unterminated
     string') out of ``run_sweep`` and failed the ``run_niche_topic_sweep`` job
-    (the 2026-06-30 alert). Now the parse degrades to the embedding pre-rank so
-    the batch still forms — ranked, just without the LLM's re-score.
+    (the 2026-06-30 alert). The batch now still forms.
+
+    #926 improves on the original all-or-nothing degrade: the salvage rung
+    recovers the entries the model completed before derailing, so only the
+    genuinely-unscored tail falls back to the embedding pre-rank.
     """
     from services.topic_ranking import ScoredCandidate, llm_final_score
 
@@ -235,12 +240,13 @@ async def test_llm_final_score_recovers_from_truncated_json(monkeypatch):
     weights = [NicheGoal("TRAFFIC", 100)]
     scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
 
-    # No exception; both candidates present, backfilled from embedding_score*100.
+    # No exception; both candidates present.
     assert set(scored) == {"c1", "c2"}
-    assert scored["c1"].llm_score == pytest.approx(60.0)   # 0.6 * 100
-    assert scored["c2"].llm_score == pytest.approx(42.0)   # 0.42 * 100
-    assert scored["c1"].score_breakdown == {}
-    assert scored["c2"].score_breakdown == {}
+    # c1's entry completed before the derail — salvaged, so the LLM's real
+    # score survives instead of being thrown away with the rest.
+    assert scored["c1"].llm_score == pytest.approx(87.5)
+    # c2's entry was cut mid-write — backfilled from embedding_score * 100.
+    assert scored["c2"].llm_score == pytest.approx(42.0)
 
 
 @pytest.mark.asyncio
@@ -261,7 +267,8 @@ async def test_llm_final_score_recovers_from_non_object_json(monkeypatch):
 
     assert set(scored) == {"c1"}
     assert scored["c1"].llm_score == pytest.approx(55.0)  # 0.55 * 100
-    assert scored["c1"].score_breakdown == {}
+    # #926: breakdown is never overwritten by this path (None as constructed).
+    assert scored["c1"].score_breakdown is None
 
 
 # ---------------------------------------------------------------------------
@@ -370,3 +377,171 @@ def test_topic_chain_imports_without_pyyaml():
     )
     assert proc.returncode == 0, f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
     assert "OK" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# llm_final_score degrade handling (Glad-Labs/poindexter#926)
+#
+# Langfuse traces showed 10 of 19 real ranking calls over 14 days failing to
+# parse — the model derailing into a repetition loop on an invented breakdown
+# key. Every failure silently re-ranked the whole batch by raw embedding
+# cosine, which is what promoted a self-referential candidate to #1 (#925).
+# ---------------------------------------------------------------------------
+
+
+def _cands():
+    from services.topic_ranking import ScoredCandidate
+    return [
+        ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.60),
+        ScoredCandidate(id="c2", title="B", summary="y", embedding_score=0.40),
+    ]
+
+
+_WEIGHTS = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
+
+
+async def test_flat_score_shape_is_the_current_contract(monkeypatch):
+    """The prompt now asks for {"<id>": <score>} — no nested breakdown."""
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": 87.5, "c2": 42}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == 87.5
+    assert scored["c2"].llm_score == 42.0
+
+
+async def test_calculated_breakdown_is_not_overwritten(monkeypatch):
+    """The embedding pre-rank's real per-goal breakdown must survive.
+
+    It used to be clobbered by the LLM's invented goal names on every
+    successful call — feedback_machine_rules: calculated beats generated.
+    """
+    from services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": 90}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+
+    pre_rank = {"TRAFFIC": 0.42, "EDUCATION": 0.18, "_grounding": 0.87}
+    cand = ScoredCandidate(
+        id="c1", title="A", summary="x", embedding_score=0.6,
+        score_breakdown=dict(pre_rank),
+    )
+    scored = await llm_final_score([cand], _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == 90.0
+    assert scored["c1"].score_breakdown == pre_rank
+
+
+async def test_legacy_nested_shape_still_scores(monkeypatch):
+    """A Langfuse override or customised pack pinned to the old prompt must
+    keep working rather than silently degrading every candidate."""
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": {"score": 71, "breakdown": {"TRAFFIC": 0.4}}}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == 71.0
+
+
+async def test_truncated_response_salvages_complete_entries(monkeypatch):
+    """A derailed response keeps the candidates it managed to score."""
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": 88, "c2": '
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == 88.0          # salvaged
+    assert scored["c2"].llm_score == pytest.approx(40.0)  # 0.40 * 100 fallback
+
+
+async def test_total_degrade_emits_finding(monkeypatch):
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return "Let me re-evaluate the candidates and calculate scores."
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    # Every candidate fell back to embedding_score * 100.
+    assert scored["c1"].llm_score == pytest.approx(60.0)
+    assert scored["c2"].llm_score == pytest.approx(40.0)
+
+    assert len(seen) == 1
+    assert seen[0]["kind"] == "topic_rank_degraded"
+    assert seen[0]["severity"] == "warn"
+    assert seen[0]["extra"]["reason"] == "unparseable"
+    assert seen[0]["extra"]["unscored"] == 2
+
+
+async def test_partial_omission_emits_partial_finding(monkeypatch):
+    """Parsed fine but the model skipped an id — a different degrade class."""
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": 88}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+
+    await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert len(seen) == 1
+    assert seen[0]["extra"]["reason"] == "partial"
+    assert seen[0]["extra"]["unscored"] == 1
+    assert seen[0]["extra"]["omitted_ids"] == ["c2"]
+
+
+async def test_clean_response_emits_no_finding(monkeypatch):
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": 88, "c2": 44}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+
+    await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert seen == []
+
+
+async def test_non_numeric_score_counts_as_omitted(monkeypatch):
+    """A JSON `true`/null/garbage value must not become a 0.0 score."""
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"c1": true, "c2": null}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == pytest.approx(60.0)
+    assert scored["c2"].llm_score == pytest.approx(40.0)
+
+
+async def test_wrong_shape_is_a_total_degrade_not_partial(monkeypatch):
+    """A JSON array parses, and its first {...} member survives the salvage
+    walk — but it keys on nothing we asked about. That is a total degrade,
+    and mislabelling it 'partial' would understate it on the Findings board.
+    """
+    from services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '[{"score": 50.0}]'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake)
+    seen = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+
+    scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
+    assert scored["c1"].llm_score == pytest.approx(60.0)
+    assert scored["c2"].llm_score == pytest.approx(40.0)
+    assert seen[0]["extra"]["reason"] == "no_matching_ids"
+    assert seen[0]["extra"]["unscored"] == 2

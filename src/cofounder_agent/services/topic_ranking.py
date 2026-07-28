@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+from typing import Any
 
 from services.logger_config import get_logger
 from services.niche_service import NicheGoal
@@ -360,44 +361,138 @@ async def llm_final_score(
             f"may be configured for structured extraction — set "
             f"``structured_extraction_model`` to a JSON-reliable instruct model."
         )
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        # A truncated / malformed response (the structured model hit a length
-        # cap mid-object, or emitted a stray token) must NOT sink the whole
-        # discovery sweep. Before this guard, json.loads raised 'Unterminated
-        # string' out of run_sweep and failed the run_niche_topic_sweep job
-        # (2026-06-30). Degrade to the embedding pre-rank: an empty ``parsed``
-        # backfills every candidate from ``embedding_score`` in the loop below,
-        # so the batch still forms — ranked, just without the LLM's re-score.
+    # Tolerant parse with the opt-in truncated-object salvage rung. A derailed
+    # response often carries several complete, correctly-scored entries before
+    # it breaks down; recovering them beats discarding the whole batch. Safe
+    # here because top-level entries are independent (one id -> one score).
+    from utils.json_extract import extract_json_object
+
+    degrade_reason: str | None = None
+    parsed = extract_json_object(raw, salvage_truncated=True)
+    if parsed is None:
+        # Nothing recoverable. Degrade to the embedding pre-rank rather than
+        # sinking the sweep — a malformed rank response must not fail the
+        # run_niche_topic_sweep job (2026-06-30 incident).
+        degrade_reason = "unparseable"
         logger.warning(
-            "topic_ranking.llm_final_score: unparseable JSON from model %r "
-            "(%s) — falling back to embedding pre-rank for all %d candidate(s); "
+            "topic_ranking.llm_final_score: unparseable JSON from model %r — "
+            "falling back to embedding pre-rank for all %d candidate(s); "
             "raw_preview=%r",
-            model, exc, len(candidates), raw[:200],
+            model, len(candidates), raw[:200],
         )
         parsed = {}
-    if not isinstance(parsed, dict):
-        # Valid JSON of the wrong shape (an array/scalar from a model that
-        # ignored response_format=json_object) is as useless here as a parse
-        # error — same degrade path, and it avoids an AttributeError on the
-        # ``parsed.get`` below.
-        logger.warning(
-            "topic_ranking.llm_final_score: expected a JSON object from model "
-            "%r, got %s — falling back to embedding pre-rank",
-            model, type(parsed).__name__,
-        )
-        parsed = {}
+
     result: dict[str, ScoredCandidate] = {}
+    omitted: list[str] = []
     for c in candidates:
-        score_blob = parsed.get(c.id)
-        if score_blob is None:
-            logger.warning("LLM scorer omitted candidate %s; defaulting to embedding_score", c.id)
-            score_blob = {"score": c.embedding_score * 100, "breakdown": {}}
-        c.llm_score = float(score_blob.get("score", 0.0))
-        c.score_breakdown = dict(score_blob.get("breakdown", {}))
+        score = _coerce_llm_score(parsed.get(c.id))
+        if score is None:
+            omitted.append(c.id)
+            score = c.embedding_score * 100
+        c.llm_score = float(score)
+        # NOTE: score_breakdown is deliberately NOT overwritten. The embedding
+        # pre-rank already computed a real per-goal breakdown via
+        # weighted_cosine_score (plus the _grounding key); the LLM used to be
+        # asked for its own and clobbered it with invented goal names — which
+        # was also the main parse-failure surface (#926). Calculated beats
+        # generated (feedback_machine_rules).
         result[c.id] = c
+
+    if omitted and degrade_reason is None:
+        # Parsed into a dict, but not every candidate got a usable score.
+        # Distinguish "the model skipped a few" from "nothing in this response
+        # matched any candidate" — the latter is a total degrade wearing a
+        # valid-JSON costume (e.g. a JSON array, whose first {...} member
+        # parses as an object that happens to key on nothing we asked about).
+        # Labelling that "partial" would understate it on the Findings board.
+        degrade_reason = "partial" if len(omitted) < len(candidates) else "no_matching_ids"
+    if degrade_reason:
+        _emit_rank_degrade_finding(
+            model=model,
+            reason=degrade_reason,
+            omitted=omitted,
+            total=len(candidates),
+            raw_preview=raw[:400],
+        )
     return result
+
+
+def _coerce_llm_score(blob: Any) -> float | None:
+    """Read a candidate's score from either supported response shape.
+
+    Current prompt returns ``{"<id>": <score>}``. The retired prompt returned
+    ``{"<id>": {"score": <n>, "breakdown": {...}}}`` — still accepted so a
+    Langfuse prompt override or an operator's customised pack pinned to the old
+    shape keeps scoring instead of silently degrading every candidate
+    (``feedback_backcompat_now_required``).
+
+    Returns ``None`` when no usable number is present, which the caller treats
+    as "omitted" and backfills from the embedding pre-rank.
+    """
+    if blob is None:
+        return None
+    if isinstance(blob, bool):
+        # bool is an int subclass; a JSON `true` is not a score.
+        return None
+    if isinstance(blob, (int, float)):
+        return float(blob)
+    if isinstance(blob, dict):
+        inner = blob.get("score")
+        if isinstance(inner, bool) or not isinstance(inner, (int, float)):
+            return None
+        return float(inner)
+    if isinstance(blob, str):
+        try:
+            return float(blob.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _emit_rank_degrade_finding(
+    *, model: str, reason: str, omitted: list[str], total: int, raw_preview: str,
+) -> None:
+    """Surface a ranking degrade on the Findings board.
+
+    Before this, a degrade only produced a ``logger.warning``: the batch still
+    formed, the console showed a normal-looking ranked batch, and the fact that
+    it was ordered by raw embedding cosine rather than by the LLM's judgement
+    was knowable only by noticing that ``score_breakdown`` was empty. Ten of
+    nineteen real calls over 14 days degraded that way with nothing surfaced.
+    """
+    from utils.findings import emit_finding
+
+    n = len(omitted) if reason == "partial" else total
+    # "partial" is the only reason where some candidates kept a real score;
+    # every other reason means the whole batch fell back.
+    emit_finding(
+        source="topic_ranking",
+        kind="topic_rank_degraded",
+        title=(
+            f"Topic ranking degraded to embedding pre-rank "
+            f"({reason}): {n}/{total} candidate(s) unscored by {model}"
+        ),
+        body=(
+            "The LLM final-score response could not be used for these "
+            "candidates, so their rank came from raw embedding cosine "
+            "similarity against the niche goal vectors. Cosine rewards "
+            "lexical self-similarity, so a degraded batch ranks differently "
+            "than an LLM-scored one.\n\n"
+            f"- reason: {reason}\n"
+            f"- model: {model}\n"
+            f"- unscored: {n} of {total}\n"
+            f"- response preview: {raw_preview!r}"
+        ),
+        severity="warn",
+        dedup_key=f"topic-rank-degraded:{model}:{reason}",
+        extra={
+            "model": model,
+            "reason": reason,
+            "unscored": n,
+            "total": total,
+            "omitted_ids": omitted[:20],
+        },
+    )
 
 
 def apply_decay(*, score: float, decay_factor: float) -> float:

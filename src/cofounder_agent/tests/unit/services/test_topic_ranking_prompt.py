@@ -44,10 +44,10 @@ Candidates:
 [c1] Test Title — Test summary
 [c2] Other Title — Other summary
 
-Return STRICT JSON keyed by candidate id, of the form:
-{"<id>": {"score": <0-100>, "breakdown": {"<GOAL_TYPE>": <weighted contribution 0-1>, ...}}, ...}
+Return STRICT JSON keyed by candidate id, mapping each id directly to its score
+as a number from 0 to 100:
+{"<id>": <score 0-100>, ...}
 
-The breakdown values per candidate should approximately sum to (score / 100).
 Return ONLY the JSON, no commentary.
 """
 
@@ -156,8 +156,12 @@ class TestTopicRankingStructuralInvariants:
         )
         # The example schema in the template should render literally —
         # NOT be interpreted as another format placeholder:
-        assert '{"<id>": {"score": <0-100>' in actual
-        assert '"breakdown":' in actual
+        assert '{"<id>": <score 0-100>, ...}' in actual
+        # #926: the nested "breakdown" object was removed from the schema.
+        # Asking the model to invent goal-name keys was the dominant
+        # parse-failure surface, and the pre-rank already computes a real
+        # breakdown that the LLM's version used to overwrite.
+        assert '"breakdown"' not in actual
 
     def test_unicode_em_dash_preserved_through_format(
         self, pm: UnifiedPromptManager
