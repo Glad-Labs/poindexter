@@ -12,6 +12,7 @@ Deep lore (every gotcha found while building this) lives in Claude's memory:
 
 | Dir             | Contents                                                                                                                                                                         | Restores to                                          |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `applications/` | App-menu entry that drives `conky-strip.service` (shadows the packaged one)                                                                                                      | `~/.local/share/applications/`                       |
 | `btop/`         | btop config + deuteranomaly-safe theme                                                                                                                                           | `~/.config/btop/`                                    |
 | `conky/`        | 8.8" 1920x480 sensor-strip panel (renderer, launcher, loop poller, bg generator)                                                                                                 | `~/.config/conky/`                                   |
 | `openrgb/`      | OpenRGB detector config (Corsair disabled) + ARGB temp-sync daemon                                                                                                               | `~/.config/OpenRGB/`, `~/.config/openrgb-temp-sync/` |
@@ -46,6 +47,15 @@ no display config is baked.
 - Thermal palette (everywhere): mint `#00e5d6` → amber `(255,184,51)` → orange
   `(255,128,0)`; LINK anchors 25/30/35 °C, OpenRGB windows: coolant 28–38,
   DIMM 40–50, GPU 35–60.
+- **Never launch conky from the app menu's packaged entry or bare `conky`** —
+  there is no `~/.conkyrc`, so it loads stock `/etc/conky/conky.conf` anchored to
+  xinerama head 0 (the primary), not the strip. `applications/conky.desktop`
+  shadows it by desktop-file ID and drives the systemd unit instead.
+- `launch-strip.sh` anchors the strip relative to **monitor 0**, so it waits for
+  the RandR layout to stop changing (3 identical reads) before sampling. Reading
+  it mid-settle picks up whichever output woke first and mispositions the panel
+  for the whole session — hit 2026-07-27, head 0 sampled as HDMI-A-3 `@+5360`
+  and the strip drew 3440px off-screen.
 - Editing OLH RGB colors later: change `openlinkhub/rgb.json` **and bump the
   profile's `version`** before copying — devices render from per-serial copies
   in `database/rgb/` that only refresh on a version mismatch (upstream #487).

@@ -14,6 +14,13 @@ python3 ~/.config/conky/make-strip-bg.py
 cp -v "$HERE"/openrgb/OpenRGB.json ~/.config/OpenRGB/
 cp -v "$HERE"/openrgb/sync.py ~/.config/openrgb-temp-sync/
 
+# Shadows the packaged conky.desktop, whose bare `conky --daemonize` loads stock
+# /etc/conky/conky.conf on the primary monitor instead of the strip.
+echo "== app-menu entry =="
+mkdir -p ~/.local/share/applications
+cp -v "$HERE"/applications/conky.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+
 echo "== openrgb-python venv =="
 [ -x ~/.local/share/openrgb-venv/bin/python ] || python3 -m venv ~/.local/share/openrgb-venv
 ~/.local/share/openrgb-venv/bin/pip install -q openrgb-python
