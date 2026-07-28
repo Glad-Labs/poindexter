@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## [0.112.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.111.0...v0.112.0) (2026-07-28)
+
+
+### Features
+
+* **affiliate:** add `affiliate keyword` CLI and seed prose-shaped aliases ([#2874](https://github.com/Glad-Labs/glad-labs-stack/issues/2874)) ([f217b5b](https://github.com/Glad-Labs/glad-labs-stack/commit/f217b5b949e9b553bc890f2e1e544cf3137de2e9))
+* **obs:** alert on mains undervoltage before it hard-crashes the host ([#2855](https://github.com/Glad-Labs/glad-labs-stack/issues/2855)) ([c9cfbec](https://github.com/Glad-Labs/glad-labs-stack/commit/c9cfbec7c7e5d83fabe0f5aba1e47325bdd6c0af))
+* **retention:** prune rejected social drafts, never posted ones ([#2867](https://github.com/Glad-Labs/glad-labs-stack/issues/2867)) ([966bbba](https://github.com/Glad-Labs/glad-labs-stack/commit/966bbba4a310a3c20a648dd725824081e8f099e9))
+
+
+### Bug Fixes
+
+* **affiliate:** exclude bot clicks and attribute by source page ([#2868](https://github.com/Glad-Labs/glad-labs-stack/issues/2868)) ([5b073c2](https://github.com/Glad-Labs/glad-labs-stack/commit/5b073c2a03d647b9c537030a2c58b45955987e9e))
+* **ci:** key kernel-purity baseline on import target, not line number ([#2865](https://github.com/Glad-Labs/glad-labs-stack/issues/2865)) ([5111183](https://github.com/Glad-Labs/glad-labs-stack/commit/5111183d637f36c536596de870b4054d68773673))
+* **console:** cap SOCIAL DISTRIBUTION height + add status filter ([#2856](https://github.com/Glad-Labs/glad-labs-stack/issues/2856)) ([76b2966](https://github.com/Glad-Labs/glad-labs-stack/commit/76b2966eed9dc335b4020d62f2d6c8db54f1f87d))
+* **grafana:** match default time windows to actual data cadence ([#2863](https://github.com/Glad-Labs/glad-labs-stack/issues/2863)) ([75e8812](https://github.com/Glad-Labs/glad-labs-stack/commit/75e8812a557a27b168e5a46acd1cbfa99625df29))
+* **grafana:** repack hardware-power after concurrent Mains Voltage merge ([#2858](https://github.com/Glad-Labs/glad-labs-stack/issues/2858)) ([29bbe3c](https://github.com/Glad-Labs/glad-labs-stack/commit/29bbe3c17ed58aad34bd92d7a00ead0d09b4b3e0))
+* **grafana:** repair 11 non-displaying panels and repack all 12 dashboards ([#2857](https://github.com/Glad-Labs/glad-labs-stack/issues/2857)) ([dc8dd48](https://github.com/Glad-Labs/glad-labs-stack/commit/dc8dd4802d2ca66b62c160872cff05bdcf40bd6d))
+* **media:** stop the TTS filename rule deleting numbers; accept H2 headlines ([#2876](https://github.com/Glad-Labs/glad-labs-stack/issues/2876)) ([a58588f](https://github.com/Glad-Labs/glad-labs-stack/commit/a58588f40b1b9001d1810a0e16ba75cc6e48363d))
+* **retention:** prune checkpoints for rejected runs, not just completed ones ([#2871](https://github.com/Glad-Labs/glad-labs-stack/issues/2871)) ([8152731](https://github.com/Glad-Labs/glad-labs-stack/commit/815273124685b607b54d456a4e703523b348aeaf))
+* **rig:** deadband ARGB temp-sync so sensor noise stops repainting the Aura ([#2861](https://github.com/Glad-Labs/glad-labs-stack/issues/2861)) ([c33de9d](https://github.com/Glad-Labs/glad-labs-stack/commit/c33de9d6806f115ac7332c6598eecbc771e981ef)), closes [#2860](https://github.com/Glad-Labs/glad-labs-stack/issues/2860)
+* **rig:** launch strip from app menu, and settle RandR before anchoring ([#2854](https://github.com/Glad-Labs/glad-labs-stack/issues/2854)) ([9c74fbb](https://github.com/Glad-Labs/glad-labs-stack/commit/9c74fbbfb98b312d43c53b34cbc7ec621850ce86))
+* **security:** bump next 16.2.10 -&gt; 16.2.12 on the production site ([#2866](https://github.com/Glad-Labs/glad-labs-stack/issues/2866)) ([41f09d0](https://github.com/Glad-Labs/glad-labs-stack/commit/41f09d0cac994a169c635d1ed114b25f75f2de25))
+* **security:** clear 40 of 42 HIGH Trivy findings across four lockfiles ([#2870](https://github.com/Glad-Labs/glad-labs-stack/issues/2870)) ([ef0a386](https://github.com/Glad-Labs/glad-labs-stack/commit/ef0a386c98cd7321b5d2392d3e8b084d03421a63))
+* **security:** override sharp to ^0.35.0 to clear the last Trivy HIGH ([#2873](https://github.com/Glad-Labs/glad-labs-stack/issues/2873)) ([12194b4](https://github.com/Glad-Labs/glad-labs-stack/commit/12194b4c203fd35f83b7d70f9b15a848e6ee1366))
+* **social:** page GET /api/social/drafts without stranding approvals ([#2859](https://github.com/Glad-Labs/glad-labs-stack/issues/2859)) ([7ef0e24](https://github.com/Glad-Labs/glad-labs-stack/commit/7ef0e24d7d65a5342f9b28893ac574c70f3eeab0))
+* **starter:** patch 4 HIGH npm CVEs in the starter template lockfile ([#2864](https://github.com/Glad-Labs/glad-labs-stack/issues/2864)) ([65fc1a0](https://github.com/Glad-Labs/glad-labs-stack/commit/65fc1a0b17d266e220962cd1abf3889d90695dfa))
+* **topics:** stop LLM ranking silently degrading to raw embedding cosine ([#2872](https://github.com/Glad-Labs/glad-labs-stack/issues/2872)) ([3b0b1ec](https://github.com/Glad-Labs/glad-labs-stack/commit/3b0b1ec12a1a1ace5c0cf142b49893a4f900178d))
+* **topics:** stop web_search searching its own brand + add self-reference gate ([#2862](https://github.com/Glad-Labs/glad-labs-stack/issues/2862)) ([0a6ce9a](https://github.com/Glad-Labs/glad-labs-stack/commit/0a6ce9a0916f18ffafac3857c773becbf8b9f466))
+
 ## [0.111.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.110.0...v0.111.0) (2026-07-27)
 
 

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "poindexter"
-version = "0.111.0"
+version = "0.112.0"
 description = "Poindexter — production-ready AI content pipeline with autonomous agents, multi-provider LLM routing, and full-stack web applications. Built by Glad Labs LLC."
 authors = ["Glad Labs LLC <hello@gladlabs.io>"]
 readme = "README.md"
@@ -64,7 +64,7 @@ priority = "explicit"
 
 [project]
 name = "poindexter"
-version = "0.111.0"
+version = "0.112.0"
 description = "Poindexter — Python agents and content pipeline. Built by Glad Labs LLC."
 authors = [
   { name="Glad Labs LLC", email="hello@gladlabs.io" },
