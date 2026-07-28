@@ -1562,15 +1562,15 @@ dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "setuptools ; python_version
 
 [[package]]
 name = "diffusers"
-version = "0.38.0"
+version = "0.39.0"
 description = "State-of-the-art diffusion in PyTorch and JAX."
 optional = true
 python-versions = ">=3.10.0"
 groups = ["main"]
 markers = "extra == \"ml\""
 files = [
-    {file = "diffusers-0.38.0-py3-none-any.whl", hash = "sha256:18e53f9e539096320470f62c6360a6fd5727ff28cffda566265316e13fcdb612"},
-    {file = "diffusers-0.38.0.tar.gz", hash = "sha256:1e094ec5c16f18c42fb89d37f07a94cf9aab3ebbe527ab059c609597b8857626"},
+    {file = "diffusers-0.39.0-py3-none-any.whl", hash = "sha256:912aca51b5787365110806e984d5555735bf8a461073bb8459029d0bca7870ef"},
+    {file = "diffusers-0.39.0.tar.gz", hash = "sha256:14bb1d98c85a0e463d734c99aaa73b480a7bc9bad22af30fbf730ef8f09c1d67"},
 ]
 
 [package.dependencies]
@@ -1582,11 +1582,11 @@ numpy = "*"
 Pillow = "*"
 regex = "!=2019.12.17"
 requests = "*"
-safetensors = ">=0.8.0rc0"
+safetensors = ">=0.8.0"
 
 [package.extras]
 bitsandbytes = ["accelerate (>=0.31.0)", "bitsandbytes (>=0.43.3)"]
-dev = ["GitPython (<3.1.19)", "Jinja2", "Jinja2", "accelerate (>=0.31.0)", "accelerate (>=0.31.0)", "compel (==0.1.8)", "datasets", "datasets", "flax (>=0.4.1)", "ftfy", "hf-doc-builder (>=0.3.0)", "hf-doc-builder (>=0.3.0)", "invisible-watermark (>=0.2.0)", "isort (>=5.5.4)", "jax (>=0.4.1)", "jaxlib (>=0.4.1)", "librosa", "parameterized", "peft (>=0.17.0)", "phonemizer", "protobuf (>=3.20.3,<4)", "protobuf (>=3.20.3,<4)", "pytest", "pytest-timeout", "pytest-xdist", "requests-mock (==1.10.0)", "ruff (==0.9.10)", "safetensors (>=0.8.0rc0)", "scipy", "sentencepiece (>=0.1.91,!=0.1.92)", "tensorboard", "tiktoken (>=0.7.0)", "timm", "torch (>=1.4)", "torchsde", "torchvision", "transformers (>=4.41.2)", "urllib3 (<=2.0.0)"]
+dev = ["GitPython (<3.1.19)", "Jinja2", "Jinja2", "accelerate (>=0.31.0)", "accelerate (>=0.31.0)", "datasets", "datasets", "flax (>=0.4.1)", "ftfy", "hf-doc-builder (>=0.3.0)", "hf-doc-builder (>=0.3.0)", "invisible-watermark (>=0.2.0)", "isort (>=5.5.4)", "jax (>=0.4.1)", "jaxlib (>=0.4.1)", "librosa", "llvmlite (>=0.40.0)", "numba (>=0.57.0)", "parameterized", "peft (>=0.17.0)", "phonemizer", "protobuf (>=3.20.3,<4)", "protobuf (>=3.20.3,<4)", "pytest", "pytest-timeout", "pytest-xdist", "requests-mock (==1.10.0)", "ruff (==0.9.10)", "safetensors (>=0.8.0)", "scipy", "sentencepiece (>=0.1.91,!=0.1.92)", "tensorboard", "tiktoken (>=0.7.0)", "timm", "torch (>=2.6)", "torchsde", "torchvision", "transformers (>=4.41.2)", "urllib3 (<=2.0.0)"]
 docs = ["hf-doc-builder (>=0.3.0)"]
 flashpack = ["flashpack"]
 flax = ["flax (>=0.4.1)", "jax (>=0.4.1)", "jaxlib (>=0.4.1)"]
@@ -1594,8 +1594,8 @@ gguf = ["accelerate (>=0.31.0)", "gguf (>=0.10.0)"]
 nvidia-modelopt = ["nvidia_modelopt[hf] (>=0.33.1)"]
 optimum-quanto = ["accelerate (>=0.31.0)", "optimum_quanto (>=0.2.6)"]
 quality = ["hf-doc-builder (>=0.3.0)", "isort (>=5.5.4)", "ruff (==0.9.10)", "urllib3 (<=2.0.0)"]
-test = ["GitPython (<3.1.19)", "Jinja2", "compel (==0.1.8)", "datasets", "ftfy", "invisible-watermark (>=0.2.0)", "librosa", "parameterized", "phonemizer", "protobuf (>=3.20.3,<4)", "pytest", "pytest-timeout", "pytest-xdist", "requests-mock (==1.10.0)", "safetensors (>=0.8.0rc0)", "scipy", "sentencepiece (>=0.1.91,!=0.1.92)", "tiktoken (>=0.7.0)", "torchsde", "torchvision", "transformers (>=4.41.2)"]
-torch = ["accelerate (>=0.31.0)", "torch (>=1.4)"]
+test = ["GitPython (<3.1.19)", "Jinja2", "datasets", "ftfy", "invisible-watermark (>=0.2.0)", "librosa", "llvmlite (>=0.40.0)", "numba (>=0.57.0)", "parameterized", "phonemizer", "protobuf (>=3.20.3,<4)", "pytest", "pytest-timeout", "pytest-xdist", "requests-mock (==1.10.0)", "safetensors (>=0.8.0)", "scipy", "sentencepiece (>=0.1.91,!=0.1.92)", "tiktoken (>=0.7.0)", "torchsde", "torchvision", "transformers (>=4.41.2)"]
+torch = ["accelerate (>=0.31.0)", "torch (>=2.6)"]
 torchao = ["accelerate (>=0.31.0)", "torchao (>=0.7.0)"]
 training = ["Jinja2", "accelerate (>=0.31.0)", "datasets", "peft (>=0.17.0)", "protobuf (>=3.20.3,<4)", "tensorboard", "timm"]
 
@@ -9743,4 +9743,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "53074618a9ab459e42382b3d226da2f1d6d1c0bb4451443d678046031285bfc4"
+content-hash = "e9f08ec93a4b2d207c89d3c2a26d93a7cce09cd834c3bbd236ad9d38f8c82405"
