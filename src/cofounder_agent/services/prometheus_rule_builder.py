@@ -128,6 +128,30 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # healthy baseline is <0.01.
     "host_memory_available_warning_gb": "4",
     "host_memory_psi_full_stall_critical_ratio": "0.25",
+    # Mains supply quality (Glad-Labs/poindexter#924). Watches
+    # psu_line_voltage_volts — true outlet voltage from the Shelly wall-plug
+    # meter (see docs/operations/wall-power-metering.md), NOT a PSU-internal
+    # estimate. Undervoltage is otherwise an invisible failure mode: the host
+    # browns out and dies mid-instruction, so there is no journal entry, no
+    # MCE, and no thermal trace to find afterwards — it reads as a mystery
+    # reboot. Two such crashes hit the operator rig in five days (2026-07-23
+    # 16:24 at 93.5V under 726W load; 2026-07-27 17:52 idle, on an afternoon
+    # whose baseline had sagged to 104V).
+    #
+    # Nominal ships "0" = BOTH rules inert, same reasoning as
+    # expected_gpu_count above: mains nominal is regional (120V vs 230V) and a
+    # 230V operator must never inherit a 120V operator's threshold. Each
+    # operator sets their own; with "0" the comparison is `volts < 0`, which
+    # no sample matches. Percentages are of nominal, so they carry over to any
+    # region unchanged once nominal is set.
+    "psu_nominal_line_voltage_volts": "0",
+    # 92% = the ANSI C84.1 Range B lower bound (110V on a 120V nominal) —
+    # the standards line for "utilization voltage is out of spec", not an
+    # arbitrary pick. 87% is the approach to typical ATX-PSU brownout dropout
+    # (~85-90V on 120V nominal); below it a hard cut is imminent, not
+    # theoretical.
+    "psu_line_voltage_warning_percent": "92",
+    "psu_line_voltage_critical_percent": "87",
 }
 
 
@@ -427,6 +451,85 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "wan model load may OOM. Unload idle models (the gpu_scheduler "
             "should), or reduce concurrent model residency. Tune via "
             "prometheus.threshold.gpu_vram_utilization_percent."
+        ),
+    },
+    # --- Mains supply quality (Glad-Labs/poindexter#924) ---
+    # Reads psu_line_voltage_volts from the Shelly wall-plug meter (job
+    # "nvidia-smi", gpu-exporter:9835) — an independent exporter, so per the
+    # restart-gap policy above a raw instant read needs no last_over_time
+    # bridge.
+    #
+    # The two bands are deliberately DISJOINT (warning is floored at the
+    # critical threshold) rather than nested. Alertmanager's inhibit rule
+    # keys on `equal: ["alertname", "instance"]`, so a nested pair with
+    # different alertnames would page twice for one brownout. Disjoint bands
+    # page exactly once and move the notification from warning to critical as
+    # the sag deepens.
+    #
+    # Both are inert until an operator sets psu_nominal_line_voltage_volts:
+    # at the "0" default each comparison reduces to `< 0`, which no sample
+    # matches.
+    "MainsVoltageLow": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "psu_line_voltage_volts"
+            " >= ({threshold.psu_nominal_line_voltage_volts}"
+            " * {threshold.psu_line_voltage_critical_percent} / 100)"
+            "\nand psu_line_voltage_volts"
+            " < ({threshold.psu_nominal_line_voltage_volts}"
+            " * {threshold.psu_line_voltage_warning_percent} / 100)"
+        ),
+        # 5m: a supply problem worth acting on persists for hours (the
+        # 2026-07-27 afternoon sag ran ~4h). Long enough that switching loads
+        # elsewhere in the building don't page.
+        "for": "5m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Mains voltage below spec ({{ $value | humanize }}V)",
+        "description": (
+            "Measured outlet voltage is {{ $value | humanize }}V — under "
+            "prometheus.threshold.psu_line_voltage_warning_percent (default "
+            "92% of nominal, the ANSI C84.1 Range B lower bound). Sustained "
+            "undervoltage ends in an uncommanded hard power-off that leaves "
+            "NO journal entry, no MCE and no thermal trace — it reads as a "
+            "mystery reboot. Check whether the sag tracks this host's own "
+            "draw (compare psu_line_voltage_volts against "
+            "psu_total_power_watts on the Hardware & Power board): if it "
+            "does, the branch circuit or receptacle upstream of the plug has "
+            "high impedance and wants an electrician — a warm plug or outlet "
+            "is a fire risk, not just a crash risk. If it does not, the sag "
+            "is utility-side and wants a line-interactive UPS with AVR."
+        ),
+    },
+    "MainsVoltageCritical": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # `> 0` guard: a meter that reports a literal 0.0 on a failed read
+        # would otherwise page critical every scrape. A genuinely absent
+        # Shelly omits the series entirely, which yields no samples and is
+        # already safe.
+        "expr": (
+            "psu_line_voltage_volts > 0"
+            "\nand psu_line_voltage_volts"
+            " < ({threshold.psu_nominal_line_voltage_volts}"
+            " * {threshold.psu_line_voltage_critical_percent} / 100)"
+        ),
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Mains voltage approaching brownout dropout ({{ $value | humanize }}V)",
+        "description": (
+            "Measured outlet voltage is {{ $value | humanize }}V — under "
+            "prometheus.threshold.psu_line_voltage_critical_percent (default "
+            "87% of nominal). Typical ATX PSUs drop out around 85-90% of "
+            "nominal, so a hard power-off is imminent rather than "
+            "theoretical: the operator rig lost power at 93.5V on "
+            "2026-07-23. Shed load NOW (pause GPU jobs — draw and sag are "
+            "coupled when the circuit is the problem) and stop Postgres "
+            "cleanly if you can, so the crash doesn't land mid-write."
         ),
     },
     # Host disk space. Previously static in infrastructure.yml — moved here so

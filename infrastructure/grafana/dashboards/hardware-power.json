@@ -736,6 +736,78 @@
       "description": "Total DC output power from the corsair-psu kernel driver via node_exporter hwmon. Pairs with the Shelly wall stat: wall \u2212 DC = conversion loss. (The driver's own input-power estimate reads garbage, hence the plug.)"
     },
     {
+      "id": 72,
+      "type": "timeseries",
+      "title": "Mains Voltage (Shelly, AC in)",
+      "description": "True outlet voltage from the Shelly wall-plug meter \u2014 not a PSU-internal estimate. Dashed lines mirror the MainsVoltageLow / MainsVoltageCritical alert bands at 92% / 87% of a 120V nominal (110.4V / 104.4V). Those alert thresholds live in app_settings (prometheus.threshold.psu_nominal_line_voltage_volts and the two percent keys); if you retune them there, update these lines to match. Sustained undervoltage ends in an uncommanded hard power-off that leaves no journal entry \u2014 see docs/operations/wall-power-metering.md.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisLabel": "Volts",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "unit": "volt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 104.4
+              },
+              {
+                "color": "blue",
+                "value": 110.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "min"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "psu_line_voltage_volts",
+          "legendFormat": "Mains V"
+        }
+      ]
+    },
+    {
       "id": 10,
       "type": "timeseries",
       "title": "Power Over Time",

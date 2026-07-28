@@ -317,6 +317,157 @@ class TestHostMemoryPressureRules:
 
 
 # ---------------------------------------------------------------------------
+# Mains undervoltage (Glad-Labs/poindexter#924)
+# ---------------------------------------------------------------------------
+
+
+def _band_bounds(section: str) -> tuple[float | None, float | None]:
+    """Pull the numeric (lower, upper) bounds out of a rendered rule section.
+
+    Reads the bounds back off the *rendered PromQL* rather than recomputing
+    them from the thresholds, so a drift between the expr and the intended
+    band fails the sweep below instead of passing on parallel arithmetic.
+    """
+    import re
+
+    def _val(pattern: str) -> float | None:
+        m = re.search(pattern, section)
+        if not m:
+            return None
+        return float(m.group(1)) * float(m.group(2)) / 100
+
+    lower = _val(r">= \((\d+(?:\.\d+)?) \* (\d+(?:\.\d+)?) / 100\)")
+    upper = _val(r"< \((\d+(?:\.\d+)?) \* (\d+(?:\.\d+)?) / 100\)")
+    return lower, upper
+
+
+class TestMainsUndervoltage:
+    """Undervoltage alerting on ``psu_line_voltage_volts`` (the Shelly
+    wall-plug meter — true outlet voltage, not a PSU-internal estimate).
+
+    A brownout kills the host mid-instruction: no journal entry, no MCE, no
+    thermal trace. Two such crashes hit the operator rig in five days
+    (2026-07-23 16:24 at 93.5V under load; 2026-07-27 17:52 idle), which is
+    what these rules exist to pre-empt.
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        assert "MainsVoltageLow" in rb.DEFAULT_RULES
+        assert "MainsVoltageCritical" in rb.DEFAULT_RULES
+        # 92% = ANSI C84.1 Range B lower bound; 87% approaches ATX dropout.
+        assert rb.DEFAULT_THRESHOLDS["psu_line_voltage_warning_percent"] == "92"
+        assert rb.DEFAULT_THRESHOLDS["psu_line_voltage_critical_percent"] == "87"
+
+    def test_ships_inert_because_nominal_voltage_is_regional(self):
+        """Mains nominal is 120V or 230V depending on country, so neither rule
+        may carry a shipped default — a 230V operator must not inherit a 120V
+        operator's threshold. Same precedent as ``expected_gpu_count``."""
+        assert rb.DEFAULT_THRESHOLDS["psu_nominal_line_voltage_volts"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_default_render_can_never_match(self):
+        """With nominal "0" both exprs reduce to ``< 0``, which no sample
+        matches. Verified end-to-end rather than by reading the default."""
+        out = await rb.build_current(_FakePool([]))
+        for name in ("MainsVoltageLow", "MainsVoltageCritical"):
+            section = out.split(f"alert: {name}")[1].split("alert:", 1)[0]
+            assert "{threshold." not in section
+            _lower, upper = _band_bounds(section)
+            # Upper bound of 0 => the band is empty for every real reading.
+            assert upper == 0.0, f"{name} is not inert by default"
+
+    @pytest.mark.asyncio
+    async def test_bands_are_disjoint_so_one_brownout_pages_once(self):
+        """Alertmanager's inhibit rule keys on ``equal: [alertname, instance]``,
+        so a nested warning/critical pair with different alertnames would page
+        twice for a single brownout. The warning band is floored at the
+        critical threshold to keep them mutually exclusive."""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.psu_nominal_line_voltage_volts",
+             "value": "120"},
+        ])
+        out = await rb.build_current(pool)
+        warn = out.split("alert: MainsVoltageLow")[1].split("alert:", 1)[0]
+        crit = out.split("alert: MainsVoltageCritical")[1].split("alert:", 1)[0]
+
+        w_lo, w_hi = _band_bounds(warn)
+        _c_lo, c_hi = _band_bounds(crit)
+        assert (w_lo, w_hi) == (104.4, 110.4)
+        assert c_hi == 104.4
+        # The warning floor IS the critical ceiling — no overlap, no gap.
+        assert w_lo == c_hi
+
+        def fires(volts: float) -> set[str]:
+            hit = set()
+            if w_lo <= volts < w_hi:
+                hit.add("warning")
+            if 0 < volts < c_hi:
+                hit.add("critical")
+            return hit
+
+        # Healthy supply: silent. 108.2V was the operator rig's real reading
+        # hours after the 2026-07-27 crash — below ANSI spec, so it warns.
+        assert fires(120.0) == set()
+        assert fires(114.0) == set()
+        assert fires(108.2) == {"warning"}
+        assert fires(104.4) == {"warning"}
+        # 93.5V was measured at the 2026-07-23 hard power-off.
+        assert fires(93.5) == {"critical"}
+        # Never both, at any voltage.
+        for tenth in range(0, 1400):
+            assert len(fires(tenth / 10)) <= 1
+
+    @pytest.mark.asyncio
+    async def test_zero_reading_does_not_page_critical(self):
+        """A meter that reports a literal 0.0 on a failed read must not look
+        like the deepest possible brownout. (A genuinely absent Shelly omits
+        the series, which yields no samples and is already safe.)"""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.psu_nominal_line_voltage_volts",
+             "value": "120"},
+        ])
+        out = await rb.build_current(pool)
+        crit = out.split("alert: MainsVoltageCritical")[1].split("alert:", 1)[0]
+        assert "psu_line_voltage_volts > 0" in crit
+
+    @pytest.mark.asyncio
+    async def test_thresholds_port_to_a_230v_region(self):
+        """Percent-of-nominal, so an EU operator sets one key and gets
+        correct absolute bounds."""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.psu_nominal_line_voltage_volts",
+             "value": "230"},
+        ])
+        out = await rb.build_current(pool)
+        warn = out.split("alert: MainsVoltageLow")[1].split("alert:", 1)[0]
+        w_lo, w_hi = _band_bounds(warn)
+        assert (round(w_lo, 1), round(w_hi, 1)) == (200.1, 211.6)
+
+    def test_severities_route_correctly(self):
+        # Warning → Discord (routine); critical → Telegram (imminent hard cut).
+        assert rb.DEFAULT_RULES["MainsVoltageLow"]["severity"] == "warning"
+        assert rb.DEFAULT_RULES["MainsVoltageCritical"]["severity"] == "critical"
+
+    def test_no_absent_guard_so_meter_death_doesnt_false_fire(self):
+        """A missing Shelly is the wall-power watchdog's job (brain/psu_power
+        .py), not this rule's — a bare comparison yields no series on no-data
+        (#581)."""
+        for name in ("MainsVoltageLow", "MainsVoltageCritical"):
+            assert "absent(" not in rb.DEFAULT_RULES[name]["expr"]
+
+    def test_descriptions_separate_the_two_root_causes(self):
+        """Sag that tracks our own draw is upstream circuit impedance (an
+        electrician); sag that doesn't is utility-side (a UPS with AVR). The
+        operator needs to be pointed at the right one."""
+        low = rb.DEFAULT_RULES["MainsVoltageLow"]["description"].lower()
+        assert "psu_total_power_watts" in low
+        assert "ups" in low and "avr" in low
+        assert "circuit" in low or "receptacle" in low
+        crit = rb.DEFAULT_RULES["MainsVoltageCritical"]["description"].lower()
+        assert "shed load" in crit or "pause" in crit
+
+
+# ---------------------------------------------------------------------------
 # load_thresholds / load_rules
 # ---------------------------------------------------------------------------
 

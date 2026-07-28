@@ -119,6 +119,70 @@ absent, the URL is unset/unreachable and the system is on the software estimate
 curl http://<plug-ip>/rpc/Switch.GetStatus?id=0
 ```
 
+## Undervoltage alerting
+
+The plug also meters **line voltage** (`psu_line_voltage_volts`), and that is a
+health signal, not just trivia: when mains sags far enough the PSU drops out and
+the host dies mid-instruction. There is no journal entry, no MCE and no thermal
+trace afterwards — it reads as a mystery reboot. The only evidence is the
+voltage trend leading up to it, which is why this is monitored.
+
+Two rules in `services/prometheus_rule_builder.py` watch it
+(Glad-Labs/poindexter#924):
+
+| Alert                  | Fires below                                                                                      | Severity            |
+| ---------------------- | ------------------------------------------------------------------------------------------------ | ------------------- |
+| `MainsVoltageLow`      | `psu_line_voltage_warning_percent` (default 92% of nominal — the ANSI C84.1 Range B lower bound) | warning → Discord   |
+| `MainsVoltageCritical` | `psu_line_voltage_critical_percent` (default 87% — approaching ATX brownout dropout)             | critical → Telegram |
+
+The bands are **disjoint**, not nested: the warning is floored at the critical
+threshold so a single brownout pages once, not twice (Alertmanager's inhibit
+rule keys on `alertname`, which differs between the two).
+
+**Both ship inert and you must opt in.** Mains nominal is regional, so there is
+no safe shipped default — a 230V operator must not inherit a 120V operator's
+threshold. Set your nominal and the rules activate:
+
+```bash
+poindexter settings set prometheus.threshold.psu_nominal_line_voltage_volts 120 --allow-new
+```
+
+`--allow-new` is required the first time: the shipped value lives in
+`DEFAULT_THRESHOLDS` and is merged at render time, so there is no `app_settings`
+row until you create one (same as `prometheus.threshold.expected_gpu_count`).
+
+Use `230` (or your local nominal) outside North America; the thresholds are
+percentages, so the absolute bounds follow automatically. `0` (the default)
+disables both. `RenderPrometheusRulesJob` picks the change up within 5 minutes —
+no restart needed.
+
+### Reading the result
+
+If the sag **tracks your own draw** — compare `psu_line_voltage_volts` against
+`psu_total_power_watts` on the Hardware & Power board — the branch circuit or
+receptacle upstream of the plug has high impedance. That is an electrician's
+job, and a plug or outlet that is warm to the touch is a fire risk, not just a
+crash risk. If the sag is **independent of your draw**, it is utility-side and
+the fix is a line-interactive UPS with AVR (pure sine wave — a PFC PSU will not
+accept a simulated-sine unit).
+
+Worked example from the operator rig, 5 days of samples:
+
+| Host draw | Mean mains V | Min    |
+| --------- | ------------ | ------ |
+| 200–299W  | 112.5V       | 100.0V |
+| 700–799W  | 106.1V       | 93.5V  |
+
+Pearson r = −0.33 between voltage and draw, ~1.5 Ω implied source impedance —
+a circuit problem, and it hard-crashed the host twice in five days.
+
+### What these rules cannot catch
+
+They fire on **sustained** sag (`for: 5m` / `1m`). A sub-second utility blip is
+invisible at a 30s scrape interval, and no Prometheus rule can catch one — that
+is a UPS's job, not monitoring's. A quiet board means "no sustained
+undervoltage", not "power is clean".
+
 ## Staleness watchdog
 
 `brain/data_freshness_probe.py` watches the feeds behind these panels and emits
