@@ -448,6 +448,20 @@ class TestMainsUndervoltage:
         assert rb.DEFAULT_RULES["MainsVoltageLow"]["severity"] == "warning"
         assert rb.DEFAULT_RULES["MainsVoltageCritical"]["severity"] == "critical"
 
+    def test_pending_windows_are_asymmetric_by_design(self):
+        """The warning holds 30m so this host's own GPU jobs — which sag the
+        line into the warning band for 5-10min at a time — don't page as if
+        they were a supply fault. At the original 5m the band covered 18.6% of
+        a 7-day window (~31h/week), which is mute-the-alert territory.
+
+        The critical must NOT inherit that patience: below 87% of nominal a
+        hard cut is imminent (the rig lost power at 93.5V on 2026-07-23), so it
+        stays at 1m. Widening it would trade the one alert that predicts a
+        crash for a quieter board.
+        """
+        assert rb.DEFAULT_RULES["MainsVoltageLow"]["for"] == "30m"
+        assert rb.DEFAULT_RULES["MainsVoltageCritical"]["for"] == "1m"
+
     def test_no_absent_guard_so_meter_death_doesnt_false_fire(self):
         """A missing Shelly is the wall-power watchdog's job (brain/psu_power
         .py), not this rule's — a bare comparison yields no series on no-data
@@ -754,7 +768,13 @@ class TestRestartGapBridging:
         # cAdvisor / node_exporter / nvidia-smi / postgres_exporter run as
         # independent containers or host services — worker deploys don't
         # blank their series.
-        independent = {"PoindexterContainerMemoryHigh"}
+        independent = {
+            "PoindexterContainerMemoryHigh",
+            # psu_line_voltage_volts is scraped from gpu-exporter (job
+            # "nvidia-smi") — named in the comment above as one of the
+            # exporters that survives a worker deploy.
+            "MainsVoltageLow",
+        }
         for name, rule in rb.DEFAULT_RULES.items():
             m = re.fullmatch(r"(\d+)([mh])", str(rule["for"]))
             assert m, f"{name}: unparseable for: {rule['for']!r}"

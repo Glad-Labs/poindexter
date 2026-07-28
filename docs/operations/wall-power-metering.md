@@ -178,7 +178,7 @@ a circuit problem, and it hard-crashed the host twice in five days.
 
 ### What these rules cannot catch
 
-They fire on **sustained** sag (`for: 5m` / `1m`). A sub-second utility blip is
+They fire on **sustained** sag (`for: 30m` / `1m`). A sub-second utility blip is
 invisible at a 30s scrape interval, and no Prometheus rule can catch one — that
 is a UPS's job, not monitoring's. A quiet board means "no sustained
 undervoltage", not "power is clean".

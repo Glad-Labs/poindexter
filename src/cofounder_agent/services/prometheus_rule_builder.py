@@ -481,10 +481,24 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             " < ({threshold.psu_nominal_line_voltage_volts}"
             " * {threshold.psu_line_voltage_warning_percent} / 100)"
         ),
-        # 5m: a supply problem worth acting on persists for hours (the
-        # 2026-07-27 afternoon sag ran ~4h). Long enough that switching loads
-        # elsewhere in the building don't page.
-        "for": "5m",
+        # 30m: a supply problem worth acting on persists for hours (the
+        # 2026-07-27 afternoon sag ran ~4h). 5m proved too short in practice —
+        # this host's OWN GPU jobs pull the line into the warning band for
+        # 5-10min at a stretch, so the rule paged on ordinary work instead of
+        # on supply quality: measured over the 7 days to 2026-07-28, the
+        # warning band covered 18.6% of the window (~31h/week). 30m outlasts a
+        # single inference run while still catching the multi-hour afternoon
+        # sags that actually precede a hard cut.
+        #
+        # Note this only de-noises the *warning*. MainsVoltageCritical stays at
+        # for: 1m — below 87% of nominal a dropout is imminent and 30m of
+        # silence would be 30m too many.
+        #
+        # Exempt from the long-for restart-gap ratchet (see the test of the
+        # same name): psu_line_voltage_volts comes from gpu-exporter, an
+        # independent container that does not blank on worker deploys, so the
+        # raw instant read survives a 30m pending window.
+        "for": "30m",
         "severity": "warning",
         "category": "infrastructure",
         "summary": "Mains voltage below spec ({{ $value | humanize }}V)",
