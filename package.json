@@ -61,7 +61,7 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
     "baseline-browser-mapping": "^2.11.5",
@@ -99,7 +99,7 @@
     "@vercel/speed-insights": "^2.0.0"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
-    "@rollup/rollup-linux-x64-musl": "^4.62.2"
+    "@rollup/rollup-linux-x64-gnu": "^4.62.3",
+    "@rollup/rollup-linux-x64-musl": "^4.62.3"
   }
 }
