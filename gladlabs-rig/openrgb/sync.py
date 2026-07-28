@@ -24,10 +24,46 @@ OLH_HUB = "http://127.0.0.1:27003/api/devices/D88EC280CF680350A725FEFCE85D887D"
 TICK_S = 5
 GPU_EVERY = 3  # nvidia-smi every 3rd tick
 
+# How far a temperature must move before we repaint.
+#
+# Without a deadband the "skip unchanged colors" guard in main() never actually
+# skips. Idle coolant wobbles ~0.3 °C of sensor noise, and against the 28-38 °C
+# ramp every 0.1 °C lands on a DIFFERENT rounded RGB value (31.5 °C ->
+# (178,198,100), 31.6 °C -> (184,197,97), 31.7 °C -> (189,196,93)) — so we
+# rewrote the Aura headers on essentially every tick while the lighting looked
+# completely static.
+#
+# That churn is not free: those writes leave the ASUS EC's bank register dirty,
+# and the kernel's asus_ec_sensors driver logs "Concurrent access to the ACPI EC
+# detected. Race condition possible." the next time it reads a sensor. Measured
+# on boot 2026-07-26: 20,580 Aura writes -> 35,157 kernel warnings in one boot
+# (72,652 on the boot before).
+#
+# 0.5 °C is 1/20th of the coolant ramp — a ~5% color step, invisible on an RGB
+# strip — while real thermal movement still tracks smoothly (21 distinct colors
+# across a 28->38 °C sweep).
+TEMP_QUANTUM_C = 0.5
+
 # Glad Labs thermal palette: mint (cool) -> amber (warm) -> amber-orange (hot)
 COOL = (0x00, 0xE5, 0xD6)
 MID = (0xFF, 0xB8, 0x33)
 HOT = (0xFF, 0x80, 0x00)
+
+
+def deadband(store, key, t):
+    """Hold the last reported temperature until it moves a full TEMP_QUANTUM_C.
+
+    Anchored to the last REPORTED value, not to a fixed grid. Rounding to a grid
+    looks equivalent but still flaps whenever the reading straddles a step
+    boundary — and the real idle series does exactly that (31.5-31.8 °C straddles
+    31.75). Measured on that series: grid-rounding removed only 60% of the
+    writes, this removes 93%.
+    """
+    prev = store.get(key)
+    if prev is None or abs(t - prev) >= TEMP_QUANTUM_C:
+        store[key] = t
+        return t
+    return prev
 
 
 def ramp(t, lo, hi):
@@ -90,6 +126,8 @@ def log(msg):
 def main():
     client = None
     last = {}
+    stable = {}
+    missing = set()
     tick = 0
     gpus_cached = []
     while True:
@@ -97,6 +135,8 @@ def main():
             if client is None:
                 client = OpenRGBClient("127.0.0.1", 6742, "temp-sync")
                 last.clear()
+                stable.clear()
+                missing.clear()
                 log(f"connected: {len(client.devices)} devices")
 
             if not client.devices:
@@ -107,17 +147,41 @@ def main():
             dimms = [d for d in client.devices if "Vengeance" in d.name]
             gpus = [d for d in client.devices if "GeForce" in d.name]
 
+            # Fail loud when a target didn't enumerate. OpenRGB detects hardware
+            # once at server start, so a bus that isn't ready yet (this service
+            # starts at login) yields a PARTIAL device list — not an empty one.
+            # The `if not client.devices` refresh above only catches the empty
+            # case, so a missing motherboard used to leave `aura` empty forever
+            # and the guards below silently skipped it: lighting just stayed
+            # dark with nothing in the log. Observed 2026-07-27 — 4 devices
+            # enumerated, motherboard absent, zero Aura writes all boot.
+            # Edge-triggered so a genuinely absent target logs once, not per tick.
+            for name, found in (("aura", aura), ("dimm", dimms), ("gpu", gpus)):
+                if found:
+                    missing.discard(name)
+                elif name not in missing:
+                    missing.add(name)
+                    log(
+                        f"WARNING: no {name} device matched — that target is NOT "
+                        f"being driven. Enumerated: {[d.name for d in client.devices]}. "
+                        "Re-detect with: systemctl --user restart openrgb-server"
+                    )
+
             cool = coolant_temp()
             if aura and cool is not None:
-                c = ramp(cool, 28, 38)
+                c = ramp(deadband(stable, "aura", cool), 28, 38)
                 if last.get("aura") != c.__dict__:
                     for d in aura:
                         set_static(d, c)
                     last["aura"] = c.__dict__
                     log(f"aura <- {c} (coolant {cool}°)")
 
-            for i, (d, t) in enumerate(zip(dimms, dimm_temps())):
-                c = ramp(t, 40, 50)
+            # strict=False on purpose: a DIMM whose spd5118 sensor didn't
+            # enumerate just holds its last color rather than crashing the tick
+            # (a raise here would land in the catch-all below and force a
+            # reconnect loop). Pairs are truncated to the shorter list.
+            for i, (d, t) in enumerate(zip(dimms, dimm_temps(), strict=False)):
+                c = ramp(deadband(stable, f"dimm{i}", t), 40, 50)
                 if last.get(f"dimm{i}") != c.__dict__:
                     d.set_color(c)
                     last[f"dimm{i}"] = c.__dict__
@@ -128,7 +192,7 @@ def main():
             for d in gpus:
                 idx = 0 if "5090" in d.name else 1
                 if idx < len(gpus_cached):
-                    c = ramp(gpus_cached[idx], 35, 60)
+                    c = ramp(deadband(stable, f"gpu{idx}", gpus_cached[idx]), 35, 60)
                     if last.get(f"gpu{idx}") != c.__dict__:
                         set_static(d, c)
                         last[f"gpu{idx}"] = c.__dict__
