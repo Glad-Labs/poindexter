@@ -364,3 +364,172 @@ class TestValidationDisabled:
 
         conn.fetch.assert_not_called()
         notify_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Non-Ollama filtering (Glad-Labs/poindexter#941)
+#
+# Measured on the live DB 2026-07-29, the unfiltered validator reported 16
+# missing models of which 15 were false positives — burying the single real
+# finding. These pin each root cause so the noise can't creep back.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestOllamaValueClassification:
+    """Unit-level checks on the value/key classifier itself."""
+
+    def test_ollama_prefixed_values_are_checked(self):
+        from utils.startup_manager import _is_ollama_model_value
+
+        assert _is_ollama_model_value(
+            "pipeline_writer_model", "ollama/gemma-4-31B-it-qat:latest",
+            skip_keys=frozenset(),
+        )
+
+    def test_other_provider_namespaces_are_skipped(self):
+        """A namespaced value declares its own backend. The old code carried an
+        allowlist of cloud prefixes, which could only ever recognise providers
+        someone had already been bitten by — HuggingFace orgs sailed through
+        and were reported as missing Ollama models."""
+        from utils.startup_manager import _is_ollama_model_value
+
+        for value in (
+            "anthropic/claude-sonnet-5",             # another LLM provider
+            "Systran/faster-whisper-medium",         # speaches / HF repo
+            "Wan-AI/Wan2.2-TI2V-5B",                 # wan-server / HF repo
+            "speaches-ai/Kokoro-82M-v1.0-ONNX",      # speaches / HF repo
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",  # sentence-transformers
+        ):
+            assert not _is_ollama_model_value(
+                "some_model", value, skip_keys=frozenset()
+            ), value
+
+    def test_sentinel_values_are_skipped(self):
+        """`auto` selects a model at runtime — there is nothing to look up."""
+        from utils.startup_manager import _is_ollama_model_value
+
+        assert not _is_ollama_model_value(
+            "default_ollama_model", "auto", skip_keys=frozenset()
+        )
+
+    def test_known_non_ollama_bare_keys_are_skipped(self):
+        """Bare values can't be classified by inspection, so the key decides.
+        gpu_model is the clearest case: it holds a hardware description, and
+        was being reported as a missing LLM."""
+        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        assert "gpu_model" in _NON_OLLAMA_MODEL_KEYS
+        assert not _is_ollama_model_value(
+            "gpu_model", "NVIDIA RTX 5090 (32GB VRAM)",
+            skip_keys=_NON_OLLAMA_MODEL_KEYS,
+        )
+        assert not _is_ollama_model_value(
+            "image_model", "z_image_turbo", skip_keys=_NON_OLLAMA_MODEL_KEYS,
+        )
+
+    def test_unknown_bare_keys_are_still_checked(self):
+        """Default-on for unrecognised bare keys: a NEW Ollama model setting
+        must be validated without anyone remembering to register it. Silence
+        on a real missing model is worse than one false positive."""
+        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        assert _is_ollama_model_value(
+            "some_new_writer_model", "llama3.2:3b",
+            skip_keys=_NON_OLLAMA_MODEL_KEYS,
+        )
+
+    def test_operator_skip_list_extends_the_builtin(self):
+        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+
+        extended = _NON_OLLAMA_MODEL_KEYS | {"my_custom_backend_model"}
+        assert not _is_ollama_model_value(
+            "my_custom_backend_model", "something", skip_keys=extended,
+        )
+
+
+@pytest.mark.unit
+class TestOllamaNameVariants:
+    def test_untagged_name_matches_latest(self):
+        """Ollama's /api/tags always reports an explicit tag, so a bare
+        `nomic-embed-text` never string-matched the installed
+        `nomic-embed-text:latest` — reported missing while sitting right
+        there."""
+        from utils.startup_manager import _ollama_name_variants
+
+        assert "nomic-embed-text:latest" in _ollama_name_variants("nomic-embed-text")
+
+    def test_latest_tag_matches_untagged(self):
+        from utils.startup_manager import _ollama_name_variants
+
+        assert "nomic-embed-text" in _ollama_name_variants("nomic-embed-text:latest")
+
+    def test_explicit_non_latest_tag_is_not_widened(self):
+        """`phi4:14b` must NOT be treated as equivalent to bare `phi4` — a
+        different tag is a different model, and widening would hide a genuine
+        wrong-tag misconfiguration."""
+        from utils.startup_manager import _ollama_name_variants
+
+        assert _ollama_name_variants("phi4:14b") == {"phi4:14b"}
+
+
+@pytest.mark.unit
+class TestValidatorNoiseSuppression:
+    @pytest.mark.asyncio
+    async def test_non_ollama_values_are_not_reported_missing(self):
+        """The regression this all exists for: a boot where every non-Ollama
+        backend is configured must produce NO warning."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "gpu_model", "value": "NVIDIA RTX 5090 (32GB VRAM)"},
+                {"key": "image_model", "value": "z_image_turbo"},
+                {"key": "generative_video_model", "value": "Wan-AI/Wan2.2-TI2V-5B"},
+                {"key": "podcast_tts_model", "value": "speaches-ai/Kokoro-82M-v1.0-ONNX"},
+                {"key": "rag_rerank_model", "value": "cross-encoder/ms-marco-MiniLM-L-6-v2"},
+                {"key": "voice_agent_stt_model", "value": "Systran/faster-whisper-medium"},
+                {"key": "default_ollama_model", "value": "auto"},
+                {"key": "pipeline_writer_model", "value": "anthropic/claude-sonnet-5"},
+            ],
+            tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_untagged_installed_model_is_not_reported_missing(self):
+        notify = await _run_validator(
+            model_rows=[{"key": "embed_model", "value": "nomic-embed-text"}],
+            tags_data={"models": [{"name": "nomic-embed-text:latest"}]},
+            show_data={"template": _GOOD_TEMPLATE},
+        )
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_real_missing_ollama_model_still_reports(self):
+        """The point of the filtering is that THIS survives — it was the one
+        true finding lost among 15 false positives."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": "gpu_model", "value": "NVIDIA RTX 5090 (32GB VRAM)"},
+                {"key": "voice_agent_llm_model", "value": "ollama/gemma-4-E2B-Q2:latest"},
+            ],
+            tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_called_once()
+        msg = notify.call_args[0][0]
+        assert "gemma-4-E2B-Q2:latest" in msg
+        assert "NVIDIA" not in msg, "hardware string must not appear as a model"
+
+    @pytest.mark.asyncio
+    async def test_one_model_across_many_keys_reports_once(self):
+        """Report per MODEL, not per key. The writer model is referenced by
+        ~20 keys, which printed the same suspect-template line 20 times."""
+        notify = await _run_validator(
+            model_rows=[
+                {"key": f"pipeline_step{i}_model", "value": "ollama/ghost:latest"}
+                for i in range(5)
+            ],
+            tags_data={"models": [{"name": "llama3.2:3b"}]},
+        )
+        notify.assert_called_once()
+        msg = notify.call_args[0][0]
+        assert msg.count("ghost:latest") == 1, msg

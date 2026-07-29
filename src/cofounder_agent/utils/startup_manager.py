@@ -25,6 +25,71 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
+# --------------------------------------------------------------------------- #
+# Ollama model-setting validation helpers (Glad-Labs/poindexter#941)           #
+#                                                                              #
+# Not every `*_model` app_setting addresses Ollama. The pipeline configures    #
+# image-gen, wan, speaches/whisper, a sentence-transformers reranker and the   #
+# chatterbox sidecar through identically-shaped keys — and `gpu_model` is not  #
+# a model at all, it holds a hardware description. Checking them all against   #
+# `/api/tags` produced 15 false positives per boot that buried the one real    #
+# finding, so the validator needs to know what it is looking at.               #
+# --------------------------------------------------------------------------- #
+
+# Values meaning "decide at runtime", not a model name to look up.
+_MODEL_SENTINELS = frozenset({"auto", "default", "none"})
+
+# Bare (no-slash) values whose key addresses a non-Ollama backend. A slash-ed
+# value is classified structurally by its provider prefix instead, so only
+# these ambiguous bare ones need naming. Operators extend this via
+# `ollama_model_validation_skip_keys` rather than editing code.
+_NON_OLLAMA_MODEL_KEYS = frozenset({
+    "gpu_model",                 # hardware description, e.g. "NVIDIA RTX 5090 (32GB VRAM)"
+    "image_model",               # image-gen server
+    "image_generation_model",    # image-gen server
+    "voice_agent_whisper_model",  # faster-whisper size, e.g. "medium"
+    "voice_bridge_stt_model",    # faster-whisper size, e.g. "base.en"
+})
+
+
+def _ollama_name_variants(name: str) -> set[str]:
+    """Every spelling of ``name`` that refers to the same Ollama model.
+
+    Ollama's ``/api/tags`` always reports an explicit tag, so an untagged
+    config value like ``nomic-embed-text`` never string-matches the installed
+    ``nomic-embed-text:latest`` even though they are the same model. Compare
+    across variants instead of the raw strings.
+    """
+    name = name.strip()
+    if not name:
+        return set()
+    if ":" in name:
+        base, _, tag = name.rpartition(":")
+        return {name, base} if tag == "latest" else {name}
+    return {name, f"{name}:latest"}
+
+
+def _is_ollama_model_value(key: str, value: str, *, skip_keys: frozenset[str]) -> bool:
+    """True when ``value`` is an Ollama model this validator should check.
+
+    Three rules, cheapest first:
+
+    1. Sentinels (``auto``) select a model at runtime; there is nothing to look up.
+    2. A value containing ``/`` declares its own namespace. ``ollama/…`` is
+       ours; anything else is another provider (``anthropic/claude-sonnet-5``)
+       or a HuggingFace repo (``Systran/faster-whisper-medium``,
+       ``Wan-AI/Wan2.2-TI2V-5B``, ``cross-encoder/ms-marco-MiniLM-L-6-v2``).
+       This replaces an allowlist of cloud prefixes that could only ever
+       recognise the providers someone had already been bitten by.
+    3. Bare values are ambiguous by inspection, so the KEY decides.
+    """
+    raw = (value or "").strip()
+    if not raw or raw.lower() in _MODEL_SENTINELS:
+        return False
+    if "/" in raw:
+        return raw.lower().startswith("ollama/")
+    return key not in skip_keys
+
 
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
@@ -718,6 +783,17 @@ class StartupManager:
         5. If any model is uninstalled or has a suspect template, calls
            :func:`notify_operator` to alert via Discord/Telegram.
 
+        **Only Ollama-destined values are checked** (Glad-Labs/poindexter#941).
+        Not every ``*_model`` setting addresses Ollama — the pipeline also
+        configures image-gen, wan, speaches/whisper, a sentence-transformers
+        reranker and the chatterbox sidecar through identically-named keys.
+        Measured 2026-07-29, the un-filtered check reported 16 missing models
+        of which **15 were false positives**, burying the one real finding
+        (an uninstalled ``ollama/``-prefixed voice model). Four filters keep
+        the warning worth reading — see ``_is_ollama_model_value``, the
+        ``ESCAPE`` on the key query, the ``:latest`` normalization in
+        ``_ollama_name_variants``, and the de-duplication of both report lists.
+
         Gated by ``ollama_model_validation_enabled`` (default ``true``).
         Never hard-fails -- startup continues even when Ollama is unreachable.
 
@@ -749,11 +825,16 @@ class StartupManager:
         # ------------------------------------------------------------------ #
         try:
             async with pool.acquire() as conn:
+                # ESCAPE matters: `_` is a single-character LIKE wildcard, so
+                # the unescaped '%_model' also matched `.model` keys —
+                # dragging in sidecar settings like
+                # plugin.tts_provider.chatterbox.model that Ollama was never
+                # going to have installed.
                 rows = await conn.fetch(
-                    "SELECT key, value FROM app_settings"
-                    " WHERE key LIKE '%_model'"
-                    " AND value IS NOT NULL AND value != ''"
-                    " ORDER BY key"
+                    r"SELECT key, value FROM app_settings"
+                    r" WHERE key LIKE '%\_model' ESCAPE '\'"
+                    r" AND value IS NOT NULL AND value != ''"
+                    r" ORDER BY key"
                 )
         except Exception as db_err:
             logger.warning("[model_validator] DB query failed: %s", db_err)
@@ -763,9 +844,26 @@ class StartupManager:
             logger.debug("[model_validator] No *_model keys found")
             return
 
+        # Operator-extensible skip list, on top of the built-in one — a new
+        # non-Ollama `*_model` key shouldn't require a code change to stop it
+        # being reported as a missing model every boot.
+        extra_skip = {
+            k.strip() for k in
+            (sc.get("ollama_model_validation_skip_keys", "") or "").split(",")
+            if k.strip()
+        }
+        skip_keys = _NON_OLLAMA_MODEL_KEYS | frozenset(extra_skip)
+
         # key -> raw value (may include ollama/ prefix)
-        configured: dict[str, str] = {row["key"]: row["value"] for row in rows}
-        logger.debug("[model_validator] %d model key(s) to validate", len(configured))
+        configured: dict[str, str] = {
+            row["key"]: row["value"] for row in rows
+            if _is_ollama_model_value(row["key"], row["value"], skip_keys=skip_keys)
+        }
+        skipped = len(rows) - len(configured)
+        logger.debug(
+            "[model_validator] %d model key(s) to validate (%d non-Ollama skipped)",
+            len(configured), skipped,
+        )
 
         # ------------------------------------------------------------------ #
         # Fetch installed Ollama models                                       #
@@ -845,33 +943,28 @@ class StartupManager:
         missing_models: list[str] = []
         suspect_models: list[tuple] = []  # (model, reason)
 
+        # One model is typically referenced by many keys (gemma-4-31B is the
+        # writer for ~20 of them). Report per MODEL, not per key, or a single
+        # bad template prints twenty identical lines.
+        checked_models: set[str] = set()
+
         for key, raw_value in configured.items():
-            # Strip the ollama/ prefix that the DB uses but Ollama itself does not
+            # Strip the ollama/ prefix that the DB uses but Ollama itself does
+            # not. Non-Ollama values never reach here — _is_ollama_model_value
+            # filtered them out when `configured` was built.
             model_name = raw_value.strip()
-            if model_name.startswith("ollama/"):
+            if model_name.lower().startswith("ollama/"):
                 model_name = model_name[len("ollama/"):]
 
-            if not model_name:
+            if not model_name or model_name in checked_models:
                 continue
+            checked_models.add(model_name)
 
-            # Skip non-Ollama model references (e.g. "openai/gpt-4o") --
-            # only validate Ollama-destined values.
-            raw_lower = raw_value.lower()
-            non_ollama_prefixes = (
-                "openai/", "anthropic/", "gemini/",
-                "groq/", "fireworks/", "together/",
-            )
-            if (
-                not raw_value.startswith("ollama/")
-                and any(p in raw_lower for p in non_ollama_prefixes)
-            ):
-                logger.debug(
-                    "[model_validator] Skipping non-Ollama model key=%r value=%r",
-                    key, raw_value,
-                )
-                continue
-
-            if model_name not in installed_names:
+            # Match across tag variants: Ollama always reports an explicit tag,
+            # so a bare `nomic-embed-text` would otherwise look missing against
+            # an installed `nomic-embed-text:latest`.
+            variants = _ollama_name_variants(model_name)
+            if not (variants & installed_names):
                 missing_models.append(model_name)
                 logger.warning(
                     "[model_validator] MISSING: key=%r references model %r "
@@ -879,8 +972,12 @@ class StartupManager:
                     key, model_name,
                 )
             else:
-                # Model is installed -- check its chat template
-                template = await _fetch_template(model_name)
+                # Model is installed -- check its chat template. Ask by the
+                # name Ollama itself reports, not the config's spelling, so an
+                # untagged setting doesn't turn into a /api/show miss that
+                # would be filed as a template-fetch failure.
+                installed_name = next(iter(variants & installed_names))
+                template = await _fetch_template(installed_name)
                 if template is None:
                     continue
                 has_suspect = any(tok in template for tok in _SUSPECT_TOKENS)

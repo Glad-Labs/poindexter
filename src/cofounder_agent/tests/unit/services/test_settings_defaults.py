@@ -539,8 +539,13 @@ class TestGroupingMakesSense:
         # already-tolerated RAG-section interleave. Bumped 323→345 for the
         # qa.title_coherence rail block (2026-07-24): three qa_title_coherence_*
         # keys with their comments plus the title_content_excerpt_chars sibling,
-        # all inside the existing qa cluster's tolerated interleave.
-        assert span < 345, (
+        # all inside the existing qa cluster's tolerated interleave. Bumped
+        # 345→349 for ollama_model_validation_skip_keys (poindexter#941), a
+        # 4-line sibling of ollama_model_validation_enabled in the same
+        # already-tolerated interleave — it belongs beside use_ollama, and the
+        # only way to keep it out of this span would be to exile it ~300 lines
+        # from the setting it extends.
+        assert span < 349, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

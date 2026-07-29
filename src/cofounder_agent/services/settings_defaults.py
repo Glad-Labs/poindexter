@@ -787,6 +787,10 @@ DEFAULTS: dict[str, str] = {
     # non-Ollama deployments or when Ollama is deliberately unreachable at
     # startup (e.g. remote-only LiteLLM routing).
     'ollama_model_validation_enabled': 'true',
+    # Extra `*_model` keys whose value is NOT an Ollama model (CSV), added to
+    # the built-in list in utils/startup_manager.py — see there for the rules.
+    # Only needed for BARE values; namespaced ones self-classify (#941).
+    'ollama_model_validation_skip_keys': '',
 
     # ----- LLM providers / endpoints -----
     'flux_schnell_server_url': '',
