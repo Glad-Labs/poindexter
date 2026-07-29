@@ -45,20 +45,43 @@ updates:
     # Held majors (2026-07-28). Both are major-ONLY holds — patches and minors
     # still flow, so security fixes are unaffected.
     #
-    # typescript: 7.0.2 breaks jest-unit and the Frontend-only Playwright specs
-    #   (#2869/#2846). Because dependabot puts a manifest change in the group's
-    #   PR even when the group is minor/patch-only, that one major sits in
-    #   front of the whole batch. Hold it until the TS 7 migration is done
-    #   deliberately, then drop this entry.
+    # typescript: held on an UPSTREAM blocker, not on our own code. The
+    #   migration was attempted end-to-end on 2026-07-28 and is documented
+    #   below so the next attempt is short.
     #
-    #   Caveat for whoever drops it: typescript was NOT the only thing failing
-    #   those two checks, despite how it looked at the time. react/react-dom
-    #   19.2.8 and @tailwindcss/postcss 4.3.3 broke them independently, via a
-    #   workspace hoisting bug — bumping a dep declared only in web/public-site
-    #   de-hoisted it while its consumer stayed at the root node_modules. Fixed
-    #   in #2886 by declaring react/react-dom/tailwindcss at the root. So a
-    #   green run after dropping this hold means TS 7 itself is fine; it does
-    #   not retroactively mean TS 7 was ever the sole blocker.
+    #   BLOCKER — typescript-eslint does not support TS 7. Its parser refuses
+    #   to load ("typescript-eslint does not support TS 7.0") and the latest
+    #   published @typescript-eslint/parser still declares
+    #   `typescript: >=4.8.4 <6.1.0`. Support is tracked upstream in
+    #   typescript-eslint#10940 and targets TS >= 7.1. This is not cosmetic:
+    #   eslint runs in lint-staged on EVERY commit touching .ts/.tsx, so
+    #   adopting TS 7 today breaks the local commit loop for all work.
+    #   Re-check that peer range; when it admits 7.x, do the steps below.
+    #
+    #   Everything else already works. TS 7 is the native (Go) compiler
+    #   rewrite, and the production source needed ZERO changes — `tsc
+    #   --noEmit` was clean, `next build` completed with full static
+    #   generation, and jest was 332/332. Three mechanical changes are needed:
+    #
+    #     1. experimental.useTypeScriptCli: true in web/public-site and
+    #        web/storefront next.config.js. TS 7 dropped the JS compiler API
+    #        Next calls in-process; without this Next fails outright. Next's
+    #        own error names this flag as the supported path.
+    #     2. Remove `baseUrl` from web/public-site/tsconfig.json — TS 7
+    #        removed the option (error TS5102). `paths` keeps working; with no
+    #        baseUrl it resolves relative to the tsconfig's own directory,
+    #        which is what "." meant here anyway.
+    #     3. Exclude test globs from that tsconfig. useTypeScriptCli runs the
+    #        real `tsc -p`, which checks a WIDER file set than the old
+    #        in-process path — it picks up test files that were never
+    #        type-checked before (@types/jest has never been a dependency of
+    #        this repo). Excluding them restores the previous behaviour rather
+    #        than loosening anything.
+    #
+    #   Also worth knowing: typescript was NOT the only thing failing
+    #   jest-unit and Playwright back when this hold was added, despite how it
+    #   looked. react/react-dom 19.2.8 and @tailwindcss/postcss 4.3.3 broke
+    #   them independently via a workspace hoisting bug, fixed in #2886.
     #
     # @types/node: the 22 -> 26 major already landed outside dependabot, so all
     #   four manifests are on ^26.1.x today. This entry is a forward guard
