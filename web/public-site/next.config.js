@@ -1,27 +1,22 @@
 /** @type {import('next').NextConfig} */
-// Lazy-import Sentry so the build still works when its module resolution
-// breaks. Background: @sentry/nextjs gets hoisted to root node_modules by
-// npm workspaces, but `next` stays nested in web/public-site/node_modules
-// (because web/storefront also depends on `next`, npm keeps per-workspace
-// copies). When Sentry's `isBuild.js` does `require('next/constants')`,
-// Node's module resolution walks up from the hoisted location and can't
-// find Next — `Cannot find module 'next/constants'`. This crashed every
-// Vercel build between PR #97 (Apr 30) and PR #148 (May 1) — gladlabs.io
-// was stuck on a 3-day-old deploy.
+// Imported directly. This used to be a lazy import wrapped in try/catch,
+// because @sentry/nextjs was hoisted to the root node_modules while `next`
+// stayed nested in web/public-site — so Sentry's `require('next/constants')`
+// walked up from the hoisted location and found nothing. That broke every
+// Vercel build between PR #97 and PR #148 (Apr 30 - May 1), and the catch was
+// added to keep deploys moving.
 //
-// Until the hoisting is properly fixed (separate follow-up: bump Sentry
-// to v11+ which supports Next 16, OR add `next` to root devDependencies
-// to force hoist parity), gracefully skip Sentry when it can't load.
-let withSentryConfig = null;
-try {
-  ({ withSentryConfig } = await import('@sentry/nextjs'));
-} catch (err) {
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[next.config] @sentry/nextjs failed to load — building without Sentry wrapping.',
-    err?.message || err
-  );
-}
+// The hoisting is fixed as of #2886: `next` is declared in the ROOT
+// devDependencies, so it hoists to the root node_modules and Sentry resolves
+// it from anywhere in the tree. The old comment's premise is now inverted —
+// next is hoisted and Sentry is the nested one.
+//
+// Restoring a hard import on purpose: the catch degraded silently, so a
+// resolution regression would have shipped a production site with NO error
+// tracking and only a build-log line nobody reads. Failing the build is the
+// louder, correct behaviour (CLAUDE.md "fail loud + notify"). If this ever
+// throws again, fix the hoisting rather than re-adding the catch.
+import { withSentryConfig } from '@sentry/nextjs';
 
 // ── Build-time environment validation ──────────────────────────────────────
 // Runs when Next.js boots (`next build` and `next dev`).
@@ -506,7 +501,9 @@ const hasSentryDsn =
 // Only fall back to it when no relay is set (e.g. a hosted DSN).
 const hasExternalSentryTunnel = Boolean(process.env.NEXT_PUBLIC_SENTRY_TUNNEL);
 
-export default hasSentryDsn && withSentryConfig
+// `withSentryConfig` is a static import now, so it is always defined — the
+// only real question left is whether a DSN is configured.
+export default hasSentryDsn
   ? withSentryConfig(nextConfig, {
       // Suppress Sentry CLI output during builds
       silent: true,
