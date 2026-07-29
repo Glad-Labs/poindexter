@@ -196,6 +196,18 @@ async def self_review_and_revise(
             # a local model stays local + free. This is the #2199-class fix: the
             # old hardcoded ollama_native call POSTed a cloud model name to
             # local Ollama and 404'd.
+            # No ``num_ctx`` here BY DESIGN — do not "fix" this by threading one.
+            # ``dispatch_complete`` back-fills it for LOCAL dispatches that did
+            # not supply one, via ``_resolve_default_num_ctx(phase, ...)`` ->
+            # ``resolve_num_ctx`` -> ``writer_self_review_num_ctx`` ->
+            # ``ollama_num_ctx`` -> 8192 (glad-labs-stack#2170). The ``phase``
+            # below is what keys that lookup, so the per-phase override IS live.
+            # Supplying num_ctx explicitly would suppress the back-fill — and the
+            # back-fill is the ONLY thing that skips the param for a paid/cloud
+            # model, so a cloud ``writer_self_review_model`` (the whole point of
+            # the routing above) would then carry an Ollama-only param and drag
+            # the VRAM clamp's local ``/api/show`` into every Anthropic call.
+            # Pinned by ``tests/unit/services/test_self_review_num_ctx.py``.
             from services.llm_providers.dispatcher import dispatch_complete
             return await dispatch_complete(
                 pool,
