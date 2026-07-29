@@ -47,10 +47,18 @@ updates:
     #
     # typescript: 7.0.2 breaks jest-unit and the Frontend-only Playwright specs
     #   (#2869/#2846). Because dependabot puts a manifest change in the group's
-    #   PR even when the group is minor/patch-only, that one major sat in front
-    #   of ~10 safe updates (@sentry/nextjs, postcss, autoprefixer, rollup,
-    #   tailwindcss/postcss) and blocked all of them. Hold it until the TS 7
-    #   migration is done deliberately, then drop this entry.
+    #   PR even when the group is minor/patch-only, that one major sits in
+    #   front of the whole batch. Hold it until the TS 7 migration is done
+    #   deliberately, then drop this entry.
+    #
+    #   Caveat for whoever drops it: typescript was NOT the only thing failing
+    #   those two checks, despite how it looked at the time. react/react-dom
+    #   19.2.8 and @tailwindcss/postcss 4.3.3 broke them independently, via a
+    #   workspace hoisting bug — bumping a dep declared only in web/public-site
+    #   de-hoisted it while its consumer stayed at the root node_modules. Fixed
+    #   in #2886 by declaring react/react-dom/tailwindcss at the root. So a
+    #   green run after dropping this hold means TS 7 itself is fine; it does
+    #   not retroactively mean TS 7 was ever the sole blocker.
     #
     # @types/node: the 22 -> 26 major already landed outside dependabot, so all
     #   four manifests are on ^26.1.x today. This entry is a forward guard
