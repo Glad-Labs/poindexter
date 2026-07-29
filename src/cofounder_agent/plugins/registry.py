@@ -529,10 +529,29 @@ def get_modules() -> list[Any]:
 
 
 # ---------------------------------------------------------------------------
-# Core sample plugins — registered imperatively as a workaround for this
-# project's poetry packaging config (see pyproject.toml note). Third-party
-# community plugins use entry_points as documented; core samples are
-# imported directly until the packaging issue is resolved.
+# Core sample plugins — registered imperatively because entry_points discovery
+# does not work in the container images. This is LOAD-BEARING IN PRODUCTION;
+# do not remove it on the assumption that entry_points cover it.
+#
+# Measured 2026-07-28:
+#   poetry venv (host/dev)  -> `poindexter-backend` installed;
+#                              entry_points: taps 8, jobs 26, llm_providers 3
+#   poindexter-prefect-worker -> NO distribution installed;
+#                              entry_points: 0 in every group
+#
+# The images build with `poetry install --no-root`, so no distribution
+# metadata exists and `importlib.metadata.entry_points()` returns nothing.
+# The three blockers that force --no-root are spelled out in
+# src/cofounder_agent/Dockerfile above that install line — that is the real
+# explanation. (This comment used to say "see pyproject.toml note"; there is
+# no such note there, only the entry-point declarations themselves.)
+#
+# Consequence worth knowing: in the container, entry_points contribute
+# NOTHING, so a third-party plugin installed as a pip distribution is
+# invisible at runtime even though docs/architecture/plugin-architecture.md
+# advertises exactly that. First-party plugins are unaffected — they come
+# from _SAMPLES and the in-tree module scan. Fixing that means making the
+# package installable in the image, not deleting this fallback.
 # ---------------------------------------------------------------------------
 
 
