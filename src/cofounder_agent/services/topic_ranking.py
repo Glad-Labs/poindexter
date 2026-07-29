@@ -249,6 +249,10 @@ async def _ollama_chat_json(
             messages=messages,
             model=model,
             tier="standard",
+            # Attribution + num_ctx tunability (``topic_ranking_num_ctx``);
+            # inputs are small today, but an unnamed phase is invisible in
+            # cost_logs and untunable if the candidate list ever grows.
+            phase="topic_ranking",
             timeout_s=int(timeout),
             # LiteLLM maps this to Ollama's ``format=json`` automatically;
             # other backends (OpenAI / Anthropic / etc.) honor the OpenAI

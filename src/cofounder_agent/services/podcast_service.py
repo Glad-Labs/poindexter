@@ -662,11 +662,18 @@ async def _build_script_with_llm(
         think = _resolve_podcast_think(_sc)
         think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
         messages = [{"role": "user", "content": prompt}]
+        # ``phase`` is load-bearing beyond attribution: dispatch_complete
+        # back-fills num_ctx as ``<phase>_num_ctx`` -> ``ollama_num_ctx``, so
+        # without one this call inherited the 8192 global — a TOTAL window that
+        # prompt + output share. Asking for max_tokens=8192 inside it was
+        # unsatisfiable with an article-sized prompt, and 16 scripts were cut
+        # off at exactly 8192. Tune via ``podcast_script_num_ctx``.
         result = await dispatch_complete(
             pool=pool,
             messages=messages,
             model=model,
             tier="standard",
+            phase="podcast_script",
             timeout_s=180,
             temperature=0.4,
             max_tokens=8192,

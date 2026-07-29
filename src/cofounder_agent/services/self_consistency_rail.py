@@ -214,6 +214,11 @@ async def _sample_summaries(
                 messages=[{"role": "user", "content": prompt}],
                 model=writer_model,
                 tier="standard",
+                # Without a phase this rail's samples logged as the generic
+                # "dispatch_complete" and drew num_ctx from the global
+                # ``ollama_num_ctx``. The prompt carries the article, so it is
+                # context-sensitive; ``qa_self_consistency_num_ctx`` tunes it.
+                phase="qa_self_consistency",
                 temperature=temperature,
                 max_tokens=250,
             )
