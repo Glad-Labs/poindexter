@@ -359,3 +359,13 @@ Chatterbox (MIT) won the bake-off against CosyVoice2 (Apache-2.0, rejected for
 audio artifacts, since removed) and is **live**: `podcast_tts_engine=chatterbox`
 runs as an opt-in `tts-hq`-profile sidecar and supports zero-shot voice cloning
 from a pinned reference clip — see `scripts/tts_sidecars/assets/README.md`.
+
+**Cloned-voice pacing is set downstream, not by the reference.** A clone takes
+timbre from `audio_prompt_path` but largely not its speaking rate — measured
+2026-07-28, dropping a reference 19% slower moved the output only 7%. Record
+the reference for identity (unscripted talking beats reading aloud), then set
+pace with `plugin.tts_provider.chatterbox.atempo` (pitch-preserving, `1.0` =
+off, `<1` = slower; it rides the existing loudnorm pass so it adds no extra
+transcode). `cfg_weight` also slows delivery but bottoms out around `0.30` —
+lower than that lengthens pauses rather than slowing speech. Full rationale and
+a measuring recipe: `scripts/tts_sidecars/assets/README.md`.

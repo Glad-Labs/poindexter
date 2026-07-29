@@ -1536,8 +1536,17 @@ DEFAULTS: dict[str, str] = {
     'plugin.tts_provider.chatterbox.model': 'chatterbox',
     # 0.5 is the upstream-recommended neutral default; raise for more emotion.
     'plugin.tts_provider.chatterbox.exaggeration': '0.5',
-    # cfg_weight pacing knob; lower = slower/more deliberate delivery.
+    # cfg_weight pacing knob; lower = slower/more deliberate delivery. Bottoms
+    # out around 0.30 — below that it lengthens PAUSES instead of slowing
+    # articulation, which reads as hesitant rather than measured.
     'plugin.tts_provider.chatterbox.cfg_weight': '0.5',
+    # Pitch-preserving pace multiplier applied after synthesis (<1 = slower).
+    # 1.0 = off, and OSS default, since the right value depends on the pinned
+    # voice. This is the effective pace control: a clone inherits timbre from
+    # audio_prompt_path but not its speaking rate, so re-recording a slower
+    # reference moves output pace only marginally (measured: a -19% reference
+    # bought -7% output). Rides the existing loudnorm pass — no extra encode.
+    'plugin.tts_provider.chatterbox.atempo': '1.0',
     # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
     # VRAM), where a full paragraph takes minutes — well past the 120s default.
     'plugin.tts_provider.chatterbox.timeout_s': '600',

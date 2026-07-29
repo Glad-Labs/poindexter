@@ -906,3 +906,262 @@ class TestTtsService:
 
         # The fix: peak is now comfortably under the qa.audio clip threshold.
         assert _max_volume_db(dst) < _DEFAULT_MAX_VOLUME_CLIP_DB
+
+    # ---- Pitch-preserving pace control (atempo) ----
+    #
+    # Context: a voice clone inherits timbre from its reference clip but not the
+    # reference's speaking rate, so pace is corrected here rather than by asking
+    # an operator to re-record more slowly. See _DEFAULT_ATEMPO.
+
+    def test_atempo_defaults_to_off(self):
+        """Pace adjustment is opt-in — the right value depends on the pinned
+        voice, so an install that never sets it must get untouched audio."""
+        from services.tts_service import _DEFAULT_ATEMPO, _resolve_atempo
+
+        assert _DEFAULT_ATEMPO == "1.0"
+        assert _resolve_atempo(_DEFAULT_ATEMPO) is None
+
+    def test_resolve_atempo_treats_noop_values_as_none(self):
+        """None/empty/1.0 all mean 'add no filter'. Empty string matters: it is
+        the app_settings unset sentinel, so an unset key must not be parsed as
+        a rate."""
+        from services.tts_service import _resolve_atempo
+
+        assert _resolve_atempo(None) is None
+        assert _resolve_atempo("") is None
+        assert _resolve_atempo("   ") is None
+        assert _resolve_atempo("1.0") is None
+        assert _resolve_atempo(1.0) is None
+
+    def test_resolve_atempo_ignores_unparseable_rather_than_raising(self):
+        """A typo in a delivery-polish knob must not cost an operator a whole
+        episode — it degrades to 'no pace change' and warns."""
+        from services.tts_service import _resolve_atempo
+
+        assert _resolve_atempo("slower") is None
+        assert _resolve_atempo("0") is None
+        assert _resolve_atempo("-0.9") is None
+
+    def test_resolve_atempo_clamps_to_intelligible_range(self):
+        """Speech is unintelligible outside roughly half-to-double speed, so
+        absurd values clamp instead of producing unusable audio."""
+        from services.tts_service import (
+            _ATEMPO_MAX,
+            _ATEMPO_MIN,
+            _resolve_atempo,
+        )
+
+        assert _resolve_atempo("0.92") == pytest.approx(0.92)
+        assert _resolve_atempo("0.01") == _ATEMPO_MIN
+        assert _resolve_atempo("50") == _ATEMPO_MAX
+
+    async def test_remux_applies_atempo_filter(self, monkeypatch):
+        """An active atempo reaches ffmpeg as `-af atempo=<rate>`."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"SLOWED")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        out = await mod._remux_concatenated_audio(b"raw", "mp3", atempo="0.92")
+
+        assert out == b"SLOWED"
+        argv = captured["argv"]
+        assert "-af" in argv
+        assert "atempo=0.92" in argv[argv.index("-af") + 1]
+
+    async def test_atempo_precedes_loudnorm_in_filter_chain(self, monkeypatch):
+        """loudnorm measures integrated loudness across the whole stream, so it
+        must run AFTER the tempo change — otherwise it targets a signal whose
+        duration is about to change underneath it."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(
+            b"raw", "mp3", atempo="0.9", loudnorm=True,
+            loudnorm_i="-16", loudnorm_tp="-1.5", loudnorm_lra="11",
+            loudnorm_ar="44100",
+        )
+        argv = captured["argv"]
+        af = argv[argv.index("-af") + 1]
+        assert af.index("atempo=") < af.index("loudnorm="), af
+        # Both concerns still present — one pass, not one replacing the other.
+        assert "aresample=44100" in af
+
+    async def test_remux_without_atempo_has_no_atempo_filter(self, monkeypatch):
+        """Guards against always-on resampling of every episode."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(b"raw", "mp3", mode="reencode")
+        assert "-af" not in captured["argv"]
+
+    async def test_atempo_forces_reencode_over_copy(self, monkeypatch):
+        """A filter graph cannot ride on `-c copy`, so an active atempo forces a
+        re-encode the same way loudnorm does."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(
+            b"raw", "mp3", mode="copy", atempo="0.9",
+        )
+        argv = captured["argv"]
+        assert "copy" not in argv
+        assert "libmp3lame" in argv
+        assert "-af" in argv
+
+    async def test_render_runs_pass_for_atempo_even_with_remux_and_loudnorm_off(
+        self, monkeypatch
+    ):
+        """The one setting whose entire purpose is to change the audio must not
+        become a silent no-op just because the two normalization passes are
+        disabled."""
+        import services.tts_service as mod
+        from services.tts_service import render_openai_tts
+
+        called: dict = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            called.update(kwargs)
+            return b"OUT"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://x/v1", model="m", voice="v", text="hi",
+                response_format="mp3", remux_enabled=False,
+                loudnorm_enabled=False, atempo="0.9",
+            )
+
+        assert out == b"OUT"
+        assert called.get("atempo") == "0.9"
+
+    async def test_render_skips_pass_when_atempo_is_the_default(self, monkeypatch):
+        """Counterpart to the above: an inactive atempo must NOT drag an
+        otherwise-disabled render into an extra transcode."""
+        import services.tts_service as mod
+        from services.tts_service import render_openai_tts
+
+        called: dict = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            called["ran"] = True
+            return b"OUT"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://x/v1", model="m", voice="v", text="hi",
+                response_format="mp3", remux_enabled=False,
+                loudnorm_enabled=False, atempo="1.0",
+            )
+
+        assert out == b"RAW"
+        assert "ran" not in called
+
+    @pytest.mark.skipif(
+        shutil.which("ffmpeg") is None, reason="ffmpeg not installed"
+    )
+    async def test_atempo_actually_lengthens_audio(self, tmp_path):
+        """End-to-end through real ffmpeg: the filter genuinely slows playback.
+
+        The unit tests above assert argv shape; this one proves the flag does
+        what the setting claims, so a future filter-chain refactor can't leave
+        a well-formed command that no longer changes the audio.
+        """
+        import subprocess
+
+        from services.tts_service import _remux_concatenated_audio
+
+        def _duration(path):
+            r = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=nokey=1:noprint_wrappers=1", str(path)],
+                capture_output=True, text=True, check=True,
+            )
+            return float(r.stdout.strip())
+
+        src = tmp_path / "src.mp3"
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+             "-i", "sine=frequency=300:duration=4", "-c:a", "libmp3lame", str(src)],
+            check=True,
+        )
+
+        out = await _remux_concatenated_audio(src.read_bytes(), "mp3", atempo="0.5")
+        dst = tmp_path / "slow.mp3"
+        dst.write_bytes(out)
+
+        # 0.5x rate => ~2x duration. Generous bounds: mp3 padding adds a frame.
+        assert _duration(dst) == pytest.approx(_duration(src) * 2, rel=0.05)

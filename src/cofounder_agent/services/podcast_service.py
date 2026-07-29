@@ -1374,6 +1374,7 @@ class PodcastService:
             "audio_prompt_path": sc.get(
                 "plugin.tts_provider.chatterbox.audio_prompt_path", "",
             ),
+            "atempo": sc.get("plugin.tts_provider.chatterbox.atempo", ""),
             "remux_bitrate": sc.get("podcast_tts_remux_bitrate", ""),
             "loudnorm_enabled": sc.get_bool("podcast_tts_loudnorm_enabled", True),
             "loudnorm_i": sc.get("podcast_tts_loudnorm_i", ""),

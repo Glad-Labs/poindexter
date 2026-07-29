@@ -109,6 +109,62 @@ _DEFAULT_LOUDNORM_TP = "-1.5"    # max true peak dBTP (the headroom)
 _DEFAULT_LOUDNORM_LRA = "11"     # loudness range
 _DEFAULT_LOUDNORM_AR = "44100"   # resample target (loudnorm upsamples to 192 kHz)
 
+# Pitch-preserving playback-rate adjustment, applied in the SAME ffmpeg pass as
+# loudnorm (so it costs no extra transcode). 1.0 = off.
+#
+# Why this exists: a voice-cloning engine takes timbre from its reference clip
+# but NOT its speaking rate. Measured on Chatterbox 2026-07-28 with two
+# references of the same speaker — dropping the reference from 194 to 157 wpm
+# (-19%) moved the clone only 212 -> 197 wpm (-7%), so barely a third of the
+# change survived. Re-recording the reference is therefore a weak pace control,
+# and cfg_weight bottoms out around 0.30 (below that it inserts PAUSES rather
+# than slowing articulation, which sounds hesitant). Post-hoc atempo is the one
+# lever that moves output pace proportionally, so pace is a delivery setting
+# here rather than something the operator re-records for.
+_DEFAULT_ATEMPO = "1.0"
+# ffmpeg's atempo accepts 0.5-100.0 in one instance. Speech is unintelligible
+# outside roughly half-to-double speed, so we clamp to that window instead of
+# chaining filters to reach rates nobody can listen to.
+_ATEMPO_MIN, _ATEMPO_MAX = 0.5, 2.0
+
+
+def _resolve_atempo(value: Any) -> float | None:
+    """Parse an atempo setting into a usable rate, or ``None`` when it's a no-op.
+
+    ``None`` means "add no filter": unset, empty (the app_settings unset
+    sentinel), 1.0, or unparseable. An unparseable or out-of-range value warns
+    loudly and then degrades to the nearest sane behaviour rather than failing
+    the render — this is a delivery-polish knob, and a typo in it should not
+    cost an operator a whole episode.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        rate = float(text)
+    except ValueError:
+        logger.warning(
+            "[tts_service] atempo=%r is not a number — ignoring (no tempo change)",
+            value,
+        )
+        return None
+    if rate <= 0:
+        logger.warning(
+            "[tts_service] atempo=%s must be positive — ignoring", rate,
+        )
+        return None
+    if abs(rate - 1.0) < 1e-9:
+        return None
+    clamped = max(_ATEMPO_MIN, min(_ATEMPO_MAX, rate))
+    if clamped != rate:
+        logger.warning(
+            "[tts_service] atempo=%s outside [%s, %s] — clamping to %s",
+            rate, _ATEMPO_MIN, _ATEMPO_MAX, clamped,
+        )
+    return clamped
+
 
 def is_tts_enabled(site_config: Any) -> bool:
     """Return True iff podcast_tts_enabled is set to a truthy value."""
@@ -221,6 +277,7 @@ async def render_openai_tts(
     loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
     loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
     loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
+    atempo: str = _DEFAULT_ATEMPO,
     encode_format: str | None = None,
 ) -> bytes | None:
     """POST to an OpenAI-compatible /audio/speech endpoint and normalize.
@@ -238,6 +295,10 @@ async def render_openai_tts(
     sidecars can run on CPU (no spare VRAM), where synthesizing a full
     paragraph legitimately takes minutes, so the provider passes a generous
     per-engine ``timeout_s``. Speaches (fast, GPU) keeps the default.
+
+    ``atempo`` (default ``"1.0"`` = off) rescales playback rate without
+    shifting pitch, riding along in the loudnorm/encode pass. It is the
+    effective pace control for cloned voices — see ``_DEFAULT_ATEMPO``.
 
     ``encode_format`` names the DELIVERY format wanted back when
     ``response_format`` is ``"wav"`` — for an engine whose sidecar already
@@ -290,14 +351,21 @@ async def render_openai_tts(
     # encode_format forces the call even with remux/loudnorm both off: for a
     # wav wire-format response it's the only step that produces the delivery
     # format at all (there's no concatenation-header problem to "normalize"
-    # away, unlike the Speaches mp3/aac/opus path).
-    if remux_enabled or loudnorm_enabled or encode_format is not None:
+    # away, unlike the Speaches mp3/aac/opus path). An active atempo forces it
+    # too — otherwise the one setting whose whole purpose is to change the
+    # audio would silently do nothing with remux and loudnorm both off.
+    if (
+        remux_enabled
+        or loudnorm_enabled
+        or encode_format is not None
+        or _resolve_atempo(atempo) is not None
+    ):
         audio_bytes = await _remux_concatenated_audio(
             audio_bytes, fmt, mode=remux_mode, bitrate=remux_bitrate,
             loudnorm=loudnorm_enabled,
             loudnorm_i=loudnorm_i, loudnorm_tp=loudnorm_tp,
             loudnorm_lra=loudnorm_lra, loudnorm_ar=loudnorm_ar,
-            encode_format=encode_format,
+            atempo=atempo, encode_format=encode_format,
         )
     return audio_bytes
 
@@ -406,6 +474,7 @@ async def _remux_concatenated_audio(
     loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
     loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
     loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
+    atempo: str = _DEFAULT_ATEMPO,
     encode_format: str | None = None,
 ) -> bytes:
     """Normalize Speaches' byte-concatenated multi-segment audio to one stream,
@@ -435,6 +504,11 @@ async def _remux_concatenated_audio(
     loudness target. A filter graph cannot ride on ``-c copy``, so ``loudnorm``
     forces a re-encode regardless of ``mode``.
 
+    ``atempo`` (default off) joins the same filter graph AHEAD of loudnorm, so
+    a pace change costs no extra transcode and loudness is measured against the
+    final duration. See ``_DEFAULT_ATEMPO`` for why pace is corrected here
+    rather than at the engine.
+
     ``fmt == "wav"`` is normally left untouched (a byte-concatenated WAV would
     truncate to its first RIFF chunk, so processing it here would be unsafe
     without knowing it's a single file). Passing ``encode_format`` is the
@@ -460,17 +534,31 @@ async def _remux_concatenated_audio(
         )
         return audio_bytes
 
+    # Filter graph, applied in ONE decode+encode pass. Any filter forces a
+    # re-encode — a filter graph cannot ride on `-c copy`.
+    #
+    # Order is deliberate: atempo first, loudnorm second. loudnorm measures
+    # integrated loudness over the whole stream, so it must see the audio at
+    # its final duration; measuring before a tempo change would target the
+    # wrong signal.
+    filters: list[str] = []
+
+    # Pitch-preserving pace adjustment (see _DEFAULT_ATEMPO). No-op at 1.0.
+    tempo = _resolve_atempo(atempo)
+    if tempo is not None:
+        filters.append(f"atempo={tempo:g}")
+
     # EBU R128 loudness normalization (audio_clipping fix). loudnorm caps the
     # true peak (headroom below the qa.audio clip gate) and hits the integrated
-    # loudness target. It MUST decode + filter + encode, so it forces a
-    # re-encode — a filter graph cannot ride on `-c copy`. loudnorm internally
-    # upsamples to 192 kHz, so we resample back to a distribution rate.
-    filter_args: list[str] = []
+    # loudness target. loudnorm internally upsamples to 192 kHz, so we resample
+    # back to a distribution rate.
     if loudnorm:
-        chain = f"loudnorm=I={loudnorm_i}:TP={loudnorm_tp}:LRA={loudnorm_lra}"
+        filters.append(f"loudnorm=I={loudnorm_i}:TP={loudnorm_tp}:LRA={loudnorm_lra}")
         if loudnorm_ar:
-            chain += f",aresample={loudnorm_ar}"
-        filter_args = ["-af", chain]
+            filters.append(f"aresample={loudnorm_ar}")
+
+    filter_args: list[str] = ["-af", ",".join(filters)] if filters else []
+    if filters:
         mode = "reencode"
 
     if fmt == "wav":

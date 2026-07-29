@@ -122,6 +122,12 @@ class ChatterboxTTSProvider:
             render_kwargs["loudnorm_lra"] = str(cfg["loudnorm_lra"])
         if cfg.get("loudnorm_ar"):
             render_kwargs["loudnorm_ar"] = str(cfg["loudnorm_ar"])
+        # Pace. Chatterbox clones timbre from audio_prompt_path but NOT the
+        # reference's speaking rate, so pace is corrected downstream in the
+        # existing loudnorm pass rather than by re-recording a slower
+        # reference — see _DEFAULT_ATEMPO in services/tts_service.py.
+        if cfg.get("atempo"):
+            render_kwargs["atempo"] = str(cfg["atempo"])
 
         audio = await render_openai_tts(
             base_url=base_url, model=model, voice=voice or "default",
