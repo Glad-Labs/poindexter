@@ -18,7 +18,7 @@
 #   - the brain image small (only what it actually imports)
 #   - the boundary explicit (brain != worker)
 name = "poindexter-brain"
-version = "0.112.0"
+version = "0.113.0"
 description = "Poindexter brain daemon — standalone monitor, self-healer, knowledge graph supervisor."
 authors = ["Glad Labs LLC <hello@gladlabs.io>"]
 readme = "README.md"

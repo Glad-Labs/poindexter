@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## [0.113.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.112.0...v0.113.0) (2026-07-29)
+
+
+### Features
+
+* **cli:** add `poindexter logs` and process-footage demo tapes ([#2901](https://github.com/Glad-Labs/glad-labs-stack/issues/2901)) ([bf10ba3](https://github.com/Glad-Labs/glad-labs-stack/commit/bf10ba33ac323060d59198ef2430aa6baab9f5a6))
+* **gpu:** P2 group 1 — bounded GPU waits for fail-soft QA rails ([#2908](https://github.com/Glad-Labs/glad-labs-stack/issues/2908)) ([16ed210](https://github.com/Glad-Labs/glad-labs-stack/commit/16ed2103d7c1249365739378183aba145a366049))
+* **tts:** add pitch-preserving atempo so cloned-voice pace is tunable ([#2896](https://github.com/Glad-Labs/glad-labs-stack/issues/2896)) ([ec6f077](https://github.com/Glad-Labs/glad-labs-stack/commit/ec6f077652798e88091fc795e857a4d4dfe3338b))
+* **video:** record real CLI footage as demo clips with VHS ([#2897](https://github.com/Glad-Labs/glad-labs-stack/issues/2897)) ([7de58cb](https://github.com/Glad-Labs/glad-labs-stack/commit/7de58cb9b29841b2254f5c490133b5371f271cec))
+* **video:** wire cli_demo into the shot list as a first-class source ([#2909](https://github.com/Glad-Labs/glad-labs-stack/issues/2909)) ([06b87d3](https://github.com/Glad-Labs/glad-labs-stack/commit/06b87d3bae65ff2a3bb196eeb1b9f355191519af))
+
+
+### Bug Fixes
+
+* **cli:** replace traffic-light status colors with a colorblind-safe palette ([#2892](https://github.com/Glad-Labs/glad-labs-stack/issues/2892)) ([706fdb3](https://github.com/Glad-Labs/glad-labs-stack/commit/706fdb3427ea2af9534f538892f556d2425b50fa))
+* **content:** route task length through the weighted picker, not a flat 1500 ([#2889](https://github.com/Glad-Labs/glad-labs-stack/issues/2889)) ([7b034df](https://github.com/Glad-Labs/glad-labs-stack/commit/7b034dffbcf1d2b3aed5ba93f508c37e1f92ecdd))
+* **deps:** hoist react + tailwindcss at root so their bumps stop breaking CI ([#2886](https://github.com/Glad-Labs/glad-labs-stack/issues/2886)) ([8d15a3c](https://github.com/Glad-Labs/glad-labs-stack/commit/8d15a3c92230d3f32b2427bb603b764a0910df14))
+* **gpu:** eviction credit never matched the real Ollama runner name ([#2905](https://github.com/Glad-Labs/glad-labs-stack/issues/2905)) ([0b98329](https://github.com/Glad-Labs/glad-labs-stack/commit/0b983295320a95f5c881ac6e0b46b40546efd27b))
+* **images:** gate the third stock-fallback site (image_rebuild hero) ([#2894](https://github.com/Glad-Labs/glad-labs-stack/issues/2894)) ([e804e6c](https://github.com/Glad-Labs/glad-labs-stack/commit/e804e6ca811ac924b356698ffb5056051c6e0059))
+* **images:** stop the silent stock downgrade caused by video VRAM reclaim ([#2890](https://github.com/Glad-Labs/glad-labs-stack/issues/2890)) ([18a065b](https://github.com/Glad-Labs/glad-labs-stack/commit/18a065b47cf8c0f252d9965896ef065c3d2959c5))
+* **llm:** name the phase on three dispatch_complete call sites ([#2910](https://github.com/Glad-Labs/glad-labs-stack/issues/2910)) ([fbfe619](https://github.com/Glad-Labs/glad-labs-stack/commit/fbfe6194816f3e9467f5a82684e0698acc78dae2))
+* **media:** name chatterbox in the VRAM-reclaim log line ([#2907](https://github.com/Glad-Labs/glad-labs-stack/issues/2907)) ([97d282a](https://github.com/Glad-Labs/glad-labs-stack/commit/97d282a0b352d661fbee8d00382680f16fcd2f17))
+* **mirror:** strip the sentry-dsn leak-guard test, red on the public mirror ([#2906](https://github.com/Glad-Labs/glad-labs-stack/issues/2906)) ([b485063](https://github.com/Glad-Labs/glad-labs-stack/commit/b485063cde2c87c7cc4f7ca64e09c5847cdf7e59))
+* **obs:** hold MainsVoltageLow 30m so our own GPU load doesn't page ([#2883](https://github.com/Glad-Labs/glad-labs-stack/issues/2883)) ([7fd2aa8](https://github.com/Glad-Labs/glad-labs-stack/commit/7fd2aa8eba22984ec97bc497e699b0f7f8ddd0d2))
+* **sentry:** drop the lazy-import workaround, its premise is gone ([#2893](https://github.com/Glad-Labs/glad-labs-stack/issues/2893)) ([f85a929](https://github.com/Glad-Labs/glad-labs-stack/commit/f85a929e730c64f93b5151bf62f97f6eb74b8cce))
+* **startup:** stop the model validator crying wolf on non-Ollama models ([#2911](https://github.com/Glad-Labs/glad-labs-stack/issues/2911)) ([0abe33e](https://github.com/Glad-Labs/glad-labs-stack/commit/0abe33e1f202592e511cedd239c5c56cbb60980f))
+* **tts:** forward atempo to the tts-bakeoff preview ([#2899](https://github.com/Glad-Labs/glad-labs-stack/issues/2899)) ([6d51f86](https://github.com/Glad-Labs/glad-labs-stack/commit/6d51f861340db15818f33ae61c2ae33a63d43789))
+* **tts:** release chatterbox VRAM when idle instead of squatting the render ([#2904](https://github.com/Glad-Labs/glad-labs-stack/issues/2904)) ([b2a9ecb](https://github.com/Glad-Labs/glad-labs-stack/commit/b2a9ecb17cfc3854b8ec1a2336ab024e5e465d76))
+* **video:** mount the demo-clip dir on worker AND prefect-worker ([#2912](https://github.com/Glad-Labs/glad-labs-stack/issues/2912)) ([9bd99f6](https://github.com/Glad-Labs/glad-labs-stack/commit/9bd99f6352f7052904b677bf09184b7180d6d248))
+
 ## [0.112.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.111.0...v0.112.0) (2026-07-28)
 
 
