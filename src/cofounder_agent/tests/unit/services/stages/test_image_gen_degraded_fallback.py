@@ -163,11 +163,16 @@ class TestStageFallsBackToPexels:
             "generate_featured_image": True,
             "task_id": "task-image-gen-degraded",
             "image_service": image_service,
+            # Stock fallback is opt-in as of 2026-07-28 (default OFF, so a
+            # failed render no longer silently ships stock art). This test
+            # covers the opted-IN operator, so it enables the key explicitly.
             "site_config": SimpleNamespace(
                 get=lambda key, default=None: default,
                 get_int=lambda key, default=0: default,
                 get_float=lambda key, default=0.0: default,
-                get_bool=lambda key, default=False: default,
+                get_bool=lambda key, default=False: (
+                    True if key == "image_stock_fallback_enabled" else default
+                ),
             ),
         }
 
@@ -237,3 +242,84 @@ class TestStageFallsBackToPexels:
         updates = result.context_updates
         assert updates.get("featured_image") is None
         assert updates["stages"]["3_featured_image_found"] is False
+
+
+class TestStockFallbackGate:
+    """`image_stock_fallback_enabled` (2026-07-28, default OFF).
+
+    Pexels was never a preference here — it is the fallback for a failed
+    image-gen render. But the swap was silent: the stage returned ok=True with
+    a stock hero and nothing distinguished it from a clean run, which is how
+    weeks of quietly-stocked posts went unnoticed. Off by default now, and
+    loud either way.
+
+    Deliberate stock (the video director picking Pexels for a shot needing
+    real photography) is a different path and is NOT gated by this.
+    """
+
+    @staticmethod
+    def _ctx(image_service, *, stock_enabled: bool):
+        return {
+            "topic": "test topic",
+            "generate_featured_image": True,
+            "task_id": "task-stock-gate",
+            "image_service": image_service,
+            "site_config": SimpleNamespace(
+                get=lambda key, default=None: default,
+                get_int=lambda key, default=0: default,
+                get_float=lambda key, default=0.0: default,
+                get_bool=lambda key, default=False: (
+                    stock_enabled if key == "image_stock_fallback_enabled" else default
+                ),
+            ),
+        }
+
+    @pytest.mark.asyncio
+    async def test_disabled_skips_pexels_entirely_and_emits_finding(self):
+        """Gated off: no stock search at all, no image, and a finding — the
+        run must not be able to pass as clean."""
+        from modules.content.stages import source_featured_image as sfi
+
+        search = AsyncMock()
+        image_service = SimpleNamespace(
+            gen_available=True, gen_initialized=True, search_featured_image=search,
+        )
+        emit = MagicMock()
+        with patch.object(sfi, "_try_image_gen_featured", new=AsyncMock(return_value=None)), \
+             patch("utils.findings.emit_finding", emit):
+            result = await sfi.SourceFeaturedImageStage().execute(
+                self._ctx(image_service, stock_enabled=False), {},
+            )
+
+        assert result.ok is True  # still graceful — the pipeline continues
+        search.assert_not_awaited(), "stock must not be searched while gated off"
+        assert result.context_updates.get("featured_image") is None
+        assert result.metrics["source"] == "none"
+        assert emit.call_count == 1
+        assert emit.call_args.kwargs["kind"] == "image_gen_downgrade"
+        assert emit.call_args.kwargs["severity"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_enabled_still_reports_the_downgrade(self):
+        """Opting back in restores stock, but it is still a downgrade and is
+        still announced — a fork enabling this keeps the signal."""
+        from modules.content.stages import source_featured_image as sfi
+
+        pexels_image = SimpleNamespace(
+            url="https://images.pexels.com/photos/1/p.jpg",
+            photographer="Ada L", source="pexels", width=940, height=650,
+        )
+        image_service = SimpleNamespace(
+            gen_available=True, gen_initialized=True,
+            search_featured_image=AsyncMock(return_value=pexels_image),
+        )
+        emit = MagicMock()
+        with patch.object(sfi, "_try_image_gen_featured", new=AsyncMock(return_value=None)), \
+             patch("utils.findings.emit_finding", emit):
+            result = await sfi.SourceFeaturedImageStage().execute(
+                self._ctx(image_service, stock_enabled=True), {},
+            )
+
+        assert result.context_updates["featured_image_source"] == "pexels"
+        assert emit.call_count == 1
+        assert emit.call_args.kwargs["kind"] == "image_gen_downgrade"

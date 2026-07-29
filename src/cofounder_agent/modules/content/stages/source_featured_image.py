@@ -53,6 +53,7 @@ first, falls back to a Pexels photo if image-gen is unavailable or fails.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -388,7 +389,33 @@ class SourceFeaturedImageStage:
                     metrics={"source": "image_gen"},
                 )
 
-        # Strategy 2: Pexels fallback.
+        # Strategy 2: Pexels fallback — operator opt-in only (default off).
+        # Owned imagery is the brand asset; a stock hero swapped in silently is
+        # an undisclosed downgrade. Kept behind a setting rather than deleted so
+        # a fork that wants stock can flip it on. Deliberate stock picks (the
+        # video director choosing Pexels for a shot needing realism) are a
+        # different path and are unaffected.
+        if not (
+            site_config is not None
+            and site_config.get_bool("image_stock_fallback_enabled", False)
+        ):
+            stages["3_featured_image_found"] = False
+            updates["stages"] = stages
+            updates.setdefault("featured_image", None)
+            _emit_featured_downgrade_finding(
+                source="none", task_id=task_id, topic=topic,
+            )
+            logger.warning(
+                "No featured image for '%s' — image-gen failed and stock "
+                "fallback is disabled", topic,
+            )
+            return StageResult(
+                ok=True,
+                detail="no image (image-gen failed, stock fallback disabled)",
+                context_updates=updates,
+                metrics={"source": "none"},
+            )
+
         search_keywords = tags or [topic]
         try:
             pexels = await image_service.search_featured_image(
@@ -442,6 +469,10 @@ class SourceFeaturedImageStage:
                 logger.info(
                     "Featured image found: %s (Pexels)", pexels.photographer,
                 )
+                _emit_featured_downgrade_finding(
+                    source="pexels", task_id=task_id, topic=topic,
+                    photographer=pexels.photographer,
+                )
                 return StageResult(
                     ok=True,
                     detail=f"pexels: {pexels.photographer}",
@@ -456,12 +487,50 @@ class SourceFeaturedImageStage:
 
         updates["stages"] = stages
         updates.setdefault("featured_image", None)
+        _emit_featured_downgrade_finding(source="none", task_id=task_id, topic=topic)
         return StageResult(
             ok=True,
             detail="no image (image-gen unavailable + pexels returned none)",
             context_updates=updates,
             metrics={"source": "none"},
         )
+
+
+def _emit_featured_downgrade_finding(
+    *, source: str, task_id: Any, topic: str, photographer: str = "",
+) -> None:
+    """Surface a featured image that did not come from image-gen.
+
+    Counterpart to the inline atom's finding. Both exist because the fallback
+    used to log per-image and then return ``ok=True``, so a run that quietly
+    swapped owned art for stock was indistinguishable from a clean one.
+    """
+    from utils.findings import emit_finding
+
+    if source == "pexels":
+        title = "Featured image fell back to stock — image-gen failed"
+        body = (
+            f"The hero image for task {task_id} came from Pexels "
+            f"(photographer: {photographer}) because image-gen produced "
+            "nothing. The post ships with a stock hero where owned art "
+            "was intended."
+        )
+    else:
+        title = "Featured image missing — image-gen produced nothing"
+        body = (
+            f"Task {task_id} has no hero image: image-gen produced nothing and "
+            "no stock substitute was used (image_stock_fallback_enabled is "
+            "false, or the stock search returned no result)."
+        )
+    emit_finding(
+        source="stages.source_featured_image",
+        kind="image_gen_downgrade",
+        title=title,
+        body=f"{body}\n\nTopic: {topic}",
+        severity="warn",
+        dedup_key=f"featured-image-downgrade:{task_id}",
+        extra={"task_id": str(task_id or ""), "source": source},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -610,10 +679,39 @@ async def _try_image_gen_featured(
             site_config.get("image_generation_model", "image_gen")
             if site_config is not None else "image_gen"
         )
-        output_path, server_meta = await _render_image_gen(
-            image_gen_url, img_gen_prompt, negative, task_id=task_id,
-            timeout_seconds=render_timeout, gpu_model_label=gpu_model_label,
+        # Retry before conceding the hero (2026-07-28). The dominant failure
+        # is a WINDOW, not a verdict: image-gen exits and restarts to hand
+        # VRAM back for a video render (cold start + lazy model reload), or
+        # the GPU lock times out under contention. Both clear in seconds.
+        # Unlike the inline batch, this is a single image, so re-acquiring the
+        # lock per attempt costs one extra acquisition at worst — no batching
+        # invariant to protect here.
+        attempts = (
+            max(1, site_config.get_int("image_gen_render_attempts", 2))
+            if site_config is not None else 2
         )
+        backoff = (
+            site_config.get_float("image_gen_retry_backoff_seconds", 3.0) or 3.0
+            if site_config is not None else 3.0
+        )
+        output_path, server_meta = None, None
+        for attempt in range(1, attempts + 1):
+            output_path, server_meta = await _render_image_gen(
+                image_gen_url, img_gen_prompt, negative, task_id=task_id,
+                timeout_seconds=render_timeout, gpu_model_label=gpu_model_label,
+            )
+            if output_path is not None:
+                if attempt > 1:
+                    logger.info(
+                        "Featured image rendered on attempt %d/%d", attempt, attempts,
+                    )
+                break
+            logger.warning(
+                "Featured image render returned nothing (attempt %d/%d)",
+                attempt, attempts,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(backoff)
         if output_path is None:
             return None
 

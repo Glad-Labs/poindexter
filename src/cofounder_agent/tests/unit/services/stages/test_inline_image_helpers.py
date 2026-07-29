@@ -199,8 +199,14 @@ async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
 
 @pytest.mark.asyncio
 async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
-    """A single render failure yields None for that index without aborting the
-    rest — run() then Pexels-falls-back only the failed image."""
+    """A PERSISTENTLY failing render yields None for that index without
+    aborting the rest — run() then falls back only that image.
+
+    Image 2 must fail on every attempt: as of 2026-07-28 each render gets
+    `image_gen_render_attempts` tries (default 2), because the common failure
+    is a transient restart window rather than a real verdict. A single 500
+    here would now simply be retried and succeed, which is the point.
+    """
     from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
 
     recorder = _LockRecorder()
@@ -215,13 +221,18 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    # image 1 renders, image 2 returns HTTP 500, image 3 renders.
-    mock_client.post = AsyncMock(side_effect=[ok_resp, bad_resp, ok_resp])
+    # image 1 renders; image 2 returns HTTP 500 on BOTH attempts; image 3 renders.
+    mock_client.post = AsyncMock(
+        side_effect=[ok_resp, bad_resp, bad_resp, ok_resp],
+    )
 
     site_config = SimpleNamespace(
         get=lambda _k, _d=None: _d if _d is not None else "",
         get_int=lambda _k, _d=0: _d,
-        get_float=lambda _k, _d=0.0: _d,
+        # Keep the inter-attempt backoff out of the test's wall clock.
+        get_float=lambda _k, _d=0.0: (
+            0.0 if _k == "image_gen_retry_backoff_seconds" else _d
+        ),
         get_bool=lambda _k, _d=False: _d,
         _pool=MagicMock(),
     )

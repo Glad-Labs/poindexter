@@ -48,12 +48,23 @@ The gate alone only _prevents_ the lockup — it doesn't free anything, so with 
 
 This closes the ~7 GB image-gen slice of the deficit. The remaining ~8.6 GB stuck in WSL2's `vmwp`/`vmmemWSL` (stale Docker GPU retention that outlives any container restart) needs a host-side `wsl --shutdown` + Docker Desktop restart — that's the idle-only WSL reset below.
 
+### The reclaim is not free — two guards (2026-07-28)
+
+A hard unload costs image-gen a cold start plus a lazy model reload, and **any `/generate` landing in that window fails**. On the article path a failed render used to silently become a stock photo, so an over-eager reclaim degrades blog images to buy VRAM for a video render that may never happen. Two guards keep that trade honest:
+
+1. **Server-side floor.** `/unload {"hard": true}` now refuses to exit unless at least `image_gen_hard_unload_min_reserved_mb` (default `512`) is actually **reserved**. The endpoint previously logged `torch.cuda.memory_allocated()`, which is `0` by construction immediately after `unload_pipeline()` drops the tensors — so the number it printed could never detect the thing it was trying to reclaim. `torch.cuda.memory_reserved()` is the caching-allocator pool a process exit really returns, and it is what the gate reads.
+2. **Caller-side cooldown.** The per-cycle conditions were already correct (eligible work **and** a specifically-VRAM failure), but nothing remembered across cycles, so on a 5-minute cron a reclaim that _cannot_ help simply repeated forever. After a reclaim that runs and leaves the gate unhealthy, `dispatch_media_pipeline` now sits out `media_render_reclaim_cooldown_minutes` (default `30`) and emits a `vram_reclaim_ineffective` finding. A reclaim that works clears the marker immediately.
+
+**Observed 2026-07-27** (the regression these guards close): image-gen hard-unloaded every 5 minutes for 2+ hours, each exit logging `vram_used=0 MB`, each freeing nothing, each opening a cold-start window — while the re-probe kept failing and the render never ran. Every one of those exits was pure loss, paid for in downgraded article images.
+
 ### Settings (`settings_defaults.py`)
 
-| Key                                   | Default | Meaning                                                                   |
-| ------------------------------------- | ------- | ------------------------------------------------------------------------- |
-| `media_render_reclaim_enabled`        | `true`  | Master switch for the reclaim-then-reprobe attempt.                       |
-| `media_render_reclaim_settle_seconds` | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped. |
+| Key                                     | Default | Meaning                                                                                         |
+| --------------------------------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `media_render_reclaim_enabled`          | `true`  | Master switch for the reclaim-then-reprobe attempt.                                             |
+| `media_render_reclaim_settle_seconds`   | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped.                       |
+| `media_render_reclaim_cooldown_minutes` | `30`    | Pause after a reclaim that left the gate unhealthy. `0` restores the old every-cycle behaviour. |
+| `image_gen_hard_unload_min_reserved_mb` | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).       |
 
 ## Idle-only WSL/Docker reset (PR 2, host-side — build shipped, registration deferred)
 

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from plugins.job import JobResult
@@ -141,6 +142,42 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     await gpu._unload_image_gen(hard=True)
 
 
+# Wall-clock of the last reclaim that ran and left the gate still unhealthy.
+# Process-local on purpose: this is cooldown STATE, not config (the duration
+# itself is an app_settings key), and the job is a single non-overlapping
+# instance in one worker process, so a module global is the whole scope.
+_last_ineffective_reclaim: float | None = None
+
+
+def _reclaim_on_cooldown(site_config: Any, *, now: float) -> float:
+    """Seconds left before another reclaim is worth attempting (0 = go ahead).
+
+    "a reclaim that does nothing just means the cycle defers as normal" was
+    true per-cycle and false in aggregate: on a 5-minute cron a reclaim that
+    cannot help simply runs again forever. Observed 2026-07-27 — reclaim
+    fired every cycle for 2+ hours, freed nothing each time, and each one
+    killed the image-gen process, opening a cold-start window that downgraded
+    article images to stock. The render never happened either way, so every
+    one of those exits was pure loss.
+
+    So: once a reclaim fails to make the gate healthy, sit out
+    ``media_render_reclaim_cooldown_minutes`` before trying again. A reclaim
+    that DOES work clears the marker, keeping the fast path fast.
+    """
+    if _last_ineffective_reclaim is None:
+        return 0.0
+    try:
+        cooldown_min = float(
+            site_config.get("media_render_reclaim_cooldown_minutes", "30") or "30"
+        )
+    except (TypeError, ValueError):
+        cooldown_min = 30.0
+    if cooldown_min <= 0:
+        return 0.0
+    elapsed = now - _last_ineffective_reclaim
+    return max(0.0, cooldown_min * 60.0 - elapsed)
+
+
 def _max_per_cycle(site_config: Any) -> int:
     """GPU-bound cap on media renders kicked off per cycle (default 1)."""
     try:
@@ -205,20 +242,51 @@ class DispatchMediaPipelineJob:
                 and health.vram_insufficient
                 and sc.get_bool("media_render_reclaim_enabled", True)
             ):
-                logger.info(
-                    "[DISPATCH_MEDIA] render-GPU VRAM insufficient — "
-                    "attempting a bounded reclaim (evict Ollama + hard-"
-                    "unload image-gen) before deferring: %s", health.detail,
-                )
-                await _attempt_vram_reclaim(sc)
-                settle = sc.get_float("media_render_reclaim_settle_seconds", 8.0) or 8.0
-                await asyncio.sleep(settle)
-                health = await check_media_infra_health(sc)
-                if health.healthy:
+                global _last_ineffective_reclaim
+                now = time.monotonic()
+                cooling = _reclaim_on_cooldown(sc, now=now)
+                if cooling > 0:
                     logger.info(
-                        "[DISPATCH_MEDIA] reclaim freed enough VRAM — "
-                        "proceeding with dispatch this cycle"
+                        "[DISPATCH_MEDIA] render-GPU VRAM insufficient, but the "
+                        "last reclaim did not help — skipping for another %.0f "
+                        "min rather than restarting image-gen again: %s",
+                        cooling / 60.0, health.detail,
                     )
+                else:
+                    logger.info(
+                        "[DISPATCH_MEDIA] render-GPU VRAM insufficient — "
+                        "attempting a bounded reclaim (evict Ollama + hard-"
+                        "unload image-gen) before deferring: %s", health.detail,
+                    )
+                    await _attempt_vram_reclaim(sc)
+                    settle = sc.get_float("media_render_reclaim_settle_seconds", 8.0) or 8.0
+                    await asyncio.sleep(settle)
+                    health = await check_media_infra_health(sc)
+                    if health.healthy:
+                        _last_ineffective_reclaim = None
+                        logger.info(
+                            "[DISPATCH_MEDIA] reclaim freed enough VRAM — "
+                            "proceeding with dispatch this cycle"
+                        )
+                    else:
+                        # Start the cooldown. Retrying this every 5 min costs an
+                        # image-gen restart per cycle and buys nothing.
+                        _last_ineffective_reclaim = now
+                        emit_finding(
+                            source="dispatch_media_pipeline",
+                            kind="vram_reclaim_ineffective",
+                            title="VRAM reclaim freed nothing — media render still blocked",
+                            body=(
+                                "Hard-unloaded image-gen to make room for a media "
+                                "render and the VRAM gate still failed afterwards: "
+                                f"{health.detail}. Further reclaims are on cooldown "
+                                "for media_render_reclaim_cooldown_minutes. If this "
+                                "repeats, something outside the pipeline is holding "
+                                "render-GPU VRAM."
+                            ),
+                            severity="warn",
+                            dedup_key="vram-reclaim-ineffective",
+                        )
             if not health.healthy:
                 logger.warning(
                     "[DISPATCH_MEDIA] render infra unhealthy — deferring %d "

@@ -39,6 +39,11 @@ def _load_image_gen_server():
         torch_stub.cuda = types.SimpleNamespace(
             is_available=lambda: False,
             memory_allocated=lambda idx=0: 0,
+            # memory_reserved is what the hard-unload gate reads: after
+            # unload_pipeline() drops the tensors, ALLOCATED is 0 by
+            # construction, so only RESERVED can tell whether an exit would
+            # actually return anything to the host.
+            memory_reserved=lambda idx=0: 0,
         )
         sys.modules["torch"] = torch_stub
         stub_installed = True
@@ -76,15 +81,40 @@ def test_soft_unload_does_not_exit_process():
     asyncio.run(body())
 
 
+def _patch_reserved(mb: int):
+    """Point torch.cuda.memory_reserved at `mb`, and pin the threshold read.
+
+    The threshold read hits Postgres; tests must not depend on a live DB (or
+    on which value happens to be seeded), so it is always stubbed here.
+    """
+    return (
+        patch.object(
+            img_gen_server.torch.cuda, "memory_reserved",
+            lambda idx=0: mb * 1024 * 1024,
+        ),
+        patch.object(
+            img_gen_server, "read_hard_unload_min_reserved_mb",
+            new=_async_return(512),
+        ),
+    )
+
+
+def _async_return(value):
+    async def _fn(*args, **kwargs):
+        return value
+    return _fn
+
+
 def test_hard_unload_exits_process():
     """{"hard": true} must call os._exit(0) so the CUDA context actually
     returns to the host — torch.cuda.empty_cache() alone doesn't under WSL2
-    (2026-07-12 finding)."""
+    (2026-07-12 finding). Gated on there being VRAM worth reclaiming."""
     async def body():
         img_gen_server.unload_pipeline = lambda: None
         img_gen_server.state.pipeline = object()
 
-        with patch.object(os, "_exit") as mock_exit:
+        reserved, threshold = _patch_reserved(4096)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
             await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
 
         mock_exit.assert_called_once_with(0)
@@ -95,14 +125,64 @@ def test_hard_unload_exits_process():
 def test_hard_unload_exits_even_when_already_unloaded():
     """A hard unload must still exit even if state.pipeline is already None
     (idle_unloader may have dropped it already) — the stuck CUDA context can
-    outlive the pipeline object, so the reclaim must not skip the exit."""
+    outlive the pipeline object, so the reclaim must not skip the exit.
+
+    That context is exactly what shows up as RESERVED-but-not-allocated, which
+    is why the gate reads memory_reserved: this case still exits."""
     async def body():
         img_gen_server.unload_pipeline = lambda: None
         img_gen_server.state.pipeline = None
 
-        with patch.object(os, "_exit") as mock_exit:
+        reserved, threshold = _patch_reserved(7000)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
             await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
 
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
+
+
+def test_hard_unload_skips_exit_when_nothing_reserved():
+    """The regression this gate exists for (2026-07-27): image-gen was
+    hard-unloaded every 5 minutes while holding nothing, so each exit freed
+    zero VRAM and only opened a cold-start window in which /generate failed
+    and article images silently downgraded to stock. Below the threshold the
+    process must stay up."""
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+
+        reserved, threshold = _patch_reserved(0)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
+            result = await img_gen_server.unload(
+                img_gen_server.UnloadRequest(hard=True),
+            )
+
+        mock_exit.assert_not_called()
+        assert result["status"] == "nothing_to_reclaim"
+        assert result["vram_reserved_mb"] == 0
+
+    asyncio.run(body())
+
+
+def test_hard_unload_skips_just_below_threshold_and_exits_at_it():
+    """The gate is a threshold, not a zero-check — a few hundred MB of
+    residue is not worth a restart, the multi-GB model pool is."""
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+
+        reserved, threshold = _patch_reserved(511)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
+            result = await img_gen_server.unload(
+                img_gen_server.UnloadRequest(hard=True),
+            )
+        mock_exit.assert_not_called()
+        assert result["status"] == "nothing_to_reclaim"
+
+        reserved, threshold = _patch_reserved(512)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
+            await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
         mock_exit.assert_called_once_with(0)
 
     asyncio.run(body())

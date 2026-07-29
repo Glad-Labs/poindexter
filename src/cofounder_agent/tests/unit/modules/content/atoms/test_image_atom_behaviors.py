@@ -38,6 +38,11 @@ def _site_config(unload_enabled: bool = True) -> Any:
         get_bool=lambda key, default=False: (
             unload_enabled
             if key == "pipeline_writer_unload_before_image_gen"
+            # Stock fallback is opt-in as of 2026-07-28 (default OFF). The
+            # fallback tests in this file assert the opted-IN behaviour, so
+            # they enable it explicitly rather than inheriting the default.
+            else True
+            if key == "image_stock_fallback_enabled"
             else default
         ),
     )

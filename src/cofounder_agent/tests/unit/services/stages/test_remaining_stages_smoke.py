@@ -517,7 +517,11 @@ class TestSourceFeaturedImageAdapter:
             get=lambda k, d="": "false" if k == "image_gen_enabled" else (d if d is not None else ""),
             get_int=lambda _k, d=0: d,
             get_float=lambda _k, d=0.0: d,
-            get_bool=lambda _k, d=False: d,
+            # Stock fallback is opt-in as of 2026-07-28 (default OFF); this
+            # smoke test asserts the opted-IN Pexels path.
+            get_bool=lambda _k, d=False: (
+                True if _k == "image_stock_fallback_enabled" else d
+            ),
             _pool=None,
         )
         ctx: dict[str, Any] = {

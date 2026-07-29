@@ -37,7 +37,11 @@ def _fake_site_config(pool: Any | None = None, *, image_gen_enabled: bool = True
         get=lambda k, d="": overrides.get(k, d if d is not None else ""),
         get_int=lambda _k, d=0: d,
         get_float=lambda _k, d=0.0: d,
-        get_bool=lambda _k, d=False: d,
+        # Stock fallback is opt-in as of 2026-07-28 (default OFF). The Pexels
+        # producer-hook tests below assert the opted-IN behaviour.
+        get_bool=lambda _k, d=False: (
+            True if _k == "image_stock_fallback_enabled" else d
+        ),
         _pool=pool,
     )
 

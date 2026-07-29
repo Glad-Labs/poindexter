@@ -313,6 +313,50 @@ async def read_ocr_gate_settings() -> dict[str, str]:
     return {r["key"]: r["value"] for r in rows if r["value"] is not None}
 
 
+HARD_UNLOAD_MIN_RESERVED_MB_KEY = "image_gen_hard_unload_min_reserved_mb"
+DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB = 512
+
+
+async def read_hard_unload_min_reserved_mb() -> int:
+    """Reserved-VRAM floor below which a hard unload is not worth the exit.
+
+    Best-effort, same posture as :func:`read_ocr_gate_settings`: any DB
+    failure returns the default rather than raising, so a transient hiccup
+    degrades to "threshold at default", never to a crash in the reclaim path.
+
+    Read per call rather than cached at startup because the whole point of
+    the endpoint is that it runs while VRAM pressure is changing — an
+    operator retuning the floor should not have to restart the server.
+    """
+    try:
+        conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
+    except Exception as e:
+        logger.warning(
+            "[HARD UNLOAD] threshold read failed (DB connect): %s — using %d MB",
+            e, DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB,
+        )
+        return DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB
+    try:
+        raw = await conn.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            HARD_UNLOAD_MIN_RESERVED_MB_KEY,
+        )
+    except Exception as e:
+        logger.warning(
+            "[HARD UNLOAD] threshold read failed (query): %s — using %d MB",
+            e, DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB,
+        )
+        return DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB
+    finally:
+        await conn.close()
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        # '' is the unset sentinel (app_settings.value is NOT NULL), so this
+        # is the ordinary "key seeded but blank" path, not a bug.
+        return DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB
+
+
 async def reload_ocr_gate_config() -> None:
     """Re-read + re-parse the OCR-gate settings into state.ocr_gate."""
     raw = await read_ocr_gate_settings()
@@ -958,14 +1002,42 @@ async def unload(req: UnloadRequest | None = None):
     ``state.pipeline`` is already None — the idle unloader may have already
     dropped the pipeline object while the CUDA context itself (which is what
     actually holds the reserved pool) is still live.
+
+    The exit is gated on there actually being something to reclaim
+    (``image_gen_hard_unload_min_reserved_mb``). Exiting is not free: the
+    process is down for a cold start + lazy model reload, and any
+    ``/generate`` landing in that window fails, which silently downgrades
+    article images to stock. Before this gate the caller hard-unloaded on a
+    5-minute cadence whether or not the reclaim could help — observed
+    2026-07-27, ~24 consecutive exits that each freed nothing.
     """
     if req and req.hard:
         unload_pipeline()
-        vram_used_mb = torch.cuda.memory_allocated(0) // 1024 // 1024
+        # NOT memory_allocated: unload_pipeline() just dropped every live
+        # tensor, so allocated is 0 here by construction and can never tell
+        # us whether exiting is worthwhile (it logged a misleading
+        # "vram_used=0 MB" on every one of those 24 pointless exits). The
+        # multi-GB block a process exit actually returns to the host is the
+        # caching allocator's RESERVED pool, so that is what we measure.
+        reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+        min_reserved_mb = await read_hard_unload_min_reserved_mb()
+        if reserved_mb < min_reserved_mb:
+            logger.info(
+                "[HARD UNLOAD] skipped — %d MB reserved is below the %d MB "
+                "threshold, so exiting would reclaim nothing and would open a "
+                "cold-start window that downgrades article images",
+                reserved_mb, min_reserved_mb,
+            )
+            return {
+                "status": "nothing_to_reclaim",
+                "vram_reserved_mb": reserved_mb,
+                "min_reserved_mb": min_reserved_mb,
+            }
         logger.warning(
             "[HARD UNLOAD] exiting process to return the CUDA context to the "
-            "host (vram_used=%d MB); Docker restart policy brings it back",
-            vram_used_mb,
+            "host (vram_reserved=%d MB >= %d MB threshold); Docker restart "
+            "policy brings it back",
+            reserved_mb, min_reserved_mb,
         )
         sys.stdout.flush()
         sys.stderr.flush()

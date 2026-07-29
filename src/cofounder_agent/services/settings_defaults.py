@@ -473,6 +473,14 @@ DEFAULTS: dict[str, str] = {
     # scrape before the re-probe reads it.
     'media_render_reclaim_enabled': 'true',
     'media_render_reclaim_settle_seconds': '8',
+    # Cooldown after a reclaim that ran and left the gate still unhealthy
+    # (2026-07-28). The per-cycle logic was already correct — reclaim only with
+    # eligible work AND a specifically-VRAM failure — but on a 5-minute cron a
+    # reclaim that CANNOT help just repeats forever. Observed 2026-07-27:
+    # fired every cycle for 2+ hours, freed nothing each time, and every one
+    # restarted image-gen and opened a window that downgraded article images.
+    # The render never happened either way, so each exit was pure loss.
+    'media_render_reclaim_cooldown_minutes': '30',
     # Idle-only host-side WSL/Docker GPU reset (PR 2, 2026-07-12). Read by
     # scripts/idle_wsl_gpu_reset_check.py (invoked by the host-side
     # scripts/idle-wsl-gpu-reset.ps1 Scheduled Task) to clear the ~8.6 GB of
@@ -1326,6 +1334,33 @@ DEFAULTS: dict[str, str] = {
     'image_prompt_temperature': '0.8',
     'image_prompt_max_tokens': '150',
     'image_prompt_timeout_seconds': '90',
+    # Render retry (2026-07-28). The dominant inline/featured render failure is
+    # a WINDOW, not a verdict — image-gen restarting for a VRAM reclaim (cold
+    # start + lazy model reload) or a GPU lock timeout under contention. Both
+    # clear in seconds, so one retry recovers most renders that previously
+    # became a silent stock substitution. 2 = one initial attempt + one retry.
+    'image_gen_render_attempts': '2',
+    'image_gen_retry_backoff_seconds': '3',
+    # Stock-photo FALLBACK for a failed image-gen render. Default OFF: owned
+    # imagery is the brand asset, and an undisclosed stock swap ran unnoticed
+    # for weeks because the fallback logged per-image and still reported
+    # success. Off means a failed render yields no image plus a warn-severity
+    # `image_gen_downgrade` finding, rather than quietly shipping stock.
+    #
+    # This gates the FALLBACK only — stock chosen DELIBERATELY (the video
+    # director picking Pexels for a shot that needs real photography, per the
+    # image-media policy) is a separate path and is unaffected.
+    #
+    # Kept as a setting rather than deleted so a fork that wants stock
+    # fallback can turn it back on.
+    'image_stock_fallback_enabled': 'false',
+    # Reserved-VRAM floor (MB) below which scripts/image-gen-server.py refuses
+    # a hard unload. Exiting costs a cold start, and any /generate landing in
+    # that window downgrades an article image — so it must actually reclaim
+    # something. Measured on RESERVED, not allocated: after unload_pipeline()
+    # drops the tensors, allocated is 0 by construction and cannot detect the
+    # multi-GB caching-allocator pool an exit would return.
+    'image_gen_hard_unload_min_reserved_mb': '512',
     # OCR text-leakage gate (2026-07-13): scripts/image-gen-server.py OCR-scans
     # every /generate render and retries with a fresh seed when leaked text
     # exceeds max_chars, keeping the best-scoring attempt. Deterministic
@@ -1943,6 +1978,27 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.media_feed_render_collapse.fallback': 'discord',
     'findings.media_feed_render_collapse.cooldown_minutes': '120',
     'findings.media_feed_render_collapse.min_severity': 'error',
+    # An image did not come from image-gen: it fell back to stock, or the post
+    # shipped without that image. Routed (not log_only) ON PURPOSE — this ran
+    # silently for weeks precisely because the fallback logged per-image and
+    # still reported success, so a downgraded run was indistinguishable from a
+    # clean one. Discord, not Telegram: it degrades a post, it does not break
+    # the pipeline (feedback_telegram_vs_discord). 60m cooldown because a
+    # single image-gen outage downgrades every image in the batch, and the
+    # outage is the signal, not each image.
+    'findings.image_gen_downgrade.delivery': 'discord',
+    'findings.image_gen_downgrade.fallback': 'log_only',
+    'findings.image_gen_downgrade.cooldown_minutes': '60',
+    'findings.image_gen_downgrade.min_severity': 'warn',
+    # A VRAM reclaim ran, freed nothing, and the media render stayed blocked.
+    # Routed because the reclaim is not free — it restarts image-gen, and each
+    # restart opens a window where article images downgrade. Repeats mean
+    # something outside the pipeline is holding render-GPU VRAM. The cooldown
+    # setting bounds the retries; this bounds the noise.
+    'findings.vram_reclaim_ineffective.delivery': 'discord',
+    'findings.vram_reclaim_ineffective.fallback': 'log_only',
+    'findings.vram_reclaim_ineffective.cooldown_minutes': '180',
+    'findings.vram_reclaim_ineffective.min_severity': 'warn',
     # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
     # emitting contentless titles is a source bug worth seeing on the routine
     # ops channel, not a page; 6h cooldown keeps a persistently garbage

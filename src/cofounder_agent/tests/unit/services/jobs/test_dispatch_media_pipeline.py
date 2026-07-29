@@ -402,3 +402,121 @@ async def test_genuine_failure_on_healthy_infra_still_emits_finding():
     # No un-claim: the only execute is the claim itself.
     executed_sql = [c.args[0] for c in pool.execute.await_args_list]
     assert not any("SET media_pipeline_dispatched_at = NULL" in q for q in executed_sql)
+
+
+# ---------------------------------------------------------------------------
+# Reclaim cooldown (2026-07-28)
+# ---------------------------------------------------------------------------
+# The per-cycle guards were already right — reclaim only with eligible work AND
+# a specifically-VRAM failure. What was missing was memory ACROSS cycles: on a
+# 5-minute cron a reclaim that cannot help simply repeats forever. Observed
+# 2026-07-27: fired every cycle for 2+ hours, freed nothing each time, and each
+# one restarted image-gen, opening a cold-start window in which /generate
+# failed and article images silently downgraded to stock. The video render
+# never happened either way, so every one of those exits was pure loss.
+
+
+@pytest.fixture(autouse=True)
+def _reset_reclaim_cooldown():
+    """Cooldown state is a module global — isolate it per test.
+
+    Without this the first test to record an ineffective reclaim would
+    suppress reclaims in every test that ran after it, and the resulting
+    failure would look like an unrelated ordering flake.
+    """
+    dmp._last_ineffective_reclaim = None
+    yield
+    dmp._last_ineffective_reclaim = None
+
+
+@pytest.mark.asyncio
+async def test_ineffective_reclaim_starts_cooldown_and_emits_finding():
+    """A reclaim that runs and leaves the gate unhealthy must arm the cooldown
+    and say so — silence is what let this repeat unnoticed for hours."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}], claim="UPDATE 1")
+    emit_mock = MagicMock()
+    health = AsyncMock(
+        return_value=MediaInfraHealth(
+            False, "render-GPU free VRAM 15.0 GB < 25 GB", vram_insufficient=True,
+        )
+    )
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock()), \
+         patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", AsyncMock()), \
+         patch.object(dmp, "emit_finding", emit_mock), \
+         patch.object(dmp.asyncio, "sleep", AsyncMock()):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+
+    assert out.changes_made == 0
+    assert dmp._last_ineffective_reclaim is not None
+    kinds = [c.kwargs.get("kind") for c in emit_mock.call_args_list]
+    assert "vram_reclaim_ineffective" in kinds
+
+
+@pytest.mark.asyncio
+async def test_second_cycle_skips_reclaim_while_cooling_down():
+    """The actual regression: back-to-back cycles must not each restart
+    image-gen. Cycle 2 still defers, it just does not pay for another
+    pointless reclaim to get there."""
+    job = DispatchMediaPipelineJob()
+    reclaim_mock = AsyncMock()
+    unhealthy = MediaInfraHealth(
+        False, "render-GPU free VRAM 15.0 GB < 25 GB", vram_insufficient=True,
+    )
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock()), \
+         patch.object(dmp, "check_media_infra_health", AsyncMock(return_value=unhealthy)), \
+         patch.object(dmp, "_attempt_vram_reclaim", reclaim_mock), \
+         patch.object(dmp, "emit_finding", MagicMock()), \
+         patch.object(dmp.asyncio, "sleep", AsyncMock()):
+        await job.run(_FakePool([{"task_id": "t1"}], claim="UPDATE 1"),
+                      {"_site_config": _sc_gated()})
+        assert reclaim_mock.await_count == 1
+
+        out2 = await job.run(_FakePool([{"task_id": "t2"}], claim="UPDATE 1"),
+                             {"_site_config": _sc_gated()})
+
+    assert reclaim_mock.await_count == 1, "cycle 2 must not re-run the reclaim"
+    assert out2.changes_made == 0
+
+
+@pytest.mark.asyncio
+async def test_successful_reclaim_clears_cooldown():
+    """A reclaim that works must leave no cooldown behind, so the next genuine
+    VRAM squeeze is handled immediately instead of being suppressed."""
+    job = DispatchMediaPipelineJob()
+    dmp._last_ineffective_reclaim = None
+    health = AsyncMock(
+        side_effect=[
+            MediaInfraHealth(False, "render-GPU free VRAM 20.0 GB < 25 GB", vram_insufficient=True),
+            MediaInfraHealth(True, "ok"),
+        ]
+    )
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock()), \
+         patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", AsyncMock()), \
+         patch.object(dmp.asyncio, "sleep", AsyncMock()):
+        out = await job.run(_FakePool([{"task_id": "t1"}], claim="UPDATE 1"),
+                            {"_site_config": _sc_gated()})
+
+    assert out.changes_made == 1
+    assert dmp._last_ineffective_reclaim is None
+
+
+@pytest.mark.asyncio
+async def test_cooldown_expires_and_allows_a_fresh_reclaim():
+    """Cooldown is a pause, not a permanent stop."""
+    import time as _time
+
+    dmp._last_ineffective_reclaim = _time.monotonic() - (31 * 60)
+    sc = _sc_gated(media_render_reclaim_cooldown_minutes="30")
+    assert dmp._reclaim_on_cooldown(sc, now=_time.monotonic()) == 0.0
+
+
+def test_cooldown_of_zero_disables_the_feature():
+    """An operator setting 0 opts back into the old every-cycle behaviour."""
+    import time as _time
+
+    dmp._last_ineffective_reclaim = _time.monotonic()
+    sc = _sc_gated(media_render_reclaim_cooldown_minutes="0")
+    assert dmp._reclaim_on_cooldown(sc, now=_time.monotonic()) == 0.0

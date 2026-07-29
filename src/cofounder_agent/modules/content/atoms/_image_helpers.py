@@ -33,6 +33,7 @@ like — artifacts LLMs sometimes emit adjacent to image placeholders.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -435,6 +436,75 @@ async def _try_image_gen(
         return None
 
 
+async def _render_one_with_retry(
+    client: httpx.AsyncClient,
+    *,
+    num: str,
+    prompt: str,
+    neg_prompt: str,
+    image_gen_url: str,
+    task_id: str | None,
+    render_timeout: int,
+    site_config: Any,
+    attempts: int,
+) -> str | None:
+    """POST one /generate, retrying transient failures. None = give up.
+
+    Worth retrying because the common failures are windows, not verdicts:
+    image-gen exits and restarts (cold start + lazy model reload) for a VRAM
+    reclaim, or the GPU lock times out under contention. Both clear in
+    seconds. Before this, one unlucky POST silently became a stock photo.
+
+    The retry is deliberately inside the caller's single ``image_gen`` GPU
+    lock — re-acquiring per attempt would reintroduce the lock churn that
+    poindexter#733/#841 removed.
+    """
+    last_err: str = "unknown"
+    for attempt in range(1, attempts + 1):
+        try:
+            img_resp = await client.post(
+                f"{image_gen_url}/generate",
+                json={
+                    "prompt": prompt,
+                    "negative_prompt": neg_prompt,
+                    "task_id": str(task_id) if task_id else None,
+                },
+                timeout=render_timeout,
+            )
+            if img_resp.status_code != 200:
+                last_err = f"HTTP {img_resp.status_code}"
+                logger.warning(
+                    "  [IMAGE-%s] image-gen returned %s (batch, attempt %d/%d)",
+                    num, img_resp.status_code, attempt, attempts,
+                )
+            else:
+                tmp_path = await _resolve_gen_response(
+                    img_resp, image_gen_url=image_gen_url,
+                )
+                img_url = await _upload_to_r2_with_fallback(
+                    tmp_path, site_config=site_config,
+                )
+                logger.info(
+                    "  [IMAGE-%s] image-gen generated + uploaded (batch%s)",
+                    num, f", attempt {attempt}" if attempt > 1 else "",
+                )
+                return img_url
+        except Exception as err:  # noqa: BLE001 — one image must not stop the batch
+            last_err = f"{type(err).__name__}: {err}"
+            logger.warning(
+                "  [IMAGE-%s] image-gen render failed (batch, attempt %d/%d): %s",
+                num, attempt, attempts, err,
+            )
+        if attempt < attempts:
+            backoff = site_config.get_float("image_gen_retry_backoff_seconds", 3.0) or 3.0
+            await asyncio.sleep(backoff)
+
+    logger.warning(
+        "  [IMAGE-%s] image-gen exhausted %d attempt(s): %s", num, attempts, last_err,
+    )
+    return None
+
+
 async def _batch_generate_inline_image_urls(
     placeholders: list[tuple[str, str]],
     *,
@@ -541,6 +611,7 @@ async def _batch_generate_inline_image_urls(
     image_gen_urls: list[str | None] = []
     render_timeout = site_config.get_int("image_render_timeout_seconds", 90)
     gpu_model_label = site_config.get("image_generation_model", "image_gen")
+    attempts = max(1, site_config.get_int("image_gen_render_attempts", 2))
     try:
         async with gpu.lock(
             "image_gen", model=gpu_model_label, task_id=task_id, phase="inline_image_batch",
@@ -554,30 +625,17 @@ async def _batch_generate_inline_image_urls(
                     if img_gen_prompt is None:
                         image_gen_urls.append(None)
                         continue
-                    try:
-                        img_resp = await client.post(
-                            f"{image_gen_url}/generate",
-                            json={
-                                "prompt": img_gen_prompt,
-                                "negative_prompt": neg_prompt,
-                                "task_id": str(task_id) if task_id else None,
-                            },
-                            timeout=render_timeout,
-                        )
-                        if img_resp.status_code != 200:
-                            logger.warning(
-                                "  [IMAGE-%s] image-gen returned %s (batch)",
-                                num, img_resp.status_code,
-                            )
-                            image_gen_urls.append(None)
-                            continue
-                        tmp_path = await _resolve_gen_response(img_resp, image_gen_url=image_gen_url)
-                        img_url = await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
-                        logger.info("  [IMAGE-%s] image-gen generated + uploaded (batch)", num)
-                        image_gen_urls.append(img_url)
-                    except Exception as err:
-                        logger.warning("  [IMAGE-%s] image-gen render failed (batch): %s", num, err)
-                        image_gen_urls.append(None)
+                    # Retry before conceding the image. The dominant failure is
+                    # transient — image-gen restarting (cold start + lazy model
+                    # reload) or a GPU lock timeout — so a single retry recovers
+                    # most of what used to silently become a stock photo.
+                    img_url = await _render_one_with_retry(
+                        client, num=num, prompt=img_gen_prompt,
+                        neg_prompt=neg_prompt, image_gen_url=image_gen_url,
+                        task_id=task_id, render_timeout=render_timeout,
+                        site_config=site_config, attempts=attempts,
+                    )
+                    image_gen_urls.append(img_url)
     except Exception as err:
         logger.warning(
             "[IMAGE-BATCH] image-gen lock acquire failed: %s — no image-gen images this run", err,

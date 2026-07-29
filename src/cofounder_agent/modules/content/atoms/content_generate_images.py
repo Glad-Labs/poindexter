@@ -113,8 +113,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 },
             )
 
-        if img_url is None:
-            # Strategy 2: Pexels.
+        if img_url is None and _stock_fallback_enabled(site_config):
+            # Strategy 2: Pexels — only when the operator has opted in.
             pexels = await try_pexels(search_query, topic, image_service)
             if pexels is not None:
                 pexels_url, photographer = pexels
@@ -137,6 +137,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                         },
                     )
 
+        if source != "image_gen":
+            _emit_downgrade_finding(
+                num=num, source=source, task_id=task_id,
+                topic=topic, search_query=search_query,
+            )
+
         image_results.append({
             "num": num,
             "url": img_url,
@@ -145,6 +151,60 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         })
 
     return {"image_results": image_results}
+
+
+def _stock_fallback_enabled(site_config: Any) -> bool:
+    """Whether a failed image-gen render may fall back to stock photography.
+
+    Default OFF. Owned imagery is the brand asset — a stock photo dropped in
+    silently is a downgrade the pipeline never disclosed, and it ran that way
+    for weeks unnoticed. Kept as a setting rather than deleted so a fork that
+    wants stock can just flip it on.
+
+    Note this gates the FALLBACK only. Stock chosen deliberately — the video
+    director picking Pexels for a shot that needs real photography — is a
+    different path and is unaffected.
+    """
+    if site_config is None:
+        return False
+    return site_config.get_bool("image_stock_fallback_enabled", False)
+
+
+def _emit_downgrade_finding(
+    *, num: str, source: str, task_id: Any, topic: str, search_query: str,
+) -> None:
+    """Surface an inline image that did not come from image-gen.
+
+    The whole reason this went unnoticed for weeks: the fallback logged at
+    warning level per-image and then reported success, so nothing aggregated
+    and nothing paged. Per the QA-rail convention, a degraded path announces
+    itself rather than passing as a clean run.
+    """
+    from utils.findings import emit_finding
+
+    if source == "pexels":
+        title = "Inline image fell back to stock — image-gen failed"
+        body = (
+            f"Inline image {num} on task {task_id} was rendered from Pexels "
+            f"because image-gen produced nothing for {search_query!r}. The post "
+            "ships with stock art where owned art was intended."
+        )
+    else:
+        title = "Inline image missing — image-gen failed, stock fallback off"
+        body = (
+            f"Inline image {num} on task {task_id} has no image: image-gen "
+            f"produced nothing for {search_query!r} and image_stock_fallback_"
+            "enabled is false, so no stock substitute was used."
+        )
+    emit_finding(
+        source="content.generate_images",
+        kind="image_gen_downgrade",
+        title=title,
+        body=f"{body}\n\nTopic: {topic}",
+        severity="warn",
+        dedup_key=f"image-gen-downgrade:{task_id}:{num}",
+        extra={"task_id": str(task_id or ""), "placeholder_num": num, "source": source},
+    )
 
 
 def _build_alt_text(desc: str, topic: str, site_config: Any) -> str:
