@@ -45,6 +45,13 @@ over the shared bridge network — never via `host.docker.internal` / a
 host-published port, whose Docker-Desktop/WSL2 proxy wedges and silently
 drops connections (the 2026-07 stock-image-fallback outage)."""
 
+DEFAULT_CHATTERBOX_URL = "http://chatterbox:8000/v1"
+"""Chatterbox TTS sidecar (opt-in `tts-hq` compose profile). Matches the
+`plugin.tts_provider.chatterbox.base_url` default, which is OpenAI-shaped and
+so carries the `/v1` suffix; the GPU scheduler's `/unload` reclaim strips it
+to reach the server root. Compose service DNS name, same rationale as
+`DEFAULT_IMAGE_GEN_URL`."""
+
 # -------- Internal service mesh --------------------------------------------
 
 DEFAULT_WORKER_API_URL = "http://localhost:8002"

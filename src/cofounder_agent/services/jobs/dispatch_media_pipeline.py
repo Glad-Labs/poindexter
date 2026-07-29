@@ -129,17 +129,44 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     2026-07-12 desktop-lockup fix): evict Ollama (~0.3 GB) + hard-unload
     image-gen (~7 GB — exits its process so the CUDA context actually
     returns to the host; ``torch.cuda.empty_cache()`` alone doesn't under
-    WSL2). Docker's ``restart: unless-stopped`` brings image-gen back; it
-    lazy-loads on the next ``/generate``.
+    WSL2) + unload the chatterbox TTS model. Docker's
+    ``restart: unless-stopped`` brings the hard-unloaded servers back; both
+    lazy-load on their next request.
 
-    Both callees already catch their own exceptions (best-effort by design),
-    so this never raises and never blocks the cycle — a reclaim that does
-    nothing just means the re-probe still fails and the cycle defers as normal.
+    Chatterbox was added 2026-07-29 (Glad-Labs/poindexter#940): it caches its
+    model after narrating an episode and is not a GPU-lock owner, so it sat
+    outside every reclaim lever and squatted through the following video
+    render — observed deferring on "free VRAM 24.0 GB < 25 GB required". A
+    soft unload suffices; its VRAM is the model, not a wedged CUDA context.
+
+    Each lever is isolated: the callees are best-effort and catch internally,
+    but that made "never raises" an incidental property of their current
+    implementations rather than a guarantee of this one. Levers run in
+    ascending order of cost-to-restore, so an exception escaping an early one
+    must not skip the later ones — with chatterbox appended last, a stray
+    error in the Ollama evict would otherwise silently cost us the very lever
+    this reclaim was extended to gain. Isolating here keeps that contract
+    true no matter how the callees evolve.
     """
     from services.gpu_scheduler import gpu
 
-    await gpu._unload_ollama_models()
-    await gpu._unload_image_gen(hard=True)
+    # Callables, NOT pre-built coroutines: building all three up front would
+    # leave the un-awaited ones raising "coroutine was never awaited" the
+    # moment anyone adds a break/continue to this loop.
+    levers: tuple[tuple[str, Any], ...] = (
+        ("ollama", gpu._unload_ollama_models),
+        ("image-gen", lambda: gpu._unload_image_gen(hard=True)),
+        ("chatterbox", gpu._unload_chatterbox),
+    )
+    for name, call in levers:
+        try:
+            await call()
+        except Exception as exc:  # noqa: BLE001 — best-effort by contract
+            logger.warning(
+                "[DISPATCH_MEDIA] VRAM reclaim lever %r failed (continuing "
+                "with the rest): %s: %s",
+                name, type(exc).__name__, exc,
+            )
 
 
 # Wall-clock of the last reclaim that ran and left the gate still unhealthy.

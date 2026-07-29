@@ -775,6 +775,12 @@ services:
       # episode. Set CHATTERBOX_TTS_DEVICE=cpu (plus that timeout) if you
       # genuinely have no VRAM to spare and can wait.
       TTS_DEVICE: "${CHATTERBOX_TTS_DEVICE:-cuda}"
+      # Idle unload (Glad-Labs/poindexter#940) — release the model after this
+      # many seconds of no synthesis so narration stops squatting VRAM
+      # through the video render that follows. Matters MORE on consumer
+      # hardware (8-16 GB cards) than on the operator rig, where holding the
+      # model can starve the render outright. 0 disables.
+      CHATTERBOX_IDLE_TIMEOUT_S: "${CHATTERBOX_IDLE_TIMEOUT_S:-120}"
       # Torch CPU thread pool — only load-bearing on a TTS_DEVICE=cpu run.
       # Conservative default for consumer core counts; raise it (and `cpus`
       # below, in step) on a bigger box.

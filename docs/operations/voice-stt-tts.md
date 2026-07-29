@@ -360,6 +360,24 @@ audio artifacts, since removed) and is **live**: `podcast_tts_engine=chatterbox`
 runs as an opt-in `tts-hq`-profile sidecar and supports zero-shot voice cloning
 from a pinned reference clip — see `scripts/tts_sidecars/assets/README.md`.
 
+**Chatterbox releases its VRAM when idle** (Glad-Labs/poindexter#940). The
+model loads lazily on first synthesis and unloads after
+`CHATTERBOX_IDLE_TIMEOUT_S` seconds of inactivity (default 120; `0` keeps it
+resident). Before this it cached forever and squatted through the video render
+that follows narration — observed 2026-07-29 as
+`dispatch_media_pipeline` deferring on _"render-GPU free VRAM 24.0 GB < 25 GB
+required"_. The GPU scheduler's reclaim path (`_attempt_vram_reclaim`) can also
+force it immediately rather than waiting out the timer:
+
+    curl -fsS -X POST http://localhost:8011/unload -d '{}' -H 'Content-Type: application/json'
+    curl -fsS http://localhost:8011/health   # {"model_loaded": false, ...}
+
+`{"hard": true}` additionally exits the process so the CUDA context returns to
+the host; `restart: unless-stopped` brings it back and it lazy-loads on the
+next request. `/health` stays `"ok"` while unloaded — an unloaded model is a
+normal resting state, not ill health, and reporting otherwise would flap the
+container's healthcheck every time the timer fired.
+
 **Cloned-voice pacing is set downstream, not by the reference.** A clone takes
 timbre from `audio_prompt_path` but largely not its speaking rate — measured
 2026-07-28, dropping a reference 19% slower moved the output only 7%. Record

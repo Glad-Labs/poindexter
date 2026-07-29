@@ -1407,6 +1407,63 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
+    async def _unload_chatterbox(self, hard: bool = False):
+        """Tell the chatterbox TTS sidecar to release its model's VRAM.
+
+        Chatterbox holds VRAM outside this scheduler entirely — it isn't a
+        lock owner, it just caches its model after narrating. Before the
+        idle-unload existed it squatted through the whole subsequent video
+        render (Glad-Labs/poindexter#940: dispatch_media_pipeline deferring on
+        "free VRAM 24.0 GB < 25 GB required"). The sidecar unloads itself on
+        an idle timer; this is the on-demand lever for the reclaim path, for
+        when the render can't wait out the timeout.
+
+        Unlike image-gen, a hard unload here DOES answer before exiting (the
+        sidecar defers its ``os._exit`` briefly), so a reset connection is a
+        real failure rather than the expected path.
+
+        Best-effort: the `tts-hq` profile is opt-in, so the sidecar being
+        absent is the common case, not a bug.
+        """
+        from services.bootstrap_defaults import DEFAULT_CHATTERBOX_URL
+
+        # One source of truth for where chatterbox lives: the provider's
+        # base_url, minus the OpenAI-shaped `/v1` suffix that /unload isn't
+        # under. `or` (not a get-default) because the app_settings unset
+        # sentinel is '', which would otherwise yield a bare "/unload".
+        base = _sc_get(
+            "plugin.tts_provider.chatterbox.base_url", DEFAULT_CHATTERBOX_URL,
+        ) or DEFAULT_CHATTERBOX_URL
+        root = base.rstrip("/").removesuffix("/v1")
+        try:
+            client = self._get_http_client()
+            resp = await client.post(
+                f"{root}/unload", timeout=15, json={"hard": hard},
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    "[GPU] chatterbox model unloaded via /unload%s (%s)",
+                    " (hard)" if hard else "", resp.text[:120],
+                )
+            else:
+                logger.warning(
+                    "[GPU] chatterbox /unload returned %d: %s",
+                    resp.status_code, (getattr(resp, "text", "") or "")[:200],
+                )
+        except Exception as exc:
+            # silent-ok: a transport failure here means the sidecar isn't
+            # listening, and `tts-hq` is an opt-in compose profile — on most
+            # installs it is never running, so warning would be pure noise on
+            # every reclaim. A chatterbox that IS up but failing to unload
+            # answers with a non-200 and takes the warning branch above, and
+            # a persistent leak shows up as VRAM on the Hardware & Power
+            # dashboard. Same posture as _unload_image_gen (poindexter#455).
+            logger.debug(
+                "[GPU] chatterbox /unload call failed (sidecar likely not "
+                "running — tts-hq is opt-in): %s: %s",
+                type(exc).__name__, exc,
+            )
+
     @property
     def is_busy(self) -> bool:
         return self._lock.locked()

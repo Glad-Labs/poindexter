@@ -288,10 +288,54 @@ async def test_attempt_vram_reclaim_calls_ollama_evict_and_hard_image_gen_unload
     ollama_mock = AsyncMock()
     image_gen_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", ollama_mock), \
-         patch.object(real_gpu, "_unload_image_gen", image_gen_mock):
+         patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
+         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     ollama_mock.assert_awaited_once()
     image_gen_mock.assert_awaited_once_with(hard=True)
+
+
+@pytest.mark.asyncio
+async def test_attempt_vram_reclaim_also_unloads_chatterbox():
+    """Glad-Labs/poindexter#940: the chatterbox TTS sidecar caches its model
+    after narrating and is NOT a GPU-lock owner, so before this it sat outside
+    every reclaim lever and squatted through the following video render
+    (observed deferring on "free VRAM 24.0 GB < 25 GB required").
+
+    Soft, not hard: what it holds is the model, not a wedged CUDA context, so
+    there's no reason to bounce the process and pay a cold reload."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    chatterbox_mock = AsyncMock()
+    with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
+         patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
+         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    chatterbox_mock.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_attempt_vram_reclaim_survives_a_failing_lever():
+    """Every callee is best-effort by contract, so one raising must neither
+    abort the reclaim nor bubble into the cycle.
+
+    This is load-bearing for the lever ORDER: chatterbox runs last, so before
+    the levers were isolated a stray error in the Ollama evict would silently
+    skip it — costing exactly the reclaim this path was extended to gain."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    image_gen_mock = AsyncMock()
+    chatterbox_mock = AsyncMock()
+    with patch.object(
+            real_gpu, "_unload_ollama_models",
+            AsyncMock(side_effect=RuntimeError("ollama unreachable"))), \
+         patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
+         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())  # must not raise
+
+    # The levers AFTER the failure still ran.
+    image_gen_mock.assert_awaited_once_with(hard=True)
+    chatterbox_mock.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio

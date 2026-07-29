@@ -1260,11 +1260,14 @@ services:
       # representative — per-chunk overhead across a real script makes it
       # ~8x. Don't size this from a one-sentence benchmark.)
       #
-      # KNOWN GAP (tracked separately): this sidecar has no idle-unload, so
-      # unlike wan-server (WAN_IDLE_TIMEOUT_S) and image-gen it holds VRAM
-      # after narration and squats through the whole subsequent video
-      # render. That's the real contention fix. See Glad-Labs/poindexter#907.
       TTS_DEVICE: "${CHATTERBOX_TTS_DEVICE:-cuda}"
+      # Idle unload (Glad-Labs/poindexter#940) — release the model after this
+      # many seconds of no synthesis, so narration stops squatting VRAM
+      # through the video render that follows it. Mirrors wan-server's
+      # WAN_IDLE_TIMEOUT_S. 0 disables, to keep the model hot at the cost of
+      # holding its VRAM. The GPU scheduler's reclaim path can also force it
+      # via POST /unload when a render can't wait out the timer.
+      CHATTERBOX_IDLE_TIMEOUT_S: "${CHATTERBOX_IDLE_TIMEOUT_S:-120}"
       # Torch CPU thread pool — only load-bearing on a TTS_DEVICE=cpu run.
       # Measured scaling on a 32-core host: 8 threads = RTF 7.08x per
       # sentence, 16 = 5.50x, 32 = 3.26x. Keep in agreement with `cpus`.
