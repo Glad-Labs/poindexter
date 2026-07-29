@@ -154,6 +154,8 @@ async def test_featured_prefers_image_gen(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_featured_falls_back_to_pexels(monkeypatch):
+    """Stock fallback is opt-in as of 2026-07-28 — `allow_stock` (from
+    `rebuild-images --allow-stock`) is the per-run override that permits it."""
     async def fake_try_image_gen(*a, **kw):
         return None
 
@@ -163,9 +165,32 @@ async def test_featured_falls_back_to_pexels(monkeypatch):
     monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
     monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
-        {"topic": "GPU VRAM budgets", "image_service": object()}
+        {"topic": "GPU VRAM budgets", "image_service": object(), "allow_stock": True}
     )
     assert out == {"featured_image_url": "https://pexels/p.jpg", "featured_source": "pexels"}
+
+
+@pytest.mark.asyncio
+async def test_featured_refuses_pexels_without_allow_stock(monkeypatch):
+    """Without the override the atom must not reach for stock at all — this
+    site was missed by the first pass of the gate and could still ship a
+    silent stock hero while the content-pipeline paths refused to."""
+    searched = {"called": False}
+
+    async def fake_try_image_gen(*a, **kw):
+        return None
+
+    async def fake_try_pexels(*a, **kw):
+        searched["called"] = True
+        return ("https://pexels/p.jpg", "Ada")
+
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
+    out = await content_rebuild_featured_image.run(
+        {"topic": "GPU VRAM budgets", "image_service": object()}
+    )
+    assert out == {"featured_image_url": "", "featured_source": "none"}
+    assert searched["called"] is False
 
 
 @pytest.mark.asyncio

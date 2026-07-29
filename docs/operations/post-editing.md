@@ -119,6 +119,14 @@ regenerates. Prefers generated (SDXL/Z-Image) images.
   back to a Pexels stock photo, the command **aborts and changes nothing**,
   naming the affected slots. Pass `--allow-stock` to accept the fallback. (A slot
   that produces _nothing at all_ always aborts, even with `--allow-stock`.)
+- `--allow-stock` is a **per-run override of the global
+  `image_stock_fallback_enabled`** (default `false`, 2026-07-28). With the
+  global off, the image atoms won't produce a stock substitute at all — so the
+  flag has to reach the generation sites, not just relax the gate, or it would
+  quietly stop meaning what it says. Either way a stock slot emits a
+  warn-severity `image_gen_downgrade` finding: an opted-in downgrade is still a
+  downgrade, and this whole class of defect stayed invisible for weeks because
+  the fallback reported success.
 - Re-planning may change **how many** inline images the post has — it is a fresh
   plan, not a 1-for-1 swap.
 - The multi-image run is longer than a single `regen-image`; the CLI wait is

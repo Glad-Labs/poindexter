@@ -436,6 +436,32 @@ async def _try_image_gen(
         return None
 
 
+def stock_fallback_enabled(site_config: Any, *, allow_stock: bool = False) -> bool:
+    """Whether a failed image-gen render may fall back to stock photography.
+
+    Default OFF (``image_stock_fallback_enabled``). Owned imagery is the brand
+    asset — a stock photo dropped in silently is a downgrade the pipeline never
+    disclosed, and it ran that way for weeks unnoticed. Kept as a setting rather
+    than deleted so a fork that wants stock can just flip it on.
+
+    ``allow_stock`` is the PER-RUN override: the image_rebuild path already
+    takes an explicit operator opt-in (``poindexter tasks rebuild-images
+    --allow-stock``), and that opt-in has to actually reach the generation
+    sites. Without it the flag would only relax the rebuild GATE while the
+    atoms silently refused to produce stock at all — a flag that no longer
+    does what its help text says.
+
+    Note this gates the FALLBACK only. Stock chosen deliberately — the video
+    director picking Pexels for a shot that needs real photography — is a
+    different path and is unaffected.
+    """
+    if allow_stock:
+        return True
+    if site_config is None:
+        return False
+    return site_config.get_bool("image_stock_fallback_enabled", False)
+
+
 async def _render_one_with_retry(
     client: httpx.AsyncClient,
     *,
@@ -857,6 +883,7 @@ __all__ = [
     "normalize_from_router",
     "plan_and_inject_placeholders",
     "record_inline_image_asset",
+    "stock_fallback_enabled",
     "try_image_gen",
     "try_pexels",
 ]

@@ -56,7 +56,11 @@ ATOM_META = AtomMeta(
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    from modules.content.atoms._image_helpers import try_image_gen, try_pexels
+    from modules.content.atoms._image_helpers import (
+        stock_fallback_enabled,
+        try_image_gen,
+        try_pexels,
+    )
 
     topic = state.get("topic", "") or ""
     plan = state.get("featured_image_plan")
@@ -77,6 +81,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         logger.info("[content.rebuild_featured_image] image_gen hero: %s", url[:80])
         return {"featured_image_url": url, "featured_source": "image_gen"}
 
+    # Stock fallback is opt-in (2026-07-28): the global
+    # `image_stock_fallback_enabled` default-OFF, overridden per run by the
+    # operator's explicit `rebuild-images --allow-stock`. Without the per-run
+    # override that flag would relax the rebuild GATE while this atom quietly
+    # refused to produce stock at all.
+    allow_stock = bool(state.get("allow_stock", False))
+    if not stock_fallback_enabled(site_config, allow_stock=allow_stock):
+        logger.warning(
+            "[content.rebuild_featured_image] image-gen produced nothing and "
+            "stock fallback is disabled (desc=%r)", desc[:80],
+        )
+        _emit_rebuild_downgrade_finding(
+            source="none", task_id=task_id, topic=topic, allow_stock=allow_stock,
+        )
+        return {"featured_image_url": "", "featured_source": "none"}
+
     image_service = state.get("image_service")
     if image_service is None:
         try:
@@ -92,10 +112,53 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         pex = await try_pexels(desc, topic, image_service)
         if pex:
             logger.info("[content.rebuild_featured_image] Pexels hero: %s", pex[0][:80])
+            _emit_rebuild_downgrade_finding(
+                source="pexels", task_id=task_id, topic=topic, allow_stock=allow_stock,
+            )
             return {"featured_image_url": pex[0], "featured_source": "pexels"}
 
     logger.warning("[content.rebuild_featured_image] no featured image produced (desc=%r)", desc[:80])
+    _emit_rebuild_downgrade_finding(
+        source="none", task_id=task_id, topic=topic, allow_stock=allow_stock,
+    )
     return {"featured_image_url": "", "featured_source": "none"}
+
+
+def _emit_rebuild_downgrade_finding(
+    *, source: str, task_id: Any, topic: str, allow_stock: bool,
+) -> None:
+    """Surface a rebuilt hero that did not come from image-gen.
+
+    Counterpart to the findings on the content-pipeline paths. The rebuild
+    gate atom already fails the RUN loud on stock, but only when the operator
+    did not pass --allow-stock; with the flag set the downgrade would
+    otherwise pass entirely unrecorded.
+    """
+    from utils.findings import emit_finding
+
+    if source == "pexels":
+        title = "Rebuilt hero fell back to stock — image-gen failed"
+        body = (
+            f"The image_rebuild run for task {task_id} produced a stock hero "
+            "because image-gen returned nothing (operator passed --allow-stock)."
+        )
+    else:
+        title = "Rebuilt hero missing — image-gen produced nothing"
+        body = (
+            f"The image_rebuild run for task {task_id} produced no hero: "
+            "image-gen returned nothing and stock fallback was "
+            f"{'permitted but also empty' if allow_stock else 'disabled'}."
+        )
+    emit_finding(
+        source="content.rebuild_featured_image",
+        kind="image_gen_downgrade",
+        title=title,
+        body=f"{body}\n\nTopic: {topic}",
+        severity="warn",
+        dedup_key=f"rebuild-hero-downgrade:{task_id}",
+        extra={"task_id": str(task_id or ""), "source": source,
+               "allow_stock": allow_stock},
+    )
 
 
 __all__ = ["ATOM_META", "run"]

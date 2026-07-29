@@ -59,6 +59,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from modules.content.atoms._image_helpers import (
         batch_generate_inline_image_urls,
         record_inline_image_asset,
+        stock_fallback_enabled,
         try_pexels,
     )
     from services.image_service import get_image_service
@@ -69,6 +70,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     site_config = state.get("site_config")
     platform = state.get("platform")
     image_service = state.get("image_service") or get_image_service(site_config=site_config)  # type: ignore[arg-type]
+    # Per-run override from `rebuild-images --allow-stock`; absent (False) on
+    # the ordinary canonical_blog path, where the global setting governs.
+    allow_stock = bool(state.get("allow_stock", False))
 
     # poindexter#733 / poindexter#841 — one Ollama lock + one image-gen lock
     # for ALL plans in this call, instead of 2N per-plan lock acquisitions.
@@ -113,7 +117,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 },
             )
 
-        if img_url is None and _stock_fallback_enabled(site_config):
+        if img_url is None and stock_fallback_enabled(
+            site_config, allow_stock=allow_stock,
+        ):
             # Strategy 2: Pexels — only when the operator has opted in.
             pexels = await try_pexels(search_query, topic, image_service)
             if pexels is not None:
@@ -151,23 +157,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         })
 
     return {"image_results": image_results}
-
-
-def _stock_fallback_enabled(site_config: Any) -> bool:
-    """Whether a failed image-gen render may fall back to stock photography.
-
-    Default OFF. Owned imagery is the brand asset — a stock photo dropped in
-    silently is a downgrade the pipeline never disclosed, and it ran that way
-    for weeks unnoticed. Kept as a setting rather than deleted so a fork that
-    wants stock can just flip it on.
-
-    Note this gates the FALLBACK only. Stock chosen deliberately — the video
-    director picking Pexels for a shot that needs real photography — is a
-    different path and is unaffected.
-    """
-    if site_config is None:
-        return False
-    return site_config.get_bool("image_stock_fallback_enabled", False)
 
 
 def _emit_downgrade_finding(
