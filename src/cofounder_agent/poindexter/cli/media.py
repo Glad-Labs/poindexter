@@ -525,3 +525,106 @@ def cmd_tts_bakeoff(script_path, engines, voice, out_dir, host):
     (out_root / "manifest.json").write_text(json.dumps(rows, indent=2))
     click.secho(f"\n{len(rows)} engine(s) rendered -> {out_root}", fg="cyan", bold=True)
     click.echo("Listen and compare, then set the winner as podcast_tts_engine (Phase 2).")
+
+
+# ---------------------------------------------------------------------------
+# demos — VHS-recorded CLI footage for the video shot list (#937)
+# ---------------------------------------------------------------------------
+
+
+@media_group.group(name="demos")
+def demos_group():
+    """Record CLI demo clips for use as video shots.
+
+    Tapes live in ``src/cofounder_agent/demo_tapes/`` and are code-reviewed,
+    not DB-editable: a tape is a shell script, so a runtime-editable tape
+    would be arbitrary code execution inside the worker.
+    """
+
+
+@demos_group.command(name="list")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def cmd_demos_list(as_json: bool):
+    """List the demo catalog — what the video director can choose from."""
+    from services.demo_clips import DemoTapeError, load_tapes
+
+    try:
+        tapes = load_tapes()
+    except DemoTapeError as e:
+        click.secho(f"Catalog error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if as_json:
+        click.echo(json.dumps([
+            {
+                "slug": t.slug, "title": t.title, "description": t.description,
+                "category": t.category, "commands": t.commands,
+            }
+            for t in tapes
+        ], indent=2))
+        return
+
+    if not tapes:
+        click.echo("(no demo tapes)")
+        return
+
+    click.secho(f"Demo tapes: {len(tapes)}", fg="cyan", bold=True)
+    click.echo()
+    for t in tapes:
+        click.secho(f"  {t.slug:22} [{t.category}]", fg="cyan")
+        click.echo(f"    {'; '.join(t.commands)}")
+
+
+@demos_group.command(name="bake")
+@click.option("--slug", "slugs", multiple=True, help="Bake only these tapes (repeatable).")
+@click.option("--out", "out_dir", default=None, help="Output directory for the MP4s.")
+@click.option("--timeout", type=int, default=300, show_default=True, help="Per-tape seconds.")
+def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
+    """Record tapes to MP4.
+
+    Requires ``vhs`` + ``ttyd`` on PATH (baked into the worker image). A tape
+    whose command produces no matching output fails here rather than shipping
+    an empty clip into a video.
+    """
+    from services.demo_clips import DemoTapeError, bake_tape, load_tapes
+
+    try:
+        tapes = load_tapes()
+    except DemoTapeError as e:
+        click.secho(f"Catalog error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if slugs:
+        wanted = set(slugs)
+        unknown = wanted - {t.slug for t in tapes}
+        if unknown:
+            click.secho(f"Unknown slug(s): {sorted(unknown)}", fg="red", err=True)
+            sys.exit(2)
+        tapes = [t for t in tapes if t.slug in wanted]
+
+    target = Path(out_dir or os.getenv("POINDEXTER_DEMO_CLIP_DIR") or "/tmp/poindexter-demo-clips")
+    click.secho(f"Baking {len(tapes)} tape(s) -> {target}", fg="cyan", bold=True)
+
+    async def _go():
+        return [
+            await bake_tape(t, out_dir=target, timeout_s=timeout)
+            for t in tapes
+        ]
+
+    results = _run(_go())
+    failures = [r for r in results if not r.success]
+    click.echo()
+    for r in results:
+        if r.success:
+            click.secho(f"  ok    {r.slug:22} {r.duration_s:5.2f}s", fg="cyan")
+        else:
+            click.secho(f"  FAIL  {r.slug:22} {r.error}", fg="red")
+
+    click.echo()
+    click.secho(
+        f"{len(results) - len(failures)}/{len(results)} baked",
+        fg="red" if failures else "cyan",
+        bold=True,
+    )
+    if failures:
+        sys.exit(1)

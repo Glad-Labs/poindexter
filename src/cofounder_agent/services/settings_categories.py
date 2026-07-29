@@ -186,6 +186,10 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("short_video", "media"),
     ("inline_image", "media"),
     ("video", "media"),
+    # VHS-recorded CLI footage used as a video shot source (poindexter#937).
+    # Sits before the bare "demo" prefix would ever be tempting: these are
+    # media-lane rendering knobs, not demo/sample-data toggles.
+    ("demo_clip", "media"),
     ("podcast", "media"),
     ("voice", "media"),
     ("tts", "media"),

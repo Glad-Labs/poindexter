@@ -70,6 +70,35 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# VHS + ttyd — the demo-clip recorder (Glad-Labs/poindexter#937). VHS drives
+# a headless terminal and screen-records it, turning `demo_tapes/*.tape` into
+# real CLI footage for the video shot list. ffmpeg (installed above) is VHS's
+# other hard dependency.
+#
+# VHS comes from Charm's apt repo, same keyring-then-repo recipe as gh above.
+# ttyd is NOT packaged in Debian trixie, so it comes from its GitHub release
+# as a static binary — the method ttyd itself documents.
+#
+# fonts-jetbrains-mono supplies the recording typeface. Without a monospace
+# font installed, VHS falls back to a proportional face and the terminal
+# columns stop aligning, which looks broken on camera rather than failing.
+#
+# NOTE for anyone running this outside the compose stack: VHS drives headless
+# Chromium, whose sandbox needs `--security-opt seccomp=unconfined`. Without
+# it the zygote aborts with a stack trace that does not mention seccomp.
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://repo.charm.sh/apt/gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/charm.gpg \
+    && chmod go+r /etc/apt/keyrings/charm.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
+        > /etc/apt/sources.list.d/charm.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends vhs fonts-jetbrains-mono \
+    && curl -fsSL -o /usr/local/bin/ttyd \
+        https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 \
+    && chmod +x /usr/local/bin/ttyd \
+    && rm -rf /var/lib/apt/lists/*
+
 # Mark /app as a globally-safe git directory.
 #
 # The dev_diary topic source bind-mounts the host's .git into /app/.git

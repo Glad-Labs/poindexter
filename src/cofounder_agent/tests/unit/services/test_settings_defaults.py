@@ -302,12 +302,15 @@ class TestRegistryShape:
     def test_registry_size_in_expected_range(self):
         """Sanity floor/ceiling — caught accidental wholesale deletes."""
         from services.settings_defaults import DEFAULTS
-        # ~601 today; allow a generous range so adding new keys doesn't
-        # break the test on every PR (the floor still catches a wholesale
-        # delete, the ceiling a runaway/double-counting extractor bug).
-        assert 150 <= len(DEFAULTS) <= 800, (
+        # ~812 today (was ~601 when this was written). The range is meant to
+        # be generous — the floor catches a wholesale delete, the ceiling a
+        # runaway/double-counting extractor bug — but organic growth had
+        # crept to 797 against an 800 ceiling, so the next handful of keys
+        # tripped it. Headroom restored rather than nudged, since a
+        # ceiling that needs raising every PR is measuring the wrong thing.
+        assert 150 <= len(DEFAULTS) <= 1200, (
             f"Registry size {len(DEFAULTS)} outside expected range "
-            f"(150-800). Did the AST extractor regression?"
+            f"(150-1200). Did the AST extractor regression?"
         )
 
 

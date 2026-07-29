@@ -507,6 +507,38 @@ DEFAULTS: dict[str, str] = {
     # rendered with NO burned-in captions (2026-06-21 validation). Set
     # 'whisper_local' to use a locally-installed whisper.cpp instead. Read via
     # services/caption_providers/get_caption_provider.
+    # --- demo clips (VHS-recorded CLI footage; Glad-Labs/poindexter#937) ---
+    # Real terminal recordings of the `poindexter` CLI, used as video shot
+    # sources instead of stock footage. Tapes live in `demo_tapes/` (code, not
+    # DB — a tape is a shell script). These keys are the BRAND surface: an
+    # operator restyles their clips here without touching a tape.
+    #
+    # Font size drives terminal COLUMNS (see COLUMNS_AT_FONT_SIZE in
+    # services/demo_clips.py) — dropping it too low shrinks text below video
+    # legibility; raising it wraps wide tables mid-word. 34 fits ~88 columns
+    # at 1920px, which suits most single-command output.
+    'demo_clip_font_family': 'JetBrains Mono',
+    'demo_clip_font_size': '34',
+    'demo_clip_width': '1920',
+    'demo_clip_height': '1080',
+    'demo_clip_padding': '60',
+    'demo_clip_framerate': '30',
+    'demo_clip_typing_speed': '45ms',
+    # Palette mirrors the CLI's colourblind-safe status roles
+    # (poindexter/cli/_status_style.py) so a recording reads the same way the
+    # live terminal does. ANSI green is deliberately mapped onto the amber
+    # 'active' colour: nothing in the CLI's semantic maps emits green any
+    # more, and any third-party green that slips through should not land on
+    # the red-green confusion pair on camera.
+    'demo_clip_theme_background': '#18181B',
+    'demo_clip_theme_foreground': '#E4E4E7',
+    'demo_clip_theme_accent': '#22D3EE',
+    'demo_clip_theme_accent_bright': '#67E8F9',
+    'demo_clip_theme_active': '#FBBF24',
+    'demo_clip_theme_attention': '#C084FC',
+    'demo_clip_theme_failure': '#F87171',
+    'demo_clip_theme_dim': '#8B8B93',
+
     'video_caption_engine': 'speaches',
     # Speaches caption provider config (plugin.caption_provider.speaches.*). The
     # base_url is the same OpenAI-compatible host the TTS path already uses; the
@@ -2736,6 +2768,21 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'demo_clip_font_family': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_font_size': {'owner': 'demo_clips', 'value_type': 'integer'},
+    'demo_clip_width': {'owner': 'demo_clips', 'value_type': 'integer'},
+    'demo_clip_height': {'owner': 'demo_clips', 'value_type': 'integer'},
+    'demo_clip_padding': {'owner': 'demo_clips', 'value_type': 'integer'},
+    'demo_clip_framerate': {'owner': 'demo_clips', 'value_type': 'integer'},
+    'demo_clip_typing_speed': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_background': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_foreground': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_accent': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_accent_bright': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_active': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_attention': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_failure': {'owner': 'demo_clips', 'value_type': 'string'},
+    'demo_clip_theme_dim': {'owner': 'demo_clips', 'value_type': 'string'},
     'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
     'plugin.caption_provider.speaches.enabled': {
         'owner': 'caption_providers', 'value_type': 'boolean',
