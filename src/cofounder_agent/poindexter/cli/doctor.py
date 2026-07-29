@@ -37,6 +37,8 @@ from services.doctor import (
     run_doctor,
 )
 
+from ._status_style import ACTIVE, FAILURE, HEALTH_STATUS, SUCCESS
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -130,24 +132,24 @@ def _apply_fixes(report: DoctorReport) -> list[tuple[str, bool, str]]:
 # Rendering.
 # ---------------------------------------------------------------------------
 
-_STATUS_COLOR = {
-    "ok": "green",
-    "warn": "yellow",
-    "fail": "red",
-    "suppressed": "white",
-    "stale": "magenta",
-}
+_STATUS_COLOR = HEALTH_STATUS
 
 # Render groups in this order so the eye lands on the worst first.
 _GROUP_ORDER = ("fail", "warn", "suppressed", "stale", "ok")
 
 
 def _score_color(score: int) -> str:
+    """Band the 0-100 score onto the shared status roles.
+
+    Same colourblind constraint as ``_STATUS_COLOR`` — this is the first line
+    of the report, so a green-vs-red score is exactly the signal that has to
+    survive red-green deficiency.
+    """
     if score >= 90:
-        return "green"
+        return SUCCESS
     if score >= 70:
-        return "yellow"
-    return "red"
+        return ACTIVE
+    return FAILURE
 
 
 def _render_human(report: DoctorReport) -> None:

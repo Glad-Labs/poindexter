@@ -16,6 +16,7 @@ from typing import Any
 import click
 
 from ._api_client import WorkerClient
+from ._status_style import TASK_STATUS, color_for
 
 
 def _run(coro):
@@ -109,18 +110,7 @@ def _print_task_one_line(t: dict) -> None:
     quality = t.get("quality_score")
     quality_str = f"Q:{quality:<5}" if quality is not None else "Q:-   "
     title = t.get("title") or t.get("task_name") or t.get("topic") or "?"
-    color = {
-        "pending": "white",
-        "in_progress": "yellow",
-        "awaiting_approval": "cyan",
-        "approved": "bright_green",
-        "published": "green",
-        "rejected": "red",
-        "rejected_retry": "yellow",
-        "rejected_final": "red",
-        "failed": "red",
-        "cancelled": "white",
-    }.get(status, "white")
+    color = color_for(TASK_STATUS, status)
     click.secho(
         f"  {tid}  {status:<18} {quality_str}  {title[:70]}",
         fg=color,

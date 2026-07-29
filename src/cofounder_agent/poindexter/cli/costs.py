@@ -9,6 +9,7 @@ import sys
 import click
 
 from ._api_client import WorkerClient
+from ._status_style import BUDGET_STATUS, color_for
 
 
 def _run(coro):
@@ -41,9 +42,7 @@ def costs_budget(json_output: bool) -> None:
         return
 
     status = d.get("status", "?")
-    status_color = {"healthy": "green", "warning": "yellow", "critical": "red"}.get(
-        status, "white"
-    )
+    status_color = color_for(BUDGET_STATUS, status)
     click.secho(f"Status: {status}", fg=status_color, bold=True)
     click.echo(f"  monthly_budget     ${d.get('monthly_budget', '?')}")
     click.echo(f"  amount_spent       ${d.get('amount_spent', '?')}")

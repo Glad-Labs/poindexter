@@ -14,6 +14,7 @@ import sys
 import click
 
 from ._api_client import WorkerClient
+from ._status_style import POST_STATUS, color_for
 
 
 def _run(coro):
@@ -102,12 +103,7 @@ def _print_post_summary(p: dict) -> None:
     pid = (p.get("id") or "?")[:8]
     slug = p.get("slug") or "-"
     title = p.get("title") or "(no title)"
-    color = {
-        "published": "green",
-        "draft": "white",
-        "archived": "bright_black",
-        "scheduled": "cyan",
-    }.get(status, "white")
+    color = color_for(POST_STATUS, status)
     click.secho(f"  {pid}  {status:<10}  {title[:65]}", fg=color)
     click.secho(f"    /posts/{slug}", fg="bright_black")
 
