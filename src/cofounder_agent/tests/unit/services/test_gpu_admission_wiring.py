@@ -233,18 +233,42 @@ async def test_priority_reaches_queue_mirror():
 
 
 # ---------------------------------------------------------------------------
-# Grep-proof of inertness (Task B6): no production call site passes the
-# contract kwarg yet — P2 migrates callers group by group, each in its own PR.
+# Migrated-caller allowlist (was Task B6's zero-caller grep-proof).
+#
+# P1 shipped this asserting ZERO callers, to prove inertness. P2 migrates
+# callers group by group, so the guard becomes an ALLOWLIST rather than
+# disappearing: opting a new caller group into the contract still requires a
+# deliberate edit here, which is the point — a budget is a behaviour change
+# (work can now be skipped) and must never arrive as a drive-by kwarg.
+#
+# To migrate a group: add its files below IN THE SAME PR as the call-site
+# change, and say what the budget is and why the caller can afford to skip.
 # ---------------------------------------------------------------------------
 
+# file suffix -> why this caller may skip when the GPU is busy
+_MIGRATED_CALLERS = {
+    # P2 group 1 (2026-07-29) — fail-soft QA rails. Advisory by contract: a
+    # skipped rail yields sentinel scores + a qa_rail_gpu_busy_skip finding and
+    # never blocks publish. Budget gpu_sched_qa_rail_max_wait_s (45s) sits above
+    # ordinary LLM holds and below a render hold, so rails wait behind normal
+    # traffic and skip behind image/video renders (soak: image_gen p90 ~229s vs
+    # qa_ragas_judge's own p90 18.4s).
+    "services/ragas_eval.py": "fail-soft rail — sentinel scores + finding",
+    "services/deepeval_rails.py": "fail-soft rail — advisory pass + finding",
+    # The seam itself: dispatch_complete forwards whatever its caller declared.
+    "services/llm_providers/dispatcher.py": "contract pass-through, no policy",
+}
 
-def test_no_production_call_site_passes_max_wait_s_yet():
+
+def test_only_allowlisted_call_sites_pass_max_wait_s():
     root = Path(__file__).resolve().parents[3]  # src/cofounder_agent
-    allowed_suffixes = ("services/gpu_scheduler.py", "services/gpu_admission.py")
+    infra_suffixes = ("services/gpu_scheduler.py", "services/gpu_admission.py")
     offenders = []
     for path in root.rglob("*.py"):
         rel = path.relative_to(root).as_posix()
-        if rel.startswith("tests/") or rel.endswith(allowed_suffixes):
+        if rel.startswith("tests/") or rel.endswith(infra_suffixes):
+            continue
+        if any(rel.endswith(s) for s in _MIGRATED_CALLERS):
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
@@ -253,7 +277,21 @@ def test_no_production_call_site_passes_max_wait_s_yet():
         if "max_wait_s=" in text:
             offenders.append(rel)
     assert offenders == [], (
-        f"P1 ships with ZERO contract callers; these files pass max_wait_s= "
-        f"outside the scheduler/admission modules: {offenders}. Caller "
-        "migration is P2 — one caller group per PR, informed by the soak."
+        f"These files pass max_wait_s= but are not in _MIGRATED_CALLERS: "
+        f"{offenders}. Opting a caller into the admission contract lets its "
+        "work be SKIPPED when the GPU is busy — add it to the allowlist in "
+        "the same PR, with the budget and why that caller can afford to skip."
     )
+
+
+def test_every_allowlisted_caller_actually_uses_the_contract():
+    """The allowlist must not rot into a list of files that no longer opt in —
+    a stale entry would silently re-permit an unreviewed migration."""
+    root = Path(__file__).resolve().parents[3]
+    for suffix in _MIGRATED_CALLERS:
+        path = root / suffix
+        assert path.exists(), f"allowlisted file no longer exists: {suffix}"
+        assert "max_wait_s=" in path.read_text(encoding="utf-8", errors="ignore"), (
+            f"{suffix} is allowlisted as a migrated caller but no longer passes "
+            "max_wait_s= — remove it from _MIGRATED_CALLERS."
+        )

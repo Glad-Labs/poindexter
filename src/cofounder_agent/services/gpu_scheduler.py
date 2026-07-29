@@ -196,6 +196,26 @@ def _cfg_float(key: str, default: float) -> float:
         return default
 
 
+def qa_rail_wait_budget_s() -> float | None:
+    """Wait budget (s) for fail-soft QA rails, or ``None`` to stay legacy.
+
+    poindexter#914 P2 caller migration. QA rails are the first group to opt
+    into admission because they are the cheapest to skip and the most
+    expensive to block: a rail queued behind an image render waits on a
+    ~230s p90 hold (``gpu_lease_stats``, 07-26..29 soak) and may burn the
+    full 900s lock ceiling, while the rail's own work is seconds — the
+    ``qa_ragas_judge`` p90 over 336 samples is 18.4s.
+
+    ``0`` disables the budget (back to the unbounded legacy contract), which
+    is also the escape hatch if skipping proves too aggressive in practice.
+    The default is deliberately larger than a typical writer hold but smaller
+    than an image-render hold, so a rail waits behind ordinary LLM traffic and
+    skips behind a render.
+    """
+    budget = _cfg_float("gpu_sched_qa_rail_max_wait_s", 45.0)
+    return budget if budget > 0 else None
+
+
 def _cfg_bool(key: str, default: bool) -> bool:
     """Read a bool from site_config (DB) with fallback.
 

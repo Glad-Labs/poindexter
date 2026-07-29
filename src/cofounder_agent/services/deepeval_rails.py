@@ -74,6 +74,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from services.gpu_admission import GpuBusyError
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -220,6 +221,11 @@ def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
                 # (LiteLLM maps it to Ollama's format=json) — same
                 # constrained-decoding fix as the Ragas rail (#1910).
                 kwargs["response_format"] = {"type": "json_object"}
+            # poindexter#914 P2 — bounded wait (see qa_rail_wait_budget_s).
+            # Fail-soft rail: GpuBusyError surfaces as a degraded rail with a
+            # finding, not a fabricated pass.
+            from services.gpu_scheduler import qa_rail_wait_budget_s
+
             completion = await dispatch_complete(
                 pool=self._pool,
                 messages=[{"role": "user", "content": prompt}],
@@ -227,6 +233,8 @@ def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
                 tier="standard",
                 phase="qa_deepeval_judge",
                 temperature=0.2,
+                max_wait_s=qa_rail_wait_budget_s(),
+                priority="background",
                 **kwargs,
             )
             text = (getattr(completion, "text", "") or "").strip()
@@ -381,12 +389,59 @@ def evaluate_brand_fabrication(
             "deepeval-not-installed", str(e), rail="brand_fabrication",
         )
         return True, None, "deepeval-not-installed"
+    except GpuBusyError as busy:
+        # poindexter#914 P2 — a contention skip is not a rail fault. Same
+        # fail-open result (advisory pass, score None), but reported as its own
+        # kind so a burst of GPU pressure can't masquerade as deepeval breaking.
+        eta = f"{busy.eta_seconds:.0f}s" if busy.eta_seconds is not None else "unknown"
+        logger.info(
+            "[deepeval] brand metric skipped — GPU admission rejected "
+            "(%s, holder ETA ~%s)", busy.reason, eta,
+        )
+        _surface_deepeval_gpu_busy(busy, rail="brand_fabrication")
+        return True, None, f"gpu-busy: {busy.reason}"
     except Exception as e:
         logger.warning("[deepeval] Unexpected error in brand metric: %s", e, exc_info=True)
         _surface_deepeval_degraded(
             f"deepeval-error: {type(e).__name__}", str(e), rail="brand_fabrication",
         )
         return True, None, f"deepeval-error: {type(e).__name__}"
+
+
+def _surface_deepeval_gpu_busy(busy: Any, *, rail: str) -> None:
+    """Report a deepeval rail that skipped because admission refused the wait.
+
+    Counterpart to ``ragas_eval._surface_gpu_busy_skip`` — see that docstring
+    for why contention gets its own finding kind instead of reusing
+    ``qa_rail_degraded``.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        eta = f"{busy.eta_seconds:.0f}s" if busy.eta_seconds is not None else "unknown"
+        emit_finding(
+            source="deepeval_rails",
+            kind="qa_rail_gpu_busy_skip",
+            severity="info",
+            title=f"deepeval {rail} rail skipped — GPU busy beyond its budget",
+            body=(
+                f"GPU admission refused the wait ({busy.reason}; holder ETA "
+                f"~{eta}), so the deepeval {rail} rail skipped rather than "
+                "queueing behind a long render. The rail is advisory and fails "
+                "open, so publish is not blocked. Persistent skips mean render "
+                "pressure is crowding out QA."
+            ),
+            dedup_key=f"qa_rail_gpu_busy_skip:deepeval:{rail}",
+            extra={"rail": rail, "reason": busy.reason,
+                   "eta_seconds": busy.eta_seconds},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: emit_finding is fire-and-forget
+        # by contract (utils.findings docstring says it never raises); this only
+        # fires if that contract itself breaks. Reporting a skip must never
+        # become a new failure mode inside a rail that is already degrading.
+        # Mirrors ragas_eval._surface_gpu_busy_skip and the sibling guard in
+        # _surface_deepeval_degraded below.
+        logger.debug("[deepeval] gpu-busy-skip finding emit skipped", exc_info=True)
 
 
 def _surface_deepeval_degraded(reason: str, detail: str, *, rail: str) -> None:

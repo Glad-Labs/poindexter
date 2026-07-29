@@ -616,6 +616,21 @@ DEFAULTS: dict[str, str] = {
     # delay but never starve a background job. 0 disables aging (strict class
     # ordering). Read lazily at each wake, so changes apply without restart.
     'gpu_sched_aging_seconds': '300',
+    # Wait budget (seconds) for fail-soft QA rails — poindexter#914 P2, the
+    # first caller group migrated onto admission. Rails are the cheapest work
+    # to skip and the most expensive to block: the 07-26..29 soak measured
+    # image_gen holds at ~229s p90 (featured_image) / ~223s (inline_image_batch)
+    # while the qa_ragas_judge rail's OWN p90 is 18.4s over 336 samples. Without
+    # a budget a rail queued behind a render can burn the full 900s lock
+    # ceiling; with one, admission rejects the hopeless wait up front and the
+    # rail takes its existing degraded path (no review + a finding — never a
+    # fabricated pass, per the QA-rail fail-open contract).
+    #
+    # 45s is deliberately above ordinary LLM holds (writer_self_review p90 35s,
+    # title_generation 34.5s) and well below a render hold, so a rail waits
+    # behind normal traffic and skips behind an image/video render. Set to 0 to
+    # restore the unbounded legacy contract if skipping proves too aggressive.
+    'gpu_sched_qa_rail_max_wait_s': '45',
     # VRAM (GB) the admission fit-check holds back on the pipeline GPU for
     # mid-hold invisible claims Prometheus can't see at decision time: desktop
     # compositor transients plus an idle-unloaded resident (e.g. whisper ~3GB)
@@ -2044,6 +2059,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # restart opens a window where article images downgrade. Repeats mean
     # something outside the pipeline is holding render-GPU VRAM. The cooldown
     # setting bounds the retries; this bounds the noise.
+    # A QA rail skipped because GPU admission refused its wait (#914 P2). This
+    # is the design working, not a fault, so it stays log_only — routing it
+    # would page on ordinary load. It is a SEPARATE kind from qa_rail_degraded
+    # on purpose: both produce sentinel scores, so without the split a burst of
+    # render pressure reads as the QA stack breaking. Query it to decide
+    # whether gpu_sched_qa_rail_max_wait_s is too tight.
+    'findings.qa_rail_gpu_busy_skip.delivery': 'log_only',
+    'findings.qa_rail_gpu_busy_skip.cooldown_minutes': '60',
+    'findings.qa_rail_gpu_busy_skip.min_severity': 'info',
     'findings.vram_reclaim_ineffective.delivery': 'discord',
     'findings.vram_reclaim_ineffective.fallback': 'log_only',
     'findings.vram_reclaim_ineffective.cooldown_minutes': '180',

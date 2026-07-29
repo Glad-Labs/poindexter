@@ -35,6 +35,7 @@ import asyncio
 import math
 from typing import Any
 
+from services.gpu_admission import GpuBusyError
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -159,6 +160,7 @@ def _build_dispatcher_ragas_wrappers(
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
 
+    from services.gpu_scheduler import qa_rail_wait_budget_s
     from services.llm_providers.dispatcher import dispatch_complete, dispatch_embed
 
     class _DispatcherChatModel(BaseChatModel):
@@ -186,6 +188,12 @@ def _build_dispatcher_ragas_wrappers(
                 }
                 for m in messages
             ]
+            # poindexter#914 P2 — bounded wait. This rail is fail-soft: a
+            # degraded run reports sentinel scores and emits a finding, which
+            # is strictly better than queueing behind a ~230s image render
+            # until the 900s lock ceiling. GpuBusyError propagates to the
+            # rail's existing degraded path rather than being swallowed here,
+            # so a skip stays visible instead of looking like a clean pass.
             completion = await dispatch_complete(
                 pool=self.dispatch_pool,
                 messages=payload,
@@ -194,6 +202,8 @@ def _build_dispatcher_ragas_wrappers(
                 phase="qa_ragas_judge",
                 temperature=0.0,
                 response_format={"type": "json_object"},
+                max_wait_s=qa_rail_wait_budget_s(),
+                priority="background",
             )
             text = getattr(completion, "text", "") or ""
             generation = ChatGeneration(
@@ -387,6 +397,44 @@ def _emit_degraded_metrics_finding(failed_metrics: list[str], task_id: str | Non
         logger.debug("[ragas] degraded-metric finding emit skipped", exc_info=True)
 
 
+def _surface_gpu_busy_skip(rail: str, busy: Any, *, task_id: str | None) -> None:
+    """Report a QA rail that skipped because admission refused the wait.
+
+    Deliberately its own finding kind (poindexter#914 P2). A contention skip
+    and a broken rail produce the same sentinel scores, so without a distinct
+    kind the two are indistinguishable in triage — and a burst of GPU pressure
+    would read as the QA stack degrading. ``info`` severity, not ``warn``: a
+    bounded skip under load is the system working as designed, whereas
+    ``qa_rail_degraded`` means something is actually wrong.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        eta = f"{busy.eta_seconds:.0f}s" if busy.eta_seconds is not None else "unknown"
+        emit_finding(
+            source=f"{rail}_eval.evaluate_sample",
+            kind="qa_rail_gpu_busy_skip",
+            severity="info",
+            title=f"{rail} rail skipped — GPU busy beyond its wait budget",
+            body=(
+                f"GPU admission refused the wait ({busy.reason}; holder ETA "
+                f"~{eta}), so the {rail} rail skipped this pass rather than "
+                "queueing behind a long render up to the lock ceiling. Scores "
+                "are sentinels and the rail is advisory, so publish is not "
+                "blocked. Persistent skips mean render pressure is crowding "
+                "out QA — raise gpu_sched_qa_rail_max_wait_s, or reduce the "
+                "contention."
+            ),
+            dedup_key=f"qa_rail_gpu_busy_skip:{rail}",
+            extra={"rail": rail, "reason": busy.reason,
+                   "eta_seconds": busy.eta_seconds, "task_id": task_id},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: emit_finding never raises by
+        # contract; this only fires if that contract itself breaks. Mirrors the
+        # guard in _surface_degraded above.
+        logger.debug("[%s] gpu-busy-skip finding emit skipped", rail, exc_info=True)
+
+
 def _emit_ragas_score_audit(
     scores: dict[str, float],
     topic: str,
@@ -522,6 +570,24 @@ async def evaluate_sample(
             "failing loud", exc_info=True,
         )
         raise
+    except GpuBusyError as busy:
+        # poindexter#914 P2 — an admission skip is NOT a rail malfunction, and
+        # must not read like one. Same sentinel result (the rail genuinely did
+        # not run), but a distinct finding kind so "the GPU was busy" can never
+        # be mistaken for "Ragas is broken" during triage. Without this split
+        # the contention skips would silently inflate the qa_rail_degraded rate
+        # and send someone debugging a healthy rail.
+        logger.info(
+            "[ragas] skipped — GPU admission rejected (%s, holder ETA ~%ss)",
+            busy.reason,
+            f"{busy.eta_seconds:.0f}" if busy.eta_seconds is not None else "?",
+        )
+        _surface_gpu_busy_skip("ragas", busy, task_id=task_id)
+        return {
+            "faithfulness": -1.0,
+            "answer_relevancy": -1.0,
+            "context_precision": -1.0,
+        }
     except Exception as e:
         logger.warning("[ragas] evaluate_sample failed: %s", e, exc_info=True)
         return {

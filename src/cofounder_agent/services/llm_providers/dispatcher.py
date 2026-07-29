@@ -553,6 +553,8 @@ async def dispatch_complete(
     *,
     task_id: str | None = None,
     phase: str = "dispatch_complete",
+    max_wait_s: float | None = None,
+    priority: str = "pipeline",
     **kwargs: Any,
 ) -> Any:
     """One-shot ``complete`` call using the tier's configured provider.
@@ -573,6 +575,24 @@ async def dispatch_complete(
     template run) fills it in, so calls deep inside a run that never
     threaded ``task_id`` still group into the task's Langfuse session and
     attribute their cost rows (poindexter#902). An explicit argument wins.
+
+    GPU wait contracts (poindexter#914 P2). This function is the single seam
+    every LOCAL provider call passes through, so it is where a caller's wait
+    budget reaches the scheduler:
+
+    - ``max_wait_s`` opts the call into admission. The scheduler estimates the
+      current holder's remaining time from its ``gpu_lease_stats`` p90 and
+      raises :class:`services.gpu_admission.GpuBusyError` IMMEDIATELY when the
+      wait is hopeless, instead of the caller burning up to the 900s lock
+      ceiling behind a ~230s image render. ``None`` (default) keeps the legacy
+      unbounded behaviour, so unmigrated callers are bit-identical.
+    - ``priority`` orders the wait queue: ``pipeline`` > ``operator`` >
+      ``background``.
+
+    Both are inert unless ``app_settings.gpu_sched_enabled`` is true. Callers
+    that pass a budget MUST handle ``GpuBusyError`` — for fail-soft rails that
+    means the existing degraded path (no review + a finding), never a fabricated
+    pass.
     """
     if not task_id:
         task_id = current_task_id()
@@ -655,6 +675,7 @@ async def dispatch_complete(
             if _gpu_serialize_local_dispatch(model, provider_config):
                 async with gpu.lock(
                     "ollama", model=model, task_id=task_id, phase=phase,
+                    max_wait_s=max_wait_s, priority=priority,
                 ):
                     result = await provider.complete(
                         messages=messages, model=model, **kwargs,
