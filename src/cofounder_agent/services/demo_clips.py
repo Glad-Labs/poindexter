@@ -37,6 +37,7 @@ hand and reviewed. :func:`assert_read_only` is the second line of defence.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import shutil
@@ -266,6 +267,83 @@ def load_tapes(package_root: Path | None = None) -> list[DemoTape]:
         assert_read_only(tape)
         assert_commands_exist(tape)
         out.append(tape)
+    return out
+
+
+MANIFEST_NAME = "manifest.json"
+
+
+def clip_dir(site_config) -> Path:
+    """Directory the baker writes to and the shot renderer reads from."""
+    return Path(_setting(site_config, "demo_clip_dir", "/home/appuser/.poindexter/demo-clips"))
+
+
+def write_manifest(out_dir: Path, results: list[BakeResult]) -> Path:
+    """Record slug → duration for every successful bake.
+
+    This is the lightweight stand-in for a DB bake ledger, and it exists for
+    one specific reason: **the director has to know how long a clip is.**
+    Inventory tapes bake to ~5-7s but process tapes bake to ~25s, and a
+    director that asks for a 6s shot of a 25s narrative gets only the first
+    command — the story that justified the tape is discarded. With durations
+    in hand it can size the shot to the clip.
+
+    Merged rather than overwritten, so baking a single ``--slug`` does not
+    erase the other entries.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / MANIFEST_NAME
+    existing: dict[str, float] = {}
+    if path.is_file():
+        try:
+            existing = {
+                str(k): float(v)
+                for k, v in json.loads(path.read_text(encoding="utf-8")).items()
+            }
+        except (ValueError, TypeError, OSError):
+            # A corrupt manifest must not block a bake — it is a cache of
+            # durations, rebuildable by re-baking. Start clean rather than fail.
+            logger.warning("[DEMO_CLIP] unreadable manifest at %s — rewriting", path)
+            existing = {}
+
+    for result in results:
+        if result.success and result.duration_s > 0:
+            existing[result.slug] = round(result.duration_s, 2)
+
+    path.write_text(json.dumps(dict(sorted(existing.items())), indent=2), encoding="utf-8")
+    return path
+
+
+def load_manifest(site_config) -> dict[str, float]:
+    """Read slug → baked duration. Empty when nothing has been baked."""
+    path = clip_dir(site_config) / MANIFEST_NAME
+    if not path.is_file():
+        return {}
+    try:
+        return {
+            str(k): float(v)
+            for k, v in json.loads(path.read_text(encoding="utf-8")).items()
+        }
+    except (ValueError, TypeError, OSError):
+        logger.warning("[DEMO_CLIP] unreadable manifest at %s", path)
+        return {}
+
+
+def available_demos(
+    site_config, package_root: Path | None = None
+) -> list[tuple[DemoTape, float]]:
+    """Catalog entries whose clip is actually on disk, with its duration.
+
+    Offering the director a demo that has not been baked would guarantee a
+    fallback-ladder fill and a ``demo_clip_missing`` finding, so availability
+    is filtered here rather than left for the renderer to discover.
+    """
+    directory = clip_dir(site_config)
+    durations = load_manifest(site_config)
+    out: list[tuple[DemoTape, float]] = []
+    for tape in load_tapes(package_root):
+        if (directory / f"{tape.slug}.mp4").is_file():
+            out.append((tape, durations.get(tape.slug, 0.0)))
     return out
 
 

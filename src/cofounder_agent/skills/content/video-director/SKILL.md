@@ -86,6 +86,22 @@ SHOT SOURCES AVAILABLE
       and subtle (drift, pulse, flow, ripple, slow push/pan); fast or complex
       action tears into artifacts.
 
+- "cli_demo": a REAL screen recording of the {site_name} command-line tool
+  running against live production. Not generated, not stock — actual footage
+  of the system this post is about. Prefer it over any AI source whenever the
+  beat concerns the product working, real numbers, operations, monitoring, or
+  "here is the thing itself". Requires a "demo_id" field naming one entry from
+  the catalogue below, and NO prompt and NO query — the clip already exists.
+
+  Pick "duration_s" to fit the clip's stated length. A clip shorter than your
+  duration is trimmed to its own length (never looped); asking for less than
+  the clip holds simply cuts it short, which for a multi-command recording
+  means the viewer sees only the first command. Match the length when you want
+  the whole sequence.
+
+  AVAILABLE DEMO CLIPS:
+{demo_catalog}
+
 - "holdover": pure cross-fade transition from the previous shot. Use
   sparingly (max 1 per video) for breathing room between intense beats.
   No prompt or query needed.
@@ -243,7 +259,10 @@ TARGET TOTAL DURATION (seconds): {target_duration_s}
 
 SHOT SOURCES AVAILABLE
 ----------------------
-Same five sources as the long director:
+Same five sources as the long director. NOTE: "cli_demo" (the real CLI
+recording available to the long director) is NOT available here — those clips
+are baked 16:9 landscape, and letterboxing terminal text into a 9:16 frame
+makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
 - "pexels": stock clip — concrete real-world subjects (people, places,
   products). Real footage beats AI hallucination. Requires "query".
 - "image_kenburns": custom image-gen still + Ken Burns motion — abstract concepts,
@@ -367,8 +386,10 @@ REVISE it against these criteria, then output the REVISED shot list:
 1. COVERAGE - every important beat of the narration has a shot that carries
    it; no dead air where the visual stops tracking the script.
 2. VARIETY - kill runs of near-identical shots. Vary subject AND source
-   (pexels / image_kenburns / image_gen / generative). Visual monotony is the #1 quality
-   killer.
+   (pexels / image_kenburns / image_gen / generative / cli_demo). Visual
+   monotony is the #1 quality killer. A cli_demo shot is real footage of the
+   product — preserve it when the beat is about the system working, and do
+   not swap it for an AI illustration of the same idea.
 3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
    reveal, the close) and upgrade them to source "generative" for real motion. Keep
    generative OFF the very first and very last shot. Never exceed 3 generative shots.
@@ -389,6 +410,12 @@ CONSTRAINTS (keep the draft valid):
       particles drift upward with gentle parallax"). PRESERVE the existing
       "motion" when keeping a generative shot; WRITE one when you upgrade a
       shot to generative.
+    * cli_demo                     -> "demo_id": the catalogue slug, and
+      NEITHER "prompt" NOR "query". The clip is a pre-existing recording, so
+      there is nothing to generate; a cli_demo shot carrying a prompt or query
+      is INVALID. Never invent a demo_id — keep the one already on the shot,
+      and if you are replacing a cli_demo shot, switch it to another source
+      rather than guessing a slug that may not exist.
     * holdover                     -> neither "query" nor "prompt"
   A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when

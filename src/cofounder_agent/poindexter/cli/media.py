@@ -589,7 +589,12 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
     whose command produces no matching output fails here rather than shipping
     an empty clip into a video.
     """
-    from services.demo_clips import DemoTapeError, bake_tape, load_tapes
+    from services.demo_clips import (
+        DemoTapeError,
+        bake_tape,
+        load_tapes,
+        write_manifest,
+    )
 
     try:
         tapes = load_tapes()
@@ -615,6 +620,10 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
         ]
 
     results = _run(_go())
+    # Record durations alongside the clips. The video director reads these to
+    # size a shot to the clip it picked — a 6s shot of a 25s process narrative
+    # keeps only the first command.
+    manifest = write_manifest(target, results)
     failures = [r for r in results if not r.success]
     click.echo()
     for r in results:
@@ -624,6 +633,7 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
             click.secho(f"  FAIL  {r.slug:22} {r.error}", fg="red")
 
     click.echo()
+    click.secho(f"manifest: {manifest}", fg="bright_black")
     click.secho(
         f"{len(results) - len(failures)}/{len(results)} baked",
         fg="red" if failures else "cyan",

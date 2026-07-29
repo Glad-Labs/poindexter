@@ -517,6 +517,12 @@ DEFAULTS: dict[str, str] = {
     # services/demo_clips.py) — dropping it too low shrinks text below video
     # legibility; raising it wraps wide tables mid-word. 34 fits ~88 columns
     # at 1920px, which suits most single-command output.
+    # Where `poindexter media demos bake` writes clips and the shot-list
+    # renderer reads them (cli_demo source). Must be a path BOTH the bake job
+    # and the render lane can see — they run in the same worker container
+    # today, so a plain host-mounted dir is enough; an object-store URL is a
+    # later step (poindexter#937).
+    'demo_clip_dir': '/home/appuser/.poindexter/demo-clips',
     'demo_clip_font_family': 'JetBrains Mono',
     'demo_clip_font_size': '34',
     'demo_clip_width': '1920',
@@ -2800,6 +2806,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'demo_clip_dir': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_family': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_size': {'owner': 'demo_clips', 'value_type': 'integer'},
     'demo_clip_width': {'owner': 'demo_clips', 'value_type': 'integer'},

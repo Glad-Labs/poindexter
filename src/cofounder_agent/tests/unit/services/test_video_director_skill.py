@@ -47,6 +47,7 @@ def test_director_renders_operator_brand_no_literal_placeholder() -> None:
         model="m",
         now_iso="2026-05-30T00:00:00Z",
         site_name="Glad Labs",
+        demo_catalog="- demo_id=\"posts-list\" (6.5s, content): Recent posts.",
     )
     assert "video director for a Glad Labs blog post" in rendered
     assert "{site_name}" not in rendered
@@ -67,6 +68,7 @@ def test_director_renders_clean_with_empty_site_name() -> None:
         model="m",
         now_iso="2026-05-30T00:00:00Z",
         site_name="",
+        demo_catalog="NONE AVAILABLE",
     )
     assert "{site_name}" not in rendered
     assert "blog post" in rendered
@@ -108,6 +110,7 @@ def test_short_director_renders_9x16_and_brand() -> None:
         model="m",
         now_iso="2026-06-08T00:00:00Z",
         site_name="Glad Labs",
+        demo_catalog="- demo_id=\"posts-list\" (6.5s, content): Recent posts.",
     )
     assert "short-form video director for a Glad Labs post" in rendered
     assert "{site_name}" not in rendered
@@ -158,6 +161,7 @@ def test_long_director_example_ai_prompts_have_no_human_tokens() -> None:
         title="T", content="C", podcast_script="P",
         target_duration_s="60.0", model="m",
         now_iso="2026-05-30T00:00:00Z", site_name="Glad Labs",
+        demo_catalog="NONE AVAILABLE",
     )
     ai_prompts = _example_ai_prompts(rendered)
     assert ai_prompts, "expected at least one AI-source example shot to scan"
@@ -176,6 +180,7 @@ def test_short_director_example_ai_prompts_have_no_human_tokens() -> None:
         title="T", content="C", short_script="S",
         target_duration_s="20.0", model="m",
         now_iso="2026-06-08T00:00:00Z", site_name="Glad Labs",
+        demo_catalog="NONE AVAILABLE",
     )
     ai_prompts = _example_ai_prompts(rendered)
     assert ai_prompts, "expected at least one AI-source example shot to scan"
@@ -184,3 +189,77 @@ def test_short_director_example_ai_prompts_have_no_human_tokens() -> None:
             "short director example AI-source prompt carries human tokens: "
             f"{prompt!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# cli_demo catalogue contract (poindexter#937 PR2)
+# ---------------------------------------------------------------------------
+
+
+def test_long_director_offers_cli_demo_with_the_catalogue() -> None:
+    """The long prompt must document cli_demo AND interpolate the catalogue.
+
+    A literal ``{demo_catalog}`` reaching the model would read as an
+    instruction to invent one, so the substitution is the contract.
+    """
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        "video.director_v1",
+        title="T", content="C", podcast_script="S",
+        target_duration_s="60.0", model="m",
+        now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
+        demo_catalog='- demo_id="ops-sweep" (20.0s, process): An operator sweep.',
+    )
+    assert '"cli_demo"' in rendered
+    assert "ops-sweep" in rendered
+    assert "{demo_catalog}" not in rendered
+    assert "demo_id" in rendered
+
+
+def test_long_director_states_when_no_demos_are_baked() -> None:
+    """An explicit 'none' beats an omitted section — silence invites invention."""
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        "video.director_v1",
+        title="T", content="C", podcast_script="S",
+        target_duration_s="60.0", model="m",
+        now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
+        demo_catalog="NONE AVAILABLE — no demo clips are baked on this install.",
+    )
+    assert "NONE AVAILABLE" in rendered
+
+
+def test_short_director_forbids_cli_demo() -> None:
+    """Clips bake 16:9; letterboxed terminal text is unreadable on a phone.
+
+    The exclusion must be STATED — an unexplained absence invites the model to
+    try the source anyway (same failure shape as the omitted catalogue).
+    """
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        "video.director_short_v1",
+        title="T", content="C", short_script="S",
+        target_duration_s="45.0", model="m",
+        now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
+    )
+    assert "cli_demo" in rendered
+    assert "NOT available" in rendered
+
+
+def test_review_prompt_restates_the_cli_demo_field_contract() -> None:
+    """Critique prompts must RESTATE field rules, not summarise them.
+
+    A summarised contract makes the reviewer emit schema-invalid output, and
+    the review stage degrades silently when that happens.
+    """
+    pm = UnifiedPromptManager()
+    rendered = pm.get_prompt(
+        "video.review_v1",
+        current_shot_list="{}", podcast_script="S",
+        title="T", content="C",
+        target_duration_s="60.0", model="m",
+        now_iso="2026-07-29T00:00:00Z", site_name="Glad Labs",
+    )
+    assert "cli_demo" in rendered
+    assert "demo_id" in rendered
+    assert "Never invent a demo_id" in rendered

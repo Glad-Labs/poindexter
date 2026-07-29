@@ -36,6 +36,7 @@ ShotSource = Literal[
     "generative",      # Hero shot: animate the stylized generated still (Wan i2v)
     "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
+    "cli_demo",        # Pre-baked recording of the real CLI (see demo_clips)
 ]
 
 
@@ -83,6 +84,11 @@ _HUMAN_TOKEN_RE = re.compile(
 # satisfied. Match the canonical phrasing from
 # ``source_featured_image.py`` so the convention carries over.
 _SILHOUETTE_RE = re.compile(r"\b(silhouette|faceless)\b", re.IGNORECASE)
+
+# ``demo_id`` resolves to a filename in the demo-clip directory, and its value
+# is LLM-authored, so the character set is constrained rather than trusted.
+# Matches the slugs ``services/demo_clips.py`` derives from tape filenames.
+_DEMO_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,99}")
 
 
 def scan_for_human_tokens(text: str) -> list[str]:
@@ -133,11 +139,36 @@ class Shot(BaseModel):
         description="Camera + subject motion direction for generative (i2v) shots",
     )
     query: str | None = Field(None, max_length=200, description="Stock-library search query for Pexels source")
+    demo_id: str | None = Field(
+        None,
+        max_length=100,
+        description="Catalog slug of a pre-baked CLI recording (cli_demo source)",
+    )
     kenburns_zoom: tuple[float, float] | None = Field(
         None,
         description="Start/end zoom for image_kenburns shots (e.g. (1.0, 1.2))",
     )
     narration_offset_s: float = Field(..., ge=0, description="Audio offset where this shot's narration starts")
+
+    @field_validator("demo_id")
+    @classmethod
+    def _validate_demo_id_is_a_slug(cls, value: str | None) -> str | None:
+        """Constrain ``demo_id`` to a bare slug.
+
+        This value is LLM-authored and the renderer resolves it to a filename,
+        so an unconstrained string is a path-traversal seam — ``../../`` or an
+        absolute path would read outside the clip directory. Anchored here as
+        well as at the render site: the schema is what a frozen shot list is
+        re-validated against weeks later, so it is the durable boundary.
+        """
+        if value is None:
+            return None
+        if not _DEMO_ID_RE.fullmatch(value):
+            raise ValueError(
+                f"demo_id {value!r} must be a lowercase slug "
+                f"(letters, digits, hyphens; e.g. 'posts-list')",
+            )
+        return value
 
     @field_validator("source", mode="before")
     @classmethod
@@ -177,6 +208,21 @@ class Shot(BaseModel):
             if not self.query:
                 raise ValueError(
                     "source='pexels' requires a non-empty ``query``",
+                )
+        elif self.source == "cli_demo":
+            # The director SELECTS a pre-baked recording; it never authors the
+            # command. A prompt/query here would mean the model tried to
+            # describe or generate footage instead of choosing from the
+            # catalog, so reject rather than silently ignore the extra field.
+            if not self.demo_id:
+                raise ValueError(
+                    "source='cli_demo' requires a ``demo_id`` naming a catalog "
+                    "entry (see `poindexter media demos list`)",
+                )
+            if self.prompt or self.query:
+                raise ValueError(
+                    "source='cli_demo' must not have a prompt or query — the "
+                    "clip is pre-recorded, not generated",
                 )
         elif self.source == "holdover":
             # Holdover is a pure transition — no asset, no prompt, no query.

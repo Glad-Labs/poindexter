@@ -148,6 +148,70 @@ candidate for a _long_ shot, not a drop-in replacement for a short one.
 `alerts list`, `schedule list`, `skills list`, and `media pending` all render
 empty on a typical install. An empty table is not footage; those have no tape.
 
+## The `cli_demo` shot source
+
+A shot picks a clip by catalog slug:
+
+```json
+{
+  "idx": 3,
+  "source": "cli_demo",
+  "demo_id": "ops-sweep",
+  "duration_s": 20.0,
+  "intent": "show the operator health sweep",
+  "narration_offset_s": 42.0
+}
+```
+
+`demo_id` and **no** `prompt`, **no** `query` — the clip already exists, so a
+prompt would mean the model tried to generate rather than choose. The schema
+rejects it.
+
+**`demo_id` is constrained to a bare slug** at both the schema boundary and
+the render site. It is LLM-authored and becomes a filename, so an
+unconstrained string is a path-traversal seam. Two checks rather than one
+because a shot list frozen into `pipeline_versions` can reach the renderer by
+routes that skip re-validation.
+
+**Duration is clamped to the clip, never looped.** The compositor
+`-stream_loop`s any non-still shorter than its scene duration, and a looped
+terminal recording re-types the command mid-shot — visibly broken in a way a
+looped abstract clip is not. If the director asks for 30s of a 20s clip, the
+shot renders 20s and the timeline shortens. The director avoids the situation
+in the first place because the prompt lists each clip's baked length.
+
+**A missing clip is not fatal.** It falls through the same `_backfill_pass`
+ladder as any other failed source (→ branded card) and emits a `warn`
+`demo_clip_missing` finding naming the slug. Note it does _not_ get a Pexels
+substitute: swapping stock footage in for a missing recording of your own
+product would be misleading, so the honest card is the right rung.
+
+**The pacing guard applies.** `cli_demo` is subject to the existing
+max-2-consecutive-shots-per-source rule, so demo footage can never take over
+a video.
+
+`cli_demo` is **not** in `_REGENERABLE_SOURCES` — re-rolling a deterministic
+recording replays identical frames and only burns a QA pass.
+
+### Not offered to the short (9:16) director
+
+Clips bake 16:9 landscape. Letterboxing terminal text into a vertical frame
+makes it unreadable on a phone — the same trap that produced letterboxed
+landscape hero shots in shorts (#2774). The short director prompt says so
+explicitly rather than omitting the source, because an unexplained absence
+invites the model to try it anyway.
+
+### How the director learns what is available
+
+`_build_demo_catalog_block` renders only clips **actually on disk**, with each
+one's baked duration from `manifest.json`. Offering an unbaked demo would
+guarantee a ladder fill and a finding, so availability is filtered before the
+model sees it.
+
+When nothing is baked the block says `NONE AVAILABLE ... do NOT emit
+source="cli_demo"` explicitly. An omitted section invites a plausible invented
+`demo_id`; a stated absence does not.
+
 ## Running it
 
 ```bash

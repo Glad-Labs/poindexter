@@ -108,6 +108,42 @@ def _resolve_director_think(cfg: Any) -> bool | None:
         return False
 
 
+def _build_demo_catalog_block(site_config: Any) -> str:
+    """Render the available demo clips for the director prompt.
+
+    Only clips actually ON DISK are offered. Listing an unbaked demo would
+    guarantee the renderer falls through to the fallback ladder and emits a
+    ``demo_clip_missing`` finding, so availability is filtered before the
+    model ever sees it.
+
+    When nothing is baked the block says so EXPLICITLY rather than being
+    omitted. An absent section invites the model to invent a plausible
+    ``demo_id``; a stated "none available" tells it not to use the source at
+    all (``feedback_no_silent_defaults``).
+    """
+    try:
+        from services.demo_clips import available_demos
+        demos = available_demos(site_config)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[VIDEO_DIRECTOR] demo catalog unavailable: %s", exc)
+        demos = []
+
+    if not demos:
+        return (
+            "NONE AVAILABLE — no demo clips are baked on this install. "
+            "Do NOT emit a shot with source=\"cli_demo\"."
+        )
+
+    lines = []
+    for tape, duration in demos:
+        length = f"{duration:.1f}s" if duration > 0 else "length unknown"
+        lines.append(
+            f'- demo_id="{tape.slug}" ({length}, {tape.category}): '
+            f"{tape.title}. {tape.description}"
+        )
+    return "\n".join(lines)
+
+
 def _estimate_target_duration(podcast_script: str) -> float:
     """Estimate the podcast's spoken duration from word count.
 
@@ -478,6 +514,7 @@ class GenerateVideoShotListStage:
         title: str,
         content_text: str,
         site_name: str,
+        demo_catalog: str,
         timeout_s: int,
         think: bool | None = None,
         max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
@@ -515,6 +552,7 @@ class GenerateVideoShotListStage:
                 # Operator brand templated into the director persona via
                 # {site_name} (migrated to skills/content/video-director).
                 site_name=site_name,
+                demo_catalog=demo_catalog,
                 **{script_param: script},
             )
         except Exception as exc:
@@ -764,6 +802,9 @@ class GenerateVideoShotListStage:
             "video_director_max_retries", _DIRECTOR_MAX_RETRIES_DEFAULT
         )
 
+        # Demo-clip catalog, resolved once and shared by both directors.
+        demo_catalog = _build_demo_catalog_block(cfg)
+
         # LONG (unchanged behavior): the 16:9 director over podcast_script.
         long_shot_list = await self._produce_shot_list(
             platform=platform,
@@ -777,6 +818,7 @@ class GenerateVideoShotListStage:
             title=title,
             content_text=content_text,
             site_name=site_name,
+            demo_catalog=demo_catalog,
             timeout_s=director_timeout,
             think=director_think,
             max_tokens=director_max_tokens,
@@ -814,6 +856,7 @@ class GenerateVideoShotListStage:
                 title=title,
                 content_text=content_text,
                 site_name=site_name,
+            demo_catalog=demo_catalog,
                 timeout_s=director_timeout,
                 think=director_think,
                 max_tokens=director_max_tokens,

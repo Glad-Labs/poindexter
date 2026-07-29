@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from plugins.media_compositor import CompositionRequest, CompositionScene
-from schemas.video_shot_list import Shot, VideoShotList
+from schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from utils.findings import emit_finding
 
@@ -93,6 +93,8 @@ _HERO_MOTION_FALLBACK = (
 # CAN ask for the next-ranked result (see ``candidate_index`` on
 # ``_render_pexels_image``) — production data showed 8/8 shot_quality_fallback
 # findings in 30 days were pexels shots with zero retry path, so it's included.
+# ``cli_demo`` is deliberately absent: it is a pre-baked deterministic
+# recording, so a "regen" replays identical frames and only burns a QA pass.
 _REGENERABLE_SOURCES = frozenset(
     {"image_gen", "image_kenburns", "wan21", "generative", "pexels"},
 )
@@ -771,6 +773,57 @@ async def _backfill_pass(
         st.rung = "dropped"
 
 
+async def _resolve_demo_clip(
+    shot: Shot,
+    site_config: Any,
+) -> tuple[str, float, str]:
+    """Locate a pre-baked CLI demo clip. Returns ``(path, duration_s, error)``.
+
+    Demo clips are baked out of band (``poindexter media demos bake``) rather
+    than recorded during a render, so this is a lookup, not a render — see
+    ``services/demo_clips.py`` for why.
+
+    The ``demo_id`` is re-checked against the slug pattern here even though
+    ``Shot`` already validates it. This function turns the value into a
+    filesystem path, and a shot list can reach it by routes that skip
+    re-validation (a hand-edited ``pipeline_versions`` row, a future caller
+    building a ``Shot`` directly), so the check belongs at the point of use as
+    well as at the boundary.
+    """
+    demo_id = (shot.demo_id or "").strip()
+    if not demo_id:
+        return "", 0.0, "cli_demo shot has no demo_id"
+    if not _DEMO_ID_RE.fullmatch(demo_id):
+        return "", 0.0, f"demo_id {demo_id!r} is not a valid slug"
+
+    clip_dir = "/home/appuser/.poindexter/demo-clips"
+    if site_config is not None:
+        clip_dir = str(site_config.get("demo_clip_dir", clip_dir) or clip_dir)
+
+    path = Path(clip_dir) / f"{demo_id}.mp4"
+    # Belt-and-braces against a clip_dir that itself contains traversal, and
+    # against symlink escapes: the resolved path must stay under the resolved
+    # clip directory.
+    try:
+        resolved = path.resolve()
+        root = Path(clip_dir).resolve()
+        if not resolved.is_relative_to(root):
+            return "", 0.0, f"demo clip for {demo_id!r} resolves outside {clip_dir}"
+    except OSError as exc:
+        return "", 0.0, f"demo clip path error for {demo_id!r}: {exc}"
+
+    if not resolved.is_file():
+        return "", 0.0, (
+            f"demo clip {demo_id!r} not baked at {resolved} — run "
+            f"`poindexter media demos bake --slug {demo_id}`"
+        )
+
+    duration = await _probe_duration_s(str(resolved)) or 0.0
+    if duration <= 0:
+        return "", 0.0, f"demo clip {demo_id!r} has unreadable duration"
+    return str(resolved), duration, ""
+
+
 async def _render_one_shot(
     shot: Shot,
     *,
@@ -898,6 +951,52 @@ async def _render_one_shot(
             source=source,
             success=False,
             error="pexels miss at idx=0 with no prior clip to hold over",
+        )
+
+    if source == "cli_demo":
+        clip_path, clip_dur, error = await _resolve_demo_clip(shot, site_config)
+        if error:
+            # Missing / unbaked clip is NOT fatal — fall through to the
+            # backfill ladder (pexels substitute, then branded card) exactly
+            # like any other failed source. A shot list frozen weeks ago can
+            # legitimately name a demo that has since been retired.
+            # Distinct kind from the ladder's own ``shot_fallback``: that one
+            # says "a slot got filled", this one says WHICH demo is unbaked or
+            # retired, which is the actionable half. The ladder still emits its
+            # finding when it fills the slot — the two are complementary, not
+            # duplicates.
+            emit_finding(
+                source="shot_list_renderer",
+                kind="demo_clip_missing",
+                title=f"demo clip {shot.demo_id!r} unavailable for shot {shot.idx}",
+                body=(
+                    f"{error}. The shot falls through to the fallback ladder so "
+                    f"the timeline stays whole. Repeated hits mean the bake job "
+                    f"is failing or the shot list names a retired demo."
+                ),
+                severity="warn",
+                dedup_key=f"demo_clip_missing:{shot.demo_id}",
+                extra={"shot_idx": shot.idx, "demo_id": shot.demo_id},
+            )
+            return ShotRenderResult(
+                idx=shot.idx, source=source, success=False, error=error,
+            )
+        # Clamp to what the clip actually contains. The compositor
+        # ``-stream_loop``s any non-still shorter than its scene duration, and
+        # a looped terminal recording re-types the command mid-shot — visibly
+        # broken in a way a looped abstract clip is not. ``shot_durs`` in
+        # ``render_shot_list`` reads THIS value, so clamping here is what
+        # reaches the scene plan.
+        duration = min(float(shot.duration_s), clip_dur) if clip_dur > 0 else float(shot.duration_s)
+        if clip_dur and duration < shot.duration_s:
+            logger.info(
+                "[SHOT_LIST] cli_demo idx=%d demo_id=%s: director asked %.1fs, "
+                "clip is %.1fs — trimming the shot rather than looping it",
+                shot.idx, shot.demo_id, shot.duration_s, clip_dur,
+            )
+        return ShotRenderResult(
+            idx=shot.idx, source=source, success=True,
+            clip_path=clip_path, duration_s=duration,
         )
 
     if source in ("image_gen", "image_kenburns"):
