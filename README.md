@@ -3,8 +3,8 @@
 **A plug-and-play AI/ML content creation OSS stack.** Your PC is the factory: Poindexter researches, writes, reviews, and publishes — autonomously. Local-first, Ollama-powered, zero API costs. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-11%2C000%2B_passing-brightgreen)]()
-[![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
+[![Tests](https://img.shields.io/badge/tests-11%2C000%2B_passing-brightgreen)](<>)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](<>)
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
 ## Who this is for
@@ -240,8 +240,8 @@ Poindexter is in **alpha**. Honest snapshot:
 
 **What works today**
 
-- Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Windows 11). Single-operator content business publishing daily.
-- 110 live posts on [gladlabs.io](https://www.gladlabs.io) (279 total posts, 1,798 pipeline runs).
+- Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
+- 159 live posts on [gladlabs.io](https://www.gladlabs.io) (333 total posts, 1,975 pipeline runs).
 - 11,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes bootstrap.toml. No `.env` file required.
 - Live in-place upgrades — schema changes, container renames, env var migrations applied to a running instance with zero data loss and no in-flight task downtime.
