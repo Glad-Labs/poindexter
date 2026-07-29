@@ -427,7 +427,10 @@ def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str
     """
     prefix = f"plugin.tts_provider.{engine}."
     engine_keys = {
-        "chatterbox": ("exaggeration", "cfg_weight", "audio_prompt_path"),
+        # atempo belongs here for the same reason audio_prompt_path does: it is
+        # a pace setting the live pipeline applies, so omitting it would make
+        # the bake-off preview systematically FASTER than the real episode.
+        "chatterbox": ("exaggeration", "cfg_weight", "audio_prompt_path", "atempo"),
     }.get(engine, ())
     cfg: dict[str, Any] = {"base_url": _bakeoff_base_url(engine, host), "model": engine}
     for k in engine_keys:

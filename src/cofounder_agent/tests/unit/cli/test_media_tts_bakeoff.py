@@ -121,3 +121,19 @@ class TestTtsBakeoff:
 
         cfg = _bakeoff_engine_config("chatterbox", _SC(), "localhost")
         assert cfg["audio_prompt_path"] == "/app/voices/podcast-voice.wav"
+
+    def test_engine_config_forwards_chatterbox_atempo(self):
+        """Pace must reach the bake-off render too. atempo is applied by the
+        live pipeline, so omitting it here makes the preview systematically
+        FASTER than the episode it is supposed to be previewing — the same
+        honesty requirement audio_prompt_path has."""
+        from poindexter.cli.media import _bakeoff_engine_config
+
+        class _SC:
+            def get(self, k, d=None):
+                return {
+                    "plugin.tts_provider.chatterbox.atempo": "0.92",
+                }.get(k, d)
+
+        cfg = _bakeoff_engine_config("chatterbox", _SC(), "localhost")
+        assert cfg["atempo"] == "0.92"
