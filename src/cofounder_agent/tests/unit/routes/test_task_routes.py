@@ -1309,3 +1309,127 @@ class TestGetTaskErrorPaths:
         # Route must return 403 or 404 (never 200) for tasks owned by others
         # Solo-operator: ownership check bypassed
         assert resp.status_code in (200, 403, 404)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/tasks — target-length resolution (#542 re-wire)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateTaskTargetLength:
+    """The blog_post creation path must resolve length through the weighted
+    picker, not a hardcoded literal.
+
+    Regression guard: a flat ``or 1500`` here pinned 91.5% of all tasks
+    (1,776 of 1,940) to a single target length and left
+    ``topic_discovery_length_distribution`` unreachable in production, so
+    every post was written against the same length assignment.
+    """
+
+    @staticmethod
+    def _captured_length(mock_db) -> int:
+        """Pull target_length out of the task_data handed to add_task."""
+        assert mock_db.add_task.await_count == 1
+        task_data = mock_db.add_task.await_args.args[0]
+        return task_data["target_length"]
+
+    def test_omitted_length_routes_through_picker(self, monkeypatch):
+        monkeypatch.setattr(
+            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+        )
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-id")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "AI in Healthcare", "task_type": "blog_post"},
+        )
+
+        assert resp.status_code == 201
+        assert self._captured_length(mock_db) == 2718
+
+    def test_omitted_length_is_not_hardcoded_1500(self, monkeypatch):
+        # Pins the actual defect: the picker's value must reach the row even
+        # when it differs from the retired literal.
+        monkeypatch.setattr(
+            "routes.task_routes.pick_target_length", lambda _cfg: 431
+        )
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-id")
+        client = TestClient(_build_app(mock_db))
+
+        client.post(
+            "/api/tasks",
+            json={"topic": "AI in Healthcare", "task_type": "blog_post"},
+        )
+
+        assert self._captured_length(mock_db) != 1500
+
+    def test_explicit_target_length_wins_over_picker(self, monkeypatch):
+        monkeypatch.setattr(
+            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+        )
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-id")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "topic": "AI in Healthcare",
+                "task_type": "blog_post",
+                "target_length": 900,
+            },
+        )
+
+        assert resp.status_code == 201
+        assert self._captured_length(mock_db) == 900
+
+    def test_content_constraints_word_count_wins_over_picker(self, monkeypatch):
+        # content_constraints overrides top-level fields (#1250) — that
+        # precedence must survive the picker re-wire.
+        monkeypatch.setattr(
+            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+        )
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-id")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "topic": "AI in Healthcare",
+                "task_type": "blog_post",
+                "target_length": 900,
+                "content_constraints": {"word_count": 2200},
+            },
+        )
+
+        assert resp.status_code == 201
+        assert self._captured_length(mock_db) == 2200
+
+    def test_picker_result_varies_across_creations(self):
+        """End-to-end through the real picker: repeated creations must not
+        all land on one length (the monoculture this change fixes).
+        """
+        seen = set()
+        for _ in range(12):
+            # /api/tasks is rate-limited to 10/min and the autouse fixture
+            # only resets between tests, so clear the budget per iteration.
+            try:
+                limiter.reset()
+            except Exception:
+                pass
+            mock_db = make_mock_db()
+            mock_db.add_task = AsyncMock(return_value="task-id")
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "AI in Healthcare", "task_type": "blog_post"},
+            )
+            assert resp.status_code == 201
+            seen.add(self._captured_length(mock_db))
+
+        assert len(seen) > 1, f"picker produced a single length: {seen}"

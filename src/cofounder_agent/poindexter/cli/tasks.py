@@ -189,7 +189,16 @@ def tasks_get(task_id: str, json_output: bool, content: bool) -> None:
 @click.option("--keyword", "primary_keyword", default="")
 @click.option("--style", default="narrative", show_default=True)
 @click.option("--tone", default="professional", show_default=True)
-@click.option("--length", "target_length", type=int, default=1500, show_default=True)
+@click.option(
+    "--length",
+    "target_length",
+    type=int,
+    default=None,
+    help=(
+        "Target word count. Omit to let the weighted length picker choose "
+        "(app_settings.topic_discovery_length_distribution)."
+    ),
+)
 def tasks_create(
     topic: str,
     category: str,
@@ -197,7 +206,7 @@ def tasks_create(
     primary_keyword: str,
     style: str,
     tone: str,
-    target_length: int,
+    target_length: int | None,
 ) -> None:
     """Queue a new content task.
 

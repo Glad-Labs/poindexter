@@ -21,6 +21,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.topic_length import pick_target_length
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 from utils.uuid_prefix import resolve_task_id_prefix
@@ -382,7 +383,15 @@ async def _handle_blog_post_creation(
     cc = request.content_constraints or {}
     effective_style = cc.get("writing_style") or request.style or "narrative"
     effective_tone = cc.get("tone") or request.tone or "professional"
-    effective_length = cc.get("word_count") or request.target_length or 1500
+    # Length falls through to the weighted picker (#542) rather than a flat
+    # literal: a hardcoded 1500 here pinned 91.5% of all tasks to one length
+    # and left topic_discovery_length_distribution unreachable in prod. An
+    # explicit caller length (top-level or content_constraints) still wins.
+    effective_length = (
+        cc.get("word_count")
+        or request.target_length
+        or pick_target_length(site_config)
+    )
 
     # Resolve "auto" topic from the niche's topic_pool (b3 of
     # poindexter#812 — the Gen-1 TopicDiscovery inline scrape is retired).

@@ -70,10 +70,14 @@ class UnifiedTaskRequest(BaseModel):
         "professional", description="Content tone (blog_post, social_media, email only)"
     )
     target_length: int | None = Field(
-        1500,
+        None,
         ge=200,
         le=5000,
-        description="Target word count for content (200-5000, blog_post only)",
+        description=(
+            "Target word count for content (200-5000, blog_post only). "
+            "Omit to let the weighted length picker choose from "
+            "app_settings.topic_discovery_length_distribution."
+        ),
     )
     generate_featured_image: bool | None = Field(
         True, description="Search for featured image (blog_post only)"
