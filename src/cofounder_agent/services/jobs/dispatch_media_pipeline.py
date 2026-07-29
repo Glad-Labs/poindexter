@@ -283,7 +283,8 @@ class DispatchMediaPipelineJob:
                     logger.info(
                         "[DISPATCH_MEDIA] render-GPU VRAM insufficient — "
                         "attempting a bounded reclaim (evict Ollama + hard-"
-                        "unload image-gen) before deferring: %s", health.detail,
+                        "unload image-gen + unload chatterbox) before "
+                        "deferring: %s", health.detail,
                     )
                     await _attempt_vram_reclaim(sc)
                     settle = sc.get_float("media_render_reclaim_settle_seconds", 8.0) or 8.0
