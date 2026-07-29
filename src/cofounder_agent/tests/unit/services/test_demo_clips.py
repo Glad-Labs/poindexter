@@ -16,6 +16,7 @@ import pytest
 from services.demo_clips import (
     DemoTape,
     DemoTapeError,
+    assert_commands_exist,
     assert_read_only,
     compose_tape,
     load_tapes,
@@ -121,12 +122,89 @@ def test_non_poindexter_programs_rejected(command: str) -> None:
         assert_read_only(_tape(f'Type "{command}"\n'))
 
 
+@pytest.mark.parametrize("command", [
+    # A read-only word appearing as an ARGUMENT must not authorise the
+    # command. The original guard scanned every token, so each of these
+    # passed on the strength of its trailing word.
+    "poindexter settings set logs value",
+    "poindexter settings set feature_status enabled",
+    "poindexter tasks reject abc123 list",
+    "poindexter publishers fire youtube_main show",
+])
+def test_read_only_word_as_argument_does_not_authorise(command: str) -> None:
+    """Only the command path decides whether a command mutates."""
+    with pytest.raises(DemoTapeError, match="read-only"):
+        assert_read_only(_tape(f'Type "{command}"\n'))
+
+
+def test_group_names_are_not_leaf_verbs() -> None:
+    """A group in the allowlist would greenlight its mutating subcommands.
+
+    ``topics niche`` has ``set``-style children, so allowing ``niche`` would
+    pass ``topics niche <anything>`` on the two-word positional check.
+    """
+    from services.demo_clips import READ_ONLY_VERBS
+
+    assert "niche" not in READ_ONLY_VERBS
+
+
+def test_top_level_read_only_command_allowed() -> None:
+    """``logs`` is a top-level command, so the verb sits at position 0."""
+    assert_read_only(_tape('Type "poindexter logs --service worker --follow"\n'))
+
+
 def test_chained_mutation_is_caught() -> None:
     """A mutating command hidden behind && must not slip past the guard."""
     with pytest.raises(DemoTapeError):
         assert_read_only(
             _tape('Type "poindexter posts list && poindexter tasks approve abc"\n')
         )
+
+
+# ---------------------------------------------------------------------------
+# assert_commands_exist — allowlisted does not mean real
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", [
+    "poindexter posts lsit --limit 5",      # typo'd subcommand
+    "poindexter nonexistent list",          # bogus group
+    "poindexter postss list",               # typo'd group
+])
+def test_nonexistent_commands_rejected(command: str) -> None:
+    """A tape naming an unreal command would bake a click usage error."""
+    with pytest.raises(DemoTapeError, match="no such CLI command"):
+        assert_commands_exist(_tape(f'Type "{command}"\n'))
+
+
+@pytest.mark.parametrize("command", [
+    "poindexter posts list --limit 5",
+    "poindexter doctor",
+    "poindexter logs --service worker --follow",
+    "poindexter qa-gates list",
+])
+def test_real_commands_accepted(command: str) -> None:
+    assert_commands_exist(_tape(f'Type "{command}"\n'))
+
+
+def test_arguments_after_a_leaf_are_not_treated_as_subcommands() -> None:
+    """`tasks get <id>` — the id must not be looked up as a command."""
+    assert_commands_exist(_tape('Type "poindexter tasks get abc12345"\n'))
+
+
+def test_non_poindexter_programs_are_skipped() -> None:
+    """`clear` is a shell builtin, not a click command — nothing to check."""
+    assert_commands_exist(_tape('Type "clear"\n'))
+
+
+def test_shipped_catalog_commands_all_exist() -> None:
+    """Every tape in the repo names commands the CLI actually has.
+
+    This is what turns a same-PR command/tape mismatch into a CI failure
+    rather than a bake-time surprise on the deploy host.
+    """
+    for tape in load_tapes():
+        assert_commands_exist(tape)
 
 
 # ---------------------------------------------------------------------------

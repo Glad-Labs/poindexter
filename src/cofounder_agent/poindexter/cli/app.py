@@ -21,6 +21,7 @@ from .doctor import doctor_group
 from .experiments import experiments_group
 from .firefighter import firefighter_group
 from .integrations import integrations_group
+from .logs import logs_command
 from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
@@ -107,6 +108,7 @@ main.add_command(tasks_group, name="tasks")
 main.add_command(posts_group, name="posts")
 main.add_command(post_group, name="post")
 main.add_command(settings_group, name="settings")
+main.add_command(logs_command, name="logs")
 main.add_command(costs_group, name="costs")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")

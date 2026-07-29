@@ -42,6 +42,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +72,12 @@ _TYPE_RE = re.compile(r'^\s*Type\s+"(.*)"\s*$')
 # Read-only leaf verbs. An ALLOWLIST, not a denylist: a new mutating
 # subcommand added upstream is then refused by default rather than silently
 # permitted because nobody remembered to ban it.
+# Only LEAF verbs belong here. A group name (e.g. ``niche``, which has its
+# own mutating subcommands) would greenlight everything under it, because the
+# positional check below only inspects the first two words.
 READ_ONLY_VERBS: frozenset[str] = frozenset({
     "list", "show", "get", "status", "search", "pending", "budget",
-    "operational", "doctor", "--help", "-h", "niche",
+    "operational", "doctor", "logs", "list-paused", "qa", "--help", "-h",
 })
 
 # Commands a tape may invoke at all. ``poindexter`` is the point; the shell
@@ -184,19 +188,60 @@ def assert_read_only(tape: DemoTape) -> None:
                 )
             if program != "poindexter":
                 continue
-            # Find the leaf verb: the last token before any flag/argument that
-            # is itself a bare word. `poindexter posts list --limit 5` -> list
+            # The verb is POSITIONAL — one of the first two bare words after
+            # ``poindexter`` (`logs`, or `posts list`). Everything after that
+            # is an argument.
+            #
+            # Scanning every token for "does any of them look read-only"
+            # is unsafe: `poindexter settings set logs value` would pass on
+            # the strength of an ARGUMENT named `logs`. Only the command path
+            # decides whether a command mutates.
             verbs = [t for t in tokens[1:] if not t.startswith("-")]
-            leaf = next(
-                (v for v in reversed(verbs) if v in READ_ONLY_VERBS),
-                None,
-            )
-            if leaf is None:
+            if not any(v in READ_ONLY_VERBS for v in verbs[:2]):
                 raise DemoTapeError(
                     f"{tape.slug}: {part.strip()!r} has no read-only verb "
                     f"(allowed: {sorted(READ_ONLY_VERBS)}). Demo tapes run against "
                     f"live production data and must never mutate it.",
                 )
+
+
+def assert_commands_exist(tape: DemoTape) -> None:
+    """Reject a tape naming a CLI command that does not exist.
+
+    ``assert_read_only`` checks that a verb is *allowlisted*, not that it is
+    *real* — so a typo, or a tape landing in the same PR as the command it
+    demonstrates, passes validation and fails at bake time with a clip of a
+    click usage error. That is the same plausible-but-nonexistent failure the
+    read-only guard exists to prevent, one level up.
+
+    Walks the real click tree, so it cannot drift from the CLI. Skipped
+    silently if the CLI is not importable (the baker may run in a trimmed
+    environment); a missing check is better than a false rejection.
+    """
+    try:
+        from poindexter.cli.app import main as cli_root
+    except Exception:  # silent-ok: absent CLI means we simply cannot check
+        return
+
+    import click
+
+    for command in tape.commands:
+        for part in re.split(r"&&|\|\||;|\|", command):
+            tokens = [t for t in part.split() if not t.startswith("-")]
+            if not tokens or tokens[0] != "poindexter":
+                continue
+            node: Any = cli_root
+            for token in tokens[1:]:
+                if not isinstance(node, click.Group):
+                    break  # reached a leaf; the rest are arguments
+                child = node.get_command(None, token)  # type: ignore[arg-type]
+                if child is None:
+                    raise DemoTapeError(
+                        f"{tape.slug}: no such CLI command {' '.join(tokens[:2])!r} "
+                        f"(token {token!r}). If the command ships in this same "
+                        f"change, the tape can only bake once it is deployed.",
+                    )
+                node = child
 
 
 def tapes_dir(package_root: Path | None = None) -> Path:
@@ -219,6 +264,7 @@ def load_tapes(package_root: Path | None = None) -> list[DemoTape]:
             continue
         tape = parse_tape(path)
         assert_read_only(tape)
+        assert_commands_exist(tape)
         out.append(tape)
     return out
 

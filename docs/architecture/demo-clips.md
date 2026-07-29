@@ -106,6 +106,36 @@ is variable-width and the longest row runs past 115.
 Going smaller trades legibility for width, so a table that still wraps at 22
 is a sign the command is a poor fit for video rather than a font problem.
 
+### Inventory shots vs process shots
+
+The catalog has two kinds of tape, and they are not interchangeable.
+
+**Inventory** tapes run one command and show a table: `posts list`, `taps
+list`, `qa-gates`. Honest and useful, but structurally the same shot every
+time — a table appears. Good B-roll, weak highlight reel.
+
+**Process** tapes run several commands in sequence and show something
+happening over time: `logs-tail`, `ops-sweep`, `pipeline-review-story`,
+`content-inventory-story`. They have motion and a beat, which is what a
+longer shot wants. Chain commands with a `clear` between blocks when the
+screen would otherwise overflow.
+
+`poindexter logs --follow` is the only genuine _tail_ — it polls the Loki
+proxy, so lines arrive during the recording rather than all at once. It is
+read-only by construction (Loki is queried, never written), which is what
+makes it safe to allowlist.
+
+Process tapes want a smaller font (24–26) because they accumulate output
+across several commands, and longer `Sleep` beats so a viewer can read each
+result before the next command types.
+
+**Length changes how the renderer must use them.** An inventory tape bakes to
+~5–7s; a four-command process tape bakes to ~25s. Trimming a 25s narrative
+down to a 6s shot keeps only the first command and throws away the story that
+justified the tape. So the clip's real duration has to reach the director —
+that is what the bake ledger's recorded duration is for. A process tape is a
+candidate for a _long_ shot, not a drop-in replacement for a short one.
+
 ### Not every command makes a good clip
 
 `alerts list`, `schedule list`, `skills list`, and `media pending` all render
