@@ -104,13 +104,19 @@ def test_docs_json_gladlabs_lines_are_in_substrate_line_strips() -> None:
 _MIRROR_TOOLING_STRIP = (
     "scripts/ci/check_public_mirror_safety.py",
     "scripts/regen-app-settings-doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_frontend_exts.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
 )
+
+# Directory holding the leak guard's own test siblings. Derived rather than
+# hardcoded — see test_every_mirror_safety_test_sibling_is_stripped.
+_MIRROR_SAFETY_TEST_DIR = "src/cofounder_agent/tests/unit/scripts"
 
 
 def test_mirror_tooling_cluster_is_in_strip_files() -> None:
@@ -124,6 +130,42 @@ def test_mirror_tooling_cluster_is_in_strip_files() -> None:
     assert not missing, (
         f"Operator mirror-tooling files missing from _STRIP_FILES: {missing}. "
         "Add them here AND in scripts/sync-to-github.sh's mirror-tooling block."
+    )
+
+
+def test_every_mirror_safety_test_sibling_is_stripped() -> None:
+    """EVERY ``test_check_public_mirror_safety_*.py`` on disk must be stripped.
+
+    Derived from the filesystem on purpose. ``_MIRROR_TOOLING_STRIP`` above is a
+    hand-maintained tuple, and a hand-maintained list is exactly what failed:
+    ``test_check_public_mirror_safety_sentry_dsn.py`` landed in #2662 and was
+    added to none of the three places that must agree, so the mirror received a
+    test whose subject (``scripts/ci/check_public_mirror_safety.py``) is
+    stripped. It loads that script BY PATH via ``spec_from_file_location``, so
+    the import-based guard below could not see it either — the mirror's
+    unit-tests job went red on every push with ``FileNotFoundError``.
+
+    Keying off the directory listing means the next sibling is caught the moment
+    it is written, without anyone remembering this file exists.
+    """
+    root = _repo_root()
+    test_dir = root / _MIRROR_SAFETY_TEST_DIR
+    siblings = sorted(
+        f"{_MIRROR_SAFETY_TEST_DIR}/{p.name}"
+        for p in test_dir.glob("test_check_public_mirror_safety_*.py")
+    )
+    assert siblings, (
+        f"No mirror-safety test siblings found under {test_dir} — this test "
+        "silently passes if the glob stops matching. Check the path."
+    )
+    missing = [p for p in siblings if p not in CHECK._STRIP_FILES]
+    assert not missing, (
+        f"Mirror-safety test siblings not stripped: {missing}. Each one loads "
+        "scripts/ci/check_public_mirror_safety.py by path, which does NOT exist "
+        "on the mirror, so shipping it turns the public unit-tests job red. Add "
+        "each to ALL THREE: _STRIP_FILES in scripts/ci/check_public_mirror_safety.py, "
+        "the mirror-tooling block in scripts/sync-to-github.sh, and "
+        "_MIRROR_TOOLING_STRIP above."
     )
 
 
