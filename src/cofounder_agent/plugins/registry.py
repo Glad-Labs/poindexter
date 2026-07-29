@@ -546,12 +546,30 @@ def get_modules() -> list[Any]:
 # explanation. (This comment used to say "see pyproject.toml note"; there is
 # no such note there, only the entry-point declarations themselves.)
 #
-# Consequence worth knowing: in the container, entry_points contribute
-# NOTHING, so a third-party plugin installed as a pip distribution is
-# invisible at runtime even though docs/architecture/plugin-architecture.md
-# advertises exactly that. First-party plugins are unaffected — they come
-# from _SAMPLES and the in-tree module scan. Fixing that means making the
-# package installable in the image, not deleting this fallback.
+# THIRD-PARTY PLUGINS STILL WORK — do not "fix" this by installing the root
+# package. The zero above means only that nothing third-party is installed and
+# our own package is --no-root; the discovery mechanism itself is healthy. A
+# pip-installed plugin declares its OWN module path (``my_plugin.tap:MyTap``),
+# which never touches the ``cofounder_agent`` namespace. Verified 2026-07-28 by
+# pip-installing a throwaway distribution into a container off this image:
+# ``entry_points(group="poindexter.taps")`` returned it and ``.load()``
+# succeeded.
+#
+# Installing the root package here would be actively HARMFUL. The images lay
+# the tree out flat at /app (PYTHONPATH=/app) and 1,175 files import flat
+# (``from services.x``, ``from plugins.x``), while the entry-point values are
+# package-qualified (``cofounder_agent.plugins...``). Installing the
+# distribution would add a SECOND copy under site-packages, so sys.modules
+# would hold ``plugins.registry`` and ``cofounder_agent.plugins.registry`` as
+# distinct objects over different files — duplicating every @cache and
+# singleton in this module (get_core_samples, _cached) and in AppContainer /
+# SiteConfig. That split already exists on the host, where the editable
+# install resolves ``cofounder_agent.*`` to the MAIN checkout while flat
+# imports resolve to the cwd — in a worktree they are different trees.
+#
+# Making the root package installable would therefore require unifying the
+# import root first (a 1,175-file flat -> package-qualified migration), and it
+# buys nothing, because third-party extension already works.
 # ---------------------------------------------------------------------------
 
 
