@@ -125,6 +125,13 @@ proxy, so lines arrive during the recording rather than all at once. It is
 read-only by construction (Loki is queried, never written), which is what
 makes it safe to allowlist.
 
+Level colouring depends on Loki carrying a `level` label, and not every
+stream does. The structured `worker` / `brain-daemon` / `prefect-worker` logs
+carry `INFO` / `WARNING`; uvicorn's access-log stream carries none, so a share
+of lines in any worker tail render with an empty level column. Write tape
+descriptions against what the clip actually shows — claiming "colour-coded by
+level" oversells a tail that is mostly access logs.
+
 Process tapes want a smaller font (24–26) because they accumulate output
 across several commands, and longer `Sleep` beats so a viewer can read each
 result before the next command types.
