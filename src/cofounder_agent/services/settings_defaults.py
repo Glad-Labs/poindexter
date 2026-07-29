@@ -628,10 +628,18 @@ DEFAULTS: dict[str, str] = {
     # the per-process VRAM series (nvidia_gpu_process_memory_mib{process=...})
     # when computing the admission eviction credit — the per-card share the
     # scheduler could reclaim via unload_loaded_ollama_models. The exporter
-    # labels processes by executable basename ("ollama" covers the stock
-    # server; set to e.g. "llama-server" for a bare llama.cpp install). Read
-    # by services/gpu_registry.py::evictable_ollama_gb.
-    'gpu_evictable_process_pattern': 'ollama',
+    # labels processes by executable basename, and a match is ANY entry of this
+    # comma-separated list (case-insensitive substring).
+    #
+    # Corrected 2026-07-29: this shipped as the single value 'ollama', which
+    # matches NOTHING on a stock Linux Ollama install — the runner is
+    # /usr/local/lib/ollama/llama-server, so the label is 'llama-server' and
+    # 'ollama' is not a substring of it. The credit was therefore 0.0 on every
+    # card for the whole P1 soak, and the miss is invisible: 0.0 is also the
+    # legitimate "no telemetry" value and the fit gate fails open, so it never
+    # errored — it just never granted eviction credit. Read by
+    # services/gpu_registry.py::evictable_ollama_gb.
+    'gpu_evictable_process_pattern': 'llama-server,ollama',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer

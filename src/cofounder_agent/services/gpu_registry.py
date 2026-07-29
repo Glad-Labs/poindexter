@@ -38,7 +38,11 @@ _PROM_TIMEOUT_SEC = 5.0
 _VRAM_TOTAL_QUERY = "sum(nvidia_gpu_memory_total_mib)"
 _PROCESS_MEMORY_METRIC = "nvidia_gpu_process_memory_mib"
 _FREE_MEMO_TTL_SEC = 15.0
-_DEFAULT_EVICTABLE_PROCESS_PATTERN = "ollama"
+# Comma-separated substrings. "llama-server" first because that is what stock
+# Ollama actually names its runner on Linux (/usr/local/lib/ollama/llama-server);
+# the bare "ollama" that shipped as the default matched nothing on this host, so
+# the eviction credit was silently 0.0 for the entire P1 soak.
+_DEFAULT_EVICTABLE_PROCESS_PATTERN = "llama-server,ollama"
 
 
 class GPURegistry:
@@ -86,21 +90,35 @@ class GPURegistry:
         return value
 
     async def evictable_ollama_gb(self, gpu_index: int) -> float:
-        """VRAM (GB) the primary Ollama runner holds ON THIS CARD; 0.0 unknown.
+        """VRAM (GB) the evictable LLM runner holds ON THIS CARD; 0.0 unknown.
 
         Sums the exporter's per-process rows (``nvidia_gpu_process_memory_mib``)
         whose ``gpu`` label matches the card and whose ``process`` label
-        contains ``gpu_evictable_process_pattern`` (case-insensitive substring,
-        default "ollama"). The metric is queried unfiltered and matched
+        contains ANY entry of ``gpu_evictable_process_pattern`` (comma-separated,
+        case-insensitive substring). The metric is queried unfiltered and matched
         client-side so a model spilled across both cards contributes only its
         gpu0 share — the per-card mandate that rules out the ``/api/ps``
         cross-card total. Absent metric, empty result, or any failure → 0.0
         (conservative: admission then sees no eviction credit).
+
+        **Why a LIST (2026-07-29).** The setting shipped as a single substring
+        defaulting to ``"ollama"`` — which matched nothing on this host, so the
+        credit was silently 0.0 on every card and the fit gate ran blind for the
+        whole P1 soak. Ollama does not name its runner "ollama": the real
+        process is ``/usr/local/lib/ollama/llama-server`` → label
+        ``llama-server``, and ``"ollama" not in "llama-server"``. The failure is
+        invisible because 0.0 is also the legitimate "no telemetry" value and
+        the gate fails open, so nothing ever errored — it just never granted
+        eviction credit. Matching a list keeps that from recurring the next time
+        a vendor renames a binary, and single-value configs still work unchanged.
         """
-        pattern = (
+        raw = (
             self._site_config.get("gpu_evictable_process_pattern", "")
             or _DEFAULT_EVICTABLE_PROCESS_PATTERN
-        ).lower()
+        )
+        patterns = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
+        if not patterns:
+            return 0.0
         rows = await self._instant_query(_PROCESS_MEMORY_METRIC)
         if not rows:
             return 0.0
@@ -109,7 +127,8 @@ class GPURegistry:
             labels = row.get("metric") or {}
             if labels.get("gpu") != str(gpu_index):
                 continue
-            if pattern not in str(labels.get("process", "")).lower():
+            process = str(labels.get("process", "")).lower()
+            if not any(p in process for p in patterns):
                 continue
             try:
                 total_mib += float(row["value"][1])

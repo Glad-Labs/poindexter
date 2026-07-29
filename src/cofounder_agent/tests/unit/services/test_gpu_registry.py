@@ -204,3 +204,81 @@ async def test_evictable_pattern_is_configurable():
     )
     with patch("httpx.AsyncClient", return_value=client):
         assert await GPURegistry(site_config=sc).evictable_ollama_gb(0) == pytest.approx(4.0)
+
+
+# ---------------------------------------------------------------------------
+# Real-world process names (2026-07-29 regression)
+# ---------------------------------------------------------------------------
+# The pattern shipped as the single substring "ollama" and the tests above used
+# a process literally named "ollama" — so they passed while production matched
+# NOTHING. Stock Ollama on Linux runs /usr/local/lib/ollama/llama-server, which
+# the exporter labels "llama-server", and "ollama" is not a substring of that.
+# The credit was 0.0 on every card for the entire P1 soak and nothing errored,
+# because 0.0 is also the legitimate "no telemetry" value and the fit gate fails
+# open. These pin the observed names, not the assumed one.
+
+
+@pytest.mark.asyncio
+async def test_evictable_matches_real_stock_ollama_runner_name():
+    """The exact production label that the old default missed."""
+    client = _mock_client_rows([_proc_row("0", "llama-server", "20556", pid="1002799")])
+    with patch("httpx.AsyncClient", return_value=client):
+        got = await GPURegistry(site_config=_sc()).evictable_ollama_gb(0)
+    assert got == pytest.approx(20556 / 1024.0, rel=1e-3)
+    assert got > 0.0, "a real Ollama runner must produce non-zero eviction credit"
+
+
+@pytest.mark.asyncio
+async def test_evictable_still_matches_legacy_ollama_name():
+    """Back-compat: an install that really does label the process 'ollama'."""
+    client = _mock_client_rows([_proc_row("0", "ollama", "18432", pid="42")])
+    with patch("httpx.AsyncClient", return_value=client):
+        got = await GPURegistry(site_config=_sc()).evictable_ollama_gb(0)
+    assert got == pytest.approx(18.0)
+
+
+@pytest.mark.asyncio
+async def test_evictable_single_value_config_still_works():
+    """Operators with a single-substring value keep working unchanged."""
+    sc = SiteConfig(initial_config={
+        "gpu_metrics_prometheus_url": "http://prometheus:9090",
+        "gpu_evictable_process_pattern": "llama-server",
+    })
+    client = _mock_client_rows([
+        _proc_row("0", "llama-server", "1024", pid="1"),
+        _proc_row("0", "ollama", "1024", pid="2"),  # not in the single pattern
+    ])
+    with patch("httpx.AsyncClient", return_value=client):
+        got = await GPURegistry(site_config=sc).evictable_ollama_gb(0)
+    assert got == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_evictable_csv_matches_any_entry_without_double_counting():
+    sc = SiteConfig(initial_config={
+        "gpu_metrics_prometheus_url": "http://prometheus:9090",
+        "gpu_evictable_process_pattern": " llama-server , ollama ",  # whitespace tolerated
+    })
+    client = _mock_client_rows([
+        _proc_row("0", "llama-server", "1024", pid="1"),
+        _proc_row("0", "ollama", "1024", pid="2"),
+        _proc_row("0", "chrome", "512", pid="3"),  # excluded
+    ])
+    with patch("httpx.AsyncClient", return_value=client):
+        got = await GPURegistry(site_config=sc).evictable_ollama_gb(0)
+    # A row matching BOTH entries must count once, not once per pattern.
+    assert got == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_evictable_does_not_credit_unevictable_residents():
+    """chatterbox / speaches hold GPU0 VRAM with no /unload endpoint — they are
+    NOT reclaimable, so they must never inflate the eviction credit and let
+    admission grant on VRAM it cannot actually free."""
+    client = _mock_client_rows([
+        _proc_row("0", "uvicorn", "5560", pid="5372"),   # chatterbox TTS
+        _proc_row("0", "python", "16562", pid="2392551"),  # image-gen
+    ])
+    with patch("httpx.AsyncClient", return_value=client):
+        got = await GPURegistry(site_config=_sc()).evictable_ollama_gb(0)
+    assert got == 0.0
