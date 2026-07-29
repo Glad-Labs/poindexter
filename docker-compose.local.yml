@@ -518,6 +518,14 @@ services:
       - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      # Demo clips — VHS-recorded CLI footage consumed by the `cli_demo` shot
+      # source (poindexter#937). MUST be mounted on BOTH `worker` (where
+      # `poindexter media demos bake` runs) and `prefect-worker` (where the
+      # media_pipeline render actually executes) or the bake writes into
+      # container-local storage the renderer cannot see, and every cli_demo
+      # shot silently falls back to a branded card. Same shape as the #906
+      # bug: appuser media mounts added to `worker` but not `prefect-worker`.
+      - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
       # DbBackupJob writes pg_dumps here. Without this mount the script's
       # mkdir at ${HOME}/.poindexter/backups fails Permission denied — the
       # /home/appuser/.poindexter dir created implicitly by Docker is
@@ -877,6 +885,14 @@ services:
       - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      # Demo clips — VHS-recorded CLI footage consumed by the `cli_demo` shot
+      # source (poindexter#937). MUST be mounted on BOTH `worker` (where
+      # `poindexter media demos bake` runs) and `prefect-worker` (where the
+      # media_pipeline render actually executes) or the bake writes into
+      # container-local storage the renderer cannot see, and every cli_demo
+      # shot silently falls back to a branded card. Same shape as the #906
+      # bug: appuser media mounts added to `worker` but not `prefect-worker`.
+      - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
     extra_hosts:
       # Ollama + image-gen servers run on the host machine, not in the
       # docker network. host.docker.internal resolves to host-gateway
