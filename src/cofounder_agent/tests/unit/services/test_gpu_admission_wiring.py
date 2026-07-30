@@ -257,6 +257,22 @@ _MIGRATED_CALLERS = {
     "services/deepeval_rails.py": "fail-soft rail — advisory pass + finding",
     # The seam itself: dispatch_complete forwards whatever its caller declared.
     "services/llm_providers/dispatcher.py": "contract pass-through, no policy",
+    # P2 group 2 (2026-07-30) — media stages. Each already degrades without
+    # failing the post: generate_media_scripts logs "non-fatal" and preserves
+    # any podcast script built so far, and both video stages return None so the
+    # post ships without a shot list. Budget gpu_sched_media_max_wait_s (120s)
+    # sits above ordinary LLM traffic they should queue behind
+    # (generate_content p90 105.3s) and below every long holder they should
+    # skip behind (qa_rewrite 210.5s, featured_image 228.7s,
+    # inline_image_batch 240.0s, media_render 383.5s). These call gpu.lock()
+    # directly rather than via dispatch_complete, so the budget is passed at
+    # the lock, not the dispatch.
+    "modules/content/stages/generate_media_scripts.py":
+        "non-critical stage — partial work preserved + finding",
+    "modules/content/stages/generate_video_shot_list.py":
+        "fail-soft director — no shot list + audit + finding",
+    "modules/content/stages/review_video_shot_list.py":
+        "fail-soft review — unreviewed shot list ships + finding",
 }
 
 

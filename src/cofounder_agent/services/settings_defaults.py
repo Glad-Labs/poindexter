@@ -637,6 +637,24 @@ DEFAULTS: dict[str, str] = {
     # behind normal traffic and skips behind an image/video render. Set to 0 to
     # restore the unbounded legacy contract if skipping proves too aggressive.
     'gpu_sched_qa_rail_max_wait_s': '45',
+    # Wait budget (seconds) for the media stages — poindexter#914 P2 group 2
+    # (media_scripts / video_director / video_review). Same contract as the QA
+    # rails above, sized higher because these stages do real work rather than
+    # a judge call: their own p90 holds are 33.6s / 134.0s / 65.5s.
+    #
+    # All three already degrade without failing the post (the scripts stage
+    # logs "non-fatal" and continues; both video stages return None and ship
+    # the post without a shot list), so a contention skip costs a nice-to-have.
+    # Blocking instead costs the whole article: an unbudgeted media stage
+    # queued behind a render is what stranded a finished post past the 30-min
+    # stale-reclaim, which then re-ran the pipeline from the draft.
+    #
+    # 120s sits in the measured gap (gpu_lease_stats, 07-26..30): above the
+    # ordinary LLM traffic these should queue behind (generate_content p90
+    # 105.3s) and below every long holder they should skip behind (qa_rewrite
+    # 210.5s, featured_image 228.7s, inline_image_batch 240.0s, media_render
+    # 383.5s). 0 restores the unbounded legacy contract.
+    'gpu_sched_media_max_wait_s': '120',
     # VRAM (GB) the admission fit-check holds back on the pipeline GPU for
     # mid-hold invisible claims Prometheus can't see at decision time: desktop
     # compositor transients plus an idle-unloaded resident (e.g. whisper ~3GB)
@@ -2078,6 +2096,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.qa_rail_gpu_busy_skip.delivery': 'log_only',
     'findings.qa_rail_gpu_busy_skip.cooldown_minutes': '60',
     'findings.qa_rail_gpu_busy_skip.min_severity': 'info',
+    # A media stage skipped because GPU admission refused its wait (#914 P2
+    # group 2). Same reasoning as the QA-rail kind above — the design working,
+    # not a fault — so log_only. Kept separate from qa_rail_gpu_busy_skip
+    # because the remedies differ: a QA skip means render pressure is crowding
+    # out review, while a media skip means the post shipped without a podcast
+    # script or shot list. Query it to decide whether gpu_sched_media_max_wait_s
+    # is too tight, or whether media is simply scheduled against renders.
+    'findings.media_gpu_busy_skip.delivery': 'log_only',
+    'findings.media_gpu_busy_skip.cooldown_minutes': '60',
+    'findings.media_gpu_busy_skip.min_severity': 'info',
     'findings.vram_reclaim_ineffective.delivery': 'discord',
     'findings.vram_reclaim_ineffective.fallback': 'log_only',
     'findings.vram_reclaim_ineffective.cooldown_minutes': '180',

@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from modules.content.stages.generate_video_shot_list import (
     _DIRECTOR_MAX_RETRIES_DEFAULT,
     _DIRECTOR_MAX_TOKENS_DEFAULT,
@@ -32,6 +33,8 @@ from modules.content.stages.generate_video_shot_list import (
 )
 from plugins.stage import StageResult
 from schemas.video_shot_list import VideoShotList
+from services.gpu_admission import GpuBusyError
+from services.gpu_scheduler import media_wait_budget_s
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +131,14 @@ class ReviewVideoShotListStage:
         attempts = 1 + max(0, max_retries)
         for attempt in range(attempts):
             try:
-                async with gpu.lock("ollama", model=model, task_id=task_id, phase="video_review"):
+                async with gpu.lock(
+                    "ollama", model=model, task_id=task_id, phase="video_review",
+                    # poindexter#914 P2 group 2 — bounded wait. This review is
+                    # already fail-soft (a None here ships the unreviewed shot
+                    # list), so skipping beats queueing behind a ~230s render
+                    # up to the 900s lock ceiling on a finished article.
+                    max_wait_s=media_wait_budget_s(), priority="background",
+                ):
                     result = await platform.dispatch.complete(
                         pool=pool,
                         messages=[{"role": "user", "content": rendered}],
@@ -140,6 +150,16 @@ class ReviewVideoShotListStage:
                         **think_kwargs,
                     )
                 output = (getattr(result, "text", "") or "").strip()
+            except GpuBusyError as busy:
+                # Ahead of the broad handler below on purpose: contention is not
+                # a dispatch fault, and logging it as one would make render
+                # pressure read as the director breaking. Retrying is pointless
+                # — the GPU is busy now — so this returns rather than looping.
+                logger.info(
+                    "[VIDEO_REVIEW] skipped — GPU busy (%s, %s)", busy.reason, prompt_key,
+                )
+                surface_media_gpu_busy_skip("video_review", busy, task_id=task_id)
+                return None
             except Exception as exc:
                 logger.warning("[VIDEO_REVIEW] dispatch failed (%s, %s)", exc, prompt_key)
                 return None

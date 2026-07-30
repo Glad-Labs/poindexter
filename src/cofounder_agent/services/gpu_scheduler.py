@@ -216,6 +216,30 @@ def qa_rail_wait_budget_s() -> float | None:
     return budget if budget > 0 else None
 
 
+def media_wait_budget_s() -> float | None:
+    """Wait budget (s) for the fail-soft media stages, or ``None`` for legacy.
+
+    poindexter#914 P2 caller migration, group 2. Same contract as
+    :func:`qa_rail_wait_budget_s`, different number: these stages hold the
+    GPU far longer than a QA rail, so the budget sits higher.
+
+    All three media stages degrade without failing the post — the scripts
+    stage logs "non-fatal" and continues, both video stages return ``None``
+    and ship the post without a shot list — so skipping one under contention
+    costs a nice-to-have, while blocking burns the 900s lock ceiling on an
+    article that is otherwise finished.
+
+    The default sits in the measured gap (``gpu_lease_stats``, 07-26..30):
+    ABOVE ordinary LLM traffic they should queue behind (``generate_content``
+    p90 105.3s) and BELOW every long holder they should skip behind —
+    ``qa_rewrite`` 210.5s, ``featured_image`` 228.7s, ``inline_image_batch``
+    240.0s, ``media_render`` 383.5s. ``0`` restores the unbounded legacy
+    contract.
+    """
+    budget = _cfg_float("gpu_sched_media_max_wait_s", 120.0)
+    return budget if budget > 0 else None
+
+
 def _cfg_bool(key: str, default: bool) -> bool:
     """Read a bool from site_config (DB) with fallback.
 

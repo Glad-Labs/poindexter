@@ -25,8 +25,11 @@ import logging
 import re
 from typing import Any
 
+from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from plugins.stage import StageResult
 from services.audio_gen_service import generate_audio, is_audio_gen_enabled
+from services.gpu_admission import GpuBusyError
+from services.gpu_scheduler import media_wait_budget_s
 from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from utils.findings import emit_finding
 
@@ -124,7 +127,15 @@ class GenerateMediaScriptsStage:
 
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
-            async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
+            async with gpu.lock(
+                "ollama", model=model, task_id=context.get("task_id"),
+                phase="media_scripts",
+                # poindexter#914 P2 group 2 — bounded wait. This stage is
+                # explicitly non-critical (see the handler below), so skipping
+                # beats queueing behind a ~230s render up to the 900s lock
+                # ceiling on an article that is otherwise finished.
+                max_wait_s=media_wait_budget_s(), priority="background",
+            ):
                 podcast_script = await _build_script_with_llm(
                     title, content_text, site_config=sc,
                 )
@@ -192,6 +203,7 @@ class GenerateMediaScriptsStage:
                     async with gpu.lock(
                         "ollama", model=model,
                         task_id=context.get("task_id"), phase="media_scripts",
+                        max_wait_s=media_wait_budget_s(), priority="background",
                     ):
                         vn_result = await platform.dispatch.complete(
                             pool=pool,
@@ -210,6 +222,16 @@ class GenerateMediaScriptsStage:
                     )
                     if video_long_script:
                         logger.info("[MEDIA] Video narration script: %d chars", len(video_long_script))
+                except GpuBusyError as busy:
+                    # Ahead of the broad handler: contention is not a failure of
+                    # the narration call, and this sub-step is already optional.
+                    logger.info(
+                        "[MEDIA] video narration skipped — GPU busy (%s)", busy.reason,
+                    )
+                    surface_media_gpu_busy_skip(
+                        "media_scripts_video_narration", busy,
+                        task_id=context.get("task_id"),
+                    )
                 except Exception as vn_exc:
                     logger.warning("[MEDIA] video narration script failed: %s", vn_exc)
 
@@ -236,6 +258,7 @@ class GenerateMediaScriptsStage:
                 async with gpu.lock(
                     "ollama", model=model,
                     task_id=context.get("task_id"), phase="media_scripts",
+                    max_wait_s=media_wait_budget_s(), priority="background",
                 ):
                     result = await platform.dispatch.complete(
                         pool=pool,
@@ -347,6 +370,36 @@ class GenerateMediaScriptsStage:
                     "podcast_script_length": len(podcast_script),
                     "video_scenes_count": len(video_scenes),
                     "short_summary_length": len(short_summary),
+                },
+            )
+        except GpuBusyError as busy:
+            # Ahead of the broad handler on purpose (poindexter#914 P2 group 2):
+            # a contention skip is the admission contract working, not script
+            # generation failing, and folding it into the generic warning would
+            # make render pressure read as this stage breaking. Degrades exactly
+            # like that handler — same partial-work preservation, so a podcast
+            # script built before the skip still reaches the video director.
+            logger.info(
+                "[MEDIA] Script generation skipped — GPU busy (%s)", busy.reason,
+            )
+            surface_media_gpu_busy_skip(
+                "media_scripts", busy, task_id=context.get("task_id"),
+            )
+            stages = context.setdefault("stages", {})
+            stages["4b_media_scripts"] = False
+            return StageResult(
+                ok=bool(podcast_script),
+                detail=(
+                    f"gpu_busy_skip: {busy.reason} "
+                    f"(podcast_script={len(podcast_script)}c preserved)"
+                ),
+                context_updates={
+                    "podcast_script": podcast_script,
+                    "podcast_script_length": len(podcast_script),
+                    "podcast_audio_path": podcast_audio_path,
+                    "podcast_intro_audio_path": podcast_intro_audio_path,
+                    "video_long_script": video_long_script,
+                    "stages": stages,
                 },
             )
         except Exception as e:

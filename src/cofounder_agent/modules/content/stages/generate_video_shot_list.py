@@ -41,8 +41,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from plugins.stage import StageResult
 from schemas.video_shot_list import VideoShotList
+from services.gpu_admission import GpuBusyError
+from services.gpu_scheduler import media_wait_budget_s
 
 logger = logging.getLogger(__name__)
 
@@ -596,6 +599,11 @@ class GenerateVideoShotListStage:
                 async with gpu.lock(
                     "ollama", model=model,
                     task_id=task_id, phase="video_director",
+                    # poindexter#914 P2 group 2 — bounded wait. The director is
+                    # already fail-soft (a None here ships the post without a
+                    # shot list), so skipping beats queueing behind a ~230s
+                    # render up to the 900s lock ceiling on a finished article.
+                    max_wait_s=media_wait_budget_s(), priority="background",
                 ):
                     result = await platform.dispatch.complete(
                         pool=pool,
@@ -611,6 +619,31 @@ class GenerateVideoShotListStage:
                         **think_kwargs,
                     )
                 director_output = (getattr(result, "text", "") or "").strip()
+            except GpuBusyError as busy:
+                # Ahead of the broad handler below on purpose: contention is not
+                # a dispatch fault. It still writes a shot_list_failed audit row
+                # — that family is where "why did this post get no shot list?"
+                # is answered — but under its own phase and at info severity, so
+                # a burst of render pressure can't be mistaken for the director
+                # failing. Retrying is pointless while the GPU is held.
+                logger.info(
+                    "[VIDEO_DIRECTOR] skipped — GPU busy (%s, key=%s)",
+                    busy.reason, prompt_key,
+                )
+                await _log_audit(
+                    pool,
+                    event_type="video_director.shot_list_failed",
+                    task_id=task_id,
+                    details={
+                        "phase": "gpu_busy_skip",
+                        "prompt_key": prompt_key,
+                        "reason": busy.reason,
+                        "eta_seconds": busy.eta_seconds,
+                    },
+                    severity="info",
+                )
+                surface_media_gpu_busy_skip("video_director", busy, task_id=task_id)
+                return None
             except Exception as exc:
                 logger.warning(
                     "[VIDEO_DIRECTOR] LLM dispatch failed (%s, key=%s) — skipping",
