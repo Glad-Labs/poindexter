@@ -68,3 +68,45 @@ def test_container_path_matches_the_setting_default() -> None:
     from services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["demo_clip_dir"] == CONTAINER_PATH
+
+
+# ---------------------------------------------------------------------------
+# The bake target and the render source must be the SAME directory
+# ---------------------------------------------------------------------------
+
+
+def test_bake_default_and_render_default_agree() -> None:
+    """`demos bake` must write where `_resolve_demo_clip` reads.
+
+    These drifted once: the CLI defaulted to /tmp/poindexter-demo-clips while
+    the renderer looked in ``demo_clip_dir``, so a bake with no ``--out``
+    landed somewhere nothing would ever look and every cli_demo shot carded.
+    Nothing failed — the bake reported success and the video reported success.
+    """
+    from services.demo_clips import clip_dir
+    from services.settings_defaults import DEFAULTS
+
+    assert str(clip_dir(None)) == DEFAULTS["demo_clip_dir"]
+    assert str(clip_dir(None)) == CONTAINER_PATH
+
+
+def test_zygote_failure_is_diagnosed_not_dumped() -> None:
+    """Chromium's sandbox abort must produce an actionable message.
+
+    Its stack dump is multi-KB and the real cause is nowhere near the end, so
+    a naive tail yields `trp: 0000... | [end of stack trace]` — which is what
+    the first real bake reported, and it says nothing.
+    """
+    from services.demo_clips import _diagnose_bake_failure
+
+    blob = "content::ZygoteHostImpl::Init()\ntrp: 0000 msk: 0000\n[end of stack trace]"
+    msg = _diagnose_bake_failure(blob, blob.splitlines()[-2:])
+    assert "seccomp=unconfined" in msg
+    assert "trp:" not in msg
+
+
+def test_unrecognised_failure_still_reports_the_tail() -> None:
+    from services.demo_clips import _diagnose_bake_failure
+
+    msg = _diagnose_bake_failure("parse error line 3", ["parse error line 3"])
+    assert "parse error line 3" in msg

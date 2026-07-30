@@ -592,6 +592,7 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
     from services.demo_clips import (
         DemoTapeError,
         bake_tape,
+        clip_dir,
         load_tapes,
         write_manifest,
     )
@@ -610,7 +611,39 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
             sys.exit(2)
         tapes = [t for t in tapes if t.slug in wanted]
 
-    target = Path(out_dir or os.getenv("POINDEXTER_DEMO_CLIP_DIR") or "/tmp/poindexter-demo-clips")
+    # Default to the SAME directory the shot renderer reads (``demo_clip_dir``).
+    # These were written at different times and drifted: the CLI defaulted to
+    # /tmp/poindexter-demo-clips while ``_resolve_demo_clip`` looked in
+    # demo_clip_dir, so a bake with no --out landed where nothing would ever
+    # look for it and every cli_demo shot would card.
+    #
+    # Read through the SiteConfig DI seam rather than raw SQL — the CLI is a
+    # thin adapter (ADR 2026-06-10) and inline SQL here trips the
+    # adapter-purity ratchet.
+    async def _resolve_target() -> Path:
+        if out_dir:
+            return Path(out_dir)
+        import asyncpg
+
+        from services.site_config import SiteConfig
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        try:
+            sc = SiteConfig()
+            await sc.reload(pool)
+            return clip_dir(sc)
+        finally:
+            await pool.close()
+
+    try:
+        target = _run(_resolve_target())
+    except Exception as e:  # noqa: BLE001
+        click.secho(
+            f"Could not read demo_clip_dir from the database ({e}); "
+            f"falling back to its default. Pass --out to override.",
+            fg="yellow", err=True,
+        )
+        target = clip_dir(None)
+
     click.secho(f"Baking {len(tapes)} tape(s) -> {target}", fg="cyan", bold=True)
 
     async def _go():

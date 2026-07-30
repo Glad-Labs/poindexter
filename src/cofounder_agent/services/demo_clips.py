@@ -430,6 +430,29 @@ async def probe_duration_s(path: str, *, ffprobe: str = "ffprobe") -> float:
         return 0.0
 
 
+def _diagnose_bake_failure(output: str, tail: list[str]) -> str:
+    """Turn a VHS failure into something an operator can act on.
+
+    VHS drives headless Chromium, and when Chromium's sandbox cannot start it
+    dumps a multi-KB register/stack-trace blob whose actual cause ("no usable
+    sandbox") is nowhere near the end. Truncating to the last few lines — the
+    obvious thing — yields `trp: 0000... msk: 0000... | [end of stack trace]`,
+    which says nothing at all. This was the failure mode on the very first
+    bake attempted inside the compose worker.
+    """
+    if "ZygoteHostImpl" in output or "no usable sandbox" in output.lower():
+        return (
+            "Chromium's sandbox could not start (zygote abort). VHS drives "
+            "headless Chromium, which needs a relaxed seccomp profile: run the "
+            "bake in a container started with "
+            "`--security-opt seccomp=unconfined`. See "
+            "docs/architecture/demo-clips.md."
+        )
+    if "executable file not found" in output or "not found" in output.lower():
+        return f"vhs or a dependency is missing from PATH; vhs said: {' | '.join(tail)}"
+    return f"no output file; vhs said: {' | '.join(tail)}"
+
+
 async def bake_tape(
     tape: DemoTape,
     *,
@@ -470,9 +493,10 @@ async def bake_tape(
         proc.kill()
         return BakeResult(tape.slug, False, error=f"vhs timed out after {timeout_s}s")
 
-    tail = (stdout or b"").decode(errors="replace").strip().splitlines()[-4:]
+    output = (stdout or b"").decode(errors="replace")
+    tail = output.strip().splitlines()[-4:]
     if not clip_path.is_file():
-        return BakeResult(tape.slug, False, error=f"no output file; vhs said: {' | '.join(tail)}")
+        return BakeResult(tape.slug, False, error=_diagnose_bake_failure(output, tail))
 
     duration = await probe_duration_s(str(clip_path))
     if duration <= 0:
