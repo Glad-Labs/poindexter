@@ -1,0 +1,115 @@
+# Build the container images that gate production.
+#
+# Until now NOTHING in CI built them. Three Dockerfiles decide what actually
+# runs the pipeline, and the first time anyone learned a change broke the image
+# was at deploy time on the operator's PC. Trivy *scans* Dockerfiles; nothing
+# *built* them.
+#
+# That gap is not theoretical. Host and image genuinely diverge: the images
+# install with `poetry install --no-root`, so no distribution metadata exists
+# and `importlib.metadata.entry_points()` returns 0 inside the worker while the
+# host venv reports 8 taps / 26 jobs. Host-green says less about the image than
+# it looks like it does.
+#
+# Why `docker build --check` is NOT used here: it is a best-practice linter
+# only. Measured 2026-07-30 — it reports "no warnings found" for both a
+# Dockerfile syntax error AND a `COPY` of a nonexistent file. A real build
+# catches the bad COPY immediately. Shipping --check would have looked like
+# coverage while catching nothing.
+#
+# What is deliberately NOT built: image-gen (14.5 GB), chatterbox (14.1 GB),
+# wan. They exceed a hosted runner's disk, and their failure mode is model
+# loading at runtime rather than image assembly. Building them here would buy
+# little and add a slow, flaky job — the same "permanently red advisory check"
+# problem this workflow exists to help retire.
+name: docker-build
+
+# Path-filtered ON PURPOSE, and therefore NOT a required check. A required
+# check must run unconditionally or PRs hang forever on "Expected — Waiting for
+# status to be reported" (see the note atop python-lint.yml). Building images
+# on every docs-only PR would be pure waste, so this trades gating for cost.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/Dockerfile'
+      - '**/Dockerfile.*'
+      - '**/.dockerignore'
+      - 'src/cofounder_agent/pyproject.toml'
+      - 'src/cofounder_agent/poetry.lock'
+      - 'brain/requirements*.txt'
+      - 'docker-compose*.yml'
+      - '.github/workflows/docker-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/Dockerfile'
+      - '**/Dockerfile.*'
+      - '**/.dockerignore'
+      - 'src/cofounder_agent/pyproject.toml'
+      - 'src/cofounder_agent/poetry.lock'
+      - 'brain/requirements*.txt'
+      - 'docker-compose*.yml'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # brain is small (670 MB) and pure-Python, so it builds reliably on a hosted
+  # runner in about a minute. Verified building clean from a fresh checkout.
+  build-brain:
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Build brain image
+        run: docker build -f brain/Dockerfile -t poindexter-brain:ci ./brain
+      - name: Report size
+        run: |
+          docker images poindexter-brain:ci --format 'brain image size: {{.Size}}'
+
+  # The worker is THE image that runs the content pipeline, and the one worth
+  # guarding. It is ~7.6 GB and its `poetry install` pulls multi-GB wheels
+  # (torch, playwright), which is too much for a hosted runner's disk and too
+  # slow to be a dependable check there.
+  #
+  # It therefore uses the same `vars.CI_RUNNER || ubuntu-latest` selector as the
+  # other heavy jobs. On this repo CI_RUNNER is set, so it lands on the
+  # self-hosted runner, which already builds this image daily and has a warm
+  # layer cache — the incremental build is normally cache hits.
+  #
+  # Caveat worth knowing before trusting a red here: if CI_RUNNER is ever unset
+  # (or on a fork) this falls back to a hosted runner and attempts a COLD 7.6 GB
+  # build, which will likely die on disk or on multi-GB wheel downloads. That is
+  # an environment failure, not a broken Dockerfile — check which runner picked
+  # the job up before chasing it. The fallback is kept anyway so forks get some
+  # signal rather than a job that queues forever.
+  build-worker:
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Build worker image
+        run: |
+          docker build \
+            -f src/cofounder_agent/Dockerfile.worker \
+            -t poindexter-worker:ci \
+            ./src/cofounder_agent
+      - name: Report size
+        run: |
+          docker images poindexter-worker:ci --format 'worker image size: {{.Size}}'
+      - name: Prune the CI tag (keep layer cache, drop the tag)
+        if: always()
+        run: docker rmi poindexter-worker:ci || true
