@@ -87,10 +87,26 @@ updates:
     #   four manifests are on ^26.1.x today. This entry is a forward guard
     #   against an unattended 27 rather than a fix for anything open now.
     ignore:
+      # Version-RANGE ignores, not `update-types`. The update-types form was
+      # tried first (2026-07-28) and demonstrably does not hold: dependabot
+      # opened #2888 twelve hours after it landed, and on 2026-07-30 a
+      # `recreate` closed that PR only to immediately open #2923 carrying BOTH
+      # held majors again. The group's own `update-types: [minor, patch]` was
+      # bypassed in the same PR, so the filtering simply is not applied to these
+      # grouped deps. A `versions:` range is a blunt per-dependency exclusion
+      # and does not depend on that interaction.
+      #
+      # Re-check by commenting `@dependabot recreate` on the open production
+      # group PR: if the rebuilt PR still lists typescript, this form failed too.
       - dependency-name: 'typescript'
-        update-types: ['version-update:semver-major']
+        versions: ['>=7.0.0']
+      # Held at the NEXT major only — every manifest is on ^26.1.2 today, so
+      # 26.x patches still flow. Note dependabot reports this one as "from
+      # 22.19.17": that is the orphaned nested
+      # web/storefront/node_modules/@types/node entry in package-lock.json,
+      # which nothing requires. Worth pruning separately.
       - dependency-name: '@types/node'
-        update-types: ['version-update:semver-major']
+        versions: ['>=27.0.0']
     # Group updates by type for easier review. Restricted to minor/patch
     # (matching every other grouped ecosystem below) so a major bump rides
     # alone in its own PR instead of blocking a batch of safe updates.
