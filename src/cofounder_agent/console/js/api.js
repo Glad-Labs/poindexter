@@ -610,13 +610,27 @@
       off +
       (category ? '&category=' + encodeURIComponent(category) : '');
     const first = await http('GET', qs(0));
-    const items = (first && first.items) || [];
+    // COPY page 1's array — do not alias it. Accumulating into the response's
+    // own array mutates the caller's payload, and if any later page resolves to
+    // that same object the loop below pushes the array into ITSELF, doubling
+    // per page (100 -> 200 -> 400 ...). That is not hypothetical: the contract
+    // harness replays one fixture object for every call, so listSettings hit
+    // 204,800 entries by page 11 and died on page 12 with "Maximum call stack
+    // size exceeded" — console-unit had been red on main because of it.
+    const items = [...((first && first.items) || [])];
     const total = (first && first.total) || items.length;
     const offsets = [];
     for (let off = PAGE; off < total && off < 5000; off += PAGE)
       offsets.push(off);
     const more = await Promise.all(offsets.map((off) => http('GET', qs(off))));
-    more.forEach((p) => items.push(...((p && p.items) || [])));
+    // Append element-wise rather than `push(...page)`. Spreading passes every
+    // element as a separate argument, so a large page blows the argument limit
+    // with the same RangeError. This form is bounded by array length, not by
+    // the call stack.
+    for (const p of more) {
+      const page = (p && p.items) || [];
+      for (const row of page) items.push(row);
+    }
     const settings = items.map(adaptSetting);
     return { settings, categories: deriveCategories(settings), total };
   }
