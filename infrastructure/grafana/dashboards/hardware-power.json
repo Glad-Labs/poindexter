@@ -1224,7 +1224,7 @@
       "id": 77,
       "type": "stat",
       "title": "UPS load",
-      "description": "ups.load as percent of the inverter's own rating (ups.realpower.nominal — 1000W on the operator unit). UpsLoadHigh warns on a sustained 85-95% band; UpsLoadCritical pages at ≥95% — calibrated on the 2026-07-31 overload trip at ~106% during a sag transfer. Tune via prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent.",
+      "description": "ups.load as percent of the inverter's own rating (ups.realpower.nominal — 1000W on the operator unit). UpsLoadHigh warns on a sustained 85-95% band; UpsLoadCritical pages at ≥95% — calibrated on the 2026-07-31 overload trip (GPU burst transients on a >90% standing load, during a sag transfer). Tune via prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1286,7 +1286,7 @@
       "id": 78,
       "type": "stat",
       "title": "Est. draw on UPS",
-      "description": "load% × the unit's rated watts (network_ups_tools_ups_realpower_nominal) = estimated true draw on the battery-backed outlets. This is the number to hold against the inverter rating when deciding what lives on the protected bank vs the surge-only bank — the 2026-07-31 trip was ~1060W against a 1000W rating.",
+      "description": "load% × the unit's rated watts (network_ups_tools_ups_realpower_nominal) = estimated true draw on the battery-backed outlets. This is the number to hold against the inverter rating when deciding what lives on the protected bank vs the surge-only bank — in the 2026-07-31 trip the PC alone burst past its 1000W rating mid-transfer.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1489,7 +1489,7 @@
       "id": 80,
       "type": "timeseries",
       "title": "UPS load (% of inverter rating)",
-      "description": "ups.load history. Dashed lines mirror the UpsLoadHigh / UpsLoadCritical bands (prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent, default 85/95%); y tops at 110% because overload excursions read past 100 (OVER lane in the timeline below). The 2026-07-31 trip: a 910W PC burst plus ~150W of shared gear on a 1000W unit, during a sag transfer.",
+      "description": "ups.load history. Dashed lines mirror the UpsLoadHigh / UpsLoadCritical bands (prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent, default 85/95%); y tops at 110% because overload excursions read past 100 (OVER lane in the timeline below). The 2026-07-31 trip: the PC alone — GPU burst transients stacked on a >90% standing load — on a 1000W unit, during a sag transfer.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"

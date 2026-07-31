@@ -6,9 +6,10 @@ margin, battery state) is invisible, and the first sign of trouble is the
 machine going dark anyway. The operator rig learned this the hard way in July
 2026: four utility power cuts in five days on a house line that never exceeded
 114.6V against a 120V nominal, capped by a 2026-07-31 overload trip — the UPS
-transferred to battery during a sag while carrying ~1060W (a 910W GPU burst
-plus ~150W of shared gear) against its 1000W inverter rating, and dropped its
-output. Glad-Labs/poindexter#958 wired the whole story into the stack.
+transferred to battery during a sag while its single load, the PC, was
+bursting past 90% of the 1000W inverter rating (840→910W sustained, ~1008W
+burst peak over 9 metered days), and the inverter dropped its output.
+Glad-Labs/poindexter#958 wired the whole story into the stack.
 
 ## Architecture
 

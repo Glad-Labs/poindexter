@@ -174,9 +174,11 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # ups.load is percent of the UPS's OWN inverter rating, so unlike the
     # voltage keys these carry over to any hardware unchanged and can ship
     # live. Calibrated against the 2026-07-31 overload trip: a 1000W-rated
-    # unit transferred to battery while carrying ~1060W (PC burst 910W + ~150W
-    # of other gear) and dropped its output. 85% is the "margin is gone, shed
-    # load or raise caps" line; 95% is "the next burst trips the inverter".
+    # unit transferred to battery mid-sag while its single load — the PC —
+    # was bursting past 90% of the rating (840→910W sustained, ~1008W burst
+    # peak over 9 metered days), and the inverter tripped. 85% is the
+    # "margin is gone, shed load or cap draw" line; 95% is "the next burst
+    # trips the inverter".
     "ups_load_warning_percent": "85",
     "ups_load_critical_percent": "95",
     # Battery floor for the UpsLowBattery page, gated on actually being ON
@@ -741,11 +743,12 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "Sustained load between "
             "prometheus.threshold.ups_load_warning_percent (default 85%) and "
             "the critical band. The margin that absorbs GPU bursts during a "
-            "transfer is nearly spent — the 2026-07-31 trip happened at "
-            "~106% DURING a sag transfer. Move non-essential gear off the "
-            "battery-backed outlets to the surge-only bank, or cap GPU power "
-            "draw (`nvidia-smi -pl`). The watts behind the percent are on "
-            "the Hardware & Power UPS row (load × the unit's rated W)."
+            "transfer is nearly spent — the 2026-07-31 trip was burst "
+            "transients stacked on a >90% standing load DURING a sag "
+            "transfer. Move non-essential gear off the battery-backed "
+            "outlets to the surge-only bank, or cap GPU power draw "
+            "(`nvidia-smi -pl`). The watts behind the percent are on the "
+            "Hardware & Power UPS row (load × the unit's rated W)."
         ),
     },
     "UpsLoadCritical": {
@@ -768,10 +771,10 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "prometheus.threshold.ups_load_critical_percent (default 95%) of "
             "the inverter rating for a minute. If the line sags NOW, the "
             "transfer lands on an overloaded inverter and output drops — "
-            "that is precisely the 2026-07-31 outage (910W PC burst + ~150W "
-            "shared gear on a 1000W unit). Shed load immediately: pause GPU "
-            "jobs, and get anything non-essential off the battery-backed "
-            "outlets."
+            "that is precisely the 2026-07-31 outage: the operator PC alone, "
+            "bursting past its 1000W unit's rating mid-transfer. Shed load "
+            "immediately: pause GPU jobs, and get anything non-essential "
+            "off the battery-backed outlets."
         ),
     },
     # Host disk space. Previously static in infrastructure.yml — moved here so

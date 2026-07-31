@@ -501,9 +501,10 @@ class TestUpsRules:
     job="nut").
 
     Anchored on the 2026-07-31 operator incident: a 1000W-rated line-
-    interactive UPS transferred to battery during a sag while carrying ~1060W
-    (910W GPU burst + ~150W of shared gear) and overload-tripped its output —
-    the fourth utility power cut in five days on a house line that never
+    interactive UPS transferred to battery during a sag while its single
+    load — the PC — was bursting past 90% of the rating (840→910W sustained,
+    ~1008W burst peak), and the inverter overload-tripped its output — the
+    fourth utility power cut in five days on a house line that never
     exceeded 114.6V against a 120V nominal.
     """
 
