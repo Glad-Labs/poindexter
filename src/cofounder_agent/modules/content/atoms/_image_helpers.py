@@ -68,6 +68,31 @@ _HEADING_RE = re.compile(r"^#{2,4}\s+(.+)$", re.MULTILINE)
 _BOLD_HEADING_RE = re.compile(r"^\*\*(.{1,80}?)\*\*\s*$", re.MULTILINE)
 
 
+def _first_prose_end(content_text: str) -> int:
+    """Index just past the article's first real paragraph of prose.
+
+    "Prose" excludes headings, blank lines, and existing image markers — so for
+    a draft that opens ``## Title\\n\\nWe hit a wall...`` this returns the offset
+    at the end of "We hit a wall...", not the gap under the heading.
+
+    Used as a floor on inline-image placement. The top of the article belongs to
+    the hero image; an inline illustration above the first sentence reads as the
+    hero and leaves the real hero slot looking empty (RCA 2026-07-31 — 10 of 82
+    posts in a 60-day window opened with an inline image and zero prose above
+    it). Returns 0 when the body is nothing but headings, which leaves placement
+    unchanged rather than inventing a floor.
+    """
+    for match in re.finditer(r"(?m)^(?!\s*$)(?!#{1,6}\s)(?!\[IMAGE).+$", content_text):
+        line = match.group().strip()
+        # Skip pseudo-heading lines (``**Section Title**``) — they're structure,
+        # not prose, and _BOLD_HEADING_RE already treats them as anchors.
+        if _BOLD_HEADING_RE.match(line):
+            continue
+        para_end = content_text.find("\n\n", match.end())
+        return len(content_text) if para_end < 0 else para_end
+    return 0
+
+
 # Stylized-only fallback pool for inline illustrations. The photoreal styles
 # ("photorealistic scene", "editorial photograph", "macro photograph") were
 # removed deliberately: low-step image-gen butchers photoreal detail (the "PC
@@ -242,6 +267,15 @@ async def _plan_and_inject_placeholders(
                 len(heading_map),
             )
 
+    # Floor for inline placement: the top of the article is the HERO's slot.
+    # ``para_end`` below resolves to the gap between a heading and its first
+    # paragraph, which is the right look for a mid-article section but puts an
+    # illustration above the opening sentence when the writer leads with an H2
+    # instead of an intro paragraph. That image then reads as the hero while the
+    # real hero slot looks empty — the visible half of the 2026-07-31 hero-image
+    # RCA. Clamping (rather than dropping) keeps the image, just below the lede.
+    prose_floor = _first_prose_end(content_text)
+
     insert_positions: list[tuple[int, int, str, str]] = []
     for i, img in enumerate(plan.images):
         for heading_text, h_match in heading_map.items():
@@ -259,6 +293,8 @@ async def _plan_and_inject_placeholders(
                 para_end = content_text.find("\n\n", h_match.end())
                 if para_end < 0:
                     para_end = len(content_text)
+                # Never above the lede — see prose_floor above.
+                para_end = max(para_end, prose_floor)
                 source_hint = f"{img.source}:{img.style}"
                 insert_positions.append(
                     (para_end, i + 1, img.prompt, source_hint),

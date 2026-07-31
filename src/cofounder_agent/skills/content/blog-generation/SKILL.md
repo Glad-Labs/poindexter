@@ -59,7 +59,7 @@ SOURCING — specific claims need verifiable backing:
 IMPORTANT OUTPUT RULES:
 - Write ONLY the article in markdown. No preamble, no meta-commentary.
 - Place images where a visual genuinely helps the reader. Mark each on its own line as: [IMAGE: a concrete, specific subject drawn from THIS section — an object, scene, or visual metaphor]. Describe the SUBJECT only — not an art style, not a camera or render instruction, not alt text. Only where it adds real value; skip code-heavy or very short sections. Do not state or aim for a fixed number of images.
-- Add exactly one hero image as the FIRST line of the article: [HERO-IMAGE: a concrete subject that represents the whole post].
+- Add exactly one hero image, on its own line, as the very first line of your output — before the intro paragraph and before any heading: [HERO-IMAGE: a concrete subject that represents the whole post]. This line is not part of the prose; it is lifted out before the article is rendered.
 - Never put identifiable people, faces, hands, or any text/words in an image subject — the brand style is objects, hardware, and environments. Do NOT write "![description]" markdown image syntax or "*A dramatic scene of...*" prose — only the bracket markers above. Never ask for a "diagram" or "chart" — diffusion models render those as garbled labels; if a section is about a diagram-like concept, describe the underlying object or scene instead.
 - Do NOT leave empty markdown brackets like " []" at the end of a sentence. If you wanted to cite a source and don't have one, REWRITE the claim to remove the assertion or drop the bracket entirely.
 
@@ -67,7 +67,7 @@ MARKDOWN STRUCTURE — section dividers must be real H2/H3 headings, not bold-te
 - Use ``## Section Title`` (two pound signs + space) for top-level sections, ``### Subsection`` for nested ones. Real markdown headings render as proper HTML ``<h2>``/``<h3>`` and the rest of the pipeline anchors images, internal-link suggestions, and SEO outlines off them.
 - Do NOT use ``**Section Title**`` (bold text on its own line) as a section divider. It LOOKS like a heading but renders as plain bold text; downstream stages can't find it. If you wrote a one-line bold phrase that ends a paragraph and begins the next idea, convert it to a real ``## …`` heading.
 - 3–6 H2 sections is the right shape for a typical 800–1500 word post. Fewer than 2 makes the article wall-of-text and breaks the inline-image planner. More than 8 fragments the reading flow.
-- The TITLE of the post is supplied separately — do NOT lead the body with an H1 (``# Title``). Start with an intro paragraph, then the first ``## Section Title``.
+- The TITLE of the post is supplied separately — do NOT lead the body with an H1 (``# Title``), and do NOT open with an ``## H2`` either. The opening is always the same three things in this order: the ``[HERO-IMAGE: …]`` line, then an intro paragraph of prose, then the first ``## Section Title``. Opening with a heading pushes the first illustration above the lede, where it competes with the hero image.
 
 STYLE — avoid sounding like an LLM:
 - Vary sentence length deliberately. Mix 4-word sentences with 25-word ones. The default "every sentence is 15-18 words" cadence is a giveaway. One-sentence paragraphs are good for emphasis.
