@@ -2525,6 +2525,35 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'dev_diary_auto_publish_max_edit_distance': '50',
     'dev_diary_auto_publish_min_clean_runs': '3',
     'dev_diary_auto_publish_threshold': '70',
+
+    # ----- Dev-diary substance bar ("is today worth a diary?") -----
+    # The daily job used to skip only when the day was LITERALLY empty, which
+    # never fired: release-please, dependabot, and the nightly docs sweep all
+    # merge PRs on an otherwise dead day. Measured over 2026-07-08..07-31,
+    # four days (07-21/22/25/27) were 100% bot + bookkeeping churn and each
+    # still produced a diary about nothing.
+    #
+    # The gate now scores SUBSTANCE: bot-authored PRs and bookkeeping
+    # conventional-commit types don't count, untyped titles DO (real work
+    # routinely ships untyped -- see services/topic_sources/dev_diary_source.py
+    # SubstancePolicy for the sample that settled that). min_score=1 means
+    # "at least one substantive human PR"; on the measured window that skipped
+    # exactly the four dead days and wrote on all twenty real ones.
+    'dev_diary_min_substance_score': '1',
+    'dev_diary_substance_weight_pr': '1.0',
+    'dev_diary_substance_weight_commit': '1.0',
+    # Posts/audit score 0 by design: the pipeline publishing a post is the
+    # machine's routine output, not the operator shipping -- and 2 of the 4
+    # thin days DID publish one, so counting them would leave half the problem
+    # in place. Both stay in the writer's context bundle regardless. Raise
+    # above 0 only if a publish-only day should earn its own diary entry.
+    'dev_diary_substance_weight_post': '0',
+    'dev_diary_substance_weight_audit': '0',
+    # CSV. Blank falls back to the code defaults (app_settings.value is NOT
+    # NULL with '' as the unset sentinel), so blanking these RESTORES the
+    # filter rather than disabling it.
+    'dev_diary_bookkeeping_types': 'chore,docs,ci,test,style,build,deps,revert',
+    'dev_diary_bot_author_patterns': 'app/*,*[bot],dependabot*,*-bot',
     # Niche allowlist publish gate (#729). When 'true', publish_service
     # refuses to publish a task whose niche_slug is not a KNOWN niche
     # (no matching ``niches`` row) or is missing -- the manual-approve
@@ -3043,6 +3072,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'dev_diary_auto_publish_max_edit_distance': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'dev_diary_auto_publish_min_clean_runs': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'enforce_niche_allowlist': {'owner': 'publish_service', 'value_type': 'boolean'},
+
+    # ----- Dev-diary substance bar (thin-day skip) -----
+    'dev_diary_min_substance_score': {'owner': 'dev_diary_source', 'value_type': 'float'},
+    'dev_diary_substance_weight_pr': {'owner': 'dev_diary_source', 'value_type': 'float'},
+    'dev_diary_substance_weight_commit': {'owner': 'dev_diary_source', 'value_type': 'float'},
+    'dev_diary_substance_weight_post': {'owner': 'dev_diary_source', 'value_type': 'float'},
+    'dev_diary_substance_weight_audit': {'owner': 'dev_diary_source', 'value_type': 'float'},
+    'dev_diary_bookkeeping_types': {'owner': 'dev_diary_source', 'value_type': 'string'},
+    'dev_diary_bot_author_patterns': {'owner': 'dev_diary_source', 'value_type': 'string'},
 
     # ----- Pipeline gates -----
     'pipeline_gate_draft_gate': {'owner': 'template_runner', 'value_type': 'string'},

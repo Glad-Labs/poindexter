@@ -212,6 +212,25 @@ async def _run_trigger(lookback_hours: int) -> None:
             f"bundle: prs={len(ctx.merged_prs)} "
             f"commits={len(ctx.notable_commits)} notes={notes_count}"
         )
+        # Substance is ADVISORY here, not a gate. The scheduled job skips
+        # thin days on its own; this command is the operator explicitly
+        # asking for a diary, so it still runs — but it says out loud when
+        # the day wouldn't have earned one, which is what makes "why was
+        # there no diary this morning?" answerable.
+        breakdown = ctx.substance_breakdown()
+        click.echo(
+            f"substance: {breakdown['score']:g} "
+            f"(min {breakdown['min_score']:g}) — "
+            f"{breakdown['substantive_prs']}/{breakdown['merged_prs_total']} "
+            f"PRs are real work"
+        )
+        if breakdown["score"] < breakdown["min_score"]:
+            click.secho(
+                "note: the scheduled job would SKIP today as a thin day "
+                "(bot/bookkeeping churn only). Continuing anyway because "
+                "you asked for it explicitly.",
+                fg="yellow",
+            )
         task_id = await _create_dev_diary_task(pool, ctx, gates="preview_approval")
         click.echo(f"queued task: {task_id}")
         if notes_count == 0:

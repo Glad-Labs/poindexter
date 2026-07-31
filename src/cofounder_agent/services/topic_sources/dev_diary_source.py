@@ -23,12 +23,15 @@ no subprocess dependency on ``gh`` or ``git`` binaries, no requirement
 that ``.git`` be bind-mounted into the worker container. Failures are
 non-fatal but LOUD: 4xx/5xx responses, network timeouts, and JSON
 decode errors all log at ``warning`` level so Loki picks them up,
-then return an empty list. The "skip if quiet day" decision lives in
-the job, not here, so the source's contract stays small + testable.
+then return an empty list. The source scores how substantial a day was
+(``SubstancePolicy`` / ``DevDiaryContext.substance_score``) but does not
+act on it — the skip decision itself lives in the job, so the source's
+contract stays small + testable.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import re
 from dataclasses import dataclass, field
@@ -92,6 +95,151 @@ _GITHUB_API_BASE = "https://api.github.com"
 # have the full text available for fallback.
 _PR_BODY_CAP_CHARS = 2000
 
+# Conventional-commit subject parser. Captures the prefix (feat/fix/etc)
+# so the job can group commits by type if it wants to.
+_CC_RE = re.compile(r"^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$")
+
+
+# ---------------------------------------------------------------------------
+# Substance policy — "is this day worth a diary at all?"
+# ---------------------------------------------------------------------------
+#
+# Measured on Glad-Labs/glad-labs-stack across 2026-07-08..07-31 (24 days):
+# four days (07-21, 07-22, 07-25, 07-27) had merged PRs but ZERO substantive
+# work — every PR was release-please, dependabot, or a docs/ci sweep. Each
+# still produced a dev diary, because the old gate only asked whether ANY
+# activity existed. This policy is what raises that bar.
+#
+# Two rules, both read off that sample rather than invented:
+#
+#   1. Bot-authored PRs are never substance. All four thin days were
+#      dominated by `app/glad-labs-release-bot` and `app/dependabot`.
+#   2. Bookkeeping conventional-commit types are never substance.
+#
+# Note this is a DENYLIST, unlike the allowlist `_NOTABLE_COMMIT_PREFIXES`
+# applies to commits. An allowlist looked tempting until the same sample
+# showed real work routinely ships under an UNTYPED title — "Dev.to
+# selective syndication", "Community draft assistant (WS2 PR1: Reddit)",
+# "Electric-cost console tracking". Allowlisting prefixes would have thrown
+# those away and skipped genuinely busy days. So: untyped ⇒ substantive.
+_DEFAULT_BOOKKEEPING_TYPES = (
+    "chore", "docs", "ci", "test", "style", "build", "deps", "revert",
+)
+
+# fnmatch globs (matched lowercased) for automation accounts. GitHub App
+# actors arrive as `app/<slug>`; classic bots carry the `[bot]` suffix.
+_DEFAULT_BOT_AUTHOR_PATTERNS = ("app/*", "*[bot]", "dependabot*", "*-bot")
+
+# Squash-merged commits inherit the PR title and carry a trailing `(#N)`,
+# so one shipped PR appears in BOTH `merged_prs` and `notable_commits`.
+# Scoring the streams naively would double-count every PR; this pulls the
+# number back out so a commit can be deduped against the PR it came from.
+_PR_REF_RE = re.compile(r"\(#(\d+)\)")
+
+
+def _conventional_type(subject: str) -> str:
+    """Lowercase conventional-commit type, or ``""`` when untyped."""
+    m = _CC_RE.match((subject or "").strip())
+    return m.group(1).lower() if m else ""
+
+
+def _is_bot_author(login: str, patterns: tuple[str, ...]) -> bool:
+    """True when ``login`` matches any automation-account glob."""
+    name = (login or "").strip().lower()
+    if not name:
+        return False
+    return any(
+        fnmatch.fnmatch(name, pat.strip().lower())
+        for pat in patterns
+        if pat and pat.strip()
+    )
+
+
+def _csv_tuple(raw: Any, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    """Parse a CSV setting into a tuple, falling back when blank.
+
+    ``app_settings.value`` is NOT NULL with ``''`` as the unset sentinel
+    (feedback_app_settings_value_not_null), so a blank string means
+    "operator hasn't set this", NOT "match nothing" — the difference
+    between inheriting the defaults and silently disabling the filter.
+    """
+    if raw is None:
+        return fallback
+    parts = tuple(p.strip() for p in str(raw).split(",") if p.strip())
+    return parts or fallback
+
+
+def _as_float(raw: Any, fallback: float) -> float:
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+@dataclass(frozen=True)
+class SubstancePolicy:
+    """How much real work a day needs before it earns a dev diary.
+
+    Weights are per-item; ``min_score`` is the bar. A day scoring below it
+    is skipped as "thin". Defaults are grounded in the sample above:
+    ``min_score=1.0`` with ``weight_pr=1.0`` means "at least one
+    substantive, human-authored PR", which skipped exactly the four dead
+    days and wrote on all twenty real ones.
+
+    ``weight_post`` / ``weight_audit`` default to 0. The content pipeline
+    publishing a post is the machine doing its routine job, not the
+    operator shipping — and two of the four thin days DID publish one, so
+    counting posts would have left half the problem in place. Posts and
+    audit events stay in the bundle as writer context either way; this
+    only governs whether they justify writing at all.
+    """
+
+    min_score: float = 1.0
+    weight_pr: float = 1.0
+    weight_commit: float = 1.0
+    weight_post: float = 0.0
+    weight_audit: float = 0.0
+    bookkeeping_types: tuple[str, ...] = _DEFAULT_BOOKKEEPING_TYPES
+    bot_author_patterns: tuple[str, ...] = _DEFAULT_BOT_AUTHOR_PATTERNS
+
+    @classmethod
+    def from_settings(cls, get: Any) -> SubstancePolicy:
+        """Build from a ``get(key, default)`` accessor (SiteConfig or dict).
+
+        Every field is DB-tunable per feedback_db_first_config — the bar is
+        an editorial judgement that will drift, and shipping code to move it
+        would be the wrong seam.
+        """
+        if get is None:
+            return cls()
+        d = cls()
+        return cls(
+            min_score=_as_float(
+                get("dev_diary_min_substance_score", d.min_score), d.min_score,
+            ),
+            weight_pr=_as_float(
+                get("dev_diary_substance_weight_pr", d.weight_pr), d.weight_pr,
+            ),
+            weight_commit=_as_float(
+                get("dev_diary_substance_weight_commit", d.weight_commit),
+                d.weight_commit,
+            ),
+            weight_post=_as_float(
+                get("dev_diary_substance_weight_post", d.weight_post),
+                d.weight_post,
+            ),
+            weight_audit=_as_float(
+                get("dev_diary_substance_weight_audit", d.weight_audit),
+                d.weight_audit,
+            ),
+            bookkeeping_types=_csv_tuple(
+                get("dev_diary_bookkeeping_types", None), d.bookkeeping_types,
+            ),
+            bot_author_patterns=_csv_tuple(
+                get("dev_diary_bot_author_patterns", None), d.bot_author_patterns,
+            ),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Public dataclass: the context bundle
@@ -129,13 +277,22 @@ class DevDiaryContext:
         }
 
     def is_empty(self) -> bool:
-        """True when the day has no Glad Labs activity worth posting about.
+        """True when the day has literally no Glad Labs activity.
 
         brain_decisions is INTENTIONALLY excluded — the brain emits a
         high-confidence "Cycle complete" decision every 5 minutes as a
         heartbeat, so its presence is not signal that real work happened.
         Real signal comes from git activity (PRs, notable commits),
         published posts, or audit events that actually got resolved.
+
+        NOTE: this is the *literal* emptiness check and is deliberately
+        NOT the skip gate any more. It only catches days where nothing at
+        all happened; a day of pure release-bot and docs churn is not
+        empty by this definition yet is not worth a diary either. The job
+        gates on :meth:`substance_score` against
+        ``dev_diary_min_substance_score``. Kept as-is because callers
+        outside the job (the ``poindexter dev-diary`` preview) still ask
+        the literal question.
         """
         return (
             not self.merged_prs
@@ -143,6 +300,91 @@ class DevDiaryContext:
             and not self.recent_posts
             and not self.audit_resolved
         )
+
+    def substantive_prs(
+        self, policy: SubstancePolicy | None = None,
+    ) -> list[dict[str, Any]]:
+        """Merged PRs that represent actual shipped work.
+
+        Drops bot-authored PRs (release-please, dependabot) and
+        bookkeeping conventional-commit types. Untyped titles are KEPT —
+        see the denylist rationale on :data:`_DEFAULT_BOOKKEEPING_TYPES`.
+        """
+        pol = policy or SubstancePolicy()
+        out: list[dict[str, Any]] = []
+        for pr in self.merged_prs:
+            if _is_bot_author(pr.get("author", ""), pol.bot_author_patterns):
+                continue
+            if _conventional_type(pr.get("title", "")) in pol.bookkeeping_types:
+                continue
+            out.append(pr)
+        return out
+
+    def substantive_commits(
+        self, policy: SubstancePolicy | None = None,
+    ) -> list[dict[str, Any]]:
+        """Notable commits that aren't already counted as a merged PR.
+
+        The commits collector already allowlists feat/fix/refactor/perf/
+        security prefixes, so bookkeeping is filtered upstream. What's
+        left to do here is DEDUPE: this repo squash-merges, so a shipped
+        PR lands on main as one commit carrying `(#N)`, and would
+        otherwise be scored twice — once as a PR, once as its own commit.
+        """
+        pol = policy or SubstancePolicy()
+        counted = {
+            str(pr.get("number"))
+            for pr in self.substantive_prs(pol)
+            if pr.get("number") is not None
+        }
+        out: list[dict[str, Any]] = []
+        for commit in self.notable_commits:
+            refs = set(_PR_REF_RE.findall(commit.get("subject", "") or ""))
+            if refs & counted:
+                continue
+            out.append(commit)
+        return out
+
+    def substance_score(self, policy: SubstancePolicy | None = None) -> float:
+        """Weighted "how much real work happened today" score.
+
+        Compared against ``policy.min_score`` by the job to decide whether
+        the day earns a diary. See :class:`SubstancePolicy` for why posts
+        and audit events carry zero weight by default.
+        """
+        pol = policy or SubstancePolicy()
+        return (
+            pol.weight_pr * len(self.substantive_prs(pol))
+            + pol.weight_commit * len(self.substantive_commits(pol))
+            + pol.weight_post * len(self.recent_posts)
+            + pol.weight_audit * len(self.audit_resolved)
+        )
+
+    def substance_breakdown(
+        self, policy: SubstancePolicy | None = None,
+    ) -> dict[str, Any]:
+        """Per-signal detail behind :meth:`substance_score`.
+
+        Exists so a skip is explainable — the job puts this in its
+        JobResult metrics and the operator notification, so "why did
+        today skip?" is answerable without re-running the collectors.
+        """
+        pol = policy or SubstancePolicy()
+        prs = self.substantive_prs(pol)
+        commits = self.substantive_commits(pol)
+        return {
+            "score": self.substance_score(pol),
+            "min_score": pol.min_score,
+            "substantive_prs": len(prs),
+            "substantive_commits": len(commits),
+            "merged_prs_total": len(self.merged_prs),
+            "notable_commits_total": len(self.notable_commits),
+            "recent_posts": len(self.recent_posts),
+            "audit_resolved": len(self.audit_resolved),
+            "filtered_pr_titles": [
+                pr.get("title", "") for pr in self.merged_prs if pr not in prs
+            ][:10],
+        }
 
     def headline(self) -> str:
         """Build a generic, count-based topic for the day.
@@ -347,11 +589,6 @@ async def _collect_merged_prs(
             "body": (pr.get("body") or "")[:_PR_BODY_CAP_CHARS],
         })
     return out
-
-
-# Conventional-commit subject parser. Captures the prefix (feat/fix/etc)
-# so the job can group commits by type if it wants to.
-_CC_RE = re.compile(r"^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$")
 
 
 async def _collect_notable_commits(

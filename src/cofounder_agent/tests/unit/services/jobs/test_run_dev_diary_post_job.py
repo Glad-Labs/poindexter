@@ -125,6 +125,59 @@ def _quiet_ctx(date: str = "2026-05-02") -> DevDiaryContext:
     )
 
 
+def _bookkeeping_ctx(date: str = "2026-05-02") -> DevDiaryContext:
+    """A day with real merge activity but zero shipped work.
+
+    Verbatim shape of 2026-07-27 on Glad-Labs/glad-labs-stack: five
+    merged PRs, all release-bot or dependabot, plus a post the pipeline
+    published on its own. ``is_empty()`` is False for this bundle — that
+    is precisely why the substance bar had to replace it.
+    """
+    return DevDiaryContext(
+        date=date,
+        merged_prs=[
+            {"number": 2841, "title": "chore(main): release 0.111.0",
+             "author": "app/glad-labs-release-bot"},
+            {"number": 2842, "title": f"docs(CLAUDE.md): sync source-truth stats ({date})",
+             "author": "app/glad-labs-release-bot"},
+            {"number": 2843, "title": "docs(reference): regenerate app-settings.md",
+             "author": "app/glad-labs-release-bot"},
+            {"number": 2844,
+             "title": "ci:(deps): bump github/codeql-action/upload-sarif from 4.37.1 to 4.37.3",
+             "author": "app/dependabot"},
+            {"number": 2845, "title": "ci:(deps): bump actions/checkout from 7.0.0 to 7.0.1",
+             "author": "app/dependabot"},
+        ],
+        notable_commits=[],
+        brain_decisions=[],
+        audit_resolved=[],
+        recent_posts=[{"title": "Some scheduled post", "url": "https://x/y"}],
+        cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+    )
+
+
+def _one_real_pr_ctx(date: str = "2026-05-02") -> DevDiaryContext:
+    """Exactly one substantive PR and nothing else — scores 1.0.
+
+    Deliberately carries no commits: `_busy_ctx`'s commit subject ends
+    `(closes #24)`, which is NOT GitHub's squash format `(#24)`, so it
+    does not dedupe and that bundle scores 2.0 instead.
+    """
+    return DevDiaryContext(
+        date=date,
+        merged_prs=[{
+            "number": 156,
+            "title": "feat(gates): per-medium approval gate engine",
+            "author": "operator",
+        }],
+        notable_commits=[],
+        brain_decisions=[],
+        audit_resolved=[],
+        recent_posts=[],
+        cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+    )
+
+
 def _busy_ctx(date: str = "2026-05-02") -> DevDiaryContext:
     return DevDiaryContext(
         date=date,
@@ -216,7 +269,7 @@ class TestRun:
 
         assert result.ok is True
         assert result.changes_made == 0
-        assert "quiet day" in result.detail
+        assert "thin day" in result.detail
         # No content task should have been created
         async with db_pool.acquire() as conn:
             row_count = await conn.fetchval(
@@ -226,8 +279,116 @@ class TestRun:
         assert row_count == 0
         # Marker should be set so we don't re-fire on the same UTC day
         assert (await _get_last_run_date(db_pool)) == today
-        # Operator should have been told about the quiet day
-        assert any("quiet day" in m for m in notify_calls)
+        # Operator should have been told why nothing was written
+        assert any("thin day" in m for m in notify_calls)
+
+    async def test_bot_and_bookkeeping_only_day_skips(self, db_pool):
+        """The regression this bar exists for.
+
+        A day of release-please + dependabot + docs PRs is NOT empty, so
+        the old ``is_empty()`` gate wrote a diary about nothing. Modelled
+        on 2026-07-27, a real day from Glad-Labs/glad-labs-stack.
+        """
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        notify_calls: list[str] = []
+
+        async def fake_notify(message, critical=False):
+            notify_calls.append(message)
+
+        async def fake_gather(self, pool, **kwargs):
+            return _bookkeeping_ctx(today)
+
+        with (
+            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+                  fake_gather),
+            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+        ):
+            result = await RunDevDiaryPostJob().run(db_pool, {"notify_on_draft": True})
+
+        assert result.ok is True
+        assert result.changes_made == 0
+        assert "thin day" in result.detail
+        # The day had activity — this is exactly what the old gate missed.
+        assert result.metrics["merged_prs_total"] == 5
+        assert result.metrics["substantive_prs"] == 0
+        # A post published that day must NOT rescue it (weight_post=0).
+        assert result.metrics["recent_posts"] == 1
+        async with db_pool.acquire() as conn:
+            row_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM content_tasks WHERE niche_slug = $1",
+                _NICHE_SLUG,
+            )
+        assert row_count == 0
+        assert (await _get_last_run_date(db_pool)) == today
+
+    async def test_min_score_is_db_tunable(self, db_pool):
+        """Raising the bar via app_settings skips a 1-real-PR day."""
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        async def fake_notify(message, critical=False):
+            return None
+
+        async def fake_gather(self, pool, **kwargs):
+            # Exactly one substantive PR, no commits — scores 1.0.
+            return _one_real_pr_ctx(today)
+
+        # Default bar (1) would write this day; raising it to 2 must skip.
+        with (
+            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+                  fake_gather),
+            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+        ):
+            result = await RunDevDiaryPostJob().run(
+                db_pool,
+                {"notify_on_draft": False, "dev_diary_min_substance_score": "2"},
+            )
+
+        assert result.ok is True
+        assert "thin day" in result.detail
+        assert result.metrics["score"] == 1.0
+
+    async def test_one_real_pr_day_writes_at_the_default_bar(self, db_pool):
+        """The other side of the tunable: default min_score=1 must WRITE.
+
+        Guards the direction that matters most — a bar that skipped real
+        work would silently stop the diary altogether.
+        """
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        async def fake_notify(message, critical=False):
+            return None
+
+        async def fake_gather(self, pool, **kwargs):
+            return _one_real_pr_ctx(today)
+
+        with (
+            patch("services.topic_sources.dev_diary_source.DevDiarySource.gather_context",
+                  fake_gather),
+            patch("services.integrations.operator_notify.notify_operator", fake_notify),
+        ):
+            result = await RunDevDiaryPostJob().run(db_pool, {"notify_on_draft": False})
+
+        assert result.ok is True
+        assert "thin day" not in result.detail
+        assert result.changes_made == 1
+        async with db_pool.acquire() as conn:
+            row_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM content_tasks WHERE niche_slug = $1",
+                _NICHE_SLUG,
+            )
+        assert row_count == 1
 
     async def test_busy_day_creates_task_and_notifies(self, db_pool):
         async with db_pool.acquire() as conn:

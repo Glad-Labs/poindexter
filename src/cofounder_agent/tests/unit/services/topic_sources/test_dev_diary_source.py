@@ -34,6 +34,7 @@ from services.topic_sources.dev_diary_source import (
     _NOTABLE_COMMIT_PREFIXES,
     DevDiaryContext,
     DevDiarySource,
+    SubstancePolicy,
     _collect_audit_resolved,
     _collect_brain_decisions,
     _collect_cost_summary,
@@ -194,6 +195,161 @@ class TestDevDiaryContext:
         assert "…" not in h
         assert "..." not in h
         assert h == "Daily dev diary — 2026-05-02 (2 PRs)"
+
+
+# ---------------------------------------------------------------------------
+# Substance policy — the thin-day bar
+# ---------------------------------------------------------------------------
+#
+# Every case below is drawn from real Glad-Labs/glad-labs-stack history over
+# 2026-07-08..07-31, not invented. That window is what set the defaults.
+
+
+def _ctx(**kw) -> DevDiaryContext:
+    base = dict(
+        date="2026-07-27",
+        merged_prs=[],
+        notable_commits=[],
+        brain_decisions=[],
+        audit_resolved=[],
+        recent_posts=[],
+        cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+    )
+    base.update(kw)
+    return DevDiaryContext(**base)
+
+
+@pytest.mark.unit
+class TestSubstancePolicy:
+    def test_bot_authored_prs_are_not_substance(self):
+        # The literal 2026-07-27 bundle: 5 merged PRs, all automation.
+        ctx = _ctx(merged_prs=[
+            {"number": 1, "title": "chore(main): release 0.111.0",
+             "author": "app/glad-labs-release-bot"},
+            {"number": 2, "title": "ci:(deps): bump actions/checkout from 7.0.0 to 7.0.1",
+             "author": "app/dependabot"},
+        ])
+        assert ctx.substantive_prs() == []
+        assert ctx.substance_score() == 0.0
+        # ...yet the day is NOT "empty". This gap is the whole bug.
+        assert ctx.is_empty() is False
+
+    def test_bookkeeping_types_are_not_substance(self):
+        # 2026-07-22: human-authored, but pure docs churn.
+        ctx = _ctx(merged_prs=[
+            {"number": 1, "title": "docs(migration): refresh RESUME-HERE", "author": "operator"},
+            {"number": 2, "title": "docs(migration): record the nvme device-flip",
+             "author": "operator"},
+        ])
+        assert ctx.substance_score() == 0.0
+
+    def test_untyped_titles_count_as_substance(self):
+        # The correction that matters: an ALLOWLIST would have discarded
+        # every one of these real 07-12/13/15/23 PRs as "not notable".
+        ctx = _ctx(merged_prs=[
+            {"number": 1, "title": "Dev.to selective syndication + content-type classifier",
+             "author": "operator"},
+            {"number": 2, "title": "Community draft assistant (WS2 PR1: Reddit)",
+             "author": "operator"},
+            {"number": 3, "title": "Electric-cost console tracking + Grafana rate/source fixes",
+             "author": "operator"},
+        ])
+        assert len(ctx.substantive_prs()) == 3
+        assert ctx.substance_score() == 3.0
+
+    def test_squash_merged_commit_does_not_double_count_its_pr(self):
+        # This repo squash-merges, so a shipped PR appears in BOTH streams.
+        ctx = _ctx(
+            merged_prs=[{"number": 2930, "title": "fix(video): render-lane VRAM choreography",
+                         "author": "operator"}],
+            notable_commits=[{"sha": "57df5d2b",
+                              "subject": "fix(video): render-lane VRAM choreography (#2930)",
+                              "prefix": "fix"}],
+        )
+        assert ctx.substance_score() == 1.0, "one shipped PR must score once, not twice"
+
+    def test_commit_without_matching_pr_still_counts(self):
+        # A direct push (no PR) is real work and must not be dropped by dedup.
+        ctx = _ctx(notable_commits=[
+            {"sha": "deadbeef", "subject": "fix(worker): clear poisoned checkpoint", "prefix": "fix"},
+        ])
+        assert ctx.substance_score() == 1.0
+
+    def test_published_post_alone_does_not_earn_a_diary(self):
+        # 07-25 and 07-27 both published a post on an otherwise dead day.
+        ctx = _ctx(recent_posts=[{"title": "x", "url": "y"}])
+        assert ctx.substance_score() == 0.0
+        assert ctx.is_empty() is False
+
+    def test_post_weight_is_tunable_upward(self):
+        ctx = _ctx(recent_posts=[{"title": "x", "url": "y"}])
+        assert ctx.substance_score(SubstancePolicy(weight_post=1.0)) == 1.0
+
+    def test_mixed_day_counts_only_the_real_work(self):
+        # 2026-07-30 shape: a few real PRs alongside routine ci noise.
+        ctx = _ctx(merged_prs=[
+            {"number": 1, "title": "feat(video): bake demo clips", "author": "operator"},
+            {"number": 2, "title": "fix(voice): default voice_agent_llm_model", "author": "operator"},
+            {"number": 3, "title": "ci: pin runner image", "author": "operator"},
+            {"number": 4, "title": "chore(main): release 0.114.0", "author": "app/glad-labs-release-bot"},
+        ])
+        assert len(ctx.substantive_prs()) == 2
+        assert ctx.substance_score() == 2.0
+
+    def test_breakdown_explains_a_skip(self):
+        ctx = _ctx(merged_prs=[
+            {"number": 1, "title": "chore(main): release 0.111.0",
+             "author": "app/glad-labs-release-bot"},
+        ])
+        b = ctx.substance_breakdown()
+        assert b["score"] == 0.0
+        assert b["merged_prs_total"] == 1
+        assert b["substantive_prs"] == 0
+        # The operator must be able to see WHAT got filtered, not just a count.
+        assert "chore(main): release 0.111.0" in b["filtered_pr_titles"]
+
+
+@pytest.mark.unit
+class TestSubstancePolicyFromSettings:
+    def test_reads_every_knob(self):
+        cfg = {
+            "dev_diary_min_substance_score": "2.5",
+            "dev_diary_substance_weight_pr": "3",
+            "dev_diary_substance_weight_commit": "0.5",
+            "dev_diary_substance_weight_post": "0.25",
+            "dev_diary_substance_weight_audit": "0.125",
+            "dev_diary_bookkeeping_types": "chore, docs",
+            "dev_diary_bot_author_patterns": "app/*",
+        }
+        p = SubstancePolicy.from_settings(lambda k, d=None: cfg.get(k, d))
+        assert p.min_score == 2.5
+        assert p.weight_pr == 3.0
+        assert p.weight_commit == 0.5
+        assert p.weight_post == 0.25
+        assert p.weight_audit == 0.125
+        assert p.bookkeeping_types == ("chore", "docs")
+        assert p.bot_author_patterns == ("app/*",)
+
+    def test_missing_settings_fall_back_to_defaults(self):
+        p = SubstancePolicy.from_settings(lambda k, d=None: d)
+        assert p == SubstancePolicy()
+
+    def test_none_accessor_is_tolerated(self):
+        # CLI / manual invocation has no _site_config to hand over.
+        assert SubstancePolicy.from_settings(None) == SubstancePolicy()
+
+    def test_blank_csv_restores_defaults_rather_than_disabling_the_filter(self):
+        # app_settings.value is NOT NULL with '' as the unset sentinel. Reading
+        # '' as "match nothing" would silently let every bot PR back through.
+        p = SubstancePolicy.from_settings(lambda k, d=None: "" if "patterns" in k or "types" in k else d)
+        assert p.bookkeeping_types == SubstancePolicy().bookkeeping_types
+        assert p.bot_author_patterns == SubstancePolicy().bot_author_patterns
+
+    def test_garbage_numeric_falls_back_instead_of_raising(self):
+        p = SubstancePolicy.from_settings(
+            lambda k, d=None: "not-a-number" if k == "dev_diary_min_substance_score" else d
+        )
+        assert p.min_score == SubstancePolicy().min_score
 
 
 # ---------------------------------------------------------------------------

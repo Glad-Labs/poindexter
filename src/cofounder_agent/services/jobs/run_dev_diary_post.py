@@ -10,9 +10,19 @@ Flow
 
 1. Pull the daily context bundle via
    :class:`services.topic_sources.dev_diary_source.DevDiarySource`.
-2. If the bundle ``is_empty()`` (no PRs, no notable commits, no
-   high-confidence decisions), skip + notify the operator with a
-   "quiet day" message. Don't waste a draft slot on filler content.
+2. Score the bundle with ``ctx.substance_breakdown(policy)``. If it
+   comes in under ``dev_diary_min_substance_score``, skip + notify the
+   operator with a "thin day" message. Don't waste a draft slot on
+   filler content.
+
+   This gates on SUBSTANCE, not mere activity. The predecessor check
+   (``is_empty()``) only skipped days where literally nothing happened,
+   which in practice never fired — release-please, dependabot, and the
+   nightly docs sweep merge PRs on even a dead day. Measured across
+   2026-07-08..07-31, four days were 100% bot + bookkeeping churn and
+   each still produced a diary about nothing. Bot-authored PRs and
+   bookkeeping conventional-commit types no longer count; untyped
+   titles do. See ``dev_diary_source.SubstancePolicy``.
 3. Otherwise, create a content_tasks row tagged
    ``niche=dev_diary``, ``request_type=dev_diary``, ``--gates draft,final``.
    The standard pipeline picks the row up on its next sweep, runs the
@@ -39,6 +49,15 @@ Config (``plugin.job.run_dev_diary_post``)
 - ``config.hours_lookback`` (default 24)
 - ``config.confidence_floor`` (default 0.7)
 - ``config.notify_on_draft`` (default true)
+
+Substance bar (``app_settings``, read via the ``_site_config`` DI seam)
+----------------------------------------------------------------------
+
+- ``dev_diary_min_substance_score`` (default 1)
+- ``dev_diary_substance_weight_pr`` / ``_commit`` (default 1.0 each)
+- ``dev_diary_substance_weight_post`` / ``_audit`` (default 0 — the
+  pipeline publishing a post is not the operator shipping)
+- ``dev_diary_bookkeeping_types`` / ``dev_diary_bot_author_patterns`` (CSV)
 """
 
 from __future__ import annotations
@@ -86,10 +105,22 @@ class RunDevDiaryPostJob:
             )
 
         # ---- 2. Gather context ----
-        from services.topic_sources.dev_diary_source import DevDiarySource
+        from services.topic_sources.dev_diary_source import (
+            DevDiarySource,
+            SubstancePolicy,
+        )
 
         hours = int(config.get("hours_lookback", 24) or 24)
         confidence = float(config.get("confidence_floor", 0.7) or 0.7)
+
+        # Substance bar (app_settings-tunable). The scheduler seeds
+        # `_site_config` per the standard job DI seam; falling back to the
+        # plugin `config` dict keeps manual/CLI invocations working, and
+        # SubstancePolicy's own defaults cover both being absent.
+        site_config = config.get("_site_config")
+        policy = SubstancePolicy.from_settings(
+            getattr(site_config, "get", None) or config.get
+        )
 
         source = DevDiarySource()
         try:
@@ -106,22 +137,45 @@ class RunDevDiaryPostJob:
                 changes_made=0,
             )
 
-        # ---- 3. Quiet-day skip ----
-        if ctx.is_empty():
-            logger.info("[dev-diary] no Glad Labs activity in last %dh — skipping", hours)
+        # ---- 3. Thin-day skip ----
+        # Gates on SUBSTANCE, not mere activity. `is_empty()` only catches
+        # days where nothing happened at all; measured over 2026-07-08..07-31
+        # four days had merged PRs that were 100% release-bot / dependabot /
+        # docs churn, passed that check, and produced a diary about nothing.
+        # See SubstancePolicy for the denylist and the grounded defaults.
+        breakdown = ctx.substance_breakdown(policy)
+        score = breakdown["score"]
+        if score < policy.min_score:
+            logger.info(
+                "[dev-diary] thin day — substance %.2f < %.2f in last %dh "
+                "(%d/%d PRs substantive, %d commits) — skipping",
+                score,
+                policy.min_score,
+                hours,
+                breakdown["substantive_prs"],
+                breakdown["merged_prs_total"],
+                breakdown["substantive_commits"],
+            )
             await _set_last_run_date(pool, today)  # still mark as ran — don't retry today
             if bool(config.get("notify_on_draft", True)):
                 try:
                     await _notify_operator(
-                        f"Dev diary skipped for {today} — quiet day, "
-                        f"no Glad Labs activity to report.",
+                        f"Dev diary skipped for {today} — thin day "
+                        f"(substance {score:g} < {policy.min_score:g}). "
+                        f"{breakdown['substantive_prs']} of "
+                        f"{breakdown['merged_prs_total']} merged PRs were "
+                        f"real work; the rest was bot/bookkeeping churn.",
                     )
                 except Exception as notify_err:
                     logger.warning("[dev-diary] notify failed: %s", notify_err)
             return JobResult(
                 ok=True,
-                detail="skipped — quiet day, no Glad Labs activity to report",
+                detail=(
+                    f"skipped — thin day (substance {score:g} < "
+                    f"{policy.min_score:g})"
+                ),
                 changes_made=0,
+                metrics=breakdown,
             )
 
         # ---- 4. Create the content task ----
