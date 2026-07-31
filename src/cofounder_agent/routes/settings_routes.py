@@ -46,6 +46,16 @@ def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
     this receives was missing the `updated_at` field entirely and Pydantic
     dropped the real value (poindexter#954). The field is declared now, so a
     `None` here means the column really is NULL — report it as `null`.
+
+    More generally: `default` is a fallback for a column that exists and is
+    NULL, never a stand-in for a column that does not exist. When the attribute
+    is absent from the model entirely, `default` doesn't fall back to anything —
+    it manufactures the value on 100% of responses, and nothing distinguishes
+    that from real data downstream. `created_by_id=_setting_attr(setting,
+    "created_by_id", 1)` reported a hardcoded user ID 1 as the author of every
+    setting for exactly this reason (poindexter#955). Before passing a non-None
+    `default`, confirm the attribute is one `admin_db._APP_SETTINGS_COLUMNS`
+    actually selects and the DB-layer model actually declares.
     """
     if isinstance(setting, dict):
         return setting.get(attr, default)
@@ -223,8 +233,6 @@ async def list_settings(
                     tags=_setting_attr(setting, "tags", []),
                     created_at=_setting_attr(setting, "created_at"),
                     updated_at=_setting_attr(setting, "updated_at"),
-                    created_by_id=_setting_attr(setting, "created_by_id", 1),
-                    updated_by_id=_setting_attr(setting, "updated_by_id"),
                     value_preview=value_preview,
                 )
             )
@@ -274,8 +282,6 @@ async def get_setting(
             tags=_setting_attr(setting, "tags", []),
             created_at=_setting_attr(setting, "created_at"),
             updated_at=_setting_attr(setting, "updated_at"),
-            created_by_id=_setting_attr(setting, "created_by_id", 1),
-            updated_by_id=_setting_attr(setting, "updated_by_id"),
             value_preview=(_setting_attr(setting, "value", "") or "")[:50],
         )
     except HTTPException:
@@ -360,8 +366,6 @@ async def create_setting(
             tags=setting_data.tags or [],
             created_at=_setting_attr(created_setting, "created_at"),
             updated_at=_setting_attr(created_setting, "updated_at"),
-            created_by_id=1,
-            updated_by_id=None,
             value_preview=(_setting_attr(created_setting, "value", "") or "")[:50],
         )
     except HTTPException:
@@ -450,8 +454,6 @@ async def update_setting(
             tags=_setting_attr(updated, "tags", []),
             created_at=_setting_attr(updated, "created_at"),
             updated_at=_setting_attr(updated, "updated_at"),
-            created_by_id=_setting_attr(updated, "created_by_id", 1),
-            updated_by_id=1,
             value_preview=(_setting_attr(updated, "value", "") or "")[:50],
         )
     except HTTPException:

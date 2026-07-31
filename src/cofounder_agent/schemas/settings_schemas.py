@@ -127,8 +127,20 @@ class SettingResponse(SettingBase):
     # changed" and misleads exactly when the field matters most.
     created_at: datetime | None = Field(None, description="Creation timestamp")
     updated_at: datetime | None = Field(None, description="Last update timestamp")
-    created_by_id: int = Field(..., description="User ID who created this setting")
-    updated_by_id: int | None = Field(None, description="User ID who last updated this setting")
+    # No `created_by_id` / `updated_by_id` — do NOT reintroduce them
+    # (poindexter#955). Fossils of the abandoned `settings` schema, same
+    # generation as `modified_at` / `display_name`, they reported a hardcoded
+    # user ID 1 as the author of every row: `app_settings` has no such column,
+    # `admin_db._APP_SETTINGS_COLUMNS` does not select one, and the DB-layer
+    # model does not declare one, so the route's default fired on 100% of
+    # responses.
+    #
+    # Removed rather than nulled (how #954 handled an absent timestamp) because
+    # the cases differ: the timestamps are real columns that are genuinely
+    # sometimes NULL, so `null` honestly reports a real unknown. These had no
+    # column and no possible source — `null` forever would advertise an
+    # authorship field the system does not have and cannot add as typed
+    # (`users.id` is a uuid; these were `int`).
     value_preview: str | None = Field(
         None, description="Preview of value (for encrypted values)"
     )

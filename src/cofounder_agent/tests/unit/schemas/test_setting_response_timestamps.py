@@ -1,4 +1,4 @@
-"""Timestamp-provenance contract for the settings response (poindexter#954).
+"""Provenance contract for the settings response (poindexter#954, #955).
 
 `GET /api/settings/{key}` reported a fabricated `updated_at` — the current time
 on every call instead of the stored column. The visible defect was a
@@ -17,6 +17,14 @@ dropped the original — so the route read `None` and stamped `now()`.
 These tests lock the seam at the layer where the value was actually lost, so a
 future edit to either model or to the converter's alias handling fails here
 rather than silently resuming the fabrication.
+
+The same file also pins the *authorship* half of the contract (poindexter#955).
+`created_by_id` / `updated_by_id` reported a hardcoded user ID 1 as the author
+of every setting: `app_settings` has no such column, the SELECT never fetched
+one, and the DB-layer model never declared one, so the route's
+`_setting_attr(..., 1)` default fired on 100% of responses. Both fields are
+removed — not nulled — because unlike the timestamps there is no column behind
+them and no way to add one (`users.id` is a uuid; these were `int`).
 """
 
 from __future__ import annotations
@@ -114,6 +122,84 @@ class TestApiModelAcceptsNull:
             category="media",
             created_at=None,
             updated_at=None,
-            created_by_id=1,
         )
         assert resp.updated_at is None
+
+
+class TestNoFabricatedAuthorship:
+    """No `created_by_id` / `updated_by_id` in the settings contract (#955).
+
+    They named a user ID that cannot exist. `app_settings` has no such column,
+    `admin_db._APP_SETTINGS_COLUMNS` does not select one, and the DB-layer model
+    does not declare one — so `_setting_attr(setting, "created_by_id", 1)` in
+    `routes/settings_routes.py` was not a fallback for a NULL column, it
+    manufactured `1` on every response for all ~1,345 keys.
+    """
+
+    @pytest.mark.parametrize("field", ["created_by_id", "updated_by_id"])
+    def test_field_absent_from_api_model(self, field):
+        """Reintroducing the field is the regression — fail here, not in prod."""
+        assert field not in ApiSettingResponse.model_fields
+
+    @pytest.mark.parametrize("field", ["created_by_id", "updated_by_id"])
+    def test_field_absent_from_db_model(self, field):
+        """Nothing below the route could supply one either."""
+        assert field not in DbSettingResponse.model_fields
+
+    @pytest.mark.parametrize("field", ["created_by_id", "updated_by_id"])
+    def test_field_not_selected(self, field):
+        """The SELECT is the upstream source — it never fetched these.
+
+        Pinned against the real constant so adding the column to the query
+        without also deciding what the API should report fails here.
+        """
+        from services.admin_db import AdminDatabase
+
+        assert field not in AdminDatabase._APP_SETTINGS_COLUMNS
+
+    @pytest.mark.parametrize("field", ["created_by_id", "updated_by_id"])
+    def test_field_not_serialized(self, field):
+        """The response body must not carry the key at all.
+
+        `model_fields` alone would miss a field re-added via `extra="allow"`,
+        which is how a well-meaning "keep it for back-compat" patch would most
+        likely sneak it back in.
+        """
+        resp = ApiSettingResponse(
+            id=1,
+            key="image_render_timeout_seconds",
+            value="600",
+            category="media",
+            **{field: 1},
+        )
+        assert field not in resp.model_dump()
+
+    def test_route_passes_no_authorship_kwarg(self):
+        """The route is where the fabrication lived — keep it clean.
+
+        The schema checks above still pass while the route passes the kwarg,
+        because `SettingResponse` inherits Pydantic's default `extra="ignore"`
+        and drops an undeclared kwarg silently rather than raising (the same
+        mechanic that hid #954). So assert on the route's call sites too, or the
+        fabrication can be half-restored invisibly.
+
+        Parsed with `ast` rather than grepped: the module's own docstrings name
+        these fields to warn against them, and prose must not fail the test that
+        enforces the warning.
+        """
+        import ast
+        from pathlib import Path
+
+        import routes.settings_routes as settings_routes
+
+        tree = ast.parse(Path(settings_routes.__file__).read_text(encoding="utf-8"))
+        offenders = [
+            f"line {node.lineno}: {kw.arg}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            for kw in node.keywords
+            if kw.arg in {"created_by_id", "updated_by_id"}
+        ]
+        assert offenders == [], (
+            "fabricated authorship kwarg is back in settings_routes: " + "; ".join(offenders)
+        )
