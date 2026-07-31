@@ -86,12 +86,21 @@ poindexter auth register-client --name console-contract-drift --scopes "api:read
   OAuth client above.
 - `DISCORD_OPS_WEBHOOK_URL` — benign-drift routine ping.
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — breaking-drift critical ping.
-- `CONSOLE_CONTRACT_APP_ID` / `CONSOLE_CONTRACT_APP_PRIVATE_KEY` **(optional but
-  required for hands-off auto-merge)** — a GitHub App whose token authors the
-  refresh PR. A PR opened by the default `GITHUB_TOKEN` does **not** trigger
-  `on: pull_request` CI, so the branch-protection checks `gh pr merge --auto`
-  waits on would never start. Dormant until set (the workflow falls back to
-  `GITHUB_TOKEN`, opening the PR + pinging, but you merge it by hand).
+- `RELEASE_PLEASE_APP_ID` / `RELEASE_PLEASE_APP_PRIVATE_KEY` — the "Glad Labs
+  Release Bot" App that authors the refresh PR, already configured and shared
+  with `release-please.yml` / `regen-app-settings-doc.yml` /
+  `sync-claude-md.yml`. **Load-bearing for auto-merge:** a PR opened by the
+  default `GITHUB_TOKEN` does **not** trigger `on: pull_request` CI (GitHub's
+  recursion guard), so the branch-protection checks `gh pr merge --auto` waits
+  on never start and the PR sits BLOCKED forever. #2880 was a real refresh PR
+  closed unmerged for exactly that reason.
+- `CONSOLE_CONTRACT_APP_ID` / `CONSOLE_CONTRACT_APP_PRIVATE_KEY` _(optional)_ —
+  override the release-bot App with a dedicated least-privilege one. Unset
+  today; the workflow prefers these when present, so adding them is a
+  secrets-only change with no workflow edit.
+
+If neither pair is configured (a fork), the workflow falls back to
+`GITHUB_TOKEN` — the PR opens and pings, but you merge it by hand.
 
 The job runs only on the self-hosted runner (gated on the `CI_RUNNER` repo
 variable) so it can reach the local worker. The runner is a **container**, so it

@@ -16,12 +16,19 @@
 #   CONSOLE_CONTRACT_CLIENT_ID / _SECRET  — read-only (api:read) OAuth client.
 #   DISCORD_OPS_WEBHOOK_URL               — benign-drift routine ping.
 #   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — breaking-drift critical ping.
-#   CONSOLE_CONTRACT_APP_ID / _PRIVATE_KEY (optional) — a GitHub App whose token
-#     authors the refresh PR. Required for hands-off auto-merge: a PR opened by
-#     the default GITHUB_TOKEN does NOT trigger `on: pull_request` CI, so the
-#     branch-protection checks `gh pr merge --auto` waits on would never start.
-#     Dormant until set — the workflow falls back to GITHUB_TOKEN (PR opens +
-#     pings, but you merge it by hand).
+#   RELEASE_PLEASE_APP_ID / _PRIVATE_KEY  — the "Glad Labs Release Bot" App that
+#     authors the refresh PR. REQUIRED for hands-off auto-merge: a PR opened by
+#     the default GITHUB_TOKEN does NOT trigger `on: pull_request` CI (GitHub's
+#     recursion guard), so the branch-protection checks `gh pr merge --auto`
+#     waits on never start and the PR sits BLOCKED forever. That is not
+#     hypothetical — #2880 was a real 10-file refresh PR opened by
+#     github-actions on 2026-07-31 and closed unmerged for exactly this reason.
+#     Same App + secrets as release-please.yml / regen-app-settings-doc.yml /
+#     sync-claude-md.yml; see regen-app-settings-doc.yml for the original
+#     write-up. The App holds contents:write + pull_requests:write on this repo.
+#   CONSOLE_CONTRACT_APP_ID / _PRIVATE_KEY (optional) — overrides the release-bot
+#     App above when set, so a dedicated least-privilege App can be dropped in
+#     later without touching this workflow. Unset today.
 name: console-contract-drift
 
 on:
@@ -58,22 +65,27 @@ jobs:
       CONTRACTS: src/cofounder_agent/console/js/__tests__/contracts
       # Surfaced as env vars because the `secrets` context is not allowed in a
       # step `if:` (GitHub rejects it at parse time); the `env` context is.
-      CONSOLE_CONTRACT_APP_ID: ${{ secrets.CONSOLE_CONTRACT_APP_ID }}
+      # Coalesced here rather than in the step so the `if:` gate and the `with:`
+      # inputs can never disagree about which App is in play.
+      PR_APP_ID: ${{ secrets.CONSOLE_CONTRACT_APP_ID || secrets.RELEASE_PLEASE_APP_ID }}
       DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
-      # Optional: mint an App installation token so the refresh PR triggers CI
+      # Mint an App installation token so the refresh PR triggers CI
       # (GITHUB_TOKEN-authored PRs don't) and `gh pr merge --auto` can complete.
-      # Dormant until CONSOLE_CONTRACT_APP_ID is configured. SHA-pinned per the
-      # third-party-Actions lint.
-      - name: Mint PR-author App token (optional — enables auto-merge)
+      # Defaults to the release-bot App, whose secrets are already configured;
+      # CONSOLE_CONTRACT_APP_* overrides it if a dedicated App is ever added.
+      # The `if:` guard is what keeps a fork with neither pair configured on the
+      # old GITHUB_TOKEN path (PR opens, no auto-merge) instead of failing the
+      # run outright. SHA-pinned per the third-party-Actions lint.
+      - name: Mint PR-author App token (enables auto-merge)
         id: app-token
-        if: ${{ env.CONSOLE_CONTRACT_APP_ID != '' }}
+        if: ${{ env.PR_APP_ID != '' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.CONSOLE_CONTRACT_APP_ID }}
-          private-key: ${{ secrets.CONSOLE_CONTRACT_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.CONSOLE_CONTRACT_APP_ID || secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.CONSOLE_CONTRACT_APP_PRIVATE_KEY || secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1
