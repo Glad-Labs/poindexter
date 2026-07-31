@@ -72,6 +72,9 @@ class OpenAICompatProvider:
     name = "openai_compat"
     supports_streaming = True
     supports_embeddings = True
+    # OpenAI-spec function calling rides the /chat/completions payload
+    # unchanged; tool_calls come back on choice.message (poindexter#947).
+    supports_tools = True
 
     def __init__(self):
         self._default_base_url = "http://host.docker.internal:11434/v1"
@@ -160,6 +163,10 @@ class OpenAICompatProvider:
             payload["max_tokens"] = kwargs["max_tokens"]
         if "top_p" in kwargs:
             payload["top_p"] = kwargs["top_p"]
+        if "tools" in kwargs:
+            payload["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs:
+            payload["tool_choice"] = kwargs["tool_choice"]
 
         async with httpx.AsyncClient(timeout=cfg["timeout"]) as http:
             resp = await http.post(
@@ -173,14 +180,26 @@ class OpenAICompatProvider:
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message", {})
         usage = data.get("usage", {}) or {}
+        # Normalize tool_calls to the same plain-dict shape the litellm
+        # provider emits, so Completion consumers are provider-agnostic.
+        tool_calls: list[dict[str, Any]] | None = None
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            tool_calls = tool_calls or []
+            tool_calls.append({
+                "id": tc.get("id", "") or "",
+                "name": fn.get("name", "") or "",
+                "arguments": fn.get("arguments", "") or "",
+            })
         return Completion(
-            text=msg.get("content", ""),
+            text=msg.get("content") or "",
             model=data.get("model", model),
             prompt_tokens=usage.get("prompt_tokens", 0),
             completion_tokens=usage.get("completion_tokens", 0),
             total_tokens=usage.get("total_tokens", 0),
             finish_reason=choice.get("finish_reason", "stop"),
             raw=data,
+            tool_calls=tool_calls,
         )
 
     async def stream(

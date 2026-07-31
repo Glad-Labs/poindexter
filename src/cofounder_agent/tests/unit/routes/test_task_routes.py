@@ -616,14 +616,19 @@ class TestCreateTaskDedup:
 
     @staticmethod
     def _patch_auto_resolution(monkeypatch, *, claimed):
-        """Stub the b3 auto-topic seam: niche resolution + pool claim."""
-        import routes.task_routes as tr
+        """Stub the b3 auto-topic seam: niche resolution + pool claim.
+
+        The creation path lives in services/blog_task_creation.py as of
+        poindexter#947 (shared with the chat agent's create_post tool), so
+        the niche stub targets the service module, not the route wrapper.
+        """
+        import services.blog_task_creation as btc
         import services.topic_pool as tp
 
         niche = MagicMock()
         niche.slug = "test-niche"
         monkeypatch.setattr(
-            tr, "_resolve_niche_for_topics", AsyncMock(return_value=niche),
+            btc, "resolve_niche_for_topics", AsyncMock(return_value=niche),
         )
         monkeypatch.setattr(
             tp, "claim_best_pooled_topic", AsyncMock(return_value=claimed),
@@ -1336,7 +1341,7 @@ class TestCreateTaskTargetLength:
 
     def test_omitted_length_routes_through_picker(self, monkeypatch):
         monkeypatch.setattr(
-            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1354,7 +1359,7 @@ class TestCreateTaskTargetLength:
         # Pins the actual defect: the picker's value must reach the row even
         # when it differs from the retired literal.
         monkeypatch.setattr(
-            "routes.task_routes.pick_target_length", lambda _cfg: 431
+            "services.blog_task_creation.pick_target_length", lambda _cfg: 431
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1369,7 +1374,7 @@ class TestCreateTaskTargetLength:
 
     def test_explicit_target_length_wins_over_picker(self, monkeypatch):
         monkeypatch.setattr(
-            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")
@@ -1391,7 +1396,7 @@ class TestCreateTaskTargetLength:
         # content_constraints overrides top-level fields (#1250) — that
         # precedence must survive the picker re-wire.
         monkeypatch.setattr(
-            "routes.task_routes.pick_target_length", lambda _cfg: 2718
+            "services.blog_task_creation.pick_target_length", lambda _cfg: 2718
         )
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="task-id")

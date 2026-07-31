@@ -695,3 +695,92 @@ class TestLiteLLMProviderEmbed:
         await p.embed("x", model="nomic-embed-text")
         kwargs = mock_litellm.aembedding.await_args.kwargs
         assert kwargs["model"] == "ollama/nomic-embed-text"
+
+
+# --------------------------------------------------------------------------- #
+# Tool calling (poindexter#947) — ``tools=`` forwarding + ``tool_calls``
+# extraction for the Cofounder chat agent loop. Catches: the params
+# allowlist silently dropping ``tools`` (the model would answer in prose
+# and the agent would never act), and the reasoning-content fallback
+# fabricating an assistant answer alongside tool calls.
+# --------------------------------------------------------------------------- #
+
+
+def _tool_call_response(*, content=None, with_reasoning=None):
+    fn = SimpleNamespace(name="list_tasks", arguments='{"limit": 3}')
+    tc = SimpleNamespace(id="call_1", function=fn)
+    msg = SimpleNamespace(content=content, tool_calls=[tc])
+    if with_reasoning is not None:
+        msg.reasoning_content = with_reasoning
+    choice = SimpleNamespace(message=msg, finish_reason="tool_calls")
+    usage = SimpleNamespace(prompt_tokens=5, completion_tokens=3, total_tokens=8)
+    resp = MagicMock()
+    resp.choices = [choice]
+    resp.usage = usage
+    resp.model_dump = MagicMock(return_value={"id": "fake-id"})
+    resp._hidden_params = {}
+    return resp
+
+
+class TestLiteLLMProviderToolCalling:
+    def test_supports_tools_attribute(self, mock_litellm):
+        assert _provider_instance().supports_tools is True
+
+    @pytest.mark.asyncio
+    async def test_tools_kwarg_is_forwarded(self, mock_litellm):
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        tools = [{"type": "function", "function": {"name": "t", "parameters": {}}}]
+        p = _provider_instance()
+        await p.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="qwen2.5:7b", tools=tools, tool_choice="auto",
+        )
+        kwargs = mock_litellm.acompletion.await_args.kwargs
+        assert kwargs["tools"] == tools
+        assert kwargs["tool_choice"] == "auto"
+
+    @pytest.mark.asyncio
+    async def test_tool_calls_extracted_and_normalized(self, mock_litellm):
+        mock_litellm.acompletion = AsyncMock(return_value=_tool_call_response())
+        p = _provider_instance()
+        out = await p.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="qwen2.5:7b",
+            tools=[{"type": "function", "function": {"name": "list_tasks"}}],
+        )
+        assert out.tool_calls == [
+            {"id": "call_1", "name": "list_tasks", "arguments": '{"limit": 3}'},
+        ]
+        assert out.text == ""
+
+    @pytest.mark.asyncio
+    async def test_no_tools_means_tool_calls_none(self, mock_litellm):
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        out = await p.complete(
+            messages=[{"role": "user", "content": "hi"}], model="qwen2.5:7b",
+        )
+        assert out.tool_calls is None
+
+    @pytest.mark.asyncio
+    async def test_reasoning_recovery_skipped_when_tool_calls_present(
+        self, mock_litellm,
+    ):
+        """Empty content + tool_calls is the NORMAL tool-turn shape — the
+        reasoning-content fallback must not fabricate an answer from the
+        thinking channel next to the calls."""
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_tool_call_response(
+                content="", with_reasoning="I should call list_tasks…",
+            ),
+        )
+        p = _provider_instance()
+        out = await p.complete(
+            messages=[{"role": "user", "content": "hi"}], model="qwen2.5:7b",
+        )
+        assert out.text == ""
+        assert out.tool_calls and out.tool_calls[0]["name"] == "list_tasks"

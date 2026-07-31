@@ -92,6 +92,7 @@ _WORKER_ROUTES = [
     ("routes.module_probes_routes", "router", "module_probes_router", "Module v1 brain-probe inventory (/api/modules/probes, #239)"),
     ("routes.service_restart_routes", "router", "service_restart_router", "operator-triggered container restart intent queue (/api/services/*/restart, #909)"),
     ("routes.gpu_queue_routes", "router", "gpu_queue_router", "GPU scheduler holder/waiters/stats snapshot (/api/gpu/queue, #914 P0)"),
+    ("routes.chat_routes", "router", "chat_router", "Cofounder chat conversations + streamed agent turns (/api/chat/*, poindexter#947)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

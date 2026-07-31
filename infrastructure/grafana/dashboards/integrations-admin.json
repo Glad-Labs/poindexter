@@ -62,7 +62,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -88,7 +90,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Inbound rows — endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
+      "description": "Inbound rows \u2014 endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -117,7 +119,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -141,7 +145,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Outbound rows — destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
+      "description": "Outbound rows \u2014 destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -170,7 +174,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -223,7 +229,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -284,7 +292,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -341,7 +351,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -422,7 +434,7 @@
                     "type": "value",
                     "options": {
                       "0": {
-                        "text": "—",
+                        "text": "\u2014",
                         "color": "text"
                       },
                       "1": {
@@ -453,7 +465,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": false
         },
         "showHeader": true
@@ -515,7 +529,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -541,7 +557,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing — check `last_error`.",
+      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing \u2014 check `last_error`.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -578,7 +594,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -660,7 +678,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": false
         },
         "showHeader": true
@@ -734,7 +754,9 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -817,7 +839,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": false
         },
         "showHeader": true
@@ -879,7 +903,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -942,7 +968,9 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "textMode": "value_and_name"
       },
@@ -1024,7 +1052,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": false
         },
         "showHeader": true
@@ -1203,7 +1233,7 @@
           "language": "plaintext",
           "showLineNumbers": false
         },
-        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Public Site | your public site | Production frontend |\n| Vercel Dashboard | [vercel.com/dashboard](https://vercel.com/dashboard) | Deployments, env vars, logs |\n| RSS Feed | `<your site>/feed.xml` | JSON Feed 1.1 + feed.xml — consumed by the publishing/social adapters |\n| Static CDN | `<storage_public_url>/static/manifest.json` | Static JSON export manifest |",
+        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Public Site | your public site | Production frontend |\n| Vercel Dashboard | [vercel.com/dashboard](https://vercel.com/dashboard) | Deployments, env vars, logs |\n| RSS Feed | `<your site>/feed.xml` | JSON Feed 1.1 + feed.xml \u2014 consumed by the publishing/social adapters |\n| Static CDN | `<storage_public_url>/static/manifest.json` | Static JSON export manifest |",
         "mode": "markdown"
       },
       "type": "text",
@@ -1235,7 +1265,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1287,7 +1319,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1335,7 +1369,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1391,7 +1427,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"]
+          "calcs": [
+            "lastNotNull"
+          ]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1530,7 +1568,7 @@
       "id": 37,
       "type": "row",
       "collapsed": false,
-      "title": "Settings Lifecycle — Orphan Candidates (#756)",
+      "title": "Settings Lifecycle \u2014 Orphan Candidates (#756)",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1544,7 +1582,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "app_settings keys with a NULL last_read_at older than the default 30-day grace window — nothing reads them via SiteConfig.get. ADVISORY: a key read ONLY via direct SQL or SettingsService.get also appears here, so verify before retiring. Mirrors ProbeZeroReaderSettingsJob (poindexter#756); the footer shows the candidate count.",
+      "description": "app_settings keys with a NULL last_read_at older than the default 30-day grace window \u2014 nothing reads them via SiteConfig.get. ADVISORY: a key read ONLY via direct SQL or SettingsService.get also appears here, so verify before retiring. Mirrors ProbeZeroReaderSettingsJob (poindexter#756); the footer shows the candidate count.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1568,7 +1606,9 @@
         "footer": {
           "countRows": true,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true
@@ -1585,7 +1625,7 @@
           "refId": "A"
         }
       ],
-      "title": "Orphan candidates — never read via SiteConfig (>=30d old)",
+      "title": "Orphan candidates \u2014 never read via SiteConfig (>=30d old)",
       "type": "table"
     },
     {
@@ -1763,7 +1803,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": false
         },
         "showHeader": true
@@ -1884,7 +1926,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Live state of a curated list of opt-in capabilities that ship disabled by default (writer self-review, QA self-consistency, video/podcast/newsletter/social). Being 'off' is often correct — this panel exists so that state is always visible instead of silent. Mirrors ProbeDisabledCapabilitiesJob (glad-labs-stack#2133), which additionally pages Discord weekly while any are off.",
+      "description": "Live state of a curated list of opt-in capabilities that ship disabled by default (writer self-review, QA self-consistency, video/podcast/newsletter/social). Being 'off' is often correct \u2014 this panel exists so that state is always visible instead of silent. Mirrors ProbeDisabledCapabilitiesJob (glad-labs-stack#2133), which additionally pages Discord weekly while any are off.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1938,7 +1980,9 @@
         "footer": {
           "countRows": true,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true
@@ -1955,13 +1999,398 @@
           "refId": "A"
         }
       ],
-      "title": "Watched capability flags — current state",
+      "title": "Watched capability flags \u2014 current state",
       "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 152
+      },
+      "id": 47,
+      "panels": [],
+      "title": "Cofounder chat (poindexter#947)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Assistant turns in the last 24h - chat_messages role=assistant. Zero with console_chat_enabled=true means nobody is talking to the cofounder.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 153
+      },
+      "id": 48,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Turns\" FROM chat_messages WHERE role = 'assistant' AND created_at > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Turns (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Tool executions in the last 24h - audit_log chat_tool_call rows (the agent's action trail).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 153
+      },
+      "id": 49,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Tool calls\" FROM audit_log WHERE event_type = 'chat_tool_call' AND \"timestamp\" > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Tool calls (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Failed tool executions in the last 24h (details.ok=false). A spike usually means a model swap broke argument shapes - run scripts/chat_brain_evals.py.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 153
+      },
+      "id": 50,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Errors\" FROM audit_log WHERE event_type = 'chat_tool_call' AND (details->>'ok') = 'false' AND \"timestamp\" > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Tool errors (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "p95 tool-execution latency. Sustained highs = a slow backing read (memory search / DB) dragging every turn.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5000
+              },
+              {
+                "color": "red",
+                "value": 20000
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 153
+      },
+      "id": 51,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY (details->>'duration_ms')::int), 0)::int AS \"p95 ms\" FROM audit_log WHERE event_type = 'chat_tool_call' AND \"timestamp\" > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Tool p95 ms (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Turns that ended failed or interrupted in the last 24h. Nonzero = read the thread + worker logs; sustained = the brain/provider is misconfigured.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 153
+      },
+      "id": 52,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Bad turns\" FROM chat_messages WHERE role = 'assistant' AND turn_status IN ('failed', 'interrupted') AND created_at > now() - interval '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Bad turns (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Chat tokens consumed today (UTC) across conversations - the console_chat_daily_token_budget axis.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 153
+      },
+      "id": 53,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0)::int AS \"Tokens\" FROM chat_messages WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc');",
+          "refId": "A"
+        }
+      ],
+      "title": "Tokens today",
+      "type": "stat"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["integrations", "webhooks", "admin", "links", "reference"],
+  "tags": [
+    "integrations",
+    "webhooks",
+    "admin",
+    "links",
+    "reference"
+  ],
   "templating": {
     "list": []
   },
@@ -1975,5 +2404,5 @@
   "uid": "integrations-admin",
   "version": 2,
   "weekStart": "",
-  "description": "CHARTER: state of the declarative data plane — taps, retention, webhooks, publishing adapters, settings lifecycle. Answers 'what is wired up and is any of it drifting?'. Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
+  "description": "CHARTER: state of the declarative data plane \u2014 taps, retention, webhooks, publishing adapters, settings lifecycle. Answers 'what is wired up and is any of it drifting?'. Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
 }

@@ -96,6 +96,39 @@ DEFAULTS: dict[str, str] = {
     # compact so the SYSTEM PULSE band stays a glance, not a scrolling log — the
     # trail is the band's height driver when the live columns are idle.
     "live_activity_recent_limit": "8",
+    # ----- Cofounder console chat (poindexter#947 P1) -----
+    # Master switch for the /api/chat conversation surface. Ships off; the
+    # operator flips it once a tool-capable provider is configured for the
+    # chat tier (litellm / openai_compat — ollama_native fails loud on tools).
+    "console_chat_enabled": "false",
+    # Which brain answers: 'local' (tool loop over the routed LLM seam — the
+    # OSS default) or 'claude_code' (operator Deep mode, P6 — the store +
+    # protocol accept it now so P6 is a brain swap, not a schema change).
+    "console_chat_brain": "local",
+    # Chat model: small + resident so an interactive turn coexists with
+    # render lanes instead of evicting them. Same pick as the voice agent
+    # (benchmarked 2026-07-31: right tool 4/4, 0.22s, 4.7 GB).
+    "console_chat_model": "qwen2.5:7b",
+    # Whole-turn deadline (LLM calls + tool executions). On expiry the turn
+    # persists as 'interrupted' and the stream says so — never a silent hang.
+    "console_chat_turn_timeout_s": "120",
+    # Loop guard: max tool executions per turn before the turn aborts loud.
+    "console_chat_max_tool_calls": "8",
+    # Daily token budget for the chat surface, independent of the global
+    # cost_guard caps — a runaway conversation can't eat the day's budget.
+    "console_chat_daily_token_budget": "200000",
+    # Context tail: how many recent messages ride into the model context.
+    # Older turns are dropped (rolling summary + embedding recall are the
+    # documented follow-ups; small local models need the hard cap first).
+    "console_chat_context_recent_turns": "12",
+    # Tool results enter model context as digests capped at this many chars
+    # (cards reference DB rows for the full payload) — a 3k-word draft in a
+    # 7B context is how small models die (num_ctx is a shared ceiling).
+    "console_chat_tool_result_max_chars": "2000",
+    # Persona name rendered into the chat system prompt. A setting, not a
+    # constant: one identity across chat + voice surfaces, and a SaaS
+    # customer names their own cofounder.
+    "agent_persona_name": "Poindexter",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

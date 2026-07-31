@@ -21,7 +21,6 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
-from services.topic_length import pick_target_length
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 from utils.uuid_prefix import resolve_task_id_prefix
@@ -214,33 +213,22 @@ router = APIRouter(
 
 
 async def _resolve_niche_for_topics(pool, niche_slug: str | None):
-    """Resolve which niche a topic operation targets — explicit slug wins,
-    a single active niche is unambiguous, anything else fails loud
-    (``feedback_no_silent_defaults``: never guess between niches)."""
-    from services.niche_service import NicheService
+    """Thin HTTP adapter over :func:`services.blog_task_creation.resolve_niche_for_topics`.
 
-    nsvc = NicheService(pool)
-    if niche_slug:
-        niche = await nsvc.get_by_slug(niche_slug)
-        if niche is None:
-            raise HTTPException(
-                status_code=404, detail=f"unknown niche_slug: {niche_slug!r}",
-            )
-        return niche
-    active = await nsvc.list_active()
-    if len(active) == 1:
-        return active[0]
-    if not active:
-        raise HTTPException(
-            status_code=422,
-            detail="no active niches configured — create one first "
-                   "(poindexter niches create)",
-        )
-    raise HTTPException(
-        status_code=422,
-        detail="multiple active niches — pass niche_slug (one of: "
-               + ", ".join(sorted(n.slug for n in active)) + ")",
+    The resolution logic (explicit slug wins, single active niche is
+    unambiguous, anything else fails loud) moved to the service layer in
+    poindexter#947 so the Cofounder chat agent's ``create_post`` tool shares
+    it; this wrapper just maps the transport-agnostic error onto HTTP.
+    """
+    from services.blog_task_creation import (
+        BlogTaskCreationError,
+        resolve_niche_for_topics,
     )
+
+    try:
+        return await resolve_niche_for_topics(pool, niche_slug)
+    except BlogTaskCreationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 @router.post(
@@ -371,168 +359,27 @@ async def _handle_blog_post_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
     site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
-    """Handle blog post task creation"""
-    task_id = str(uuid_lib.uuid4())
+    """Thin HTTP adapter over :func:`services.blog_task_creation.create_blog_post_task`.
 
-    # Log model selections (#952) so we can confirm user choices are applied
-    if request.models_by_phase:
-        logger.info("[create_task] User model selections applied: %s", request.models_by_phase)
-
-    # Merge content_constraints into top-level fields (#1250)
-    # content_constraints overrides top-level style/tone/target_length when provided
-    cc = request.content_constraints or {}
-    effective_style = cc.get("writing_style") or request.style or "narrative"
-    effective_tone = cc.get("tone") or request.tone or "professional"
-    # Length falls through to the weighted picker (#542) rather than a flat
-    # literal: a hardcoded 1500 here pinned 91.5% of all tasks to one length
-    # and left topic_discovery_length_distribution unreachable in prod. An
-    # explicit caller length (top-level or content_constraints) still wins.
-    effective_length = (
-        cc.get("word_count")
-        or request.target_length
-        or pick_target_length(site_config)
+    The creation logic (auto-topic pool claim, semantic dedup guard, length
+    picker, throttle flag) moved to the service layer in poindexter#947 so
+    the Cofounder chat agent's ``create_post`` tool shares the exact same
+    path; this wrapper maps the transport-agnostic error onto HTTP.
+    """
+    from services.blog_task_creation import (
+        BlogTaskCreationError,
+        create_blog_post_task,
     )
 
-    # Resolve "auto" topic from the niche's topic_pool (b3 of
-    # poindexter#812 — the Gen-1 TopicDiscovery inline scrape is retired).
-    resolved_topic = (request.topic or "").strip()
-    # Capture BEFORE resolution: pool candidates were already deduped at
-    # tap ingest, so the manual-injection dedup guard must skip the auto
-    # path (no human is present to pass force=true).
-    is_auto_topic = resolved_topic.lower() == "auto"
-    if is_auto_topic:
-        from services.topic_pool import claim_best_pooled_topic
-
-        pool = db_service.pool if db_service else None
-        if pool is None:
-            raise HTTPException(status_code=503, detail="Database pool unavailable")
-        niche = await _resolve_niche_for_topics(pool, request.niche_slug)
-        claimed = await claim_best_pooled_topic(
-            pool, niche_id=niche.id, site_config=site_config,
-        )
-        if claimed is None:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Could not resolve auto topic — topic_pool holds no "
-                    f"usable candidates for niche {niche.slug!r}. The topic "
-                    "taps haven't deposited fresh candidates (check "
-                    "external_taps rows + the Findings board)."
-                ),
-            )
-        resolved_topic = claimed["title"]
-        # Stamp the resolved niche so the task passes the #729
-        # niche-allowlist publish gate even when the caller omitted it.
-        if not request.niche_slug:
-            request.niche_slug = niche.slug
-        logger.info(
-            "[create_task] Resolved 'auto' topic -> %r (pool row %s, source %s)",
-            resolved_topic, claimed["id"], claimed["source"],
-        )
-
-    # Pre-enqueue semantic dedup guard — closes the create_post / POST
-    # /api/tasks near-duplicate gap. AUTO topics were already deduped by
-    # TopicDiscovery above; an explicitly-provided or seed_url-derived topic is
-    # checked here against already-published posts and refused (409) when too
-    # similar, unless the caller passes force=true. See topic_dedup_guard.py.
-    if not is_auto_topic:
-        from services.topic_dedup_guard import (
-            DuplicateTopicError,
-            assert_topic_not_duplicate,
-        )
-
-        try:
-            await assert_topic_not_duplicate(
-                resolved_topic,
-                site_config=site_config,
-                force=bool(getattr(request, "force", False)),
-            )
-        except DuplicateTopicError as dup:
-            # 409 Conflict — the topic collides with an existing post. The
-            # message names the post, the score, and the force=true override.
-            raise HTTPException(status_code=409, detail=str(dup)) from dup
-
-    task_data = {
-        "id": task_id,
-        "task_name": f"Blog Post: {resolved_topic}",
-        "task_type": "blog_post",
-        "topic": resolved_topic,
-        "niche_slug": request.niche_slug,
-        "category": request.category or "general",
-        "target_audience": request.target_audience or "General",
-        "primary_keyword": request.primary_keyword,
-        "style": effective_style,
-        "tone": effective_tone,
-        "target_length": effective_length,
-        "model_selections": request.models_by_phase or {},
-        "quality_preference": request.quality_preference or "balanced",
-        "status": "pending",
-        "user_id": current_user.get("id", "system"),
-        "metadata": {
-            **(request.metadata or {}),
-            "generate_featured_image": request.generate_featured_image,
-            "tags": request.tags,
-        },
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    # Check approval-queue throttle BEFORE insert so the response body
-    # can tell the caller whether this task is going to sit behind a
-    # wall of unreviewed work. The task is still queued (201) — we do
-    # not reject it — but the caller sees ``queue_full: true`` plus
-    # ``queue_position`` so MCP / dashboards can surface "this won't
-    # run until you approve something" instead of silently stalling.
-    # See GH-89 AC#1. Chose 201+flag over 429 because the caller
-    # explicitly asked for this topic; refusing outright would drop
-    # the request on the floor, and the whole point of the approval
-    # queue is an asynchronous hand-off.
-    queue_full = False
-    queue_position = 0
-    queue_limit = 0
     try:
-        from services.pipeline_throttle import is_queue_full
-
-        queue_full, queue_position, queue_limit = await is_queue_full(
-            db_service.pool if db_service else None,
+        return await create_blog_post_task(
+            request,
+            db_service=db_service,
             site_config=site_config,
+            user_id=current_user.get("id", "system"),
         )
-    except Exception as e:
-        logger.debug("[create_task] Throttle state check failed: %s", e)
-
-    if queue_full:
-        logger.warning(
-            "[create_task] Approval queue full (%d/%d) — task %s accepted but will "
-            "block until a slot opens. Free one via /approve-post or raise "
-            "max_approval_queue.",
-            queue_position, queue_limit, task_id[:8],
-        )
-
-    # Store in database as pending — task executor will pick it up
-    returned_task_id = await db_service.add_task(task_data)
-    logger.info("Blog task created: %s", returned_task_id)
-
-    response: dict[str, Any] = {
-        "id": returned_task_id,
-        "task_id": returned_task_id,
-        "task_type": "blog_post",
-        "topic": resolved_topic,
-        "status": "pending",
-        "created_at": task_data["created_at"],
-        "message": "Blog post task created and queued",
-    }
-    if queue_full:
-        response["queue_full"] = True
-        # queue_position = current awaiting_approval count. The new task
-        # sits behind roughly ``(queue_position - queue_limit + 1)`` human
-        # approvals before the executor will pick it up.
-        response["queue_position"] = queue_position
-        response["queue_limit"] = queue_limit
-        response["message"] = (
-            f"Blog post task created but pipeline is throttled: "
-            f"{queue_position} tasks awaiting approval (limit {queue_limit}). "
-            f"Task stays pending until approvals free a slot."
-        )
-    return response
+    except BlogTaskCreationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 async def _handle_social_media_creation(

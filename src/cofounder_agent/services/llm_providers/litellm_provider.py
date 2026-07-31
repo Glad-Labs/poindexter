@@ -654,6 +654,10 @@ class LiteLLMProvider:
     name = "litellm"
     supports_streaming = True
     supports_embeddings = True
+    # OpenAI-style function calling: ``complete(tools=[...])`` forwards the
+    # schemas and populates ``Completion.tool_calls`` (poindexter#947 — the
+    # console chat agent loop is the first consumer).
+    supports_tools = True
 
     def __init__(self) -> None:
         self._configured = False
@@ -1051,7 +1055,14 @@ class LiteLLMProvider:
         # (verified in-container: think=False → complete draft vs baseline
         # truncation), so the writer path passes ``think=False`` to disable the
         # channel. Non-thinking backends ignore the param under drop_params.
-        for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx", "think"):
+        # ``tools`` / ``tool_choice`` forwarding (poindexter#947): OpenAI-spec
+        # function-calling params. LiteLLM maps them per-backend (Ollama /api/chat
+        # ``tools``, OpenAI/Anthropic native) and returns the OpenAI shape, so the
+        # tool_calls extraction below is backend-uniform.
+        for key in (
+            "temperature", "max_tokens", "top_p", "response_format",
+            "num_ctx", "think", "tools", "tool_choice",
+        ):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
         # Ollama-only params (num_ctx / think) 400 a cloud provider — litellm
@@ -1081,9 +1092,26 @@ class LiteLLMProvider:
         choice = response.choices[0] if response.choices else None
         text = ""
         finish_reason = ""
+        tool_calls: list[dict[str, Any]] | None = None
         if choice is not None:
             msg = getattr(choice, "message", None)
             text = (getattr(msg, "content", None) or "") if msg else ""
+            # Tool-call extraction (poindexter#947). Normalize the OpenAI
+            # shape into plain dicts so Completion callers never touch
+            # litellm's pydantic objects. ``arguments`` stays the raw JSON
+            # string — parse + repair belong to the agent layer.
+            raw_tool_calls = getattr(msg, "tool_calls", None) if msg else None
+            if raw_tool_calls:
+                tool_calls = []
+                for tc in raw_tool_calls:
+                    fn = getattr(tc, "function", None)
+                    tool_calls.append({
+                        "id": getattr(tc, "id", "") or "",
+                        "name": (getattr(fn, "name", "") or "") if fn else "",
+                        "arguments": (
+                            (getattr(fn, "arguments", "") or "") if fn else ""
+                        ),
+                    })
             # Strip leaked reasoning / chat-template control tokens a
             # mis-templated or reasoning-channel model inlines into the main
             # content channel (e.g. "<|channel>thought<channel|>…" — two real
@@ -1109,7 +1137,11 @@ class LiteLLMProvider:
             # return empty ``content`` with all tokens in ``reasoning_content``.
             # Recover the reasoned payload so downstream json.loads doesn't
             # get an empty string. See __init__ for the why.
-            if not text.strip() and self._reasoning_content_fallback and msg:
+            # SKIP when the model returned tool_calls: an empty content
+            # channel is the NORMAL shape for a tool-call turn, and
+            # "recovering" reasoning text would fabricate an assistant
+            # answer alongside the calls (poindexter#947).
+            if not text.strip() and not tool_calls and self._reasoning_content_fallback and msg:
                 recovered = _recover_reasoning_text(msg)
                 if recovered:
                     logger.warning(
@@ -1175,6 +1207,7 @@ class LiteLLMProvider:
             total_tokens=total_tokens,
             finish_reason=finish_reason,
             raw=raw,
+            tool_calls=tool_calls,
         )
 
     async def stream(

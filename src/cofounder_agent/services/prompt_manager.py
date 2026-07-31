@@ -84,6 +84,7 @@ class PromptCategory(str, Enum):
     VIDEO = "video"
     PODCAST = "podcast"
     VOICE = "voice"
+    CHAT = "chat"
 
 
 @dataclass
@@ -152,6 +153,7 @@ class UnifiedPromptManager:
         "video": PromptCategory.VIDEO,
         "podcast": PromptCategory.PODCAST,
         "voice": PromptCategory.VOICE,
+        "chat": PromptCategory.CHAT,
     }
 
     def __init__(self, site_config: "SiteConfig | None" = None):

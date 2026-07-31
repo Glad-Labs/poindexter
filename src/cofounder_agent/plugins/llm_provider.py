@@ -44,6 +44,15 @@ class Completion:
     ``raw`` preserves the provider's original response so observability
     tooling can extract backend-specific fields (reasoning tokens,
     safety labels, etc.) without widening the Protocol.
+
+    ``tool_calls`` is populated only when the caller passed ``tools=`` and
+    the model chose to call one — a list of normalized dicts
+    ``{"id": str, "name": str, "arguments": str}`` where ``arguments`` is
+    the raw JSON string as the model emitted it (callers own parse +
+    validation, so a malformed-JSON repair loop stays at the agent layer).
+    ``None`` means no tools were requested or the model answered in text.
+    Providers that cannot honour a ``tools=`` request must raise rather
+    than silently answer without them (see ``supports_tools`` below).
     """
 
     text: str
@@ -53,6 +62,7 @@ class Completion:
     total_tokens: int = 0
     finish_reason: str = ""  # "stop", "length", "error", etc.
     raw: dict[str, Any] = field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -75,6 +85,14 @@ class LLMProvider(Protocol):
         supports_embeddings: Whether ``embed()`` is supported. Providers
             that don't offer embedding should set this and delegate to
             the default OllamaNativeProvider.
+
+    Optional attribute (NOT part of the structural Protocol, so existing
+    third-party providers stay valid): ``supports_tools: bool`` — whether
+    ``complete(tools=[...])`` performs OpenAI-style function calling and
+    populates ``Completion.tool_calls``. Callers probe it with
+    ``getattr(provider, "supports_tools", False)``. A provider that does
+    not support tools MUST fail loud when ``tools`` is passed (never
+    silently answer without them — feedback_no_silent_defaults).
     """
 
     name: str

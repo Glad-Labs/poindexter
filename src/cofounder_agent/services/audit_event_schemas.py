@@ -76,9 +76,32 @@ class FindingDetails(BaseModel):
     extra: dict[str, Any] | None = None
 
 
+class ChatToolCallDetails(BaseModel):
+    """Powers the Cofounder chat panels (``chat_tool_call`` rows).
+
+    Single producer: ``services/chat_agent.py`` — one row per tool
+    execution in a chat turn, the reviewable trail of what the agent
+    DID (poindexter#947). ``args_digest`` is a truncated JSON preview,
+    never the full arguments (they may embed operator text).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = 1
+    conversation_id: str
+    message_id: str | None = None
+    tool: str
+    tier: str
+    ok: bool
+    duration_ms: int = 0
+    args_digest: str = ""
+    error: str | None = None
+
+
 EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "qa_pass_completed": QaPassCompletedDetails,
     "finding": FindingDetails,
+    "chat_tool_call": ChatToolCallDetails,
 }
 
 

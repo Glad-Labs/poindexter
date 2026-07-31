@@ -82,8 +82,13 @@ class TestFindingDetails:
 
 
 class TestEventSchemasRegistry:
-    def test_registers_exactly_the_two_load_bearing_types(self):
-        assert set(EVENT_SCHEMAS.keys()) == {"qa_pass_completed", "finding"}
+    def test_registers_exactly_the_load_bearing_types(self):
+        # Opportunistic additions only (poindexter#758): each entry here is a
+        # dashboard-load-bearing shape. chat_tool_call powers the Cofounder
+        # chat panels (poindexter#947).
+        assert set(EVENT_SCHEMAS.keys()) == {
+            "qa_pass_completed", "finding", "chat_tool_call",
+        }
 
 
 class TestValidateEventDetails:

@@ -34,6 +34,11 @@ class OllamaNativeProvider:
     name = "ollama_native"
     supports_streaming = True
     supports_embeddings = True
+    # This provider flattens messages onto /api/generate (see complete()),
+    # which has no function-calling channel. Tool callers must route the
+    # tier through litellm or openai_compat; complete() fails loud on a
+    # ``tools=`` request rather than silently answering without them.
+    supports_tools = False
 
     def __init__(self):
         # Lazy import — OllamaClient drags in a lot of transitive deps
@@ -68,6 +73,14 @@ class OllamaNativeProvider:
         like title generation pass this so the model emits the answer directly
         instead of leaking its rationale; ``None`` keeps the model default).
         """
+        if kwargs.get("tools"):
+            raise RuntimeError(
+                "ollama_native does not support tool calling (it flattens "
+                "the conversation onto /api/generate). Route this tier "
+                "through the litellm provider instead — e.g. `poindexter "
+                "settings set plugin.llm_provider.primary.standard litellm` "
+                "— or openai_compat pointed at Ollama's /v1 endpoint."
+            )
         client = self._get_client()
         system = next((m["content"] for m in messages if m.get("role") == "system"), None)
         prompt_msgs = [m for m in messages if m.get("role") != "system"]

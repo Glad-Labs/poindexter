@@ -142,8 +142,10 @@ class TestRouteManifestStructure:
         (operator-triggered container restart intent queue).
         Updated 2026-07-26 (poindexter#914 P0): added gpu_queue_router
         (GPU scheduler holder/waiters/stats snapshot at /api/gpu/queue).
+        Updated 2026-07-31 (poindexter#947): added chat_router
+        (Cofounder chat conversations + streamed agent turns at /api/chat/*).
         """
-        assert len(_WORKER_ROUTES) == 37
+        assert len(_WORKER_ROUTES) == 38
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first
