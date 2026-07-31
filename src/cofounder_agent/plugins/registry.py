@@ -787,6 +787,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # site_config cache so SQL/UI edits to app_settings take effect
         # without a container restart (internal tracker).
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
+        # WarmPinnedLlmEndpointsJob — loads each model that
+        # model_api_base_overrides pins to its own GPU-bound Ollama, so a
+        # restart never leaves that GPU cold until the first rail call
+        # cold-loads mid-pipeline. OLLAMA_KEEP_ALIVE=-1 never evicts but also
+        # never loads; this is the missing half of stack#2051 (see #2938).
+        ("jobs", "services.jobs.warm_pinned_llm_endpoints", "WarmPinnedLlmEndpointsJob"),
         # FlushSettingsReadTelemetryJob — drains SiteConfig.drain_read_keys()
         # every minute and stamps app_settings.last_read_at, so an
         # never-read key keeps a NULL stamp (orphan candidate). Pairs with

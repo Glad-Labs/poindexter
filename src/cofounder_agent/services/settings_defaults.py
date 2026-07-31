@@ -2313,6 +2313,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vision_scorer_unavailable.cooldown_minutes': '360',
     'findings.vision_scorer_unavailable.min_severity': 'warn',
 
+    # ----- Pinned-endpoint warm-up (stack#2051 / #2938) -----
+    # WarmPinnedLlmEndpointsJob loads each model that
+    # plugin.llm_provider.litellm.config.model_api_base_overrides pins to its own
+    # GPU-bound Ollama. OLLAMA_KEEP_ALIVE=-1 never evicts but also never LOADS,
+    # so without this a restart leaves the pinned GPU empty until the first rail
+    # call cold-loads mid-pipeline and the rail passes open. No-ops on installs
+    # with no override map configured (the OSS single-endpoint path).
+    'warm_pinned_llm_endpoints_enabled': 'true',
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
     # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob
