@@ -34,7 +34,19 @@ logger = get_logger(__name__)
 
 
 def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
-    """Safely get attribute from a setting (Pydantic model or dict)."""
+    """Safely get attribute from a setting (Pydantic model or dict).
+
+    Timestamps read through here (`created_at` / `updated_at`) are passed to
+    `SettingResponse` as-is, including `None`. Do NOT reintroduce an
+    `or datetime.now(timezone.utc)` fallback: those fields are how an operator
+    distinguishes a deliberate override from stale seed drift, and stamping the
+    current time makes every row read as "just changed".
+
+    That fallback used to fire on every single call, because the DB-layer model
+    this receives was missing the `updated_at` field entirely and Pydantic
+    dropped the real value (poindexter#954). The field is declared now, so a
+    `None` here means the column really is NULL — report it as `null`.
+    """
     if isinstance(setting, dict):
         return setting.get(attr, default)
     return getattr(setting, attr, default)
@@ -209,8 +221,8 @@ async def list_settings(
                     is_encrypted=_setting_attr(setting, "is_encrypted", False),
                     is_read_only=_setting_attr(setting, "is_read_only", False),
                     tags=_setting_attr(setting, "tags", []),
-                    created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
-                    updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
+                    created_at=_setting_attr(setting, "created_at"),
+                    updated_at=_setting_attr(setting, "updated_at"),
                     created_by_id=_setting_attr(setting, "created_by_id", 1),
                     updated_by_id=_setting_attr(setting, "updated_by_id"),
                     value_preview=value_preview,
@@ -260,8 +272,8 @@ async def get_setting(
             is_encrypted=_setting_attr(setting, "is_encrypted", False),
             is_read_only=_setting_attr(setting, "is_read_only", False),
             tags=_setting_attr(setting, "tags", []),
-            created_at=_setting_attr(setting, "created_at") or datetime.now(timezone.utc),
-            updated_at=_setting_attr(setting, "updated_at") or datetime.now(timezone.utc),
+            created_at=_setting_attr(setting, "created_at"),
+            updated_at=_setting_attr(setting, "updated_at"),
             created_by_id=_setting_attr(setting, "created_by_id", 1),
             updated_by_id=_setting_attr(setting, "updated_by_id"),
             value_preview=(_setting_attr(setting, "value", "") or "")[:50],
@@ -346,8 +358,8 @@ async def create_setting(
             is_encrypted=False,
             is_read_only=False,
             tags=setting_data.tags or [],
-            created_at=_setting_attr(created_setting, "created_at") or datetime.now(timezone.utc),
-            updated_at=_setting_attr(created_setting, "updated_at") or datetime.now(timezone.utc),
+            created_at=_setting_attr(created_setting, "created_at"),
+            updated_at=_setting_attr(created_setting, "updated_at"),
             created_by_id=1,
             updated_by_id=None,
             value_preview=(_setting_attr(created_setting, "value", "") or "")[:50],
@@ -436,8 +448,8 @@ async def update_setting(
             is_encrypted=_setting_attr(updated, "is_encrypted", False),
             is_read_only=_setting_attr(updated, "is_read_only", False),
             tags=_setting_attr(updated, "tags", []),
-            created_at=_setting_attr(updated, "created_at") or datetime.now(timezone.utc),
-            updated_at=_setting_attr(updated, "updated_at") or datetime.now(timezone.utc),
+            created_at=_setting_attr(updated, "created_at"),
+            updated_at=_setting_attr(updated, "updated_at"),
             created_by_id=_setting_attr(updated, "created_by_id", 1),
             updated_by_id=1,
             value_preview=(_setting_attr(updated, "value", "") or "")[:50],

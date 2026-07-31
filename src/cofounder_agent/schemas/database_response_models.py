@@ -455,7 +455,20 @@ class OrchestratorTrainingDataResponse(BaseModel):
 
 
 class SettingResponse(BaseModel):
-    """Application setting response model."""
+    """Application setting response model (DB layer).
+
+    NOTE: this is NOT the API-layer `schemas.settings_schemas.SettingResponse`
+    — two different models share the name. This one mirrors an `app_settings`
+    row; that one is the HTTP response body. `ModelConverter.
+    to_setting_response` builds THIS one.
+
+    `updated_at` is the live column name and must stay declared here: the model
+    defaults to Pydantic's `extra="ignore"`, so a column the model omits is
+    silently dropped rather than rejected. Omitting it is exactly how the real
+    `updated_at` used to disappear between the SELECT and the route, leaving
+    `routes/settings_routes.py` to substitute `now()` and report a fabricated
+    timestamp on every call (poindexter#954).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -466,8 +479,20 @@ class SettingResponse(BaseModel):
     display_name: str | None = Field(None, description="Display name for UI")
     description: str | None = Field(None, description="Setting description")
     is_active: bool = Field(default=True, description="Whether setting is active")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    modified_at: datetime = Field(..., description="Last modification timestamp")
+    # Nullable to match the DDL: `app_settings.created_at` / `updated_at` are
+    # `timestamptz DEFAULT now()` with no NOT NULL, so a NULL row is legal.
+    # Declaring them required made such a row raise ValidationError inside
+    # `admin_db.get_setting`, which swallows it and returns None — a 404 on a
+    # setting that exists.
+    created_at: datetime | None = Field(None, description="Creation timestamp")
+    updated_at: datetime | None = Field(
+        None, description="Last update timestamp (the `app_settings.updated_at` column)"
+    )
+    # Legacy alias for `updated_at`, kept populated for back-compat: the
+    # abandoned `settings` table called the same concept `modified_at`.
+    modified_at: datetime | None = Field(
+        None, description="Legacy alias for `updated_at` (old `settings` schema)"
+    )
 
 
 # ============================================================================

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.settings_routes import router
+from schemas.model_converter import ModelConverter
 from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
@@ -518,3 +519,127 @@ class TestUpdateSetting:
         assert call_kwargs.kwargs.get("value") == "debug" or (
             call_kwargs[0] and call_kwargs[0][1] == "debug"
         )
+
+
+# ---------------------------------------------------------------------------
+# Timestamp provenance (poindexter#954)
+# ---------------------------------------------------------------------------
+
+STORED_AT = datetime(2026, 6, 19, 23, 49, 20, tzinfo=timezone.utc)
+
+
+def _real_setting_model(**overrides):
+    """Build the object the DB layer ACTUALLY returns.
+
+    The fixtures above hand the routes a plain `dict`, which `_setting_attr`
+    reads via `.get()` — so a dict passes `updated_at` straight through and the
+    fabrication path never runs. That fidelity gap is why #954 shipped: in
+    production `db_service.get_setting` returns a Pydantic model from
+    `ModelConverter.to_setting_response`, which was silently dropping the
+    field. These tests must go through the real converter, not a dict.
+    """
+    row = {
+        "id": 42,
+        "key": "image_render_timeout_seconds",
+        "value": "600",
+        "category": "media",
+        "description": "Render timeout",
+        "is_secret": False,
+        "is_active": True,
+        "created_at": STORED_AT,
+        "updated_at": STORED_AT,
+    }
+    row.update(overrides)
+    return ModelConverter.to_setting_response(row)
+
+
+@pytest.mark.unit
+class TestTimestampProvenance:
+    """`updated_at` must report the stored column, never the current time.
+
+    This is the field an operator uses to tell a deliberate override from
+    stale seed drift, so a fabricated value is worse than an absent one.
+    """
+
+    def test_get_returns_stored_updated_at(self):
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=_real_setting_model())
+        client = TestClient(_build_app(mock_db))
+
+        body = client.get("/api/settings/image_render_timeout_seconds").json()
+
+        assert body["updated_at"] is not None
+        assert datetime.fromisoformat(body["updated_at"]) == STORED_AT
+
+    def test_get_updated_at_is_not_now(self):
+        """The original symptom: two calls returned two different times."""
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=_real_setting_model())
+        client = TestClient(_build_app(mock_db))
+
+        first = client.get("/api/settings/image_render_timeout_seconds").json()
+        second = client.get("/api/settings/image_render_timeout_seconds").json()
+
+        assert first["updated_at"] == second["updated_at"]
+        now = datetime.now(timezone.utc)
+        assert abs((datetime.fromisoformat(first["updated_at"]) - now).days) > 1
+
+    def test_get_returns_stored_created_at(self):
+        """Same four sites fabricated `created_at`; it just happened to be
+        masked because the DB model did declare that field."""
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=_real_setting_model())
+        client = TestClient(_build_app(mock_db))
+
+        body = client.get("/api/settings/image_render_timeout_seconds").json()
+
+        assert datetime.fromisoformat(body["created_at"]) == STORED_AT
+
+    def test_list_returns_stored_updated_at(self):
+        mock_db = _make_settings_db()
+        mock_db.get_all_settings = AsyncMock(return_value=[_real_setting_model()])
+        client = TestClient(_build_app(mock_db))
+
+        item = client.get("/api/settings").json()["items"][0]
+
+        assert datetime.fromisoformat(item["updated_at"]) == STORED_AT
+
+    def test_update_returns_stored_updated_at(self):
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(return_value=_real_setting_model())
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.put(
+            "/api/settings/image_render_timeout_seconds", json={"value": "900"}
+        )
+
+        assert resp.status_code == 200
+        assert datetime.fromisoformat(resp.json()["updated_at"]) == STORED_AT
+
+    def test_create_returns_stored_updated_at(self):
+        mock_db = _make_settings_db()
+        mock_db.setting_exists = AsyncMock(return_value=False)
+        mock_db.get_setting = AsyncMock(return_value=_real_setting_model())
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/settings",
+            json={"key": "image_render_timeout_seconds", "value": "600"},
+        )
+
+        assert resp.status_code == 201
+        assert datetime.fromisoformat(resp.json()["updated_at"]) == STORED_AT
+
+    def test_null_timestamp_reported_as_null(self):
+        """A genuinely absent timestamp is reported as null — not backfilled
+        with now(), which would read as 'just changed'."""
+        mock_db = _make_settings_db()
+        mock_db.get_setting = AsyncMock(
+            return_value=_real_setting_model(created_at=None, updated_at=None)
+        )
+        client = TestClient(_build_app(mock_db))
+
+        body = client.get("/api/settings/image_render_timeout_seconds").json()
+
+        assert body["updated_at"] is None
+        assert body["created_at"] is None

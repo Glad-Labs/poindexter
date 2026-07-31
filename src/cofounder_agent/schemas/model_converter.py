@@ -333,16 +333,28 @@ class ModelConverter:
         `app_settings` on 2026-04-12 as part of Gitea #192 — this converter
         provides defaults for the fields that only existed in the old
         schema so the Pydantic model still validates.
+
+        Builds the DB-layer `schemas.database_response_models.SettingResponse`,
+        NOT the same-named API-layer model in `schemas.settings_schemas`.
         """
         data = ModelConverter._normalize_row_data(row)
         if "id" in data:
             data["id"] = str(data["id"])
 
-        # Back-fill fields that exist in SettingResponse but not in the
-        # current `app_settings` schema. `modified_at` mirrors `updated_at`
-        # (they tracked the same concept in the old schema).
+        # Keep the two names for "last changed" in sync in whichever direction
+        # the source row is missing one. `updated_at` is the live
+        # `app_settings` column; `modified_at` is the old `settings` table's
+        # name for the same concept, kept populated for back-compat.
+        #
+        # Mapping `updated_at` onto `modified_at` alone is what hid
+        # poindexter#954: the DB model had no `updated_at` field, so the real
+        # value was renamed into the alias and the original dropped by
+        # `extra="ignore"`. Both are declared on the model now — do not remove
+        # either without checking `routes/settings_routes.py`.
         if "modified_at" not in data and "updated_at" in data:
             data["modified_at"] = data["updated_at"]
+        elif "updated_at" not in data and "modified_at" in data:
+            data["updated_at"] = data["modified_at"]
         if "display_name" not in data:
             data["display_name"] = None
         if "is_active" not in data:
