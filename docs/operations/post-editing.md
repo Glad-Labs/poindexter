@@ -34,10 +34,20 @@ The command reports the rebuild back as a `⚠` warning line. Two caveats:
   until someone revalidates that tag. Do it separately when you need the swap
   visible now.
 - **The call may time out client-side and still have worked.** The rebuild
-  re-uploads every published post's JSON, which can outrun the CLI's HTTP
-  timeout (30s for `replace-image` / `remove-image`;
-  `post_edit_regen_image_timeout_s` for `regen-image`). The DB writes commit
-  _before_ the rebuild starts, so a `ReadTimeout` means the rebuild is still
+  re-uploads every published post's JSON _sequentially_, so the wait scales
+  with the corpus rather than with the edit: measured **43.4s at 164 published
+  posts** (~265ms each) on 2026-07-31 — well past the 30s these commands used
+  to be pinned to. Every edit command now reads its own CLI timeout from
+  `app_settings`:
+
+  | Command                         | Setting                              | Default | Covers                                                            |
+  | ------------------------------- | ------------------------------------ | ------- | ----------------------------------------------------------------- |
+  | `replace-image`, `remove-image` | `post_edit_image_timeout_s`          | 300s    | the published-featured rebuild                                    |
+  | `regen-image`, `add-image`      | `post_edit_regen_image_timeout_s`    | 300s    | image generation + that rebuild                                   |
+  | `rebuild-images`                | `post_edit_rebuild_images_timeout_s` | 600s    | re-planning every image (drafts only — never reaches the rebuild) |
+
+  Raise the value if the corpus outgrows the default. The DB writes commit
+  _before_ the rebuild starts, so a `ReadTimeout` still means the rebuild is
   running — not that the edit failed. Verify with `poindexter tasks get`
   rather than re-running.
 

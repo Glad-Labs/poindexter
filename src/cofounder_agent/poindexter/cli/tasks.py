@@ -831,9 +831,13 @@ def tasks_replace_image(task_id: str, which: str, url: str) -> None:
     trigger_isr_revalidate(<slug>). And the rebuild re-uploads every post JSON,
     which can outrun the client timeout — a ReadTimeout here means the rebuild
     is still running, not that the edit failed; the DB writes already landed.
+    Tune the client wait with app_settings.post_edit_image_timeout_s.
     """
     _emit_edit_result(
-        _post_edit(f"/api/tasks/{task_id}/replace-image", {"which": which, "url": url}),
+        _post_edit(
+            f"/api/tasks/{task_id}/replace-image", {"which": which, "url": url},
+            timeout_key="post_edit_image_timeout_s",
+        ),
     )
 
 
@@ -882,10 +886,14 @@ def tasks_remove_image(task_id: str, which: str) -> None:
     Clearing a live post's featured image does NOT bust the Vercel ISR cache —
     call trigger_isr_revalidate(<slug>) separately or the page keeps rendering
     the removed image. The rebuild can also outrun the client timeout; a
-    ReadTimeout means it is still running, not that the removal failed.
+    ReadTimeout means it is still running, not that the removal failed. Tune
+    the client wait with app_settings.post_edit_image_timeout_s.
     """
     _emit_edit_result(
-        _post_edit(f"/api/tasks/{task_id}/remove-image", {"which": which}),
+        _post_edit(
+            f"/api/tasks/{task_id}/remove-image", {"which": which},
+            timeout_key="post_edit_image_timeout_s",
+        ),
     )
 
 

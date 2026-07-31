@@ -854,6 +854,19 @@ def test_rebuild_images_timeout_default_present():
     assert DEFAULTS["post_edit_rebuild_images_timeout_s"] == "600"
 
 
+def test_post_edit_image_timeout_default_covers_a_full_corpus_rebuild():
+    """replace-image / remove-image --which featured run export_full_rebuild
+    inline on a published post, re-uploading every published post's JSON.
+
+    Measured 2026-07-31: 43.4s at 164 posts. The old hardcoded 30s client
+    timeout was already below that, so a successful edit surfaced to the
+    operator as a ReadTimeout. Keep enough headroom for corpus growth.
+    """
+    from services.settings_defaults import DEFAULTS
+
+    assert float(DEFAULTS["post_edit_image_timeout_s"]) >= 120.0
+
+
 def test_seed_insert_binds_resolved_category(monkeypatch):
     """The seed INSERT must bind resolve_category(key), never a literal
     'general'. Otherwise every seeded key piles into the 'general' bucket

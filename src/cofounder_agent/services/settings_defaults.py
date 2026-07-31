@@ -1411,6 +1411,14 @@ DEFAULTS: dict[str, str] = {
     # every image (featured + all inline) sequentially, so it must exceed a
     # single regen by the image count — generous default.
     'post_edit_rebuild_images_timeout_s': '600',
+    # Seconds the CLI waits for POST /api/tasks/{id}/{replace,remove}-image.
+    # No image generation here, but --which featured on a PUBLISHED post runs
+    # export_full_rebuild inline, which re-uploads EVERY published post's JSON
+    # to R2 sequentially — so this scales with corpus size, not with the edit.
+    # Measured 2026-07-31: 43.4s end-to-end at 164 published posts (~265ms per
+    # post). 300 leaves ~7x headroom (~1,100 posts) before the client gives up
+    # on a rebuild that is still succeeding server-side.
+    'post_edit_image_timeout_s': '300',
     # Inline-illustration style pool (JSON array of style strings). Empty =>
     # the stylized code fallback (modules/content/stages/replace_inline_images.py
     # INLINE_STYLES). Parallels 'image_styles' for the featured image. Photoreal

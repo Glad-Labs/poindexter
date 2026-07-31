@@ -242,6 +242,52 @@ def test_image_command_help_documents_isr_and_timeout_caveats(runner, command):
     assert "timeout" in help_text, f"{command} --help omits the slow-rebuild timeout caveat"
 
 
+# ---------------------------------------------------------------------------
+# client-timeout wiring — _post_edit falls back to a hardcoded 30s unless the
+# call site names a timeout_key. replace-image / remove-image named none, but
+# --which featured on a published post runs export_full_rebuild inline, which
+# re-uploads every published post's JSON (measured 43.4s at 164 posts). So a
+# committed edit surfaced to the operator as a ReadTimeout. The key each
+# command reads is part of the operator contract — app_settings can only tune
+# a wait that the command actually looks up.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_key"),
+    [
+        (["replace-image", "abc123", "--which", "featured", "--url", "https://cdn/x.png"],
+         "post_edit_image_timeout_s"),
+        (["remove-image", "abc123", "--which", "featured"],
+         "post_edit_image_timeout_s"),
+        (["regen-image", "abc123", "--which", "featured", "--prompt", "p"],
+         "post_edit_regen_image_timeout_s"),
+        (["add-image", "abc123", "--section", "Intro"],
+         "post_edit_regen_image_timeout_s"),
+        (["rebuild-images", "abc123"],
+         "post_edit_rebuild_images_timeout_s"),
+        # edit-body writes pipeline_versions.content only — it never triggers a
+        # static rebuild, so the default wait is correct and needs no setting.
+        (["edit-body", "abc123", "--find", "x", "--replace", "y"], None),
+    ],
+    ids=["replace", "remove", "regen", "add", "rebuild", "edit-body"],
+)
+def test_edit_commands_read_their_timeout_from_app_settings(runner, argv, expected_key):
+    seen: dict = {}
+
+    def _capture(path, payload, timeout_key=None):
+        seen["timeout_key"] = timeout_key
+        return {"ok": True, "detail": "d", "task_id": "t1"}
+
+    with patch("poindexter.cli.tasks._post_edit", _capture):
+        result = runner.invoke(tasks_group, argv)
+    assert result.exit_code == 0, result.output
+    assert seen["timeout_key"] == expected_key, (
+        f"{argv[0]} reads {seen['timeout_key']!r}; expected {expected_key!r} "
+        "— a missing key silently pins the CLI to the hardcoded 30s fallback"
+    )
+
+
 @pytest.mark.parametrize("command", ["edit-body", "add-image"])
 def test_body_command_help_explains_drafts_only_is_unguarded(runner, command):
     """Body/inline edits really are draft-scoped — but by write target, not by a
