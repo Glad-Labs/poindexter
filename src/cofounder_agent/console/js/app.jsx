@@ -7,7 +7,7 @@ const { useState: useS, useEffect: useE, useRef: useR, useMemo } = React;
 // literal below on every release (see the `generic` extra-files entry in
 // release-please-config.json) so the console tracks the real build instead of
 // drifting. Keep the `// x-release-please-version` annotation on this line.
-const POINDEXTER_VERSION = '0.113.0'; // x-release-please-version
+const POINDEXTER_VERSION = '0.114.0'; // x-release-please-version
 
 const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },

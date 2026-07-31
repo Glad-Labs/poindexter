@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## [0.114.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.113.0...v0.114.0) (2026-07-31)
+
+
+### Features
+
+* **gpu:** P2 group 2 — bounded GPU waits for the fail-soft media stages ([#2921](https://github.com/Glad-Labs/glad-labs-stack/issues/2921)) ([7e76c9b](https://github.com/Glad-Labs/glad-labs-stack/commit/7e76c9b485f202be9bc5c4fba9c7bdc375ae5256))
+* **video:** bake demo clips in a throwaway sidecar on a host timer ([#2924](https://github.com/Glad-Labs/glad-labs-stack/issues/2924)) ([c9b4087](https://github.com/Glad-Labs/glad-labs-stack/commit/c9b408748b59415d1547474b6fbccd952145466d))
+
+
+### Bug Fixes
+
+* **console:** stop loadAllSettings aliasing the response array ([#2919](https://github.com/Glad-Labs/glad-labs-stack/issues/2919)) ([5d72692](https://github.com/Glad-Labs/glad-labs-stack/commit/5d726927eb599646f23803048a8f9c06d2ff48f1))
+* **dependabot:** the typescript hold does not work — switch to version ranges ([#2925](https://github.com/Glad-Labs/glad-labs-stack/issues/2925)) ([845e0fc](https://github.com/Glad-Labs/glad-labs-stack/commit/845e0fc290825fbcfb59ea9b6d5ed9a4b4a3b67d))
+* **video:** bake to demo_clip_dir, and diagnose the Chromium sandbox abort ([#2922](https://github.com/Glad-Labs/glad-labs-stack/issues/2922)) ([5a8ba3f](https://github.com/Glad-Labs/glad-labs-stack/commit/5a8ba3fe01e645168b7cdfc3ad3021b66ace8c17))
+
 ## [0.113.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.112.0...v0.113.0) (2026-07-29)
 
 
