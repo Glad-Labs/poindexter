@@ -54,6 +54,11 @@ APP_SETTINGS_ROW = {
     "is_active": True,
     "created_at": STORED_AT,
     "updated_at": STORED_AT,
+    # Lifecycle metadata (#756), added to the SELECT by poindexter#956.
+    "owner": "image_pipeline",
+    "value_type": "integer",
+    "deprecated": False,
+    "superseded_by": None,
 }
 
 
@@ -203,3 +208,98 @@ class TestNoFabricatedAuthorship:
         assert offenders == [], (
             "fabricated authorship kwarg is back in settings_routes: " + "; ".join(offenders)
         )
+
+
+class TestLifecycleMetadataReachesTheApi:
+    """`owner` / `value_type` / `deprecated` / `superseded_by` (poindexter#956).
+
+    These are REAL `app_settings` columns (unlike the #955 fields), so the bar
+    is the #954 one: the stored value must survive the SELECT → converter →
+    response chain, and an unset column must report `null` rather than a
+    stand-in. `owner` names the module that reads the key, not who set it.
+    """
+
+    LIFECYCLE = ["owner", "value_type", "deprecated", "superseded_by"]
+
+    @pytest.mark.parametrize("field", LIFECYCLE)
+    def test_selected_by_the_query(self, field):
+        """The chain starts at the SELECT — if it isn't fetched, nothing else matters."""
+        from services.admin_db import AdminDatabase
+
+        assert field in AdminDatabase._APP_SETTINGS_COLUMNS
+
+    @pytest.mark.parametrize("field", LIFECYCLE)
+    def test_declared_on_db_model(self, field):
+        """A selected column the model omits is dropped by `extra="ignore"` (#954)."""
+        assert field in DbSettingResponse.model_fields
+
+    @pytest.mark.parametrize("field", LIFECYCLE)
+    def test_declared_on_api_model(self, field):
+        assert field in ApiSettingResponse.model_fields
+
+    def test_stored_values_survive_conversion(self):
+        """The #954 regression shape, applied to the new columns."""
+        converted = ModelConverter.to_setting_response(APP_SETTINGS_ROW)
+        assert converted.owner == "image_pipeline"
+        assert converted.value_type == "integer"
+        assert converted.deprecated is False
+
+    def test_deprecation_pair_survives_conversion(self):
+        """A superseded key must carry its replacement — the pair is the payload."""
+        row = {**APP_SETTINGS_ROW, "deprecated": True, "superseded_by": "new_key"}
+        converted = ModelConverter.to_setting_response(row)
+        assert converted.deprecated is True
+        assert converted.superseded_by == "new_key"
+
+    def test_unset_columns_report_null_not_a_placeholder(self):
+        """160 of ~1,345 rows carry owner/value_type, so unset is the common case.
+
+        Reporting anything but `null` here would repeat #955 on real columns —
+        inventing provenance for the 88% of keys that have none.
+        """
+        row = {**APP_SETTINGS_ROW, "owner": None, "value_type": None}
+        converted = ModelConverter.to_setting_response(row)
+        assert converted.owner is None
+        assert converted.value_type is None
+
+    def test_route_passes_no_default_for_nullable_lifecycle_fields(self):
+        """`_lifecycle_metadata` must not hand `_setting_attr` a non-None default.
+
+        Only `deprecated` may (it is NOT NULL DEFAULT false, so `False` is the
+        column's real value). A default on the three nullable ones would
+        manufacture data exactly as `created_by_id=1` did — and the schema
+        assertions above would stay green while it happened.
+        """
+        import ast
+        import inspect
+
+        from routes.settings_routes import _lifecycle_metadata
+
+        tree = ast.parse(inspect.getsource(_lifecycle_metadata))
+        offenders = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_setting_attr"):
+                continue
+            field = node.args[1].value if len(node.args) > 1 else "?"
+            if len(node.args) > 2 and field != "deprecated":
+                offenders.append(field)
+        assert offenders == [], f"non-None default on nullable lifecycle field(s): {offenders}"
+
+
+class TestDeadHistorySchemaStaysDeleted:
+    """`SettingHistoryResponse` was deleted (poindexter#956).
+
+    It modelled `changed_by_id: int` for the abandoned `settings` table and no
+    endpoint ever returned it — a worked example of the shape #955 had to
+    remove from the live response, sitting in the file a new author would copy.
+    """
+
+    def test_not_exported_from_schemas(self):
+        import schemas
+
+        assert not hasattr(schemas, "SettingHistoryResponse")
+
+    def test_not_defined_in_settings_schemas(self):
+        import schemas.settings_schemas as settings_schemas
+
+        assert not hasattr(settings_schemas, "SettingHistoryResponse")

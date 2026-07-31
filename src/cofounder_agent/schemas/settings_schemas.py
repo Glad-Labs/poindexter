@@ -144,6 +144,27 @@ class SettingResponse(SettingBase):
     value_preview: str | None = Field(
         None, description="Preview of value (for encrypted values)"
     )
+    # Lifecycle metadata (#756), surfaced by poindexter#956. Real `app_settings`
+    # columns, sparsely populated (160 of ~1,345 rows carry owner/value_type),
+    # so `null` here is the honest report of a column that is genuinely unset —
+    # the #954 treatment, and the opposite of the #955 fields above, which had
+    # no column at all and so were removed rather than nulled.
+    #
+    # `owner` answers "which module READS this key" (`cost_guard`,
+    # `multi_model_qa`), not "who set it". It is deliberately not a
+    # replacement for the authorship fields #955 deleted.
+    owner: str | None = Field(
+        None, description="Module/service that is the primary reader of this key"
+    )
+    value_type: str | None = Field(
+        None, description="Declared value type (string/boolean/integer/float/url/model/csv/json/duration)"
+    )
+    deprecated: bool = Field(
+        default=False, description="Whether this key has been renamed or superseded"
+    )
+    superseded_by: str | None = Field(
+        None, description="Replacement key to migrate to, when deprecated"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -158,17 +179,15 @@ class SettingListResponse(ListResponse[SettingResponse]):
     """
 
 
-class SettingHistoryResponse(BaseModel):
-    """Model for audit log entry"""
-
-    id: int
-    setting_id: int
-    changed_by_id: int
-    changed_by_email: str
-    change_description: str
-    old_value: str | None
-    new_value: str | None
-    timestamp: datetime
+# `SettingHistoryResponse` was deleted here (poindexter#956). It modelled a
+# per-setting audit trail (`setting_id` / `changed_by_id` / `changed_by_email`)
+# for the abandoned `settings` table — no endpoint ever returned it, nothing
+# imported it, and `app_settings` has none of those columns. It was left as a
+# worked example of the exact `changed_by_id: int` shape #955 had to remove
+# from the live response, which is precisely the kind of fossil that teaches
+# the next author (or model) to write the bug again. Setting changes are
+# already audited in `audit_log`; if a settings-history endpoint is ever
+# wanted, model it on the real table rather than reviving this.
 
 
 class SettingBulkUpdateRequest(BaseModel):

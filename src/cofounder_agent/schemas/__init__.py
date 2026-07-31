@@ -36,7 +36,6 @@ from .settings_schemas import (
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
-    SettingHistoryResponse,
     SettingListResponse,
     SettingResponse,
     SettingUpdate,
@@ -93,7 +92,6 @@ __all__ = [
     "SettingUpdate",
     "SettingResponse",
     "SettingListResponse",
-    "SettingHistoryResponse",
     "SettingBulkUpdateRequest",
     "ErrorResponse",
     # Database Response Models (Phase 2)

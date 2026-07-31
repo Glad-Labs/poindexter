@@ -269,6 +269,21 @@ def settings_get(key: str, json_output: bool, reveal: bool) -> None:
     click.echo(f"  data_type   {s.get('data_type', '?')}")
     click.echo(f"  description {s.get('description', '')}")
     click.echo(f"  updated_at  {s.get('updated_at', '?')}")
+    # Lifecycle metadata (#756, surfaced by poindexter#956). Printed only when
+    # populated — 160 of ~1,345 keys carry owner/value_type, so unconditional
+    # lines would render "owner       None" on 88% of lookups and train the
+    # operator to ignore the field. `owner` is the module that READS the key,
+    # which is the question behind "is this key live, or seed drift?".
+    if s.get("owner"):
+        click.echo(f"  owner       {s['owner']}")
+    if s.get("value_type"):
+        click.echo(f"  value_type  {s['value_type']}")
+    if s.get("deprecated"):
+        superseded = s.get("superseded_by")
+        click.secho(
+            f"  DEPRECATED  {'use ' + superseded if superseded else 'no replacement declared'}",
+            fg="yellow",
+        )
 
 
 @settings_group.command("set")

@@ -471,9 +471,17 @@ class AdminDatabase(DatabaseServiceMixin):
     # `display_name` is dropped (the key itself is the display name).
     # `is_active` is dropped (every row is always active — delete == hard
     # delete now).
+    # The lifecycle-metadata tail (owner / value_type / deprecated /
+    # superseded_by) is the #756 annotation set, written on every boot by
+    # `settings_defaults.seed_all_defaults` from its METADATA table. Selected
+    # here so the settings API can report it (poindexter#956) — every column
+    # added to this list MUST also be declared on
+    # `schemas.database_response_models.SettingResponse`, or Pydantic's default
+    # `extra="ignore"` drops it silently between the SELECT and the route
+    # (poindexter#954).
     _APP_SETTINGS_COLUMNS = (
         "id, key, value, category, description, is_secret, is_active, "
-        "created_at, updated_at"
+        "created_at, updated_at, owner, value_type, deprecated, superseded_by"
     )
 
     @log_query_performance(operation="get_setting", category="settings_retrieval")

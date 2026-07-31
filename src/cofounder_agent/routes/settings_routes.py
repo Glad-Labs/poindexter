@@ -62,6 +62,32 @@ def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
     return getattr(setting, attr, default)
 
 
+def _lifecycle_metadata(setting: Any) -> dict[str, Any]:
+    """The #756 lifecycle columns, as SettingResponse kwargs (poindexter#956).
+
+    One helper rather than four kwargs repeated across the four construction
+    sites — the fabricated-authorship bug (#955) survived as long as it did
+    partly because the same wrong kwarg was copy-pasted into all four, so
+    fixing three of them would have looked done.
+
+    `owner` names the module that READS the key (`cost_guard`,
+    `multi_model_qa`), not whoever set it — it is not the authorship field
+    `created_by_id` pretended to be.
+
+    Only `deprecated` takes a non-None default, and legitimately: it is
+    `NOT NULL DEFAULT false` in the DDL, so `False` is the column's real value
+    rather than an invention. The other three are nullable columns, sparsely
+    populated, and report `null` when unset — see `_setting_attr`'s docstring
+    for why that distinction is the whole ballgame.
+    """
+    return {
+        "owner": _setting_attr(setting, "owner"),
+        "value_type": _setting_attr(setting, "value_type"),
+        "deprecated": bool(_setting_attr(setting, "deprecated", False)),
+        "superseded_by": _setting_attr(setting, "superseded_by"),
+    }
+
+
 def _effective_environment(setting: Any) -> str:
     """Normalized environment for a setting row.
 
@@ -234,6 +260,7 @@ async def list_settings(
                     created_at=_setting_attr(setting, "created_at"),
                     updated_at=_setting_attr(setting, "updated_at"),
                     value_preview=value_preview,
+                    **_lifecycle_metadata(setting),
                 )
             )
 
@@ -283,6 +310,7 @@ async def get_setting(
             created_at=_setting_attr(setting, "created_at"),
             updated_at=_setting_attr(setting, "updated_at"),
             value_preview=(_setting_attr(setting, "value", "") or "")[:50],
+            **_lifecycle_metadata(setting),
         )
     except HTTPException:
         raise
@@ -367,6 +395,7 @@ async def create_setting(
             created_at=_setting_attr(created_setting, "created_at"),
             updated_at=_setting_attr(created_setting, "updated_at"),
             value_preview=(_setting_attr(created_setting, "value", "") or "")[:50],
+            **_lifecycle_metadata(created_setting),
         )
     except HTTPException:
         raise
@@ -455,6 +484,7 @@ async def update_setting(
             created_at=_setting_attr(updated, "created_at"),
             updated_at=_setting_attr(updated, "updated_at"),
             value_preview=(_setting_attr(updated, "value", "") or "")[:50],
+            **_lifecycle_metadata(updated),
         )
     except HTTPException:
         raise

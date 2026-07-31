@@ -493,6 +493,18 @@ class SettingResponse(BaseModel):
     modified_at: datetime | None = Field(
         None, description="Legacy alias for `updated_at` (old `settings` schema)"
     )
+    # Lifecycle metadata (#756), selected by `admin_db._APP_SETTINGS_COLUMNS`
+    # and surfaced through the API by poindexter#956. Declared here because a
+    # column this model omits is dropped silently by `extra="ignore"` — the
+    # mechanic that hid #954. `owner` names the module that READS the key
+    # (`cost_guard`, `multi_model_qa`), not whoever set it; it is NOT the
+    # authorship field the fabricated `created_by_id` pretended to be (#955).
+    owner: str | None = Field(None, description="Module/service that is the primary reader")
+    value_type: str | None = Field(None, description="Declared value type (string/boolean/…)")
+    # NOT NULL DEFAULT false in the DDL, so unlike the rest of this block a
+    # non-None default is the column's real value, never a fabrication.
+    deprecated: bool = Field(default=False, description="Key has been renamed/superseded")
+    superseded_by: str | None = Field(None, description="Replacement key, when deprecated")
 
 
 # ============================================================================
