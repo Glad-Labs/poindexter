@@ -272,7 +272,9 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         name="search_memory",
         description=(
             "Semantic search across the operator's memory (decisions, notes, "
-            "posts, issues, audit). Use for 'what do we know about X'."
+            "issues, audit). Use for 'what do we know / what was decided "
+            "about X'. NOT for published-post coverage questions — that is "
+            "find_similar_posts."
         ),
         parameters=_params({"query": _STR, "limit": _INT}, ["query"]),
         tier="read",
@@ -281,8 +283,10 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
     ChatToolSpec(
         name="find_similar_posts",
         description=(
-            "Find published posts semantically similar to a topic — use before "
-            "creating a post to check existing coverage."
+            "Find published posts semantically similar to a topic. Use for "
+            "'have we written about X' / 'do we have coverage of X' "
+            "questions. Not needed before create_post — the pipeline "
+            "dedup-checks on its own."
         ),
         parameters=_params({"topic": _STR, "limit": _INT}, ["topic"]),
         tier="read",
