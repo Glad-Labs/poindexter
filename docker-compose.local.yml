@@ -643,6 +643,57 @@ services:
   # separate Dockerfile or pip install needed. Auth credentials
   # (OAuth client_id/secret) come from app_settings via plugins.secrets
   # at startup; secret_key for decryption is plumbed in through env.
+  # Demo-clip recorder — VHS re-bake of the CLI footage used by the `cli_demo`
+  # video shot source (poindexter#937). PROFILE-GATED: it never starts with the
+  # stack, because it is a one-shot batch job, not a service. Bring it up for a
+  # manual re-bake with:
+  #
+  #     docker compose --profile demo-recorder run --rm demo-recorder
+  #
+  # The scheduled path is a HOST systemd timer
+  # (infrastructure/systemd/poindexter-demo-bake.timer ->
+  # scripts/demo-clips/bake-clips.sh), NOT an in-container job: spawning this
+  # container from inside the worker would need the Docker socket, which is
+  # root-equivalent and a far bigger grant than the seccomp relaxation below.
+  #
+  # seccomp:unconfined is required because VHS drives headless Chromium, whose
+  # zygote aborts under Docker's default profile. Scoped to this throwaway
+  # container — deliberately NOT applied to `worker`, which would permanently
+  # widen the attack surface of the container handling external content.
+  demo-recorder:
+    profiles: ["demo-recorder"]
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile.worker
+    image: ${COMPOSE_PROJECT_NAME:-glad-labs-website}-worker
+    container_name: poindexter-demo-recorder
+    restart: "no"
+    security_opt:
+      - seccomp:unconfined
+    # Share the worker's network namespace so the CLI reaches the API on
+    # localhost:8002, exactly as the host script does.
+    network_mode: "container:poindexter-worker"
+    environment:
+      HOME: /tmp
+      POINDEXTER_API_URL: http://localhost:8002
+      DATABASE_URL: ${DATABASE_URL:-}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:-}
+    volumes:
+      # Anchored to POINDEXTER_DEPLOY_ROOT like every other /app mount. A bare
+      # './' resolves to the compose PROJECT dir, so on an operator host with a
+      # separate deploy clone the sidecar would bake using code from the
+      # working checkout — clips recorded from unmerged code, or from code that
+      # never deploys. Read-only: the bake only reads the tapes and the CLI.
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+    working_dir: /app
+    # --out passed explicitly for the same reason the host script does: a
+    # batch job must not depend on the CLI default agreeing with the
+    # renderer's setting. Those drifted once (#2922) and nothing reported it.
+    entrypoint:
+      ["python", "-m", "poindexter", "media", "demos", "bake",
+       "--out", "/home/appuser/.poindexter/demo-clips"]
+
   pipeline-bot:
     build:
       context: ./src/cofounder_agent

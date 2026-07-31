@@ -1,0 +1,25 @@
+# Fires poindexter-demo-bake.service weekly, Sunday 04:30.
+#
+# Weekly rather than daily: clips only need to track visible CLI changes, and
+# every bake costs ~5 minutes of a 13-core burst. 04:30 Sunday sits clear of
+# the daily ops sessions (01:00-07:00 weekdays) and the 03:00 DR backup.
+#
+# OnCalendar is evaluated in the HOST timezone — set that to operator_timezone.
+#
+# Persistent=true so a bake missed while the box was off runs on next boot.
+# Pairs with the script's load check: if the catch-up run lands on a busy
+# machine it defers (exit 0) rather than competing, and the following week
+# picks it up. Stale clips are a cosmetic problem; a stalled render is not.
+#
+# RandomizedDelaySec spreads the start so a catch-up bake never fires at the
+# same instant as another Persistent=true timer resuming after downtime.
+[Unit]
+Description=Timer for the weekly Poindexter demo-clip re-bake
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

@@ -231,6 +231,64 @@ The CLI is an API client ([#198](https://github.com/Glad-Labs/poindexter/issues/
 needs `POINDEXTER_API_URL` plus OAuth credentials — ideally a dedicated
 least-privilege client rather than database access.
 
+## Re-baking on a schedule
+
+Clips show real CLI output, so they go stale as the system changes. A weekly
+re-bake keeps the footage honest.
+
+```bash
+bash scripts/demo-clips/bake-clips.sh
+```
+
+Scheduled by `infrastructure/systemd/poindexter-demo-bake.{service,timer}`
+(Sunday 04:30, `Persistent=true`). For a manual one-off, the profile-gated
+compose service does the same thing:
+
+```bash
+docker compose --profile demo-recorder run --rm demo-recorder
+```
+
+### Why a throwaway container, and why a HOST timer
+
+Two constraints push the same way:
+
+**VHS needs `seccomp=unconfined`** for headless Chromium's sandbox. Granting
+that to `worker` would permanently widen the attack surface of the long-lived
+container handling external content and LLM output — for a job that runs
+weekly. Scoped to a container that lives ~60s and runs only read-only CLI
+commands, it is a much smaller grant. `test_long_lived_services_do_not_relax_seccomp`
+is the tripwire if anyone moves the bake back into the worker.
+
+**Triggering from inside a container would need the Docker socket**, which is
+root-equivalent on the host — a _larger_ privilege than the seccomp relaxation
+it would avoid. A host systemd timer needs no new privilege anywhere, and
+matches the existing scheduled-agent pattern.
+
+### Measured cost
+
+|             | full 15-tape bake                     |
+| ----------- | ------------------------------------- |
+| peak memory | ~2 GB RSS                             |
+| CPU         | bursts to ~13 cores, mean ~1.7        |
+| wall time   | ~4–5 min                              |
+| idle cost   | **zero** — nothing runs between bakes |
+| disk        | **zero** — reuses the worker image    |
+
+The CPU burst is why the script defers when the 1-minute load already exceeds
+`POINDEXTER_BAKE_MAX_LOAD_FRACTION` (default 0.6) of the core count.
+Overlapping a video render would contend with ffmpeg; overlapping a content
+run would contend with Ollama. A deferred bake exits **0** — stale clips are
+cosmetic, a stalled render is not — and `Persistent=true` picks it up next
+window.
+
+### Host directory permissions
+
+The container runs as appuser (uid 1001); the host directory belongs to the
+operator (uid 1000). A default-permission directory makes the bake die on
+`PermissionError` writing its first file. The script `chmod 777`s it, matching
+what the other appuser media mounts (`generated-videos`, `podcast`,
+`generated-images`) already use.
+
 ## Theming
 
 The palette lives in `app_settings` under `demo_clip_*`, mirroring the CLI's

@@ -1,0 +1,36 @@
+# Re-records the VHS demo-clip library used by the `cli_demo` video shot
+# source (Glad-Labs/poindexter#937). Clips show real CLI output, so they go
+# stale as the system changes — a weekly re-bake keeps the footage honest.
+#
+# Runs on the HOST, not inside a container, on purpose: the bake needs
+# `--security-opt seccomp=unconfined` for headless Chromium, and triggering
+# it from an in-container scheduler would require the Docker socket, which is
+# root-equivalent. A host timer needs no new privilege anywhere. See the
+# header of scripts/demo-clips/bake-clips.sh.
+#
+# Operators, set these to your machine (ships with generic placeholders for
+# public-mirror hygiene):
+#   - User=            your login user. It MUST be in the `docker` group.
+#   - ExecStart path   your checkout of scripts/demo-clips/bake-clips.sh.
+#   - POINDEXTER_BAKE_MAX_LOAD_FRACTION  raise/lower the quiet-window guard.
+#     The bake bursts to ~13 cores; at the default 0.6 it defers when the
+#     1-minute load already exceeds 60% of the core count, so it never
+#     contends with an in-flight video render or content run.
+#
+# Triggered by poindexter-demo-bake.timer — no [Install] section here.
+[Unit]
+Description=Poindexter demo-clip re-bake (VHS CLI footage for the video lane)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=poindexter
+# The bake is deliberately low priority — it is never urgent, and yielding to
+# anything interactive or render-related is the whole point of running it in
+# a quiet window.
+Nice=10
+IOSchedulingClass=idle
+# A full 15-tape bake is ~5 min; kill a wedged one well before the next fire.
+TimeoutStartSec=30min
+ExecStart=/home/poindexter/glad-labs-website/scripts/demo-clips/bake-clips.sh
