@@ -42,11 +42,27 @@ Take either surface offline without editing compose:
 
 ```
 poindexter settings set voice_agent_livekit_enabled false
-docker restart poindexter-voice-agent-livekit
-# container exits 0; unless-stopped leaves it stopped (no crash-loop)
+docker stop poindexter-voice-agent-livekit
 ```
 
-Re-enable the same way (`true`).
+**Use `docker stop`, not `docker restart`.** The flag makes the agent exit 0
+before loading its model, but `unless-stopped` restarts on **any** exit — the
+"unless" means "unless the operator stopped it", not "unless it failed". A
+`docker restart` on a disabled agent therefore loops start→exit→restart
+forever (measured 2026-07-31: 9 restarts in ~25s). `docker stop` records the
+explicit stop that `unless-stopped` actually honours. The flag still matters
+alongside it: without it, a `docker compose up -d` would bring the agent
+straight back.
+
+Re-enable with the flag set to `true`, then `docker start
+poindexter-voice-agent-livekit`.
+
+Verify it is parked rather than crashed — a parked agent shows `Exited (0)`
+and a stable `RestartCount`:
+
+```
+docker ps -a --filter name=poindexter-voice-agent-livekit --format '{{.Status}}'
+```
 
 ## How to connect
 

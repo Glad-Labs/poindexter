@@ -1462,8 +1462,10 @@ def _print_client_token(room: str, identity: str) -> None:
 # Always-on daemon entry point — reads everything from app_settings and runs
 # the bot until killed. Used by the ``voice-agent-livekit`` Docker service
 # (#383). When the operator disables the surface via
-# ``voice_agent_livekit_enabled = false``, the process exits 0 — docker's
-# ``unless-stopped`` policy then leaves it stopped without crash-looping.
+# ``voice_agent_livekit_enabled = false``, the process exits 0 before loading
+# the model — but that alone does NOT park it: ``unless-stopped`` restarts on
+# any exit code, so parking needs an explicit ``docker stop``. The early exit
+# just makes each loop iteration cheap. See ``run_service``.
 # ---------------------------------------------------------------------------
 
 
@@ -1517,10 +1519,19 @@ async def run_service(profile: str = "default") -> int:
             site_config.get(spec["enabled_key"], "true"),
         ).strip().lower()
         if enabled in {"false", "0", "no", "off"}:
+            # NOTE: exit 0 does NOT keep us down. `unless-stopped` restarts on
+            # ANY exit — the "unless" refers to the operator having explicitly
+            # stopped the container, not to the exit code. So a running
+            # container flipped to disabled will loop start->exit->restart
+            # (measured 2026-07-31: 9 restarts in ~25s). `docker stop` is what
+            # actually parks it; this early return only keeps the loop cheap
+            # by bailing before the model and transport load.
             log.info(
-                "%s=%s — voice room %r disabled, exiting 0 so docker leaves "
-                "us stopped under unless-stopped.",
+                "%s=%s — voice room %r disabled, exiting 0. Run `docker stop "
+                "%s` to park it: unless-stopped WILL restart this exit "
+                "otherwise.",
                 spec["enabled_key"], enabled, profile,
+                f"poindexter-voice-agent-{profile}",
             )
             return 0
 
