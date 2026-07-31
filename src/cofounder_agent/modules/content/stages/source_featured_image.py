@@ -94,6 +94,100 @@ DEFAULT_NEGATIVE = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Render budget — the node timeout MUST be able to contain it
+# ---------------------------------------------------------------------------
+#
+# RCA 2026-07-31 (the "5000-minutes-a-day" post shipped with no hero): the
+# stage's node timeout was a hardcoded ``timeout_seconds = 300`` while the
+# render budget underneath it is settings-driven. On prod that budget is
+# ``image_gen_render_attempts(2) x image_render_timeout_seconds(240) +
+# backoff(3)`` = 483s, and GPU-lock wait sits inside the node timeout but
+# OUTSIDE the per-request httpx timeout. The render finished at 302s; the node
+# was killed at 300s — two seconds short — and because
+# ``halts_on_failure = False`` the graph swallowed the TimeoutError and
+# continued with an empty state update. The image itself had already rendered
+# and uploaded to R2; it was simply orphaned.
+#
+# So these constants exist to be read from exactly TWO places — the retry loop
+# in ``_try_image_gen_featured`` and ``resolve_stage_timeout_seconds`` below,
+# which the stage exposes to the node wrapper. Reading them anywhere else
+# re-opens the drift.
+#
+# NOTE (known drift, deliberately untouched here): the code fallback for
+# ``image_render_timeout_seconds`` is 90 while ``settings_defaults.py`` declares
+# 300. The fallback only applies when no SiteConfig is threaded (tests /
+# bootstrap), so it does not affect prod; reconciling it is a behaviour change
+# that does not belong in this fix.
+DEFAULT_RENDER_TIMEOUT_SECONDS = 90
+DEFAULT_RENDER_ATTEMPTS = 2
+DEFAULT_RETRY_BACKOFF_SECONDS = 3.0
+# Headroom for the work that is inside the node timeout but outside the
+# per-request render timeout: the prompt-build LLM call, the GPU-lock wait
+# (unbounded under video/VRAM contention — this is what actually blew the
+# budget), and the R2 upload.
+DEFAULT_STAGE_OVERHEAD_SECONDS = 120
+
+
+def _render_timeout_seconds(site_config: Any) -> int:
+    if site_config is None:
+        return DEFAULT_RENDER_TIMEOUT_SECONDS
+    return int(
+        site_config.get_int(
+            "image_render_timeout_seconds", DEFAULT_RENDER_TIMEOUT_SECONDS,
+        )
+    )
+
+
+def _render_attempts(site_config: Any) -> int:
+    if site_config is None:
+        return DEFAULT_RENDER_ATTEMPTS
+    return max(
+        1,
+        int(site_config.get_int("image_gen_render_attempts", DEFAULT_RENDER_ATTEMPTS)),
+    )
+
+
+def _retry_backoff_seconds(site_config: Any) -> float:
+    if site_config is None:
+        return DEFAULT_RETRY_BACKOFF_SECONDS
+    return float(
+        site_config.get_float(
+            "image_gen_retry_backoff_seconds", DEFAULT_RETRY_BACKOFF_SECONDS,
+        )
+        or DEFAULT_RETRY_BACKOFF_SECONDS
+    )
+
+
+def resolve_stage_timeout_seconds(site_config: Any) -> int:
+    """Node timeout large enough to contain this stage's whole render budget.
+
+    ``make_stage_node`` calls this through the optional
+    ``Stage.resolve_timeout_seconds`` hook and uses it as a FLOOR on the
+    configured node timeout, so the wrapper can never kill a render it asked
+    for. Returns ``attempts x render_timeout + (attempts-1) x backoff +
+    overhead``.
+
+    The floor is deliberately one-directional: an operator may raise the node
+    timeout above this, but lowering it below guarantees the silent truncation
+    this function exists to prevent.
+    """
+    attempts = _render_attempts(site_config)
+    render = _render_timeout_seconds(site_config)
+    backoff = _retry_backoff_seconds(site_config)
+    overhead = (
+        int(
+            site_config.get_int(
+                "image_featured_stage_overhead_seconds",
+                DEFAULT_STAGE_OVERHEAD_SECONDS,
+            )
+        )
+        if site_config is not None
+        else DEFAULT_STAGE_OVERHEAD_SECONDS
+    )
+    return int(attempts * render + (attempts - 1) * backoff + overhead)
+
+
 @dataclass
 class GeneratedImage:
     """Return shape for an image-gen-generated featured image.
@@ -174,8 +268,20 @@ def _build_gen_featured_image_data(
 class SourceFeaturedImageStage:
     name = "source_featured_image"
     description = "Source a featured image — image-gen primary, Pexels fallback"
+    # Static floor only — the real budget is settings-driven and computed by
+    # resolve_timeout_seconds() below, which make_stage_node prefers when it is
+    # larger. This attribute is what a caller with no SiteConfig falls back to.
     timeout_seconds = 300
     halts_on_failure = False
+
+    def resolve_timeout_seconds(self, site_config: Any) -> int:
+        """Node-timeout floor derived from this stage's own retry budget.
+
+        See :func:`resolve_stage_timeout_seconds` — the hardcoded 300 above
+        could not contain the configured render budget, so a slow render was
+        killed two seconds before it returned and silently discarded.
+        """
+        return resolve_stage_timeout_seconds(site_config)
 
     async def execute(
         self,
@@ -671,10 +777,7 @@ async def _try_image_gen_featured(
             if site_config is not None
             else "http://image-gen-server:9836"
         )
-        render_timeout = (
-            site_config.get_int("image_render_timeout_seconds", 90)
-            if site_config is not None else 90
-        )
+        render_timeout = _render_timeout_seconds(site_config)
         gpu_model_label = (
             site_config.get("image_generation_model", "image_gen")
             if site_config is not None else "image_gen"
@@ -686,14 +789,11 @@ async def _try_image_gen_featured(
         # Unlike the inline batch, this is a single image, so re-acquiring the
         # lock per attempt costs one extra acquisition at worst — no batching
         # invariant to protect here.
-        attempts = (
-            max(1, site_config.get_int("image_gen_render_attempts", 2))
-            if site_config is not None else 2
-        )
-        backoff = (
-            site_config.get_float("image_gen_retry_backoff_seconds", 3.0) or 3.0
-            if site_config is not None else 3.0
-        )
+        # Read through the shared helpers so this loop and the node-timeout
+        # floor (resolve_stage_timeout_seconds) can never disagree about the
+        # budget — the disagreement IS the bug this path had.
+        attempts = _render_attempts(site_config)
+        backoff = _retry_backoff_seconds(site_config)
         output_path, server_meta = None, None
         for attempt in range(1, attempts + 1):
             output_path, server_meta = await _render_image_gen(

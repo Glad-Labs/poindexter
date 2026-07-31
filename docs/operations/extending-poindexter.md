@@ -140,6 +140,46 @@ Custom fields (whatever your stage needs) live alongside. Example:
 }
 ```
 
+#### Settings-driven internal budgets — `resolve_timeout_seconds`
+
+A static `timeout_seconds` cannot describe work whose own budget comes from
+app_settings (retry counts, per-request timeouts). If your stage retries
+internally, expose the optional hook and the runner will use it as a **floor**
+on the configured node timeout:
+
+```python
+def resolve_timeout_seconds(self, site_config: Any) -> int:
+    # attempts x per_request_timeout + backoff + headroom
+    return resolve_my_stage_budget(site_config)
+```
+
+`make_stage_node` takes `max(configured, hook)` — an operator may raise the node
+timeout, but cannot cut it below what the stage needs. Stages without the hook
+are unaffected.
+
+This exists because the reverse combination loses work silently. With
+`halts_on_failure=False`, a node timeout shorter than the stage's own retry
+budget means the wrapper cancels the stage mid-flight, swallows the
+`TimeoutError`, and returns an empty state update — work that already completed
+is discarded. `source_featured_image` shipped a post with no hero exactly that
+way (RCA 2026-07-31): a hardcoded 300s node timeout against a 483s configured
+render budget, with the image already rendered and uploaded to R2 two seconds
+after the node was killed. Anything that waits on a shared resource inside the
+stage — a GPU lock, a queue — counts toward the node timeout but not toward any
+per-request timeout, so include headroom for it.
+
+#### What `halts_on_failure=False` does and does not mean
+
+It means "don't abort the chain". It does **not** mean "don't report". A
+swallowed stage failure now emits a `stage_failure_swallowed` finding (warn,
+Discord, deduped per stage name) and records `status=error` in `atom_runs`. The
+run still completes — run-level `ok` keys off `halted`, not off the node's `ok` —
+so this is an observability change, not a control-flow one.
+
+Note the corollary for stage authors: any diagnostic your stage emits from
+_inside_ `execute` is lost when the stage is cancelled. Detection of "this stage
+produced nothing" belongs in the wrapper, not in the stage body.
+
 ### 1e. Test it
 
 Every stage ships with a unit test that builds a fake context + config

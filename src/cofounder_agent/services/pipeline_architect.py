@@ -1222,19 +1222,43 @@ def _wrap_atom(
             atom_metrics: dict[str, Any] = (
                 dict(_raw_metrics) if isinstance(_raw_metrics, dict) else {}
             )
+            # Reserved ``_atom_outcome`` (RCA 2026-07-31) — a stage.* virtual
+            # atom whose wrapped stage failed non-fatally returns {} without
+            # raising, which is byte-identical to a clean no-op. When the
+            # runner sets this key we honour its verdict instead of assuming
+            # success, so atom_runs stops recording swallowed failures as ok.
+            # Popped alongside _atom_metrics and BEFORE output_keys so the
+            # digests stay identical for atoms that never set it.
+            _raw_outcome = out.pop("_atom_outcome", None)
+            outcome = _raw_outcome if isinstance(_raw_outcome, dict) else {}
+            node_ok = bool(outcome.get("ok", True))
             halted = bool(out.get("_halt"))
             _node_duration.labels(
-                node=atom_name, outcome="halted" if halted else "ok",
+                node=atom_name,
+                outcome=(
+                    "halted" if halted else ("ok" if node_ok else "error")
+                ),
             ).observe(elapsed_ms / 1000.0)
             output_keys = sorted(str(k) for k in out.keys())
+            if halted:
+                _event_name = "template.node_halted"
+            elif node_ok:
+                _event_name = "template.node_completed"
+            else:
+                _event_name = "template.node_failed"
             await _safe_on_event(
                 on_event,
-                "template.node_halted" if halted else "template.node_completed",
+                _event_name,
                 _progress_payload(
                     task_id,
                     extra={
                         "elapsed_ms": elapsed_ms,
                         **({"reason": str(out.get("_halt_reason") or "")} if halted else {}),
+                        **(
+                            {"reason": str(outcome.get("detail") or "stage failed")}
+                            if not (halted or node_ok)
+                            else {}
+                        ),
                     },
                 ),
             )
@@ -1242,8 +1266,12 @@ def _wrap_atom(
                 await _emit_record(
                     record_sink,
                     TemplateRunRecord(
-                        name=atom_name, ok=True,
-                        detail=f"{len(str(out.get('content','') or ''))} chars",
+                        name=atom_name, ok=node_ok,
+                        detail=(
+                            f"{len(str(out.get('content','') or ''))} chars"
+                            if node_ok
+                            else str(outcome.get("detail") or "stage failed")
+                        ),
                         elapsed_ms=elapsed_ms,
                         node_id=node_id,
                         metrics={

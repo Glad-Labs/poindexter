@@ -323,6 +323,21 @@ def _make_stage_runner(
             stage_metrics = getattr(sink[0], "metrics", None)
             if stage_metrics:
                 out["_atom_metrics"] = dict(stage_metrics)
+            # Outcome seam (RCA 2026-07-31). A stage with
+            # halts_on_failure=False that times out returns {} WITHOUT raising,
+            # so _wrap_atom's non-raising path recorded it as ok=True — an
+            # atom_runs row reading status=ok / output_keys=[] for 301s of work
+            # that produced a hero image and threw it away. The failure is
+            # already known here (the local sink's record carries ok/detail);
+            # lift it onto a reserved key so _wrap_atom can tell a swallowed
+            # failure from a clean no-op. _wrap_atom pops it before computing
+            # output_keys, so the digests and LangGraph state are unaffected.
+            record = sink[0]
+            if not getattr(record, "ok", True):
+                out["_atom_outcome"] = {
+                    "ok": False,
+                    "detail": getattr(record, "detail", "") or "stage failed",
+                }
         return out
 
     runner.__name__ = f"virtual_atom_runner_{getattr(stage, 'name', 'unknown')}"

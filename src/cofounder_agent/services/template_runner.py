@@ -761,6 +761,95 @@ class TemplateRunSummary:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_node_timeout(
+    stage: Any,
+    cfg: Any,
+    site_config: SiteConfig | None,
+    name: str,
+) -> int:
+    """Node timeout, floored by what the stage says its own work needs.
+
+    A stage whose internal budget is settings-driven (retry counts, per-request
+    timeouts) cannot express that as a static class attribute, so the wrapper
+    would happily kill work it had itself asked for — and, for a stage with
+    ``halts_on_failure = False``, discard the result silently. Such a stage may
+    expose ``resolve_timeout_seconds(site_config) -> int``; when it returns more
+    than the configured value we take the larger, so the wrapper can never
+    truncate the stage's own retry budget.
+
+    The floor is one-directional on purpose: raising the plugin-config
+    ``timeout_seconds`` above the stage's number is honoured, lowering it below
+    is not. Stages without the hook keep the plain configured value.
+
+    RCA 2026-07-31 — ``source_featured_image`` carried a hardcoded 300s while
+    its configured render budget was 483s; a hero image that had already
+    rendered and uploaded was dropped two seconds before the stage returned it.
+    """
+    configured = int(
+        cfg.get("timeout_seconds", getattr(stage, "timeout_seconds", 120))
+    )
+    resolver = getattr(stage, "resolve_timeout_seconds", None)
+    if resolver is None:
+        return configured
+    try:
+        required = int(resolver(site_config))
+    except Exception as exc:  # noqa: BLE001 — never let the hook break the run
+        logger.warning(
+            "template_runner: stage %r resolve_timeout_seconds failed (%s) — "
+            "using configured %ds", name, exc, configured,
+        )
+        return configured
+    if required <= configured:
+        return configured
+    logger.info(
+        "template_runner: stage %r node timeout raised %ds -> %ds so it can "
+        "contain the stage's own retry budget", name, configured, required,
+    )
+    return required
+
+
+def _emit_swallowed_stage_finding(
+    *, name: str, task_id: Any, reason: str, elapsed_ms: int,
+) -> None:
+    """Surface a non-halting stage failure that the graph swallowed.
+
+    ``halts_on_failure = False`` means "don't kill the run over this" — it does
+    NOT mean "don't tell anyone". Before this, such a failure produced an empty
+    state update plus one routine progress ping into the Discord spam channel,
+    where it sat among hundreds of per-node lines; the durable record
+    (``atom_runs``) showed the node as clean. A whole hero image was lost that
+    way without a single triage-visible signal.
+
+    Deduped per stage name so an outage window collapses to one delivery while
+    every occurrence still lands in ``audit_log`` for the Findings dashboard.
+    """
+    from utils.findings import emit_finding
+
+    emit_finding(
+        source="services.template_runner",
+        kind="stage_failure_swallowed",
+        title=f"Stage {name!r} failed and the run continued without its output",
+        body=(
+            f"`{name}` did not complete ({reason}) after {elapsed_ms}ms. The "
+            "stage is configured `halts_on_failure=False`, so the graph "
+            "continued and every state update the stage would have produced "
+            "was discarded — the post ships without whatever it contributes.\n\n"
+            "If this is a timeout, check whether the stage's internal budget "
+            "(retry count x per-request timeout) actually fits inside its node "
+            "timeout; a stage that exposes `resolve_timeout_seconds` floors "
+            "that automatically."
+        ),
+        severity="warn",
+        dedup_key=f"stage-swallowed:{name}",
+        extra={
+            "stage": name,
+            "task_id": str(task_id or ""),
+            "reason": reason,
+            "elapsed_ms": elapsed_ms,
+        },
+    )
+
+
 def make_stage_node(
     stage: Any,
     pool: Any,
@@ -879,9 +968,7 @@ def make_stage_node(
             on_event=on_event,
         )
 
-        timeout = int(
-            cfg.get("timeout_seconds", getattr(stage, "timeout_seconds", 120))
-        )
+        timeout = _resolve_node_timeout(stage, cfg, node_site_config, name)
         halts = bool(
             cfg.get("halts_on_failure", getattr(stage, "halts_on_failure", True))
         )
@@ -921,6 +1008,10 @@ def make_stage_node(
             )
             if halts:
                 raise RuntimeError(f"stage {name!r} timed out after {timeout}s") from te
+            _emit_swallowed_stage_finding(
+                name=name, task_id=task_id,
+                reason=f"timed out after {timeout}s", elapsed_ms=elapsed,
+            )
             return {}
         except GraphInterrupt:
             # Control-flow signal — a stage (or an atom surfaced as a
@@ -960,6 +1051,10 @@ def make_stage_node(
             )
             if halts:
                 raise
+            _emit_swallowed_stage_finding(
+                name=name, task_id=task_id,
+                reason=f"raised {type(exc).__name__}: {exc}", elapsed_ms=elapsed,
+            )
             return {}
 
         elapsed = int((time.time() - t0) * 1000)

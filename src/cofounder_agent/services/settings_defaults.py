@@ -1442,6 +1442,16 @@ DEFAULTS: dict[str, str] = {
     # became a silent stock substitution. 2 = one initial attempt + one retry.
     'image_gen_render_attempts': '2',
     'image_gen_retry_backoff_seconds': '3',
+    # Headroom added on top of the render budget when source_featured_image
+    # computes the node timeout it needs (attempts x render_timeout +
+    # backoff + THIS). Covers the work that sits inside the node timeout but
+    # outside the per-request render timeout: the prompt-build LLM call, the
+    # R2 upload, and above all the GPU-lock wait, which is unbounded under
+    # video/VRAM contention. RCA 2026-07-31: with a hardcoded 300s node
+    # timeout against a 483s configured budget, a hero image that had already
+    # rendered AND uploaded was discarded two seconds before the stage
+    # returned it, and the run recorded itself clean.
+    'image_featured_stage_overhead_seconds': '120',
     # Stock-photo FALLBACK for a failed image-gen render. Default OFF: owned
     # imagery is the brand asset, and an undisclosed stock swap ran unnoticed
     # for weeks because the fallback logged per-image and still reported
@@ -2270,6 +2280,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.gpu_lock_timeout.fallback': 'log_only',
     'findings.gpu_lock_timeout.cooldown_minutes': '60',
     'findings.gpu_lock_timeout.min_severity': 'warn',
+    # A stage with halts_on_failure=False that timed out or raised — the graph
+    # continued and silently discarded everything that stage produced. Routed
+    # explicitly because findings.default.delivery is log_only, and log_only is
+    # exactly how this class of failure stayed invisible: the pre-existing
+    # signal was one routine progress ping in the Discord spam stream while
+    # atom_runs recorded the node as clean (RCA 2026-07-31, a hero image that
+    # had already rendered AND uploaded was dropped 2s before it was returned).
+    # Discord, not Telegram: it degrades a post, it does not break the pipeline.
+    # 60m cooldown because the cause is usually one contention window that hits
+    # a whole batch — the window is the signal, not each post.
+    'findings.stage_failure_swallowed.delivery': 'discord',
+    'findings.stage_failure_swallowed.fallback': 'log_only',
+    'findings.stage_failure_swallowed.cooldown_minutes': '60',
+    'findings.stage_failure_swallowed.min_severity': 'warn',
     # Langfuse configured-but-unusable (poindexter#815) — the prompt surface
     # silently downgraded to YAML for weeks; once-a-day Discord ping until
     # the operator fixes the preload/credentials. (Not-configured stays a
