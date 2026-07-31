@@ -1703,7 +1703,14 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_identity': 'poindexter-bot',
     'voice_agent_livekit_enabled': 'true',
     'voice_agent_livekit_url': 'ws://livekit:7880',
-    'voice_agent_llm_model': 'gemma3:27b',
+    # Bare Ollama tag — NO `ollama/` prefix. Unlike the LiteLLM-routed
+    # *_model keys, this one reaches Ollama's own API, which 404s on the
+    # prefixed form. Benchmarked 2026-07-31 on the real system prompt + the
+    # three voice tools: qwen2.5:7b answers in 0.22s (inside the natural
+    # conversational gap), picks the right tool 4/4, and fits in 4.7 GB.
+    # llama3.2:3b is faster but got a basic cron question wrong; qwen2.5:32b
+    # matches accuracy at 19 GB; glm-4.7-5090 takes 6.81s because it thinks.
+    'voice_agent_llm_model': 'qwen2.5:7b',
     'voice_agent_ollama_url': 'http://host.docker.internal:11434/v1',
     'voice_agent_public_join_url': '',
     'voice_agent_public_livekit_url': '',

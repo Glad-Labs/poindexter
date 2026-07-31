@@ -114,23 +114,23 @@ poindexter settings set <key> <value>
 
 Container picks up changes on next restart.
 
-| Key                           | Default                     | Purpose                               |
-| ----------------------------- | --------------------------- | ------------------------------------- |
-| `voice_agent_livekit_enabled` | `true`                      | Toggle the LiveKit container          |
-| `voice_agent_webrtc_enabled`  | `true`                      | Toggle the WebRTC container           |
-| `voice_agent_room_name`       | `poindexter`                | Room the bot joins on boot            |
-| `voice_agent_identity`        | `poindexter-bot`            | Bot's identity in the room            |
-| `voice_agent_brain_mode`      | `ollama`                    | LLM stage — `ollama` or `claude-code` |
-| `voice_agent_livekit_url`     | `ws://livekit:7880`         | In-network LiveKit URL the bot uses   |
-| `voice_agent_llm_model`       | `glm-4.7-5090:latest`       | Ollama model (when brain = ollama)    |
-| `voice_agent_ollama_url`      | `http://localhost:11434/v1` | Ollama base URL                       |
-| `voice_agent_tts_voice`       | `bf_emma`                   | Kokoro voice id                       |
-| `voice_agent_tts_speed`       | `1.0`                       | Kokoro playback speed                 |
-| `voice_agent_whisper_model`   | `base`                      | faster-whisper model size             |
-| `voice_agent_vad_stop_secs`   | `0.2`                       | End-of-speech silence window          |
-| `voice_agent_system_prompt`   | (Emma persona)              | Agent personality                     |
-| `voice_agent_webrtc_host`     | `0.0.0.0`                   | WebRTC bind host                      |
-| `voice_agent_webrtc_port`     | `8003`                      | WebRTC bind port                      |
+| Key                           | Default                     | Purpose                                      |
+| ----------------------------- | --------------------------- | -------------------------------------------- |
+| `voice_agent_livekit_enabled` | `true`                      | Toggle the LiveKit container                 |
+| `voice_agent_webrtc_enabled`  | `true`                      | Toggle the WebRTC container                  |
+| `voice_agent_room_name`       | `poindexter`                | Room the bot joins on boot                   |
+| `voice_agent_identity`        | `poindexter-bot`            | Bot's identity in the room                   |
+| `voice_agent_brain_mode`      | `ollama`                    | LLM stage — `ollama` or `claude-code`        |
+| `voice_agent_livekit_url`     | `ws://livekit:7880`         | In-network LiveKit URL the bot uses          |
+| `voice_agent_llm_model`       | `qwen2.5:7b`                | Ollama model, bare tag (when brain = ollama) |
+| `voice_agent_ollama_url`      | `http://localhost:11434/v1` | Ollama base URL                              |
+| `voice_agent_tts_voice`       | `bf_emma`                   | Kokoro voice id                              |
+| `voice_agent_tts_speed`       | `1.0`                       | Kokoro playback speed                        |
+| `voice_agent_whisper_model`   | `base`                      | faster-whisper model size                    |
+| `voice_agent_vad_stop_secs`   | `0.2`                       | End-of-speech silence window                 |
+| `voice_agent_system_prompt`   | (Emma persona)              | Agent personality                            |
+| `voice_agent_webrtc_host`     | `0.0.0.0`                   | WebRTC bind host                             |
+| `voice_agent_webrtc_port`     | `8003`                      | WebRTC bind port                             |
 
 ## Swap providers
 
@@ -167,9 +167,47 @@ voice container (the values above apply); `= sidecar` makes the voice
 agents thin clients of the warm Speaches container (faster-whisper +
 Kokoro), which is the path that kills the ~12s per-restart cold-start.
 
+### LLM
+
+Edit `voice_agent_llm_model`. **Bare Ollama tag — no `ollama/` prefix.**
+Unlike the LiteLLM-routed `*_model` settings, this value reaches Ollama's
+own API, which rejects the prefixed form outright:
+
+    {"error": {"message": "model 'ollama/qwen2.5:7b' not found"}}
+
+The agent strips a stray prefix and warns, but the startup model validator
+cannot catch this on its own — it strips `ollama/` before checking, so a
+prefixed value looks correctly installed while the agent 404s at runtime.
+
+Three hard constraints, in priority order:
+
+1. **Tool calling is mandatory.** The system prompt routes to three tools;
+   a model without `tools` in its Ollama capabilities silently never calls
+   them. `phi4:14b` is `completion`-only — it cannot run this agent.
+2. **Latency, not throughput.** Replies are capped ~80 words, so
+   time-to-first-token is the whole experience. `voice_agent_vad_stop_secs`
+   is 0.4s; anything past ~0.5s TTFT reads as a laggy conversation.
+3. **No thinking models.** A reasoning model spends seconds before its
+   first token — dead air after you stop speaking.
+
+Benchmarked 2026-07-31 on this hardware with the real system prompt and the
+three real tool schemas (warm, GPU otherwise idle):
+
+| model              | TTFT      | load | tools    | size   | verdict                                              |
+| ------------------ | --------- | ---- | -------- | ------ | ---------------------------------------------------- |
+| **qwen2.5:7b**     | **0.22s** | 2.2s | 4/4      | 4.7 GB | **default**                                          |
+| llama3.2:3b        | 0.15s     | 4.0s | 4/4      | 2.0 GB | fastest, but got a basic cron question wrong         |
+| qwen2.5:32b        | 0.34s     | 8.7s | 4/4      | 19 GB  | same accuracy, 4× the VRAM                           |
+| gemma-4-31B-it-qat | 2.12s     | —    | 4/4      | 18 GB  | too slow; also ships a malformed `<\|turn>` template |
+| glm-4.7-5090       | 6.81s     | —    | 4/4      | 21 GB  | thinking model — unusable for speech                 |
+| phi4:14b           | —         | —    | **none** | 9.1 GB | no tool support                                      |
+
+VRAM matters more than the raw numbers suggest: the render gate needs 25 GB
+free, so a 19 GB voice model competes directly with video renders.
+
 ### Brain
 
-`voice_agent_brain_mode = ollama` (default) — local glm-4.7-5090 with three
+`voice_agent_brain_mode = ollama` (default) — local qwen2.5:7b with three
 read-only Poindexter tools (`check_pipeline_health`,
 `get_published_post_count`, `get_ai_spending_status`). Snappy, zero
 incremental cost.

@@ -1591,7 +1591,7 @@ def main() -> None:
             "(default) the brain is resolved from app_settings at "
             "pipeline-build time — voice_agent_brain_mode first, then "
             "voice_agent_brain (legacy), then 'ollama'. Pass 'ollama' "
-            "(snappy local glm-4.7-5090 + read-only tools) or "
+            "(snappy local qwen2.5:7b + read-only tools) or "
             "'claude-code' (shells `claude -p` under the operator's Max "
             "OAuth sub — slower but has full repo / MCP / edit access "
             "for dev-on-the-go) to force a specific mode regardless of "

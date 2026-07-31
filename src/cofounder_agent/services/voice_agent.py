@@ -59,7 +59,7 @@ Defaults are seeded by migrations 0104 + 0107 + 0108.
 
 | Key                              | Default                              | Purpose                              |
 | -------------------------------- | ------------------------------------ | ------------------------------------ |
-| voice_agent_llm_model            | glm-4.7-5090:latest                  | Ollama model tag                     |
+| voice_agent_llm_model            | qwen2.5:7b                           | Ollama model tag (NO ollama/ prefix) |
 | voice_agent_ollama_url           | http://localhost:11434/v1            | Ollama OpenAI-compat base URL        |
 | voice_agent_tts_voice            | bf_emma                              | Kokoro voice id (top-graded UK fem)  |
 | voice_agent_tts_speed            | 1.0                                  | Kokoro playback speed                |
@@ -130,6 +130,40 @@ from services.voice_prompts import (
 # ---------------------------------------------------------------------------
 # Shared pipeline builder
 # ---------------------------------------------------------------------------
+
+
+def _normalize_ollama_tag(value: str, *, log: Any = None) -> str:
+    """Strip a LiteLLM-style ``ollama/`` prefix off a model tag.
+
+    Most ``*_model`` settings route through LiteLLM, which REQUIRES the
+    provider prefix (``ollama/gemma3:27b``). The voice agent does not — it
+    hands the value straight to Pipecat's ``OLLamaLLMService``, which passes
+    it verbatim to Ollama's OpenAI-compatible endpoint, where the prefixed
+    form is a hard 404:
+
+        {"error": {"message": "model 'ollama/qwen2.5:7b' not found"}}
+
+    So the same string is correct in one setting and fatal in another, and the
+    startup model validator can't catch it — the validator strips the prefix
+    before checking, so a prefixed value looks perfectly installed while the
+    agent 404s at runtime. Prod carried exactly that state
+    (``ollama/gemma-4-E2B-Q2:latest``), where the missing model masked the
+    fact that the format was wrong too.
+
+    Accept both spellings rather than making operators remember which
+    consumer wants which.
+    """
+    tag = (value or "").strip()
+    if tag.lower().startswith("ollama/"):
+        stripped = tag[len("ollama/"):]
+        if log is not None:
+            log.warning(
+                "voice_agent_llm_model=%r carries a LiteLLM-style 'ollama/' "
+                "prefix; Ollama's own API 404s on that. Using %r.",
+                tag, stripped,
+            )
+        return stripped
+    return tag
 
 
 def _resolve_whisper_model(name: str) -> WhisperModel:
@@ -372,14 +406,15 @@ def build_voice_pipeline_task(
     """
     log = log or logging.getLogger("voice_agent")
 
-    # poindexter#485 fail-loud sweep: previously fell back to Matt's
-    # specific ``glm-4.7-5090:latest`` model when the setting was
-    # missing. The baseline seed populates ``voice_agent_llm_model``
-    # on fresh installs (services/migrations/0000_baseline.seeds.sql),
-    # so an empty/missing value here means the operator explicitly
-    # cleared it — fail loud rather than silently pick a model that
-    # may not be loaded in Ollama.
-    llm_model = (site_config.get("voice_agent_llm_model", "") or "").strip()
+    # poindexter#485 fail-loud sweep: previously fell back to a specific
+    # operator model when the setting was missing. The baseline seed
+    # populates ``voice_agent_llm_model`` on fresh installs
+    # (services/migrations/0000_baseline.seeds.sql), so an empty/missing
+    # value here means the operator explicitly cleared it — fail loud
+    # rather than silently pick a model that may not be loaded in Ollama.
+    llm_model = _normalize_ollama_tag(
+        (site_config.get("voice_agent_llm_model", "") or "").strip(), log=log,
+    )
     if not llm_model:
         raise ValueError(
             "voice_agent: ``voice_agent_llm_model`` is unset — set "
@@ -537,7 +572,7 @@ async def run_local(
     Args:
         site_config: live SiteConfig instance.
         brain: which LLM stage to wire in. ``"ollama"`` (default) uses
-            the local glm-4.7-5090 with 3 read-only Poindexter tools.
+            the local qwen2.5:7b with 3 read-only Poindexter tools.
             ``"claude-code"`` swaps in the ClaudeCodeBridge — every
             voice turn shells out to ``claude -p`` under the operator's
             Max OAuth sub. Same flag and same shape as
@@ -660,7 +695,7 @@ if __name__ == "__main__":
         default="ollama",
         help=(
             "LLM stage to wire in. 'ollama' (default) is the snappy "
-            "local glm-4.7-5090 with three read-only Poindexter tools. "
+            "local qwen2.5:7b with three read-only Poindexter tools. "
             "'claude-code' shells out to `claude -p` under the operator's "
             "Max OAuth sub — slower but full repo / MCP / edit access."
         ),
