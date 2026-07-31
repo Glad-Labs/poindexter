@@ -72,33 +72,34 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 `pick(liveFn, mockFn)`. Endpoint map (verified against
 `src/cofounder_agent/routes/`):
 
-| Surface           | Endpoint(s)                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------ |
-| token             | `POST /token` (grant_type=client_credentials → JWT)                                                          |
-| health            | `GET /api/health`                                                                                            |
-| settings          | `GET /api/settings` · `PUT /api/settings/{id}`                                                               |
-| approvals         | `GET /api/tasks/pending-approval` · `POST /api/tasks/{id}/{approve\|reject\|publish}` (approve ≠ publish)    |
-| ↳ reject mode     | `reject(id,notes,{final:true})` → `allow_revisions:false` → `rejected_final`; default → `rejected_retry`     |
-| draft preview     | same-origin `/preview/{preview_token}` link (token rides each pending-approval row's `metadata`)             |
-| tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel) |
-| events            | `GET /api/pipeline/events` (the live audit feed)                                                             |
-| brain / memory    | `GET /api/memory/stats` · `GET /api/memory/search`                                                           |
-| brain activity    | `GET /api/brain/stats` (decisions_24h/7d + knowledge_total + recent 10 decisions)                            |
-| cost              | `GET /api/metrics/costs/budget` (spend vs cap)                                                               |
-| findings          | `GET /api/findings` (probe-routing triage, #461)                                                             |
-| media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                        |
-| schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                           |
-| seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                         |
-| social            | `GET /api/social/drafts` (per-post per-platform) · `POST /api/social/drafts/{id}/{approve\|reject}`          |
-| newsletter        | `GET /api/newsletter/stats` (subscriber count + 30d delivery summary + recent campaigns)                     |
-| voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                        |
-| rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                          |
-| restart           | `POST /api/services/{container}/restart` (queue) · `GET /api/services/restart/{id}` (poll, #909)             |
-| posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |
-| service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                    |
-| GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                    |
-| logs              | `GET /api/logs` (worker proxy → Loki `query_range`)                                                          |
-| traces            | `GET /api/traces` (worker proxy → Langfuse `/api/public/traces`)                                             |
+| Surface           | Endpoint(s)                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| token             | `POST /token` (grant_type=client_credentials → JWT)                                                                                                  |
+| health            | `GET /api/health`                                                                                                                                    |
+| settings          | `GET /api/settings` · `PUT /api/settings/{id}`                                                                                                       |
+| approvals         | `GET /api/tasks/pending-approval` · `POST /api/tasks/{id}/{approve\|reject\|publish}` (approve ≠ publish)                                            |
+| ↳ reject mode     | `reject(id,notes,{final:true})` → `allow_revisions:false` → `rejected_final`; default → `rejected_retry`                                             |
+| draft preview     | same-origin `/preview/{preview_token}` link (token rides each pending-approval row's `metadata`)                                                     |
+| tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel)                                         |
+| events            | `GET /api/pipeline/events` (the live audit feed)                                                                                                     |
+| brain / memory    | `GET /api/memory/stats` · `GET /api/memory/search`                                                                                                   |
+| brain activity    | `GET /api/brain/stats` (decisions_24h/7d + knowledge_total + recent 10 decisions)                                                                    |
+| cost              | `GET /api/metrics/costs/budget` (spend vs cap)                                                                                                       |
+| findings          | `GET /api/findings` (probe-routing triage, #461)                                                                                                     |
+| media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                                                                |
+| schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                                                                   |
+| seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                                                                 |
+| social            | `GET /api/social/drafts` (per-post per-platform) · `POST /api/social/drafts/{id}/{approve\|reject}`                                                  |
+| newsletter        | `GET /api/newsletter/stats` (subscriber count + 30d delivery summary + recent campaigns)                                                             |
+| voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                                                                |
+| rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                                                                  |
+| restart           | `POST /api/services/{container}/restart` (queue) · `GET /api/services/restart/{id}` (poll, #909)                                                     |
+| posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                                                        |
+| service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                                                            |
+| GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                                                            |
+| logs              | `GET /api/logs` (worker proxy → Loki `query_range`)                                                                                                  |
+| traces            | `GET /api/traces` (worker proxy → Langfuse `/api/public/traces`)                                                                                     |
+| cofounder chat    | `GET /api/chat/tools` · `GET/POST /api/chat/conversations` · `GET /…/{id}` · `POST /…/{id}/archive` · `POST /…/{id}/messages` (streamed NDJSON turn) |
 
 ### Now-running band (live activity)
 
@@ -217,6 +218,27 @@ day-to-day operation no longer requires opening Grafana directly:
   console renders fully without either).
 
 ---
+
+## 5. Cofounder tab (chat surface, poindexter#948)
+
+The first rail entry opens the **Cofounder** mode — a conversation surface
+over the P1 chat backend (`/api/chat/*`, poindexter#947): thread with typed
+message parts (markdown, expandable tool chips, task-link cards), an activity
+rail (live tool events while a turn streams + session totals), and a composer
+with `/` shortcuts. Turns stream as NDJSON over a plain fetch; the parsing +
+event→view fold live in `js/chat-helpers.js` (`window.PXChat`) and are
+contract-tested in `__tests__/chat-helpers.test.js` + `__tests__/api.chat.test.js`.
+
+- **Mock mode** ships a scripted brain: sends stream the same event kinds the
+  real backend emits and persist into the mock thread, so the zero-backend
+  demo exercises every render path (including an interrupted turn + Retry).
+- **Live mode** requires `console_chat_enabled=true` on the worker (plus a
+  tool-capable LLM provider — see `docs/architecture/cofounder-chat.md`).
+  Disabled installs render the enablement instructions instead of a dead tab.
+- A turn's task-link card deep-links into the existing task-trace mode.
+- Reconnect honesty: reopening a thread renders exactly what the store says
+  (`complete` / `failed` / `INTERRUPTED` + Retry) — the lazy repair on the
+  backend flips stranded turns, so no eternal spinners.
 
 ## Notes
 

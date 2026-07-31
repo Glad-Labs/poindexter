@@ -2567,11 +2567,135 @@
     summary: { running_by_kind: { content: 1, job: 1, brain: 1, media: 0 } },
   };
 
+  // ── Cofounder chat mock (poindexter#948) ────────────────────
+  // Shapes mirror the REAL /api/chat payloads (P1 backend) exactly —
+  // conversations, typed message parts, and the NDJSON turn events the
+  // scripted mock send emits. Only shapes P1 actually produces appear
+  // here (tool chips, task_link cards, markdown): the demo shows the
+  // truth, not vaporware (plan/result cards arrive with P3/P4).
+  const chatMock = {
+    persona: 'Poindexter',
+    tools: [
+      { name: 'list_tasks', description: 'List content pipeline tasks, newest first.', tier: 'read' },
+      { name: 'get_task', description: "Get one pipeline task's detail by id.", tier: 'read' },
+      { name: 'get_budget', description: 'Current AI spend vs the monthly budget cap.', tier: 'read' },
+      { name: 'search_memory', description: "Semantic search across the operator's memory.", tier: 'read' },
+      { name: 'find_similar_posts', description: 'Find published posts similar to a topic.', tier: 'read' },
+      { name: 'get_audit_summary', description: 'System activity summary from the audit log.', tier: 'read' },
+      { name: 'get_setting', description: 'Read one non-secret app_settings value.', tier: 'read' },
+      { name: 'create_post', description: 'Create a blog post pipeline task (waits for your approval).', tier: 'write' },
+    ],
+    conversations: [
+      {
+        id: 'mock-conv-1',
+        title: "What's in the pipeline right now?",
+        brain: 'local',
+        status: 'active',
+        message_count: 4,
+        created_at: isoAgo(3600),
+        last_message_at: isoAgo(3400),
+      },
+      {
+        id: 'mock-conv-2',
+        title: 'Write a post about self-hosted observability',
+        brain: 'local',
+        status: 'active',
+        message_count: 2,
+        created_at: isoAgo(9200),
+        last_message_at: isoAgo(9000),
+      },
+    ],
+    threads: {
+      'mock-conv-1': [
+        {
+          id: 'mock-m1', role: 'user', turn_status: 'complete',
+          parts: [{ type: 'markdown', text: "What's in the pipeline right now?" }],
+          created_at: isoAgo(3600),
+        },
+        {
+          id: 'mock-m2', role: 'assistant', turn_status: 'complete',
+          model: 'qwen2.5:7b', prompt_tokens: 1480, completion_tokens: 92, cost_usd: 0,
+          parts: [
+            { type: 'tool_call', name: 'list_tasks', ok: true, ms: 412, args_digest: '{"limit": 10}', result_digest: '3 task(s):\n- 9b1c8d2e [awaiting_approval] Own your numbers…\n- 41f2aa07 [in_progress] Local-first analytics…\n- c07d3b19 [pending] RAG retrieval stacks…' },
+            { type: 'markdown', text: '3 tasks in flight: one awaiting your approval (9b1c8d2e), one mid-pipeline, one queued.' },
+          ],
+          created_at: isoAgo(3560),
+        },
+        {
+          id: 'mock-m3', role: 'user', turn_status: 'complete',
+          parts: [{ type: 'markdown', text: 'Write a post about VRAM contention in shared GPU rigs' }],
+          created_at: isoAgo(3450),
+        },
+        {
+          id: 'mock-m4', role: 'assistant', turn_status: 'complete',
+          model: 'qwen2.5:7b', prompt_tokens: 1720, completion_tokens: 141, cost_usd: 0,
+          parts: [
+            { type: 'tool_call', name: 'create_post', ok: true, ms: 933, args_digest: '{"topic": "VRAM contention in shared GPU rigs"}', result_digest: '{"task_id": "f3a91c44", "status": "pending"}' },
+            { type: 'card', card: { kind: 'task_link', task_id: 'f3a91c44' } },
+            { type: 'markdown', text: 'Queued it — task f3a91c44 is pending. It runs the full pipeline and lands in your approval inbox; nothing publishes without you.' },
+          ],
+          created_at: isoAgo(3400),
+        },
+      ],
+      'mock-conv-2': [
+        {
+          id: 'mock-m5', role: 'user', turn_status: 'complete',
+          parts: [{ type: 'markdown', text: 'Write a post about self-hosted observability' }],
+          created_at: isoAgo(9200),
+        },
+        {
+          id: 'mock-m6', role: 'assistant', turn_status: 'interrupted',
+          model: 'qwen2.5:7b', prompt_tokens: 610, completion_tokens: 0, cost_usd: 0,
+          parts: [
+            { type: 'markdown', text: 'Turn hit the 120s deadline (console_chat_turn_timeout_s) and was interrupted.' },
+          ],
+          created_at: isoAgo(9000),
+        },
+      ],
+    },
+    // Scripted mock turn: the event sequence a real send streams, with
+    // per-event delays (ms). api.js plays this back through the same
+    // onEvent path the live NDJSON reader uses.
+    scriptFor(text) {
+      const t = (text || '').toLowerCase();
+      const mkText = (s) => ({ event: 'text', text: s });
+      const base = [
+        [120, { event: 'turn_started', message_id: 'mock-live-' + Date.now() }],
+      ];
+      if (t.includes('post about') || t.startsWith('/create-post')) {
+        const topic = text.replace(/^.*post about/i, '').trim() || 'that topic';
+        const id = 'mk' + String(Date.now()).slice(-6);
+        return base.concat([
+          [300, { event: 'tool_start', name: 'create_post', args_digest: JSON.stringify({ topic }) }],
+          [900, { event: 'tool_result', name: 'create_post', ok: true, ms: 902, digest: '{"task_id": "' + id + '", "status": "pending"}' }],
+          [60, { event: 'task_linked', task_id: id }],
+          [500, mkText('Queued it — task ' + id + ' is pending and will land in your approval inbox.')],
+          [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1650, completion_tokens: 120, cost_usd: 0 }],
+        ]);
+      }
+      if (t.includes('spent') || t.includes('budget')) {
+        return base.concat([
+          [280, { event: 'tool_start', name: 'get_budget', args_digest: '{}' }],
+          [520, { event: 'tool_result', name: 'get_budget', ok: true, ms: 517, digest: '{"amount_spent": 4.31, "monthly_budget": 30, "status": "healthy"}' }],
+          [420, mkText('$4.31 of the $30 monthly cap — healthy.')],
+          [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1390, completion_tokens: 64, cost_usd: 0 }],
+        ]);
+      }
+      return base.concat([
+        [300, { event: 'tool_start', name: 'list_tasks', args_digest: '{"limit": 10}' }],
+        [650, { event: 'tool_result', name: 'list_tasks', ok: true, ms: 641, digest: '3 task(s):\n- 9b1c8d2e [awaiting_approval] …' }],
+        [500, mkText('3 tasks in flight: one awaiting your approval, one mid-pipeline, one queued.')],
+        [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1480, completion_tokens: 92, cost_usd: 0 }],
+      ]);
+    },
+  };
+
   window.PX = {
     now,
     hhmmss,
     ago,
     kpis,
+    chatMock,
     inbox: [...inbox, ...mediaInbox],
     services,
     gpu,

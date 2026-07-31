@@ -10,6 +10,9 @@ const { useState: useS, useEffect: useE, useRef: useR, useMemo } = React;
 const POINDEXTER_VERSION = '0.114.0'; // x-release-please-version
 
 const RAIL = [
+  // Mode tab, not a scroll section: goTo() special-cases it to
+  // setMode('cofounder') (poindexter#948).
+  { id: 'cofounder', icon: 'brain', label: 'Cofounder' },
   { id: 'overview', icon: 'overview', label: 'Overview' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
   { id: 'topics', icon: 'overview', label: 'Topics' },
@@ -701,6 +704,12 @@ function App() {
   };
 
   const goTo = (id) => {
+    // Cofounder is a full-page mode (like Settings), not a scroll section.
+    if (id === 'cofounder') {
+      setMode('cofounder');
+      setActive('cofounder');
+      return;
+    }
     if (mode !== 'console') {
       setMode('console');
       setActive(id);
@@ -1323,6 +1332,14 @@ function App() {
   // ── Command palette commands (built from live state) ──────────────────
   const commands = useMemo(() => {
     const cmds = [];
+    cmds.push({
+      id: 'cofounder-open',
+      group: 'Cofounder',
+      icon: 'brain',
+      label: 'Cofounder — open chat',
+      hint: 'ask / act',
+      run: () => goTo('cofounder'),
+    });
     inbox
       .filter((i) => i.kind === 'approve')
       .forEach((i) => {
@@ -1903,6 +1920,10 @@ function App() {
             sysState={sysState}
             revenue={PX.revenue}
           />
+        )}
+
+        {mode === 'cofounder' && (
+          <CofounderMode onOpenTask={openTrace} pushToast={pushToast} />
         )}
 
         {mode === 'settings' && (

@@ -231,6 +231,70 @@
     return res.status === 204 ? null : res.json();
   }
 
+  // Streamed POST for the Cofounder chat turn endpoint (poindexter#948).
+  // Reads the NDJSON body incrementally and hands each decoded text chunk to
+  // `onChunkText`. Deliberately NOT under HTTP_TIMEOUT_MS — a turn legally
+  // runs up to console_chat_turn_timeout_s server-side; the ceiling here is a
+  // generous outer bound so a dead socket still can't hang the composer
+  // forever. Auth mirrors http(): mint, and on a 401 clear + retry once.
+  const STREAM_TIMEOUT_MS = 300_000;
+  async function httpStream(path, body, onChunkText) {
+    const url = cfg.base + path;
+    const doFetch = async () => {
+      const tok = await getToken();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + tok,
+        },
+        body: JSON.stringify(body || {}),
+      });
+    };
+    let res = await doFetch();
+    if (res.status === 401) {
+      _tok = { value: '', exp: 0 };
+      res = await doFetch();
+    }
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      let detail = bodyText;
+      try {
+        const b = JSON.parse(bodyText);
+        const d = b && (b.detail ?? b.error);
+        if (d != null) detail = typeof d === 'string' ? d : JSON.stringify(d);
+      } catch {
+        // Not JSON — raw text as-is.
+      }
+      throw new Error(
+        `POST ${path} → ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`
+      );
+    }
+    if (!res.body || !res.body.getReader)
+      throw new Error(`POST ${path} → response is not streamable`);
+    const reader = res.body.getReader();
+    const dec =
+      typeof TextDecoder !== 'undefined'
+        ? new TextDecoder()
+        : { decode: (b) => String(b) };
+    const deadline = Date.now() + STREAM_TIMEOUT_MS;
+    for (;;) {
+      if (Date.now() > deadline) {
+        try {
+          reader.cancel();
+        } catch (e) {
+          /* already closed */
+        }
+        throw new Error(`POST ${path} → stream exceeded ${STREAM_TIMEOUT_MS}ms`);
+      }
+      const { value, done } = await reader.read();
+      if (done) break;
+      const text =
+        typeof value === 'string' ? value : dec.decode(value, { stream: true });
+      if (text) onChunkText(text);
+    }
+  }
+
   // Prometheus instant query → single scalar (best-effort).
   async function promScalar(promql) {
     try {
@@ -1942,6 +2006,163 @@
           ),
         () => ({ series: [] })
       );
+    },
+
+    // ── Cofounder chat (poindexter#948; backend P1 = #947) ────
+    // Live shapes mirror routes/chat_routes.py exactly; mock rides
+    // PX.chatMock (data.js) and stays behaviourally identical — the
+    // scripted send streams the same NDJSON event kinds and persists
+    // the turn into the mock thread via the same PXChat fold the UI
+    // uses, so the zero-backend demo exercises the real render paths.
+    chatTools() {
+      return pick(
+        () => http('GET', '/api/chat/tools'),
+        () => {
+          const m = window.PX.chatMock;
+          return { persona: m.persona, tools: m.tools };
+        }
+      );
+    },
+    chatList(status) {
+      const st = status || 'active';
+      return pick(
+        () => http('GET', `/api/chat/conversations?status=${st}`),
+        () => {
+          const rows = window.PX.chatMock.conversations.filter(
+            (c) => c.status === st
+          );
+          return pair(
+            { conversations: rows, count: rows.length },
+            { conversations: [], count: 0 }
+          );
+        }
+      );
+    },
+    chatGet(id) {
+      return pick(
+        () => http('GET', `/api/chat/conversations/${encodeURIComponent(id)}`),
+        () => {
+          const m = window.PX.chatMock;
+          const conversation = m.conversations.find((c) => c.id === id);
+          if (!conversation) throw new Error(`Unknown conversation: ${id}`);
+          return {
+            conversation,
+            messages: m.threads[id] || [],
+            task_links: [],
+          };
+        }
+      );
+    },
+    chatCreate(title) {
+      return pick(
+        () => http('POST', '/api/chat/conversations', { title: title || '' }),
+        () => {
+          const m = window.PX.chatMock;
+          const conv = {
+            id: 'mock-conv-' + Date.now(),
+            title: title || '',
+            brain: 'local',
+            status: 'active',
+            message_count: 0,
+            created_at: new Date().toISOString(),
+            last_message_at: new Date().toISOString(),
+          };
+          m.conversations.unshift(conv);
+          m.threads[conv.id] = [];
+          return conv;
+        }
+      );
+    },
+    chatArchive(id) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/chat/conversations/${encodeURIComponent(id)}/archive`
+          ),
+        () => {
+          const m = window.PX.chatMock;
+          const conv = m.conversations.find((c) => c.id === id);
+          if (conv) conv.status = 'archived';
+          return { archived: !!conv, conversation_id: id };
+        }
+      );
+    },
+    // One agent turn. Streams NDJSON events into `onEvent(ev)` as they
+    // arrive; resolves when the stream ends. Mock plays the scripted
+    // event sequence through the SAME callback path, then persists the
+    // exchange into the mock thread (fold parity with the server).
+    async chatSend(id, text, onEvent) {
+      const emit = typeof onEvent === 'function' ? onEvent : () => {};
+      if (cfg.live) {
+        let carry = '';
+        await httpStream(
+          `/api/chat/conversations/${encodeURIComponent(id)}/messages`,
+          { text },
+          (chunkText) => {
+            const r = window.PXChat.splitNdjson(carry, chunkText);
+            carry = r.rest;
+            r.events.forEach(emit);
+          }
+        );
+        // Flush a trailing line the stream ended without \n on.
+        const tail = window.PXChat.splitNdjson(carry, '\n');
+        tail.events.forEach(emit);
+        return;
+      }
+      // Mock: scripted playback with per-event delays (sim=slow stretches,
+      // sim=error fails the turn honestly after it starts).
+      const m = window.PX.chatMock;
+      const thread = m.threads[id] || (m.threads[id] = []);
+      const conv = m.conversations.find((c) => c.id === id);
+      const stretch = cfg.sim === 'slow' ? 3 : 1;
+      let view = window.PXChat.newTurnView();
+      const script =
+        cfg.sim === 'error'
+          ? [
+              [120, { event: 'turn_started', message_id: 'mock-err' }],
+              [300, {
+                  event: 'error',
+                  reason: 'turn_crashed',
+                  detail: 'Simulated API error (dev sim = error)',
+                }],
+              [60, {
+                  event: 'done',
+                  turn_status: 'failed',
+                  prompt_tokens: 0,
+                  completion_tokens: 0,
+                  cost_usd: 0,
+                }],
+            ]
+          : m.scriptFor(text);
+      for (const [delay, ev] of script) {
+        await wait(delay * stretch);
+        view = window.PXChat.foldEvent(view, ev);
+        emit(ev);
+      }
+      thread.push({
+        id: 'mock-u-' + Date.now(),
+        role: 'user',
+        turn_status: 'complete',
+        parts: [{ type: 'markdown', text }],
+        created_at: new Date().toISOString(),
+      });
+      thread.push({
+        id: view.messageId || 'mock-a-' + Date.now(),
+        role: 'assistant',
+        turn_status: view.status,
+        model: 'qwen2.5:7b',
+        prompt_tokens: view.stats.promptTokens,
+        completion_tokens: view.stats.completionTokens,
+        cost_usd: view.stats.costUsd,
+        parts: view.parts,
+        created_at: new Date().toISOString(),
+      });
+      if (conv) {
+        conv.message_count = thread.length;
+        conv.last_message_at = new Date().toISOString();
+        if (!conv.title) conv.title = text.slice(0, 60);
+      }
     },
   };
 

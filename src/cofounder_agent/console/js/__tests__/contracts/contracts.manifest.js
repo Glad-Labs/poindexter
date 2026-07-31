@@ -115,7 +115,49 @@ module.exports = [
     request: { method: 'GET', path: '/api/brain/stats' },
   },
 
+  // Cofounder chat reads (poindexter#948). chatSend is deliberately NOT a
+  // manifest row: it consumes a streamed NDJSON body, which this harness's
+  // json-response stub can't represent — its request + stream contract is
+  // pinned by api.chat.test.js instead (same exclusion class as the
+  // serviceHealth/gpu composites).
+  {
+    name: 'chatTools',
+    invoke: (api) => api.chatTools(),
+    request: { method: 'GET', path: '/api/chat/tools' },
+  },
+  {
+    name: 'chatList',
+    invoke: (api) => api.chatList(),
+    request: {
+      method: 'GET',
+      path: '/api/chat/conversations',
+      query: { status: 'active' },
+    },
+  },
+  {
+    name: 'chatGet',
+    invoke: (api) => api.chatGet('conv_1'),
+    request: { method: 'GET', path: '/api/chat/conversations/conv_1' },
+  },
+
   // ══ TIER 2 — write / mutation (request contract incl. body; never recorded) ══
+  {
+    name: 'chatCreate',
+    invoke: (api) => api.chatCreate('My thread'),
+    request: {
+      method: 'POST',
+      path: '/api/chat/conversations',
+      body: { title: 'My thread' },
+    },
+  },
+  {
+    name: 'chatArchive',
+    invoke: (api) => api.chatArchive('conv_1'),
+    request: {
+      method: 'POST',
+      path: '/api/chat/conversations/conv_1/archive',
+    },
+  },
   {
     name: 'updateSetting',
     invoke: (api) => api.updateSetting('site_title', 'Glad Labs'),

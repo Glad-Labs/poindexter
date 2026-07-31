@@ -118,6 +118,24 @@ class TestEnabledGate:
 
 
 @pytest.mark.unit
+class TestToolsCatalog:
+    def test_lists_registry_tools_with_tiers(self, fake_store):
+        client = _build_client()
+        resp = client.get("/api/chat/tools")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["persona"] == "Poindexter"
+        names = [t["name"] for t in body["tools"]]
+        assert "create_post" in names and "list_tasks" in names
+        assert all(t["tier"] in ("read", "write") for t in body["tools"])
+        assert all(t["description"] for t in body["tools"])
+
+    def test_gated_by_enabled_flag(self, fake_store):
+        client = _build_client(enabled=False)
+        assert client.get("/api/chat/tools").status_code == 403
+
+
+@pytest.mark.unit
 class TestConversationCrud:
     def test_create_201(self, fake_store):
         client = _build_client()

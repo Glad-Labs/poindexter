@@ -65,6 +65,29 @@ def _stale_after_seconds(site_config: SiteConfig) -> int:
     return max(60, timeout * 2)
 
 
+@router.get("/tools")
+async def list_tools(
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """The agent's capability catalog — name, description, tier per tool.
+
+    The console's empty state answers "what can you do?" from this read so
+    the UI never drifts from the registry (AI-first: the catalog IS the
+    capability list). Same gate as the rest of the surface.
+    """
+    _require_enabled(site_config)
+    from services.chat_tools import CHAT_TOOLS
+
+    persona = str(site_config.get("agent_persona_name", "Poindexter") or "Poindexter")
+    return {
+        "persona": persona,
+        "tools": [
+            {"name": t.name, "description": t.description, "tier": t.tier}
+            for t in CHAT_TOOLS
+        ],
+    }
+
+
 @router.post("/conversations", status_code=201)
 async def create_conversation(
     body: CreateConversationRequest,
