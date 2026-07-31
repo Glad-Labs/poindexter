@@ -2376,6 +2376,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vision_scorer_unavailable.cooldown_minutes': '360',
     'findings.vision_scorer_unavailable.min_severity': 'warn',
 
+    # ----- Cost-guard local downgrade (instead of hard-failing) -----
+    # When the paid daily/monthly cap is reached, dispatch_complete swaps the
+    # PAID model for a local one and warns, rather than propagating
+    # CostGuardExhausted. Without this a spend ceiling becomes a content outage:
+    # the prod writer is pinned to a cloud model, so an exhausted budget failed
+    # the whole pipeline instead of producing a cheaper article. Set false to
+    # restore hard-fail (surface the error to the operator).
+    'cost_guard_local_fallback_enabled': 'true',
+    # Model used for that downgrade. Empty -> pipeline_local_writer_model (the
+    # existing "guaranteed local, writer-grade" pin). A value here MUST be local;
+    # a paid one is refused at dispatch and the original error propagates,
+    # because silently retrying against a second paid provider is exactly what
+    # CostGuardExhausted's contract forbids.
+    'cost_guard_local_fallback_model': '',
     # ----- Pinned-endpoint warm-up (stack#2051 / #2938) -----
     # WarmPinnedLlmEndpointsJob loads each model that
     # plugin.llm_provider.litellm.config.model_api_base_overrides pins to its own

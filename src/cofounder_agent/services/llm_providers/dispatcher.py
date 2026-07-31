@@ -350,6 +350,88 @@ def _resolve_default_num_ctx(
     return resolve_num_ctx(phase, site_config=site_config)
 
 
+def _local_fallback_or_reraise(
+    exhausted: Any,
+    model: str,
+    provider_config: dict[str, Any] | None,
+    *,
+    phase: str,
+    span: Any,
+) -> str:
+    """Return a LOCAL model to retry with, or re-raise ``exhausted``.
+
+    The spend cap is a ceiling on *money*, not a kill switch on *content*. With
+    the prod writer pinned to a cloud model, propagating ``CostGuardExhausted``
+    converts "we've spent enough this month" into "the pipeline stops" — so the
+    dispatch degrades to a local model instead, loudly.
+
+    Resolution: ``cost_guard_local_fallback_model`` -> ``pipeline_local_writer_model``.
+    Re-raises unchanged when the feature is disabled, when neither key is set
+    (no silent invention of a model name — ``feedback_no_silent_defaults``), or
+    when the configured fallback is ITSELF paid, which would either loop or
+    quietly bill a second provider. That last case is the trap
+    ``CostGuardExhausted``'s docstring warns about: never silently retry against
+    a different PAID provider.
+    """
+    from services.container_registry import get_container
+
+    container = get_container()
+    site_config = container.site_config if container is not None else None
+    if site_config is None:
+        raise exhausted
+
+    if not site_config.get_bool("cost_guard_local_fallback_enabled", True):
+        raise exhausted
+
+    candidate = (site_config.get("cost_guard_local_fallback_model", "") or "").strip()
+    if not candidate:
+        candidate = (site_config.get("pipeline_local_writer_model", "") or "").strip()
+    if not candidate:
+        logger.error(
+            "[cost_guard] budget exhausted and no local fallback resolvable — set "
+            "cost_guard_local_fallback_model (or pipeline_local_writer_model) to "
+            "degrade instead of failing. Propagating.",
+        )
+        raise exhausted
+
+    if _is_paid_llm_call(candidate, provider_config):
+        logger.error(
+            "[cost_guard] configured local fallback %r is itself a PAID model — "
+            "refusing to swap one paid provider for another. Propagating.",
+            candidate,
+        )
+        raise exhausted
+
+    # Loud by design (``feedback_flag_quality_downgrades``): a cheaper model is
+    # an acceptable outcome, a SILENT one is not.
+    logger.warning(
+        "[cost_guard] %s budget exhausted (%s) — downgrading %s -> %s for phase %s",
+        getattr(exhausted, "scope", "?"), exhausted, model, candidate, phase,
+    )
+    span.set_attribute("llm.cost_guard.downgraded", True)
+    span.set_attribute("llm.cost_guard.original_model", model)
+
+    from utils.findings import emit_finding
+
+    emit_finding(
+        source="cost_guard",
+        kind="paid_call_downgraded_to_local",
+        severity="warn",
+        title=f"budget exhausted — {model} downgraded to {candidate}",
+        body=(
+            f"Phase {phase} requested paid model {model}; the "
+            f"{getattr(exhausted, 'scope', '?')} cap is reached "
+            f"({exhausted}). Served locally with {candidate} instead. Output "
+            "quality is the local model's, not the paid model's — raise the cap "
+            "or accept the downgrade for the rest of the window."
+        ),
+        # Per scope, not per call: one alert when the cap bites, not one per
+        # dispatch for the remainder of the month.
+        dedup_key=f"cost_guard_downgrade_{getattr(exhausted, 'scope', 'unknown')}",
+    )
+    return candidate
+
+
 def _vram_guard_enabled() -> bool:
     """Master switch for the clamp. Default ON; a config-read failure leaves the
     guard ON (its clamp fails open anyway) rather than blocking the dispatch."""
@@ -634,6 +716,10 @@ async def dispatch_complete(
         started = time.monotonic()
         provider = None
         provider_config: dict[str, Any] | None = None
+        # Local import matches ``_enforce_budget_if_paid``'s idiom for the same
+        # module; needed by name in the except clause below.
+        from services.cost_guard import CostGuardExhausted
+
         try:
             provider = await get_provider(pool, tier)
             span.set_attribute("llm.provider.name", provider.name)
@@ -642,10 +728,25 @@ async def dispatch_complete(
             # Spend cap on the PRIMARY path (audit H2). No-op for local calls;
             # raises CostGuardExhausted (fails closed) for an over-budget or
             # budget-unverifiable PAID call, before the provider fires.
-            await _enforce_budget_if_paid(
-                pool=pool, provider=provider, model=model,
-                provider_config=provider_config,
-            )
+            #
+            # On exhaustion we DOWNGRADE to a local model rather than propagate.
+            # This is the path CostGuardExhausted's own docstring prescribes
+            # ("fall back to a free local provider explicitly via the router
+            # policy"), and it matters because the prod writer is pinned to a
+            # cloud model: without it, hitting the cap turns a cost ceiling into
+            # a content outage — the pipeline errors instead of producing a
+            # cheaper article. The swap happens BEFORE the num_ctx backfill
+            # below so the local model gets its per-phase context and VRAM clamp
+            # exactly as a natively-local dispatch would.
+            try:
+                await _enforce_budget_if_paid(
+                    pool=pool, provider=provider, model=model,
+                    provider_config=provider_config,
+                )
+            except CostGuardExhausted as exhausted:
+                model = _local_fallback_or_reraise(
+                    exhausted, model, provider_config, phase=phase, span=span,
+                )
             # Default num_ctx for LOCAL dispatches that never threaded one, so
             # every local path (vision QA, media, scheduled research) is bounded
             # + clamped like the writer — not left at Ollama's Modelfile default
