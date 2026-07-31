@@ -78,6 +78,7 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | health            | `GET /api/health`                                                                                            |
 | settings          | `GET /api/settings` · `PUT /api/settings/{id}`                                                               |
 | approvals         | `GET /api/tasks/pending-approval` · `POST /api/tasks/{id}/{approve\|reject\|publish}` (approve ≠ publish)    |
+| ↳ reject mode     | `reject(id,notes,{final:true})` → `allow_revisions:false` → `rejected_final`; default → `rejected_retry`     |
 | draft preview     | same-origin `/preview/{preview_token}` link (token rides each pending-approval row's `metadata`)             |
 | tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel) |
 | events            | `GET /api/pipeline/events` (the live audit feed)                                                             |

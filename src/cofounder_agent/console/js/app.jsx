@@ -754,10 +754,23 @@ function App() {
           ['mint', 'APPROVE'],
           `operator approved <b>#${taskId}</b> → staged`
         );
-      } else if (kind === 'reject') {
-        await PX.api.reject(taskId, '');
-        pushToast('Rejected — sent back to edit', 'amber', '⚠');
-        pushFeed(['amber', 'REVIEW'], `operator rejected <b>#${taskId}</b>`);
+      } else if (kind === 'reject' || kind === 'reject_final') {
+        // Two distinct gates, same as the drawer: reject → rejected_retry
+        // (regenerates), reject_final → rejected_final (closed out).
+        const final = kind === 'reject_final';
+        await PX.api.reject(taskId, '', { final });
+        pushToast(
+          final
+            ? 'Rejected for good — will not regenerate'
+            : 'Rejected — sent back to edit',
+          'amber',
+          '⚠'
+        );
+        pushFeed(
+          ['amber', 'REVIEW'],
+          `operator rejected <b>#${taskId}</b>` +
+            (final ? ' — final, no regen' : ' → regenerating')
+        );
       } else if (kind === 'publish') {
         await PX.api.publishTask(taskId);
         pushToast('Published — is live', 'mint', '✓');
@@ -828,16 +841,27 @@ function App() {
         pushToast(`Publish failed — ${err.message}`, 'red', '✕');
       }
     },
-    reject: async (e) => {
+    // `opts.final` → rejected_final (no regen). Omitted/false → rejected_retry,
+    // so the row-level ✕ quick-reject stays the recoverable one. Callers that
+    // pass a single arg (panels.jsx `onReject(it)`) get retry by construction.
+    reject: async (e, opts = {}) => {
+      const final = !!opts.final;
       const prev = inbox;
       removeInbox(e.id);
       closeDrawer();
       try {
-        await PX.api.reject(e.id, e.detail?.feedback || '');
-        pushToast(`Rejected — sent back to edit`, 'amber', '⚠');
+        await PX.api.reject(e.id, e.detail?.feedback || '', { final });
+        pushToast(
+          final
+            ? 'Rejected for good — will not regenerate'
+            : 'Rejected — sent back to edit',
+          'amber',
+          '⚠'
+        );
         pushFeed(
           ['amber', 'REVIEW'],
-          `operator rejected <b>${trunc(e.title || '#' + (e.detail?.task || ''))}</b>`
+          `operator rejected <b>${trunc(e.title || '#' + (e.detail?.task || ''))}</b>` +
+            (final ? ' — final, no regen' : ' → regenerating')
         );
       } catch (err) {
         setInbox(prev);

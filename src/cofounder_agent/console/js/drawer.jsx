@@ -211,31 +211,57 @@ function Drawer({ entity, onClose, actions }) {
               />
               {rejectOpen ? (
                 <div className="field" style={{ marginTop: 14 }}>
-                  <label>Reason for sending back</label>
+                  <label>Rejection notes</label>
                   <textarea
                     autoFocus
                     rows={3}
                     value={feedback}
                     onChange={(ev) => setFeedback(ev.target.value)}
-                    placeholder="What needs to change before this can be approved?"
+                    placeholder="What needs to change — or why this topic should be dropped?"
                     style={{ resize: 'vertical' }}
                   />
+                  <p
+                    className="c-dim"
+                    style={{ fontSize: 11, margin: '6px 0 0', lineHeight: 1.5 }}
+                  >
+                    <b>Send back to edit</b> regenerates the post and returns it
+                    here for review. <b>Reject for good</b> closes the task out
+                    — nothing regenerates. Use it for a bad topic or a quiet-day
+                    dev diary you don&rsquo;t want written at all.
+                  </p>
                 </div>
               ) : null}
             </>
           );
+          // Two explicit reject buttons, no implicit default — the CLI learned
+          // this the hard way (an omitted --retry/--final silently regenerated
+          // a duplicate topic), so the console asks the same question outright:
+          // regenerate (rejected_retry) vs close out (rejected_final).
           foot = rejectOpen ? (
             <>
               <button
-                className="mbtn mbtn--danger"
+                className="mbtn mbtn--amber"
                 style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                title="rejected_retry — the pipeline rewrites it and it comes back here"
                 onClick={() => {
                   e.detail = { ...(e.detail || {}), feedback };
                   actions.reject(e);
                 }}
               >
-                <Icon name="x" size={13} />
+                <Icon name="retry" size={13} />
                 Send back to edit
+              </button>
+              <button
+                className="mbtn mbtn--danger"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                title="rejected_final — closes the task out, nothing regenerates"
+                onClick={() => {
+                  e.detail = { ...(e.detail || {}), feedback };
+                  actions.reject(e, { final: true });
+                }}
+              >
+                <Icon name="x" size={13} />
+                Reject for good
               </button>
               <button
                 className="mbtn mbtn--ghost"

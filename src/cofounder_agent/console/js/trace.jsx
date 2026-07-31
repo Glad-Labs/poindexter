@@ -550,12 +550,24 @@
                   ✓ Approve
                 </button>
               )}
+              {/* Same two-gate reject as the drawer: retry regenerates,
+                  final closes the task out for good. */}
               {canApprove && (
                 <button
                   className="tact tact--no"
+                  title="rejected_retry — the pipeline rewrites it and it comes back for review"
                   onClick={() => onAction('reject', taskId)}
                 >
                   ✕ Reject
+                </button>
+              )}
+              {canApprove && (
+                <button
+                  className="tact tact--no"
+                  title="rejected_final — closes the task out, nothing regenerates"
+                  onClick={() => onAction('reject_final', taskId)}
+                >
+                  ⊘ Reject · final
                 </button>
               )}
               {canPublish && (

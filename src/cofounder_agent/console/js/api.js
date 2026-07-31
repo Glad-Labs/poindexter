@@ -754,19 +754,25 @@
         () => ({ ok: true })
       );
     },
-    reject(id, human_feedback = '') {
+    // `opts.final` picks WHICH terminal state the reject lands in — the same
+    // fork the CLI exposes as `poindexter tasks reject --retry|--final`:
+    //   allow_revisions=true  → rejected_retry: the worker regenerates and the
+    //                           task comes back to awaiting_approval.
+    //   allow_revisions=false → rejected_final: closed out, never regenerated.
+    // Default stays retry (the recoverable one) so no caller that omits opts
+    // can silently kill a task; the drawer/deep-dive ask explicitly.
+    reject(id, human_feedback = '', opts = {}) {
       // Body contract: RejectionRequest (routes/approval_routes.py) REQUIRES
       // {reason, feedback} — a missing key 400s (VALIDATION_ERROR). The
       // `human_feedback` field this used to send belongs to the APPROVE
-      // route's schema, not reject. allow_revisions=true → rejected_retry:
-      // the console's reject IS "send back to edit" (drawer copy), unlike
-      // the MCP reject_post tool's terminal allow_revisions=false.
+      // route's schema, not reject.
+      const final = !!opts.final;
       return pick(
         () =>
           http('POST', `/api/tasks/${id}/reject`, {
-            reason: 'operator_rejected',
+            reason: final ? 'operator_rejected_final' : 'operator_rejected',
             feedback: human_feedback || '',
-            allow_revisions: true,
+            allow_revisions: !final,
           }),
         () => ({ ok: true })
       );
