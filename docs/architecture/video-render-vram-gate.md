@@ -57,14 +57,36 @@ A hard unload costs image-gen a cold start plus a lazy model reload, and **any `
 
 **Observed 2026-07-27** (the regression these guards close): image-gen hard-unloaded every 5 minutes for 2+ hours, each exit logging `vram_used=0 MB`, each freeing nothing, each opening a cold-start window — while the re-probe kept failing and the render never ran. Every one of those exits was pure loss, paid for in downgraded article images.
 
+### The gate holds no reservation — mid-flow choreography (2026-07-29, poindexter#907)
+
+The preflight checks free VRAM **once**, before the flow starts, and nothing keeps that VRAM reserved for the minutes a render takes. So the gate can pass honestly and the render still lose the card to a concurrent consumer.
+
+Measured on the operator box, 2026-07-29:
+
+| time        | event                                                               |
+| ----------- | ------------------------------------------------------------------- |
+| 05:03:45    | gate passes — **29.4 GB free** on GPU0, render dispatches           |
+| 05:03–05:07 | **image-gen loads 25.1 GB** to illustrate the _next_ article        |
+| 05:06:36    | wan OOMs — **98 MB free**, its own process holding just **1.82 GB** |
+|             | → `hero_render_fallback`; the clip ships as a Ken-Burns still       |
+
+wan was **crowded out, not too big** — note it held only 1.82 GB of its own at the moment it failed. This is why no `media_render_min_free_vram_gb` value fixes it: the crowding happens _after_ the check, so raising the bar just admits fewer renders that fail the same way. 18 `hero_render_fallback` findings trace to this.
+
+Two fixes, matching the two defects in the issue:
+
+1. **Clear the card at the point of use.** `shot_list_renderer._clear_image_gen_for_hero` hard-unloads image-gen immediately before each wan load (`video_hero_unload_image_gen`, default on). Best-effort — a failed reclaim must not turn a _possible_ render into a _certain_ skip. Cheap to repeat: once image-gen holds nothing the server declines the exit (`nothing_to_reclaim`), so only the first call of a run actually pays.
+2. **Stop a failed load from latching.** `wan-server._ensure_pipeline_loaded` now releases the partial load (`_release_partial_load` — an OOM part-way through `.to("cuda")` used to strand ~14.9 GB with no handle) and only latches `degraded` for _persistent_ causes. An OOM is a statement about the card at that moment, not about the model, so it stays retryable instead of 503-ing every later request until a container restart.
+
 ### Settings (`settings_defaults.py`)
 
-| Key                                     | Default | Meaning                                                                                         |
-| --------------------------------------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `media_render_reclaim_enabled`          | `true`  | Master switch for the reclaim-then-reprobe attempt.                                             |
-| `media_render_reclaim_settle_seconds`   | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped.                       |
-| `media_render_reclaim_cooldown_minutes` | `30`    | Pause after a reclaim that left the gate unhealthy. `0` restores the old every-cycle behaviour. |
-| `image_gen_hard_unload_min_reserved_mb` | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).       |
+| Key                                     | Default | Meaning                                                                                                                  |
+| --------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `media_render_reclaim_enabled`          | `true`  | Master switch for the reclaim-then-reprobe attempt.                                                                      |
+| `media_render_reclaim_settle_seconds`   | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped.                                                |
+| `media_render_reclaim_cooldown_minutes` | `30`    | Pause after a reclaim that left the gate unhealthy. `0` restores the old every-cycle behaviour.                          |
+| `image_gen_hard_unload_min_reserved_mb` | `512`   | Reserved-VRAM floor below which image-gen refuses a hard unload (nothing worth the exit).                                |
+| `video_hero_unload_image_gen`           | `true`  | Hard-unload image-gen immediately before each wan hero load (#907). Off = skip the cold reload on a card that fits both. |
+| `video_hero_unload_settle_seconds`      | `3`     | Pause after that unload so the CUDA context returns to the host before wan asks for it.                                  |
 
 ## Idle-only WSL/Docker reset (PR 2, host-side — build shipped, registration deferred)
 

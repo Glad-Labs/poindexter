@@ -218,6 +218,46 @@ def _load_pipeline_blocking() -> Any:
     return pipe
 
 
+def _is_retryable_load_failure(exc: BaseException) -> bool:
+    """Whether a failed load is worth retrying on the next /generate.
+
+    An OOM is a statement about the card AT THAT MOMENT, not about the model
+    or this server — the crowding process (image-gen holding ~25 GB) will have
+    unloaded by the next attempt. Latching degraded on it turns a transient
+    contention loss into a permanent outage that only a container restart
+    clears. Anything else (a bad model id, a missing revision, a broken
+    install) really is persistent and keeps the latch.
+    """
+    name = type(exc).__name__
+    if "OutOfMemory" in name:
+        return True
+    text = str(exc).lower()
+    return "out of memory" in text or "cuda error: out of memory" in text
+
+
+def _release_partial_load() -> None:
+    """Drop whatever a failed load left resident.
+
+    ``_load_pipeline_blocking`` moves components to CUDA one at a time, so an
+    OOM part-way through leaves the already-moved ones resident with no handle
+    to them (measured 2026-07-26: 14.9 GB still held by the process after a
+    failed load). Without this the leak compounds across attempts — each retry
+    starts with less room than the last and fails sooner.
+    """
+    state.pipeline = None
+    try:
+        gc.collect()
+        torch.cuda.empty_cache()
+        logger.warning(
+            "Released partial load after failure; VRAM still allocated: %d MB",
+            torch.cuda.memory_allocated(0) // 1024 // 1024,
+        )
+    except Exception as exc:  # noqa: BLE001  # silent-ok: cleanup is best-effort
+        # by definition — we are already on the failure path, and a cleanup
+        # error must not mask the original load exception the caller re-raises.
+        logger.warning("empty_cache after failed load failed: %s", exc)
+
+
 async def _ensure_pipeline_loaded() -> Any:
     """Lazy-load the i2v pipeline. Caller must hold the GPU lock."""
     if state.pipeline is not None:
@@ -227,9 +267,20 @@ async def _ensure_pipeline_loaded() -> Any:
         state.degraded = False
         state.degraded_reason = None
     except Exception as exc:
-        state.degraded = True
-        state.degraded_reason = f"{type(exc).__name__}: {exc}"
-        logger.exception("WanImageToVideoPipeline load failed")
+        # poindexter#907 defect 1. Two things went wrong here before: the
+        # partial load stayed resident (leak), and `degraded` latched for
+        # every cause including a transient OOM (no self-recovery). Together
+        # they turned one unlucky render into a permanent 503 until someone
+        # restarted the container.
+        _release_partial_load()
+        retryable = _is_retryable_load_failure(exc)
+        state.degraded = not retryable
+        state.degraded_reason = None if retryable else f"{type(exc).__name__}: {exc}"
+        logger.exception(
+            "WanImageToVideoPipeline load failed (%s)",
+            "retryable — will re-attempt on next /generate" if retryable
+            else "persistent — latching degraded",
+        )
         raise
     return state.pipeline
 

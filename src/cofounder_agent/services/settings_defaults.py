@@ -397,6 +397,24 @@ DEFAULTS: dict[str, str] = {
     'video_hero_width': '1280',
     'video_hero_height': '704',
     'video_hero_fps': '24',
+    # Hard-unload image-gen immediately before each wan hero load
+    # (poindexter#907 defect 2). The dispatch-time VRAM gate checks free VRAM
+    # once, before the flow starts, and holds no reservation for the minutes
+    # the render takes — so image-gen can (and did) load mid-flow and crowd wan
+    # out. Measured 2026-07-29: gate passed at 29.4 GB free, image-gen took
+    # 25.1 GB illustrating the next article, wan OOM'd with 98 MB free while
+    # holding just 1.82 GB itself. 18 hero_render_fallback findings trace here.
+    #
+    # A soft /unload doesn't return the VRAM (the process keeps its CUDA
+    # reserved pool), so this is the hard unload; image-gen lazy-reloads on its
+    # next /generate. Repeats are cheap — once it holds nothing the server
+    # declines the exit (nothing_to_reclaim), so only the first call pays.
+    # Turn OFF on a card that comfortably fits both, to skip the cold reload.
+    'video_hero_unload_image_gen': 'true',
+    # Pause after the unload so the CUDA context actually returns to the host
+    # before wan asks for it — the process exit is asynchronous from the
+    # renderer's point of view.
+    'video_hero_unload_settle_seconds': '3',
     # Motion direction appended to the i2v prompt when a shot list predates
     # the Shot.motion field (frozen Stage-1 lists are re-read weeks later).
     # The i2v model needs motion language — the still's own description

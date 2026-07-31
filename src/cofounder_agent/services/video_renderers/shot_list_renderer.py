@@ -492,6 +492,51 @@ def _compose_hero_wan_prompt(
     return f"{base}. Camera and motion: {direction}"
 
 
+async def _clear_image_gen_for_hero(site_config: Any) -> None:
+    """Hard-unload image-gen so the wan hero load has the card (poindexter#907).
+
+    Best-effort by design: the caller is about to attempt a render either way,
+    and a reclaim that fails should not convert a possible render into a
+    certain skip. A failure here just means wan may OOM and fall back to a
+    still — the pre-existing behaviour — so this can only improve the odds.
+
+    Gated on ``video_hero_unload_image_gen`` (default on) so an operator whose
+    card comfortably fits both can avoid paying image-gen's cold reload.
+    """
+    try:
+        enabled = (
+            site_config.get_bool("video_hero_unload_image_gen", True)
+            if site_config is not None else True
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+        # decide whether a render is attempted; default to the safer behaviour.
+        enabled = True
+    if not enabled:
+        return
+    try:
+        from services.gpu_scheduler import gpu
+
+        await gpu._unload_image_gen(hard=True)
+        settle = (
+            site_config.get_float("video_hero_unload_settle_seconds", 3.0)
+            if site_config is not None else 3.0
+        ) or 3.0
+        # Let the CUDA context actually return to the host before wan asks for
+        # it — the exit is asynchronous from this process's point of view.
+        await asyncio.sleep(settle)
+        logger.info(
+            "[SHOT_LIST] hard-unloaded image-gen before hero clip "
+            "(settle %.1fs) — poindexter#907", settle,
+        )
+    except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
+        # optimisation, not a precondition. Logged so a persistently failing
+        # unload is visible, but never allowed to block the render attempt.
+        logger.warning(
+            "[SHOT_LIST] image-gen pre-hero unload failed (%s) — attempting "
+            "the hero render anyway", exc,
+        )
+
+
 async def _render_generative_clip(
     *,
     prompt: str,
@@ -517,6 +562,23 @@ async def _render_generative_clip(
     produced the miss may already be gone by the time anyone looks).
     """
     from services.video_providers.wan2_1 import Wan21Provider
+
+    # poindexter#907 defect 2 — clear the render card before wan loads.
+    #
+    # The dispatch-time VRAM gate checks free VRAM ONCE, before the flow
+    # starts, and nothing holds that reservation for the ~3.5 minutes the
+    # render takes. Measured 2026-07-29: the gate passed with 29.4 GB free at
+    # 05:03:45, image-gen then loaded 25.1 GB mid-flow to illustrate the NEXT
+    # article, and wan OOM'd at 05:06:36 with 98 MB free — its own process
+    # holding just 1.82 GB. It was crowded out, not too big. 18
+    # hero_render_fallback findings trace to this.
+    #
+    # A soft /unload does not return the VRAM (the process keeps its CUDA
+    # reserved pool), so this is the HARD unload — process exit + Docker
+    # restart, image-gen lazy-reloads on its next /generate. Cheap to repeat:
+    # once image-gen holds nothing the server declines the exit
+    # (`nothing_to_reclaim`), so the per-clip call is a no-op after the first.
+    await _clear_image_gen_for_hero(site_config)
 
     provider = Wan21Provider()
     config: dict[str, Any] = {
