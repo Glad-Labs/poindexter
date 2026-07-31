@@ -4,7 +4,17 @@ P3 of the cost-attribution design
 (``docs/superpowers/specs/2026-06-21-cost-control-attribution-design.md`` §6).
 A read-only, fail-OPEN sibling of ``services.pipeline_throttle``: instead of
 gating on approval-queue depth it gates on money — the ``cost_ledger``
-``total_usd`` (paid API + measured electricity) against two soft ceilings:
+``total_usd`` **minus idle electricity** against two soft ceilings.
+
+The subtraction is the point: the throttle gates *controllable* spend. Paid API
+and ACTIVE electricity are both caused by running work, so deferring work
+reduces them. IDLE electricity is drawn whether or not the pipeline runs, so
+counting it makes the cap measure "was the machine on" — and since deferring
+work cannot bring it back down, once idle alone crosses the ceiling the
+pipeline stays throttled until the window rolls over. See
+``cost_throttle_count_idle_electricity`` below to restore the old sum.
+
+The two ceilings:
 
 * **daily** — a rate limit that clears at midnight (``get_spend("day")`` resets
   each UTC day), with hysteresis so it doesn't chatter around the threshold:
@@ -34,6 +44,10 @@ All tunables live in ``app_settings`` (DB-first), read via ``site_config``:
 * ``cost_throttle_monthly_budget_usd`` (default ``60.00``; ``<= 0`` disables the
   monthly axis).
 * ``cost_throttle_resume_buffer_pct`` (default ``10``) — daily hysteresis band.
+* ``cost_throttle_count_idle_electricity`` (default ``false``) — set ``true`` to
+  count idle electricity toward the ceilings again (the pre-2026-07-31
+  behaviour). Only affects the MEASURED electricity path; on the estimated path
+  there is no idle component in the total to begin with.
 
 ``get_state()`` exposes the current state for Prometheus (``metrics_exporter``)
 and health payloads, mirroring ``pipeline_throttle.get_state()``.
@@ -203,8 +217,12 @@ async def should_throttle(pool: Any, *, site_config: Any = None) -> ThrottleDeci
             buffer_pct = float(
                 site_config.get_float("cost_throttle_resume_buffer_pct", 10.0)
             )
+            count_idle = bool(
+                site_config.get_bool("cost_throttle_count_idle_electricity", False)
+            )
         else:
             enabled, daily_budget, monthly_budget, buffer_pct = True, 3.0, 60.0, 10.0
+            count_idle = False
 
         if not enabled:
             _STATE.daily_latched = False
@@ -222,8 +240,23 @@ async def should_throttle(pool: Any, *, site_config: Any = None) -> ThrottleDeci
         month = await cost_ledger.get_spend(
             pool, window="month", site_config=site_config
         )
-        daily_total = float(day.total_usd)
-        monthly_total = float(month.total_usd)
+        # Throttle on CONTROLLABLE spend. Idle electricity is what the machine
+        # draws whether or not the pipeline runs, so counting it makes the cap
+        # measure "was the PC on" rather than "did we spend money" — and worse,
+        # deferring work cannot bring the number back down, so once idle alone
+        # crosses the ceiling the pipeline stays throttled until the window
+        # rolls over. Observed 2026-07-31: $61.06 monthly total against a $60
+        # cap, of which $41.73 was idle electricity and only $11.37 was real
+        # cloud API spend — content generation stopped for the rest of the month
+        # over power the machine would have drawn while sitting idle anyway.
+        #
+        # Active electricity STAYS counted: that is caused by running work, so
+        # deferring work genuinely reduces it. Set
+        # cost_throttle_count_idle_electricity=true to restore the old sum.
+        daily_idle = 0.0 if count_idle else float(day.idle_electricity_usd)
+        monthly_idle = 0.0 if count_idle else float(month.idle_electricity_usd)
+        daily_total = float(day.total_usd) - daily_idle
+        monthly_total = float(month.total_usd) - monthly_idle
 
         # Monthly backstop — cumulative, no hysteresis; disabled at budget <= 0.
         monthly_tripped = monthly_budget > 0 and monthly_total >= monthly_budget

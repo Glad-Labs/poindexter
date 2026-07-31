@@ -254,6 +254,17 @@ DEFAULTS: dict[str, str] = {
     'cost_throttle_daily_budget_usd': '3.00',
     'cost_throttle_monthly_budget_usd': '60.00',
     'cost_throttle_resume_buffer_pct': '10',
+    # Count IDLE electricity toward the throttle ceilings. Default false: the
+    # throttle gates work, and idle draw happens whether or not work runs, so
+    # counting it makes the cap measure "was the machine on" instead of "did we
+    # spend money" — and deferring work cannot bring it back down, so once idle
+    # alone crosses the ceiling the pipeline stays throttled until rollover.
+    # 2026-07-31: $61.06 monthly vs a $60 cap, of which $41.73 was idle
+    # electricity and $11.37 real cloud spend; content generation stopped for
+    # the rest of the month over power drawn while sitting idle. Active
+    # electricity stays counted — that IS caused by running work. Set true to
+    # restore the pre-2026-07-31 sum.
+    'cost_throttle_count_idle_electricity': 'false',
 
     # ----- LLM model selection -----
     # OSS defaults pin only publicly-pullable Ollama tags so a fresh
@@ -2863,6 +2874,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'electricity_source_gap_minutes': {'owner': 'cost_ledger', 'value_type': 'integer'},
     'psu_watchdog_degraded_cycles_before_page': {'owner': 'brain_psu_watchdog', 'value_type': 'integer'},
     'cost_throttle_enabled': {'owner': 'spend_throttle', 'value_type': 'boolean'},
+    'cost_throttle_count_idle_electricity': {'owner': 'spend_throttle', 'value_type': 'boolean'},
     'cost_throttle_daily_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},
     'cost_throttle_monthly_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},
     'cost_throttle_resume_buffer_pct': {'owner': 'spend_throttle', 'value_type': 'float'},

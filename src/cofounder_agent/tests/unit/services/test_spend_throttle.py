@@ -241,3 +241,110 @@ async def test_reset_for_tests_clears_state(monkeypatch):
     assert spend_throttle.get_state()["active"] is True
     spend_throttle.reset_for_tests()
     assert spend_throttle.get_state()["active"] is False
+
+
+# ---------------------------------------------------------------------------
+# Idle-electricity exclusion (2026-07-31)
+#
+# The throttle gates *controllable* spend. Idle draw happens whether or not the
+# pipeline runs, so counting it made the cap measure "was the machine on" — and
+# because deferring work can't reduce it, once idle alone crossed the ceiling
+# the pipeline stayed throttled until rollover. Observed on prod: $61.06 monthly
+# against a $60 cap, of which $41.73 was idle and only $11.37 real cloud spend.
+# ---------------------------------------------------------------------------
+
+
+def _patch_spend_with_idle(
+    monkeypatch, *, daily_total: float, monthly_total: float,
+    daily_idle: float = 0.0, monthly_idle: float = 0.0,
+) -> None:
+    async def _fake(pool, *, window="day", strict=False, site_config=None):
+        if window == "day":
+            return SpendBreakdown(
+                total_usd=daily_total, idle_electricity_usd=daily_idle,
+            )
+        return SpendBreakdown(
+            total_usd=monthly_total, idle_electricity_usd=monthly_idle,
+        )
+
+    monkeypatch.setattr(cost_ledger, "get_spend", _fake)
+
+
+@pytest.mark.asyncio
+async def test_idle_electricity_alone_does_not_engage_monthly(monkeypatch):
+    """The prod incident, replayed: total over cap but only because of idle."""
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=0.5, monthly_total=61.06, monthly_idle=41.73,
+    )
+    decision = await spend_throttle.should_throttle(_Pool(), site_config=_cfg())
+
+    assert decision.throttled is False, (
+        "idle electricity pushed the raw total over the cap, but controllable "
+        "spend was only $19.33 — the pipeline must keep working"
+    )
+
+
+@pytest.mark.asyncio
+async def test_controllable_spend_still_engages_monthly(monkeypatch):
+    """Excluding idle must not defang the ceiling on real spend."""
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=0.5, monthly_total=101.0, monthly_idle=40.0,
+    )
+    decision = await spend_throttle.should_throttle(_Pool(), site_config=_cfg())
+
+    assert decision.throttled is True
+    assert decision.ceiling == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_idle_excluded_from_daily_axis_too(monkeypatch):
+    """Both ceilings read the same controllable total."""
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=3.4, monthly_total=5.0, daily_idle=1.5,
+    )
+    decision = await spend_throttle.should_throttle(_Pool(), site_config=_cfg())
+
+    assert decision.throttled is False, "daily controllable spend was $1.90"
+
+
+@pytest.mark.asyncio
+async def test_active_electricity_stays_counted(monkeypatch):
+    """Only IDLE is excluded. Active draw is caused by running work, so
+    deferring work genuinely reduces it and it must still trip the cap."""
+    # $61 total with no idle component => all of it is API + active electricity.
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=0.5, monthly_total=61.0, monthly_idle=0.0,
+    )
+    decision = await spend_throttle.should_throttle(_Pool(), site_config=_cfg())
+
+    assert decision.throttled is True
+    assert decision.ceiling == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_setting_restores_legacy_inclusive_sum(monkeypatch):
+    """Backcompat escape hatch — the pre-2026-07-31 behaviour on demand."""
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=0.5, monthly_total=61.06, monthly_idle=41.73,
+    )
+    decision = await spend_throttle.should_throttle(
+        _Pool(),
+        site_config=_cfg(cost_throttle_count_idle_electricity="true"),
+    )
+
+    assert decision.throttled is True
+    assert decision.ceiling == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_reported_total_is_the_throttled_on_total(monkeypatch):
+    """The decision must report the number it actually judged, or the operator
+    reads a total that doesn't explain the verdict."""
+    _patch_spend_with_idle(
+        monkeypatch, daily_total=2.0, monthly_total=61.06,
+        daily_idle=0.5, monthly_idle=41.73,
+    )
+    decision = await spend_throttle.should_throttle(_Pool(), site_config=_cfg())
+
+    assert decision.monthly_total_usd == pytest.approx(19.33, abs=0.01)
+    assert decision.daily_total_usd == pytest.approx(1.5, abs=0.01)

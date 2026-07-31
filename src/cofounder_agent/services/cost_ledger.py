@@ -50,6 +50,12 @@ API_AXIS_PREDICATE = "COALESCE(cost_type, 'inference') NOT LIKE 'electricity%'"
 # Every row is on exactly one axis: api (non-electricity) or electricity.
 ELECTRICITY_AXIS_PREDICATE = "cost_type LIKE 'electricity%'"
 
+# The idle slice of the electricity axis: power the machine draws whether or not
+# the pipeline is doing anything. Named here because the ledger owns cost-type
+# semantics; consumers that need to reason about *controllable* spend (notably
+# ``spend_throttle``) rent this rather than hardcoding the string.
+IDLE_ELECTRICITY_COST_TYPE = "electricity_idle"
+
 # All SQL below interpolates only hardcoded literals (the window literal keyed by
 # the Window enum + the axis predicates above), never user input — hence the
 # uniform ``# nosec B608``.
@@ -82,6 +88,15 @@ class SpendBreakdown:
     electricity_source: Literal["measured", "estimated", "mixed", "none"] = "none"
     electricity_coverage_pct: float = 0.0
     by_type: dict[str, float] = field(default_factory=dict)
+    # The idle slice already counted inside ``total_usd``, so a consumer can
+    # subtract it to get controllable spend. Populated ONLY on the measured
+    # path, where ``electricity_usd`` really is the sum of the ``electricity%``
+    # rows and this is one of its components. On the estimated path
+    # ``electricity_usd`` is derived from per-call ``electricity_kwh`` over the
+    # API axis — attributable to work, with no idle component in the total at
+    # all — so this stays 0.0 and subtracting it is a correct no-op rather than
+    # a double-subtraction of a number that was never added.
+    idle_electricity_usd: float = 0.0
 
 
 async def get_spend(
@@ -134,6 +149,14 @@ async def get_spend(
         source = "estimated" if electricity > 0 else "none"
 
     by_type = {r["t"]: float(r["v"] or 0.0) for r in rows}
+    # Only meaningful when ``electricity`` came from the measured rows — see the
+    # field docstring on SpendBreakdown for why the estimated path has no idle
+    # component to report.
+    idle = (
+        float(by_type.get(IDLE_ELECTRICITY_COST_TYPE, 0.0))
+        if source == "measured"
+        else 0.0
+    )
     return SpendBreakdown(
         api_usd=api,
         electricity_usd=electricity,
@@ -141,4 +164,5 @@ async def get_spend(
         electricity_source=source,
         electricity_coverage_pct=round(coverage, 1),
         by_type=by_type,
+        idle_electricity_usd=idle,
     )
