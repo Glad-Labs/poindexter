@@ -1911,11 +1911,13 @@ services:
       # per-flag 0/1 series (flag="OB"|"OL"|"LB"|"OVER"|"BOOST"|...) — the
       # seam the Ups* alert rules and the status-timeline panel read.
       NUT_EXPORTER_VARIABLES: "battery.charge,battery.charge.low,battery.charge.warning,battery.runtime,battery.runtime.low,battery.voltage,battery.voltage.nominal,input.voltage,input.voltage.nominal,output.voltage,ups.load,ups.realpower.nominal,ups.status"
-    # No healthcheck: the image is a scratch-built Go binary with no shell or
-    # HTTP client to self-probe (same constraint as promtail — see its
-    # comment). Liveness is Prometheus-side instead: UpsCommsLost (DB-rendered,
-    # prometheus_rule_builder.py) fires when the network_ups_tools_ups_status
-    # series disappears for 10m on a host that declared an expected UPS count.
+    # No compose-level healthcheck: the 3.3.0 image bakes its own
+    # (wget --spider :9199/metrics; the container reports (healthy) — verified
+    # live 2026-07-31). That only proves the HTTP listener answers, not that
+    # UPS data is flowing — "real data" liveness is Prometheus-side:
+    # UpsCommsLost (DB-rendered, prometheus_rule_builder.py) fires when the
+    # network_ups_tools_ups_status series disappears for 10m on a host that
+    # declared an expected UPS count.
 
   # ===========================================
   # Always-on voice agents (Glad-Labs/poindexter#383)
