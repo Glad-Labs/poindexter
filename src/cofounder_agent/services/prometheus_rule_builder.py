@@ -152,6 +152,39 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # theoretical.
     "psu_line_voltage_warning_percent": "92",
     "psu_line_voltage_critical_percent": "87",
+    # UPS via NUT (Glad-Labs/poindexter#958). All Ups* rules read the
+    # network_ups_tools_* series from the profile-gated nut-exporter
+    # container (job="nut"), so on a host without the `ups` compose profile
+    # every load/battery rule is naturally inert — no series, no fire.
+    #
+    # How many UPSes this host expects upsd to serve. Ships "0" = UpsCommsLost
+    # disabled, same reasoning as expected_gpu_count above: a host with no UPS
+    # must not page "comms lost" forever. Operators with a UPS set their count
+    # (usually "1"); the rule then fires when the status series count drops
+    # below it — covering a dead exporter, a dead upsd, a stale driver AND an
+    # unplugged USB data cable with one signal.
+    "expected_ups_count": "0",
+    # Chronic-undervoltage advisory line for the voltage the UPS itself
+    # measures at its input. Ships "0" = inert because mains nominal is
+    # regional (120V vs 230V) — the psu_nominal_line_voltage_volts precedent.
+    # A 120V operator's natural setting is "114": the ANSI C84.1 Range A
+    # service-voltage lower bound, and the ceiling the operator rig's house
+    # supply never exceeded across 9 metered days (93.5-114.6V, 2026-07).
+    "ups_input_voltage_low_volts": "0",
+    # ups.load is percent of the UPS's OWN inverter rating, so unlike the
+    # voltage keys these carry over to any hardware unchanged and can ship
+    # live. Calibrated against the 2026-07-31 overload trip: a 1000W-rated
+    # unit transferred to battery while carrying ~1060W (PC burst 910W + ~150W
+    # of other gear) and dropped its output. 85% is the "margin is gone, shed
+    # load or raise caps" line; 95% is "the next burst trips the inverter".
+    "ups_load_warning_percent": "85",
+    "ups_load_critical_percent": "95",
+    # Battery floor for the UpsLowBattery page, gated on actually being ON
+    # battery (discharging). Fires well above the driver's own shutdown
+    # floor (battery.charge.low, 30% on the operator rig) so the page lands
+    # while there is still runtime to act in — NUT's LB/forced-shutdown line
+    # is the point of no return, not a useful warning.
+    "ups_battery_charge_critical_percent": "50",
 }
 
 
@@ -544,6 +577,201 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "2026-07-23. Shed load NOW (pause GPU jobs — draw and sag are "
             "coupled when the circuit is the problem) and stop Postgres "
             "cleanly if you can, so the crash doesn't land mid-write."
+        ),
+    },
+    # --- UPS via NUT (Glad-Labs/poindexter#958) ---
+    # All six rules read network_ups_tools_* from the profile-gated
+    # nut-exporter (job="nut", host networking → the host's upsd). The
+    # exporter is independent of worker deploys, but unlike the Shelly rules
+    # above these DO wrap reads in last_over_time[10m]: the highest-stakes
+    # firing window is a power outage, exactly when containers get restarted
+    # (host reboot on power-loss recovery, operator load-shedding), and a
+    # single missed scrape on a raw read would resolve-then-refire a live
+    # `send_resolved` page — a false all-clear mid-outage. last (never max):
+    # power-restored / load-shed / recharged truths must propagate with the
+    # first fresh sample.
+    "UpsOnBattery": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # OB is the transfer-relay truth from the UPS itself. `for: 1m` skips
+        # the sub-minute sag transfers a line-interactive UPS exists to absorb
+        # (the operator rig logged several during 2026-07 brownouts) while
+        # paging ~90s into a real outage — early enough to act well before
+        # NUT's own low-battery forced shutdown.
+        "expr": (
+            'last_over_time(network_ups_tools_ups_status{flag="OB"}[10m]) == 1'
+        ),
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "UPS {{ $labels.ups }} is ON BATTERY — utility power lost",
+        "description": (
+            "The UPS transferred to battery over a minute ago and has not "
+            "returned to line power. The host is running on inverter runtime "
+            "now (see the UPS row on the Hardware & Power board for charge "
+            "and estimated minutes left). NUT will force a clean shutdown at "
+            "its configured floor; before that: shed GPU load (pause "
+            "image/video jobs) to stretch runtime, and finish anything "
+            "mid-write. If other gear shares the battery bank, remember the "
+            "inverter rating is shared — the 2026-07-31 trip was an overload "
+            "DURING a transfer, not a dead battery."
+        ),
+    },
+    "UpsLowBattery": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # Gated on OB (`and on(ups)` — only the status series carries the
+        # flag label) so a normal post-outage recharge, which sits below any
+        # sane floor for a while ON LINE, never pages. Fires only while
+        # actually discharging. Threshold sits above the driver's own
+        # battery.charge.low so the page precedes NUT's forced shutdown.
+        "expr": (
+            "last_over_time(network_ups_tools_battery_charge[10m])"
+            " < {threshold.ups_battery_charge_critical_percent}"
+            "\nand on(ups) "
+            'last_over_time(network_ups_tools_ups_status{flag="OB"}[10m]) == 1'
+        ),
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "UPS {{ $labels.ups }} battery below {{ $value | humanize }}% while discharging",
+        "description": (
+            "Still on battery AND the charge has fallen under "
+            "prometheus.threshold.ups_battery_charge_critical_percent "
+            "(default 50%). NUT's forced shutdown fires at its own lower "
+            "floor (battery.charge.low / battery.runtime.low — drawn on the "
+            "Hardware & Power UPS panels), so this is the last comfortable "
+            "window to act: stop Postgres-heavy work, let the pipeline "
+            "drain, and if the outage looks long, shut down non-essential "
+            "gear sharing the battery bank."
+        ),
+    },
+    "UpsCommsLost": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # Count-vs-expected (the GpuCountBelowExpected pattern) rather than
+        # absent(): count() yields NO sample when the series family vanishes,
+        # so `or vector(0)` supplies the zero — and the "0" default renders
+        # the comparison `< 0`, which never matches, keeping UPS-less hosts
+        # silent. Deliberately a RAW read (no last_over_time): absence IS the
+        # signal here, and bridging would delay it; `for: 10m` rides out
+        # exporter restarts/recreates instead (the GpuCountBelowExpected
+        # rationale — don't page about the remedy).
+        "expr": (
+            '(count(network_ups_tools_ups_status{flag="OB"}) or vector(0))'
+            " < {threshold.expected_ups_count}"
+        ),
+        "for": "10m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "UPS telemetry gone — fewer UPSes visible than expected",
+        "description": (
+            "network_ups_tools_ups_status has reported fewer UPSes than "
+            "prometheus.threshold.expected_ups_count for 10m. Every UPS "
+            "alert (on-battery, low-battery, overload) is blind until this "
+            "recovers — and outages are exactly when it must not be. Check "
+            "in order: `docker ps | grep nut-exporter` (is the `ups` compose "
+            "profile active?), `upsc <name>@localhost` on the host (upsd / "
+            "driver health), `systemctl status nut-server "
+            "nut-driver@<name>`, and the USB data cable to the UPS — a "
+            "power-strip-only connection powers the load fine while "
+            "reporting nothing."
+        ),
+    },
+    "UpsInputVoltageLow": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # Chronic-undervoltage ADVISORY from the UPS's own input tap —
+        # complements the Shelly-based MainsVoltage* pair with a second,
+        # independent meter that keeps reading even if the plug meter moves
+        # or dies. The `> 0` guard keeps outages out of it: on battery the
+        # UPS reports input.voltage 0, which is UpsOnBattery's story, not a
+        # sag. for: 30m because the condition worth an advisory is the
+        # multi-hour afternoon sag (the operator house ran 93-114V for DAYS
+        # against a 120V nominal, 2026-07), not a passing dip — and 30m
+        # requires the last_over_time bridge per the restart-gap ratchet.
+        "expr": (
+            "last_over_time(network_ups_tools_input_voltage[10m]) > 0"
+            "\nand last_over_time(network_ups_tools_input_voltage[10m])"
+            " < {threshold.ups_input_voltage_low_volts}"
+        ),
+        "for": "30m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "UPS input voltage chronically low ({{ $value | humanize }}V)",
+        "description": (
+            "The UPS has measured its input under "
+            "prometheus.threshold.ups_input_voltage_low_volts for 30+ "
+            "minutes — chronic supply undervoltage, the precursor condition "
+            "to sag-transfers and brownout crashes. The AVR is absorbing it "
+            "for now (compare input vs output voltage on the Hardware & "
+            "Power UPS row; BOOST in the status timeline = the relay doing "
+            "work). Log the reading for the utility complaint, and expect "
+            "transfer events if it deepens. On a 120V service, 114V is the "
+            "ANSI C84.1 Range A lower bound — below it the utility is out "
+            "of spec, not you."
+        ),
+    },
+    # The two load bands are DISJOINT (warning is ceilinged at the critical
+    # threshold) for the same Alertmanager-inhibit reason as MainsVoltage*
+    # above: one overload episode should page once, escalating warning →
+    # critical as it deepens, never both at once.
+    "UpsLoadHigh": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "last_over_time(network_ups_tools_ups_load[10m])"
+            " >= {threshold.ups_load_warning_percent}"
+            "\nand last_over_time(network_ups_tools_ups_load[10m])"
+            " < {threshold.ups_load_critical_percent}"
+        ),
+        # 5m: a GPU render burst legitimately visits the 80s for a few
+        # minutes; a SUSTAINED sit in the band means the standing load has
+        # grown into the inverter's margin.
+        "for": "5m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "UPS load {{ $value | humanize }}% of inverter rating for 5m",
+        "description": (
+            "Sustained load between "
+            "prometheus.threshold.ups_load_warning_percent (default 85%) and "
+            "the critical band. The margin that absorbs GPU bursts during a "
+            "transfer is nearly spent — the 2026-07-31 trip happened at "
+            "~106% DURING a sag transfer. Move non-essential gear off the "
+            "battery-backed outlets to the surge-only bank, or cap GPU power "
+            "draw (`nvidia-smi -pl`). The watts behind the percent are on "
+            "the Hardware & Power UPS row (load × the unit's rated W)."
+        ),
+    },
+    "UpsLoadCritical": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "last_over_time(network_ups_tools_ups_load[10m])"
+            " >= {threshold.ups_load_critical_percent}"
+        ),
+        # 1m: at ≥95% of rating the next burst or transfer trips the
+        # inverter — the 30m patience of the advisory tier would be 30m
+        # too long (the MainsVoltageCritical asymmetry).
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "UPS load {{ $value | humanize }}% — inverter trip imminent",
+        "description": (
+            "Load has held at or above "
+            "prometheus.threshold.ups_load_critical_percent (default 95%) of "
+            "the inverter rating for a minute. If the line sags NOW, the "
+            "transfer lands on an overloaded inverter and output drops — "
+            "that is precisely the 2026-07-31 outage (910W PC burst + ~150W "
+            "shared gear on a 1000W unit). Shed load immediately: pause GPU "
+            "jobs, and get anything non-essential off the battery-backed "
+            "outlets."
         ),
     },
     # Host disk space. Previously static in infrastructure.yml — moved here so

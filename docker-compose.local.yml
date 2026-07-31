@@ -1873,6 +1873,51 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # UPS Metrics Exporter — NUT to Prometheus (Glad-Labs/poindexter#958)
+  # ===========================================
+  nut-exporter:
+    # Profile-gated OFF by default, same posture as gpu-exporter above: only a
+    # host with a NUT-managed UPS (Network UPS Tools — `upsc <name>@localhost`
+    # answers) should run this. Enable by adding "ups" to compose_profiles in
+    # ~/.poindexter/bootstrap.toml (start-stack.sh exports it as
+    # COMPOSE_PROFILES), or one-off:
+    #   docker compose -f docker-compose.local.yml --profile ups up -d nut-exporter
+    profiles: ["ups"]
+    image: ghcr.io/druggeri/nut_exporter:3.3.0
+    container_name: poindexter-nut-exporter
+    restart: unless-stopped
+    # Host networking, NOT the compose bridge: upsd binds 127.0.0.1:3493 on
+    # the HOST (NUT's shipped default), so a bridged container could only
+    # reach it if upsd were re-bound to 0.0.0.0 — a host security posture
+    # change this stack must not require. In the host namespace the exporter's
+    # default NUT target (127.0.0.1:3493) is already correct, and its own
+    # listener occupies HOST port 9199 (no `ports:` mapping exists for
+    # ports_lint to see — documented prose-side in docs/operations/ports.md).
+    # Prometheus reaches it the way it reaches node_exporter:
+    # host.docker.internal:9199 (job "nut" in prometheus.yml). upsd grants
+    # anonymous read of UPS variables (auth is only for commands/upsmon), so
+    # no credentials ride along.
+    network_mode: host
+    environment:
+      # Which NUT variables become network_ups_tools_* gauges. The exporter's
+      # default list PLUS: output.voltage (the AVR-corrected voltage the PC
+      # actually sees — diverges from input.voltage exactly when the UPS is
+      # boosting/trimming), ups.realpower.nominal (the inverter's W rating,
+      # so panels can turn load-% into watts against the real ceiling),
+      # battery.charge.low / battery.runtime.low (the driver's own LB /
+      # shutdown floors, overlaid on the dashboard so retuning NUT retunes
+      # the panels), and battery.charge.warning. Variables a given UPS
+      # doesn't expose are skipped without error. ups.status is parsed into
+      # per-flag 0/1 series (flag="OB"|"OL"|"LB"|"OVER"|"BOOST"|...) — the
+      # seam the Ups* alert rules and the status-timeline panel read.
+      NUT_EXPORTER_VARIABLES: "battery.charge,battery.charge.low,battery.charge.warning,battery.runtime,battery.runtime.low,battery.voltage,battery.voltage.nominal,input.voltage,input.voltage.nominal,output.voltage,ups.load,ups.realpower.nominal,ups.status"
+    # No healthcheck: the image is a scratch-built Go binary with no shell or
+    # HTTP client to self-probe (same constraint as promtail — see its
+    # comment). Liveness is Prometheus-side instead: UpsCommsLost (DB-rendered,
+    # prometheus_rule_builder.py) fires when the network_ups_tools_ups_status
+    # series disappears for 10m on a host that declared an expected UPS count.
+
+  # ===========================================
   # Always-on voice agents (Glad-Labs/poindexter#383)
   # ===========================================
   # Two containers, one image (scripts/Dockerfile.voice-agent), each

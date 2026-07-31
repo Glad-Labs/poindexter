@@ -21,7 +21,7 @@
   "tags": ["hardware", "gpu", "power", "infra"],
   "title": "Hardware & Power",
   "uid": "hardware-power",
-  "version": 4,
+  "version": 5,
   "panels": [
     {
       "type": "row",
@@ -1017,6 +1017,1085 @@
       ]
     },
     {
+      "id": 73,
+      "type": "row",
+      "title": "UPS — line power & battery (NUT)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 74,
+      "type": "stat",
+      "title": "UPS status",
+      "description": "ON BATTERY = the transfer relay has left line power (ups.status flag OB from the host's upsd via the nut-exporter container). Text + color together by design (colorblind-safe). Mirrors the UpsOnBattery page (critical → Telegram after 1m on battery). An off/bypassed UPS also reads ON LINE here — the status-flag timeline at the bottom of this row carries the full truth.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "ON LINE",
+                  "color": "blue",
+                  "index": 0
+                },
+                "1": {
+                  "text": "ON BATTERY",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_ups_status{flag=\"OB\"}",
+          "legendFormat": "{{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 75,
+      "type": "stat",
+      "title": "Battery charge",
+      "description": "battery.charge from the UPS. The driver forces a clean shutdown at its own floor (battery.charge.low — overlaid live on the charge history panel below), and UpsLowBattery pages at prometheus.threshold.ups_battery_charge_critical_percent (default 50%) — but only while actually discharging, so a post-outage recharge never pages.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "blue",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_charge",
+          "legendFormat": "{{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 76,
+      "type": "stat",
+      "title": "Runtime remaining",
+      "description": "battery.runtime — the UPS's own runtime estimate at the CURRENT load. It recalculates as load changes (a GPU burst can halve it between scrapes) and CyberPower firmware clamps it near the shutdown floor, so read it as an order of magnitude, not a promise. NUT forces the clean shutdown at battery.runtime.low.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 300
+              },
+              {
+                "color": "blue",
+                "value": 600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_runtime",
+          "legendFormat": "{{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 77,
+      "type": "stat",
+      "title": "UPS load",
+      "description": "ups.load as percent of the inverter's own rating (ups.realpower.nominal — 1000W on the operator unit). UpsLoadHigh warns on a sustained 85-95% band; UpsLoadCritical pages at ≥95% — calibrated on the 2026-07-31 overload trip at ~106% during a sag transfer. Tune via prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 110,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "orange",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_ups_load",
+          "legendFormat": "{{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 78,
+      "type": "stat",
+      "title": "Est. draw on UPS",
+      "description": "load% × the unit's rated watts (network_ups_tools_ups_realpower_nominal) = estimated true draw on the battery-backed outlets. This is the number to hold against the inverter rating when deciding what lives on the protected bank vs the surge-only bank — the 2026-07-31 trip was ~1060W against a 1000W rating.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 47
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 850
+              },
+              {
+                "color": "orange",
+                "value": 950
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_ups_load * network_ups_tools_ups_realpower_nominal / 100",
+          "legendFormat": "{{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "type": "timeseries",
+      "title": "UPS input vs output voltage",
+      "description": "What the UPS measures at its input (orange) vs what it delivers to the PC (blue, output.voltage) — the lines separate exactly when the AVR is correcting (BOOST/TRIM lanes in the timeline below). Y pinned to 90-130V for a 120V service so chronic sag is visible at a glance; the dashed 114V line mirrors UpsInputVoltageLow (prometheus.threshold.ups_input_voltage_low_volts — 114V = ANSI C84.1 Range A lower bound; retune both together). The operator house ran 93-114V for days in 2026-07. Independent second meter alongside the Shelly's Mains Voltage panel above (MainsVoltage* alerts) — two taps on the same story.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt",
+          "min": 90,
+          "max": 130,
+          "custom": {
+            "axisLabel": "Volts",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 114
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "min"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_input_voltage",
+          "legendFormat": "input {{ups}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_output_voltage",
+          "legendFormat": "output (AVR) {{ups}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_input_voltage_nominal",
+          "legendFormat": "nominal"
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "type": "timeseries",
+      "title": "UPS load (% of inverter rating)",
+      "description": "ups.load history. Dashed lines mirror the UpsLoadHigh / UpsLoadCritical bands (prometheus.threshold.ups_load_warning_percent / ups_load_critical_percent, default 85/95%); y tops at 110% because overload excursions read past 100 (OVER lane in the timeline below). The 2026-07-31 trip: a 910W PC burst plus ~150W of shared gear on a 1000W unit, during a sag transfer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 110,
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisLabel": "% of rating",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "orange",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_ups_load",
+          "legendFormat": "load {{ups}}"
+        }
+      ]
+    },
+    {
+      "id": 81,
+      "type": "timeseries",
+      "title": "Battery charge",
+      "description": "battery.charge with the driver's OWN floors overlaid live: battery.charge.low is the forced-clean-shutdown line (30% on the operator rig — set via override.* in /etc/nut/ups.conf; retune NUT and this line moves with it), battery.charge.warning the firmware's warning level. The dashed 50% threshold mirrors the UpsLowBattery page floor (prometheus.threshold.ups_battery_charge_critical_percent), which only fires while discharging.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 59
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "axisLabel": "",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "min"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_charge",
+          "legendFormat": "charge {{ups}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_charge_low",
+          "legendFormat": "shutdown floor (driver)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_charge_warning",
+          "legendFormat": "warning (driver)"
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "type": "timeseries",
+      "title": "Battery runtime remaining",
+      "description": "battery.runtime with battery.runtime.low overlaid — NUT orders the clean shutdown when runtime crosses that floor (300s on the operator rig). The estimate recalculates with load, so expect step changes when GPU work starts or stops; a runtime that steps DOWN while on battery is the pack telling you the truth early.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 59
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "axisLabel": "",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "min"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_runtime",
+          "legendFormat": "runtime {{ups}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_runtime_low",
+          "legendFormat": "shutdown floor (driver)"
+        }
+      ]
+    },
+    {
+      "id": 83,
+      "type": "timeseries",
+      "title": "Battery voltage",
+      "description": "battery.voltage vs nominal — pack health at a glance. A float voltage parked well above nominal is healthy (27.2V on a 24V PbAcid pack); a reading sagging toward nominal AT REST is an aging pack that will under-deliver runtime when it finally matters. Always-on UPS packs typically want replacing every 3-5 years.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 59
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt",
+          "custom": {
+            "axisLabel": "",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "min"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_voltage",
+          "legendFormat": "battery {{ups}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_battery_voltage_nominal",
+          "legendFormat": "nominal"
+        }
+      ]
+    },
+    {
+      "id": 84,
+      "type": "state-timeline",
+      "title": "UPS status flags",
+      "description": "ups.status decomposed into one lane per flag, lit only while active. OB = on battery, LB = low battery, OVER = overload (the 2026-07-31 trip signature), BOOST/TRIM = the AVR actively correcting under-/over-voltage (the audible relay clicks during sags — these lanes lighting up is the supply degrading BEFORE any transfer), CHRG/DISCHRG = battery direction, FSD = forced shutdown ordered, BYPASS = power flowing unprotected. Reconstructs an incident after the fact: sag → BOOST → OB → OVER reads left to right.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 67
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 70,
+            "lineWidth": 0
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "—",
+                  "color": "transparent",
+                  "index": 0
+                },
+                "1": {
+                  "text": "active",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CHRG"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—",
+                        "color": "transparent",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "charging",
+                        "color": "blue",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "BOOST"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—",
+                        "color": "transparent",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "AVR boost",
+                        "color": "yellow",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TRIM"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "—",
+                        "color": "transparent",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "AVR trim",
+                        "color": "yellow",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showValue": "never",
+        "rowHeight": 0.8,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_ups_status{flag=~\"OB|LB|OVER|BOOST|TRIM|CHRG|DISCHRG|FSD|BYPASS\"}",
+          "legendFormat": "{{flag}}"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "GPU — history (Postgres)",
       "collapsed": false,
@@ -1024,7 +2103,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 73
       },
       "panels": [],
       "id": 13
@@ -1041,7 +2120,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 74
       },
       "fieldConfig": {
         "defaults": {
@@ -1081,7 +2160,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 83
       },
       "fieldConfig": {
         "defaults": {
@@ -1118,7 +2197,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 92
       }
     },
     {
@@ -1134,7 +2213,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 93
       },
       "targets": [
         {
@@ -1167,7 +2246,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 66
+        "y": 93
       },
       "targets": [
         {
@@ -1200,7 +2279,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 101
       },
       "targets": [
         {
@@ -1233,7 +2312,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 109
       },
       "targets": [
         {
@@ -1261,7 +2340,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 90
+        "y": 117
       },
       "panels": [],
       "id": 59
@@ -1279,7 +2358,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 91
+        "y": 118
       },
       "fieldConfig": {
         "defaults": {
@@ -1341,7 +2420,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 91
+        "y": 118
       },
       "fieldConfig": {
         "defaults": {
@@ -1403,7 +2482,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 91
+        "y": 118
       },
       "fieldConfig": {
         "defaults": {
@@ -1465,7 +2544,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1532,7 +2611,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1596,7 +2675,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 130
       },
       "panels": []
     },
@@ -1613,7 +2692,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 131
       },
       "fieldConfig": {
         "defaults": {
@@ -1678,7 +2757,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 112
+        "y": 139
       },
       "id": 69,
       "panels": [],
@@ -1721,7 +2800,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 113
+        "y": 140
       },
       "id": 70,
       "options": {
@@ -1778,7 +2857,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 113
+        "y": 140
       },
       "id": 71,
       "options": {

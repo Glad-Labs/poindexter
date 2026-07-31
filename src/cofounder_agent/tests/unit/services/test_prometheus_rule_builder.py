@@ -482,6 +482,157 @@ class TestMainsUndervoltage:
 
 
 # ---------------------------------------------------------------------------
+# UPS via NUT — Glad-Labs/poindexter#958
+# ---------------------------------------------------------------------------
+
+
+_UPS_RULES = (
+    "UpsOnBattery",
+    "UpsLowBattery",
+    "UpsCommsLost",
+    "UpsInputVoltageLow",
+    "UpsLoadHigh",
+    "UpsLoadCritical",
+)
+
+
+class TestUpsRules:
+    """UPS alerting on the ``network_ups_tools_*`` series (NUT nut-exporter,
+    job="nut").
+
+    Anchored on the 2026-07-31 operator incident: a 1000W-rated line-
+    interactive UPS transferred to battery during a sag while carrying ~1060W
+    (910W GPU burst + ~150W of shared gear) and overload-tripped its output —
+    the fourth utility power cut in five days on a house line that never
+    exceeded 114.6V against a 120V nominal.
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        for name in _UPS_RULES:
+            assert name in rb.DEFAULT_RULES, name
+        assert rb.DEFAULT_THRESHOLDS["ups_load_warning_percent"] == "85"
+        assert rb.DEFAULT_THRESHOLDS["ups_load_critical_percent"] == "95"
+        assert rb.DEFAULT_THRESHOLDS["ups_battery_charge_critical_percent"] == "50"
+
+    def test_hardware_specific_keys_ship_inert(self):
+        """A host with no UPS must never page: expected-count ships "0" (the
+        ``expected_gpu_count`` precedent) and the undervoltage line ships "0"
+        because mains nominal is regional (the ``psu_nominal_line_voltage_
+        volts`` precedent). The load/battery rules need no such guard — they
+        read series that simply don't exist without a UPS."""
+        assert rb.DEFAULT_THRESHOLDS["expected_ups_count"] == "0"
+        assert rb.DEFAULT_THRESHOLDS["ups_input_voltage_low_volts"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_default_render_is_inert_for_ups_less_hosts(self):
+        """End-to-end: with shipped defaults, UpsCommsLost renders ``< 0``
+        (count() can never be negative) and UpsInputVoltageLow renders
+        ``< 0`` (no voltage sample matches)."""
+        out = await rb.build_current(_FakePool([]))
+        comms = out.split("alert: UpsCommsLost")[1].split("alert:", 1)[0]
+        assert "{threshold." not in comms
+        assert "< 0" in comms
+        volt = out.split("alert: UpsInputVoltageLow")[1].split("alert:", 1)[0]
+        assert "{threshold." not in volt
+        assert "< 0" in volt
+
+    @pytest.mark.asyncio
+    async def test_operator_render_arms_the_gated_rules(self):
+        """One key each arms them: expected_ups_count=1, input floor=114 (the
+        ANSI C84.1 Range A lower bound on a 120V service, and the ceiling the
+        operator house never exceeded across 9 metered days)."""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.expected_ups_count", "value": "1"},
+            {"key": "prometheus.threshold.ups_input_voltage_low_volts",
+             "value": "114"},
+        ])
+        out = await rb.build_current(pool)
+        comms = out.split("alert: UpsCommsLost")[1].split("alert:", 1)[0]
+        assert "or vector(0)) < 1" in comms
+        volt = out.split("alert: UpsInputVoltageLow")[1].split("alert:", 1)[0]
+        assert "< 114" in volt
+
+    def test_comms_lost_counts_against_absence(self):
+        """count() yields NO sample when the series family vanishes — the
+        ``or vector(0)`` is what turns total absence into a firing zero
+        instead of a silent empty result."""
+        expr = rb.DEFAULT_RULES["UpsCommsLost"]["expr"]
+        assert "count(" in expr
+        assert "or vector(0)" in expr
+        # Absence IS the signal: bridging would delay it. for: 10m rides out
+        # exporter recreates instead (the GpuCountBelowExpected rationale).
+        assert "_over_time" not in expr
+        assert rb.DEFAULT_RULES["UpsCommsLost"]["for"] == "10m"
+
+    def test_low_battery_only_fires_while_discharging(self):
+        """A post-outage recharge sits below any sane floor for a while ON
+        LINE — the OB gate is what keeps that from paging. ``on(ups)`` because
+        only the status series carries the ``flag`` label."""
+        expr = rb.DEFAULT_RULES["UpsLowBattery"]["expr"]
+        assert 'flag="OB"' in expr
+        assert "and on(ups)" in expr
+
+    def test_undervoltage_advisory_ignores_outages(self):
+        """On battery the UPS reports input.voltage 0 — that is UpsOnBattery's
+        story, and without the ``> 0`` guard every outage would drag the
+        advisory in with it."""
+        expr = rb.DEFAULT_RULES["UpsInputVoltageLow"]["expr"]
+        assert "> 0" in expr
+
+    def test_load_bands_are_disjoint_so_one_overload_pages_once(self):
+        """Same inhibit-rule reasoning as MainsVoltage*: warning covers
+        [85, 95), critical [95, ∞) — escalation, never a double page."""
+        warn = rb.DEFAULT_RULES["UpsLoadHigh"]["expr"]
+        assert ">= {threshold.ups_load_warning_percent}" in warn
+        assert "< {threshold.ups_load_critical_percent}" in warn
+        crit = rb.DEFAULT_RULES["UpsLoadCritical"]["expr"]
+        assert ">= {threshold.ups_load_critical_percent}" in crit
+        assert "ups_load_warning_percent" not in crit
+
+    def test_severities_route_correctly(self):
+        """Critical → Telegram (act now), warning → Discord (advisory) per
+        the brain dispatcher's severity matrix. On-battery, low-battery,
+        comms-lost and load-critical are all page-worthy; chronic
+        undervoltage and the load warning band are watch-items."""
+        expected = {
+            "UpsOnBattery": "critical",
+            "UpsLowBattery": "critical",
+            "UpsCommsLost": "critical",
+            "UpsInputVoltageLow": "warning",
+            "UpsLoadHigh": "warning",
+            "UpsLoadCritical": "critical",
+        }
+        for name, severity in expected.items():
+            assert rb.DEFAULT_RULES[name]["severity"] == severity, name
+
+    def test_incident_rules_bridge_scrape_holes_with_last_not_max(self):
+        """Unlike the raw-read Shelly rules (independent exporter, long
+        ``for:``), the short-``for:`` UPS rules bridge with last_over_time:
+        their firing window IS the outage, exactly when containers restart,
+        and a one-scrape hole on a raw read would send a false "resolved"
+        mid-incident. ``last`` so recovery propagates with the first fresh
+        sample; ``max`` would hold OB=1 for the whole lookback after power
+        returned."""
+        for name in ("UpsOnBattery", "UpsLowBattery", "UpsInputVoltageLow",
+                     "UpsLoadHigh", "UpsLoadCritical"):
+            expr = rb.DEFAULT_RULES[name]["expr"]
+            assert "last_over_time(" in expr, name
+            assert "max_over_time" not in expr, name
+
+    def test_pending_windows_are_asymmetric_by_design(self):
+        """1m to page on a real transfer (sub-minute sag transfers are the
+        UPS doing its job); 5m before the load warning (GPU bursts visit the
+        80s legitimately); 1m at ≥95% where the next burst trips the
+        inverter; 30m for the chronic-undervoltage advisory (the condition
+        worth flagging runs for hours)."""
+        assert rb.DEFAULT_RULES["UpsOnBattery"]["for"] == "1m"
+        assert rb.DEFAULT_RULES["UpsLowBattery"]["for"] == "1m"
+        assert rb.DEFAULT_RULES["UpsLoadHigh"]["for"] == "5m"
+        assert rb.DEFAULT_RULES["UpsLoadCritical"]["for"] == "1m"
+        assert rb.DEFAULT_RULES["UpsInputVoltageLow"]["for"] == "30m"
+
+
+# ---------------------------------------------------------------------------
 # load_thresholds / load_rules
 # ---------------------------------------------------------------------------
 

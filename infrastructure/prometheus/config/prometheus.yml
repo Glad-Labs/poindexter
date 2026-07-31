@@ -78,6 +78,36 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:9100"]
 
+  # UPS metrics (network_ups_tools_*) — DRuggeri/nut_exporter, the
+  # profile-gated `nut-exporter` compose service (--profile ups,
+  # Glad-Labs/poindexter#958). The exporter runs with host networking so it
+  # can reach the host's upsd on 127.0.0.1:3493 (NUT's shipped bind), which
+  # means Prometheus reaches IT the way it reaches node_exporter: via the
+  # host gateway. Targets are UPS NAMES on that upsd (`upsc -l localhost`),
+  # relabeled into the exporter's ?ups= query param and a `ups` label per its
+  # documented multi-UPS pattern; the real scrape address is swapped in last.
+  # metrics_path /ups_metrics carries the UPS variables (the exporter's
+  # /metrics is only its own Go runtime — not scraped); the keep-list drops
+  # the promhttp_* handler noise that rides along. A host that never enables
+  # the profile just reports this job down — the DB-rendered Ups* alert rules
+  # ship inert (prometheus.threshold.expected_ups_count = "0"), so the dead
+  # target pages nobody.
+  - job_name: nut
+    metrics_path: /ups_metrics
+    static_configs:
+      - targets: ["cyberpower"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_ups
+      - source_labels: [__param_ups]
+        target_label: ups
+      - target_label: __address__
+        replacement: host.docker.internal:9199
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "network_ups_tools_.*"
+        action: keep
+
   # Uptime Kuma — HTTP / TCP monitor response times & up/down status.
   # Auth via API key (password-only basic auth). The key lives in the
   # `uptime_kuma_api_key` row of `app_settings` (is_secret=true). Brain
