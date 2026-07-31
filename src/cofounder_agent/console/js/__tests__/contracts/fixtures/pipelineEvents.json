@@ -1,5 +1,527 @@
 {
-  "count": 0,
-  "events": [],
-  "server_time": "2026-07-27T11:14:16.113315+00:00"
+  "count": 22,
+  "events": [
+    {
+      "id": 248907,
+      "timestamp": "2026-07-31T19:14:43.582100+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 248903,
+      "timestamp": "2026-07-31T19:13:05.881701+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 0
+      }
+    },
+    {
+      "id": 248888,
+      "timestamp": "2026-07-31T19:10:23.744636+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
+      "severity": "info",
+      "details": {
+        "topic": "Discovering Cryptographic Weaknesses with Claude",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 248882,
+      "timestamp": "2026-07-31T19:09:33.699746+00:00",
+      "event_type": "template_completed",
+      "source": "content_router",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "info",
+      "details": {
+        "ok": true,
+        "records": [
+          "stage.verify_task",
+          "atoms.narrate_bundle",
+          "stage.source_featured_image",
+          "stage.finalize_task"
+        ],
+        "template": "dev_diary",
+        "halted_at": null
+      }
+    },
+    {
+      "id": 248881,
+      "timestamp": "2026-07-31T19:09:33.358584+00:00",
+      "event_type": "auto_publish_gate",
+      "source": "finalize_task",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "info",
+      "details": {
+        "reason": "quality_score 70.0 >= 69.0, 3/3 trailing clean runs",
+        "dry_run": false,
+        "threshold": 69,
+        "gate_state": "pass",
+        "would_fire": true,
+        "quality_score": 70,
+        "required_clean_runs": 3,
+        "trailing_clean_runs": 3
+      }
+    },
+    {
+      "id": 248880,
+      "timestamp": "2026-07-31T19:09:30.151878+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "warning",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": false,
+        "attempts": 3,
+        "threshold": 6,
+        "text_chars": 48,
+        "attempt_scores": [
+          73,
+          74,
+          48
+        ]
+      }
+    },
+    {
+      "id": 248875,
+      "timestamp": "2026-07-31T19:06:21.861782+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "info",
+      "details": {
+        "style": "flat vector illustration",
+        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)"
+      }
+    },
+    {
+      "id": 248873,
+      "timestamp": "2026-07-31T19:05:40.406576+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "info",
+      "details": {
+        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)",
+        "template_slug": "dev_diary"
+      }
+    },
+    {
+      "id": 248784,
+      "timestamp": "2026-07-31T18:45:15.383261+00:00",
+      "event_type": "qa_pass_completed",
+      "source": "qa.aggregate",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "warning",
+      "details": {
+        "rescued": true,
+        "reviews": [
+          {
+            "score": 80,
+            "advisory": false,
+            "approved": true,
+            "provider": "programmatic",
+            "reviewer": "programmatic_validator",
+            "feedback_preview": "clean (no fabrication); 4 warning(s)"
+          },
+          {
+            "score": 85,
+            "advisory": false,
+            "approved": true,
+            "provider": "ollama",
+            "reviewer": "ollama_critic",
+            "feedback_preview": "The article demonstrates strong technical accuracy and clear explanation of context window limitations in self-hosted LLMs. It effectively uses concrete examples like 'the model wraps up a technical e"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_brand_fabrication",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
+          },
+          {
+            "score": 90,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_g_eval",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) The Actual Output effectively addresses the Input topic by elaborating on why self-hosted LLMs produce short outputs due to context window limitations. It mai"
+          },
+          {
+            "score": 82,
+            "advisory": true,
+            "approved": true,
+            "provider": "ragas",
+            "reviewer": "ragas_eval",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.73, faithfulness=0.91"
+          },
+          {
+            "score": 65,
+            "advisory": true,
+            "approved": true,
+            "provider": "vision_gate",
+            "reviewer": "image_relevance",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=65, overall=65. [65] v/images/featured/ee9d118c-088a38f2.webp: The image shows a document icon with a folded corner, which could symbolize trun"
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
+            "provider": "http_head",
+            "reviewer": "citation_verifier",
+            "feedback_preview": "All 5 external URL(s) verified alive"
+          },
+          {
+            "score": 92,
+            "advisory": true,
+            "approved": true,
+            "provider": "unlinked_attribution",
+            "reviewer": "unlinked_attribution",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) 1 named source(s) cited without a link or corpus match: Operational"
+          },
+          {
+            "score": 13.3,
+            "advisory": true,
+            "approved": true,
+            "provider": "content_originality_gate",
+            "reviewer": "content_originality",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) content near-duplicate of published post 'why-kv-cache-quantization-matters-for-long-context-ce1f7499' (worst-chunk cosine 0.87 > 0.83)"
+          }
+        ],
+        "approved": false,
+        "terminal": true,
+        "final_score": 88.67,
+        "reviewer_count": 9,
+        "schema_version": 1,
+        "approval_threshold": 80,
+        "qa_rewrite_attempts": 1
+      }
+    },
+    {
+      "id": 248783,
+      "timestamp": "2026-07-31T18:45:15.378073+00:00",
+      "event_type": "qa_flagged_surfaced",
+      "source": "qa.aggregate",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "warning",
+      "details": {
+        "attempts": 1,
+        "threshold": 80,
+        "vetoed_by": [
+          "missing_required:topic_delivery"
+        ],
+        "final_score": 88.67
+      }
+    },
+    {
+      "id": 248647,
+      "timestamp": "2026-07-31T18:14:23.090446+00:00",
+      "event_type": "ragas_score",
+      "source": "ragas_eval",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "score": 0.8203,
+        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
+        "faithfulness": 0.9091,
+        "metric_count": 2,
+        "answer_relevancy": 0.7315,
+        "context_precision": -1
+      }
+    },
+    {
+      "id": 248611,
+      "timestamp": "2026-07-31T18:07:31.441531+00:00",
+      "event_type": "qa_pass_completed",
+      "source": "qa.aggregate",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "rescued": false,
+        "reviews": [
+          {
+            "score": 88,
+            "advisory": true,
+            "approved": false,
+            "provider": "citation_grounding",
+            "reviewer": "citation_grounding",
+            "feedback_preview": "2 named source(s) with no corpus match: Independent coverage of self-hosted deployment friction; Independent coverage of self-hosting a year in"
+          },
+          {
+            "score": 0,
+            "advisory": false,
+            "approved": false,
+            "provider": "programmatic",
+            "reviewer": "programmatic_validator",
+            "feedback_preview": "1 critical issue(s) — first: Fabricated quote detected: '\"do not summarize prematurely.\" Add exclamation'"
+          },
+          {
+            "score": 25,
+            "advisory": false,
+            "approved": false,
+            "provider": "ollama",
+            "reviewer": "ollama_critic",
+            "feedback_preview": "This article contains significant unfinished elements that violate publication standards. The presence of raw HTML image tags (\"<img src=\"...\">\") and truncated sentences like \"KV cache quantization on"
+          },
+          {
+            "score": 0,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_brand_fabrication",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) 1 fabrication(s) detected: fake_quote: fake_quote: '\"do not summarize prematurely.\" Add exclamation'"
+          },
+          {
+            "score": 66.7,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_faithfulness",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) The score is 0.67 because the actual output includes several contradictions: it mentions arithmetic constraints and a shared finite token pool as reasons for "
+          },
+          {
+            "score": 63,
+            "advisory": true,
+            "approved": true,
+            "provider": "ragas",
+            "reviewer": "ragas_eval",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.58, context_precision=0.33, faithfulness=0.98"
+          },
+          {
+            "score": 45,
+            "advisory": true,
+            "approved": true,
+            "provider": "vision_gate",
+            "reviewer": "image_relevance",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) Vision QA avg=45, overall=45. [30] v/images/featured/ee9d118c-088a38f2.webp: Generic document icon doesn't illustrate context window limitation or token budg;"
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
+            "provider": "http_head",
+            "reviewer": "citation_verifier",
+            "feedback_preview": "All 5 external URL(s) verified alive"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "unlinked_attribution",
+            "reviewer": "unlinked_attribution",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
+          },
+          {
+            "score": 97.1,
+            "advisory": true,
+            "approved": true,
+            "provider": "self_consistency_gate",
+            "reviewer": "self_consistency",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.971 across 3 samples (threshold=0.55) PASS"
+          },
+          {
+            "score": 13,
+            "advisory": true,
+            "approved": true,
+            "provider": "content_originality_gate",
+            "reviewer": "content_originality",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) content near-duplicate of published post 'why-kv-cache-quantization-matters-for-long-context-ce1f7499' (worst-chunk cosine 0.87 > 0.83)"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "title_coherence_gate",
+            "reviewer": "title_coherence",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: Why Your Self-Hosted LLM Cuts Answers Short: Understanding the Context Window Bu] The article directly explains why self-hosted LLMs produce short ans"
+          }
+        ],
+        "approved": false,
+        "terminal": false,
+        "final_score": 59.09,
+        "rescue_attempt": 1,
+        "reviewer_count": 12,
+        "schema_version": 1,
+        "rescue_deferred": true,
+        "approval_threshold": 80,
+        "qa_rewrite_attempts": 0
+      }
+    },
+    {
+      "id": 248610,
+      "timestamp": "2026-07-31T18:07:31.440238+00:00",
+      "event_type": "qa_rescue_scheduled",
+      "source": "qa.aggregate",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "attempt": 1,
+        "threshold": 80,
+        "vetoed_by": [
+          "programmatic_validator",
+          "ollama_critic"
+        ],
+        "final_score": 59.09,
+        "max_attempts": 2
+      }
+    },
+    {
+      "id": 248581,
+      "timestamp": "2026-07-31T18:00:07.818958+00:00",
+      "event_type": "ragas_score",
+      "source": "ragas_eval",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "score": 0.6301,
+        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
+        "faithfulness": 0.9783,
+        "metric_count": 3,
+        "answer_relevancy": 0.5787,
+        "context_precision": 0.3333
+      }
+    },
+    {
+      "id": 248547,
+      "timestamp": "2026-07-31T17:53:59.443692+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 248534,
+      "timestamp": "2026-07-31T17:52:23.697301+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "style": "flat vector illustration",
+        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt"
+      }
+    },
+    {
+      "id": 248533,
+      "timestamp": "2026-07-31T17:52:23.148128+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 248532,
+      "timestamp": "2026-07-31T17:52:18.339214+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 248531,
+      "timestamp": "2026-07-31T17:52:13.123911+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 248523,
+      "timestamp": "2026-07-31T17:49:52.696696+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 5
+      }
+    },
+    {
+      "id": 248520,
+      "timestamp": "2026-07-31T17:47:53.584924+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "severity": "info",
+      "details": {
+        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 248426,
+      "timestamp": "2026-07-31T17:26:08.066651+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "severity": "info",
+      "details": {
+        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)",
+        "template_slug": "dev_diary"
+      }
+    }
+  ],
+  "server_time": "2026-07-31T19:14:45.908183+00:00"
 }

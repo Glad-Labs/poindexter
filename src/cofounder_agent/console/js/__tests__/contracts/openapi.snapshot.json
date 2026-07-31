@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AI Content Pipeline (worker)",
-    "version": "0.110.0"
+    "version": "0.114.0"
   },
   "paths": {
     "/api/metrics/costs/budget": {
@@ -354,33 +354,30 @@
             "description": "Setting database ID"
           },
           "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At",
-            "description": "Creation timestamp"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At",
-            "description": "Last update timestamp"
-          },
-          "created_by_id": {
-            "type": "integer",
-            "title": "Created By Id",
-            "description": "User ID who created this setting"
-          },
-          "updated_by_id": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Updated By Id",
-            "description": "User ID who last updated this setting"
+            "title": "Created At",
+            "description": "Creation timestamp"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "Last update timestamp"
           },
           "value_preview": {
             "anyOf": [
@@ -399,10 +396,7 @@
         "required": [
           "key",
           "value",
-          "id",
-          "created_at",
-          "updated_at",
-          "created_by_id"
+          "id"
         ],
         "title": "SettingResponse",
         "description": "Model for returning setting data"
