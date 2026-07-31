@@ -116,6 +116,18 @@ IMAGE_GEN_NEGATIVE_PROMPT = (
 )
 
 
+def _default_render_timeout() -> int:
+    """Declared default for ``image_render_timeout_seconds``.
+
+    Read from ``settings_defaults`` rather than repeated as a literal — this key
+    had drifted to four different values across the codebase, each a fossil of
+    the default on the day its call site was written (2026-07-31).
+    """
+    from services.settings_defaults import default_int
+
+    return default_int("image_render_timeout_seconds")
+
+
 def _get_image_gen_negative_prompt(site_config: Any) -> str:
     """Return operator-configured negative prompt, or the safe default."""
     if site_config is None:
@@ -438,7 +450,11 @@ async def _try_image_gen(
 
         # Step 2: image-gen renders the image
         neg_prompt = _get_image_gen_negative_prompt(site_config)
-        render_timeout = site_config.get_int("image_render_timeout_seconds", 90) if site_config is not None else 90
+        _render_default = _default_render_timeout()
+        render_timeout = (
+            site_config.get_int("image_render_timeout_seconds", _render_default)
+            if site_config is not None else _render_default
+        )
         gpu_model_label = site_config.get("image_generation_model", "image_gen") if site_config is not None else "image_gen"
         async with gpu.lock(
             "image_gen", model=gpu_model_label,
@@ -671,7 +687,9 @@ async def _batch_generate_inline_image_urls(
     # Phase 2: render ALL images under a single image-gen lock           #
     # ------------------------------------------------------------------ #
     image_gen_urls: list[str | None] = []
-    render_timeout = site_config.get_int("image_render_timeout_seconds", 90)
+    render_timeout = site_config.get_int(
+        "image_render_timeout_seconds", _default_render_timeout(),
+    )
     gpu_model_label = site_config.get("image_generation_model", "image_gen")
     attempts = max(1, site_config.get_int("image_gen_render_attempts", 2))
     try:

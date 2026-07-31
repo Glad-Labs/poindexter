@@ -1427,6 +1427,17 @@ DEFAULTS: dict[str, str] = {
     # image_ocr_gate_max_attempts renders, each a few seconds) while still
     # bounding a genuinely hung GPU server. Wired into the featured + inline +
     # video render calls. #image-zimage-and-variety.
+    #
+    # THIS IS THE ONLY PLACE THE NUMBER LIVES (2026-07-31 reconciliation). All
+    # seven read sites take their fallback from `default_int(...)` instead of
+    # repeating a literal. They had drifted to four values — 90 at four sites
+    # (the #1566 default), 240 at three (the #1727 default), 300 declared here
+    # (raised by #2386 when the OCR gate gained up-to-3 attempts), and 240 live
+    # on prod. Prod's copy was not an operator override: it was written the same
+    # day #1727 made 240 the default, then froze, because seeding is
+    # `ON CONFLICT DO NOTHING`. So prod ran a render timeout that predated the
+    # retry loop it had to accommodate. If you change this number, prod does NOT
+    # follow — an existing row must be updated deliberately.
     'image_render_timeout_seconds': '300',
     # LLM params for the image-PROMPT generation step — the small model that
     # writes the image-gen prompt from the topic + chosen style (NOT the image
@@ -3335,3 +3346,33 @@ def keys() -> list[str]:
     DEFAULTS.keys() against the live DB to flag drift).
     """
     return sorted(DEFAULTS.keys())
+
+
+def default_int(key: str) -> int:
+    """The declared default for an int-valued key, for use as a code fallback.
+
+    Pass this to ``site_config.get_int(key, default_int(key))`` instead of
+    repeating a literal. A repeated literal is a snapshot of whatever the
+    default happened to be the day that call site was written, and it goes
+    stale silently — ``image_render_timeout_seconds`` accumulated FOUR values
+    that way (90 at four call sites, 240 at three, 300 declared here, 240 live
+    on prod), each one a fossil of a different month's default.
+
+    Deliberately NOT a blanket rule: a code fallback that differs from the
+    declared default is often correct (a fail-safe ``False``, an ``""``
+    presence-probe, a ``-1`` sentinel), and ~74 keys diverge on purpose. Use
+    this where the call site genuinely means "the normal default", not where it
+    means something else.
+
+    Raises ``KeyError`` with a pointed message when the key isn't declared —
+    that's a rename that lost its default, and it should fail loudly at import
+    of the first call rather than silently supply a zero.
+    """
+    try:
+        raw = DEFAULTS[key]
+    except KeyError:
+        raise KeyError(
+            f"{key!r} has no entry in settings_defaults.DEFAULTS — a call site "
+            "asked for its declared default. Add the key or fix the name."
+        ) from None
+    return int(raw)

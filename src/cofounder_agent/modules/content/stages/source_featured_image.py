@@ -114,12 +114,12 @@ DEFAULT_NEGATIVE = (
 # which the stage exposes to the node wrapper. Reading them anywhere else
 # re-opens the drift.
 #
-# NOTE (known drift, deliberately untouched here): the code fallback for
-# ``image_render_timeout_seconds`` is 90 while ``settings_defaults.py`` declares
-# 300. The fallback only applies when no SiteConfig is threaded (tests /
-# bootstrap), so it does not affect prod; reconciling it is a behaviour change
-# that does not belong in this fix.
-DEFAULT_RENDER_TIMEOUT_SECONDS = 90
+# The render-timeout fallback is READ FROM the declared default rather than
+# repeated as a literal (2026-07-31 reconciliation). A repeated literal is a
+# snapshot of whatever the default was the day the call site was written: this
+# key had drifted to four values (90 here and at three other sites, 240 at
+# three more, 300 declared, 240 live on prod), each a fossil of a different
+# month. ``default_int`` makes that drift impossible by construction.
 DEFAULT_RENDER_ATTEMPTS = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 3.0
 # Headroom for the work that is inside the node timeout but outside the
@@ -130,13 +130,12 @@ DEFAULT_STAGE_OVERHEAD_SECONDS = 120
 
 
 def _render_timeout_seconds(site_config: Any) -> int:
+    from services.settings_defaults import default_int
+
+    fallback = default_int("image_render_timeout_seconds")
     if site_config is None:
-        return DEFAULT_RENDER_TIMEOUT_SECONDS
-    return int(
-        site_config.get_int(
-            "image_render_timeout_seconds", DEFAULT_RENDER_TIMEOUT_SECONDS,
-        )
-    )
+        return fallback
+    return int(site_config.get_int("image_render_timeout_seconds", fallback))
 
 
 def _render_attempts(site_config: Any) -> int:

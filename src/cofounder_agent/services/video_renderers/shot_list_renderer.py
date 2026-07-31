@@ -49,6 +49,7 @@ from typing import Any
 
 from plugins.media_compositor import CompositionRequest, CompositionScene
 from schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
+from services.settings_defaults import default_int
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from utils.findings import emit_finding
 
@@ -1071,9 +1072,10 @@ async def _render_one_shot(
                 error=f"{source} shot missing prompt and query",
             )
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.png")
+        _render_default = default_int("image_render_timeout_seconds")
         render_timeout = (
-            site_config.get_int("image_render_timeout_seconds", 240)
-            if site_config is not None else 240
+            site_config.get_int("image_render_timeout_seconds", _render_default)
+            if site_config is not None else _render_default
         )
         ok = await _render_image_gen_image(
             prompt=image_gen_prompt,
@@ -1113,9 +1115,10 @@ async def _render_one_shot(
         # the Ken-Burns fallback fills the frame.
         hero_w, hero_h, hero_fps = _hero_render_dims(orientation, site_config)
         still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
+        _render_default = default_int("image_render_timeout_seconds")
         render_timeout = (
-            site_config.get_int("image_render_timeout_seconds", 240)
-            if site_config is not None else 240
+            site_config.get_int("image_render_timeout_seconds", _render_default)
+            if site_config is not None else _render_default
         )
         still_ok = await _render_image_gen_image(
             prompt=shot.prompt,

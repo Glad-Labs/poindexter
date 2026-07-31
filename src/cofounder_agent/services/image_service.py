@@ -892,7 +892,12 @@ class ImageService:
         # request never traverses the flaky host-published-port proxy).
         _sc = self._site_config
         image_gen_server_url = _sc.get("image_gen_server_url", "http://image-gen-server:9836")
-        render_timeout = _sc.get_int("image_render_timeout_seconds", 240)
+        from services.settings_defaults import default_int
+
+        render_timeout = _sc.get_int(
+            "image_render_timeout_seconds",
+            default_int("image_render_timeout_seconds"),
+        )
         try:
             import httpx
 

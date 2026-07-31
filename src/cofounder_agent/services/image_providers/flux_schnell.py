@@ -285,10 +285,13 @@ async def _generate_to_path(
     another provider.
     """
     try:
+        from services.settings_defaults import default_int
+
+        _render_default = default_int("image_render_timeout_seconds")
         render_timeout = (
-            site_config.get_int("image_render_timeout_seconds", 90)
+            site_config.get_int("image_render_timeout_seconds", _render_default)
             if site_config is not None
-            else 90
+            else _render_default
         )
         _body = {
             "prompt": prompt,
