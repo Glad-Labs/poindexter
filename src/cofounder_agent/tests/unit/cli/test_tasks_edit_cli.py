@@ -203,3 +203,55 @@ def test_edit_body_editor_mode_no_change_skips_post(runner):
     assert result.exit_code == 0, result.output
     assert "(no changes)" in result.output
     client.post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# help-text accuracy — the image commands used to claim "drafts only", which is
+# wrong for --which featured: PostEditService syncs posts.featured_image_url and
+# rebuilds the static export for published tasks, and no route or service gates
+# on pipeline_tasks.status. Operators read --help to decide whether a command is
+# safe to point at a live post, so these facts are part of the contract.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["replace-image", "regen-image", "remove-image"])
+def test_image_command_help_documents_published_featured_support(runner, command):
+    """--help must say featured reaches published posts, and not claim drafts-only."""
+    result = runner.invoke(tasks_group, [command, "--help"])
+    assert result.exit_code == 0, result.output
+    help_text = result.output.lower()
+    assert "published" in help_text, f"{command} --help hides published-post support"
+    assert "drafts only" not in help_text, (
+        f"{command} --help still claims 'drafts only' — untrue for --which featured"
+    )
+
+
+@pytest.mark.parametrize("command", ["replace-image", "regen-image", "remove-image"])
+def test_image_command_help_documents_isr_and_timeout_caveats(runner, command):
+    """The two ways the published path surprises an operator must be in --help.
+
+    The rebuild does not call trigger_isr_revalidate and posts/[slug] has no
+    time-based revalidate, so the live page serves the old image until the cache
+    tag is busted; and the rebuild can outlast the client timeout after the DB
+    writes have already committed, so a ReadTimeout is a slow success.
+    """
+    result = runner.invoke(tasks_group, [command, "--help"])
+    assert result.exit_code == 0, result.output
+    help_text = result.output.lower()
+    assert "isr" in help_text, f"{command} --help omits the ISR cache caveat"
+    assert "timeout" in help_text, f"{command} --help omits the slow-rebuild timeout caveat"
+
+
+@pytest.mark.parametrize("command", ["edit-body", "add-image"])
+def test_body_command_help_explains_drafts_only_is_unguarded(runner, command):
+    """Body/inline edits really are draft-scoped — but by write target, not by a
+    status check, so --help must say they silently no-op on a published post."""
+    result = runner.invoke(tasks_group, [command, "--help"])
+    assert result.exit_code == 0, result.output
+    help_text = result.output.lower()
+    assert "pipeline_versions.content" in help_text, (
+        f"{command} --help should name the write target that makes it draft-scoped"
+    )
+    assert "published" in help_text, (
+        f"{command} --help should say what happens against a published post"
+    )

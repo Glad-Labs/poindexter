@@ -506,6 +506,10 @@ async def edit_post_body(
     ``new_content`` to overwrite the whole body. The anti-hallucination
     validator re-runs but is advisory — warnings are reported and the edit
     still applies (you are the human approval gate).
+
+    Drafts-only is unguarded, not enforced: this writes
+    pipeline_versions.content while the live site serves posts.content, so on a
+    published post it reports success and changes nothing publicly visible.
     """
     if not new_content and not find:
         return (
@@ -526,9 +530,20 @@ async def edit_post_body(
 
 @mcp.tool()
 async def replace_post_image(task_id: str, which: str, url: str) -> str:
-    """Swap a draft image URL. Drafts only.
+    """Swap an image URL on a draft or a published post.
 
     ``which`` = ``featured`` or ``inline:N`` (1-based — the N-th inline <img>).
+
+    ``featured`` works on PUBLISHED posts too: it updates
+    posts.featured_image_url and triggers a full static-export rebuild.
+    ``inline:N`` is draft-only — it edits pipeline_versions.content, which the
+    live site never serves, so it reports success but changes nothing publicly
+    visible on a published post.
+
+    The published path does NOT bust the Vercel ISR cache, so the live page
+    keeps serving the old image until the ``posts`` / ``post:<slug>`` tag is
+    revalidated separately. The rebuild is slow enough to time out client-side;
+    a timeout means it is still running, not that the edit failed.
     """
     full_id = await _resolve_task_id(task_id)
     result = await _api(
@@ -541,10 +556,17 @@ async def replace_post_image(task_id: str, which: str, url: str) -> str:
 
 @mcp.tool()
 async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
-    """Regenerate a draft image via the image capability and swap it in. Drafts only.
+    """Regenerate an image via the image capability and swap it in.
 
     ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/no-hands +
     on-topic guardrails configured for image generation.
+
+    Hands off to the same path as replace_post_image, so ``featured`` reaches
+    PUBLISHED posts (updates posts.featured_image_url + rebuilds the static
+    export) while ``inline:N`` stays draft-only and no-ops against the live
+    site. The published path does not bust the ISR cache — the page serves the
+    old image until the ``posts`` / ``post:<slug>`` tag is revalidated. Expect
+    slow calls: a client timeout does not mean the edit failed.
     """
     full_id = await _resolve_task_id(task_id)
     result = await _api(
@@ -557,11 +579,17 @@ async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
 
 @mcp.tool()
 async def remove_post_image(task_id: str, which: str) -> str:
-    """Remove a draft image. Drafts only.
+    """Remove an image from a draft or a published post.
 
     ``which`` = ``featured`` or ``inline:N`` (1-based). Removing the featured
     image clears it to none (no auto-promote of an inline image); removing
     an inline image renumbers the rest naturally.
+
+    ``featured`` reaches PUBLISHED posts — it also clears
+    posts.featured_image_url and triggers a static-export rebuild, though it
+    does NOT bust the Vercel ISR cache, so the live page keeps rendering the
+    removed image until the ``posts`` / ``post:<slug>`` tag is revalidated
+    separately. ``inline:N`` is draft-only and no-ops against the live site.
     """
     full_id = await _resolve_task_id(task_id)
     result = await _api("POST", f"/api/tasks/{full_id}/remove-image", {"which": which})
@@ -580,6 +608,11 @@ async def add_post_image(
     existing image) or ``section`` (an H2-H4 heading, fuzzy match) to
     position it. ``prompt`` is optional — without it, the prompt is derived
     from the target section's own heading text.
+
+    Drafts-only is unguarded, not enforced: the new <img> lands in
+    pipeline_versions.content, which the live site never serves, so this no-ops
+    against a published post. There is no add-featured counterpart — use
+    replace_post_image with ``featured``, which does reach published posts.
     """
     if bool(after) == bool(section):
         return "Error: provide exactly one of `after` (inline:N) or `section`."

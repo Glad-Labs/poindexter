@@ -1288,12 +1288,19 @@ async def generate_task_image(
 
 
 # ============================================================================
-# DRAFT EDITING — body + images (poindexter#523)
+# POST EDITING — body + images (poindexter#523)
 # ============================================================================
-# Operator edits to an awaiting_approval draft, backed by the shared
-# modules/content PostEditService. Drafts only (pipeline_versions); editing a
-# published posts.content row is out of scope. The CLI + MCP tools call these
-# routes — this is the single seam.
+# Operator edits backed by the shared modules/content PostEditService. The CLI
+# + MCP tools call these routes — this is the single seam.
+#
+# None of these routes gate on pipeline_tasks.status; scope is decided by WHAT
+# each edit writes. Body edits and inline:N image edits write
+# pipeline_versions.content, and the live site serves posts.content — so they
+# are draft-only in effect, silently no-opping on a published post rather than
+# being rejected. `which=featured` is the exception: PostEditService mirrors it
+# into posts.featured_image_url for published tasks and rebuilds the static
+# export, so it reaches live posts end-to-end. Editing published posts.content
+# remains out of scope.
 
 
 class EditBodyRequest(BaseModel):
@@ -1399,7 +1406,7 @@ async def edit_task_body(
     return _edit_result_json(res)
 
 
-@publishing_router.post("/{task_id}/replace-image", summary="Swap a draft image URL")
+@publishing_router.post("/{task_id}/replace-image", summary="Swap an image URL")
 async def replace_task_image(
     task_id: str,
     body: ReplaceImageRequest,
@@ -1408,7 +1415,14 @@ async def replace_task_image(
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config_dep=Depends(get_site_config_dependency),
 ):
-    """Swap a draft image URL (drafts only). ``which`` = ``featured`` or ``inline:N``."""
+    """Swap an image URL. ``which`` = ``featured`` or ``inline:N``.
+
+    ``featured`` also reaches PUBLISHED posts — it mirrors into
+    posts.featured_image_url and triggers a static-export rebuild (reported via
+    ``warnings``). ``inline:N`` writes pipeline_versions.content only, which the
+    live site never serves, so it is draft-only in effect. Neither busts the ISR
+    cache; callers revalidate the post's cache tag separately.
+    """
     full_id = await _resolve_full_task_id(db_service, task_id)
     svc = _build_edit_service(
         db_service, site_config_dep,
@@ -1421,7 +1435,7 @@ async def replace_task_image(
     return _edit_result_json(res)
 
 
-@publishing_router.post("/{task_id}/regen-image", summary="Regenerate a draft image")
+@publishing_router.post("/{task_id}/regen-image", summary="Regenerate an image")
 async def regen_task_image(
     task_id: str,
     body: RegenImageRequest,
@@ -1430,8 +1444,14 @@ async def regen_task_image(
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config_dep=Depends(get_site_config_dependency),
 ):
-    """Regenerate a draft image via the image capability (drafts only).
-    ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/on-topic guardrails."""
+    """Regenerate an image via the image capability.
+    ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/on-topic guardrails.
+
+    Delegates the swap to ``replace_image``, so ``featured`` reaches PUBLISHED
+    posts (posts.featured_image_url + static-export rebuild) while ``inline:N``
+    is draft-only in effect. Slow by nature — generation plus rebuild — and it
+    does not bust the ISR cache.
+    """
     full_id = await _resolve_full_task_id(db_service, task_id)
     svc = _build_edit_service(
         db_service, site_config_dep, need_image=True,
@@ -1446,7 +1466,7 @@ async def regen_task_image(
     return _edit_result_json(res)
 
 
-@publishing_router.post("/{task_id}/remove-image", summary="Remove a draft image")
+@publishing_router.post("/{task_id}/remove-image", summary="Remove an image")
 async def remove_task_image(
     task_id: str,
     body: RemoveImageRequest,
@@ -1455,9 +1475,14 @@ async def remove_task_image(
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config_dep=Depends(get_site_config_dependency),
 ):
-    """Remove a draft image (drafts only). ``which`` = ``featured`` or ``inline:N``.
+    """Remove an image. ``which`` = ``featured`` or ``inline:N``.
     ``featured`` clears to no-image (no promote-an-inline magic); ``inline:N``
-    strips that ``<img>`` tag — later images renumber naturally."""
+    strips that ``<img>`` tag — later images renumber naturally.
+
+    ``featured`` also reaches PUBLISHED posts (clears posts.featured_image_url
+    + rebuilds the static export, without busting the ISR cache); ``inline:N``
+    writes pipeline_versions.content only and is draft-only in effect.
+    """
     full_id = await _resolve_full_task_id(db_service, task_id)
     svc = _build_edit_service(
         db_service, site_config_dep,

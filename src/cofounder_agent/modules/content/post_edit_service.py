@@ -1,10 +1,19 @@
-"""Operator-grade draft editing — body + images — for awaiting_approval tasks.
+"""Operator-grade post editing — body + images — for awaiting_approval tasks.
 
 Single owner of draft mutations (``pipeline_versions`` + ``audit_log``).
 Reached from the CLI / MCP / API adapters: the API routes construct it from
 ``app.state`` deps and are the real seam; the CLI and MCP tools are OAuth HTTP
-clients of those routes. Drafts only — published ``posts.content`` editing is
-out of scope (poindexter#523).
+clients of those routes.
+
+Scope is decided by WHAT each edit writes — there is no status guard here or on
+the routes. Body edits and ``inline:N`` image edits write
+``pipeline_versions.content``; the live site serves ``posts.content``, so on a
+published task they succeed against the draft store and change nothing publicly
+visible. ``which="featured"`` is the deliberate exception: it mirrors into
+``posts.featured_image_url`` and rebuilds the static export for published tasks
+(see ``_sync_published_post_featured``), making it the one edit that reaches a
+live post. Editing published ``posts.content`` remains out of scope
+(poindexter#523).
 """
 from __future__ import annotations
 
@@ -75,7 +84,8 @@ class EditResult:
 
 
 class PostEditService:
-    """Edit an ``awaiting_approval`` draft's body and images. Drafts only.
+    """Edit a task's body and images — drafts, plus the featured image of a
+    published post (see the module docstring for the scope split).
 
     Constructed per-request by the API route with the live ``app.state`` deps;
     unit tests pass fakes. Only ``pool`` is required for body edits; image ops
@@ -145,11 +155,14 @@ class PostEditService:
     # -- images -------------------------------------------------------------
 
     async def replace_image(self, task_id: str, *, which: str, url: str) -> EditResult:
-        """Swap a draft image URL. ``which`` = ``featured`` or ``inline:N`` (1-based).
+        """Swap an image URL. ``which`` = ``featured`` or ``inline:N`` (1-based).
 
         ``featured`` updates ``pipeline_versions.featured_image_url`` (canonical)
-        and best-effort mirrors it into ``pipeline_tasks.result``/``task_metadata``.
-        ``inline:N`` rewrites the ``src`` of the N-th ``<img>`` in the body.
+        and best-effort mirrors it into ``pipeline_tasks.result``/``task_metadata``;
+        for a published task it additionally syncs ``posts.featured_image_url``
+        and rebuilds the static export, so this path reaches the live site.
+        ``inline:N`` rewrites the ``src`` of the N-th ``<img>`` in the body —
+        draft store only, invisible to a published post.
         """
         norm = which.strip().lower()
         if norm == "featured":
@@ -178,12 +191,14 @@ class PostEditService:
         raise ValueError(f"--which must be 'featured' or 'inline:N', got {which!r}")
 
     async def remove_image(self, task_id: str, *, which: str) -> EditResult:
-        """Remove a draft image. ``which`` = ``featured`` or ``inline:N`` (1-based).
+        """Remove an image. ``which`` = ``featured`` or ``inline:N`` (1-based).
 
         ``featured`` clears ``pipeline_versions.featured_image_url`` to NULL
         (nullable column — no promote-an-inline-image magic; the draft simply
-        has no featured image until an operator sets one). ``inline:N`` strips
-        the whole ``<img>`` tag from the body. Removal doesn't renumber
+        has no featured image until an operator sets one), and for a published
+        task clears ``posts.featured_image_url`` + rebuilds the static export.
+        ``inline:N`` strips the whole ``<img>`` tag from the body — draft store
+        only, invisible to a published post. Removal doesn't renumber
         anything on disk — ``inline:N`` is always counted live off the
         current body, so the next command naturally sees one fewer image.
         """
@@ -466,6 +481,16 @@ class PostEditService:
         posts.featured_image_url is what the static-export JSON reads; pipeline_versions
         is the canonical draft store but not what the live site serves. Skips silently
         for non-published tasks (drafts, approved-but-not-live, etc.).
+
+        Deliberately stops at the rebuild: it does NOT call
+        ``trigger_isr_revalidate``. The Next.js post page caches on the
+        ``posts`` / ``post:<slug>`` tags with no time-based ``revalidate``, so
+        the live page keeps serving the previous image until a caller
+        revalidates. Callers that need the swap visible immediately must do
+        that themselves. Note also that the rebuild re-uploads every published
+        post's JSON, so it can outlast an adapter's HTTP timeout — the DB
+        writes above have already committed by then, making a client-side
+        timeout a slow success rather than a failed edit.
         """
         warnings: list[str] = []
         try:

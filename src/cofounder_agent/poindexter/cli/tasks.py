@@ -691,8 +691,25 @@ def tasks_approve_batch(
 
 
 # ---------------------------------------------------------------------------
-# edit — draft body/image editing (drafts only, poindexter#523)
+# edit — body/image editing (poindexter#523)
 # ---------------------------------------------------------------------------
+# Scope splits on WHAT each edit writes, not on a status guard — neither the
+# routes nor PostEditService gate on `pipeline_tasks.status`:
+#
+#   --which featured  → pipeline_versions.featured_image_url AND, when the task
+#                       is already published, posts.featured_image_url (keyed on
+#                       metadata->>'pipeline_task_id'), followed by
+#                       export_full_rebuild. Works end-to-end on a live post.
+#   --which inline:N  → pipeline_versions.content only. The live site serves
+#                       posts.content, so against a published post these report
+#                       success and change nothing publicly visible.
+#
+# Two sharp edges on the published-featured path, both surfaced in the per-
+# command help: the static rebuild does NOT call trigger_isr_revalidate, and
+# posts/[slug] has no time-based `revalidate`, so the page keeps serving the old
+# image until something busts the tag. And the rebuild re-uploads every post
+# JSON, which can outlast the client timeout — the DB writes land first, so a
+# ReadTimeout is a slow success, not a failure.
 
 
 def _post_edit(path: str, payload: dict[str, Any], timeout_key: str | None = None) -> dict:
@@ -775,6 +792,10 @@ def tasks_edit_body(task_id: str, find: str | None, replace: str | None) -> None
     With --find, the worker applies a surgical find/replace. Without it, the
     current body opens in $EDITOR and the saved result is written back. Either
     way the validator re-runs (warn-only) — warnings print but never block.
+
+    Draft-only is unguarded, not enforced: this writes pipeline_versions.content
+    and the live site serves posts.content, so running it against a published
+    post reports success and changes nothing publicly visible.
     """
     if find is not None:
         payload: dict[str, Any] = {"find": find, "replace": replace or ""}
@@ -793,7 +814,24 @@ def tasks_edit_body(task_id: str, find: str | None, replace: str | None) -> None
 @click.option("--which", required=True, help="featured | inline:N (1-based)")
 @click.option("--url", required=True, help="New image URL.")
 def tasks_replace_image(task_id: str, which: str, url: str) -> None:
-    """Swap a draft image URL (drafts only) — the featured image or the N-th inline <img>."""
+    """Swap an image URL — the featured image or the N-th inline <img>.
+
+    --which featured also works on PUBLISHED posts: it writes
+    pipeline_versions.featured_image_url and, when the task is already
+    published, posts.featured_image_url too, then triggers a full static-export
+    rebuild so the live site serves the new image.
+
+    --which inline:N is draft-only — it rewrites pipeline_versions.content,
+    which the live site never serves. Against a published post it reports
+    success while changing nothing publicly visible.
+
+    On the published path, mind two things. The rebuild does NOT bust the
+    Vercel ISR cache and posts/[slug] carries no time-based revalidate, so the
+    page serves the OLD image indefinitely until you separately call
+    trigger_isr_revalidate(<slug>). And the rebuild re-uploads every post JSON,
+    which can outrun the client timeout — a ReadTimeout here means the rebuild
+    is still running, not that the edit failed; the DB writes already landed.
+    """
     _emit_edit_result(
         _post_edit(f"/api/tasks/{task_id}/replace-image", {"which": which, "url": url}),
     )
@@ -804,7 +842,19 @@ def tasks_replace_image(task_id: str, which: str, url: str) -> None:
 @click.option("--which", required=True, help="featured | inline:N (1-based)")
 @click.option("--prompt", required=True, help="Image generation prompt.")
 def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
-    """Regenerate a draft image via the image capability and swap it in (drafts only)."""
+    """Regenerate an image via the image capability and swap it in.
+
+    Generates the image, then hands off to the same path as replace-image — so
+    --which featured also works on PUBLISHED posts (updates
+    posts.featured_image_url + triggers a static-export rebuild), while
+    --which inline:N is draft-only and no-ops against the live site.
+
+    The published path does NOT bust the Vercel ISR cache — call
+    trigger_isr_revalidate(<slug>) separately or the post keeps serving the old
+    image. Generation and rebuild are both slow: a client-side ReadTimeout does
+    not mean the edit failed, the DB writes land before the rebuild starts.
+    Tune the client timeout with app_settings.post_edit_regen_image_timeout_s.
+    """
     _emit_edit_result(
         _post_edit(
             f"/api/tasks/{task_id}/regen-image",
@@ -818,11 +868,21 @@ def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
 @click.argument("task_id")
 @click.option("--which", required=True, help="featured | inline:N (1-based)")
 def tasks_remove_image(task_id: str, which: str) -> None:
-    """Remove a draft image (drafts only) — the featured image or the N-th inline <img>.
+    """Remove an image — the featured image or the N-th inline <img>.
 
     Featured removal clears to no-image (no auto-promote of an inline image).
     Removing an inline image renumbers the rest naturally — index N is always
     counted live off the current body.
+
+    --which featured also works on PUBLISHED posts: it clears
+    posts.featured_image_url as well and triggers a full static-export rebuild.
+    --which inline:N is draft-only — it edits pipeline_versions.content, which
+    the live site never serves, so it no-ops against a published post.
+
+    Clearing a live post's featured image does NOT bust the Vercel ISR cache —
+    call trigger_isr_revalidate(<slug>) separately or the page keeps rendering
+    the removed image. The rebuild can also outrun the client timeout; a
+    ReadTimeout means it is still running, not that the removal failed.
     """
     _emit_edit_result(
         _post_edit(f"/api/tasks/{task_id}/remove-image", {"which": which}),
@@ -838,11 +898,16 @@ def tasks_remove_image(task_id: str, which: str) -> None:
     help="Image generation prompt. Default: derived from the target section's heading.",
 )
 def tasks_add_image(task_id: str, after: str | None, section: str | None, prompt: str | None) -> None:
-    """Generate a new image and insert it into a draft (drafts only).
+    """Generate a new image and insert it into a draft. Drafts only.
 
     Exactly one of --after or --section positions the new image. Without
     --prompt, the prompt is derived from the target section's own heading
     text (operator preference: prompts come from headings, not body prose).
+
+    Draft-only is unguarded, not enforced: the new <img> lands in
+    pipeline_versions.content, which the live site never serves, so this
+    no-ops against a published post. There is no add-featured counterpart —
+    use replace-image --which featured, which does reach published posts.
     """
     if bool(after) == bool(section):
         click.echo("Error: pass exactly one of --after or --section", err=True)

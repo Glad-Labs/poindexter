@@ -541,7 +541,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `image_rebuild_service.py` | Enqueue an image_rebuild pipeline task for an awaiting_approval draft. |
 | `internal_link_coherence.py` | Internal-link recommendation coherence gate. |
 | `multi_model_qa.py` | Multi-Model QA — adversarial review using different LLM providers. |
-| `post_edit_service.py` | Operator-grade draft editing — body + images — for awaiting_approval tasks. |
+| `post_edit_service.py` | Operator-grade post editing — body + images — for awaiting_approval tasks. |
 | `posts_service.py` | PostsService — single SQL owner for posts, categories, and tags. |
 | `quality_service.py` | Unified Quality Assessment Service |
 | `task_metadata.py` | Single source of truth for the finalize ``task_metadata`` blob. |
