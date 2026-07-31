@@ -17,7 +17,15 @@ nul
 # ============================================================
 # Node.js
 # ============================================================
-node_modules/
+# NO trailing slash — that form matches directories ONLY, and agent
+# worktrees under .claude/worktrees/ carry `node_modules` as a SYMLINK to
+# the main checkout so they can share deps. A symlink is not a directory,
+# so `node_modules/` did not match it and `git add -A` swept it into a
+# commit (#2913, 2026-07-31). Its content was the absolute path
+# `/home/mattm/<checkout>/node_modules`, so checking it out AT that path
+# produced a symlink pointing at itself — which replaced the real
+# directory and wiped every installed dep in the main checkout.
+node_modules
 .next/
 build/
 dist/
