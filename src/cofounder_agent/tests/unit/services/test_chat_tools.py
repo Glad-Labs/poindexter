@@ -50,12 +50,24 @@ class TestRegistryShape:
     def test_tiers_valid(self):
         assert all(t.tier in ("read", "write") for t in CHAT_TOOLS)
 
-    def test_p1_write_surface_is_create_post_only(self):
-        writes = sorted(t.name for t in CHAT_TOOLS if t.tier == "write")
-        assert writes == ["create_post"], (
-            "P1 ships exactly one write tool (create_post — gated by the "
-            "downstream approval inbox). New write tools need the P3 "
-            "in-chat approval-card machinery first (poindexter#949)."
+    def test_write_surface_pinned_with_approval_gates(self):
+        """Every write tool must be deliberate: either approval-carded
+        (P3 machinery, poindexter#949) or explicitly exempt with a reason.
+        A new write tool cannot land without updating this pin."""
+        writes = {t.name: t.requires_approval for t in CHAT_TOOLS if t.tier == "write"}
+        assert writes == {
+            # Exempt: its output already lands in the operator's approval
+            # inbox — the human gate is downstream (P1 decision).
+            "create_post": False,
+            # Approval-carded (executed only via the operator's click):
+            "set_setting": True,
+            "restart_service": True,
+            "cancel_task": True,
+        }
+
+    def test_read_tools_never_carry_approval(self):
+        assert all(
+            not t.requires_approval for t in CHAT_TOOLS if t.tier == "read"
         )
 
     def test_handlers_are_async(self):

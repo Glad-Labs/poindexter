@@ -155,6 +155,7 @@ async def run_turn(
     completion_tokens = 0
     cost_usd = 0.0
     turn_status = "failed"
+    turn_started_monotonic = time.monotonic()
 
     try:
         # Daily chat budget — independent of the global cost_guard caps.
@@ -312,6 +313,73 @@ async def run_turn(
                            "ms": 0, "digest": detail}
                     continue
 
+                # ── Write-tool approval gate (P3 poindexter#949) ──
+                # A gated write tool is queued for the operator's click, NOT
+                # executed. The model gets an honest tool result so the turn
+                # wraps up gracefully; the card carries the action forward.
+                if spec.tier == "write":
+                    from services.chat_approvals import (
+                        approval_policy,
+                        create_approval,
+                    )
+
+                    policy = await approval_policy(
+                        pool, name, default_card=spec.requires_approval,
+                    )
+                    if policy == "forbid":
+                        detail = (
+                            f"Tool {name} is forbidden for the chat agent "
+                            "(agent_permissions allowed=false)."
+                        )
+                        _tool_reply(detail)
+                        yield {"event": "tool_result", "name": name,
+                               "ok": False, "ms": 0, "digest": detail}
+                        continue
+                    if policy == "card":
+                        args_digest = _args_digest(raw_args)
+                        try:
+                            args = json.loads(raw_args) if raw_args.strip() else {}
+                            if not isinstance(args, dict):
+                                raise ValueError("arguments must be a JSON object")
+                        except ValueError as exc:
+                            detail = _BAD_ARGS.format(name=name, error=exc)
+                            _tool_reply(detail)
+                            yield {"event": "tool_result", "name": name,
+                                   "ok": False, "ms": 0, "digest": detail}
+                            continue
+                        summary = f"{name} {json.dumps(args, default=str)[:300]}"
+                        approval = await create_approval(
+                            pool, conversation_id=conversation_id,
+                            message_id=message_id, tool=name, args=args,
+                            summary=summary,
+                        )
+                        parts.append({
+                            "type": "card",
+                            "card": {
+                                "kind": "approval",
+                                "approval_id": approval["id"],
+                                "tool": name,
+                                "summary": summary,
+                                "args_digest": args_digest,
+                                "state": "pending",
+                            },
+                        })
+                        yield {"event": "approval_required",
+                               "approval_id": approval["id"], "tool": name,
+                               "summary": summary}
+                        detail = (
+                            f"{name} is queued for operator approval "
+                            f"(id {approval['id'][:8]}). It runs only if the "
+                            "operator clicks Approve on the card — tell them "
+                            "it awaits their sign-off, then stop."
+                        )
+                        _tool_reply(detail)
+                        yield {"event": "tool_result", "name": name,
+                               "ok": True, "ms": 0, "digest": detail}
+                        continue
+                    # policy == 'inline': operator explicitly relaxed the
+                    # gate via agent_permissions — fall through to execute.
+
                 args_digest = _args_digest(raw_args)
                 yield {"event": "tool_start", "name": name,
                        "args_digest": args_digest}
@@ -386,6 +454,17 @@ async def run_turn(
 
     except _TurnAborted as aborted:
         turn_status = aborted.turn_status
+    except asyncio.CancelledError:
+        # Client disconnect or the composer's Stop button — Starlette cancels
+        # the generator at a yield point. Finalize as 'interrupted' (best
+        # effort in the finally; the store's lazy repair is the backstop if
+        # even that write is cancelled) and let the cancellation propagate.
+        turn_status = "interrupted"
+        parts.append({
+            "type": "markdown",
+            "text": "Turn stopped by the operator (or the connection dropped).",
+        })
+        raise
     except asyncio.TimeoutError:
         turn_status = "interrupted"
         detail = (
@@ -402,13 +481,27 @@ async def run_turn(
         yield {"event": "error", "reason": "turn_crashed", "detail": detail}
     finally:
         try:
-            await store.finalize_message(
+            # Shielded: during a cancellation the surrounding task is being
+            # torn down, and a bare await here would just re-raise before the
+            # write lands. If even the shielded write dies, the store's lazy
+            # interrupted-repair covers the stranded row.
+            await asyncio.shield(store.finalize_message(
                 pool, message_id, parts=parts, turn_status=turn_status,
                 model=model, prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens, cost_usd=cost_usd,
-            )
-        except Exception:  # noqa: BLE001 — finalize is best-effort; repair covers it
+            ))
+        except BaseException:  # noqa: BLE001 — finalize is best-effort; repair covers it
             logger.exception("[chat] finalize failed (message=%s)", message_id)
+        try:
+            await asyncio.shield(_audit_turn_completed(
+                pool, conversation_id=conversation_id, message_id=message_id,
+                turn_status=turn_status, model=model, parts=parts,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                cost_usd=cost_usd,
+                duration_ms=int((time.monotonic() - turn_started_monotonic) * 1000),
+            ))
+        except BaseException:  # noqa: BLE001 — telemetry must never mask the turn
+            logger.exception("[chat] turn audit failed (message=%s)", message_id)
 
     yield {
         "event": "done",
@@ -435,6 +528,50 @@ async def _dispatch(
         tools=openai_tools,
         tool_choice="auto",
         temperature=0.2,
+    )
+
+
+async def _audit_turn_completed(
+    pool: Any,
+    *,
+    conversation_id: str,
+    message_id: str,
+    turn_status: str,
+    model: str,
+    parts: list[dict[str, Any]],
+    prompt_tokens: int,
+    completion_tokens: int,
+    cost_usd: float,
+    duration_ms: int,
+) -> None:
+    tool_calls = sum(1 for p in parts if p.get("type") == "tool_call")
+    tool_errors = sum(
+        1 for p in parts if p.get("type") == "tool_call" and not p.get("ok")
+    )
+    approvals_queued = sum(
+        1 for p in parts
+        if p.get("type") == "card"
+        and (p.get("card") or {}).get("kind") == "approval"
+    )
+    from services.audit_event_schemas import validate_event_details
+    from services.audit_log import AuditLogger
+
+    details = validate_event_details("chat_turn_completed", {
+        "schema_version": 1,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "turn_status": turn_status,
+        "model": model,
+        "tool_calls": tool_calls,
+        "tool_errors": tool_errors,
+        "approvals_queued": approvals_queued,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cost_usd": round(cost_usd, 6),
+        "duration_ms": duration_ms,
+    })
+    await AuditLogger(pool).log(
+        "chat_turn_completed", "chat_agent", details or {},
     )
 
 

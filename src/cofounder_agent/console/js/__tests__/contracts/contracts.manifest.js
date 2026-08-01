@@ -139,6 +139,11 @@ module.exports = [
     invoke: (api) => api.chatGet('conv_1'),
     request: { method: 'GET', path: '/api/chat/conversations/conv_1' },
   },
+  {
+    name: 'chatWatch',
+    invoke: (api) => api.chatWatch('task_1'),
+    request: { method: 'GET', path: '/api/chat/watch/task_1' },
+  },
 
   // ══ TIER 2 — write / mutation (request contract incl. body; never recorded) ══
   {
@@ -157,6 +162,16 @@ module.exports = [
       method: 'POST',
       path: '/api/chat/conversations/conv_1/archive',
     },
+  },
+  {
+    name: 'chatApprove',
+    invoke: (api) => api.chatApprove('appr_1'),
+    request: { method: 'POST', path: '/api/chat/approvals/appr_1/approve' },
+  },
+  {
+    name: 'chatDeny',
+    invoke: (api) => api.chatDeny('appr_1'),
+    request: { method: 'POST', path: '/api/chat/approvals/appr_1/deny' },
   },
   {
     name: 'updateSetting',

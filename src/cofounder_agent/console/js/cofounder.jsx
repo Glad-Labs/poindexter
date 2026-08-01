@@ -44,7 +44,162 @@ function CfToolChip({ part }) {
   );
 }
 
-function CfCard({ card, onOpenTask }) {
+// Approval card (P3 poindexter#949): pending → one-shot Approve/Deny;
+// resolved → stamped outcome. Buttons disable while resolving and after.
+function CfApprovalCard({ card, onResolved, pushToast }) {
+  const [busy, setBusy] = React.useState(false);
+  const pending = card.state === 'pending';
+  const resolve = async (approve) => {
+    if (busy || !pending) return;
+    setBusy(true);
+    try {
+      await (approve
+        ? PX.api.chatApprove(card.approval_id)
+        : PX.api.chatDeny(card.approval_id));
+      if (onResolved) await onResolved();
+    } catch (e) {
+      pushToast && pushToast(`Approval failed — ${e.message}`, 'red', '✕');
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      className={`cf-approval ${pending ? '' : `cf-approval--${card.state}`}`}
+    >
+      <div className="cf-approval__head">
+        <Icon
+          name={pending ? 'alert' : card.state === 'approved' ? 'check' : 'x'}
+          size={13}
+        />
+        <span className="cf-approval__tool">{card.tool}</span>
+        <span className="cf-approval__state">
+          {pending ? 'NEEDS YOUR APPROVAL' : card.state.toUpperCase()}
+        </span>
+      </div>
+      <div className="cf-approval__summary">{card.summary}</div>
+      {pending && (
+        <div className="cf-approval__actions">
+          <button
+            className="mbtn mbtn--amber"
+            disabled={busy}
+            onClick={() => resolve(true)}
+          >
+            <Icon name="check" size={12} />
+            {busy ? 'WORKING…' : 'Approve once'}
+          </button>
+          <button
+            className="mbtn mbtn--ghost"
+            disabled={busy}
+            onClick={() => resolve(false)}
+          >
+            <Icon name="x" size={12} />
+            Deny
+          </button>
+        </div>
+      )}
+      {!pending && card.state === 'approved' && (
+        <div className="cf-approval__result">
+          {card.executed_ok ? '✓' : '✕'} {card.result_digest || '(no output)'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Completion card the watcher job appends when a linked run goes terminal.
+// Post-lifecycle buttons reuse the console's EXISTING task endpoints —
+// the same calls the approvals inbox makes.
+function CfTaskResultCard({ card, onOpenTask, onActed, pushToast }) {
+  const [busy, setBusy] = React.useState(false);
+  const act = async (label, fn) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      pushToast && pushToast(`${label} — ok`, 'mint', '✓');
+      if (onActed) await onActed();
+    } catch (e) {
+      pushToast && pushToast(`${label} failed — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const awaiting = card.status === 'awaiting_approval';
+  const approved = card.status === 'approved';
+  return (
+    <div className="cf-card cf-card--result">
+      <Icon name="pipeline" size={13} />
+      <span>
+        <b className="tnum">{String(card.task_id).slice(0, 8)}</b> {card.status}
+        {card.quality_score != null
+          ? ` · Q${Math.round(card.quality_score)}`
+          : ''}
+        {card.topic ? ` — ${card.topic}` : ''}
+      </span>
+      <span className="cf-card__actions">
+        {awaiting && (
+          <button
+            className="mbtn mbtn--primary"
+            disabled={busy}
+            onClick={() => act('Approve', () => PX.api.approve(card.task_id))}
+            title="Stage for publishing (approve ≠ publish)"
+          >
+            <Icon name="check" size={12} />
+            Approve
+          </button>
+        )}
+        {awaiting && (
+          <button
+            className="mbtn mbtn--ghost"
+            disabled={busy}
+            onClick={() => act('Reject', () => PX.api.reject(card.task_id))}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        )}
+        {approved && (
+          <button
+            className="mbtn mbtn--amber"
+            disabled={busy}
+            onClick={() =>
+              act('Publish', () => PX.api.publishTask(card.task_id))
+            }
+            title="Ship it live"
+          >
+            <Icon name="bolt" size={12} />
+            Publish
+          </button>
+        )}
+        <button
+          className="mbtn mbtn--ghost"
+          onClick={() => onOpenTask && onOpenTask(card.task_id)}
+          title="Open the task trace"
+        >
+          <Icon name="link" size={12} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function CfCard({ card, onOpenTask, onResolved, pushToast }) {
+  if (card.kind === 'approval')
+    return (
+      <CfApprovalCard
+        card={card}
+        onResolved={onResolved}
+        pushToast={pushToast}
+      />
+    );
+  if (card.kind === 'task_result')
+    return (
+      <CfTaskResultCard
+        card={card}
+        onOpenTask={onOpenTask}
+        onActed={onResolved}
+        pushToast={pushToast}
+      />
+    );
   if (card.kind === 'task_link') {
     return (
       <div className="cf-card">
@@ -74,7 +229,7 @@ function CfCard({ card, onOpenTask }) {
   );
 }
 
-function CfParts({ parts, onOpenTask }) {
+function CfParts({ parts, onOpenTask, onResolved, pushToast }) {
   return (
     <>
       {(parts || []).map((p, i) => {
@@ -86,24 +241,40 @@ function CfParts({ parts, onOpenTask }) {
           );
         if (p.type === 'tool_call') return <CfToolChip key={i} part={p} />;
         if (p.type === 'card')
-          return <CfCard key={i} card={p.card || {}} onOpenTask={onOpenTask} />;
+          return (
+            <CfCard
+              key={i}
+              card={p.card || {}}
+              onOpenTask={onOpenTask}
+              onResolved={onResolved}
+              pushToast={pushToast}
+            />
+          );
         return null;
       })}
     </>
   );
 }
 
-function CfMessage({ msg, onOpenTask, onRetry }) {
+function CfMessage({ msg, onOpenTask, onRetry, onResolved, pushToast }) {
   const isUser = msg.role === 'user';
+  const isSystem = msg.role === 'system';
   const retryable =
     !isUser &&
+    !isSystem &&
     (msg.turn_status === 'interrupted' || msg.turn_status === 'failed');
+  const variant = isUser ? 'user' : isSystem ? 'system' : 'agent';
   return (
-    <div className={`cf-msg cf-msg--${isUser ? 'user' : 'agent'}`}>
+    <div className={`cf-msg cf-msg--${variant}`}>
       <div className="cf-msg__body">
-        <CfParts parts={msg.parts} onOpenTask={onOpenTask} />
+        <CfParts
+          parts={msg.parts}
+          onOpenTask={onOpenTask}
+          onResolved={onResolved}
+          pushToast={pushToast}
+        />
         <div className="cf-msg__meta">
-          <CfStatusChip status={msg.turn_status} />
+          <CfStatusChip status={isSystem ? 'complete' : msg.turn_status} />
           {retryable && onRetry && (
             <button className="mbtn mbtn--ghost" onClick={onRetry}>
               <Icon name="retry" size={11} />
@@ -117,11 +288,15 @@ function CfMessage({ msg, onOpenTask, onRetry }) {
 }
 
 // The in-flight assistant message, rendered from the live fold.
-function CfLiveTurn({ view, onOpenTask }) {
+function CfLiveTurn({ view, onOpenTask, pushToast }) {
   return (
     <div className="cf-msg cf-msg--agent cf-msg--live">
       <div className="cf-msg__body">
-        <CfParts parts={view.parts} onOpenTask={onOpenTask} />
+        <CfParts
+          parts={view.parts}
+          onOpenTask={onOpenTask}
+          pushToast={pushToast}
+        />
         {view.liveTool && (
           <div className="cf-tool cf-tool--running">
             <span className="cf-tool__head">
@@ -201,8 +376,51 @@ function CfDisabled({ detail }) {
   );
 }
 
-// Activity rail: current-turn live feed + session totals.
-function CfRail({ live, messages, brain, model }) {
+// Watched pipeline runs: live per-node progress from GET /api/chat/watch.
+function CfWatchBlock({ watches, onOpenTask }) {
+  const rows = Object.values(watches || {});
+  if (!rows.length) return null;
+  return (
+    <div className="cf-rail__block">
+      <div className="cf-rail__title">WATCHING RUNS</div>
+      {rows.map((w) => {
+        const p = PXChat.watchProgress(w);
+        if (!p) return null;
+        return (
+          <div key={p.taskId} className="cf-watch">
+            <button
+              className="cf-watch__head"
+              onClick={() => onOpenTask && onOpenTask(p.taskId)}
+              title="Open the task trace"
+            >
+              <span className="tnum">{String(p.taskId).slice(0, 8)}</span>
+              <span className="cf-watch__status">{p.status}</span>
+              <span className="cf-rail__ms">
+                {p.done}
+                {p.expected ? `/${p.expected}` : ''} steps
+              </span>
+            </button>
+            <div className="cf-watch__bar">
+              <div
+                className={`cf-watch__fill ${p.pct == null ? 'cf-watch__fill--indet' : ''}`}
+                style={p.pct != null ? { width: p.pct + '%' } : {}}
+              />
+            </div>
+            {p.current && (
+              <div className="cf-rail__row">
+                <span className="cf-spin" />{' '}
+                {p.current.atom || p.current.node_id}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Activity rail: current-turn live feed + watched runs + session totals.
+function CfRail({ live, messages, brain, model, watches, onOpenTask }) {
   const stats = PXChat.sessionStats(messages || []);
   const liveStats = live ? live.stats : null;
   const feed = live
@@ -210,6 +428,7 @@ function CfRail({ live, messages, brain, model }) {
     : [];
   return (
     <aside className="cf-rail">
+      <CfWatchBlock watches={watches} onOpenTask={onOpenTask} />
       <div className="cf-rail__block">
         <div className="cf-rail__title">NOW DOING</div>
         {!live && <div className="cf-rail__idle">idle — send a message</div>}
@@ -280,7 +499,7 @@ function CfRail({ live, messages, brain, model }) {
   );
 }
 
-function CfComposer({ value, setValue, onSend, disabled }) {
+function CfComposer({ value, setValue, onSend, disabled, onStop }) {
   const slash = PXChat.slashMatches(value);
   const taRef = React.useRef(null);
   const send = () => {
@@ -322,15 +541,26 @@ function CfComposer({ value, setValue, onSend, disabled }) {
             }
           }}
         />
-        <button
-          className="mbtn mbtn--primary cf-composer__send"
-          onClick={send}
-          disabled={disabled || !(value || '').trim()}
-          title={disabled ? 'Turn in progress…' : 'Send (Enter)'}
-        >
-          <Icon name="bolt" size={13} />
-          {disabled ? 'RUNNING' : 'SEND'}
-        </button>
+        {disabled && onStop ? (
+          <button
+            className="mbtn mbtn--danger cf-composer__send"
+            onClick={onStop}
+            title="Stop this turn (finalizes as interrupted)"
+          >
+            <Icon name="kill" size={13} />
+            STOP
+          </button>
+        ) : (
+          <button
+            className="mbtn mbtn--primary cf-composer__send"
+            onClick={send}
+            disabled={disabled || !(value || '').trim()}
+            title={disabled ? 'Turn in progress…' : 'Send (Enter)'}
+          >
+            <Icon name="bolt" size={13} />
+            {disabled ? 'RUNNING' : 'SEND'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -350,7 +580,9 @@ function CofounderMode({ onOpenTask, pushToast }) {
   const [pendingUserText, setPendingUserText] = React.useState(null);
   const [input, setInput] = React.useState('');
   const [listOpen, setListOpen] = React.useState(false); // mobile drawer
+  const [watches, setWatches] = React.useState({}); // taskId → watch snapshot
   const scrollRef = React.useRef(null);
+  const abortRef = React.useRef(null); // Stop button (P3)
 
   const disabled403 = (e) => {
     const m = String((e && e.message) || '');
@@ -393,8 +625,56 @@ function CofounderMode({ onOpenTask, pushToast }) {
     setThread(null);
     setLive(null);
     setPendingUserText(null);
+    setWatches({});
     if (selectedId) loadThread(selectedId);
   }, [selectedId]);
+
+  // ── Watched-run polling (P3 poindexter#949) ────────────────
+  // Every conversation-linked task that is not yet terminal polls the slim
+  // watch read on the configured cadence. A task flipping terminal reloads
+  // the thread once (the watcher job's completion message lands there) and
+  // drops out of the poll set.
+  const watchPollMs =
+    Math.max(2, (catalog && catalog.watch_poll_seconds) || 5) * 1000;
+  React.useEffect(() => {
+    if (!selectedId) return undefined;
+    const linkIds = (thread ? thread.task_links || [] : []).map(
+      (l) => l.pipeline_task_id
+    );
+    const liveIds = live ? live.taskIds : [];
+    const ids = [...new Set([...linkIds, ...liveIds])].filter((id) => {
+      const snap = watches[id];
+      return !(snap && snap.terminal);
+    });
+    if (!ids.length) return undefined;
+    let alive = true;
+    const tick = async () => {
+      for (const id of ids) {
+        try {
+          const snap = await PX.api.chatWatch(id);
+          if (!alive) return;
+          setWatches((w) => ({ ...w, [id]: snap }));
+          if (snap.terminal && !(watches[id] && watches[id].terminal)) {
+            await loadThread(selectedId);
+          }
+        } catch (e) {
+          // Unknown task / transient read failure: drop silently; the rail
+          // simply shows nothing rather than a fabricated bar.
+          if (alive)
+            setWatches((w) => ({
+              ...w,
+              [id]: { task_id: id, terminal: true, nodes: [], nodes_done: 0 },
+            }));
+        }
+      }
+    };
+    tick();
+    const timer = setInterval(tick, watchPollMs);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [selectedId, thread, live && live.taskIds.join(','), watchPollMs]);
 
   // Keep the thread pinned to the bottom while streaming / loading.
   React.useEffect(() => {
@@ -444,23 +724,36 @@ function CofounderMode({ onOpenTask, pushToast }) {
       setInput('');
       setPendingUserText(text);
       setLive(PXChat.newTurnView());
-      await api.chatSend(convId, text, (ev) =>
-        setLive((v) => PXChat.foldEvent(v || PXChat.newTurnView(), ev))
+      const controller =
+        typeof AbortController !== 'undefined' ? new AbortController() : null;
+      abortRef.current = controller;
+      await api.chatSend(
+        convId,
+        text,
+        (ev) => setLive((v) => PXChat.foldEvent(v || PXChat.newTurnView(), ev)),
+        controller ? { signal: controller.signal } : {}
       );
     } catch (e) {
-      if (!disabled403(e)) pushToast(`Turn failed — ${e.message}`, 'red', '✕');
-      setLive((v) => {
-        const base = v || PXChat.newTurnView();
-        return {
-          ...base,
-          done: true,
-          status: 'failed',
-          errors: base.errors.concat([
-            { reason: 'request', detail: e.message },
-          ]),
-        };
-      });
+      if (e && e.name === 'AbortError') {
+        // Operator hit Stop: the worker finalizes the turn 'interrupted';
+        // the thread reload below renders the honest state.
+      } else {
+        if (!disabled403(e))
+          pushToast(`Turn failed — ${e.message}`, 'red', '✕');
+        setLive((v) => {
+          const base = v || PXChat.newTurnView();
+          return {
+            ...base,
+            done: true,
+            status: 'failed',
+            errors: base.errors.concat([
+              { reason: 'request', detail: e.message },
+            ]),
+          };
+        });
+      }
     } finally {
+      abortRef.current = null;
       // Swap the live fold for the canonical persisted rows.
       await loadThread(convId);
       refreshList();
@@ -557,6 +850,8 @@ function CofounderMode({ onOpenTask, pushToast }) {
               key={m.id}
               msg={m}
               onOpenTask={onOpenTask}
+              pushToast={pushToast}
+              onResolved={() => loadThread(selectedId)}
               onRetry={
                 m.role !== 'user' &&
                 (m.turn_status === 'interrupted' || m.turn_status === 'failed')
@@ -572,13 +867,20 @@ function CofounderMode({ onOpenTask, pushToast }) {
               </div>
             </div>
           )}
-          {live && <CfLiveTurn view={live} onOpenTask={onOpenTask} />}
+          {live && (
+            <CfLiveTurn
+              view={live}
+              onOpenTask={onOpenTask}
+              pushToast={pushToast}
+            />
+          )}
         </div>
         <CfComposer
           value={input}
           setValue={setInput}
           onSend={send}
           disabled={sending}
+          onStop={() => abortRef.current && abortRef.current.abort()}
         />
       </section>
 
@@ -587,6 +889,8 @@ function CofounderMode({ onOpenTask, pushToast }) {
         messages={messages}
         brain={thread && thread.conversation.brain}
         model={null}
+        watches={watches}
+        onOpenTask={onOpenTask}
       />
     </div>
   );

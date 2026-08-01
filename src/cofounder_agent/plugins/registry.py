@@ -762,6 +762,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.classify_content_types", "ClassifyContentTypesJob"),
         ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
+        ("jobs", "services.jobs.chat_task_watch", "ChatTaskWatchJob"),
         (
             "jobs",
             "services.jobs.cancel_orphaned_social_drafts",

@@ -513,3 +513,135 @@
     max-width: 92%;
   }
 }
+
+/* ── P3: approval cards · watched runs · system messages ─────── */
+.cf-msg--system {
+  justify-content: center;
+}
+.cf-msg--system .cf-msg__body {
+  background: transparent;
+  border: 1px dashed var(--gl-hairline);
+  max-width: 92%;
+}
+.cf-msg--system .cf-text {
+  color: var(--gl-text-muted);
+  font-size: 12px;
+}
+
+.cf-approval {
+  border: 1px solid var(--gl-amber-dim);
+  background: rgba(255, 179, 71, 0.06);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cf-approval--approved {
+  border-color: var(--gl-hairline);
+  background: var(--gl-surface);
+}
+.cf-approval--denied {
+  border-color: var(--gl-hairline);
+  background: var(--gl-surface);
+  opacity: 0.75;
+}
+.cf-approval__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gl-amber);
+}
+.cf-approval--approved .cf-approval__head {
+  color: var(--gl-mint);
+}
+.cf-approval--denied .cf-approval__head {
+  color: var(--gl-text-muted);
+}
+.cf-approval__tool {
+  font-family: var(--gl-font-mono);
+  font-size: 12px;
+  color: var(--gl-text);
+}
+.cf-approval__state {
+  margin-left: auto;
+  font-family: var(--gl-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+.cf-approval__summary {
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  color: var(--gl-text-dim);
+  word-break: break-all;
+}
+.cf-approval__actions {
+  display: flex;
+  gap: 8px;
+}
+.cf-approval__result {
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  color: var(--gl-text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cf-card--result {
+  flex-wrap: wrap;
+}
+.cf-card__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.cf-watch {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--gl-hairline);
+}
+.cf-watch:last-child {
+  border-bottom: none;
+}
+.cf-watch__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0 0 6px;
+  color: var(--gl-text);
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.cf-watch__status {
+  color: var(--gl-cyan);
+  font-size: 10px;
+}
+.cf-watch__bar {
+  height: 5px;
+  background: var(--gl-surface-2);
+  overflow: hidden;
+}
+.cf-watch__fill {
+  height: 100%;
+  background: var(--gl-cyan);
+  transition: width 0.6s ease;
+}
+.cf-watch__fill--indet {
+  width: 35%;
+  animation: cf-indet 1.4s ease-in-out infinite;
+}
+@keyframes cf-indet {
+  0% {
+    margin-left: 0;
+  }
+  50% {
+    margin-left: 65%;
+  }
+  100% {
+    margin-left: 0;
+  }
+}

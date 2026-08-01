@@ -98,10 +98,50 @@ class ChatToolCallDetails(BaseModel):
     error: str | None = None
 
 
+class ChatTurnCompletedDetails(BaseModel):
+    """Turn-level outcome rows (Cofounder chat panels — poindexter#949).
+
+    Single producer: ``services/chat_agent.py`` (one row per finalized
+    turn, written in the loop's ``finally``).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = 1
+    conversation_id: str
+    message_id: str | None = None
+    turn_status: str
+    model: str = ""
+    tool_calls: int = 0
+    tool_errors: int = 0
+    approvals_queued: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    duration_ms: int = 0
+
+
+class ChatApprovalResolvedDetails(BaseModel):
+    """Approval-card resolutions (poindexter#949 — the deny count feeds the
+    Cofounder Grafana row). Single producer: ``services/chat_approvals.py``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = 1
+    approval_id: str
+    conversation_id: str
+    tool: str
+    approved: bool
+    executed_ok: bool | None = None
+
+
 EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "qa_pass_completed": QaPassCompletedDetails,
     "finding": FindingDetails,
     "chat_tool_call": ChatToolCallDetails,
+    "chat_turn_completed": ChatTurnCompletedDetails,
+    "chat_approval_resolved": ChatApprovalResolvedDetails,
 }
 
 

@@ -79,10 +79,22 @@ async def list_tools(
     from services.chat_tools import CHAT_TOOLS
 
     persona = str(site_config.get("agent_persona_name", "Poindexter") or "Poindexter")
+    try:
+        watch_poll_seconds = int(
+            str(site_config.get("console_chat_watch_poll_seconds", "5"))
+        )
+    except (TypeError, ValueError):
+        watch_poll_seconds = 5
     return {
         "persona": persona,
+        "watch_poll_seconds": watch_poll_seconds,
         "tools": [
-            {"name": t.name, "description": t.description, "tier": t.tier}
+            {
+                "name": t.name,
+                "description": t.description,
+                "tier": t.tier,
+                "requires_approval": t.requires_approval,
+            }
             for t in CHAT_TOOLS
         ],
     }
@@ -210,6 +222,66 @@ async def send_message(
             }) + "\n"
 
     return StreamingResponse(_ndjson(), media_type="application/x-ndjson")
+
+
+@router.post("/approvals/{approval_id}/approve")
+async def approve_approval(
+    approval_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Resolve an approval card → execute the stored call (one-shot)."""
+    return await _resolve(approval_id, True, db_service, site_config)
+
+
+@router.post("/approvals/{approval_id}/deny")
+async def deny_approval(
+    approval_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Resolve an approval card as denied — nothing executes (one-shot)."""
+    return await _resolve(approval_id, False, db_service, site_config)
+
+
+async def _resolve(
+    approval_id: str, approve: bool,
+    db_service: DatabaseService, site_config: SiteConfig,
+) -> dict[str, Any]:
+    _require_enabled(site_config)
+    from services.chat_approvals import resolve_approval
+
+    try:
+        return await resolve_approval(
+            pool=db_service.pool, db_service=db_service,
+            site_config=site_config, approval_id=approval_id, approve=approve,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown approval: {approval_id!r}",
+        ) from exc
+    except Exception as exc:  # asyncpg DataError on malformed uuid, etc.
+        if "invalid input" in str(exc).lower():
+            raise HTTPException(
+                status_code=404, detail=f"Unknown approval: {approval_id!r}",
+            ) from exc
+        raise
+
+
+@router.get("/watch/{task_id}")
+async def watch(
+    task_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Slim run-progress snapshot the activity rail polls (~5s while live)."""
+    _require_enabled(site_config)
+    from services.chat_watch import watch_task
+
+    snapshot = await watch_task(db_service.pool, task_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"Unknown task: {task_id!r}")
+    return snapshot
 
 
 async def _load_conversation(

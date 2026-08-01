@@ -129,6 +129,18 @@ DEFAULTS: dict[str, str] = {
     # constant: one identity across chat + voice surfaces, and a SaaS
     # customer names their own cofounder.
     "agent_persona_name": "Poindexter",
+    # Rail poll cadence for watched pipeline runs (seconds). Served to the
+    # console via GET /api/chat/tools so the client never hardcodes it.
+    "console_chat_watch_poll_seconds": "5",
+    # Completion-ping channel for chat-linked runs reaching a terminal
+    # status: discord (routine, default) | telegram (pushes to phone —
+    # reserve for operators who want draft-ready pings loud) | none.
+    # The system message in the thread lands regardless.
+    "console_chat_watch_notify": "discord",
+    # Browser-facing console base URL for deeplinks in completion pings
+    # (e.g. your tailnet URL http://100.x.y.z:8002). Empty = no link,
+    # text-only pings.
+    "console_public_url": "",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

@@ -187,9 +187,57 @@ test('fold: interrupted done keeps its status', () => {
 test('fold: unknown event kinds are a forward-compatible no-op', () => {
   const PXChat = load();
   const base = foldAll(PXChat, [{ event: 'turn_started', message_id: 'm' }]);
-  const v = PXChat.foldEvent(base, { event: 'approval_required', action: 'x' });
+  const v = PXChat.foldEvent(base, { event: 'plan_proposed', plan: 'x' });
   assert.deepEqual(j(v.parts), j(base.parts));
   assert.equal(v.status, 'streaming');
+});
+
+test('fold: approval_required renders the pending card (P3)', () => {
+  const PXChat = load();
+  const v = foldAll(PXChat, [
+    { event: 'turn_started', message_id: 'm' },
+    {
+      event: 'approval_required',
+      approval_id: 'appr-1',
+      tool: 'set_setting',
+      summary: 'set_setting {"key":"k"}',
+    },
+    { event: 'text', text: 'Awaiting your sign-off.' },
+    { event: 'done', turn_status: 'complete' },
+  ]);
+  const card = v.parts.find((p) => p.type === 'card').card;
+  assert.equal(card.kind, 'approval');
+  assert.equal(card.approval_id, 'appr-1');
+  assert.equal(card.state, 'pending');
+  assert.equal(v.status, 'complete');
+});
+
+test('watchProgress: pct from expected nodes; indeterminate when unknown', () => {
+  const PXChat = load();
+  const p = PXChat.watchProgress({
+    task_id: 't1',
+    status: 'in_progress',
+    terminal: false,
+    topic: 'T',
+    nodes_done: 12,
+    expected_nodes: 31,
+    nodes: [
+      { node_id: 'a', status: 'success', duration_ms: 5 },
+      { node_id: 'b', status: 'running', duration_ms: null },
+    ],
+  });
+  assert.equal(p.pct, 39);
+  assert.equal(p.current.node_id, 'b');
+  assert.equal(p.tail.length, 2);
+  const unknown = PXChat.watchProgress({
+    task_id: 't2',
+    status: 'in_progress',
+    nodes_done: 3,
+    expected_nodes: null,
+    nodes: [],
+  });
+  assert.equal(unknown.pct, null);
+  assert.equal(PXChat.watchProgress(null), null);
 });
 
 test('fold: does not mutate the previous view (state-safe for React)', () => {

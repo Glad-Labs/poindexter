@@ -66,6 +66,16 @@ class ChatToolSpec:
     parameters: dict[str, Any]
     tier: str  # "read" | "write"
     handler: Callable[..., Awaitable[str]]
+    # P3 (poindexter#949): write tools with requires_approval=True are NOT
+    # executed by the agent loop. The loop queues a chat_approvals row +
+    # renders an approval card; the operator's Approve click executes the
+    # handler via services/chat_approvals.py. An agent_permissions row
+    # (agent_name='console_chat', resource=<tool>, action='execute') can
+    # relax this (requires_approval=false → run inline) or forbid the tool
+    # outright (allowed=false); an indeterminate check fails CLOSED to the
+    # card. create_post stays approval-free by design — its output already
+    # lands in the operator's approval inbox downstream.
+    requires_approval: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +236,72 @@ async def _create_post(
     )
 
 
+async def _set_setting(ctx: ChatToolContext, *, key: str, value: str) -> str:
+    from services.settings_service import SettingsService
+
+    key = key.strip()
+    row = await ctx.pool.fetchrow(
+        "SELECT is_secret FROM app_settings WHERE key = $1", key,
+    )
+    if row is None:
+        raise ChatToolError(
+            f"Setting {key!r} does not exist — chat can update existing "
+            "settings but never invent new keys (new keys land in "
+            "settings_defaults.py via PR)."
+        )
+    if row["is_secret"]:
+        raise ChatToolError(
+            f"Setting {key!r} is a secret — secrets are managed via "
+            "`poindexter setup` / set_secret, never through chat."
+        )
+    svc = SettingsService(ctx.pool)  # type: ignore[no-untyped-call]
+    await svc.set(key, str(value))
+    return f"{key} set to {value!r}. Live within ~60s (reload_site_config)."
+
+
+async def _restart_service(ctx: ChatToolContext, *, container: str) -> str:
+    from services.service_restart_requests import (
+        InvalidContainerName,
+        SelfDefeatingRestart,
+        create_restart_request,
+    )
+
+    try:
+        row = await create_restart_request(
+            ctx.pool, container.strip(), requested_by="console_chat",
+        )
+    except InvalidContainerName as exc:
+        raise ChatToolError(f"Invalid container name: {exc}") from exc
+    except SelfDefeatingRestart as exc:
+        raise ChatToolError(str(exc)) from exc
+    return (
+        f"Restart queued for {container!r} (request {str(row.get('id'))[:8]}) — "
+        "the brain daemon claims and executes it within ~10s."
+    )
+
+
+async def _cancel_task(ctx: ChatToolContext, *, task_id: str) -> str:
+    import json as _json
+    from datetime import datetime, timezone
+
+    from utils.uuid_prefix import resolve_task_id_prefix
+
+    resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
+    task = await ctx.db_service.get_task(resolved)
+    if task is None:
+        raise ChatToolError(f"No task found for id {task_id!r}.")
+    # Same soft-cancel the DELETE /api/tasks/{id} route performs.
+    deleted_metadata = {
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": "console_chat",
+        "soft_delete": True,
+    }
+    await ctx.db_service.update_task_status(
+        resolved, "cancelled", result=_json.dumps({"metadata": deleted_metadata}),
+    )
+    return f"Task {resolved[:8]} cancelled."
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -327,6 +403,42 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="write",
         handler=_create_post,
+    ),
+    ChatToolSpec(
+        name="set_setting",
+        description=(
+            "Update one existing non-secret app_settings value. Queues an "
+            "approval card — the change happens only after the operator "
+            "clicks Approve."
+        ),
+        parameters=_params({"key": _STR, "value": _STR}, ["key", "value"]),
+        tier="write",
+        handler=_set_setting,
+        requires_approval=True,
+    ),
+    ChatToolSpec(
+        name="restart_service",
+        description=(
+            "Queue a container restart (executed by the brain daemon). "
+            "Queues an approval card — restarts happen only after the "
+            "operator clicks Approve."
+        ),
+        parameters=_params({"container": _STR}, ["container"]),
+        tier="write",
+        handler=_restart_service,
+        requires_approval=True,
+    ),
+    ChatToolSpec(
+        name="cancel_task",
+        description=(
+            "Cancel a pipeline task (soft-cancel, same as the console's "
+            "Kill). Queues an approval card — cancellation happens only "
+            "after the operator clicks Approve."
+        ),
+        parameters=_params({"task_id": _STR}, ["task_id"]),
+        tier="write",
+        handler=_cancel_task,
+        requires_approval=True,
     ),
 )
 

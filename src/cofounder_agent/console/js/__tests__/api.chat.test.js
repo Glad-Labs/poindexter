@@ -86,6 +86,60 @@ function makeChatMock() {
       },
     ],
     threads: { c1: [] },
+    // P3 members (mirror data.js's chatMock shape).
+    approvals: {},
+    watchTicks: {},
+    resolveApproval(approvalId, approve) {
+      const a = this.approvals[approvalId];
+      if (!a) throw new Error(`Unknown approval: ${approvalId}`);
+      if (a.state !== 'pending')
+        return { id: approvalId, status: a.state, already_resolved: true };
+      a.state = approve ? 'approved' : 'denied';
+      const executed_ok = approve ? true : null;
+      const result_digest = approve ? a.tool + ' executed (mock).' : '';
+      const thread = this.threads[a.conversationId] || [];
+      for (const msg of thread) {
+        for (const p of msg.parts || []) {
+          if (
+            p.type === 'card' &&
+            p.card &&
+            p.card.approval_id === approvalId
+          ) {
+            p.card.state = a.state;
+            p.card.executed_ok = executed_ok;
+            p.card.result_digest = result_digest;
+          }
+        }
+      }
+      thread.push({
+        id: 'mock-sys-' + Date.now(),
+        role: 'system',
+        turn_status: 'complete',
+        parts: [
+          {
+            type: 'markdown',
+            text: approve
+              ? `Approved: ${a.tool} — ok. ${result_digest}`
+              : `Denied: ${a.tool} — not executed.`,
+          },
+        ],
+      });
+      return { id: approvalId, status: a.state, executed_ok, result_digest };
+    },
+    watchSnapshot(taskId) {
+      const tick = (this.watchTicks[taskId] =
+        (this.watchTicks[taskId] || 0) + 1);
+      const done = Math.min(4 + tick * 3, 31);
+      const terminal = done >= 31;
+      return {
+        task_id: taskId,
+        status: terminal ? 'awaiting_approval' : 'in_progress',
+        terminal,
+        expected_nodes: 31,
+        nodes_done: done,
+        nodes: [],
+      };
+    },
     scriptFor() {
       return [
         [0, { event: 'turn_started', message_id: 'mock-m1' }],
@@ -308,4 +362,134 @@ test('live: chatList/chatGet hit the expected endpoints', async () => {
     calls.urls.some((u) => u.includes('/api/chat/conversations?status=active'))
   );
   assert.ok(calls.urls.some((u) => u.endsWith('/api/chat/conversations/abc')));
+});
+
+// ── P3: approvals + watch (poindexter#949) ──────────────────
+
+test('mock: approval flow — card streams pending, approve stamps + appends outcome', async () => {
+  const { api, sandbox } = makeAdapter({ live: false });
+  sandbox.PX.chatMock.scriptFor = () => [
+    [0, { event: 'turn_started', message_id: 'm-a' }],
+    [
+      0,
+      (() => {
+        sandbox.PX.chatMock.approvals['appr-t1'] = {
+          tool: 'set_setting',
+          args: { key: 'k' },
+          state: 'pending',
+          conversationId: null,
+        };
+        return {
+          event: 'approval_required',
+          approval_id: 'appr-t1',
+          tool: 'set_setting',
+          summary: 'set_setting {"key":"k"}',
+        };
+      })(),
+    ],
+    [0, { event: 'text', text: 'Awaiting your sign-off.' }],
+    [0, { event: 'done', turn_status: 'complete' }],
+  ];
+  const kinds = [];
+  await api.chatSend('c1', 'set k', (ev) => kinds.push(ev.event));
+  assert.ok(kinds.includes('approval_required'));
+  let t = await api.chatGet('c1');
+  const card = t.messages[1].parts.find((p) => p.type === 'card').card;
+  assert.equal(card.kind, 'approval');
+  assert.equal(card.state, 'pending');
+
+  const out = await api.chatApprove('appr-t1');
+  assert.equal(out.status, 'approved');
+  t = await api.chatGet('c1');
+  const stamped = t.messages[1].parts.find((p) => p.type === 'card').card;
+  assert.equal(stamped.state, 'approved');
+  assert.equal(stamped.executed_ok, true);
+  const sys = t.messages[t.messages.length - 1];
+  assert.equal(sys.role, 'system');
+  assert.match(sys.parts[0].text, /Approved: set_setting/);
+
+  // One-shot: a second approve reports already_resolved, changes nothing.
+  const again = await api.chatApprove('appr-t1');
+  assert.equal(again.already_resolved, true);
+});
+
+test('mock: deny stamps the card without executing', async () => {
+  const { api, sandbox } = makeAdapter({ live: false });
+  sandbox.PX.chatMock.approvals['appr-d'] = {
+    tool: 'restart_service',
+    args: {},
+    state: 'pending',
+    conversationId: 'c1',
+  };
+  sandbox.PX.chatMock.threads.c1.push({
+    id: 'm-d',
+    role: 'assistant',
+    turn_status: 'complete',
+    parts: [
+      {
+        type: 'card',
+        card: { kind: 'approval', approval_id: 'appr-d', state: 'pending' },
+      },
+    ],
+  });
+  const out = await api.chatDeny('appr-d');
+  assert.equal(out.status, 'denied');
+  const t = await api.chatGet('c1');
+  const card = t.messages[0].parts[0].card;
+  assert.equal(card.state, 'denied');
+  assert.match(
+    t.messages[t.messages.length - 1].parts[0].text,
+    /Denied: restart_service/
+  );
+});
+
+test('mock: watchSnapshot advances toward a terminal state', async () => {
+  const { api } = makeAdapter({ live: false });
+  const first = await api.chatWatch('t-w');
+  const second = await api.chatWatch('t-w');
+  assert.ok(second.nodes_done > first.nodes_done);
+  assert.equal(first.expected_nodes, 31);
+  let snap = second;
+  for (let i = 0; i < 20 && !snap.terminal; i++)
+    snap = await api.chatWatch('t-w');
+  assert.equal(snap.terminal, true);
+  assert.equal(snap.status, 'awaiting_approval');
+});
+
+test('live: chatApprove/chatDeny/chatWatch hit the P3 endpoints', async () => {
+  const { api, calls } = makeAdapter({
+    live: true,
+    apiHandler: (u) => {
+      if (u.includes('/approvals/'))
+        return res({ id: 'a1', status: 'approved' });
+      if (u.includes('/watch/'))
+        return res({ task_id: 't1', terminal: false, nodes_done: 2 });
+      return res({});
+    },
+  });
+  await api.chatApprove('a1');
+  await api.chatDeny('a1');
+  await api.chatWatch('t1');
+  assert.ok(
+    calls.urls.some((u) => u.endsWith('/api/chat/approvals/a1/approve'))
+  );
+  assert.ok(calls.urls.some((u) => u.endsWith('/api/chat/approvals/a1/deny')));
+  assert.ok(calls.urls.some((u) => u.endsWith('/api/chat/watch/t1')));
+});
+
+test('live: chatSend abort surfaces as AbortError to the caller', async () => {
+  const controller = new AbortController();
+  const { api } = makeAdapter({
+    live: true,
+    apiHandler: () => {
+      const err = new Error('The user aborted a request.');
+      err.name = 'AbortError';
+      return Promise.reject(err);
+    },
+  });
+  controller.abort();
+  await assert.rejects(
+    () => api.chatSend('c', 'x', () => {}, { signal: controller.signal }),
+    (e) => e.name === 'AbortError'
+  );
 });

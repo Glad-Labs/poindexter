@@ -53,6 +53,8 @@ _OVERRIDES: dict[str, str] = {
     "use_ollama": "models",
     "use_prefect_orchestration": "pipeline",
     "trace_recent_limit": "observability",
+    "agent_persona_name": "identity",
+    "console_public_url": "identity",
     "host_home": "infrastructure",
     "repo_root": "infrastructure",
     "environment": "infrastructure",
@@ -249,6 +251,9 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("data_freshness", "observability"),
     ("beacon", "observability"),
     ("live_activity", "observability"),
+    # Cofounder chat surface (poindexter#947/#949) — operator UI + agent
+    # knobs live with the other console-surface settings.
+    ("console_chat", "integrations"),
     ("smart_monitor", "observability"),
     ("branch_drift", "observability"),
     ("pr_staleness", "observability"),

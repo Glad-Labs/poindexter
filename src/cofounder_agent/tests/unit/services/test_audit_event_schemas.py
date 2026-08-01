@@ -84,10 +84,14 @@ class TestFindingDetails:
 class TestEventSchemasRegistry:
     def test_registers_exactly_the_load_bearing_types(self):
         # Opportunistic additions only (poindexter#758): each entry here is a
-        # dashboard-load-bearing shape. chat_tool_call powers the Cofounder
-        # chat panels (poindexter#947).
+        # dashboard-load-bearing shape. The chat_* types power the Cofounder
+        # panels (poindexter#947 tool calls; #949 turns + approval denies).
         assert set(EVENT_SCHEMAS.keys()) == {
-            "qa_pass_completed", "finding", "chat_tool_call",
+            "qa_pass_completed",
+            "finding",
+            "chat_tool_call",
+            "chat_turn_completed",
+            "chat_approval_resolved",
         }
 
 

@@ -98,6 +98,20 @@
       case 'text':
         v.parts.push({ type: 'markdown', text: ev.text || '' });
         break;
+      case 'approval_required':
+        // Mirrors the pending card part the server persists on the turn
+        // (P3 poindexter#949) so the live render matches the reload.
+        v.parts.push({
+          type: 'card',
+          card: {
+            kind: 'approval',
+            approval_id: ev.approval_id,
+            tool: ev.tool,
+            summary: ev.summary || '',
+            state: 'pending',
+          },
+        });
+        break;
       case 'error':
         v.errors.push({
           reason: ev.reason || 'error',
@@ -196,6 +210,32 @@
     return SLASH.filter((s) => s.cmd.startsWith(q));
   }
 
+  // Watched-run snapshot (GET /api/chat/watch/{id}) → rail progress view.
+  // pct is null when the graph's expected node count is unknown (dev_diary /
+  // capture disabled) — the bar renders indeterminate, never fabricated.
+  function watchProgress(snapshot) {
+    if (!snapshot) return null;
+    const done = snapshot.nodes_done || 0;
+    const expected = snapshot.expected_nodes || null;
+    const pct =
+      expected && expected > 0
+        ? Math.min(100, Math.round((done / expected) * 100))
+        : null;
+    const nodes = snapshot.nodes || [];
+    const running = nodes.filter((n) => n.status === 'running');
+    return {
+      taskId: snapshot.task_id,
+      status: snapshot.status,
+      terminal: !!snapshot.terminal,
+      topic: snapshot.topic || '',
+      done,
+      expected,
+      pct,
+      current: running.length ? running[running.length - 1] : null,
+      tail: nodes.slice(-4),
+    };
+  }
+
   window.PXChat = {
     splitNdjson,
     newTurnView,
@@ -204,6 +244,7 @@
     statusMeta,
     suggestedPrompts,
     slashMatches,
+    watchProgress,
     SLASH,
   };
 })();

@@ -2576,14 +2576,47 @@
   const chatMock = {
     persona: 'Poindexter',
     tools: [
-      { name: 'list_tasks', description: 'List content pipeline tasks, newest first.', tier: 'read' },
-      { name: 'get_task', description: "Get one pipeline task's detail by id.", tier: 'read' },
-      { name: 'get_budget', description: 'Current AI spend vs the monthly budget cap.', tier: 'read' },
-      { name: 'search_memory', description: "Semantic search across the operator's memory.", tier: 'read' },
-      { name: 'find_similar_posts', description: 'Find published posts similar to a topic.', tier: 'read' },
-      { name: 'get_audit_summary', description: 'System activity summary from the audit log.', tier: 'read' },
-      { name: 'get_setting', description: 'Read one non-secret app_settings value.', tier: 'read' },
-      { name: 'create_post', description: 'Create a blog post pipeline task (waits for your approval).', tier: 'write' },
+      {
+        name: 'list_tasks',
+        description: 'List content pipeline tasks, newest first.',
+        tier: 'read',
+      },
+      {
+        name: 'get_task',
+        description: "Get one pipeline task's detail by id.",
+        tier: 'read',
+      },
+      {
+        name: 'get_budget',
+        description: 'Current AI spend vs the monthly budget cap.',
+        tier: 'read',
+      },
+      {
+        name: 'search_memory',
+        description: "Semantic search across the operator's memory.",
+        tier: 'read',
+      },
+      {
+        name: 'find_similar_posts',
+        description: 'Find published posts similar to a topic.',
+        tier: 'read',
+      },
+      {
+        name: 'get_audit_summary',
+        description: 'System activity summary from the audit log.',
+        tier: 'read',
+      },
+      {
+        name: 'get_setting',
+        description: 'Read one non-secret app_settings value.',
+        tier: 'read',
+      },
+      {
+        name: 'create_post',
+        description:
+          'Create a blog post pipeline task (waits for your approval).',
+        tier: 'write',
+      },
     ],
     conversations: [
       {
@@ -2608,50 +2641,192 @@
     threads: {
       'mock-conv-1': [
         {
-          id: 'mock-m1', role: 'user', turn_status: 'complete',
-          parts: [{ type: 'markdown', text: "What's in the pipeline right now?" }],
+          id: 'mock-m1',
+          role: 'user',
+          turn_status: 'complete',
+          parts: [
+            { type: 'markdown', text: "What's in the pipeline right now?" },
+          ],
           created_at: isoAgo(3600),
         },
         {
-          id: 'mock-m2', role: 'assistant', turn_status: 'complete',
-          model: 'qwen2.5:7b', prompt_tokens: 1480, completion_tokens: 92, cost_usd: 0,
+          id: 'mock-m2',
+          role: 'assistant',
+          turn_status: 'complete',
+          model: 'qwen2.5:7b',
+          prompt_tokens: 1480,
+          completion_tokens: 92,
+          cost_usd: 0,
           parts: [
-            { type: 'tool_call', name: 'list_tasks', ok: true, ms: 412, args_digest: '{"limit": 10}', result_digest: '3 task(s):\n- 9b1c8d2e [awaiting_approval] Own your numbers…\n- 41f2aa07 [in_progress] Local-first analytics…\n- c07d3b19 [pending] RAG retrieval stacks…' },
-            { type: 'markdown', text: '3 tasks in flight: one awaiting your approval (9b1c8d2e), one mid-pipeline, one queued.' },
+            {
+              type: 'tool_call',
+              name: 'list_tasks',
+              ok: true,
+              ms: 412,
+              args_digest: '{"limit": 10}',
+              result_digest:
+                '3 task(s):\n- 9b1c8d2e [awaiting_approval] Own your numbers…\n- 41f2aa07 [in_progress] Local-first analytics…\n- c07d3b19 [pending] RAG retrieval stacks…',
+            },
+            {
+              type: 'markdown',
+              text: '3 tasks in flight: one awaiting your approval (9b1c8d2e), one mid-pipeline, one queued.',
+            },
           ],
           created_at: isoAgo(3560),
         },
         {
-          id: 'mock-m3', role: 'user', turn_status: 'complete',
-          parts: [{ type: 'markdown', text: 'Write a post about VRAM contention in shared GPU rigs' }],
+          id: 'mock-m3',
+          role: 'user',
+          turn_status: 'complete',
+          parts: [
+            {
+              type: 'markdown',
+              text: 'Write a post about VRAM contention in shared GPU rigs',
+            },
+          ],
           created_at: isoAgo(3450),
         },
         {
-          id: 'mock-m4', role: 'assistant', turn_status: 'complete',
-          model: 'qwen2.5:7b', prompt_tokens: 1720, completion_tokens: 141, cost_usd: 0,
+          id: 'mock-m4',
+          role: 'assistant',
+          turn_status: 'complete',
+          model: 'qwen2.5:7b',
+          prompt_tokens: 1720,
+          completion_tokens: 141,
+          cost_usd: 0,
           parts: [
-            { type: 'tool_call', name: 'create_post', ok: true, ms: 933, args_digest: '{"topic": "VRAM contention in shared GPU rigs"}', result_digest: '{"task_id": "f3a91c44", "status": "pending"}' },
+            {
+              type: 'tool_call',
+              name: 'create_post',
+              ok: true,
+              ms: 933,
+              args_digest: '{"topic": "VRAM contention in shared GPU rigs"}',
+              result_digest: '{"task_id": "f3a91c44", "status": "pending"}',
+            },
             { type: 'card', card: { kind: 'task_link', task_id: 'f3a91c44' } },
-            { type: 'markdown', text: 'Queued it — task f3a91c44 is pending. It runs the full pipeline and lands in your approval inbox; nothing publishes without you.' },
+            {
+              type: 'markdown',
+              text: 'Queued it — task f3a91c44 is pending. It runs the full pipeline and lands in your approval inbox; nothing publishes without you.',
+            },
           ],
           created_at: isoAgo(3400),
         },
       ],
       'mock-conv-2': [
         {
-          id: 'mock-m5', role: 'user', turn_status: 'complete',
-          parts: [{ type: 'markdown', text: 'Write a post about self-hosted observability' }],
+          id: 'mock-m5',
+          role: 'user',
+          turn_status: 'complete',
+          parts: [
+            {
+              type: 'markdown',
+              text: 'Write a post about self-hosted observability',
+            },
+          ],
           created_at: isoAgo(9200),
         },
         {
-          id: 'mock-m6', role: 'assistant', turn_status: 'interrupted',
-          model: 'qwen2.5:7b', prompt_tokens: 610, completion_tokens: 0, cost_usd: 0,
+          id: 'mock-m6',
+          role: 'assistant',
+          turn_status: 'interrupted',
+          model: 'qwen2.5:7b',
+          prompt_tokens: 610,
+          completion_tokens: 0,
+          cost_usd: 0,
           parts: [
-            { type: 'markdown', text: 'Turn hit the 120s deadline (console_chat_turn_timeout_s) and was interrupted.' },
+            {
+              type: 'markdown',
+              text: 'Turn hit the 120s deadline (console_chat_turn_timeout_s) and was interrupted.',
+            },
           ],
           created_at: isoAgo(9000),
         },
       ],
+    },
+    // P3 (poindexter#949): pending approval cards + watched-run snapshots.
+    approvals: {},
+    watchTicks: {},
+    links: {},
+    resolveApproval(approvalId, approve) {
+      const a = this.approvals[approvalId];
+      if (!a) throw new Error(`Unknown approval: ${approvalId}`);
+      if (a.state !== 'pending')
+        return { id: approvalId, status: a.state, already_resolved: true };
+      a.state = approve ? 'approved' : 'denied';
+      const executed_ok = approve ? true : null;
+      const result_digest = approve ? a.tool + ' executed (mock).' : '';
+      // Stamp the card part on the owning thread message + append the
+      // system-message outcome — same shape the server produces.
+      const thread = this.threads[a.conversationId] || [];
+      for (const msg of thread) {
+        for (const p of msg.parts || []) {
+          if (
+            p.type === 'card' &&
+            p.card &&
+            p.card.approval_id === approvalId
+          ) {
+            p.card.state = a.state;
+            p.card.executed_ok = executed_ok;
+            p.card.result_digest = result_digest;
+          }
+        }
+      }
+      thread.push({
+        id: 'mock-sys-' + Date.now(),
+        role: 'system',
+        turn_status: 'complete',
+        parts: [
+          {
+            type: 'markdown',
+            text: approve
+              ? `Approved: ${a.tool} — ok. ${result_digest}`
+              : `Denied: ${a.tool} — not executed.`,
+          },
+        ],
+        created_at: new Date().toISOString(),
+      });
+      return {
+        id: approvalId,
+        status: a.state,
+        executed_ok,
+        result_digest,
+      };
+    },
+    // Advancing watch snapshot so the rail demo shows real motion; caps at
+    // a terminal awaiting_approval state (mock mode is an explicit demo).
+    watchSnapshot(taskId) {
+      const tick = (this.watchTicks[taskId] =
+        (this.watchTicks[taskId] || 0) + 1);
+      const done = Math.min(4 + tick * 3, 31);
+      const terminal = done >= 31;
+      const names = [
+        'content.generate_draft',
+        'writer_self_review',
+        'qa.web_factcheck',
+        'content.generate_images',
+        'qa.aggregate',
+        'seo.generate_all_metadata',
+        'content.persist_task',
+      ];
+      const nodes = [];
+      for (let i = Math.max(0, done - 4); i < done; i++) {
+        nodes.push({
+          node_id: names[i % names.length] + '_' + i,
+          atom: names[i % names.length],
+          status: i === done - 1 && !terminal ? 'running' : 'success',
+          duration_ms: 900 + (i % 5) * 400,
+        });
+      }
+      return {
+        task_id: taskId,
+        status: terminal ? 'awaiting_approval' : 'in_progress',
+        topic: 'Mock pipeline run',
+        terminal,
+        quality_score: terminal ? 87 : null,
+        expected_nodes: 31,
+        nodes_done: done,
+        nodes,
+      };
     },
     // Scripted mock turn: the event sequence a real send streams, with
     // per-event delays (ms). api.js plays this back through the same
@@ -2662,30 +2837,174 @@
       const base = [
         [120, { event: 'turn_started', message_id: 'mock-live-' + Date.now() }],
       ];
+      if (
+        t.includes('restart') ||
+        t.startsWith('set ') ||
+        t.includes('setting')
+      ) {
+        const tool = t.includes('restart') ? 'restart_service' : 'set_setting';
+        const args = t.includes('restart')
+          ? { container: 'poindexter-worker' }
+          : { key: 'console_chat_model', value: 'qwen2.5:7b' };
+        const approvalId = 'mock-appr-' + Date.now();
+        // Registered on emit so the card's buttons resolve against it.
+        const summary = tool + ' ' + JSON.stringify(args);
+        const self = window.PX.chatMock;
+        return base.concat([
+          [
+            400,
+            (() => {
+              self.approvals[approvalId] = {
+                tool,
+                args,
+                state: 'pending',
+                conversationId: null, // stamped by chatSend's persist step
+              };
+              return {
+                event: 'approval_required',
+                approval_id: approvalId,
+                tool,
+                summary,
+              };
+            })(),
+          ],
+          [
+            300,
+            {
+              event: 'tool_result',
+              name: tool,
+              ok: true,
+              ms: 0,
+              digest:
+                tool +
+                ' is queued for operator approval (id ' +
+                approvalId.slice(-8) +
+                ').',
+            },
+          ],
+          [
+            400,
+            mkText(
+              'Queued — it runs only after you click Approve on the card.'
+            ),
+          ],
+          [
+            80,
+            {
+              event: 'done',
+              turn_status: 'complete',
+              prompt_tokens: 1520,
+              completion_tokens: 84,
+              cost_usd: 0,
+            },
+          ],
+        ]);
+      }
       if (t.includes('post about') || t.startsWith('/create-post')) {
         const topic = text.replace(/^.*post about/i, '').trim() || 'that topic';
         const id = 'mk' + String(Date.now()).slice(-6);
         return base.concat([
-          [300, { event: 'tool_start', name: 'create_post', args_digest: JSON.stringify({ topic }) }],
-          [900, { event: 'tool_result', name: 'create_post', ok: true, ms: 902, digest: '{"task_id": "' + id + '", "status": "pending"}' }],
+          [
+            300,
+            {
+              event: 'tool_start',
+              name: 'create_post',
+              args_digest: JSON.stringify({ topic }),
+            },
+          ],
+          [
+            900,
+            {
+              event: 'tool_result',
+              name: 'create_post',
+              ok: true,
+              ms: 902,
+              digest: '{"task_id": "' + id + '", "status": "pending"}',
+            },
+          ],
           [60, { event: 'task_linked', task_id: id }],
-          [500, mkText('Queued it — task ' + id + ' is pending and will land in your approval inbox.')],
-          [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1650, completion_tokens: 120, cost_usd: 0 }],
+          [
+            500,
+            mkText(
+              'Queued it — task ' +
+                id +
+                ' is pending and will land in your approval inbox.'
+            ),
+          ],
+          [
+            80,
+            {
+              event: 'done',
+              turn_status: 'complete',
+              prompt_tokens: 1650,
+              completion_tokens: 120,
+              cost_usd: 0,
+            },
+          ],
         ]);
       }
       if (t.includes('spent') || t.includes('budget')) {
         return base.concat([
           [280, { event: 'tool_start', name: 'get_budget', args_digest: '{}' }],
-          [520, { event: 'tool_result', name: 'get_budget', ok: true, ms: 517, digest: '{"amount_spent": 4.31, "monthly_budget": 30, "status": "healthy"}' }],
+          [
+            520,
+            {
+              event: 'tool_result',
+              name: 'get_budget',
+              ok: true,
+              ms: 517,
+              digest:
+                '{"amount_spent": 4.31, "monthly_budget": 30, "status": "healthy"}',
+            },
+          ],
           [420, mkText('$4.31 of the $30 monthly cap — healthy.')],
-          [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1390, completion_tokens: 64, cost_usd: 0 }],
+          [
+            80,
+            {
+              event: 'done',
+              turn_status: 'complete',
+              prompt_tokens: 1390,
+              completion_tokens: 64,
+              cost_usd: 0,
+            },
+          ],
         ]);
       }
       return base.concat([
-        [300, { event: 'tool_start', name: 'list_tasks', args_digest: '{"limit": 10}' }],
-        [650, { event: 'tool_result', name: 'list_tasks', ok: true, ms: 641, digest: '3 task(s):\n- 9b1c8d2e [awaiting_approval] …' }],
-        [500, mkText('3 tasks in flight: one awaiting your approval, one mid-pipeline, one queued.')],
-        [80, { event: 'done', turn_status: 'complete', prompt_tokens: 1480, completion_tokens: 92, cost_usd: 0 }],
+        [
+          300,
+          {
+            event: 'tool_start',
+            name: 'list_tasks',
+            args_digest: '{"limit": 10}',
+          },
+        ],
+        [
+          650,
+          {
+            event: 'tool_result',
+            name: 'list_tasks',
+            ok: true,
+            ms: 641,
+            digest: '3 task(s):\n- 9b1c8d2e [awaiting_approval] …',
+          },
+        ],
+        [
+          500,
+          mkText(
+            '3 tasks in flight: one awaiting your approval, one mid-pipeline, one queued.'
+          ),
+        ],
+        [
+          80,
+          {
+            event: 'done',
+            turn_status: 'complete',
+            prompt_tokens: 1480,
+            completion_tokens: 92,
+            cost_usd: 0,
+          },
+        ],
       ]);
     },
   };

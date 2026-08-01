@@ -238,7 +238,7 @@
   // generous outer bound so a dead socket still can't hang the composer
   // forever. Auth mirrors http(): mint, and on a 401 clear + retry once.
   const STREAM_TIMEOUT_MS = 300_000;
-  async function httpStream(path, body, onChunkText) {
+  async function httpStream(path, body, onChunkText, signal) {
     const url = cfg.base + path;
     const doFetch = async () => {
       const tok = await getToken();
@@ -249,6 +249,7 @@
           Authorization: 'Bearer ' + tok,
         },
         body: JSON.stringify(body || {}),
+        ...(signal ? { signal } : {}),
       });
     };
     let res = await doFetch();
@@ -285,7 +286,9 @@
         } catch (e) {
           /* already closed */
         }
-        throw new Error(`POST ${path} → stream exceeded ${STREAM_TIMEOUT_MS}ms`);
+        throw new Error(
+          `POST ${path} → stream exceeded ${STREAM_TIMEOUT_MS}ms`
+        );
       }
       const { value, done } = await reader.read();
       if (done) break;
@@ -2048,7 +2051,7 @@
           return {
             conversation,
             messages: m.threads[id] || [],
-            task_links: [],
+            task_links: (m.links && m.links[id]) || [],
           };
         }
       );
@@ -2092,7 +2095,10 @@
     // arrive; resolves when the stream ends. Mock plays the scripted
     // event sequence through the SAME callback path, then persists the
     // exchange into the mock thread (fold parity with the server).
-    async chatSend(id, text, onEvent) {
+    // `opts.signal` (AbortSignal) is the composer's Stop button (P3):
+    // aborting cancels the fetch → the worker cancels the turn and
+    // finalizes it 'interrupted'.
+    async chatSend(id, text, onEvent, opts = {}) {
       const emit = typeof onEvent === 'function' ? onEvent : () => {};
       if (cfg.live) {
         let carry = '';
@@ -2103,7 +2109,8 @@
             const r = window.PXChat.splitNdjson(carry, chunkText);
             carry = r.rest;
             r.events.forEach(emit);
-          }
+          },
+          opts.signal
         );
         // Flush a trailing line the stream ended without \n on.
         const tail = window.PXChat.splitNdjson(carry, '\n');
@@ -2121,18 +2128,24 @@
         cfg.sim === 'error'
           ? [
               [120, { event: 'turn_started', message_id: 'mock-err' }],
-              [300, {
+              [
+                300,
+                {
                   event: 'error',
                   reason: 'turn_crashed',
                   detail: 'Simulated API error (dev sim = error)',
-                }],
-              [60, {
+                },
+              ],
+              [
+                60,
+                {
                   event: 'done',
                   turn_status: 'failed',
                   prompt_tokens: 0,
                   completion_tokens: 0,
                   cost_usd: 0,
-                }],
+                },
+              ],
             ]
           : m.scriptFor(text);
       for (const [delay, ev] of script) {
@@ -2158,11 +2171,58 @@
         parts: view.parts,
         created_at: new Date().toISOString(),
       });
+      // Stamp mock approvals with their owning conversation so the card's
+      // Approve/Deny buttons can find + rewrite this thread (P3).
+      for (const p of view.parts) {
+        if (p.type === 'card' && p.card && p.card.kind === 'approval') {
+          const a = m.approvals[p.card.approval_id];
+          if (a) a.conversationId = id;
+        }
+      }
+      // Persist task links so the rail's watch poll survives the turn
+      // ending (mirrors chat_task_links).
+      if (view.taskIds.length) {
+        m.links = m.links || {};
+        const links = (m.links[id] = m.links[id] || []);
+        for (const taskId of view.taskIds)
+          links.push({ pipeline_task_id: taskId, purpose: 'created' });
+      }
       if (conv) {
         conv.message_count = thread.length;
         conv.last_message_at = new Date().toISOString();
         if (!conv.title) conv.title = text.slice(0, 60);
       }
+    },
+    // Approval-card resolution (P3 poindexter#949). One-shot server-side;
+    // the resolved approval comes back for immediate card stamping, and the
+    // caller re-GETs the thread for the appended system message.
+    chatApprove(approvalId) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/chat/approvals/${encodeURIComponent(approvalId)}/approve`
+          ),
+        () => window.PX.chatMock.resolveApproval(approvalId, true)
+      );
+    },
+    chatDeny(approvalId) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/chat/approvals/${encodeURIComponent(approvalId)}/deny`
+          ),
+        () => window.PX.chatMock.resolveApproval(approvalId, false)
+      );
+    },
+    // Watched-run progress snapshot for the activity rail (5s poll while a
+    // linked task is live).
+    chatWatch(taskId) {
+      return pick(
+        () => http('GET', `/api/chat/watch/${encodeURIComponent(taskId)}`),
+        () => window.PX.chatMock.watchSnapshot(taskId)
+      );
     },
   };
 

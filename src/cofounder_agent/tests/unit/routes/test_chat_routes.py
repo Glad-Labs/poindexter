@@ -136,6 +136,75 @@ class TestToolsCatalog:
 
 
 @pytest.mark.unit
+class TestApprovalRoutes:
+    def _client_with_resolver(self, monkeypatch, resolver):
+        import services.chat_approvals as chat_approvals
+
+        monkeypatch.setattr(chat_approvals, "resolve_approval", resolver)
+        return _build_client()
+
+    def test_approve_resolves(self, fake_store, monkeypatch):
+        seen = {}
+
+        async def resolver(*, pool, db_service, site_config, approval_id,
+                           approve, user_id="operator"):
+            seen.update({"id": approval_id, "approve": approve})
+            return {"id": approval_id, "status": "approved",
+                    "executed_ok": True, "result_digest": "done"}
+
+        client = self._client_with_resolver(monkeypatch, resolver)
+        resp = client.post("/api/chat/approvals/appr-1/approve")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "approved"
+        assert seen == {"id": "appr-1", "approve": True}
+
+    def test_deny_resolves(self, fake_store, monkeypatch):
+        async def resolver(**kwargs):
+            assert kwargs["approve"] is False
+            return {"id": kwargs["approval_id"], "status": "denied"}
+
+        client = self._client_with_resolver(monkeypatch, resolver)
+        assert client.post("/api/chat/approvals/appr-1/deny").status_code == 200
+
+    def test_unknown_approval_404(self, fake_store, monkeypatch):
+        async def resolver(**kwargs):
+            raise KeyError(kwargs["approval_id"])
+
+        client = self._client_with_resolver(monkeypatch, resolver)
+        assert client.post("/api/chat/approvals/nope/approve").status_code == 404
+
+    def test_gated_by_enabled_flag(self, fake_store):
+        client = _build_client(enabled=False)
+        assert client.post("/api/chat/approvals/a/approve").status_code == 403
+
+
+@pytest.mark.unit
+class TestWatchRoute:
+    def test_snapshot_passthrough(self, fake_store, monkeypatch):
+        import services.chat_watch as chat_watch
+
+        async def watch_task(pool, task_id):
+            return {"task_id": task_id, "status": "in_progress",
+                    "terminal": False, "nodes_done": 3}
+
+        monkeypatch.setattr(chat_watch, "watch_task", watch_task)
+        client = _build_client()
+        resp = client.get("/api/chat/watch/t-9")
+        assert resp.status_code == 200
+        assert resp.json()["nodes_done"] == 3
+
+    def test_unknown_task_404(self, fake_store, monkeypatch):
+        import services.chat_watch as chat_watch
+
+        async def watch_task(pool, task_id):
+            return None
+
+        monkeypatch.setattr(chat_watch, "watch_task", watch_task)
+        client = _build_client()
+        assert client.get("/api/chat/watch/nope").status_code == 404
+
+
+@pytest.mark.unit
 class TestConversationCrud:
     def test_create_201(self, fake_store):
         client = _build_client()
