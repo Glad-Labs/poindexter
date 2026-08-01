@@ -1032,7 +1032,9 @@ class GPUScheduler:
                 holder_stats = None
 
         free_gb: float | None = None
-        evictable_gb = 0.0
+        # None = unknown; decide() fails open on it. Do NOT default this to 0.0
+        # — that reads as "nothing evictable" and rejects (poindexter#914).
+        evictable_gb: float | None = None
         try:
             registry = self._get_registry()
             gpu_index = _cfg_int("pipeline_gpu_index", 0)
@@ -1041,7 +1043,7 @@ class GPUScheduler:
         except Exception:
             # silent-ok: missing VRAM telemetry skips the fit gate (fail-open);
             # a persistent outage already pages via nvidia_exporter_unreachable.
-            free_gb, evictable_gb = None, 0.0
+            free_gb, evictable_gb = None, None
 
         estimate_gb: float | None = None
         if model:

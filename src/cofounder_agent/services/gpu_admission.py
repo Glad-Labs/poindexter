@@ -65,7 +65,12 @@ class AdmissionInputs:
     holder_stats: LeaseStats | None = None
     eta_fallback_s: float = 120.0
     free_gpu0_gb: float | None = None
-    evictable_gpu0_gb: float = 0.0  # 0.0 when unknown (conservative)
+    # None = UNKNOWN (telemetry stale/absent), 0.0 = known "nothing evictable".
+    # These were conflated until poindexter#914: a scrape lag that hid a
+    # resident 21GB model read as "nothing to evict" and produced a `no_fit`
+    # that degraded the QA rail — which then passed OPEN, so the judgement
+    # silently did not happen. Unknown must fail open, like free_gpu0_gb.
+    evictable_gpu0_gb: float | None = None
     headroom_gb: float = 6.0
     model_estimate_gb: float | None = None
 
@@ -104,6 +109,13 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
     budget = i.free_gpu0_gb - i.headroom_gb
     if i.model_estimate_gb <= budget:
         return AdmissionDecision(action="grant", eta_seconds=eta)
+    # Eviction credit unknown -> fail open. We already know the model does not
+    # fit the free budget, so the only question left is whether something
+    # evictable is holding the rest of the card. Answering "no" on ignorance
+    # rejects the caller, and a rejected QA rail passes OPEN — trading a slow
+    # judgement for no judgement at all (poindexter#914).
+    if i.evictable_gpu0_gb is None:
+        return AdmissionDecision(action="grant_after_unload", eta_seconds=eta)
     if i.model_estimate_gb <= budget + i.evictable_gpu0_gb:
         return AdmissionDecision(action="grant_after_unload", eta_seconds=eta)
     return AdmissionDecision(action="reject", reason="no_fit", eta_seconds=eta)

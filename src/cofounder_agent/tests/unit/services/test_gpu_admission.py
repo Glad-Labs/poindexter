@@ -229,15 +229,49 @@ def test_missing_model_estimate_skips_fit_gate():
     assert d.action == "grant"
 
 
-def test_unknown_evictable_defaults_conservative_zero():
-    """evictable defaults 0.0 → no phantom eviction credit: a model that only
-    fits WITH eviction is rejected when the per-process metric is absent."""
+def test_unknown_evictable_fails_open():
+    """Unknown eviction credit grants (after unload) rather than rejecting.
+
+    REVERSED 2026-07-31 (poindexter#914). This previously asserted `reject`,
+    reasoning that an absent per-process metric must not buy "phantom eviction
+    credit". That concern is real — the replacement keeps it, in
+    ``test_known_zero_evictable_still_rejects`` below: a card we can SEE is
+    empty still rejects.
+
+    What changed is the treatment of *ignorance*. The metric lags ~40s (10s
+    exporter refresh + 30s Prometheus scrape) against a 45s rail budget, so
+    "absent" routinely meant "a 21GB model loaded and hasn't been scraped yet",
+    not "nothing is loaded". Rejecting on that degraded the QA rail — which
+    **passes open** — so the judgement silently did not happen: 105 rejections
+    and a 0% success rate on qa_deepeval_judge in one 66-minute prod window.
+
+    The asymmetry decides it: a rejected rail means NO QA, an over-granted one
+    merely thrashes. `GPURegistry.evictable_ollama_gb` now returns None for
+    unknown and a float (including a real 0.0) when it knows.
+    """
     d = decide(
         AdmissionInputs(
             max_wait_s=60.0,
             free_gpu0_gb=16.0,
             headroom_gb=6.0,
             model_estimate_gb=14.0,
+            evictable_gpu0_gb=None,  # unknown
+        )
+    )
+    assert d.action == "grant_after_unload"
+    assert d.reason is None
+
+
+def test_known_zero_evictable_still_rejects():
+    """The teeth the reversal above must not remove: when we KNOW the card has
+    nothing evictable and the model doesn't fit, reject."""
+    d = decide(
+        AdmissionInputs(
+            max_wait_s=60.0,
+            free_gpu0_gb=16.0,
+            headroom_gb=6.0,
+            model_estimate_gb=14.0,
+            evictable_gpu0_gb=0.0,  # known-empty, not unknown
         )
     )
     assert d.action == "reject"

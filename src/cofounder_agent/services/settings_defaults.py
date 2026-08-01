@@ -2376,6 +2376,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vision_scorer_unavailable.cooldown_minutes': '360',
     'findings.vision_scorer_unavailable.min_severity': 'warn',
 
+    # ----- GPU eviction-credit staleness tolerance (poindexter#914) -----
+    # Per-card VRAM that nvidia_gpu_process_memory_mib may leave unattributed
+    # before GPURegistry.evictable_ollama_gb treats its process list as stale
+    # and returns None (unknown) instead of 0.0 (nothing evictable). Driver /
+    # context overhead is never charged to a PID so a small gap is normal
+    # (~0.3GB observed); a multi-GB gap means a loaded model has not been
+    # scraped yet — the exporter lags ~40s (10s refresh + 30s scrape) and a
+    # false 0.0 there rejects admission, degrading a QA rail that then passes
+    # OPEN. Sized under the smallest fleet model (~3.5GB), above real overhead.
+    'gpu_evictable_unattributed_tolerance_gb': '2.0',
     # ----- Cost-guard local downgrade (instead of hard-failing) -----
     # When the paid daily/monthly cap is reached, dispatch_complete swaps the
     # PAID model for a local one and warns, rather than propagating

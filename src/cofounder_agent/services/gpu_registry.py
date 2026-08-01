@@ -43,6 +43,12 @@ _FREE_MEMO_TTL_SEC = 15.0
 # the bare "ollama" that shipped as the default matched nothing on this host, so
 # the eviction credit was silently 0.0 for the entire P1 soak.
 _DEFAULT_EVICTABLE_PROCESS_PATTERN = "llama-server,ollama"
+# Per-card VRAM that `nvidia_gpu_process_memory_mib` may leave unattributed
+# before the process list is treated as stale (poindexter#914). Driver/context
+# overhead is never charged to a PID, so a small gap is normal; a multi-GB gap
+# means a loaded model has not been scraped yet. Sized well under the smallest
+# model in the fleet (~3.5GB) and well above observed overhead (~0.3GB).
+_DEFAULT_UNATTRIBUTED_TOLERANCE_GB = 2.0
 
 
 class GPURegistry:
@@ -89,8 +95,13 @@ class GPURegistry:
         self._free_memo[gpu_index] = (now, value)
         return value
 
-    async def evictable_ollama_gb(self, gpu_index: int) -> float:
-        """VRAM (GB) the evictable LLM runner holds ON THIS CARD; 0.0 unknown.
+    async def evictable_ollama_gb(self, gpu_index: int) -> float | None:
+        """VRAM (GB) the evictable LLM runner holds ON THIS CARD.
+
+        Returns ``None`` when the answer is UNKNOWN and a float when it is
+        known — including a genuine ``0.0`` for "nothing evictable is loaded".
+        Mirrors :meth:`free_gb`'s contract so admission can fail open on
+        unknown instead of treating ignorance as absence.
 
         Sums the exporter's per-process rows (``nvidia_gpu_process_memory_mib``)
         whose ``gpu`` label matches the card and whose ``process`` label
@@ -98,19 +109,38 @@ class GPURegistry:
         case-insensitive substring). The metric is queried unfiltered and matched
         client-side so a model spilled across both cards contributes only its
         gpu0 share — the per-card mandate that rules out the ``/api/ps``
-        cross-card total. Absent metric, empty result, or any failure → 0.0
-        (conservative: admission then sees no eviction credit).
+        cross-card total.
+
+        **Why 0.0-means-unknown had to die (poindexter#914, 2026-07-31).** This
+        returned 0.0 for every failure mode, and 0.0 is also the legitimate
+        "nothing is loaded" answer, so the two were indistinguishable. Measured
+        on prod: Prometheus was missing a live ``llama-server`` holding ~21 GB on
+        gpu0 that ``nvidia-smi`` saw at the same instant — pure scrape lag (10s
+        exporter refresh + 30s Prometheus interval ≈ 40s worst case, against a
+        45s rail budget). Admission read the 0.0 as "nothing to evict", answered
+        ``no_fit``, and the QA rail degraded and **passed open** — so the
+        judgement silently did not happen. Over one 66-minute window that was
+        105 rejections and a 0% success rate on ``qa_deepeval_judge``.
+
+        Rejecting on incomplete telemetry is the wrong default here: a rejected
+        rail means NO QA at all, while an over-granted one merely thrashes.
+
+        **Staleness detection.** An empty/failed query is unknown outright. When
+        rows do come back, the per-process sum for this card is corroborated
+        against ``nvidia_gpu_memory_used_mib`` — a large unattributed remainder
+        means the process list has not caught up with a load that already
+        happened, so the honest answer is ``None``, not ``0.0``. Small gaps are
+        expected (driver/context overhead is never attributed to a PID), hence
+        the tolerance rather than an equality check.
 
         **Why a LIST (2026-07-29).** The setting shipped as a single substring
         defaulting to ``"ollama"`` — which matched nothing on this host, so the
         credit was silently 0.0 on every card and the fit gate ran blind for the
         whole P1 soak. Ollama does not name its runner "ollama": the real
         process is ``/usr/local/lib/ollama/llama-server`` → label
-        ``llama-server``, and ``"ollama" not in "llama-server"``. The failure is
-        invisible because 0.0 is also the legitimate "no telemetry" value and
-        the gate fails open, so nothing ever errored — it just never granted
-        eviction credit. Matching a list keeps that from recurring the next time
-        a vendor renames a binary, and single-value configs still work unchanged.
+        ``llama-server``, and ``"ollama" not in "llama-server"``. Matching a list
+        keeps that from recurring the next time a vendor renames a binary, and
+        single-value configs still work unchanged.
         """
         raw = (
             self._site_config.get("gpu_evictable_process_pattern", "")
@@ -118,23 +148,57 @@ class GPURegistry:
         )
         patterns = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
         if not patterns:
+            # Operator explicitly cleared the pattern: nothing is DECLARED
+            # evictable. That is a real answer, not missing telemetry.
             return 0.0
         rows = await self._instant_query(_PROCESS_MEMORY_METRIC)
         if not rows:
-            return 0.0
-        total_mib = 0.0
+            return None  # metric absent / query failed — unknown, not zero
+
+        matched_mib = 0.0
+        attributed_mib = 0.0
+        saw_card = False
         for row in rows:
             labels = row.get("metric") or {}
             if labels.get("gpu") != str(gpu_index):
                 continue
-            process = str(labels.get("process", "")).lower()
-            if not any(p in process for p in patterns):
-                continue
+            saw_card = True
             try:
-                total_mib += float(row["value"][1])
+                value_mib = float(row["value"][1])
             except (KeyError, IndexError, TypeError, ValueError):
                 continue
-        return total_mib / _MIB_PER_GB
+            attributed_mib += value_mib
+            process = str(labels.get("process", "")).lower()
+            if any(p in process for p in patterns):
+                matched_mib += value_mib
+
+        if not saw_card:
+            # The metric exists but carries no rows for THIS card — the
+            # exporter may not have enumerated it yet. Unknown.
+            return None
+
+        used_mib = await self._instant_scalar(
+            f'nvidia_gpu_memory_used_mib{{gpu="{gpu_index}"}}'
+        )
+        if used_mib is None:
+            # Can't corroborate. The process list alone cannot distinguish
+            # "nothing loaded" from "load not scraped yet".
+            return None
+        tolerance_gb = self._site_config.get_float(
+            "gpu_evictable_unattributed_tolerance_gb",
+            _DEFAULT_UNATTRIBUTED_TOLERANCE_GB,
+        )
+        unattributed_gb = (used_mib - attributed_mib) / _MIB_PER_GB
+        if unattributed_gb > tolerance_gb:
+            logger.debug(
+                "[gpu_registry] gpu%d has %.1fGB unattributed VRAM (used=%.1fGB, "
+                "per-process=%.1fGB) — process list is stale, eviction credit unknown",
+                gpu_index, unattributed_gb, used_mib / _MIB_PER_GB,
+                attributed_mib / _MIB_PER_GB,
+            )
+            return None
+
+        return matched_mib / _MIB_PER_GB
 
     def _prometheus_url(self) -> str:
         return self._site_config.get("gpu_metrics_prometheus_url", "") or _DEFAULT_PROM_URL

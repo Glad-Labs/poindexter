@@ -173,19 +173,25 @@ async def test_evictable_spilled_model_counts_only_this_cards_share():
 
 
 @pytest.mark.asyncio
-async def test_evictable_absent_metric_is_zero():
-    """Exporter without the per-process metric (not yet rebuilt) → 0.0 credit,
-    so admission never grants on phantom evictable VRAM."""
+async def test_evictable_absent_metric_is_unknown():
+    """Exporter without the per-process metric (not yet rebuilt) → None.
+
+    REVERSED 2026-07-31 (poindexter#914): this asserted 0.0. Returning 0.0 made
+    "I have no telemetry" indistinguishable from "nothing is loaded", and
+    admission read the latter — rejecting, which degrades a QA rail that then
+    passes OPEN. None lets the caller fail open deliberately instead.
+    """
     client = _mock_client_rows([])
     with patch("httpx.AsyncClient", return_value=client):
-        assert await GPURegistry(site_config=_sc()).evictable_ollama_gb(0) == 0.0
+        assert await GPURegistry(site_config=_sc()).evictable_ollama_gb(0) is None
 
 
 @pytest.mark.asyncio
-async def test_evictable_failure_is_zero():
+async def test_evictable_failure_is_unknown():
+    """Prometheus down is ignorance, not evidence of an empty card."""
     client = _mock_client(raise_exc=RuntimeError("prom down"))
     with patch("httpx.AsyncClient", return_value=client):
-        assert await GPURegistry(site_config=_sc()).evictable_ollama_gb(0) == 0.0
+        assert await GPURegistry(site_config=_sc()).evictable_ollama_gb(0) is None
 
 
 @pytest.mark.asyncio
