@@ -96,3 +96,27 @@ test('matrixToSeries without labelBy keeps the joined-label behavior', () => {
   ]);
   assert.equal(out[0].label, 'quantile=0.95');
 });
+
+test('latestPoint returns the last finite-valued point, skipping trailing nulls', () => {
+  assert.deepEqual(
+    T.latestPoint([
+      [1000, 5],
+      [2000, 9],
+      [3000, null],
+    ]),
+    [2000, 9]
+  );
+  assert.deepEqual(T.latestPoint([[1000, 0]]), [1000, 0]); // zero is a real value
+});
+
+test('latestPoint is null for empty, missing, or all-null series', () => {
+  assert.equal(T.latestPoint([]), null);
+  assert.equal(T.latestPoint(undefined), null);
+  assert.equal(
+    T.latestPoint([
+      [1000, null],
+      [2000, NaN],
+    ]),
+    null
+  );
+});

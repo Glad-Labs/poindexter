@@ -65,6 +65,24 @@ function TimeChart({ series, stale, height = 150, unit = '' }) {
     return best;
   };
 
+  // Readout rows: cursor-time values while hovering, each series' latest sample
+  // at idle — so the strip below the chart is ALWAYS populated and the card
+  // never changes height on hover (a height change reflows the whole masonry
+  // column — that read as cards "jumping" on mouse-over).
+  const hovering = hoverX != null;
+  const readout = list
+    .map((s, i) => ({
+      label: s.label,
+      key: s.label + i,
+      pt: hovering ? nearest(s.points) : ts.latestPoint(s.points),
+    }))
+    .filter((r) => r.pt != null);
+  const readoutT = hovering
+    ? hoverT
+    : readout.length
+      ? Math.max(...readout.map((r) => r.pt[0]))
+      : null;
+
   return (
     <div className="tc" style={{ opacity: stale ? 0.5 : 1 }}>
       <svg
@@ -161,24 +179,19 @@ function TimeChart({ series, stale, height = 150, unit = '' }) {
           ))}
         </ul>
       )}
-      {hoverX != null && (
-        <div className="tc-readout">
-          {fmtT(hoverT)}
-          {' · '}
-          {list.map((s, i) => {
-            const n = nearest(s.points);
-            return n ? (
-              <span key={i} style={{ marginRight: 8 }}>
-                {s.label}{' '}
-                <b>
-                  {fmtV(n[1])}
-                  {unit}
-                </b>
-              </span>
-            ) : null;
-          })}
-        </div>
-      )}
+      <div className="tc-readout">
+        {readoutT != null && fmtT(readoutT)}
+        {readoutT != null && ' · '}
+        {readout.map((r) => (
+          <span key={r.key} style={{ marginRight: 8 }}>
+            {r.label}{' '}
+            <b>
+              {fmtV(r.pt[1])}
+              {unit}
+            </b>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

@@ -88,6 +88,16 @@
     return _ticks(tMin, tMax, n);
   }
 
+  // Last point in a series with a finite value — the reading a chart can
+  // honestly report at idle. Null when the series has none.
+  function latestPoint(points) {
+    for (let i = (points || []).length - 1; i >= 0; i--) {
+      const p = points[i];
+      if (p && p[1] != null && Number.isFinite(p[1])) return p;
+    }
+    return null;
+  }
+
   // Prometheus matrix result -> canonical series. Seconds -> ms. Label: when
   // labelBy is set and present on a series' metric, use labelPrefix+that value
   // (e.g. "GPU 0"); else the join of non-__name__ labels, else fallbackLabel.
@@ -122,6 +132,7 @@
     dashFor,
     yTicks,
     xTicks,
+    latestPoint,
     matrixToSeries,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

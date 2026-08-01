@@ -1899,13 +1899,21 @@ button {
   color: var(--gl-text-dim);
   opacity: 0.7;
 }
-/* Hover readout under a chart. */
+/* Readout strip under a chart — latest values at idle, cursor values on hover.
+   FIXED one-line height on purpose: when this mounted only on hover, the card
+   grew/shrank with the pointer and reflowed the masonry columns ("cards jump
+   when I mouse over"). Long multi-series rows ellipsize, never wrap. */
 .tc-readout {
   font-family: var(--gl-font-mono);
   font-size: 10px;
+  line-height: 13px;
+  height: 23px; /* 13px line + 2px top + 8px bottom padding (border-box) */
   color: var(--gl-text-dim);
   padding: 2px 10px 8px;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tc-readout b {
   color: var(--gl-text);
