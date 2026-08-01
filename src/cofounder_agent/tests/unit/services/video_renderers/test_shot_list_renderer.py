@@ -20,6 +20,21 @@ from services.video_renderers.shot_list_renderer import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_wan_unload():
+    """Every _render_pass now fires a best-effort wan hard-unload before its
+    still phase (`_clear_wan_for_stills`, poindexter#966 between-lanes half).
+    Left unpatched, each render-path test would attempt a REAL HTTP POST to
+    the wan-server URL — absorbed by the best-effort except, so tests stay
+    green but non-hermetic (the known silent-test-network-hazard shape, and
+    non-deterministic on the real-network CI runner). Tests asserting the
+    unload re-patch locally; the innermost patch wins."""
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    with patch("services.gpu_scheduler.gpu._unload_wan", _AsyncMock()):
+        yield
+
+
 def _build_shot_list(shots: list[Shot]) -> VideoShotList:
     """Convenience: wrap shots in a valid VideoShotList."""
     total = sum(s.duration_s for s in shots)
@@ -1857,6 +1872,66 @@ class TestRenderPassHeroOrdering:
         assert hero.result.success
         assert hero.result.clip_path.endswith(".png")  # Ken-Burns still fallback
         fb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_render_pass_clears_wan_before_stills(self, tmp_path):
+        """Between-lanes half of poindexter#966: the prior lane's hero phase
+        leaves wan resident, so the pass hard-unloads wan before its still
+        phase whenever the list has image-gen-family work (1d10e119's long
+        rendered clean while its short substituted 5/8 against resident wan)."""
+        from services.gpu_scheduler import gpu as real_gpu
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        wan_unload = AsyncMock()
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-wanclear",
+        )
+        shots = [s for s in self._mixed_shots() if s.idx == 0]  # image_gen only
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(real_gpu, "_unload_wan", wan_unload):
+            await slr._render_pass(shots, render_kwargs=render_kwargs)
+
+        wan_unload.assert_awaited_once_with(hard=True)
+
+    @pytest.mark.asyncio
+    async def test_render_pass_skips_wan_clear_without_image_gen_work(self, tmp_path):
+        """An all-pexels/holdover list needs no image-gen, so evicting wan
+        would be a pointless cold-reload tax on the next hero."""
+        from services.gpu_scheduler import gpu as real_gpu
+        from services.video_renderers import shot_list_renderer as slr
+
+        wan_unload = AsyncMock()
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-nowan",
+        )
+        shots = [
+            Shot(idx=0, duration_s=5.0, intent="open", source="pexels",
+                 query="server room", narration_offset_s=0.0),
+        ]
+
+        async def fake_pexels_video(**kwargs):
+            return False
+
+        async def fake_pexels_image(*, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"jpg")
+            return True
+
+        with patch.object(slr, "_render_pexels_video", fake_pexels_video), \
+             patch.object(slr, "_render_pexels_image", fake_pexels_image), \
+             patch.object(real_gpu, "_unload_wan", wan_unload):
+            await slr._render_pass(shots, render_kwargs=render_kwargs)
+
+        wan_unload.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_failed_hero_still_reaches_backfill_ladder(self, tmp_path):

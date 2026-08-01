@@ -538,6 +538,55 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         )
 
 
+async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
+    """Hard-unload wan before the still phase when this render has image-gen
+    work (the between-lanes half of poindexter#966).
+
+    The two-phase order fixed hero poisoning WITHIN a render, but the media
+    graph runs the LONG lane's render before the SHORT lane's — and the
+    long's hero phase leaves ~24 GB of wan resident (its idle unload is
+    minutes away), so the short's still phase can't load image-gen and every
+    image-gen-family shot substitutes (2026-08-01: 1d10e119's long rendered
+    clean while its short substituted 5/8). Symmetric to
+    ``_clear_image_gen_for_hero``: best-effort, and cheap when wan holds
+    nothing — the wan-server declines the exit (``nothing_to_reclaim``,
+    stack#2984) below its reserved floor, so the common wan-cold case costs
+    one HTTP round-trip.
+
+    Skipped entirely when the list has no image-gen-family work (an
+    all-pexels/holdover list doesn't need image-gen at all), and gated by the
+    same ``video_hero_unload_image_gen`` switch — an operator whose card
+    fits both models has opted out of this whole choreography.
+    """
+    needs_image_gen = any(
+        s.source in ("image_gen", "image_kenburns") or s.source in _HERO_SOURCES
+        for s in shots
+    )
+    if not needs_image_gen:
+        return
+    try:
+        enabled = (
+            site_config.get_bool("video_hero_unload_image_gen", True)
+            if site_config is not None else True
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+        # decide whether a render is attempted; default to the safer behaviour.
+        enabled = True
+    if not enabled:
+        return
+    try:
+        from services.gpu_scheduler import gpu
+
+        await gpu._unload_wan(hard=True)
+    except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
+        # optimisation, not a precondition — a failure here reverts to the
+        # pre-fix odds, never blocks the render.
+        logger.warning(
+            "[SHOT_LIST] wan pre-still unload failed (%s) — rendering anyway",
+            exc,
+        )
+
+
 async def _render_generative_clip(
     *,
     prompt: str,
@@ -1293,6 +1342,12 @@ async def _render_pass(
     each still-phase shot and ``("hero clip j/M", pct)`` per animation —
     the media pulse row's real per-shot progress.
     """
+    # Between-lanes choreography: a PREVIOUS render's hero phase (e.g. the
+    # long lane's, when this is the short's) may still have ~24 GB of wan
+    # resident — evict it before this pass's image-gen work, mirroring the
+    # pre-hero image-gen unload. Declined server-side when wan holds nothing.
+    await _clear_wan_for_stills(shots, render_kwargs.get("site_config"))
+
     states: list[_ShotState] = []
     render_prior: str | None = None
     total = len(shots)
