@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-27.**  
+> **Auto-generated from live `app_settings` table on 2026-08-01.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 682 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -565,7 +565,7 @@ The worker re-reads on every poll; no restart needed.
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
 | `voice_agent_livekit_enabled` | `true` |  | Toggle for the always-on voice-agent-livekit container. 'true' (default) keeps the bot joined to the configured room.... |
 | `voice_agent_livekit_url` | `ws://livekit:7880` |  | WebSocket URL the in-network voice bot uses to reach the LiveKit SFU. 'livekit' is the docker-compose service name; o... |
-| `voice_agent_llm_model` | `gemma3:27b` |  | Ollama model tag the voice agent uses for its LLM step. Same daily-driver as pipeline_writer_model by default. |
+| `voice_agent_llm_model` | `qwen2.5:7b` |  | Ollama model tag the voice agent uses for its LLM step. BARE tag — no ollama/ prefix, unlike the LiteLLM-routed *_mod... |
 | `voice_agent_ollama_url` | `http://host.docker.internal:11434/v1` |  | Ollama base URL. Default targets the host's Ollama from inside Docker; running voice_agent.py directly on the host ca... |
 | `voice_agent_recall_k` | `3` |  | Top-K most-similar prior voice_messages turns to inject into the qwen3:8b system prompt as 'recalled context' on each... |
 | `voice_agent_recall_min_similarity` | `0.5` |  | Cosine-similarity floor for voice_messages recall. Hits below this threshold are filtered out before the top-K cut, s... |
