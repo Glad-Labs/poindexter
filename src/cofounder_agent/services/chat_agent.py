@@ -508,8 +508,23 @@ async def run_turn(
                 ok = False
                 error_detail: str | None = None
                 try:
-                    result_text = await spec.handler(ctx, **args)
+                    # Tool execution shares the turn deadline. A bare await
+                    # here let a hung tool strand the turn past every
+                    # deadline until the CLIENT gave up (live: a plan
+                    # compose stuck behind a VRAM-blocked model load ran
+                    # 315s into a 300s turn and died as a disconnect, not
+                    # an honest turn_timeout).
+                    tool_remaining = deadline - time.monotonic()
+                    if tool_remaining <= 0:
+                        raise asyncio.TimeoutError
+                    result_text = await asyncio.wait_for(
+                        spec.handler(ctx, **args), timeout=tool_remaining,
+                    )
                     ok = True
+                except asyncio.TimeoutError:
+                    # Turn deadline hit mid-tool — the turn-level handler
+                    # yields the honest turn_timeout error + interrupted.
+                    raise
                 except ChatToolError as exc:
                     result_text = f"Tool error: {exc}"
                     error_detail = str(exc)

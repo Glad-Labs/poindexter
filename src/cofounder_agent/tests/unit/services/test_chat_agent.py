@@ -377,6 +377,29 @@ class TestLifecycle:
         assert events[-1]["turn_status"] == "interrupted"
         assert fs.finalized["turn_status"] == "interrupted"
 
+    def test_hung_tool_hits_turn_deadline(self, monkeypatch):
+        """Tool execution shares the turn deadline. A hung tool (live: a
+        plan compose stuck behind a VRAM-blocked model load) must end the
+        turn with an honest turn_timeout — not strand it until the client
+        disconnects."""
+        async def hung_tool(ctx, **kwargs):
+            await asyncio.sleep(30)
+            return "never"
+
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            tool_specs={"plan_pipeline": _spec("plan_pipeline", hung_tool)},
+            completions=[
+                _completion(tool_calls=[_tool_call("plan_pipeline", "{}")]),
+            ],
+            site_config=FakeSiteConfig(console_chat_turn_timeout_s=1),
+        )
+        errors = _events_of(events, "error")
+        assert errors and errors[0]["reason"] == "turn_timeout"
+        assert events[-1]["turn_status"] == "interrupted"
+        assert fs.finalized["turn_status"] == "interrupted"
+
     def test_dispatch_crash_fails_turn(self, monkeypatch):
         async def broken(pool, messages, model, tools):
             raise RuntimeError("ollama exploded")
