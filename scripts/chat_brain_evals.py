@@ -74,8 +74,13 @@ async def _run_case(
     system = _CHAT_SYSTEM_FALLBACK.format(
         persona_name="Poindexter", tool_names=tool_names_csv(),
     )
+    # A model pin that already carries a litellm prefix (the prod default is
+    # ollama_chat/qwen3-vl:30b — /api/chat transport, required for tool-result
+    # round-trips) passes through untouched; bare names default to
+    # ollama_chat/ so the harness tests the same transport the agent uses.
+    prefixed = model if "/" in model else f"ollama_chat/{model}"
     response = await litellm.acompletion(
-        model=f"ollama/{model.removeprefix('ollama/')}",
+        model=prefixed,
         api_base=api_base,
         messages=[
             {"role": "system", "content": system},

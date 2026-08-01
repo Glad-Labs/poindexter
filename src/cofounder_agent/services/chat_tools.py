@@ -85,21 +85,28 @@ class ChatToolSpec:
 
 async def _list_tasks(ctx: ChatToolContext, *, status: str = "", limit: int = 10) -> str:
     limit = max(1, min(int(limit), 50))
-    result = await ctx.db_service.get_tasks_paginated(
+    # ``get_tasks_paginated`` returns ``(rows, total)`` — the
+    # ``PaginatedTasksResult`` type name "was a long-standing lie" per its
+    # own docstring (#201). Reading ``.tasks`` off the tuple silently
+    # yielded "No tasks found" against a 1,900-task table (caught by the
+    # 2026-08-01 live verification once the ollama_chat transport fix
+    # stopped masking tool results).
+    rows, total = await ctx.db_service.get_tasks_paginated(
         offset=0, limit=limit, status=(status or None), light=True,
     )
-    tasks = getattr(result, "tasks", None) or []
-    if not tasks:
+    rows = rows or []
+    if not rows:
         return f"No tasks found (status filter: {status or 'all'})."
     lines = []
-    for t in tasks:
-        row = t if isinstance(t, dict) else getattr(t, "__dict__", {})
+    for t in rows:
+        row = t if isinstance(t, dict) else dict(t)
         lines.append(
             f"- {str(row.get('task_id') or row.get('id') or '?')[:8]} "
             f"[{row.get('status', '?')}] {row.get('topic') or row.get('task_name') or ''}"
             f" (created {str(row.get('created_at') or '')[:16]})"
         )
-    return f"{len(lines)} task(s):\n" + "\n".join(lines)
+    total_note = f" of {total} total" if total and total > len(lines) else ""
+    return f"{len(lines)} task(s){total_note}:\n" + "\n".join(lines)
 
 
 async def _get_task(ctx: ChatToolContext, *, task_id: str) -> str:

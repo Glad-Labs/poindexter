@@ -153,30 +153,31 @@ class TestCreatePost:
 
 @pytest.mark.unit
 class TestListTasks:
-    def test_renders_rows_and_clamps_limit(self):
-        class Result:
-            tasks = [
-                {"task_id": "abcdef123456", "status": "pending",
-                 "topic": "T1", "created_at": "2026-07-31T00:00:00"},
-            ]
+    """The real contract is a ``(rows, total)`` TUPLE — the
+    ``PaginatedTasksResult`` name is documented as a lie (#201). The
+    original fake here modeled a ``.tasks`` object and hid a bug that
+    made the live tool report zero tasks against a full table."""
 
+    def test_renders_rows_total_and_clamps_limit(self):
         class Db:
             async def get_tasks_paginated(self, **kwargs):
                 assert kwargs["limit"] == 50  # clamped from 999
-                return Result()
+                return (
+                    [{"task_id": "abcdef123456", "status": "pending",
+                      "topic": "T1", "created_at": "2026-07-31T00:00:00"}],
+                    1992,
+                )
 
         out = asyncio.run(
             get_tool("list_tasks").handler(_ctx(db_service=Db()), limit=999)
         )
         assert "abcdef12" in out and "[pending]" in out and "T1" in out
+        assert "of 1992 total" in out
 
     def test_empty(self):
-        class Result:
-            tasks = []
-
         class Db:
             async def get_tasks_paginated(self, **kwargs):
-                return Result()
+                return ([], 0)
 
         out = asyncio.run(
             get_tool("list_tasks").handler(_ctx(db_service=Db()), status="failed")
