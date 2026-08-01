@@ -349,6 +349,30 @@ class TestOllamaChatTextDispatcherPath:
             await ollama_chat_text("p", site_config=sc, pool=pool)
         assert "think" not in dispatch.await_args.kwargs
 
+    async def test_response_format_forwarded_to_dispatcher(self):
+        """response_format reaches dispatch_complete so LiteLLM can map it
+        to Ollama's grammar-constrained ``format`` field (poindexter#970 —
+        the architect's anti-think-spiral lever)."""
+        pool = MagicMock()
+        sc = _StubSiteConfig()
+        dispatch = AsyncMock(return_value=_fake_completion("{}"))
+        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+            await ollama_chat_text(
+                "p", site_config=sc, pool=pool,
+                response_format={"type": "json_object"},
+            )
+        assert dispatch.await_args.kwargs.get("response_format") == {
+            "type": "json_object"
+        }
+
+    async def test_response_format_omitted_by_default(self):
+        pool = MagicMock()
+        sc = _StubSiteConfig()
+        dispatch = AsyncMock(return_value=_fake_completion("ok"))
+        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+            await ollama_chat_text("p", site_config=sc, pool=pool)
+        assert "response_format" not in dispatch.await_args.kwargs
+
     async def test_dispatch_path_runs_maybe_unwrap_json(self):
         """Some providers (Ollama) still return JSON envelopes — must unwrap."""
         pool = MagicMock()
@@ -425,6 +449,27 @@ class TestOllamaChatTextHttpxFallback:
 
         payload = mock_client.post.await_args[1]["json"]
         assert payload["think"] is False
+
+    async def test_httpx_response_format_maps_to_ollama_format_json(self):
+        """The fallback maps json_object → Ollama ``format: "json"`` itself
+        (no LiteLLM in the loop), keeping both paths behavior-identical."""
+        sc = _StubSiteConfig(base_url="http://localhost:11434")
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(return_value={"message": {"content": "{}"}})
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await ollama_chat_text(
+                "hi", site_config=sc,
+                response_format={"type": "json_object"},
+            )
+
+        payload = mock_client.post.await_args[1]["json"]
+        assert payload["format"] == "json"
 
     async def test_httpx_fallback_dispatcher_is_not_called(self):
         """Explicit: when no pool is provided, the dispatcher is bypassed."""

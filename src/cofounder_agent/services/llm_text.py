@@ -230,6 +230,7 @@ async def ollama_chat_text(
     task_id: str | None = None,
     phase: str = "ollama_chat_text",
     think: bool | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> str:
     """Plain-text LLM chat call.
 
@@ -274,6 +275,16 @@ async def ollama_chat_text(
             ``think=False``. ``None`` (default) omits the field entirely, so
             non-writer callers are unchanged and non-thinking models are
             unaffected.
+        response_format: OpenAI-style structured-output request, e.g.
+            ``{"type": "json_object"}``. On the dispatch path LiteLLM maps
+            it to Ollama's ``format`` field (grammar-constrained decoding);
+            the httpx fallback maps ``json_object`` → ``format: "json"``
+            itself. This is the reliable lever for JSON-demanding callers:
+            ``think=False`` is delivered on the wire but qwen3-vl (and
+            peers) still stream literal deliberation into content on hard
+            structured tasks — constrained decoding makes that impossible
+            (poindexter#970: the architect went 0-for-4 live without it,
+            3-for-3 clean with it).
 
     Returns:
         The raw assistant content (post-unwrap, see
@@ -314,6 +325,8 @@ async def ollama_chat_text(
         extra: dict[str, Any] = {}
         if think is not None:
             extra["think"] = think
+        if response_format is not None:
+            extra["response_format"] = response_format
         completion = await dispatch_complete(
             pool=pool,
             messages=messages,
@@ -353,6 +366,8 @@ async def ollama_chat_text(
         }
         if think is not None:
             payload["think"] = think
+        if response_format is not None and response_format.get("type") == "json_object":
+            payload["format"] = "json"
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{base_url}/api/chat", json=payload)
             resp.raise_for_status()

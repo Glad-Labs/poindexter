@@ -373,11 +373,16 @@ async def compose(
             site_config=_sc,
             pool=pool,
             timeout_setting="pipeline_architect_timeout_seconds",
-            # Structured JSON output: the reasoning channel off keeps a
-            # thinking model (glm-4.7, qwen3) from burning its budget on
-            # <think> prose that poisons the {…} extraction below — the
-            # first live chat plan turn failed exactly this way.
+            # Structured JSON output, two levers (poindexter#970):
+            # constrained decoding is the load-bearing one — wire-verified
+            # that think=False IS delivered, yet qwen3-vl still streams
+            # literal deliberation into content on hard structured tasks
+            # (~36K-char spirals to the num_ctx ceiling, 0-for-4 live).
+            # Ollama's format=json grammar makes prose impossible: 3-for-3
+            # clean specs in 3-17s. think=False stays as the cheap belt for
+            # models that do honor it.
             think=False,
+            response_format={"type": "json_object"},
         )
         last_raw = raw
         spec, parse_errors = _parse_json_spec(raw)

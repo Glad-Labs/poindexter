@@ -82,10 +82,12 @@ async def test_dedicated_architect_model_override_still_wins(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_compose_requests_think_off(monkeypatch):
-    """compose() must pass think=False — a thinking architect model
-    (glm-4.7) otherwise burns its budget on <think> prose that poisons
-    the JSON extraction (first live chat plan turn, 2026-08-01)."""
+async def test_compose_requests_constrained_json(monkeypatch):
+    """compose() must request grammar-constrained JSON output AND the
+    thinking channel off (poindexter#970). think=False alone is delivered
+    on the wire but qwen3-vl still streams literal deliberation into
+    content on hard structured tasks — response_format json_object is the
+    lever that makes prose impossible."""
     captured: dict[str, Any] = {}
 
     async def _fake_ollama(prompt: str, **kwargs: Any) -> str:
@@ -99,9 +101,10 @@ async def test_compose_requests_think_off(monkeypatch):
     monkeypatch.setattr(pipeline_architect, "_ollama_chat_text", _fake_ollama)
 
     sc = SiteConfig(initial_config={
-        "pipeline_architect_model": "ollama/glm-4.7-5090:latest",
+        "pipeline_architect_model": "ollama_chat/qwen3-vl:30b",
     })
     await pipeline_architect.compose(
         "a lean post plan", site_config=sc, max_attempts=1,
     )
     assert captured.get("think") is False
+    assert captured.get("response_format") == {"type": "json_object"}
