@@ -2340,10 +2340,13 @@ services:
   # ===========================================
   # GitHub Actions self-hosted CI runners (cloud CI minutes → $0)
   # ===========================================
-  # Two persistent runners that execute the `unit-tests` workflow on this PC
+  # Two persistent runners that execute the pytest-shaped workflows on this PC
   # instead of paying GitHub-hosted minutes — unit-tests alone was ~60% of a
-  # ~30k-min/month bill. Scope is deliberately just unit-tests; every other
-  # workflow stays on ubuntu-latest. Each runner stays registered and runs jobs
+  # ~30k-min/month bill; benchmarks, rerank-import-guard and
+  # console-contract-drift ride the same `vars.CI_RUNNER` seam. Everything
+  # else — including every job that needs the Docker daemon (docker-build's
+  # build-worker; see the socket NOTE below) — stays on
+  # ubuntu-latest. Each runner stays registered and runs jobs
   # back-to-back; the Actions agent cleans the workspace between runs and each
   # runner's own pip/poetry cache volume stays warm so multi-GB wheels (torch /
   # sentence-transformers) download once.
@@ -2438,11 +2441,21 @@ services:
       # at /root/.cache (verified on the runner). Best-effort optimization;
       # correctness does not depend on it.
       - ci-runner-1-cache:/root/.cache
-      # NOTE: the host Docker socket is intentionally NOT mounted. unit-tests
-      # is pure pytest with no GitHub Actions `services:`/`container:` jobs, so
-      # the runner never needs to drive host Docker — keeping the socket out is
-      # least-privilege. If you later move a service-container workflow (e.g.
-      # integration-db) onto the runner, add `/var/run/docker.sock:/var/run/docker.sock`.
+      # NOTE: the host Docker socket is intentionally NOT mounted, and that is
+      # load-bearing, not an omission. Everything scheduled here is
+      # pytest/stdlib-shaped with no GitHub Actions `services:`/`container:`
+      # jobs, so the runner never needs to drive host Docker — while it DOES
+      # execute raw PR code, dependabot branches included. With the socket
+      # mounted, one compromised dependency's install hook is a
+      # `docker run --privileged -v /:/host` away from owning the machine that
+      # runs the production stack. Precedent: docker-build.yml's build-worker
+      # briefly targeted these runners (#2920) and every run died with "Cannot
+      # connect to the Docker daemon"; the fix was moving that job back to a
+      # hosted runner, NOT mounting the socket. A future docker-needing job
+      # gets its own isolated runner class instead — labels alone don't
+      # isolate it (recipe + label-superset gotcha:
+      # docs/operations/self-hosted-ci-runner.md, "Extending to another
+      # workflow").
     extra_hosts:
       # Lets a job reach host-native services (e.g. Ollama on 11434) the same
       # way the rest of the stack does.

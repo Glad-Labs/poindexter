@@ -79,23 +79,34 @@ jobs:
 
   # The worker is THE image that runs the content pipeline, and the one worth
   # guarding. It is ~7.6 GB and its `poetry install` pulls multi-GB wheels
-  # (torch, playwright), which is too much for a hosted runner's disk and too
-  # slow to be a dependable check there.
+  # (torch, playwright) — and it still builds HOSTED, on purpose.
   #
-  # It therefore uses the same `vars.CI_RUNNER || ubuntu-latest` selector as the
-  # other heavy jobs. On this repo CI_RUNNER is set, so it lands on the
-  # self-hosted runner, which already builds this image daily and has a warm
-  # layer cache — the incremental build is normally cache hits.
+  # Do not "optimize" this job onto the shared `vars.CI_RUNNER` seam. That
+  # shipped once (#2920) and put a red on every main push the moment the
+  # runner fleet came online: the self-hosted runners are containers that
+  # deliberately do NOT mount /var/run/docker.sock (they execute raw PR code —
+  # unit-tests runs `poetry install` on dependabot branches — so handing them
+  # the daemon that runs the production stack would let one compromised
+  # dependency own the host; see the SECURITY note on github-runner-1 in
+  # docker-compose.local.yml). Every `docker build` there dies with "Cannot
+  # connect to the Docker daemon". The job only looked green pre-merge because
+  # the fleet happened to be offline that evening, so runner-healthcheck had
+  # failed CI_RUNNER over to hosted.
   #
-  # Caveat worth knowing before trusting a red here: if CI_RUNNER is ever unset
-  # (or on a fork) this falls back to a hosted runner and attempts a COLD 7.6 GB
-  # build, which will likely die on disk or on multi-GB wheel downloads. That is
-  # an environment failure, not a broken Dockerfile — check which runner picked
-  # the job up before chasing it. The fallback is kept anyway so forks get some
-  # signal rather than a job that queues forever.
+  # Hosted is measured-fine, not hoped-fine: the cold build ran green five for
+  # five at ~3 minutes each (2026-07-30/31) — the hosted runners' pipe makes
+  # the multi-GB wheel pulls a non-event, and the 7.6 GB image fits hosted
+  # disk. If the image ever outgrows that, the fix is a separately provisioned
+  # docker-capable runner class behind CI_RUNNER_DOCKER below — never the
+  # pytest runners (label-superset gotcha and the full recipe:
+  # docs/operations/self-hosted-ci-runner.md, "Extending to another workflow").
   build-worker:
     if: github.repository != 'Glad-Labs/poindexter'
-    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    # CI_RUNNER_DOCKER is a dormant seam: unset everywhere today (and on
+    # forks), so this resolves to ubuntu-latest. Only ever point it at a
+    # runner class whose runners DO mount docker.sock — setting it to the
+    # pytest runners' labels recreates the outage documented above.
+    runs-on: ${{ vars.CI_RUNNER_DOCKER && fromJSON(vars.CI_RUNNER_DOCKER) || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12

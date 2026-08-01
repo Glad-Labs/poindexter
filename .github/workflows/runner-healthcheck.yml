@@ -3,8 +3,12 @@
 #
 # WHY THIS IS HOSTED: it is the one workflow that must run in GitHub's cloud.
 # A "is Matt's PC reachable?" probe cannot run on Matt's PC. It reconciles the
-# `CI_RUNNER` repo variable — which ONLY the `unit-tests` runs-on seam reads —
-# against the live status of the self-hosted runners:
+# `CI_RUNNER` repo variable against the live status of the self-hosted
+# runners. The variable is read only by the pytest-shaped runs-on seams
+# (unit-tests, benchmarks, rerank-import-guard, console-contract-drift) —
+# never by a job that needs the Docker daemon: the runner containers mount no
+# docker.sock, so docker-build's build-worker builds hosted behind its own
+# dormant CI_RUNNER_DOCKER seam instead (see docker-compose.local.yml):
 #
 #   >=1 self-hosted runner online  ->  set CI_RUNNER   (unit-tests runs on the PC, $0 minutes)
 #   none online                    ->  unset CI_RUNNER (unit-tests falls back to ubuntu-latest,

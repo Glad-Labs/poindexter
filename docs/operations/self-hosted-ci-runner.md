@@ -9,11 +9,15 @@ allowance** (~10× over), and the `unit-tests` workflow alone was **~60%** of it
 on Matt's always-on PC instead of in GitHub's cloud — self-hosted runner minutes
 are **not** billed.
 
-Scope is deliberately narrow: **only `unit-tests` moves to self-hosted.** Every
-other workflow (jest-unit, integration-db, security, public-mirror-safety,
+Scope is deliberately narrow: **only pytest-shaped jobs move to self-hosted** —
+`unit-tests`, plus `benchmarks`, `rerank-import-guard` and
+`console-contract-drift`, which later adopted the same seam. Every other
+workflow (jest-unit, integration-db, security, public-mirror-safety,
 grafana-panels-lint, playwright-e2e, migrations-smoke, releases, syncs) stays on
 `ubuntu-latest`. `migrations-smoke` in particular stays hosted as a cheap
-always-available liveness check.
+always-available liveness check, and **anything that needs the Docker daemon
+(`docker-build`'s `build-worker`) must stay hosted** — the runners mount no
+docker.sock; see [Extending to another workflow](#extending-to-another-workflow).
 
 ## How it fits together
 
@@ -239,17 +243,42 @@ poindexter-ci-runner-1 df -h` (and `-2`); prune the `gladlabs-ci-runner-*-cache`
 
 ## Extending to another workflow
 
-Only `unit-tests` is in scope. To move another workflow later, add the **same
-seam** to its job(s) and confirm the job has no hosted-image assumptions:
+To move another workflow onto the PC, add the **same seam** to its job(s) and
+confirm the job has no hosted-image assumptions:
 
 ```yaml
 runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
 ```
 
-If that workflow uses GitHub Actions `services:`/`container:` (e.g.
-`integration-db`'s Postgres), also mount the host Docker socket into the
-runners (`- /var/run/docker.sock:/var/run/docker.sock`) — it's intentionally
-omitted today because `unit-tests` doesn't need it.
+Adopters so far are all pytest/stdlib-shaped: `unit-tests`, `benchmarks`,
+`rerank-import-guard`, `console-contract-drift`.
+
+**Jobs that need the Docker daemon are NOT eligible for this seam.** The
+runner containers mount no `/var/run/docker.sock`, so any `docker …` step or
+GitHub Actions `services:`/`container:` block fails with "Cannot connect to
+the Docker daemon". That is a security decision, not an oversight: these
+runners execute raw PR code (dependabot branches included), and the socket
+would let one compromised dependency drive the daemon that runs the
+production stack — `docker run --privileged -v /:/host` is root on the host.
+Precedent: `docker-build.yml`'s `build-worker` shipped on this seam (#2920),
+stayed green only while the fleet was offline (hosted fallback), then went
+red on every main push as soon as `runner-healthcheck` re-enabled
+`CI_RUNNER`. It now builds hosted (measured ~3 min cold, well within hosted
+disk) behind its own dormant `vars.CI_RUNNER_DOCKER` seam.
+
+If a docker-daemon job ever genuinely outgrows hosted runners, provision a
+**separate, isolated runner class** rather than mounting the socket into
+these runners — and mind the label trap: GitHub dispatches a job to any
+runner whose labels are a **superset** of its `runs-on` list, and every
+Linux self-hosted runner automatically carries the system labels
+`self-hosted` / `linux` / `x64`. A socketed runner registered with only
+those labels would therefore also attract `unit-tests` jobs (raw PR code
+again). Isolation means re-labeling in lockstep: give the pytest runners a
+distinguishing custom label (compose `LABELS`), update the `CI_RUNNER`
+variable **and** `runner-healthcheck.yml`'s `RUNNER_LABELS` to include it,
+give the docker runner a different custom label, point `CI_RUNNER_DOCKER`
+at that — and only then mount
+`- /var/run/docker.sock:/var/run/docker.sock` on the docker runner alone.
 
 ## Security (load-bearing)
 
