@@ -47,12 +47,15 @@ ARTICLE CONTENT:
 NARRATION:
 ```
 
-## video.long_form_narration
-
-The `{target_seconds}` / `{target_words}` placeholders are substituted from
-`video_long_target_seconds` (words = seconds × 2.5 WPS) — the same
-one-canonical-target pattern as the short lane, so the narration ask, the
+The long-form prompt's `{target_seconds}` / `{target_words}` placeholders are
+substituted from `video_long_target_seconds` (words = seconds × 2.5 WPS) — the
+same one-canonical-target pattern as the short lane, so the narration ask, the
 director's visual plan, and the runaway-trim ceiling can never disagree.
+(Prose must sit OUTSIDE the `## <key>` → fence pair: `extract_section` matches
+a fence immediately after the heading, so a paragraph between them makes the
+key unresolvable and the stage falls back to its in-code default.)
+
+## video.long_form_narration
 
 ```text
 Write a voiceover narration script for a long-form video about the article below.
