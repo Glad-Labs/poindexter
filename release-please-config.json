@@ -50,6 +50,11 @@
           "jsonpath": "$.packages[''].version"
         },
         {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$.packages['web/public-site'].version"
+        },
+        {
           "type": "toml",
           "path": "mcp-server/pyproject.toml",
           "jsonpath": "$.project.version"
