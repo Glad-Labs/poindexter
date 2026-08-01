@@ -318,3 +318,42 @@ test('slashMatches: prefix filter, empty for non-slash input', () => {
   assert.equal(m.length, 1);
   assert.equal(m[0].cmd, '/create-post');
 });
+
+test('threadFingerprint: moves on new messages, status flips, and card stamps', () => {
+  const PXChat = load();
+  const base = {
+    messages: [
+      {
+        id: 'm1',
+        turn_status: 'complete',
+        parts: [{ type: 'markdown', text: 'q' }],
+      },
+      {
+        id: 'm2',
+        turn_status: 'complete',
+        parts: [{ type: 'card', card: { kind: 'approval', state: 'pending' } }],
+      },
+    ],
+    task_links: [],
+  };
+  const f0 = PXChat.threadFingerprint(base);
+  assert.equal(
+    f0,
+    PXChat.threadFingerprint(JSON.parse(JSON.stringify(base))),
+    'identical threads must fingerprint identically'
+  );
+  const withSystem = JSON.parse(JSON.stringify(base));
+  withSystem.messages.push({
+    id: 'm3',
+    turn_status: 'complete',
+    parts: [{ type: 'markdown', text: 'Draft ready' }],
+  });
+  assert.notEqual(PXChat.threadFingerprint(withSystem), f0);
+  const stamped = JSON.parse(JSON.stringify(base));
+  stamped.messages[1].parts[0].card.state = 'approved';
+  assert.notEqual(PXChat.threadFingerprint(stamped), f0);
+  const repaired = JSON.parse(JSON.stringify(base));
+  repaired.messages[1].turn_status = 'interrupted';
+  assert.notEqual(PXChat.threadFingerprint(repaired), f0);
+  assert.equal(PXChat.threadFingerprint(null), '');
+});

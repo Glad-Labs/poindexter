@@ -210,6 +210,26 @@
     return SLASH.filter((s) => s.cmd.startsWith(q));
   }
 
+  // Cheap change-detection fingerprint for a loaded thread. The open
+  // thread refresh-polls (watcher completion messages land server-side
+  // with no push channel), and re-setting identical state every poll
+  // would yank the reader's scroll to the bottom — so the poll only
+  // applies a fetch whose fingerprint moved. Approval-card state rides
+  // message parts, hence the per-message status+parts-length walk.
+  function threadFingerprint(thread) {
+    if (!thread) return '';
+    const msgs = thread.messages || [];
+    const per = msgs
+      .map(
+        (m) =>
+          `${m.id}:${m.turn_status}:${(m.parts || []).length}:${(m.parts || [])
+            .map((p) => (p.card && p.card.state) || '')
+            .join('')}`
+      )
+      .join('|');
+    return `${msgs.length}#${per}#${(thread.task_links || []).length}`;
+  }
+
   // Watched-run snapshot (GET /api/chat/watch/{id}) → rail progress view.
   // pct is null when the graph's expected node count is unknown (dev_diary /
   // capture disabled) — the bar renders indeterminate, never fabricated.
@@ -244,6 +264,7 @@
     statusMeta,
     suggestedPrompts,
     slashMatches,
+    threadFingerprint,
     watchProgress,
     SLASH,
   };

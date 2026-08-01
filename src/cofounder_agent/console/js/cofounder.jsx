@@ -629,6 +629,36 @@ function CofounderMode({ onOpenTask, pushToast }) {
     if (selectedId) loadThread(selectedId);
   }, [selectedId]);
 
+  // ── Thread refresh poll ────────────────────────────────────
+  // Watcher completion messages (and turns from other tabs) land
+  // server-side with no push channel — without this, they silently pile
+  // up and flush together on the next manual action (the exact symptom
+  // from the first live session). Quiet poll, fingerprint-guarded so an
+  // unchanged thread never re-renders (and never yanks the scroll).
+  React.useEffect(() => {
+    if (!selectedId || sending) return undefined;
+    const ms =
+      Math.max(8, ((catalog && catalog.watch_poll_seconds) || 5) * 2) * 1000;
+    let alive = true;
+    const timer = setInterval(async () => {
+      try {
+        const fresh = await api.chatGet(selectedId);
+        if (!alive) return;
+        if (
+          PXChat.threadFingerprint(fresh) !== PXChat.threadFingerprint(thread)
+        )
+          setThread(fresh);
+      } catch (e) {
+        // Transient read failure — next tick retries; errors here must
+        // never toast-spam an idle thread.
+      }
+    }, ms);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [selectedId, sending, thread, catalog]);
+
   // ── Watched-run polling (P3 poindexter#949) ────────────────
   // Every conversation-linked task that is not yet terminal polls the slim
   // watch read on the configured cadence. A task flipping terminal reloads
