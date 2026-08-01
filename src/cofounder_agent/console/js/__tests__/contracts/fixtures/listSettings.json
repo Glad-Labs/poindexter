@@ -13,7 +13,11 @@
       "id": 11807,
       "created_at": "2026-05-02T03:03:46.252990Z",
       "updated_at": "2026-05-02T03:03:46.252990Z",
-      "value_preview": ""
+      "value_preview": "",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_click_bot_ua_pattern",
@@ -28,11 +32,15 @@
       "id": 1259173,
       "created_at": "2026-07-28T03:05:42.803460Z",
       "updated_at": "2026-07-28T03:05:42.803460Z",
-      "value_preview": "(bot|crawler|spider|slurp|bingpreview|facebookexte"
+      "value_preview": "(bot|crawler|spider|slurp|bingpreview|facebookexte",
+      "owner": "sync_affiliate_clicks",
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_clicks_last_sync",
-      "value": "2026-07-31T19:10:33.314928+00:00",
+      "value": "2026-08-01T09:53:18.997133+00:00",
       "data_type": "string",
       "category": "cost",
       "environment": "production",
@@ -42,8 +50,12 @@
       "tags": [],
       "id": 941770,
       "created_at": "2026-07-11T23:23:22.616038Z",
-      "updated_at": "2026-07-31T19:10:33.315055Z",
-      "value_preview": "2026-07-31T19:10:33.314928+00:00"
+      "updated_at": "2026-08-01T09:53:18.997388Z",
+      "value_preview": "2026-08-01T09:53:18.997133+00:00",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_disclosure_text",
@@ -58,7 +70,11 @@
       "id": 941307,
       "created_at": "2026-07-11T23:17:53.145803Z",
       "updated_at": "2026-07-12T03:30:44.999877Z",
-      "value_preview": "This post may contain affiliate links, including A"
+      "value_preview": "This post may contain affiliate links, including A",
+      "owner": "static_export_service",
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_import_llm_model",
@@ -73,7 +89,11 @@
       "id": 977082,
       "created_at": "2026-07-12T20:21:26.286383Z",
       "updated_at": "2026-07-16T22:02:51.808764Z",
-      "value_preview": "ollama/gemma-4-31B-it-qat:latest"
+      "value_preview": "ollama/gemma-4-31B-it-qat:latest",
+      "owner": "affiliate_import",
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_import_llm_timeout_seconds",
@@ -88,7 +108,11 @@
       "id": 977083,
       "created_at": "2026-07-12T20:21:26.288855Z",
       "updated_at": "2026-07-12T20:21:26.288855Z",
-      "value_preview": "60"
+      "value_preview": "60",
+      "owner": "affiliate_import",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_injection_enabled",
@@ -103,7 +127,11 @@
       "id": 941304,
       "created_at": "2026-07-11T23:17:53.141896Z",
       "updated_at": "2026-07-11T23:21:41.093562Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "content_inject_affiliate_links",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_max_links_per_post",
@@ -118,7 +146,11 @@
       "id": 941305,
       "created_at": "2026-07-11T23:17:53.143539Z",
       "updated_at": "2026-07-11T23:17:53.143539Z",
-      "value_preview": "3"
+      "value_preview": "3",
+      "owner": "content_inject_affiliate_links",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "affiliate_redirect_base_url",
@@ -133,13 +165,17 @@
       "id": 941306,
       "created_at": "2026-07-11T23:17:53.144706Z",
       "updated_at": "2026-07-11T23:17:53.144706Z",
-      "value_preview": "/go"
+      "value_preview": "/go",
+      "owner": null,
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "agent_persona_name",
       "value": "Poindexter",
       "data_type": "string",
-      "category": "general",
+      "category": "identity",
       "environment": "production",
       "description": "Auto-seeded by services.settings_defaults (#379)",
       "is_encrypted": false,
@@ -148,7 +184,11 @@
       "id": 1341494,
       "created_at": "2026-07-31T18:00:37.514043Z",
       "updated_at": "2026-07-31T18:00:37.514043Z",
-      "value_preview": "Poindexter"
+      "value_preview": "Poindexter",
+      "owner": null,
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alert_force_telegram_event_types",
@@ -163,7 +203,11 @@
       "id": 31267,
       "created_at": "2026-05-06T23:11:48.837790Z",
       "updated_at": "2026-05-06T23:11:48.837790Z",
-      "value_preview": ""
+      "value_preview": "",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alertmanager_url",
@@ -178,7 +222,11 @@
       "id": 255350,
       "created_at": "2026-05-31T17:43:47.394580Z",
       "updated_at": "2026-05-31T17:43:47.394580Z",
-      "value_preview": "http://alertmanager:9093"
+      "value_preview": "http://alertmanager:9093",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alertmanager_webhook_token",
@@ -193,7 +241,11 @@
       "id": 4435,
       "created_at": "2026-04-20T04:40:22.233246Z",
       "updated_at": "2026-04-20T04:40:31.183237Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alert_repeat_summarize_threshold_minutes",
@@ -208,7 +260,11 @@
       "id": 31266,
       "created_at": "2026-05-06T23:11:48.836763Z",
       "updated_at": "2026-05-06T23:11:48.836763Z",
-      "value_preview": "30"
+      "value_preview": "30",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alert_repeat_suppress_window_minutes",
@@ -223,7 +279,11 @@
       "id": 31265,
       "created_at": "2026-05-06T23:11:48.835349Z",
       "updated_at": "2026-05-20T09:19:27.360696Z",
-      "value_preview": "120"
+      "value_preview": "120",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "allowed_origins",
@@ -238,7 +298,11 @@
       "id": 402,
       "created_at": "2026-03-29T03:00:05.315153Z",
       "updated_at": "2026-03-29T03:00:05.315153Z",
-      "value_preview": "https://gladlabs.io,https://www.gladlabs.io"
+      "value_preview": "https://gladlabs.io,https://www.gladlabs.io",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "alt_text_budget",
@@ -253,7 +317,11 @@
       "id": 4660,
       "created_at": "2026-04-21T04:22:48.952730Z",
       "updated_at": "2026-04-21T04:22:48.952730Z",
-      "value_preview": "120"
+      "value_preview": "120",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "anthropic_api_key",
@@ -268,7 +336,11 @@
       "id": 446,
       "created_at": "2026-03-29T03:00:05.246997Z",
       "updated_at": "2026-04-20T01:55:05.321731Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "api_base_url",
@@ -283,7 +355,11 @@
       "id": 480,
       "created_at": "2026-04-02T17:29:09.221110Z",
       "updated_at": "2026-04-02T17:29:09.221110Z",
-      "value_preview": "http://worker:8002"
+      "value_preview": "http://worker:8002",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "api_token",
@@ -298,7 +374,11 @@
       "id": 440,
       "created_at": "2026-03-29T03:00:05.287796Z",
       "updated_at": "2026-04-26T04:08:23.792008Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "api_url",
@@ -313,7 +393,11 @@
       "id": 1236,
       "created_at": "2026-04-09T20:23:23.505345Z",
       "updated_at": "2026-04-09T20:23:23.505345Z",
-      "value_preview": "http://localhost:8002"
+      "value_preview": "http://localhost:8002",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "approval_gate_topic_decision_reject_status",
@@ -328,7 +412,11 @@
       "id": 5848,
       "created_at": "2026-04-27T20:41:24.741928Z",
       "updated_at": "2026-04-27T20:41:24.741928Z",
-      "value_preview": "dismissed"
+      "value_preview": "dismissed",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "approval_ttl_days",
@@ -343,7 +431,11 @@
       "id": 533,
       "created_at": "2026-04-05T18:43:49.556861Z",
       "updated_at": "2026-04-05T18:43:49.556861Z",
-      "value_preview": "7"
+      "value_preview": "7",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "app_version",
@@ -358,7 +450,11 @@
       "id": 29319,
       "created_at": "2026-05-06T17:38:43.212787Z",
       "updated_at": "2026-05-06T17:38:43.212787Z",
-      "value_preview": "3.0.1"
+      "value_preview": "3.0.1",
+      "owner": "sentry_integration",
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "atom_runs_capture_enabled",
@@ -373,7 +469,11 @@
       "id": 273077,
       "created_at": "2026-06-02T03:45:25.505445Z",
       "updated_at": "2026-06-02T03:45:25.505445Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "atom_runs_output_preview_max_bytes",
@@ -388,7 +488,11 @@
       "id": 845850,
       "created_at": "2026-07-08T05:00:47.105242Z",
       "updated_at": "2026-07-08T05:00:47.105242Z",
-      "value_preview": "2048"
+      "value_preview": "2048",
+      "owner": "pipeline_architect",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "audio_gen_engine",
@@ -403,7 +507,11 @@
       "id": 29473,
       "created_at": "2026-05-06T17:38:43.323600Z",
       "updated_at": "2026-05-06T17:38:43.323600Z",
-      "value_preview": ""
+      "value_preview": "",
+      "owner": "audio_gen_service",
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "audio_render_timeout_seconds",
@@ -418,7 +526,11 @@
       "id": 455717,
       "created_at": "2026-06-14T00:38:57.977753Z",
       "updated_at": "2026-06-14T00:38:57.977753Z",
-      "value_preview": "180"
+      "value_preview": "180",
+      "owner": "stable_audio_open",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_append_sources_section",
@@ -433,7 +545,11 @@
       "id": 4722,
       "created_at": "2026-04-22T01:15:38.214691Z",
       "updated_at": "2026-04-22T01:15:38.214691Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_embed_max_age_hours",
@@ -448,7 +564,11 @@
       "id": 606286,
       "created_at": "2026-06-21T06:00:52.518413Z",
       "updated_at": "2026-06-21T06:00:52.518413Z",
-      "value_preview": "6"
+      "value_preview": "6",
+      "owner": "auto_embed_watch",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_embed_watch_enabled",
@@ -463,7 +583,11 @@
       "id": 606287,
       "created_at": "2026-06-21T06:00:52.520517Z",
       "updated_at": "2026-06-21T06:00:52.520517Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "auto_embed_watch",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_embed_watch_max_retries",
@@ -478,7 +602,11 @@
       "id": 606288,
       "created_at": "2026-06-21T06:00:52.521551Z",
       "updated_at": "2026-06-21T06:00:52.521551Z",
-      "value_preview": "2"
+      "value_preview": "2",
+      "owner": "auto_embed_watch",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_embed_watch_retry_delay_seconds",
@@ -493,7 +621,11 @@
       "id": 606289,
       "created_at": "2026-06-21T06:00:52.522710Z",
       "updated_at": "2026-06-21T06:00:52.522710Z",
-      "value_preview": "120"
+      "value_preview": "120",
+      "owner": "auto_embed_watch",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "auto_publish_threshold",
@@ -508,7 +640,11 @@
       "id": 442,
       "created_at": "2026-03-29T03:00:05.272705Z",
       "updated_at": "2026-03-29T03:00:05.272705Z",
-      "value_preview": "0"
+      "value_preview": "0",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_daily_enabled",
@@ -523,7 +659,11 @@
       "id": 25482,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_daily_interval",
@@ -538,7 +678,11 @@
       "id": 25484,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "24h"
+      "value_preview": "24h",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_daily_retention",
@@ -553,7 +697,11 @@
       "id": 25486,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "7"
+      "value_preview": "7",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_hourly_enabled",
@@ -568,7 +716,11 @@
       "id": 25481,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_hourly_interval",
@@ -583,7 +735,11 @@
       "id": 25483,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "1h"
+      "value_preview": "1h",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_hourly_retention",
@@ -598,7 +754,11 @@
       "id": 25485,
       "created_at": "2026-05-05T18:43:56.658508Z",
       "updated_at": "2026-05-05T18:43:56.658508Z",
-      "value_preview": "24"
+      "value_preview": "24",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_backup_dir",
@@ -613,7 +773,11 @@
       "id": 29286,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-08T03:24:45.037294Z",
-      "value_preview": "/host-backups/auto"
+      "value_preview": "/host-backups/auto",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_daily_max_age_hours",
@@ -628,7 +792,11 @@
       "id": 29283,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "26"
+      "value_preview": "26",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_enabled",
@@ -643,7 +811,11 @@
       "id": 29280,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_hourly_max_age_minutes",
@@ -658,7 +830,11 @@
       "id": 29282,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "90"
+      "value_preview": "90",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_max_retries",
@@ -673,7 +849,11 @@
       "id": 29284,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "2"
+      "value_preview": "2",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_poll_interval_minutes",
@@ -688,7 +868,11 @@
       "id": 29281,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "5"
+      "value_preview": "5",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_retry_delay_seconds",
@@ -703,7 +887,11 @@
       "id": 29285,
       "created_at": "2026-05-06T17:38:43.102590Z",
       "updated_at": "2026-05-06T17:38:43.102590Z",
-      "value_preview": "120"
+      "value_preview": "120",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "backup_watcher_sentinel_dir",
@@ -718,7 +906,11 @@
       "id": 59714,
       "created_at": "2026-05-11T04:01:23.667992Z",
       "updated_at": "2026-05-11T04:01:23.667992Z",
-      "value_preview": "/host-backup-logs"
+      "value_preview": "/host-backup-logs",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "beacon_bot_flag_backfilled",
@@ -733,7 +925,11 @@
       "id": 879428,
       "created_at": "2026-07-10T06:50:52.845245Z",
       "updated_at": "2026-07-10T06:50:52.845245Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "beacon_bot_flag_enabled",
@@ -748,7 +944,11 @@
       "id": 878589,
       "created_at": "2026-07-10T06:47:46.079455Z",
       "updated_at": "2026-07-10T06:47:46.079455Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "flag_bot_page_views",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "beacon_flood_backfill_cap",
@@ -763,7 +963,11 @@
       "id": 878592,
       "created_at": "2026-07-10T06:47:46.082592Z",
       "updated_at": "2026-07-10T06:47:46.082592Z",
-      "value_preview": "30"
+      "value_preview": "30",
+      "owner": "flag_bot_page_views",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "beacon_flood_cap_per_window",
@@ -778,7 +982,11 @@
       "id": 878591,
       "created_at": "2026-07-10T06:47:46.081636Z",
       "updated_at": "2026-07-10T06:47:46.081636Z",
-      "value_preview": "20"
+      "value_preview": "20",
+      "owner": "flag_bot_page_views",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "beacon_flood_window_hours",
@@ -793,7 +1001,11 @@
       "id": 878590,
       "created_at": "2026-07-10T06:47:46.080621Z",
       "updated_at": "2026-07-10T06:47:46.080621Z",
-      "value_preview": "24"
+      "value_preview": "24",
+      "owner": "flag_bot_page_views",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_anomaly_baseline_window_days",
@@ -808,7 +1020,11 @@
       "id": 29524,
       "created_at": "2026-05-06T17:38:43.342660Z",
       "updated_at": "2026-05-06T17:38:43.342660Z",
-      "value_preview": "30"
+      "value_preview": "30",
+      "owner": "detect_anomalies",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_anomaly_current_window_hours",
@@ -823,7 +1039,11 @@
       "id": 29525,
       "created_at": "2026-05-06T17:38:43.343699Z",
       "updated_at": "2026-05-06T17:38:43.343699Z",
-      "value_preview": "24"
+      "value_preview": "24",
+      "owner": "detect_anomalies",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_auto_cancel_grace_minutes",
@@ -838,7 +1058,11 @@
       "id": 4683,
       "created_at": "2026-04-21T14:03:33.250132Z",
       "updated_at": "2026-04-21T14:03:33.250132Z",
-      "value_preview": "10"
+      "value_preview": "10",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_cycle_timeout_seconds",
@@ -853,7 +1077,11 @@
       "id": 712217,
       "created_at": "2026-06-29T16:11:55.690345Z",
       "updated_at": "2026-06-29T16:11:55.690345Z",
-      "value_preview": "240"
+      "value_preview": "240",
+      "owner": "brain_daemon",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_digest_window_hours",
@@ -868,7 +1096,11 @@
       "id": 342206,
       "created_at": "2026-06-07T02:07:09.964910Z",
       "updated_at": "2026-06-07T02:07:09.964910Z",
-      "value_preview": "6"
+      "value_preview": "6",
+      "owner": "brain_daemon",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_hang_dump_seconds",
@@ -883,7 +1115,11 @@
       "id": 717967,
       "created_at": "2026-06-29T19:58:21.893032Z",
       "updated_at": "2026-06-29T19:58:21.893032Z",
-      "value_preview": "300"
+      "value_preview": "300",
+      "owner": "brain_daemon",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_heartbeat_interval_seconds",
@@ -898,7 +1134,11 @@
       "id": 717966,
       "created_at": "2026-06-29T19:58:21.891572Z",
       "updated_at": "2026-06-29T19:58:21.891572Z",
-      "value_preview": "60"
+      "value_preview": "60",
+      "owner": "brain_daemon",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_oauth_client_id",
@@ -913,7 +1153,11 @@
       "id": 15416,
       "created_at": "2026-05-03T03:47:56.469228Z",
       "updated_at": "2026-05-05T04:21:27.571382Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "brain_oauth_client_secret",
@@ -928,7 +1172,11 @@
       "id": 15417,
       "created_at": "2026-05-03T03:47:56.474907Z",
       "updated_at": "2026-05-05T04:21:27.574862Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_dedup_hours",
@@ -943,7 +1191,11 @@
       "id": 286989,
       "created_at": "2026-06-03T01:00:44.624445Z",
       "updated_at": "2026-06-03T01:00:44.624445Z",
-      "value_preview": "6"
+      "value_preview": "6",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_git_dir",
@@ -958,7 +1210,11 @@
       "id": 286990,
       "created_at": "2026-06-03T01:00:44.625981Z",
       "updated_at": "2026-06-03T01:00:44.625981Z",
-      "value_preview": "/host-git"
+      "value_preview": "/host-git",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_min_commits_behind",
@@ -973,7 +1229,11 @@
       "id": 981997,
       "created_at": "2026-07-12T21:21:50.327443Z",
       "updated_at": "2026-07-12T21:21:50.327443Z",
-      "value_preview": "3"
+      "value_preview": "3",
+      "owner": "branch_drift_probe",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_poll_interval_minutes",
@@ -988,7 +1248,11 @@
       "id": 286987,
       "created_at": "2026-06-03T01:00:44.620915Z",
       "updated_at": "2026-06-03T01:00:44.620915Z",
-      "value_preview": "15"
+      "value_preview": "15",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_probe_enabled",
@@ -1003,7 +1267,11 @@
       "id": 286986,
       "created_at": "2026-06-03T01:00:44.617310Z",
       "updated_at": "2026-06-03T01:00:44.617310Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "branch_drift_repo",
@@ -1018,7 +1286,11 @@
       "id": 286988,
       "created_at": "2026-06-03T01:00:44.622869Z",
       "updated_at": "2026-06-03T01:00:44.622869Z",
-      "value_preview": "Glad-Labs/glad-labs-stack"
+      "value_preview": "Glad-Labs/glad-labs-stack",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cadence_slo_enabled",
@@ -1033,7 +1305,11 @@
       "id": 240618,
       "created_at": "2026-05-30T22:01:19.542177Z",
       "updated_at": "2026-05-30T22:01:19.542177Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "health_probes",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cadence_slo_expected_posts_per_day",
@@ -1048,7 +1324,11 @@
       "id": 240619,
       "created_at": "2026-05-30T22:01:19.546448Z",
       "updated_at": "2026-05-30T22:01:19.546448Z",
-      "value_preview": "1"
+      "value_preview": "1",
+      "owner": "health_probes",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cadence_slo_shortfall_ratio",
@@ -1063,7 +1343,11 @@
       "id": 240621,
       "created_at": "2026-05-30T22:01:19.551319Z",
       "updated_at": "2026-05-30T22:01:19.551319Z",
-      "value_preview": "0.5"
+      "value_preview": "0.5",
+      "owner": "health_probes",
+      "value_type": "float",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cadence_slo_window_hours",
@@ -1078,7 +1362,11 @@
       "id": 240620,
       "created_at": "2026-05-30T22:01:19.548898Z",
       "updated_at": "2026-05-30T22:01:19.548898Z",
-      "value_preview": "24"
+      "value_preview": "24",
+      "owner": "health_probes",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_reconcile_enabled",
@@ -1093,7 +1381,11 @@
       "id": 428928,
       "created_at": "2026-06-12T03:34:52.145767Z",
       "updated_at": "2026-06-12T03:34:52.145767Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "content_reconcile_citations",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_reconcile_llm_enabled",
@@ -1108,7 +1400,11 @@
       "id": 846844,
       "created_at": "2026-07-08T05:10:26.844079Z",
       "updated_at": "2026-07-08T05:10:26.844079Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "content_llm_reconcile_citations",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_reconcile_llm_max_content_chars",
@@ -1123,7 +1419,11 @@
       "id": 846847,
       "created_at": "2026-07-08T05:10:26.847254Z",
       "updated_at": "2026-07-08T05:10:26.847254Z",
-      "value_preview": "24000"
+      "value_preview": "24000",
+      "owner": "content_llm_reconcile_citations",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_reconcile_llm_model",
@@ -1138,7 +1438,11 @@
       "id": 846845,
       "created_at": "2026-07-08T05:10:26.845259Z",
       "updated_at": "2026-07-28T15:02:23.220697Z",
-      "value_preview": ""
+      "value_preview": "",
+      "owner": "content_llm_reconcile_citations",
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_reconcile_llm_timeout_seconds",
@@ -1153,7 +1457,11 @@
       "id": 846846,
       "created_at": "2026-07-08T05:10:26.846263Z",
       "updated_at": "2026-07-08T05:10:26.846263Z",
-      "value_preview": "60"
+      "value_preview": "60",
+      "owner": "content_llm_reconcile_citations",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_repoint_enabled",
@@ -1168,7 +1476,11 @@
       "id": 527957,
       "created_at": "2026-06-18T04:10:16.535139Z",
       "updated_at": "2026-06-18T04:10:16.535139Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "content_reconcile_citations",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_repoint_multitenant_hosts",
@@ -1183,7 +1495,11 @@
       "id": 527958,
       "created_at": "2026-06-18T04:10:16.536432Z",
       "updated_at": "2026-06-18T04:10:16.536432Z",
-      "value_preview": ""
+      "value_preview": "",
+      "owner": "content_reconcile_citations",
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "citation_strip_unlinked_enabled",
@@ -1198,7 +1514,11 @@
       "id": 656170,
       "created_at": "2026-06-23T06:30:29.969286Z",
       "updated_at": "2026-06-23T06:30:29.969286Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "content_reconcile_citations",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "classify_content_types_enabled",
@@ -1213,7 +1533,11 @@
       "id": 1009246,
       "created_at": "2026-07-13T05:30:31.478518Z",
       "updated_at": "2026-07-13T05:30:31.478518Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "classify_content_types",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_oauth_client_id",
@@ -1228,7 +1552,11 @@
       "id": 14717,
       "created_at": "2026-05-02T22:53:27.179109Z",
       "updated_at": "2026-06-30T17:57:36.431906Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_oauth_client_secret",
@@ -1243,7 +1571,11 @@
       "id": 14718,
       "created_at": "2026-05-02T22:53:27.183631Z",
       "updated_at": "2026-06-30T17:57:36.438489Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_post_approve_bulk_max_count",
@@ -1258,7 +1590,11 @@
       "id": 29826,
       "created_at": "2026-05-06T19:27:36.979595Z",
       "updated_at": "2026-05-06T19:27:36.979595Z",
-      "value_preview": "100"
+      "value_preview": "100",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_post_approve_bulk_require_confirm",
@@ -1273,7 +1609,11 @@
       "id": 29827,
       "created_at": "2026-05-06T19:27:36.979595Z",
       "updated_at": "2026-05-06T19:27:36.979595Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_post_create_idempotency_enabled",
@@ -1288,7 +1628,11 @@
       "id": 29304,
       "created_at": "2026-05-06T17:38:43.165221Z",
       "updated_at": "2026-05-06T17:38:43.165221Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_post_create_idempotency_strategy",
@@ -1303,7 +1647,11 @@
       "id": 29306,
       "created_at": "2026-05-06T17:38:43.167469Z",
       "updated_at": "2026-05-06T17:38:43.167469Z",
-      "value_preview": "slug_or_content_hash"
+      "value_preview": "slug_or_content_hash",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cli_post_create_idempotency_window_minutes",
@@ -1318,7 +1666,11 @@
       "id": 29305,
       "created_at": "2026-05-06T17:38:43.166461Z",
       "updated_at": "2026-05-06T17:38:43.166461Z",
-      "value_preview": "30"
+      "value_preview": "30",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_probe_enabled",
@@ -1333,7 +1685,11 @@
       "id": 849358,
       "created_at": "2026-07-08T06:31:21.364530Z",
       "updated_at": "2026-07-08T06:31:21.364530Z",
-      "value_preview": "true"
+      "value_preview": "true",
+      "owner": "clock_skew_probe",
+      "value_type": "boolean",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_reference_url",
@@ -1348,7 +1704,11 @@
       "id": 849359,
       "created_at": "2026-07-08T06:31:21.366843Z",
       "updated_at": "2026-07-08T06:31:21.366843Z",
-      "value_preview": "https://www.cloudflare.com"
+      "value_preview": "https://www.cloudflare.com",
+      "owner": "clock_skew_probe",
+      "value_type": "url",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_renotify_minutes",
@@ -1363,7 +1723,11 @@
       "id": 849362,
       "created_at": "2026-07-08T06:31:21.373719Z",
       "updated_at": "2026-07-08T06:31:21.373719Z",
-      "value_preview": "60"
+      "value_preview": "60",
+      "owner": "clock_skew_probe",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_sample_retention_days",
@@ -1378,7 +1742,11 @@
       "id": 849363,
       "created_at": "2026-07-08T06:31:21.375993Z",
       "updated_at": "2026-07-08T06:31:21.375993Z",
-      "value_preview": "30"
+      "value_preview": "30",
+      "owner": "clock_skew_probe",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_severity",
@@ -1393,7 +1761,11 @@
       "id": 849361,
       "created_at": "2026-07-08T06:31:21.371441Z",
       "updated_at": "2026-07-08T06:31:21.371441Z",
-      "value_preview": "critical"
+      "value_preview": "critical",
+      "owner": "clock_skew_probe",
+      "value_type": "string",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "clock_skew_threshold_seconds",
@@ -1408,7 +1780,11 @@
       "id": 849360,
       "created_at": "2026-07-08T06:31:21.369219Z",
       "updated_at": "2026-07-08T06:31:21.369219Z",
-      "value_preview": "120"
+      "value_preview": "120",
+      "owner": "clock_skew_probe",
+      "value_type": "integer",
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudflare_account_id",
@@ -1423,7 +1799,11 @@
       "id": 583,
       "created_at": "2026-04-06T02:56:21.655015Z",
       "updated_at": "2026-04-06T02:56:21.655015Z",
-      "value_preview": "01ddb679184ebe59cc7f03f8171d76ee"
+      "value_preview": "01ddb679184ebe59cc7f03f8171d76ee",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudflare_analytics_api_token",
@@ -1438,11 +1818,15 @@
       "id": 223059,
       "created_at": "2026-05-29T00:17:40.435514Z",
       "updated_at": "2026-06-03T18:56:54.058562Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudflare_analytics_last_sync",
-      "value": "2026-07-31T17:40:17.145912+00:00",
+      "value": "2026-08-01T09:53:18.980533+00:00",
       "data_type": "string",
       "category": "integrations",
       "environment": "production",
@@ -1452,8 +1836,12 @@
       "tags": [],
       "id": 223061,
       "created_at": "2026-05-29T00:17:40.439086Z",
-      "updated_at": "2026-07-31T17:40:17.146141Z",
-      "value_preview": "2026-07-31T17:40:17.145912+00:00"
+      "updated_at": "2026-08-01T09:53:18.980715Z",
+      "value_preview": "2026-08-01T09:53:18.980533+00:00",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudflare_beacon_url",
@@ -1468,7 +1856,11 @@
       "id": 444416,
       "created_at": "2026-06-13T05:48:37.530400Z",
       "updated_at": "2026-06-13T05:56:52.936615Z",
-      "value_preview": "https://page-views-beacon.mattg-01d.workers.dev"
+      "value_preview": "https://page-views-beacon.mattg-01d.workers.dev",
+      "owner": "probe_cloudflare_beacon",
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudinary_api_key",
@@ -1483,7 +1875,11 @@
       "id": 443,
       "created_at": "2026-03-31T16:13:47.804567Z",
       "updated_at": "2026-04-20T01:55:05.318199Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     },
     {
       "key": "cloudinary_api_secret",
@@ -1498,10 +1894,14 @@
       "id": 444,
       "created_at": "2026-03-31T16:13:47.870072Z",
       "updated_at": "2026-04-20T01:55:05.319349Z",
-      "value_preview": "********"
+      "value_preview": "********",
+      "owner": null,
+      "value_type": null,
+      "deprecated": false,
+      "superseded_by": null
     }
   ],
-  "total": 1348,
+  "total": 1360,
   "limit": 100,
   "offset": 0
 }

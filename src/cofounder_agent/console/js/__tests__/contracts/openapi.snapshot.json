@@ -390,6 +390,48 @@
             ],
             "title": "Value Preview",
             "description": "Preview of value (for encrypted values)"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner",
+            "description": "Module/service that is the primary reader of this key"
+          },
+          "value_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Type",
+            "description": "Declared value type (string/boolean/integer/float/url/model/csv/json/duration)"
+          },
+          "deprecated": {
+            "type": "boolean",
+            "title": "Deprecated",
+            "description": "Whether this key has been renamed or superseded",
+            "default": false
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By",
+            "description": "Replacement key to migrate to, when deprecated"
           }
         },
         "type": "object",

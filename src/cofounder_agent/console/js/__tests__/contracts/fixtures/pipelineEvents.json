@@ -1,12 +1,164 @@
 {
-  "count": 22,
+  "count": 50,
   "events": [
     {
-      "id": 248907,
-      "timestamp": "2026-07-31T19:14:43.582100+00:00",
+      "id": 253148,
+      "timestamp": "2026-08-01T09:43:03.986806+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 8,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253147,
+      "timestamp": "2026-08-01T09:43:03.986171+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 6,
+        "duration_s": 8,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253146,
+      "timestamp": "2026-08-01T09:43:03.985675+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253145,
+      "timestamp": "2026-08-01T09:43:03.984766+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253144,
+      "timestamp": "2026-08-01T09:43:03.984072+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253143,
+      "timestamp": "2026-08-01T09:43:03.983275+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253141,
+      "timestamp": "2026-08-01T09:43:03.982116+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 20,
+        "shot_idx": 1,
+        "duration_s": 4,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 253140,
+      "timestamp": "2026-08-01T09:43:03.979573+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 2,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253093,
+      "timestamp": "2026-08-01T09:29:17.549702+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
-      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
+      "task_id": null,
       "severity": "info",
       "details": {
         "model": "z_image_turbo",
@@ -20,508 +172,770 @@
       }
     },
     {
-      "id": 248903,
-      "timestamp": "2026-07-31T19:13:05.881701+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
-      }
-    },
-    {
-      "id": 248888,
-      "timestamp": "2026-07-31T19:10:23.744636+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "c7cc5ba7-db46-4c0a-bd8b-f666a58eebb6",
-      "severity": "info",
-      "details": {
-        "topic": "Discovering Cryptographic Weaknesses with Claude",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 248882,
-      "timestamp": "2026-07-31T19:09:33.699746+00:00",
-      "event_type": "template_completed",
-      "source": "content_router",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
-      "severity": "info",
-      "details": {
-        "ok": true,
-        "records": [
-          "stage.verify_task",
-          "atoms.narrate_bundle",
-          "stage.source_featured_image",
-          "stage.finalize_task"
-        ],
-        "template": "dev_diary",
-        "halted_at": null
-      }
-    },
-    {
-      "id": 248881,
-      "timestamp": "2026-07-31T19:09:33.358584+00:00",
-      "event_type": "auto_publish_gate",
-      "source": "finalize_task",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
-      "severity": "info",
-      "details": {
-        "reason": "quality_score 70.0 >= 69.0, 3/3 trailing clean runs",
-        "dry_run": false,
-        "threshold": 69,
-        "gate_state": "pass",
-        "would_fire": true,
-        "quality_score": 70,
-        "required_clean_runs": 3,
-        "trailing_clean_runs": 3
-      }
-    },
-    {
-      "id": 248880,
-      "timestamp": "2026-07-31T19:09:30.151878+00:00",
+      "id": 253091,
+      "timestamp": "2026-08-01T09:29:13.134743+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253090,
+      "timestamp": "2026-08-01T09:29:09.270942+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253089,
+      "timestamp": "2026-08-01T09:29:04.673134+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253088,
+      "timestamp": "2026-08-01T09:29:00.756945+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253070,
+      "timestamp": "2026-08-01T09:24:09.858622+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 60,
+        "shot_idx": 10,
+        "duration_s": 20,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253069,
+      "timestamp": "2026-08-01T09:24:09.857972+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 100,
+        "shot_idx": 9,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253068,
+      "timestamp": "2026-08-01T09:24:09.857502+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 8,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253067,
+      "timestamp": "2026-08-01T09:24:09.856918+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 92,
+        "shot_idx": 7,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253066,
+      "timestamp": "2026-08-01T09:24:09.855808+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 6,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253065,
+      "timestamp": "2026-08-01T09:24:09.854527+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253064,
+      "timestamp": "2026-08-01T09:24:09.853661+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253063,
+      "timestamp": "2026-08-01T09:24:09.852788+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253062,
+      "timestamp": "2026-08-01T09:24:09.852135+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 92,
+        "shot_idx": 2,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253061,
+      "timestamp": "2026-08-01T09:24:09.851385+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253060,
+      "timestamp": "2026-08-01T09:24:09.850277+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8ece4386-a988-48a6-8165-6ec98d3c957c",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 253043,
+      "timestamp": "2026-08-01T09:21:07.481611+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253042,
+      "timestamp": "2026-08-01T09:21:03.030221+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253041,
+      "timestamp": "2026-08-01T09:20:59.776864+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253040,
+      "timestamp": "2026-08-01T09:20:54.758312+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253039,
+      "timestamp": "2026-08-01T09:20:50.868285+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253038,
+      "timestamp": "2026-08-01T09:20:46.195474+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 253037,
+      "timestamp": "2026-08-01T09:20:42.122128+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 252977,
+      "timestamp": "2026-08-01T09:03:35.969525+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252976,
+      "timestamp": "2026-08-01T09:03:35.969055+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 85,
+        "shot_idx": 6,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252975,
+      "timestamp": "2026-08-01T09:03:35.968504+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252974,
+      "timestamp": "2026-08-01T09:03:35.967923+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 4,
+        "duration_s": 5,
+        "qa_outcome": "unscored"
+      }
+    },
+    {
+      "id": 252973,
+      "timestamp": "2026-08-01T09:03:35.967243+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 5.2,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252972,
+      "timestamp": "2026-08-01T09:03:35.966401+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252970,
+      "timestamp": "2026-08-01T09:03:35.965621+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 25,
+        "shot_idx": 1,
+        "duration_s": 4.5,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 252969,
+      "timestamp": "2026-08-01T09:03:35.964166+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 92,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 252924,
+      "timestamp": "2026-08-01T08:53:25.837461+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 252923,
+      "timestamp": "2026-08-01T08:53:21.152852+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 252921,
+      "timestamp": "2026-08-01T08:53:17.573384+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 252919,
+      "timestamp": "2026-08-01T08:53:12.955848+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
       "severity": "warning",
       "details": {
         "model": "z_image_turbo",
         "passed": false,
         "attempts": 3,
         "threshold": 6,
-        "text_chars": 48,
+        "text_chars": 23,
         "attempt_scores": [
-          73,
-          74,
-          48
+          23,
+          30,
+          34
         ]
       }
     },
     {
-      "id": 248875,
-      "timestamp": "2026-07-31T19:06:21.861782+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
-      "severity": "info",
-      "details": {
-        "style": "flat vector illustration",
-        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)"
-      }
-    },
-    {
-      "id": 248873,
-      "timestamp": "2026-07-31T19:05:40.406576+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
-      "severity": "info",
-      "details": {
-        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)",
-        "template_slug": "dev_diary"
-      }
-    },
-    {
-      "id": 248784,
-      "timestamp": "2026-07-31T18:45:15.383261+00:00",
-      "event_type": "qa_pass_completed",
-      "source": "qa.aggregate",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "warning",
-      "details": {
-        "rescued": true,
-        "reviews": [
-          {
-            "score": 80,
-            "advisory": false,
-            "approved": true,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "clean (no fabrication); 4 warning(s)"
-          },
-          {
-            "score": 85,
-            "advisory": false,
-            "approved": true,
-            "provider": "ollama",
-            "reviewer": "ollama_critic",
-            "feedback_preview": "The article demonstrates strong technical accuracy and clear explanation of context window limitations in self-hosted LLMs. It effectively uses concrete examples like 'the model wraps up a technical e"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_brand_fabrication",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
-          },
-          {
-            "score": 90,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_g_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) The Actual Output effectively addresses the Input topic by elaborating on why self-hosted LLMs produce short outputs due to context window limitations. It mai"
-          },
-          {
-            "score": 82,
-            "advisory": true,
-            "approved": true,
-            "provider": "ragas",
-            "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.73, faithfulness=0.91"
-          },
-          {
-            "score": 65,
-            "advisory": true,
-            "approved": true,
-            "provider": "vision_gate",
-            "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=65, overall=65. [65] v/images/featured/ee9d118c-088a38f2.webp: The image shows a document icon with a folded corner, which could symbolize trun"
-          },
-          {
-            "score": 100,
-            "advisory": false,
-            "approved": true,
-            "provider": "http_head",
-            "reviewer": "citation_verifier",
-            "feedback_preview": "All 5 external URL(s) verified alive"
-          },
-          {
-            "score": 92,
-            "advisory": true,
-            "approved": true,
-            "provider": "unlinked_attribution",
-            "reviewer": "unlinked_attribution",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) 1 named source(s) cited without a link or corpus match: Operational"
-          },
-          {
-            "score": 13.3,
-            "advisory": true,
-            "approved": true,
-            "provider": "content_originality_gate",
-            "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) content near-duplicate of published post 'why-kv-cache-quantization-matters-for-long-context-ce1f7499' (worst-chunk cosine 0.87 > 0.83)"
-          }
-        ],
-        "approved": false,
-        "terminal": true,
-        "final_score": 88.67,
-        "reviewer_count": 9,
-        "schema_version": 1,
-        "approval_threshold": 80,
-        "qa_rewrite_attempts": 1
-      }
-    },
-    {
-      "id": 248783,
-      "timestamp": "2026-07-31T18:45:15.378073+00:00",
-      "event_type": "qa_flagged_surfaced",
-      "source": "qa.aggregate",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "warning",
-      "details": {
-        "attempts": 1,
-        "threshold": 80,
-        "vetoed_by": [
-          "missing_required:topic_delivery"
-        ],
-        "final_score": 88.67
-      }
-    },
-    {
-      "id": 248647,
-      "timestamp": "2026-07-31T18:14:23.090446+00:00",
-      "event_type": "ragas_score",
-      "source": "ragas_eval",
+      "id": 252915,
+      "timestamp": "2026-08-01T08:53:02.379757+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
       "task_id": null,
       "severity": "info",
       "details": {
-        "score": 0.8203,
-        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
-        "faithfulness": 0.9091,
-        "metric_count": 2,
-        "answer_relevancy": 0.7315,
-        "context_precision": -1
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 1,
+        "attempt_scores": [
+          1
+        ]
       }
     },
     {
-      "id": 248611,
-      "timestamp": "2026-07-31T18:07:31.441531+00:00",
-      "event_type": "qa_pass_completed",
-      "source": "qa.aggregate",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "info",
-      "details": {
-        "rescued": false,
-        "reviews": [
-          {
-            "score": 88,
-            "advisory": true,
-            "approved": false,
-            "provider": "citation_grounding",
-            "reviewer": "citation_grounding",
-            "feedback_preview": "2 named source(s) with no corpus match: Independent coverage of self-hosted deployment friction; Independent coverage of self-hosting a year in"
-          },
-          {
-            "score": 0,
-            "advisory": false,
-            "approved": false,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "1 critical issue(s) — first: Fabricated quote detected: '\"do not summarize prematurely.\" Add exclamation'"
-          },
-          {
-            "score": 25,
-            "advisory": false,
-            "approved": false,
-            "provider": "ollama",
-            "reviewer": "ollama_critic",
-            "feedback_preview": "This article contains significant unfinished elements that violate publication standards. The presence of raw HTML image tags (\"<img src=\"...\">\") and truncated sentences like \"KV cache quantization on"
-          },
-          {
-            "score": 0,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_brand_fabrication",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) 1 fabrication(s) detected: fake_quote: fake_quote: '\"do not summarize prematurely.\" Add exclamation'"
-          },
-          {
-            "score": 66.7,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_faithfulness",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) The score is 0.67 because the actual output includes several contradictions: it mentions arithmetic constraints and a shared finite token pool as reasons for "
-          },
-          {
-            "score": 63,
-            "advisory": true,
-            "approved": true,
-            "provider": "ragas",
-            "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.58, context_precision=0.33, faithfulness=0.98"
-          },
-          {
-            "score": 45,
-            "advisory": true,
-            "approved": true,
-            "provider": "vision_gate",
-            "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) Vision QA avg=45, overall=45. [30] v/images/featured/ee9d118c-088a38f2.webp: Generic document icon doesn't illustrate context window limitation or token budg;"
-          },
-          {
-            "score": 100,
-            "advisory": false,
-            "approved": true,
-            "provider": "http_head",
-            "reviewer": "citation_verifier",
-            "feedback_preview": "All 5 external URL(s) verified alive"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "unlinked_attribution",
-            "reviewer": "unlinked_attribution",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
-          },
-          {
-            "score": 97.1,
-            "advisory": true,
-            "approved": true,
-            "provider": "self_consistency_gate",
-            "reviewer": "self_consistency",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.971 across 3 samples (threshold=0.55) PASS"
-          },
-          {
-            "score": 13,
-            "advisory": true,
-            "approved": true,
-            "provider": "content_originality_gate",
-            "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) content near-duplicate of published post 'why-kv-cache-quantization-matters-for-long-context-ce1f7499' (worst-chunk cosine 0.87 > 0.83)"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "title_coherence_gate",
-            "reviewer": "title_coherence",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: Why Your Self-Hosted LLM Cuts Answers Short: Understanding the Context Window Bu] The article directly explains why self-hosted LLMs produce short ans"
-          }
-        ],
-        "approved": false,
-        "terminal": false,
-        "final_score": 59.09,
-        "rescue_attempt": 1,
-        "reviewer_count": 12,
-        "schema_version": 1,
-        "rescue_deferred": true,
-        "approval_threshold": 80,
-        "qa_rewrite_attempts": 0
-      }
-    },
-    {
-      "id": 248610,
-      "timestamp": "2026-07-31T18:07:31.440238+00:00",
-      "event_type": "qa_rescue_scheduled",
-      "source": "qa.aggregate",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "info",
-      "details": {
-        "attempt": 1,
-        "threshold": 80,
-        "vetoed_by": [
-          "programmatic_validator",
-          "ollama_critic"
-        ],
-        "final_score": 59.09,
-        "max_attempts": 2
-      }
-    },
-    {
-      "id": 248581,
-      "timestamp": "2026-07-31T18:00:07.818958+00:00",
-      "event_type": "ragas_score",
-      "source": "ragas_eval",
+      "id": 252901,
+      "timestamp": "2026-08-01T08:48:52.819025+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
       "task_id": null,
       "severity": "info",
       "details": {
-        "score": 0.6301,
-        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
-        "faithfulness": 0.9783,
-        "metric_count": 3,
-        "answer_relevancy": 0.5787,
-        "context_precision": 0.3333
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 11,
+        "duration_s": 24.8,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 248547,
-      "timestamp": "2026-07-31T17:53:59.443692+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "id": 252900,
+      "timestamp": "2026-08-01T08:48:52.818415+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
       "severity": "info",
       "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "attempts": 1,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 10,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 248534,
-      "timestamp": "2026-07-31T17:52:23.697301+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "id": 252899,
+      "timestamp": "2026-08-01T08:48:52.817559+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
       "severity": "info",
       "details": {
-        "style": "flat vector illustration",
-        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt"
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 9,
+        "duration_s": 20,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 248533,
-      "timestamp": "2026-07-31T17:52:23.148128+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "id": 252898,
+      "timestamp": "2026-08-01T08:48:52.816992+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
       "severity": "info",
       "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "attempts": 1,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 8,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 248532,
-      "timestamp": "2026-07-31T17:52:18.339214+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "id": 252897,
+      "timestamp": "2026-08-01T08:48:52.816192+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
       "severity": "info",
       "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "attempts": 1,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 20,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 248531,
-      "timestamp": "2026-07-31T17:52:13.123911+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
+      "id": 252896,
+      "timestamp": "2026-08-01T08:48:52.815663+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
       "severity": "info",
       "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "attempts": 1,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 248523,
-      "timestamp": "2026-07-31T17:49:52.696696+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 5
-      }
-    },
-    {
-      "id": 248520,
-      "timestamp": "2026-07-31T17:47:53.584924+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "ee9d118c-1eb2-4865-aa5a-6beae8c59c28",
-      "severity": "info",
-      "details": {
-        "topic": "Why self-hosted LLMs quietly write short: the context window is the ceiling, not the prompt",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 248426,
-      "timestamp": "2026-07-31T17:26:08.066651+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "fa3c3be2-38dd-4a97-aa11-ba11b028c1ba",
-      "severity": "info",
-      "details": {
-        "topic": "Daily dev diary — 2026-07-31 (8 PRs, 5 commits)",
-        "template_slug": "dev_diary"
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "1d10e119-a478-4591-b6cc-ae804c527207",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 6,
+        "duration_s": 22,
+        "qa_outcome": "accepted"
       }
     }
   ],
-  "server_time": "2026-07-31T19:14:45.908183+00:00"
+  "server_time": "2026-08-01T09:53:22.797290+00:00"
 }
