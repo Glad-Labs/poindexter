@@ -46,6 +46,11 @@ tcol() { # temp -> ramp hex (cool blue base)
   [[ $v =~ ^[0-9]+$ ]] || { printf "9fb1bd"; return; }
   if [ "$v" -lt "$w" ]; then printf "33bbee"; elif [ "$v" -lt "$h" ]; then printf "ffb833"; else printf "ff8000"; fi
 }
+batcol() { # battery % -> ramp hex (low = bad, inverse of the temp ramps)
+  local v=${1%%.*}
+  [[ $v =~ ^[0-9]+$ ]] || { printf "9fb1bd"; return; }
+  if [ "$v" -ge 50 ]; then printf "009988"; elif [ "$v" -ge 20 ]; then printf "ffb833"; else printf "ff8000"; fi
+}
 bar() { # pct warm hot -> 24-char colored block bar
   local p=${1%%.*} w=$2 h=$3
   [[ $p =~ ^[0-9]+$ ]] || p=0
@@ -102,6 +107,22 @@ done < <(nvidia-smi --query-gpu=temperature.gpu,power.draw,power.limit,utilizati
 LOOP_COOL="--" LOOP_BLOCK="--" LOOP_PUMP="--" LOOP_FN=0 LOOP_FMIN="--" LOOP_FMAX="--" LOOP_FAVG="--" LOOP_AIR="--"
 eval "$(python3 "$HOME/.config/conky/loop-poll.py" 2>/dev/null)"
 
+# Headset battery via headsetcontrol (Virtuoso MAX receiver) — refreshed async
+# every 30 s: battery moves over minutes, and a per-frame HID roundtrip would
+# just contend with OpenLinkHub on the receiver. -o env emits the same
+# eval-safe KEY=VALUE shape as loop-poll; stdout/stderr fully redirected so
+# the background child never writes into conky's execpi pipe.
+HSFILE=$RD/strip-headset
+DEVICE_0_BATTERY_STATUS="" DEVICE_0_BATTERY_LEVEL=""
+if command -v headsetcontrol >/dev/null; then
+  printf -v NOW '%(%s)T' -1
+  if (( NOW - $(stat -c %Y "$HSFILE" 2>/dev/null || echo 0) >= 30 )); then
+    touch "$HSFILE"  # claim the refresh slot so overlapping ticks don't double-spawn
+    ( headsetcontrol -b -o env 2>/dev/null > "$HSFILE.new" && mv "$HSFILE.new" "$HSFILE" ) &
+  fi
+  eval "$(grep -E '^DEVICE_0_BATTERY_(STATUS|LEVEL)=' "$HSFILE" 2>/dev/null)"
+fi
+
 # graph caches — execgraph only accepts 0-100, so everything is a percent:
 # gpu0 = util %, gpu1 = power % of its limit (util is ~always 0 on the
 # compute-only 3090), watts = % of the PSU's 1500 W capacity (matches the PSU bar)
@@ -128,16 +149,25 @@ printf '${voffset 12}${font DejaVu Sans:bold:size=15}'
 printf '${goto %s}${color 00e5d6}▎${color 9fb1bd}CPU · RYZEN 9950X3D${goto %s}${color 00e5d6}▎${color 9fb1bd}GPU · RTX 5090${goto %s}${color 00e5d6}▎${color 9fb1bd}GPU · RTX 3090${goto %s}${color 00e5d6}▎${color 9fb1bd}PSU · HX1500i WALL' $C1 $C2 $C3 $C4
 printf '${goto 1770}${font DejaVu Sans Mono:bold:size=15}${color 00e5d6}${time %%H:%%M:%%S}\n'
 
-# R1 — heroes
-printf '${voffset 14}${font DejaVu Sans Mono:bold:size=52}'
-printf '${goto %s}${color %s}%s°${goto %s}${color %s}%s°${goto %s}${color %s}%s°${goto %s}${color 00e5d6}%s W\n' \
+# R1 — heroes (voffset 2 + R2's 6 used to be 14/-6 — heroes ride 12px higher,
+# bars and everything below keep their absolute position)
+printf '${voffset 2}${font DejaVu Sans Mono:bold:size=52}'
+printf '${goto %s}${color %s}%s°${goto %s}${color %s}%s°${goto %s}${color %s}%s°${goto %s}${color 00e5d6}%s W' \
   $C1 "$(tcol "$TCTL" 55 75)" "$TCTL" \
   $C2 "$(tcol "$G0T" 45 70)" "$G0T" \
   $C3 "$(tcol "$G1T" 45 70)" "$G1T" \
   $C4 "$PTOT"
+# headset battery, stacked under the clock in the free right margin
+HSTXT=""
+case "$DEVICE_0_BATTERY_STATUS" in
+  BATTERY_AVAILABLE)   HSTXT="\${color $(batcol "$DEVICE_0_BATTERY_LEVEL")}HS ${DEVICE_0_BATTERY_LEVEL}%" ;;
+  BATTERY_CHARGING)    HSTXT="\${color 33bbee}HS ${DEVICE_0_BATTERY_LEVEL:--}% chg" ;;
+  BATTERY_UNAVAILABLE) HSTXT="\${color 9fb1bd}HS off" ;;
+esac
+printf '${goto 1770}${font DejaVu Sans Mono:bold:size=15}${voffset -36}%s${voffset 36}\n' "$HSTXT"
 
 # R2 — bars: cpu load / gpu util / gpu util / psu load
-printf '${voffset -6}${font DejaVu Sans Mono:size=19}'
+printf '${voffset 6}${font DejaVu Sans Mono:size=19}'
 printf '${goto %s}%s${color 9fb1bd} %s%%${goto %s}%s${color 9fb1bd} %s%%${goto %s}%s${color 9fb1bd} %s%%${goto %s}%s${color 9fb1bd} %s%%\n' \
   $C1 "$(bar "$CPUPCT" 45 80)" "$CPUPCT" \
   $C2 "$(bar "$G0U" 45 80)" "$G0U" \
