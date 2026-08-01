@@ -1510,6 +1510,53 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
+    async def _unload_wan(self, hard: bool = False):
+        """Tell the wan-server to release its VRAM (poindexter#962).
+
+        The wan idle unloader drops the pipeline OBJECTS on its own timer,
+        but torch's caching allocator keeps the multi-GB reserved pool + CUDA
+        context until the process exits — observed 10,240 MiB still held
+        ~6.5h after the last render, pinning the render GPU under the
+        dispatch free-VRAM gate all night with nothing on the reclaim ladder
+        able to touch it. ``hard=True`` asks the server to exit after
+        unloading (mirroring image-gen's contract, including its
+        ``nothing_to_reclaim`` decline when the reserved pool is below the
+        ``WAN_HARD_UNLOAD_MIN_RESERVED_MB`` floor); Docker's
+        ``restart: unless-stopped`` brings it back and it lazy-loads on the
+        next ``/generate``.
+
+        URL resolution reuses the provider's own chain
+        (``wan_server_url`` → plugin namespace → default ``:9840``) so the
+        reclaim hits the exact server the render will.
+        """
+        from services.video_providers.wan2_1 import _resolve_server_url
+
+        base = _resolve_server_url({}, _sc()).rstrip("/")
+        try:
+            client = self._get_http_client()
+            kwargs: dict = {"timeout": 10}
+            if hard:
+                kwargs["json"] = {"hard": True}
+            resp = await client.post(f"{base}/unload", **kwargs)
+            if resp.status_code == 200:
+                logger.info(
+                    "[GPU] wan model unloaded via /unload endpoint%s (%s)",
+                    " (hard)" if hard else "",
+                    (getattr(resp, "text", "") or "")[:120],
+                )
+        except Exception as exc:
+            # silent-ok: same posture as _unload_image_gen — for hard=True a
+            # reset connection IS the reclaim working (os._exit(0) fires
+            # before uvicorn flushes the response when the floor is met), and
+            # for soft the server being down between renders is the common
+            # case, not a bug.
+            logger.debug(
+                "[GPU] wan /unload call failed (%s): %s: %s",
+                "expected — hard unload may exit before responding" if hard
+                else "server likely offline",
+                type(exc).__name__, exc,
+            )
+
     @property
     def is_busy(self) -> bool:
         return self._lock.locked()

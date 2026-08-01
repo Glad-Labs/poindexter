@@ -129,9 +129,9 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     2026-07-12 desktop-lockup fix): evict Ollama (~0.3 GB) + hard-unload
     image-gen (~7 GB — exits its process so the CUDA context actually
     returns to the host; ``torch.cuda.empty_cache()`` alone doesn't under
-    WSL2) + unload the chatterbox TTS model. Docker's
-    ``restart: unless-stopped`` brings the hard-unloaded servers back; both
-    lazy-load on their next request.
+    WSL2) + unload the chatterbox TTS model + hard-unload the wan-server.
+    Docker's ``restart: unless-stopped`` brings the hard-unloaded servers
+    back; all lazy-load on their next request.
 
     Chatterbox was added 2026-07-29 (Glad-Labs/poindexter#940): it caches its
     model after narrating an episode and is not a GPU-lock owner, so it sat
@@ -139,24 +139,32 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     render — observed deferring on "free VRAM 24.0 GB < 25 GB required". A
     soft unload suffices; its VRAM is the model, not a wedged CUDA context.
 
+    wan was added 2026-08-01 (Glad-Labs/poindexter#962): after a successful
+    render evening its idle unloader drops the pipeline objects but the
+    process keeps ~10 GB of CUDA reserved pool, which no lever here could
+    touch — the gate then deferred every render overnight ("free VRAM
+    18.6 GB < 25 GB required") until a human restarted the container. Its
+    hard unload declines (``nothing_to_reclaim``) when the pool is below the
+    ``WAN_HARD_UNLOAD_MIN_RESERVED_MB`` floor, so repeat reclaims are cheap.
+
     Each lever is isolated: the callees are best-effort and catch internally,
     but that made "never raises" an incidental property of their current
-    implementations rather than a guarantee of this one. Levers run in
-    ascending order of cost-to-restore, so an exception escaping an early one
-    must not skip the later ones — with chatterbox appended last, a stray
-    error in the Ollama evict would otherwise silently cost us the very lever
-    this reclaim was extended to gain. Isolating here keeps that contract
-    true no matter how the callees evolve.
+    implementations rather than a guarantee of this one. An exception
+    escaping an early lever must not skip the later ones — a stray error in
+    the Ollama evict would otherwise silently cost us the wan lever this
+    reclaim was extended to gain. Isolating here keeps that contract true no
+    matter how the callees evolve.
     """
     from services.gpu_scheduler import gpu
 
-    # Callables, NOT pre-built coroutines: building all three up front would
+    # Callables, NOT pre-built coroutines: building all four up front would
     # leave the un-awaited ones raising "coroutine was never awaited" the
     # moment anyone adds a break/continue to this loop.
     levers: tuple[tuple[str, Any], ...] = (
         ("ollama", gpu._unload_ollama_models),
         ("image-gen", lambda: gpu._unload_image_gen(hard=True)),
         ("chatterbox", gpu._unload_chatterbox),
+        ("wan", lambda: gpu._unload_wan(hard=True)),
     )
     for name, call in levers:
         try:
@@ -283,8 +291,8 @@ class DispatchMediaPipelineJob:
                     logger.info(
                         "[DISPATCH_MEDIA] render-GPU VRAM insufficient — "
                         "attempting a bounded reclaim (evict Ollama + hard-"
-                        "unload image-gen + unload chatterbox) before "
-                        "deferring: %s", health.detail,
+                        "unload image-gen + unload chatterbox + hard-unload "
+                        "wan) before deferring: %s", health.detail,
                     )
                     await _attempt_vram_reclaim(sc)
                     settle = sc.get_float("media_render_reclaim_settle_seconds", 8.0) or 8.0

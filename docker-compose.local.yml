@@ -1223,6 +1223,14 @@ services:
       # so the 5B model fits the 32GB card. Override per-host via this env.
       WAN_MODEL_ID: "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
       WAN_IDLE_TIMEOUT_S: "900"
+      # Reserved-VRAM floor for the hard unload (poindexter#962): below this
+      # a POST /unload {"hard":true} declines (nothing_to_reclaim) instead of
+      # paying a pointless process exit + cold reload. The idle unloader
+      # frees the pipeline OBJECTS but the process keeps its multi-GB CUDA
+      # reserved pool until exit — observed 10,240 MiB held ~6.5h after the
+      # last render, pinning the render GPU under the dispatch free-VRAM
+      # gate. dispatch_media_pipeline's reclaim ladder calls the hard unload.
+      WAN_HARD_UNLOAD_MIN_RESERVED_MB: "512"
       # The model is ~24GB resident on a 32GB card that also drives the
       # desktop — margin is a few hundred MB at the VAE-decode spike.
       # Measured 2026-07-26: a 480p render OOM'd needing 426MiB with

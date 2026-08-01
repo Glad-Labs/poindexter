@@ -502,6 +502,48 @@ class TestWaitForGamingClear:
 # ===========================================================================
 
 
+class TestUnloadWan:
+    """poindexter#962: the wan hard-unload lever posts {"hard": true} to the
+    provider-resolved server URL — a resolution mistake would silently no-op
+    every reclaim (best-effort swallows transport errors by design)."""
+
+    @pytest.mark.asyncio
+    async def test_hard_unload_posts_to_resolved_url(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        resp = MagicMock(status_code=200, text='{"status":"nothing_to_reclaim"}')
+        client = MagicMock()
+        client.post = AsyncMock(return_value=resp)
+        with patch.object(scheduler, "_get_http_client", return_value=client), \
+             patch(
+                 "services.video_providers.wan2_1._resolve_server_url",
+                 return_value="http://wan-server:9840/",
+             ):
+            await scheduler._unload_wan(hard=True)
+
+        client.post.assert_awaited_once()
+        args, kwargs = client.post.await_args
+        assert args[0] == "http://wan-server:9840/unload"
+        assert kwargs["json"] == {"hard": True}
+
+    @pytest.mark.asyncio
+    async def test_transport_failure_is_swallowed(self):
+        # A reset connection IS the hard unload working (os._exit fires before
+        # uvicorn flushes the response) — the lever must never raise.
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=ConnectionError("reset"))
+        with patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_wan(hard=True)  # must not raise
+
+
 class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_image_gen_mode_unloads_ollama(self):

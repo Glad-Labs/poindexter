@@ -52,6 +52,7 @@ import gc
 import io
 import logging
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -98,6 +99,17 @@ if MODEL_REVISION is None and MODEL_ID == _DEFAULT_MODEL_ID:
 # Idle unload — the loaded model is large; release it so image-gen / Ollama
 # can reclaim VRAM when no video work is queued.
 IDLE_TIMEOUT_S = int(os.getenv("WAN_IDLE_TIMEOUT_S", "120"))
+
+# Hard-unload floor (poindexter#962): reserved-VRAM below which a hard unload
+# declines to exit. The idle unloader drops the pipeline OBJECTS, but torch's
+# caching allocator keeps the multi-GB reserved pool + CUDA context until the
+# process exits — observed 10,240 MiB still held ~6.5h after the last render,
+# pinning the render GPU under dispatch_media_pipeline's free-VRAM gate all
+# night. Env (not app_settings) because this server is deliberately DB-free;
+# 512 MB mirrors image_gen_hard_unload_min_reserved_mb's default.
+HARD_UNLOAD_MIN_RESERVED_MB = int(
+    os.getenv("WAN_HARD_UNLOAD_MIN_RESERVED_MB", "512")
+)
 
 # Frame cap so a runaway request can't OOM the GPU. Wan's temporal VAE
 # compresses by 4, so valid frame counts are 4k+1 (81, 121, …).
@@ -469,11 +481,64 @@ async def health() -> dict[str, Any]:
     }
 
 
+class UnloadRequest(BaseModel):
+    """Body for ``POST /unload``. ``hard`` opts into the process-exit path."""
+
+    hard: bool = False
+
+
 @app.post("/unload")
-async def unload() -> dict[str, str]:
+async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     """Manual VRAM release — called by the worker's GPU scheduler when
     Ollama / image-gen needs the card.
+
+    Soft (default, no body or ``{"hard": false}``): drop the pipelines +
+    ``torch.cuda.empty_cache()`` — the pre-existing behavior.
+
+    Hard (``{"hard": true}``, poindexter#962): also exit the process.
+    ``empty_cache()`` does NOT return the caching allocator's reserved pool
+    or the CUDA context to the host — only a process exit does (the same
+    physics as image-gen's hard unload; observed here as ~10 GB still held
+    hours after the idle unloader had dropped the pipeline objects). Docker's
+    ``restart: unless-stopped`` brings the server back; it lazy-loads on the
+    next ``/generate``. Used by ``dispatch_media_pipeline``'s render-GPU
+    VRAM reclaim.
+
+    The exit is gated on there being something worth reclaiming
+    (``WAN_HARD_UNLOAD_MIN_RESERVED_MB``): measured on ``memory_reserved``,
+    NOT ``memory_allocated`` — the unload above just dropped every live
+    tensor, so allocated is ~0 by construction; the reserved pool is what a
+    process exit actually returns. Below the floor the endpoint answers
+    ``nothing_to_reclaim`` instead of paying a pointless cold-start window
+    (the image-gen lesson: ~24 consecutive no-op exits before its gate).
     """
+    if req and req.hard:
+        async with state.gpu_lock:
+            _unload_pipeline_blocking()
+            reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+            if reserved_mb < HARD_UNLOAD_MIN_RESERVED_MB:
+                logger.info(
+                    "[HARD UNLOAD] skipped — %d MB reserved is below the "
+                    "%d MB floor; exiting would reclaim nothing and cost a "
+                    "cold reload on the next hero shot",
+                    reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+                )
+                return {
+                    "status": "nothing_to_reclaim",
+                    "vram_reserved_mb": reserved_mb,
+                    "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
+                }
+            logger.warning(
+                "[HARD UNLOAD] exiting process to return the CUDA context to "
+                "the host (vram_reserved=%d MB >= %d MB floor); Docker "
+                "restart policy brings it back",
+                reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+            )
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
+            return {"status": "exiting"}  # unreachable outside tests
+
     async with state.gpu_lock:
         _unload_pipeline_blocking()
     return {"status": "unloaded"}

@@ -289,7 +289,8 @@ async def test_attempt_vram_reclaim_calls_ollama_evict_and_hard_image_gen_unload
     image_gen_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", ollama_mock), \
          patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
-         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()):
+         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
+         patch.object(real_gpu, "_unload_wan", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     ollama_mock.assert_awaited_once()
     image_gen_mock.assert_awaited_once_with(hard=True)
@@ -309,9 +310,30 @@ async def test_attempt_vram_reclaim_also_unloads_chatterbox():
     chatterbox_mock = AsyncMock()
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
          patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
-         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock):
+         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock), \
+         patch.object(real_gpu, "_unload_wan", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     chatterbox_mock.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_attempt_vram_reclaim_hard_unloads_wan():
+    """Glad-Labs/poindexter#962: wan's idle unloader drops the pipeline
+    objects but the process keeps ~10 GB of CUDA reserved pool, which no
+    lever could touch — the gate then deferred every render overnight
+    ("free VRAM 18.6 GB < 25 GB required") until a human restarted the
+    container. Hard, because only a process exit returns the reserved pool;
+    the server declines (nothing_to_reclaim) below its floor, so repeat
+    reclaims are cheap."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    wan_mock = AsyncMock()
+    with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
+         patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
+         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
+         patch.object(real_gpu, "_unload_wan", wan_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    wan_mock.assert_awaited_once_with(hard=True)
 
 
 @pytest.mark.asyncio
@@ -326,16 +348,19 @@ async def test_attempt_vram_reclaim_survives_a_failing_lever():
 
     image_gen_mock = AsyncMock()
     chatterbox_mock = AsyncMock()
+    wan_mock = AsyncMock()
     with patch.object(
             real_gpu, "_unload_ollama_models",
             AsyncMock(side_effect=RuntimeError("ollama unreachable"))), \
          patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
-         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock):
+         patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock), \
+         patch.object(real_gpu, "_unload_wan", wan_mock):
         await dmp._attempt_vram_reclaim(_sc_gated())  # must not raise
 
-    # The levers AFTER the failure still ran.
+    # The levers AFTER the failure still ran — including wan, the last rung.
     image_gen_mock.assert_awaited_once_with(hard=True)
     chatterbox_mock.assert_awaited_once_with()
+    wan_mock.assert_awaited_once_with(hard=True)
 
 
 @pytest.mark.asyncio
