@@ -26,14 +26,49 @@ It ships with realistic **mock data** so it runs with zero backend. Flip it to
 
 ## 1. It's already served from the worker (same-origin, no CORS)
 
-`main.py` mounts this folder at `/console/` (`StaticFiles(..., html=True)`,
-mounted **after** the API routers so it never shadows `/api`). With the worker
-running:
+`main.py` mounts this folder at `/console/` (`NoCacheStaticFiles(..., html=True)`
+via `utils/operator_console.py`, mounted **after** the API routers so it never
+shadows `/api`). With the worker running:
 
 > Open **http://localhost:8002/console/**
 
 The static mount is **not** behind `verify_api_token`, so the page itself loads
 freely; the `/api/...` calls it makes carry a short-lived OAuth JWT (below).
+
+### Caching — why a deploy doesn't need a hard refresh
+
+Every asset here is served with **`Cache-Control: no-cache`**. That means _cache
+it, but revalidate before every use_ — not "don't cache" (that would be
+`no-store`). The browser keeps each file and re-asks with the ETag `StaticFiles`
+already emits, so an unchanged asset costs a bodiless `304` and a changed one
+comes back `200` with fresh bytes.
+
+This matters because the console has **no build step and no hashed filenames**.
+`index.html` names ~33 plain `<script>`/`<link>` tags that share one global
+lexical scope and the `window.PX`/`PXR` contract, so a browser holding _some_
+files from cache while fetching others fresh runs a **mixed version** of the app
+— partial rendering, strobing, runtime errors. Revalidating everything on every
+load makes that state unrepresentable: after a deploy you get all-new or
+all-old, never a blend.
+
+It wasn't always this way. `StaticFiles` sets no `Cache-Control` of its own, so
+console assets used to fall through to the catch-all in
+`middleware/cache_control.py` and come back **`private, max-age=60`** — a
+60-second window per file in which the browser reused its copy _without asking_.
+Reload inside that window after a deploy and a freshly revalidated `index.html`
+could pull cached copies of the very scripts it names. That is what bit on
+2026-07-31, when four console PRs landed the same day and the console needed a
+hard refresh to come back. Setting the header at the mount is also what makes
+the middleware stand down — it explicitly defers to any response that already
+carries a `Cache-Control`, so the two never disagree.
+
+The cost is ~33 conditional requests per full page load, all `304`s with no
+body, against a worker on localhost or the tailnet. Vendored `js/vendor/` files
+revalidate on the same terms; `babel.min.js` is 2.9 MB but a `304` carries none
+of it, and keeping the rule uniform means there's no asset that _can_ go stale.
+
+Pinned by `tests/unit/utils/test_operator_console.py` (including the
+middleware-defers case, which is the one that would silently regress).
 
 ---
 
@@ -246,7 +281,9 @@ contract-tested in `__tests__/chat-helpers.test.js` + `__tests__/api.chat.test.j
   (`js/vendor/`). Fine for a local operator tool. If it ever needs to ship
   production-fast, the future move is an esbuild/vite precompile of the `.jsx`
   into one bundle and dropping the Babel runtime — documented as a follow-up,
-  not done here.
+  not done here. That move would also supersede the `no-cache` policy in §1:
+  content-hashed bundle filenames are self-busting, so they'd want a long
+  `max-age` instead. Until then, revalidation is what keeps a deploy atomic.
 - **One token mint per load.** Going live mounts ~11 panels that each hit the
   API; `getToken()` coalesces their concurrent OAuth mints behind a single
   in-flight `POST /token` (and backs off + retries once on a `429`), so a live

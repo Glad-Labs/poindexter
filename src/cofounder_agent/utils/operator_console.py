@@ -19,6 +19,25 @@ absent where it doesn't — the same convention the private business modules use
 This is the single call site for that mount; ``main.py`` invokes
 :func:`mount_operator_console` after the API routers are registered so the
 static handler can never shadow an ``/api/...`` path.
+
+Caching
+-------
+The console has no build step and no content hashes in its filenames: its ~33
+assets are plain ``<script>``/``<link>`` tags sharing one global lexical scope
+and a ``window.PX``/``PXR`` contract. A browser that serves *some* of those
+files from cache while fetching others fresh therefore runs a **mixed version**
+of the app — partial rendering, strobing, runtime errors — until a hard refresh.
+
+Left alone, that is exactly what happens. ``StaticFiles`` sets no
+``Cache-Control`` of its own, so console assets fall through
+``middleware/cache_control.py`` to its catch-all ``private, max-age=60``: a
+60-second window per file in which the browser reuses the cached copy **without
+revalidating**. Reload inside that window after a deploy and the freshly
+revalidated ``index.html`` can pull cached copies of the scripts it names.
+
+:class:`NoCacheStaticFiles` closes the window by stamping ``no-cache``, so the
+mount invalidates atomically on deploy. See ``console/README.md`` §1 for the
+operator-facing version of this story.
 """
 
 from __future__ import annotations
@@ -27,10 +46,46 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+# "cache but revalidate before every use" — NOT "don't cache" (that's
+# ``no-store``). The browser keeps each file and re-asks with the ETag
+# ``StaticFiles`` already emits, so an unchanged asset costs a bodiless 304 and
+# a changed one returns 200 with fresh bytes. Atomic by construction: there is
+# no window in which a subset of the console can be served stale.
+#
+# Deliberately a constant and not an ``app_settings`` key. The DB-first config
+# rule asks "could a customer tune this?" — here the answer is that they must
+# not: any positive ``max-age`` re-opens the mixed-version window this exists to
+# close, so a knob would only be a way to reintroduce the bug. The mount also
+# runs at import time, before ``SiteConfig`` is loaded in the lifespan.
+CONSOLE_CACHE_CONTROL = "no-cache"
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """``StaticFiles`` that forces revalidation of every file it serves.
+
+    Stamps :data:`CONSOLE_CACHE_CONTROL` on the response after the parent has
+    built it, which covers all three shapes ``StaticFiles`` can return: the
+    ``200`` file body, the ``304`` produced when the request's ``If-None-Match``
+    matches (Starlette keeps ``cache-control`` when it filters headers onto a
+    not-modified response), and the ``html=True`` directory redirect.
+
+    Setting the header here rather than special-casing ``/console`` inside
+    ``middleware/cache_control.py`` is what keeps the two in agreement: that
+    middleware explicitly defers to any response that already carries a
+    ``Cache-Control``, so policy stays next to the mount it describes.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = CONSOLE_CACHE_CONTROL
+        return response
 
 
 def _default_console_dir() -> Path:
@@ -51,6 +106,9 @@ def mount_operator_console(app: Any, *, console_dir: Path | None = None) -> bool
     returns ``index.html``) only if ``console_dir`` exists. On the public OSS
     mirror the directory is stripped, so the mount is skipped and the backend
     boots without a ``/console`` route instead of raising ``RuntimeError``.
+
+    Uses :class:`NoCacheStaticFiles` so a deploy invalidates the console's
+    unhashed assets atomically — see the module docstring's Caching section.
 
     Args:
         app: the FastAPI application to mount onto.
@@ -73,7 +131,7 @@ def mount_operator_console(app: Any, *, console_dir: Path | None = None) -> bool
 
     app.mount(
         "/console",
-        StaticFiles(directory=console_dir, html=True),
+        NoCacheStaticFiles(directory=console_dir, html=True),
         name="console",
     )
     logger.info("[STARTUP] ✅ Operator console mounted at /console/")
