@@ -639,6 +639,16 @@ def ensure_pipeline_loaded():
     return state.pipeline
 
 
+async def _idle_unloader_tick() -> None:
+    """One idle-unloader pass: unload the pipeline after IDLE_TIMEOUT of no
+    generates, then refresh the OCR-gate settings (piggybacked on the same
+    60s cadence). Factored out of the startup loop so the loop can wrap it
+    in a blanket except — and so tests can drive a single pass directly."""
+    if state.pipeline is not None and (time.time() - state.last_used) > IDLE_TIMEOUT:
+        unload_pipeline()
+    await reload_ocr_gate_config()
+
+
 # ============================================================================
 # REQUEST/RESPONSE MODELS
 # ============================================================================
@@ -721,18 +731,25 @@ async def degraded_watchdog() -> None:
     the idle_unloader() create_task pattern in startup()."""
     attempt = 0
     while True:
-        if state.degraded:
-            attempt += 1
-            logger.info(
-                "[WATCHDOG] degraded (attempt %d): %s — retrying reload_config()",
-                attempt, state.degraded_reason,
-            )
-            await reload_config()
-            if not state.degraded:
-                logger.info("[WATCHDOG] recovered after %d attempt(s)", attempt)
-                attempt = 0
+        try:
+            if state.degraded:
+                attempt += 1
+                logger.info(
+                    "[WATCHDOG] degraded (attempt %d): %s — retrying reload_config()",
+                    attempt, state.degraded_reason,
+                )
+                await reload_config()
+                if not state.degraded:
+                    logger.info("[WATCHDOG] recovered after %d attempt(s)", attempt)
+                    attempt = 0
+        except Exception:
+            # Same failure mode as the idle unloader: an exception escaping
+            # this body kills self-heal for the life of the process. Log loud,
+            # keep the cadence (attempt already advanced, so backoff applies).
+            logger.exception("[WATCHDOG] poll failed; retrying on cadence")
         else:
-            attempt = 0
+            if not state.degraded:
+                attempt = 0
         await asyncio.sleep(next_retry_delay(attempt))
 
 
@@ -755,14 +772,17 @@ async def startup():
                     state.config.friendly_name)
 
     async def idle_unloader():
+        # Exception-proof: one failed tick must not kill the loop. This loop
+        # died silently on 2026-07-30 (a stray exception escaping the bare
+        # body — the tick's DB read is one candidate) and the loaded pipeline
+        # then squatted 19 GB through the night of 2026-07-31, OOMing every
+        # Ollama load on the shared GPU until a manual restart.
         while True:
             await asyncio.sleep(60)
-            if state.pipeline is not None and (time.time() - state.last_used) > IDLE_TIMEOUT:
-                unload_pipeline()
-            # Piggyback the OCR-gate settings refresh on this existing 60s
-            # tick — mirrors the main app's reload_site_config cadence
-            # (also ~1 min) without a dedicated background task.
-            await reload_ocr_gate_config()
+            try:
+                await _idle_unloader_tick()
+            except Exception:
+                logger.exception("[IDLE] unloader tick failed; loop continues")
     asyncio.create_task(idle_unloader())
     asyncio.create_task(degraded_watchdog())
 

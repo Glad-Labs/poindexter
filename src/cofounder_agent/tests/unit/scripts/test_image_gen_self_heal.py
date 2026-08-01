@@ -210,3 +210,43 @@ def test_degraded_watchdog_self_heals():
                 pass
 
     asyncio.run(body())
+
+
+def test_degraded_watchdog_survives_poll_exception():
+    """A stray exception in a watchdog pass (a DB blip inside reload_config,
+    say) must not kill the loop — the identical bare idle-unloader loop died
+    exactly that way on 2026-07-30 and VRAM hygiene was gone until a manual
+    restart. The loop logs loud and keeps its cadence."""
+    async def body():
+        orig_delay = img_gen_server.next_retry_delay
+        orig_reload = img_gen_server.reload_config
+        img_gen_server.next_retry_delay = lambda attempt: 0.001
+        calls = []
+
+        async def exploding_reload():
+            calls.append(True)
+            raise RuntimeError("transient DB blip")
+
+        img_gen_server.reload_config = exploding_reload
+        img_gen_server.state.degraded = True
+        img_gen_server.state.degraded_reason = "test blip"
+
+        task = asyncio.create_task(img_gen_server.degraded_watchdog())
+        try:
+            for _ in range(200):
+                await asyncio.sleep(0.001)
+                if len(calls) >= 3:
+                    break
+            assert len(calls) >= 3, "watchdog died after the first exception"
+            assert not task.done()
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            img_gen_server.next_retry_delay = orig_delay
+            img_gen_server.reload_config = orig_reload
+            img_gen_server.state.degraded = False
+
+    asyncio.run(body())

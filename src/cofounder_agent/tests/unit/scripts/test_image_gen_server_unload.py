@@ -15,6 +15,7 @@ import asyncio
 import importlib.util
 import os
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import patch
@@ -192,3 +193,52 @@ def test_default_unload_request_is_soft():
     """UnloadRequest() with no args must default hard=False, so an existing
     caller that omits the body keeps getting the pre-existing soft contract."""
     assert img_gen_server.UnloadRequest().hard is False
+
+
+# ---------------------------------------------------------------------------
+# _idle_unloader_tick — factored out of the startup loop so the loop can wrap
+# it in a blanket except (the bare loop died silently on 2026-07-30 and the
+# loaded pipeline squatted 19 GB through the following night).
+# ---------------------------------------------------------------------------
+
+
+def test_idle_unloader_tick_unloads_when_idle():
+    """IDLE_TIMEOUT elapsed with a loaded pipeline → the tick unloads and
+    still runs the piggybacked OCR-gate settings refresh."""
+    async def body():
+        img_gen_server.state.pipeline = object()
+        img_gen_server.state.last_used = 0.0
+        refreshed = []
+
+        async def fake_refresh():
+            refreshed.append(True)
+
+        with patch.object(img_gen_server, "unload_pipeline") as unload_mock, \
+             patch.object(img_gen_server, "reload_ocr_gate_config", fake_refresh):
+            await img_gen_server._idle_unloader_tick()
+
+        unload_mock.assert_called_once()
+        assert refreshed
+
+    asyncio.run(body())
+
+
+def test_idle_unloader_tick_keeps_warm_pipeline():
+    """A pipeline used within IDLE_TIMEOUT stays loaded; the OCR-gate refresh
+    still happens on the shared cadence."""
+    async def body():
+        img_gen_server.state.pipeline = object()
+        img_gen_server.state.last_used = time.time()
+        refreshed = []
+
+        async def fake_refresh():
+            refreshed.append(True)
+
+        with patch.object(img_gen_server, "unload_pipeline") as unload_mock, \
+             patch.object(img_gen_server, "reload_ocr_gate_config", fake_refresh):
+            await img_gen_server._idle_unloader_tick()
+
+        unload_mock.assert_not_called()
+        assert refreshed
+
+    asyncio.run(body())

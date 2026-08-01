@@ -25,6 +25,7 @@ import asyncio
 import importlib.util
 import os
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import patch
@@ -142,6 +143,107 @@ def test_hard_unload_exits_when_pipeline_already_none():
         wan.state.t2v_pipeline = None
         with _patch_reserved(10240), patch.object(os, "_exit") as mock_exit:
             await wan.unload(wan.UnloadRequest(hard=True))
+
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
+
+
+# ---------------------------------------------------------------------------
+# _idle_unload_tick — the self-driven half of the hard unload (2026-08-01: a
+# post-render soft unload left a 10.3 GB reserved pool squatting for hours
+# because no render was pending to trigger the reclaim rung, OOMing every
+# Ollama load on the shared card).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_idle_tick_noop_when_recently_used():
+    """A warm pipeline inside IDLE_TIMEOUT_S is left alone."""
+    async def body():
+        wan.state.last_used = time.time()
+        wan.state.pipeline = object()
+        wan.state.t2v_pipeline = None
+        with patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+             patch.object(os, "_exit") as mock_exit:
+            await wan._idle_unload_tick()
+
+        unload_mock.assert_not_called()
+        mock_exit.assert_not_called()
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_idle_tick_soft_unloads_then_hard_exits_above_floor():
+    """Idle + loaded + fat reserved pool → soft unload, then process exit:
+    the VRAM returns to the card without waiting for a consumer reclaim."""
+    async def body():
+        wan.state.last_used = 0.0
+        wan.state.pipeline = object()
+        wan.state.t2v_pipeline = None
+        with patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+             _patch_reserved(10240), \
+             patch.object(os, "_exit") as mock_exit:
+            await wan._idle_unload_tick()
+
+        unload_mock.assert_called_once()
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_idle_tick_below_floor_unloads_without_exit():
+    """Idle + loaded but a lean pool → soft unload only; no cold-start is
+    paid when an exit would reclaim nothing."""
+    async def body():
+        wan.state.last_used = 0.0
+        wan.state.pipeline = object()
+        wan.state.t2v_pipeline = None
+        with patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+             _patch_reserved(100), \
+             patch.object(os, "_exit") as mock_exit:
+            await wan._idle_unload_tick()
+
+        unload_mock.assert_called_once()
+        mock_exit.assert_not_called()
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_idle_tick_cold_idle_short_circuits():
+    """Nothing loaded and no reserved pool: the tick returns before touching
+    the GPU lock — the every-30s steady state stays free."""
+    async def body():
+        wan.state.last_used = 0.0
+        wan.state.pipeline = None
+        wan.state.t2v_pipeline = None
+        with patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+             _patch_reserved(0), \
+             patch.object(os, "_exit") as mock_exit:
+            await wan._idle_unload_tick()
+
+        unload_mock.assert_not_called()
+        mock_exit.assert_not_called()
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_idle_tick_exits_when_pool_squats_after_earlier_unload():
+    """The 2026-08-01 shape: pipelines already None (the post-render unload
+    ran) while the reserved pool still holds ~10 GB — the tick hard-exits on
+    its own instead of waiting for a render-gate reclaim that may never come."""
+    async def body():
+        wan.state.last_used = 0.0
+        wan.state.pipeline = None
+        wan.state.t2v_pipeline = None
+        with patch.object(wan, "_unload_pipeline_blocking"), \
+             _patch_reserved(10240), \
+             patch.object(os, "_exit") as mock_exit:
+            await wan._idle_unload_tick()
 
         mock_exit.assert_called_once_with(0)
 

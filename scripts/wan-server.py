@@ -330,6 +330,68 @@ def _unload_pipeline_blocking() -> None:
     )
 
 
+def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
+    """Floor-gated process exit (poindexter#962). Caller must hold the GPU
+    lock and have already soft-unloaded — allocated is ~0 by construction, so
+    the gate measures ``memory_reserved``, the pool only a process exit
+    returns. Below the floor: no exit (``quiet_skip`` silences the log for
+    the 30s idle cadence). At or above: flush + ``os._exit(0)``; Docker's
+    restart policy revives the server and it lazy-loads on next /generate.
+
+    Shared by the ``POST /unload {"hard": true}`` endpoint (consumer-driven
+    reclaim) and the idle unloader (self-driven — 2026-08-01: the post-render
+    soft unload left a 10.3 GB reserved pool squatting for hours because no
+    render was pending to trigger the reclaim rung, OOMing every Ollama load
+    on the card)."""
+    reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+    if reserved_mb < HARD_UNLOAD_MIN_RESERVED_MB:
+        if not quiet_skip:
+            logger.info(
+                "[HARD UNLOAD] skipped — %d MB reserved is below the "
+                "%d MB floor; exiting would reclaim nothing and cost a "
+                "cold reload on the next hero shot",
+                reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+            )
+        return {
+            "status": "nothing_to_reclaim",
+            "vram_reserved_mb": reserved_mb,
+            "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
+        }
+    logger.warning(
+        "[HARD UNLOAD] exiting process to return the CUDA context to "
+        "the host (vram_reserved=%d MB >= %d MB floor); Docker "
+        "restart policy brings it back",
+        reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+    )
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+    return {"status": "exiting"}  # unreachable outside tests
+
+
+async def _idle_unload_tick() -> None:
+    """One idle-unloader pass: after IDLE_TIMEOUT_S of no /generate calls,
+    soft-unload the pipelines, then hard-exit if the leftover reserved pool
+    clears the floor. The second stage is what actually returns VRAM to the
+    card: without it an idle wan squats ~10 GB between renders until some
+    consumer event (a render gate reclaim) happens to notice, starving
+    ollama-primary on the shared GPU (2026-08-01 incident)."""
+    if (time.time() - state.last_used) <= IDLE_TIMEOUT_S:
+        return
+    # Cheap pre-check outside the lock: nothing loaded and no reserved pool
+    # means nothing to do — the common cold-idle case, every 30s.
+    if (
+        state.pipeline is None
+        and state.t2v_pipeline is None
+        and torch.cuda.memory_reserved(0) // 1024 // 1024
+        < HARD_UNLOAD_MIN_RESERVED_MB
+    ):
+        return
+    async with state.gpu_lock:
+        _unload_pipeline_blocking()
+        _hard_exit_if_reserved_pool(quiet_skip=True)
+
+
 # ============================================================================
 # IMAGE + DIMENSION HELPERS
 # ============================================================================
@@ -432,15 +494,17 @@ async def on_startup() -> None:
         )
 
     async def idle_unloader() -> None:
-        """Release VRAM after IDLE_TIMEOUT_S of no /generate calls."""
+        """Drive _idle_unload_tick() every 30s, forever. Exception-proof: one
+        failed tick must not kill the loop — image-gen's identical bare loop
+        died on a stray exception (last idle unload 2026-07-30 13:04Z) and
+        its pipeline squatted 19 GB through the following night, OOMing every
+        Ollama load on the card."""
         while True:
             await asyncio.sleep(30)
-            if (
-                state.pipeline is not None
-                and (time.time() - state.last_used) > IDLE_TIMEOUT_S
-            ):
-                async with state.gpu_lock:
-                    _unload_pipeline_blocking()
+            try:
+                await _idle_unload_tick()
+            except Exception:
+                logger.exception("[IDLE] unload tick failed; loop continues")
 
     asyncio.create_task(idle_unloader())
 
@@ -515,29 +579,7 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     if req and req.hard:
         async with state.gpu_lock:
             _unload_pipeline_blocking()
-            reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
-            if reserved_mb < HARD_UNLOAD_MIN_RESERVED_MB:
-                logger.info(
-                    "[HARD UNLOAD] skipped — %d MB reserved is below the "
-                    "%d MB floor; exiting would reclaim nothing and cost a "
-                    "cold reload on the next hero shot",
-                    reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
-                )
-                return {
-                    "status": "nothing_to_reclaim",
-                    "vram_reserved_mb": reserved_mb,
-                    "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
-                }
-            logger.warning(
-                "[HARD UNLOAD] exiting process to return the CUDA context to "
-                "the host (vram_reserved=%d MB >= %d MB floor); Docker "
-                "restart policy brings it back",
-                reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
-            )
-            sys.stdout.flush()
-            sys.stderr.flush()
-            os._exit(0)
-            return {"status": "exiting"}  # unreachable outside tests
+            return _hard_exit_if_reserved_pool()
 
     async with state.gpu_lock:
         _unload_pipeline_blocking()
