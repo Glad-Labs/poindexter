@@ -373,6 +373,11 @@ async def compose(
             site_config=_sc,
             pool=pool,
             timeout_setting="pipeline_architect_timeout_seconds",
+            # Structured JSON output: the reasoning channel off keeps a
+            # thinking model (glm-4.7, qwen3) from burning its budget on
+            # <think> prose that poisons the {…} extraction below — the
+            # first live chat plan turn failed exactly this way.
+            think=False,
         )
         last_raw = raw
         spec, parse_errors = _parse_json_spec(raw)
@@ -418,6 +423,16 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     if not raw:
         return {}, ["empty response from model"]
 
+    # Reasoning models (glm-4.7, qwen3, deepseek-r1) wrap deliberation in
+    # <think> blocks whose prose can contain stray braces — a `{` inside
+    # the think block anchors the outermost-{...} scan below on garbage
+    # (live failure: `invalid JSON … char 1` on the first chat plan turn).
+    # compose() requests think=False, but the strip stays as defense in
+    # depth for providers that ignore the field.
+    from services.llm_providers.thinking_models import strip_think_blocks
+
+    raw = strip_think_blocks(raw)
+
     # Strip markdown fences if present (poindexter#643 — canonical shared
     # helper; the outermost-{...} scan below is robust to a fence tagged
     # something other than json/jsonc/json5 that the helper declines to
@@ -436,11 +451,67 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     try:
         spec = json.loads(payload)
     except json.JSONDecodeError as exc:
-        return {}, [f"invalid JSON: {exc}"]
+        # The outermost slice can still be poisoned by prose braces around
+        # the real object (an unclosed think block, chatter before the
+        # spec). Fall back to the balanced {...} candidates; the largest
+        # one that parses to a dict wins (the spec dwarfs any prose-borne
+        # fragment like a sketched node).
+        spec = _largest_balanced_json_object(raw)
+        if spec is None:
+            return {}, [f"invalid JSON: {exc}"]
 
     if not isinstance(spec, dict):
         return {}, [f"top-level value is not an object (got {type(spec).__name__})"]
     return spec, []
+
+
+def _largest_balanced_json_object(raw: str) -> dict[str, Any] | None:
+    """Scan for the largest balanced ``{...}`` span that parses to a dict.
+
+    Depth-counts braces outside string literals from each opening ``{``.
+    Largest-wins because prose can carry small valid fragments (a model
+    sketching one node mid-deliberation) while the real spec spans KBs.
+    Bounded by the response length, so the worst case stays trivial.
+    """
+    best: dict[str, Any] | None = None
+    best_len = 0
+    i, n = 0, len(raw)
+    while i < n:
+        if raw[i] != "{":
+            i += 1
+            continue
+        depth, j, in_str, esc = 0, i, False, False
+        while j < n:
+            ch = raw[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        if depth == 0 and j > i:
+            span = raw[i : j + 1]
+            if len(span) > best_len:
+                try:
+                    candidate = json.loads(span)
+                except json.JSONDecodeError:
+                    candidate = None
+                if isinstance(candidate, dict):
+                    best, best_len = candidate, len(span)
+            i = j + 1
+        else:
+            i += 1
+    return best
 
 
 def _validate_spec(

@@ -79,3 +79,29 @@ async def test_dedicated_architect_model_override_still_wins(monkeypatch):
     await pipeline_architect.compose("compose a pipeline", site_config=sc, max_attempts=1)
 
     assert captured["model"] == "qwen3:14b"
+
+
+@pytest.mark.asyncio
+async def test_compose_requests_think_off(monkeypatch):
+    """compose() must pass think=False — a thinking architect model
+    (glm-4.7) otherwise burns its budget on <think> prose that poisons
+    the JSON extraction (first live chat plan turn, 2026-08-01)."""
+    captured: dict[str, Any] = {}
+
+    async def _fake_ollama(prompt: str, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "{}"
+
+    monkeypatch.setattr(
+        pipeline_architect, "to_catalog_text",
+        lambda: "restart_container v1 | atom | tier=budget | cost=0",
+    )
+    monkeypatch.setattr(pipeline_architect, "_ollama_chat_text", _fake_ollama)
+
+    sc = SiteConfig(initial_config={
+        "pipeline_architect_model": "ollama/glm-4.7-5090:latest",
+    })
+    await pipeline_architect.compose(
+        "a lean post plan", site_config=sc, max_attempts=1,
+    )
+    assert captured.get("think") is False
