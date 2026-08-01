@@ -46,10 +46,17 @@ class ChatTaskWatchJob:
 
         batch_size = int(config.get("batch_size", 20))
         try:
+            # quality_score lives on pipeline_versions (latest version per
+            # task) — pipeline_tasks has no such column. Selecting
+            # t.quality_score errored EVERY minute post-deploy (2026-08-01;
+            # the unit fakes couldn't catch a column-name drift).
             rows = await pool.fetch(
                 """
                 SELECT l.conversation_id, l.pipeline_task_id,
-                       t.task_id, t.status, t.topic, t.quality_score
+                       t.task_id, t.status, t.topic,
+                       (SELECT v.quality_score FROM pipeline_versions v
+                         WHERE v.task_id = t.task_id
+                         ORDER BY v.version DESC LIMIT 1) AS quality_score
                   FROM chat_task_links l
                   JOIN pipeline_tasks t
                     ON (t.task_id = l.pipeline_task_id

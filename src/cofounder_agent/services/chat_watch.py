@@ -27,12 +27,17 @@ TERMINAL_STATUSES = frozenset(
 
 async def watch_task(pool: Any, task_id: str) -> dict[str, Any] | None:
     """Progress snapshot for one task; None when the task doesn't exist."""
+    # quality_score comes from the latest pipeline_versions row —
+    # pipeline_tasks has no such column (see the 2026-08-01 watcher-job
+    # errata in services/jobs/chat_task_watch.py).
     task = await pool.fetchrow(
         """
-        SELECT task_id, status, topic, template_slug,
-               quality_score, updated_at
-          FROM pipeline_tasks
-         WHERE task_id = $1 OR id::text = $1
+        SELECT t.task_id, t.status, t.topic, t.template_slug, t.updated_at,
+               (SELECT v.quality_score FROM pipeline_versions v
+                 WHERE v.task_id = t.task_id
+                 ORDER BY v.version DESC LIMIT 1) AS quality_score
+          FROM pipeline_tasks t
+         WHERE t.task_id = $1 OR t.id::text = $1
         """,
         task_id,
     )
