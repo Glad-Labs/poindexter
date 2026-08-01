@@ -49,6 +49,12 @@ class ChatToolContext:
     touched a pipeline task appends its id, and the agent loop drains it
     after the call to write ``chat_task_links`` rows + emit ``task_linked``
     stream events (the P3 activity rail watches those links).
+
+    ``emitted_cards`` (P4) is the sibling channel for rich card parts a
+    handler produced (the architect's plan card): the loop drains it into
+    the message parts + streams each as a ``card`` event. ``message_id``
+    is the assistant row the current turn writes — handlers that persist
+    card-backing rows (chat_plans) need it for later card stamping.
     """
 
     db_service: Any
@@ -56,7 +62,9 @@ class ChatToolContext:
     pool: Any
     user_id: str = "operator"
     conversation_id: str = ""
+    message_id: str = ""
     linked_task_ids: list[str] = field(default_factory=list)
+    emitted_cards: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -309,6 +317,58 @@ async def _cancel_task(ctx: ChatToolContext, *, task_id: str) -> str:
     return f"Task {resolved[:8]} cancelled."
 
 
+async def _plan_pipeline(
+    ctx: ChatToolContext, *, intent: str, topic: str = "",
+) -> str:
+    """Compose an ad-hoc pipeline (poindexter#950) and emit a plan card.
+
+    Read-tier on purpose: composing designs a plan, it runs nothing —
+    execution happens only via the card's one-shot Run action.
+    ``max_attempts=2`` keeps the FIX-retry loop inside the chat turn's
+    deadline (the full 3-attempt budget belongs to offline callers).
+    """
+    from services.chat_plans import create_plan
+    from services.pipeline_architect import compose
+
+    result = await compose(
+        intent,
+        site_config=ctx.site_config,
+        pool=ctx.pool,
+        max_attempts=2,
+    )
+    if not result.ok or not result.spec:
+        errors = "\n".join((result.errors or ["unknown compose failure"])[:5])
+        raise ChatToolError(
+            "The architect could not produce a valid plan:\n"
+            f"{errors[:800]}\n"
+            "Rephrase the intent (name concrete steps to add/skip) and try again."
+        )
+    plan = await create_plan(
+        ctx.pool,
+        conversation_id=ctx.conversation_id,
+        message_id=ctx.message_id,
+        intent=intent,
+        topic=topic or "",
+        spec=result.spec,
+    )
+    ctx.emitted_cards.append({
+        "kind": "plan",
+        "plan_id": plan["plan_id"],
+        "slug": plan["slug"],
+        "intent": plan["intent"],
+        "topic": plan["topic"],
+        "node_count": plan["node_count"],
+        "nodes": plan["nodes"],
+        "state": "draft",
+    })
+    return (
+        f"Plan ready: {plan['node_count']} steps, cached as "
+        f"{plan['slug']} (plan {plan['plan_id'][:8]}). The plan card shows "
+        "the steps — the operator clicks Run pipeline to execute it or "
+        "Adjust to refine. Summarize the plan in one sentence and stop."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -410,6 +470,19 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="write",
         handler=_create_post,
+    ),
+    ChatToolSpec(
+        name="plan_pipeline",
+        description=(
+            "Design a custom content pipeline from a plain-language intent "
+            "(e.g. 'write about X but skip video and double the "
+            "fact-checking'). Produces a plan card the operator can Run or "
+            "Adjust — nothing executes until they click Run. Pass the "
+            "article subject as topic; pipeline-shape wishes go in intent."
+        ),
+        parameters=_params({"intent": _STR, "topic": _STR}, ["intent"]),
+        tier="read",
+        handler=_plan_pipeline,
     ),
     ChatToolSpec(
         name="set_setting",

@@ -2747,6 +2747,49 @@
     approvals: {},
     watchTicks: {},
     links: {},
+    // P4 (poindexter#950): architect plan cards.
+    plans: {},
+    runPlan(planId) {
+      const p = this.plans[planId];
+      if (!p) throw new Error(`Unknown plan: ${planId}`);
+      if (p.state !== 'draft')
+        return { id: planId, status: 'ran', already_resolved: true };
+      p.state = 'ran';
+      const taskId = 'mkplan' + String(Date.now()).slice(-6);
+      p.task_id = taskId;
+      const thread = this.threads[p.conversationId] || [];
+      for (const msg of thread) {
+        for (const part of msg.parts || []) {
+          if (
+            part.type === 'card' &&
+            part.card &&
+            part.card.kind === 'plan' &&
+            part.card.plan_id === planId
+          ) {
+            part.card.state = 'ran';
+            part.card.task_id = taskId;
+          }
+        }
+      }
+      this.links[p.conversationId] = this.links[p.conversationId] || [];
+      this.links[p.conversationId].push({
+        pipeline_task_id: taskId,
+        purpose: 'created',
+      });
+      thread.push({
+        id: 'mock-sys-' + Date.now(),
+        role: 'system',
+        turn_status: 'complete',
+        parts: [
+          {
+            type: 'markdown',
+            text: `Plan run started: "${p.topic}" — task ${taskId.slice(0, 8)} on template ${p.slug}. Watching it here.`,
+          },
+        ],
+        created_at: new Date().toISOString(),
+      });
+      return { id: planId, status: 'ran', task_id: taskId };
+    },
     resolveApproval(approvalId, approve) {
       const a = this.approvals[approvalId];
       if (!a) throw new Error(`Unknown approval: ${approvalId}`);
@@ -2831,12 +2874,94 @@
     // Scripted mock turn: the event sequence a real send streams, with
     // per-event delays (ms). api.js plays this back through the same
     // onEvent path the live NDJSON reader uses.
-    scriptFor(text) {
+    scriptFor(text, conversationId) {
       const t = (text || '').toLowerCase();
       const mkText = (s) => ({ event: 'text', text: s });
       const base = [
         [120, { event: 'turn_started', message_id: 'mock-live-' + Date.now() }],
       ];
+      if (
+        t.includes('plan') ||
+        t.includes('design') ||
+        t.includes('custom pipeline')
+      ) {
+        const planId = 'mock-plan-' + Date.now();
+        const topic =
+          (text.match(/about (.+?)(?: but| with|$)/i) || [])[1] || 'the topic';
+        const nodes = [
+          'verify_task',
+          'content.generate_draft',
+          'writer_self_review',
+          'qa.web_factcheck',
+          'qa.web_factcheck_2',
+          'qa.aggregate',
+          'seo.generate_all_metadata',
+          'content.persist_task',
+        ];
+        const self = window.PX.chatMock;
+        return base.concat([
+          [
+            500,
+            {
+              event: 'tool_start',
+              name: 'plan_pipeline',
+              args_digest: JSON.stringify({ intent: text }),
+            },
+          ],
+          [
+            1400,
+            (() => {
+              self.plans[planId] = {
+                state: 'draft',
+                slug: 'plan_focused_factcheck',
+                topic,
+                // Known at creation so a mid-stream Run stamps the right
+                // thread; the persist step re-stamps it either way.
+                conversationId: conversationId || null,
+              };
+              return {
+                event: 'card',
+                card: {
+                  kind: 'plan',
+                  plan_id: planId,
+                  slug: 'plan_focused_factcheck',
+                  intent: text,
+                  topic,
+                  node_count: nodes.length,
+                  nodes,
+                  state: 'draft',
+                },
+              };
+            })(),
+          ],
+          [
+            120,
+            {
+              event: 'tool_result',
+              name: 'plan_pipeline',
+              ok: true,
+              ms: 1380,
+              digest: 'Plan ready: 8 steps, cached as plan_focused_factcheck.',
+            },
+          ],
+          [
+            400,
+            mkText(
+              'Plan ready — 8 steps, no media, fact-checking doubled. Run it from the card or tell me what to change.'
+            ),
+          ],
+          [
+            80,
+            {
+              event: 'done',
+              turn_status: 'complete',
+              prompt_tokens: 2100,
+              completion_tokens: 160,
+              cost_usd: 0,
+            },
+          ],
+        ]);
+      }
       if (
         t.includes('restart') ||
         t.startsWith('set ') ||
@@ -2858,7 +2983,9 @@
                 tool,
                 args,
                 state: 'pending',
-                conversationId: null, // stamped by chatSend's persist step
+                // Known at creation so a mid-stream resolve stamps the
+                // right thread; the persist step re-stamps it either way.
+                conversationId: conversationId || null,
               };
               return {
                 event: 'approval_required',

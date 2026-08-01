@@ -268,6 +268,38 @@ async def _resolve(
         raise
 
 
+class RunPlanRequest(BaseModel):
+    topic: str = Field("", max_length=200)
+
+
+@router.post("/plans/{plan_id}/run")
+async def run_plan_route(
+    plan_id: str,
+    body: RunPlanRequest | None = None,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """One-shot: run an architect plan card (creates the pipeline task)."""
+    _require_enabled(site_config)
+    from services.chat_plans import run_plan
+
+    try:
+        return await run_plan(
+            pool=db_service.pool, db_service=db_service, plan_id=plan_id,
+            topic_override=(body.topic if body and body.topic else None),
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown plan: {plan_id!r}",
+        ) from exc
+    except Exception as exc:
+        if "invalid input" in str(exc).lower():
+            raise HTTPException(
+                status_code=404, detail=f"Unknown plan: {plan_id!r}",
+            ) from exc
+        raise
+
+
 @router.get("/watch/{task_id}")
 async def watch(
     task_id: str,

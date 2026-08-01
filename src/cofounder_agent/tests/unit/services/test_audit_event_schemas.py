@@ -92,6 +92,7 @@ class TestEventSchemasRegistry:
             "chat_tool_call",
             "chat_turn_completed",
             "chat_approval_resolved",
+            "chat_plan_run",
         }
 
 

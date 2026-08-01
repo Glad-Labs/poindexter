@@ -104,8 +104,15 @@ def _tool_call(name, arguments, call_id="c1"):
     return {"id": call_id, "name": name, "arguments": arguments}
 
 
+class _NoRowsPool:
+    """Minimal pool for the finalize card-state merge: no resolutions."""
+
+    async def fetchrow(self, sql, *args):
+        return None
+
+
 def _run(monkeypatch, fake_store, *, completions=None, dispatch=None,
-         supports_tools=True, site_config=None, tool_specs=None):
+         supports_tools=True, site_config=None, tool_specs=None, pool=None):
     """Drive run_turn with fakes; return the collected event list."""
     fake_store.install(monkeypatch)
 
@@ -142,7 +149,8 @@ def _run(monkeypatch, fake_store, *, completions=None, dispatch=None,
     async def collect():
         events = []
         async for event in chat_agent.run_turn(
-            pool=object(), db_service=object(),
+            pool=pool if pool is not None else _NoRowsPool(),
+            db_service=object(),
             site_config=site_config or FakeSiteConfig(),
             conversation={"id": "conv1"}, user_text="hello there",
         ):
@@ -466,3 +474,94 @@ class TestTextualToolCallRecovery:
         )
         assert events[1]["event"] == "text"
         assert "amount_spent" in events[1]["text"]
+
+
+@pytest.mark.unit
+class TestFinalizeCardStateMerge:
+    """A resolve landing while the turn still streams must survive finalize.
+
+    The card becomes clickable the moment its event streams, but the
+    assistant row's parts are only written at finalize — without the merge,
+    finalize clobbers the resolved stamp and an executed action renders as
+    forever-pending (found live: approve during the model's closing text).
+    """
+
+    class _ResolvedPool:
+        def __init__(self, rows):
+            self.rows = rows
+            self.queries = []
+
+        async def fetchrow(self, sql, *args):
+            self.queries.append((" ".join(sql.split()), args))
+            return self.rows.get(args[0])
+
+    def test_helper_overlays_resolved_approval(self):
+        pool = self._ResolvedPool({
+            "a1": {"status": "approved", "executed_ok": True,
+                   "result_digest": "set_setting executed."},
+        })
+        parts = [
+            {"type": "markdown", "text": "hi"},
+            {"type": "card", "card": {"kind": "approval", "approval_id": "a1",
+                                      "state": "pending"}},
+        ]
+        merged = asyncio.run(
+            chat_agent._merge_resolved_card_states(pool, parts))
+        assert merged[0] == parts[0]
+        card = merged[1]["card"]
+        assert card["state"] == "approved" and card["executed_ok"] is True
+        assert card["result_digest"] == "set_setting executed."
+
+    def test_helper_keeps_pending_and_draft_untouched(self):
+        pool = self._ResolvedPool({
+            "a1": {"status": "pending", "executed_ok": None,
+                   "result_digest": ""},
+            "p1": {"status": "draft", "task_id": None},
+        })
+        parts = [
+            {"type": "card", "card": {"kind": "approval", "approval_id": "a1",
+                                      "state": "pending"}},
+            {"type": "card", "card": {"kind": "plan", "plan_id": "p1",
+                                      "state": "draft"}},
+        ]
+        merged = asyncio.run(
+            chat_agent._merge_resolved_card_states(pool, parts))
+        assert merged[0]["card"]["state"] == "pending"
+        assert merged[1]["card"]["state"] == "draft"
+
+    def test_helper_lookup_failure_keeps_part(self):
+        class BrokenPool:
+            async def fetchrow(self, sql, *args):
+                raise RuntimeError("db down")
+
+        parts = [{"type": "card",
+                  "card": {"kind": "plan", "plan_id": "p1", "state": "draft"}}]
+        merged = asyncio.run(
+            chat_agent._merge_resolved_card_states(BrokenPool(), parts))
+        assert merged == parts
+
+    def test_loop_finalize_persists_mid_stream_plan_run(self, monkeypatch):
+        """End-to-end through run_turn: the plan ran mid-stream; the
+        finalized parts must carry state 'ran', not the in-memory draft."""
+        async def handler(ctx, **kwargs):
+            ctx.emitted_cards.append(
+                {"kind": "plan", "plan_id": "p1", "state": "draft"})
+            return "Plan ready."
+
+        pool = self._ResolvedPool(
+            {"p1": {"status": "ran", "task_id": "task-9"}})
+        fs = FakeStore()
+        _run(
+            monkeypatch, fs, pool=pool,
+            tool_specs={"plan_pipeline": _spec("plan_pipeline", handler)},
+            completions=[
+                _completion(tool_calls=[_tool_call("plan_pipeline", "{}")]),
+                _completion(text="Here is your plan."),
+            ],
+        )
+        cards = [p["card"] for p in fs.finalized["parts"]
+                 if p.get("type") == "card"
+                 and (p.get("card") or {}).get("kind") == "plan"]
+        assert cards and cards[0]["state"] == "ran"
+        assert cards[0]["task_id"] == "task-9"
+        assert any("chat_plans" in q for q, _ in pool.queries)

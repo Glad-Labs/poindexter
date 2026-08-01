@@ -169,6 +169,11 @@ module.exports = [
     request: { method: 'POST', path: '/api/chat/approvals/appr_1/approve' },
   },
   {
+    name: 'chatPlanRun',
+    invoke: (api) => api.chatPlanRun('plan_1'),
+    request: { method: 'POST', path: '/api/chat/plans/plan_1/run', body: {} },
+  },
+  {
     name: 'chatDeny',
     invoke: (api) => api.chatDeny('appr_1'),
     request: { method: 'POST', path: '/api/chat/approvals/appr_1/deny' },

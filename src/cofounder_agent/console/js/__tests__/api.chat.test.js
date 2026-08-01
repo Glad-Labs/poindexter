@@ -515,3 +515,58 @@ test('live: the #745 error envelope (error_code/message) surfaces the message, n
       !e.message.includes('error_code')
   );
 });
+
+// ── P4: plan cards ──────────────────────────────────────────
+
+test('mock: runPlan one-shot stamps the card, links the task, appends outcome', async () => {
+  const { api, sandbox } = makeAdapter({ live: false });
+  sandbox.PX.chatMock.plans = {
+    'plan-1': {
+      state: 'draft',
+      slug: 'plan_x',
+      topic: 'X',
+      conversationId: 'c1',
+    },
+  };
+  sandbox.PX.chatMock.runPlan = function (planId) {
+    const p = this.plans[planId];
+    if (!p) throw new Error(`Unknown plan: ${planId}`);
+    if (p.state !== 'draft')
+      return { id: planId, status: 'ran', already_resolved: true };
+    p.state = 'ran';
+    p.task_id = 'mk-task-1';
+    this.links.c1 = [{ pipeline_task_id: 'mk-task-1', purpose: 'created' }];
+    this.threads.c1.push({
+      id: 'sys-p',
+      role: 'system',
+      turn_status: 'complete',
+      parts: [{ type: 'markdown', text: 'Plan run started: "X"' }],
+    });
+    return { id: planId, status: 'ran', task_id: 'mk-task-1' };
+  };
+  sandbox.PX.chatMock.links = {};
+  const out = await api.chatPlanRun('plan-1');
+  assert.equal(out.status, 'ran');
+  assert.equal(out.task_id, 'mk-task-1');
+  const again = await api.chatPlanRun('plan-1');
+  assert.equal(again.already_resolved, true);
+  const t = await api.chatGet('c1');
+  assert.ok(t.task_links.some((l) => l.pipeline_task_id === 'mk-task-1'));
+  assert.match(
+    t.messages[t.messages.length - 1].parts[0].text,
+    /Plan run started/
+  );
+});
+
+test('live: chatPlanRun hits the P4 endpoint with the topic body', async () => {
+  const { api, calls } = makeAdapter({
+    live: true,
+    apiHandler: () => res({ id: 'p1', status: 'ran', task_id: 't1' }),
+  });
+  await api.chatPlanRun('p1', 'Better topic');
+  const i = calls.urls.findIndex((u) => u.endsWith('/api/chat/plans/p1/run'));
+  assert.ok(i >= 0);
+  assert.deepEqual(j(JSON.parse(calls.opts[i].body)), {
+    topic: 'Better topic',
+  });
+});

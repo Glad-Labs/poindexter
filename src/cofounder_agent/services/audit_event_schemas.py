@@ -136,12 +136,27 @@ class ChatApprovalResolvedDetails(BaseModel):
     executed_ok: bool | None = None
 
 
+class ChatPlanRunDetails(BaseModel):
+    """Architect plan-card runs (poindexter#950 — the Cofounder panel's
+    plans-run count). Single producer: ``services/chat_plans.py``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = 1
+    plan_id: str
+    conversation_id: str
+    template_slug: str
+    task_id: str
+
+
 EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "qa_pass_completed": QaPassCompletedDetails,
     "finding": FindingDetails,
     "chat_tool_call": ChatToolCallDetails,
     "chat_turn_completed": ChatTurnCompletedDetails,
     "chat_approval_resolved": ChatApprovalResolvedDetails,
+    "chat_plan_run": ChatPlanRunDetails,
 }
 
 

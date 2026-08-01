@@ -655,3 +655,71 @@
     margin-left: 0;
   }
 }
+
+/* ── P4: architect plan cards ────────────────────────────────── */
+.cf-plan {
+  border: 1px solid var(--gl-cyan-border);
+  background: var(--gl-cyan-bg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.cf-plan--ran {
+  border-color: var(--gl-hairline);
+  background: var(--gl-surface);
+}
+.cf-plan__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gl-cyan);
+}
+.cf-plan--ran .cf-plan__head {
+  color: var(--gl-mint);
+}
+.cf-plan__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gl-text);
+}
+.cf-plan__slug {
+  margin-left: auto;
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  color: var(--gl-text-muted);
+}
+.cf-plan__blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cf-plan__block {
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--gl-cyan-border);
+  color: var(--gl-text-dim);
+  background: var(--gl-surface);
+}
+.cf-plan__nodes {
+  max-height: 220px;
+}
+.cf-plan__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cf-plan__detail {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.cf-plan__ranchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  color: var(--gl-mint);
+}

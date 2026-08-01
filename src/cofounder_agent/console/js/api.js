@@ -2151,7 +2151,7 @@
                 },
               ],
             ]
-          : m.scriptFor(text);
+          : m.scriptFor(text, id);
       for (const [delay, ev] of script) {
         await wait(delay * stretch);
         view = window.PXChat.foldEvent(view, ev);
@@ -2175,12 +2175,33 @@
         parts: view.parts,
         created_at: new Date().toISOString(),
       });
-      // Stamp mock approvals with their owning conversation so the card's
-      // Approve/Deny buttons can find + rewrite this thread (P3).
+      // Stamp mock approvals/plans with their owning conversation so the
+      // cards' buttons can find + rewrite this thread (P3/P4) — and
+      // overlay any state already resolved MID-STREAM, mirroring the
+      // server's finalize card-state merge: without this, a resolve that
+      // landed before the persist is clobbered back to pending/draft.
       for (const p of view.parts) {
         if (p.type === 'card' && p.card && p.card.kind === 'approval') {
           const a = m.approvals[p.card.approval_id];
-          if (a) a.conversationId = id;
+          if (a) {
+            a.conversationId = id;
+            if (a.state && a.state !== 'pending') {
+              p.card.state = a.state;
+              p.card.executed_ok = a.state === 'approved' ? true : null;
+              p.card.result_digest =
+                a.state === 'approved' ? a.tool + ' executed (mock).' : '';
+            }
+          }
+        }
+        if (p.type === 'card' && p.card && p.card.kind === 'plan') {
+          const pl = m.plans && m.plans[p.card.plan_id];
+          if (pl) {
+            pl.conversationId = id;
+            if (pl.state && pl.state !== 'draft') {
+              p.card.state = pl.state;
+              if (pl.task_id) p.card.task_id = pl.task_id;
+            }
+          }
         }
       }
       // Persist task links so the rail's watch poll survives the turn
@@ -2218,6 +2239,21 @@
             `/api/chat/approvals/${encodeURIComponent(approvalId)}/deny`
           ),
         () => window.PX.chatMock.resolveApproval(approvalId, false)
+      );
+    },
+    // Architect plan card: one-shot Run (P4 poindexter#950). Creates the
+    // pipeline task from the cached plan template; the thread reload picks
+    // up the stamped card + system message, and the watch rail follows the
+    // linked task.
+    chatPlanRun(planId, topic) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/chat/plans/${encodeURIComponent(planId)}/run`,
+            topic ? { topic } : {}
+          ),
+        () => window.PX.chatMock.runPlan(planId)
       );
     },
     // Watched-run progress snapshot for the activity rail (5s poll while a

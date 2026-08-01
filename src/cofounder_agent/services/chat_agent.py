@@ -154,6 +154,55 @@ async def _resolve_provider_supports_tools(pool: Any, tier: str) -> tuple[Any, b
     return provider, bool(getattr(provider, "supports_tools", False))
 
 
+async def _merge_resolved_card_states(
+    pool: Any, parts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Overlay authoritative resolution state onto card parts at finalize.
+
+    An approval/plan card becomes clickable in the console the moment its
+    ``card`` event streams — while the assistant row's ``parts`` are only
+    written at finalize. A resolve landing in that window stamps the row's
+    still-empty parts and would then be clobbered by the finalize write,
+    leaving an already-executed action rendered as forever-pending. The
+    ``chat_approvals`` / ``chat_plans`` rows are the source of truth, so
+    re-read them and let the resolved state win. Best-effort: any lookup
+    failure keeps the in-memory part untouched.
+    """
+    out: list[dict[str, Any]] = []
+    for part in parts:
+        card = part.get("card") if isinstance(part, dict) else None
+        if not isinstance(card, dict):
+            out.append(part)
+            continue
+        try:
+            if card.get("approval_id"):
+                row = await pool.fetchrow(
+                    "SELECT status, executed_ok, result_digest"
+                    " FROM chat_approvals WHERE id = $1",
+                    card["approval_id"],
+                )
+                if row and row["status"] != "pending":
+                    card = {
+                        **card,
+                        "state": row["status"],
+                        "executed_ok": row["executed_ok"],
+                        "result_digest": row["result_digest"] or "",
+                    }
+            elif card.get("plan_id"):
+                row = await pool.fetchrow(
+                    "SELECT status, task_id FROM chat_plans WHERE id = $1",
+                    card["plan_id"],
+                )
+                if row and row["status"] != "draft":
+                    card = {**card, "state": row["status"],
+                            "task_id": row["task_id"]}
+            out.append({**part, "card": card})
+        except Exception:  # noqa: BLE001 — merge is best-effort; the part stays as-is
+            logger.exception("[chat] card-state merge failed (part kept as-is)")
+            out.append(part)
+    return out
+
+
 class _TurnAborted(Exception):
     """Internal: abort the loop with a reason already event-streamed."""
 
@@ -258,6 +307,7 @@ async def run_turn(
             pool=pool,
             user_id=user_id,
             conversation_id=conversation_id,
+            message_id=message_id,
         )
         openai_tools = to_openai_tools()
 
@@ -501,6 +551,12 @@ async def run_turn(
                     })
                     yield {"event": "task_linked", "task_id": task_id}
                 ctx.linked_task_ids.clear()
+                # Rich cards a handler produced (P4: the architect's plan
+                # card) ride the same drain into parts + the stream.
+                for card in ctx.emitted_cards:
+                    parts.append({"type": "card", "card": card})
+                    yield {"event": "card", "card": card}
+                ctx.emitted_cards.clear()
         else:
             # Round cap exhausted without a final text answer.
             detail = (
@@ -544,11 +600,15 @@ async def run_turn(
             # torn down, and a bare await here would just re-raise before the
             # write lands. If even the shielded write dies, the store's lazy
             # interrupted-repair covers the stranded row.
-            await asyncio.shield(store.finalize_message(
-                pool, message_id, parts=parts, turn_status=turn_status,
-                model=model, prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens, cost_usd=cost_usd,
-            ))
+            async def _finalize() -> None:
+                merged = await _merge_resolved_card_states(pool, parts)
+                await store.finalize_message(
+                    pool, message_id, parts=merged, turn_status=turn_status,
+                    model=model, prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens, cost_usd=cost_usd,
+                )
+
+            await asyncio.shield(_finalize())
         except BaseException:  # noqa: BLE001 — finalize is best-effort; repair covers it
             logger.exception("[chat] finalize failed (message=%s)", message_id)
         try:

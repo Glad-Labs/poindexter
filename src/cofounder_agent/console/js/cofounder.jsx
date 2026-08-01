@@ -59,6 +59,10 @@ function CfApprovalCard({ card, onResolved, pushToast }) {
       if (onResolved) await onResolved();
     } catch (e) {
       pushToast && pushToast(`Approval failed — ${e.message}`, 'red', '✕');
+    } finally {
+      // The reload normally swaps this card to its resolved state; if it
+      // didn't (already_resolved race), give the buttons back rather than
+      // stranding WORKING… forever.
       setBusy(false);
     }
   };
@@ -182,7 +186,112 @@ function CfTaskResultCard({ card, onOpenTask, onActed, pushToast }) {
   );
 }
 
-function CfCard({ card, onOpenTask, onResolved, pushToast }) {
+// Architect plan card (P4 poindexter#950): plain-language step blocks +
+// technical toggle; one-shot Run creates the pipeline task; Adjust drops
+// a feedback prefill into the composer (the model recomposes — the
+// conversation IS the adjust loop).
+function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
+  const [busy, setBusy] = React.useState(false);
+  const [detail, setDetail] = React.useState(false);
+  const draft = card.state === 'draft';
+  const blocks = PXChat.planBlocks(card.nodes || []);
+  const run = async () => {
+    if (busy || !draft) return;
+    setBusy(true);
+    try {
+      await PX.api.chatPlanRun(card.plan_id);
+      if (onResolved) await onResolved();
+    } catch (e) {
+      pushToast && pushToast(`Run failed — ${e.message}`, 'red', '✕');
+    } finally {
+      // The reload normally swaps this card to 'ran'; if it didn't
+      // (already_resolved race), give the button back rather than
+      // stranding it busy forever.
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={`cf-plan ${draft ? '' : 'cf-plan--ran'}`}>
+      <div className="cf-plan__head">
+        <Icon name="pipeline" size={13} />
+        <span className="cf-plan__title">
+          Plan · {card.node_count} steps
+          {card.topic ? ` — ${card.topic}` : ''}
+        </span>
+        <span className="cf-plan__slug tnum">{card.slug}</span>
+      </div>
+      <div className="cf-plan__blocks">
+        {blocks.map((b) => (
+          <span key={b.label} className="cf-plan__block">
+            {b.label}
+            {b.count > 1 ? ` ×${b.count}` : ''}
+          </span>
+        ))}
+      </div>
+      {detail && (
+        <pre className="cf-tool__pre cf-plan__nodes">
+          {(card.nodes || []).join('\n')}
+        </pre>
+      )}
+      <div className="cf-plan__actions">
+        {draft ? (
+          <>
+            <button
+              className="mbtn mbtn--primary"
+              disabled={busy}
+              onClick={run}
+              title="Create the pipeline task from this plan"
+            >
+              <Icon name="bolt" size={12} />
+              {busy ? 'STARTING…' : 'Run pipeline'}
+            </button>
+            <button
+              className="mbtn"
+              disabled={busy}
+              onClick={() => onAdjust && onAdjust('Adjust the plan: ')}
+              title="Tell the architect what to change"
+            >
+              <Icon name="retry" size={12} />
+              Adjust
+            </button>
+          </>
+        ) : (
+          <span className="cf-plan__ranchip">
+            <Icon name="check" size={12} /> running
+            {card.task_id ? (
+              <button
+                className="mbtn mbtn--ghost"
+                onClick={() => onOpenTask && onOpenTask(card.task_id)}
+                title="Open the task trace"
+              >
+                <Icon name="link" size={12} />
+                {String(card.task_id).slice(0, 8)}
+              </button>
+            ) : null}
+          </span>
+        )}
+        <button
+          className="mbtn mbtn--ghost cf-plan__detail"
+          onClick={() => setDetail(!detail)}
+        >
+          {detail ? 'hide' : 'show'} technical detail
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
+  if (card.kind === 'plan')
+    return (
+      <CfPlanCard
+        card={card}
+        onOpenTask={onOpenTask}
+        onResolved={onResolved}
+        onAdjust={onAdjust}
+        pushToast={pushToast}
+      />
+    );
   if (card.kind === 'approval')
     return (
       <CfApprovalCard
@@ -229,7 +338,7 @@ function CfCard({ card, onOpenTask, onResolved, pushToast }) {
   );
 }
 
-function CfParts({ parts, onOpenTask, onResolved, pushToast }) {
+function CfParts({ parts, onOpenTask, onResolved, onAdjust, pushToast }) {
   return (
     <>
       {(parts || []).map((p, i) => {
@@ -247,6 +356,7 @@ function CfParts({ parts, onOpenTask, onResolved, pushToast }) {
               card={p.card || {}}
               onOpenTask={onOpenTask}
               onResolved={onResolved}
+              onAdjust={onAdjust}
               pushToast={pushToast}
             />
           );
@@ -256,7 +366,14 @@ function CfParts({ parts, onOpenTask, onResolved, pushToast }) {
   );
 }
 
-function CfMessage({ msg, onOpenTask, onRetry, onResolved, pushToast }) {
+function CfMessage({
+  msg,
+  onOpenTask,
+  onRetry,
+  onResolved,
+  onAdjust,
+  pushToast,
+}) {
   const isUser = msg.role === 'user';
   const isSystem = msg.role === 'system';
   const retryable =
@@ -271,6 +388,7 @@ function CfMessage({ msg, onOpenTask, onRetry, onResolved, pushToast }) {
           parts={msg.parts}
           onOpenTask={onOpenTask}
           onResolved={onResolved}
+          onAdjust={onAdjust}
           pushToast={pushToast}
         />
         <div className="cf-msg__meta">
@@ -288,13 +406,14 @@ function CfMessage({ msg, onOpenTask, onRetry, onResolved, pushToast }) {
 }
 
 // The in-flight assistant message, rendered from the live fold.
-function CfLiveTurn({ view, onOpenTask, pushToast }) {
+function CfLiveTurn({ view, onOpenTask, onAdjust, pushToast }) {
   return (
     <div className="cf-msg cf-msg--agent cf-msg--live">
       <div className="cf-msg__body">
         <CfParts
           parts={view.parts}
           onOpenTask={onOpenTask}
+          onAdjust={onAdjust}
           pushToast={pushToast}
         />
         {view.liveTool && (
@@ -594,6 +713,11 @@ function CofounderMode({ onOpenTask, pushToast }) {
   const [watches, setWatches] = React.useState({}); // taskId → watch snapshot
   const scrollRef = React.useRef(null);
   const abortRef = React.useRef(null); // Stop button (P3)
+  const readSeqRef = React.useRef(0); // token-serializes thread reads
+  const threadRef = React.useRef(null);
+  React.useEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
 
   const disabled403 = (e) => {
     const m = String((e && e.message) || '');
@@ -622,22 +746,42 @@ function CofounderMode({ onOpenTask, pushToast }) {
       });
   }, []);
 
-  const loadThread = (id) =>
-    api
-      .chatGet(id)
-      .then((t) => setThread(t))
-      .catch((e) => {
+  // Every thread read flows through here, token-serialized: a read
+  // superseded by a later-started read is discarded on arrival, so a slow
+  // response can never regress the pane to an older snapshot (live
+  // symptom: watcher message rendered, vanished, then re-appeared on the
+  // next poll — the refresh poll's stale GET was landing after the
+  // watch-effect's fresher one). Returns false only on a fetch failure —
+  // and a failed refresh never blanks rows already on screen; the next
+  // poll repairs instead.
+  const syncThread = async (id, { background = false } = {}) => {
+    const token = ++readSeqRef.current;
+    try {
+      const fresh = await api.chatGet(id);
+      if (token !== readSeqRef.current) return true; // superseded
+      if (
+        PXChat.threadFingerprint(fresh) !==
+        PXChat.threadFingerprint(threadRef.current)
+      )
+        setThread(fresh);
+      return true;
+    } catch (e) {
+      if (!background && !threadRef.current) {
         setThread(null);
         if (!disabled403(e))
           pushToast(`Thread load failed — ${e.message}`, 'red', '✕');
-      });
+      }
+      return false;
+    }
+  };
 
   React.useEffect(() => {
     setThread(null);
+    threadRef.current = null;
     setLive(null);
     setPendingUserText(null);
     setWatches({});
-    if (selectedId) loadThread(selectedId);
+    if (selectedId) syncThread(selectedId);
   }, [selectedId]);
 
   // ── Thread refresh poll ────────────────────────────────────
@@ -650,25 +794,13 @@ function CofounderMode({ onOpenTask, pushToast }) {
     if (!selectedId || sending) return undefined;
     const ms =
       Math.max(8, ((catalog && catalog.watch_poll_seconds) || 5) * 2) * 1000;
-    let alive = true;
-    const timer = setInterval(async () => {
-      try {
-        const fresh = await api.chatGet(selectedId);
-        if (!alive) return;
-        if (
-          PXChat.threadFingerprint(fresh) !== PXChat.threadFingerprint(thread)
-        )
-          setThread(fresh);
-      } catch (e) {
-        // Transient read failure — next tick retries; errors here must
-        // never toast-spam an idle thread.
-      }
+    const timer = setInterval(() => {
+      // Transient read failures are swallowed inside syncThread — errors
+      // here must never toast-spam or blank an idle thread.
+      syncThread(selectedId, { background: true });
     }, ms);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [selectedId, sending, thread, catalog]);
+    return () => clearInterval(timer);
+  }, [selectedId, sending, catalog]);
 
   // ── Watched-run polling (P3 poindexter#949) ────────────────
   // Every conversation-linked task that is not yet terminal polls the slim
@@ -696,7 +828,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
           if (!alive) return;
           setWatches((w) => ({ ...w, [id]: snap }));
           if (snap.terminal && !(watches[id] && watches[id].terminal)) {
-            await loadThread(selectedId);
+            await syncThread(selectedId, { background: true });
           }
         } catch (e) {
           // Unknown task / transient read failure: drop silently; the rail
@@ -795,8 +927,14 @@ function CofounderMode({ onOpenTask, pushToast }) {
       }
     } finally {
       abortRef.current = null;
-      // Swap the live fold for the canonical persisted rows.
-      await loadThread(convId);
+      // Swap the live fold for the canonical persisted rows. One quick
+      // retry before giving up: a transient read failure right here would
+      // otherwise vanish the exchange until the next poll repairs it.
+      const ok = await syncThread(convId, { background: true });
+      if (!ok) {
+        await new Promise((r) => setTimeout(r, 1200));
+        await syncThread(convId, { background: true });
+      }
       refreshList();
       setLive(null);
       setPendingUserText(null);
@@ -892,7 +1030,8 @@ function CofounderMode({ onOpenTask, pushToast }) {
               msg={m}
               onOpenTask={onOpenTask}
               pushToast={pushToast}
-              onResolved={() => loadThread(selectedId)}
+              onAdjust={(t) => setInput(t)}
+              onResolved={() => syncThread(selectedId, { background: true })}
               onRetry={
                 m.role !== 'user' &&
                 (m.turn_status === 'interrupted' || m.turn_status === 'failed')
@@ -912,6 +1051,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
             <CfLiveTurn
               view={live}
               onOpenTask={onOpenTask}
+              onAdjust={(t) => setInput(t)}
               pushToast={pushToast}
             />
           )}

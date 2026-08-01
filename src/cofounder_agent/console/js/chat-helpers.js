@@ -98,6 +98,11 @@
       case 'text':
         v.parts.push({ type: 'markdown', text: ev.text || '' });
         break;
+      case 'card':
+        // Generic rich card from a tool (P4: the architect's plan card).
+        // Mirrors the part the server persists on the turn.
+        if (ev.card) v.parts.push({ type: 'card', card: ev.card });
+        break;
       case 'approval_required':
         // Mirrors the pending card part the server persists on the turn
         // (P3 poindexter#949) so the live render matches the reload.
@@ -255,6 +260,49 @@
     return `${msgs.length}#${per}#${(thread.task_links || []).length}`;
   }
 
+  // Plan-card node ids → plain-language step blocks (P4). Grouped by
+  // recognizable prefixes so a non-technical reader sees "Write ·
+  // Quality checks ×13 · SEO" while the technical toggle shows raw node
+  // ids. Unknown prefixes fall into "Other steps" rather than vanishing.
+  const _BLOCK_RULES = [
+    [/^verify/, 'Verify'],
+    [/research|topic/, 'Research'],
+    [
+      /generate_draft|writer|two_pass|narrate|self_review|reconcile|normalize|title|affiliate|link/,
+      'Write & polish',
+    ],
+    [/image|caption/, 'Images'],
+    [/^qa[._]|quality|url_validation/, 'Quality checks'],
+    [/^seo/, 'SEO'],
+    [/media|video|audio|podcast|shot_list|capture_training/, 'Media'],
+    [/social/, 'Social'],
+    [/approval_gate|gate/, 'Your approval gate'],
+    [
+      /persist|compile|finalize|record_pipeline|evaluate_auto_publish/,
+      'Finalize',
+    ],
+  ];
+  function planBlocks(nodes) {
+    const blocks = [];
+    const byLabel = {};
+    for (const raw of nodes || []) {
+      const id = String(raw).toLowerCase();
+      let label = 'Other steps';
+      for (const [re, l] of _BLOCK_RULES) {
+        if (re.test(id)) {
+          label = l;
+          break;
+        }
+      }
+      if (!byLabel[label]) {
+        byLabel[label] = { label, count: 0 };
+        blocks.push(byLabel[label]);
+      }
+      byLabel[label].count += 1;
+    }
+    return blocks;
+  }
+
   // Watched-run snapshot (GET /api/chat/watch/{id}) → rail progress view.
   // pct is null when the graph's expected node count is unknown (dev_diary /
   // capture disabled) — the bar renders indeterminate, never fabricated.
@@ -290,6 +338,7 @@
     suggestedPrompts,
     slashMatches,
     expandSlash,
+    planBlocks,
     threadFingerprint,
     watchProgress,
     SLASH,

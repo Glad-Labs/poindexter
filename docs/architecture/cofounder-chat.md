@@ -142,7 +142,46 @@ minute) appends ONE completion message per link reaching a terminal status
 (`discord` default / `telegram` / `none`) with a `console_public_url`
 deeplink when set.
 
+Client-side, every thread read (refresh poll, watch-effect reload,
+post-turn swap) is **token-serialized**: a read superseded by a
+later-started one is discarded on arrival, and a failed refresh never
+blanks rows already on screen. Without this, a slow stale GET landing
+after a fresher one regressed the pane — messages visibly vanished until
+the next poll restored them.
+
 **Stop.** The composer's STOP aborts the fetch; the worker cancels the
 generator and finalizes the turn `interrupted` (shielded write; the lazy
 repair is the backstop). Turn-level `chat_turn_completed` audit rows land
 in the loop's `finally`.
+
+## P4 — the architect in the loop (poindexter#950)
+
+`plan_pipeline(intent, topic)` is the architect's first operator entry
+point. The model calls it for "design/plan a pipeline" asks; the handler
+runs `pipeline_architect.compose` (max_attempts=2 to fit the turn
+deadline), **namespaces the spec so its `pipeline_templates` slug always
+starts `plan_`** (cache_template upserts by slug — an LLM naming its spec
+"canonical blog" must never overwrite the production template; the guard
+refuses on escape), caches it (fingerprint-stamped, active), inserts a
+`chat_plans` row, and emits a **plan card**: plain-language step blocks
+(client-derived from node ids — "Write & polish · Quality checks ×13 ·
+SEO"), a technical toggle with raw node ids, and Run/Adjust.
+
+- **Run** (`POST /api/chat/plans/{id}/run`, one-shot draft→ran): creates
+  the `pipeline_tasks` row with `template_slug` = the cached slug — Prefect
+  claims it like any pending task, `load_active_graph_def` loads the
+  composed graph, the contract-fingerprint gate still applies — links the
+  task to the conversation (the P3 watch rail + completion watcher take
+  over), stamps the card, appends a system message, audits
+  `chat_plan_run`. No semantic-dedup guard: a hand-designed run is an
+  explicit operator action.
+- **Adjust** is conversational: the button prefills the composer
+  ("Adjust the plan: …") and the model composes a NEW plan — the thread is
+  the adjust loop, no bespoke state machine.
+- Compose failures surface the architect's `FIX:` errors verbatim (they
+  are written as the repair signal).
+
+Compose runs on the architect model (`pipeline_architect_model`, else the
+local-writer resolver) — a cold large model can push a plan turn toward
+the `console_chat_turn_timeout_s` deadline; raise it if plan turns
+interrupt.

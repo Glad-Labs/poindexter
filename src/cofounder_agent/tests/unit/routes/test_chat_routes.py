@@ -179,6 +179,40 @@ class TestApprovalRoutes:
 
 
 @pytest.mark.unit
+class TestPlanRunRoute:
+    def test_run_passthrough(self, fake_store, monkeypatch):
+        import services.chat_plans as chat_plans
+
+        seen = {}
+
+        async def run_plan(*, pool, db_service, plan_id, topic_override=None,
+                           user_id="operator"):
+            seen.update({"id": plan_id, "topic": topic_override})
+            return {"id": plan_id, "status": "ran", "task_id": "t-1"}
+
+        monkeypatch.setattr(chat_plans, "run_plan", run_plan)
+        client = _build_client()
+        resp = client.post("/api/chat/plans/p-1/run", json={"topic": "Better"})
+        assert resp.status_code == 200
+        assert resp.json()["task_id"] == "t-1"
+        assert seen == {"id": "p-1", "topic": "Better"}
+
+    def test_unknown_plan_404(self, fake_store, monkeypatch):
+        import services.chat_plans as chat_plans
+
+        async def run_plan(**kwargs):
+            raise KeyError(kwargs["plan_id"])
+
+        monkeypatch.setattr(chat_plans, "run_plan", run_plan)
+        client = _build_client()
+        assert client.post("/api/chat/plans/nope/run").status_code == 404
+
+    def test_gated_by_enabled_flag(self, fake_store):
+        client = _build_client(enabled=False)
+        assert client.post("/api/chat/plans/p/run").status_code == 403
+
+
+@pytest.mark.unit
 class TestWatchRoute:
     def test_snapshot_passthrough(self, fake_store, monkeypatch):
         import services.chat_watch as chat_watch

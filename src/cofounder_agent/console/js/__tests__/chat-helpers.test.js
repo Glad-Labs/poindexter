@@ -370,3 +370,44 @@ test('expandSlash: self-contained commands send; argument-takers insert', () => 
   assert.equal(PXChat.expandSlash('/unknown'), null);
   assert.equal(PXChat.expandSlash(''), null);
 });
+
+test('fold: generic card event renders the part (P4 plan cards)', () => {
+  const PXChat = load();
+  const v = foldAll(PXChat, [
+    { event: 'turn_started', message_id: 'm' },
+    {
+      event: 'card',
+      card: { kind: 'plan', plan_id: 'p1', state: 'draft', nodes: ['a'] },
+    },
+    { event: 'done', turn_status: 'complete' },
+  ]);
+  const card = v.parts.find((p) => p.type === 'card').card;
+  assert.equal(card.kind, 'plan');
+  assert.equal(card.plan_id, 'p1');
+});
+
+test('planBlocks: groups node ids into plain-language blocks, in order', () => {
+  const PXChat = load();
+  const blocks = PXChat.planBlocks([
+    'verify_task',
+    'content.generate_draft',
+    'writer_self_review',
+    'qa.web_factcheck',
+    'qa.web_factcheck_2',
+    'qa.aggregate',
+    'seo.generate_all_metadata',
+    'content.persist_task',
+    'totally_novel_node',
+  ]);
+  const labels = j(blocks.map((b) => b.label));
+  assert.deepEqual(labels, [
+    'Verify',
+    'Write & polish',
+    'Quality checks',
+    'SEO',
+    'Finalize',
+    'Other steps',
+  ]);
+  assert.equal(blocks.find((b) => b.label === 'Quality checks').count, 3);
+  assert.deepEqual(j(PXChat.planBlocks([])), []);
+});
