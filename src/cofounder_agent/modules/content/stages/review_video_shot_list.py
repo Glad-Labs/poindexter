@@ -252,10 +252,18 @@ class ReviewVideoShotListStage:
         )
 
         # LONG. Non-halting: fall back to the unreviewed list on any failure.
+        # The reference script is the one the narration will actually voice —
+        # video_long_script, fallback podcast_script — matching the director
+        # and media.render_narration (silent-tail fix). The template var keeps
+        # its legacy {podcast_script} name for frozen-override backcompat.
+        long_narration_script = (
+            (context.get("video_long_script") or "").strip()
+            or context.get("podcast_script", "")
+        )
         revised = await self._review_one(
             platform=platform, pool=pool, model=model, timeout_s=review_timeout,
             prompt_key="video.review_v1", script_var="podcast_script",
-            script=context.get("podcast_script", ""), current=current,
+            script=long_narration_script, current=current,
             title=title, content_text=content_text, site_name=site_name,
             task_id=task_id, now_iso=now_iso, think=director_think,
             max_tokens=review_max_tokens, max_retries=review_max_retries,

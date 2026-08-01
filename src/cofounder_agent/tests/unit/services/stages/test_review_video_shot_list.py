@@ -90,6 +90,35 @@ async def test_revised_list_replaces_original() -> None:
 
 
 @pytest.mark.asyncio
+async def test_long_review_prefers_video_long_script() -> None:
+    """Silent-tail fix: the long review's reference script is the one the
+    narration will voice (video_long_script, fallback podcast_script) —
+    matching the director and media.render_narration."""
+    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    ctx = {
+        "title": "T", "content": "C body " * 20,
+        "podcast_script": "podcast " * 20,
+        "video_long_script": "narration words " * 20,
+        "video_shot_list": _valid_list(),
+        "platform": _platform(dispatch_text=json.dumps(_valid_list())),
+        "database_service": _make_db(),
+        "task_id": "t-src",
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    # First get_prompt call is the LONG review; its {podcast_script} template
+    # var (legacy name) must carry the narration script.
+    kw = mock_pm.return_value.get_prompt.call_args_list[0].kwargs
+    assert kw["podcast_script"] == ctx["video_long_script"].strip()
+
+
+@pytest.mark.asyncio
 async def test_failure_keeps_original_non_halting() -> None:
     from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 

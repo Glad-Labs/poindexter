@@ -528,6 +528,37 @@ DEFAULTS: dict[str, str] = {
     # image is held longer than this; beyond it the shot sequence cycles
     # (repeating visuals at a steady cadence) instead of stretching one frame.
     'video_short_max_shot_seconds': '9',
+    # Canonical LONG-form video narration target in seconds (silent-tail fix,
+    # 2026-07-31): drives the video.long_form_narration prompt's ask — the word
+    # target is derived (round(target * 2.5 WPS)) — the same one-canonical-target
+    # pattern as video_short_target_seconds. Before this the long prompt had NO
+    # length ask at all, so narration length was whatever the model felt like
+    # (358-592 words observed) while the director planned visuals from the much
+    # longer PODCAST script — every long video ran 1-2 minutes past the voice.
+    'video_long_target_seconds': '180',
+    # Hard cap on the long narration length in seconds. A runaway long script is
+    # trimmed to the last full sentence within this budget (advisory
+    # long_script_trimmed finding), and the director's target-duration estimate
+    # clamps here too — one ceiling for both, so they can't disagree.
+    'video_long_max_seconds': '300',
+    # Per-shot ceiling for the LONG-lane narration-fit rescale — the long-form
+    # sibling of video_short_max_shot_seconds. Long-form pacing legitimately
+    # holds a shot 15-30s (the director's own per-shot rule caps at 30), so the
+    # short lane's 9s ceiling would shred it into cycled fragments on a modest
+    # stretch. Beyond this the shot sequence cycles instead of stretching.
+    'video_long_max_shot_seconds': '30',
+    # Per-shot FLOOR for the narration-fit compression direction (both lanes).
+    # When the visuals outrun the narration the fit scales every shot down
+    # proportionally; no shot is compressed below this, so a deep over-plan
+    # can't turn the hook into a subliminal flicker.
+    'video_fit_min_shot_seconds': '2',
+    # How long the visuals may outlive the voice, in seconds (both lanes). The
+    # narration-fit compression triggers only beyond this and then aims the
+    # visual track at narration + this hold — a short outro beat after the voice
+    # stops reads better than a hard cut, while minutes of silent footage (the
+    # 2026-07 long-video rejections: a 300s plan over a ~175s narration) never
+    # ship. media.qa's silent-tail check allows the same hold before flagging.
+    'video_fit_trailing_hold_seconds': '3',
     # Render-GPU VRAM preflight (2026-07-12 desktop-lockup fix). The Wan render
     # loads ~24 GB onto pipeline_gpu_index (the RTX 5090 that also drives the
     # desktop). dispatch_media_pipeline defers the whole cycle unless the card
@@ -3024,6 +3055,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_long_target_seconds': {'owner': 'video', 'value_type': 'integer'},
+    'video_long_max_seconds': {'owner': 'video', 'value_type': 'integer'},
+    'video_long_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'demo_clip_dir': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_family': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_size': {'owner': 'demo_clips', 'value_type': 'integer'},

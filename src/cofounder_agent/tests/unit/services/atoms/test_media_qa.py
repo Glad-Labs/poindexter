@@ -3,8 +3,11 @@
 QA-checks the rendered videos AFTER the render nodes — three checks per asset:
 
 A. **A/V duration sync** (deterministic): probe the rendered video duration and
-   compare to the shot-list ``total_duration_s``. A drift beyond the
-   DB-configurable ``media.qa.av_sync_tolerance_s`` (default 2.0s) emits an
+   compare to the lane's ACTUAL narration audio when present (silent-tail fix
+   — asymmetric bounds: under-run beyond ``media.qa.av_sync_tolerance_s`` cuts
+   the speaker off; over-run beyond ``video_fit_trailing_hold_seconds`` + the
+   tolerance is a silent tail), falling back to the shot-list
+   ``total_duration_s`` when no narration exists. Beyond a bound emits an
    advisory ``av_desync`` finding.
 B. **Caption presence** (deterministic): a missing ``caption_srt_path`` (captions
    are best-effort upstream) emits a single advisory ``missing_captions`` finding.
@@ -193,6 +196,120 @@ async def test_av_sync_custom_tolerance_from_site_config(tmp_path):
     assert out["media_qa_result"]["long"]["av_sync_ok"] is True
     kinds = [c.kwargs.get("kind") for c in mock_emit.call_args_list]
     assert "av_desync" not in kinds
+
+
+def _probe_by_path(mapping: dict[str, float | None]):
+    """AsyncMock side_effect: return a per-path duration (video vs narration)."""
+    async def _probe(path, *args, **kwargs):
+        return mapping.get(str(path))
+    return _probe
+
+
+@pytest.mark.asyncio
+async def test_av_sync_narration_reference_silent_tail_emits_desync(tmp_path):
+    """The 2026-07 rejection shape: video faithfully renders a 300s plan over a
+    175s narration → zero drift vs PLAN (the old check shipped it silently) but
+    a 125s silent tail vs the voice → av_desync, reference=narration."""
+    long_video = _existing_file(tmp_path, "long.mp4")
+    narration = _existing_file(tmp_path, "narration.mp3")
+    mock_emit = MagicMock()
+    state = {
+        "task_id": "t-tail",
+        "long_video_path": long_video,
+        "video_shot_list": {"total_duration_s": 300.0},
+        "long_narration_audio_path": narration,
+        "site_config": _site_config(media_qa_frame_detection_enabled="false"),
+    }
+    with patch.object(
+        media_qa, "_probe_duration",
+        AsyncMock(side_effect=_probe_by_path({long_video: 300.0, narration: 175.0})),
+    ), patch.object(media_qa, "emit_finding", mock_emit):
+        out = await qa_run(state)
+
+    result = out["media_qa_result"]["long"]
+    assert result["av_sync_ok"] is False
+    assert result["av_sync_reference"] == "narration"
+    assert result["narration_duration_s"] == 175.0
+    desync = [c for c in mock_emit.call_args_list if c.kwargs.get("kind") == "av_desync"]
+    assert len(desync) == 1
+    assert desync[0].kwargs["extra"]["reference"] == "narration"
+    assert "silent" in desync[0].kwargs["body"]
+
+
+@pytest.mark.asyncio
+async def test_av_sync_narration_reference_within_hold_is_ok(tmp_path):
+    """A fitted render lands at narration + the deliberate outro hold — that
+    must NOT flag (the old plan-compare false-alarmed on every fitted short)."""
+    long_video = _existing_file(tmp_path, "long.mp4")
+    narration = _existing_file(tmp_path, "narration.mp3")
+    mock_emit = MagicMock()
+    state = {
+        "task_id": "t-hold",
+        "long_video_path": long_video,
+        # Plan is far from actual — irrelevant once narration is the reference.
+        "video_shot_list": {"total_duration_s": 300.0},
+        "long_narration_audio_path": narration,
+        "site_config": _site_config(media_qa_frame_detection_enabled="false"),
+    }
+    with patch.object(
+        media_qa, "_probe_duration",
+        AsyncMock(side_effect=_probe_by_path({long_video: 178.0, narration: 175.0})),
+    ), patch.object(media_qa, "emit_finding", mock_emit):
+        out = await qa_run(state)
+
+    result = out["media_qa_result"]["long"]
+    assert result["av_sync_ok"] is True
+    assert result["av_sync_reference"] == "narration"
+    kinds = [c.kwargs.get("kind") for c in mock_emit.call_args_list]
+    assert "av_desync" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_av_sync_narration_reference_voice_cut_emits_desync(tmp_path):
+    """Video shorter than narration beyond tolerance = the speaker is cut off
+    → av_desync (the under-run direction keeps the tight 2s tolerance)."""
+    long_video = _existing_file(tmp_path, "long.mp4")
+    narration = _existing_file(tmp_path, "narration.mp3")
+    mock_emit = MagicMock()
+    state = {
+        "task_id": "t-cut",
+        "long_video_path": long_video,
+        "video_shot_list": {"total_duration_s": 300.0},
+        "long_narration_audio_path": narration,
+        "site_config": _site_config(media_qa_frame_detection_enabled="false"),
+    }
+    with patch.object(
+        media_qa, "_probe_duration",
+        AsyncMock(side_effect=_probe_by_path({long_video: 170.0, narration: 175.0})),
+    ), patch.object(media_qa, "emit_finding", mock_emit):
+        out = await qa_run(state)
+
+    assert out["media_qa_result"]["long"]["av_sync_ok"] is False
+    desync = [c for c in mock_emit.call_args_list if c.kwargs.get("kind") == "av_desync"]
+    assert len(desync) == 1
+    assert "cut off" in desync[0].kwargs["body"]
+
+
+@pytest.mark.asyncio
+async def test_av_sync_falls_back_to_plan_without_narration(tmp_path):
+    """No narration audio on state → the plan total remains the reference
+    (backcompat: silent/no-narration renders still get a sanity check)."""
+    long_video = _existing_file(tmp_path, "long.mp4")
+    mock_emit = MagicMock()
+    state = {
+        "task_id": "t-fallback",
+        "long_video_path": long_video,
+        "video_shot_list": {"total_duration_s": 60.0},
+        "site_config": _site_config(media_qa_frame_detection_enabled="false"),
+    }
+    with patch.object(media_qa, "_probe_duration", AsyncMock(return_value=60.5)), patch.object(
+        media_qa, "emit_finding", mock_emit
+    ):
+        out = await qa_run(state)
+
+    result = out["media_qa_result"]["long"]
+    assert result["av_sync_ok"] is True
+    assert result["av_sync_reference"] == "plan"
 
 
 # ---------------------------------------------------------------------------

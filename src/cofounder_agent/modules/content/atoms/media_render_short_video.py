@@ -59,8 +59,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         output_key="short_video_path",
         narration_key="short_narration_audio_path",
         caption_key="short_caption_srt_path",
-        # Short lane only (issue #867): fit the visuals to the actual narration
-        # so the compositor never freezes the final frame over an overhang.
+        # Fit the visuals to the actual narration (issue #867): stretch so the
+        # compositor never freezes the final frame over an overhang, and (since
+        # the 2026-07-31 silent-tail fix) compress so an over-planned list never
+        # outlives the voice by more than the trailing hold. Ceiling stays the
+        # short-lane default (video_short_max_shot_seconds).
         narration_fit=True,
     )
 

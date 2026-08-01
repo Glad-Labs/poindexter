@@ -147,23 +147,27 @@ def _build_demo_catalog_block(site_config: Any) -> str:
     return "\n".join(lines)
 
 
-def _estimate_target_duration(podcast_script: str) -> float:
-    """Estimate the podcast's spoken duration from word count.
+def _estimate_target_duration(narration_script: str, *, max_s: float = 300.0) -> float:
+    """Estimate the long video narration's spoken duration from word count.
 
-    The director needs a target duration. The actual podcast file may
-    not exist yet at this stage (podcast gen is post-publish), so we
-    estimate from the script: ~2.5 words/second is a reasonable TTS
+    The director needs a target duration. The narration audio doesn't exist
+    yet at this stage (TTS is Stage-2), so we estimate from the script the
+    voice will actually read — ``video_long_script``, NOT the podcast script
+    (silent-tail fix, 2026-07-31: estimating from the ~2× longer podcast
+    script planned ~300s of visuals over a ~175s narration, so every long
+    video ran minutes past the voice). ~2.5 words/second is a reasonable TTS
     narration pace.
 
-    Clamped to [20, 300] seconds — shorter than 20s isn't worth the
-    director call; longer than 300s exceeds the renderer's practical
-    output length.
+    Clamped to [20, ``max_s``] seconds — shorter than 20s isn't worth the
+    director call; the ceiling is ``video_long_max_seconds`` (the same budget
+    the narration script itself is trimmed to, so the plan and the voice
+    share one ceiling).
     """
-    if not podcast_script:
+    if not narration_script:
         return _DEFAULT_TARGET_DURATION_S
-    word_count = len(podcast_script.split())
+    word_count = len(narration_script.split())
     estimated = word_count / _WORDS_PER_SECOND
-    return max(20.0, min(estimated, 300.0))
+    return max(20.0, min(estimated, max_s))
 
 
 _DEFAULT_SHORT_DURATION_S = 20.0  # Fallback when short script length unknown
@@ -754,6 +758,14 @@ class GenerateVideoShotListStage:
         title = context.get("title", "")
         content_text = context.get("content", "")
         podcast_script = context.get("podcast_script", "")
+        # The long video NARRATES video_long_script (fallback podcast_script) —
+        # the exact resolution order media.render_narration uses at Stage 2 —
+        # so the director must plan shots + duration over THAT script (silent-
+        # tail fix, 2026-07-31). Planning over the ~2× longer podcast script
+        # pinned every plan at the ~300s clamp while the voice ran ~175s.
+        narration_script = (
+            (context.get("video_long_script") or "").strip() or podcast_script
+        )
         task_id = context.get("task_id")
 
         if not content_text or not title:
@@ -762,13 +774,13 @@ class GenerateVideoShotListStage:
                 detail="nothing to direct (missing content or title)",
                 metrics={"skipped": True},
             )
-        if not podcast_script:
+        if not narration_script:
             # The director needs the narration script to align shot
             # durations to. Without it, we'd produce a shot list that
             # didn't actually correspond to any audio.
             return StageResult(
                 ok=True,
-                detail="no podcast_script in context — director skipped",
+                detail="no narration script in context — director skipped",
                 metrics={"skipped": True},
             )
 
@@ -838,13 +850,19 @@ class GenerateVideoShotListStage:
         # Demo-clip catalog, resolved once and shared by both directors.
         demo_catalog = _build_demo_catalog_block(cfg)
 
-        # LONG (unchanged behavior): the 16:9 director over podcast_script.
+        # LONG: the 16:9 director over the script the narration will voice
+        # (video_long_script, fallback podcast_script — resolved above). The
+        # prompt's template var is still named {podcast_script} for backcompat
+        # with frozen prompt overrides; the CONTENT is the narration script.
         long_shot_list = await self._produce_shot_list(
             platform=platform,
             pool=pool,
             model=model,
-            script=podcast_script,
-            target_duration_s=_estimate_target_duration(podcast_script),
+            script=narration_script,
+            target_duration_s=_estimate_target_duration(
+                narration_script,
+                max_s=float(cfg.get_int("video_long_max_seconds", 300)),
+            ),
             prompt_key="video.director_v1",
             task_id=task_id,
             now_iso=now_iso,

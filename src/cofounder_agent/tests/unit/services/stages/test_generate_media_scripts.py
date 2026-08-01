@@ -159,6 +159,69 @@ async def test_runaway_short_is_trimmed_and_emits_finding():
 
 
 @pytest.mark.asyncio
+async def test_runaway_long_script_is_trimmed_and_emits_finding():
+    """A long video narration over video_long_max_seconds (default 300s → 750
+    words) is trimmed to <= the budget and an advisory long_script_trimmed
+    finding fires (silent-tail fix — the same cap the director's target
+    estimate clamps to, so the plan and the voice share one ceiling)."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    # 200 five-word sentences = 1000 words ≈ 400s, over the 750-word budget.
+    runaway = " ".join(["The quick brown fox jumps."] * 200)
+    result_obj = SimpleNamespace(text=runaway)
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    trimmed = result.context_updates["video_long_script"]
+    assert len(trimmed.split()) <= 750
+    long_findings = [
+        c for c in mock_finding.call_args_list
+        if c.kwargs.get("kind") == "long_script_trimmed"
+    ]
+    assert len(long_findings) == 1
+
+
+@pytest.mark.asyncio
+async def test_long_script_within_budget_is_not_trimmed():
+    """A long narration under the budget rides untouched — no long finding."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    ok_long = " ".join(["A calm spoken line."] * 50)  # 200 words ≈ 80s
+    result_obj = SimpleNamespace(text=ok_long)
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    assert result.context_updates["video_long_script"]  # non-empty, untouched
+    long_findings = [
+        c for c in mock_finding.call_args_list
+        if c.kwargs.get("kind") == "long_script_trimmed"
+    ]
+    assert long_findings == []
+
+
+@pytest.mark.asyncio
 async def test_short_within_budget_is_not_trimmed():
     """A short comfortably under the budget rides untouched — no finding."""
     gpu = SimpleNamespace(lock=_fake_lock)
@@ -646,7 +709,9 @@ _STAGE_DIRECTION_TELLS = (
 
 
 def test_video_narration_prompt_has_no_visual_stage_directions():
-    prompt = _build_video_narration_prompt("My Title", "Some article body.").lower()
+    prompt = _build_video_narration_prompt(
+        "My Title", "Some article body.", target_seconds=180, target_words=450,
+    ).lower()
     for tell in _STAGE_DIRECTION_TELLS:
         assert tell not in prompt, f"narration prompt still invites '{tell}'"
 
@@ -654,9 +719,23 @@ def test_video_narration_prompt_has_no_visual_stage_directions():
 def test_video_narration_prompt_signals_audio_only_framing():
     # Guards against silently reverting to a visuals-referencing prompt: the
     # rewrite must positively frame the narration as standalone audio.
-    prompt = _build_video_narration_prompt("My Title", "Some article body.").lower()
+    prompt = _build_video_narration_prompt(
+        "My Title", "Some article body.", target_seconds=180, target_words=450,
+    ).lower()
     assert any(w in prompt for w in ("spoken", "audio", "for the ear", "listener"))
     assert "my title" in prompt and "some article body." in prompt
+
+
+def test_video_narration_prompt_carries_length_target():
+    # Silent-tail fix: the long narration ask derives from
+    # video_long_target_seconds — the prompt used to carry NO length target,
+    # so narration length was uncontrolled while the director planned visuals
+    # from the (much longer) podcast script.
+    prompt = _build_video_narration_prompt(
+        "My Title", "Some article body.", target_seconds=180, target_words=450,
+    )
+    assert "180-second" in prompt
+    assert "450 words" in prompt
 
 
 # --- Bug C2: media narration must speak the real title, not a polluted one --

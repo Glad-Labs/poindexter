@@ -122,10 +122,27 @@ def _dims_for_aspect(aspect: Any) -> tuple[int, int]:
 
 
 def _duration_ms(shot_list: Any) -> int | None:
+    """PLAN duration off the shot list — the fallback when ffprobe can't read
+    the real file. The probed duration is preferred (silent-tail fix,
+    2026-07-31): narration-fit means the rendered length legitimately diverges
+    from the plan, and recording the plan here is how a 61.3s fitted short got
+    booked as 45.0s in media_assets."""
     total = _extract(shot_list, "total_duration_s")
     try:
         return int(float(total) * 1000) if total else None
     except (TypeError, ValueError):
+        return None
+
+
+async def _probed_duration_ms(path: Any) -> int | None:
+    """ffprobe the durable file's REAL duration, ms. None on any failure."""
+    try:
+        from services.media_quality_service import _probe_duration
+
+        dur_s = await _probe_duration(str(path))
+        return int(float(dur_s) * 1000) if dur_s and dur_s > 0 else None
+    except Exception as exc:  # noqa: BLE001 — probe is best-effort
+        logger.warning("[media.persist] duration probe failed for %s: %s", path, exc)
         return None
 
 
@@ -206,7 +223,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             provider_plugin="compositor.ffmpeg_local",
             width=width,
             height=height,
-            duration_ms=_duration_ms(shot_list),
+            duration_ms=(
+                await _probed_duration_ms(durable) or _duration_ms(shot_list)
+            ),
             file_size_bytes=size,
         )
         if asset_id:

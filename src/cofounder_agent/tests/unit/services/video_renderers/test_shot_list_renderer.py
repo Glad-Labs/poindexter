@@ -1941,10 +1941,52 @@ class TestFitSceneDurations:
         assert out == [(0, 2.0), (1, 5.0), (2, 6.0), (3, 5.0)]
 
     def test_video_longer_than_narration_is_noop(self):
+        # Without shortfall_hold_s (the pre-compression contract every legacy
+        # caller keeps) a shorter narration never triggers a re-layout.
         from services.video_renderers.shot_list_renderer import _fit_scene_durations
         durs = [5.0, 5.0, 5.0]
         out = _fit_scene_durations(durs, 8.0, max_shot_s=9.0)  # narration shorter
         assert out == [(0, 5.0), (1, 5.0), (2, 5.0)]
+
+    def test_compression_scales_down_to_narration_plus_hold(self):
+        # The 2026-07 silent-tail shape: a ~300s director plan (estimated off
+        # the podcast script) over a ~175s narration shipped ~2 minutes of
+        # silent footage. With the hold set, the fit compresses proportionally
+        # to narration + hold and preserves the director's pacing ratios.
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [15.0, 25.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 20.0]  # 300s
+        out = _fit_scene_durations(
+            durs, 175.0, max_shot_s=30.0, min_shot_s=2.0, shortfall_hold_s=3.0,
+        )
+        total = sum(d for _, d in out)
+        assert abs(total - 178.0) < 0.05          # narration + hold
+        assert len(out) == len(durs)              # no shot dropped, no cycling
+        # Pacing preserved: the 15s hook stays exactly half a 30s hold.
+        assert abs(out[0][1] * 2 - out[2][1]) < 0.01
+        assert all(d >= 2.0 for _, d in out)      # floor holds
+
+    def test_compression_noop_within_hold(self):
+        # A deliberate outro beat (shortfall ≤ hold + tolerance) never churns
+        # a re-layout — the video may outlive the voice by the hold.
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [5.0, 5.0, 5.0]  # 15s
+        out = _fit_scene_durations(
+            durs, 12.0, max_shot_s=9.0, min_shot_s=2.0, shortfall_hold_s=3.0,
+        )  # shortfall 3.0 ≤ hold(3) + tolerance(1)
+        assert out == [(0, 5.0), (1, 5.0), (2, 5.0)]
+
+    def test_compression_respects_min_shot_floor(self):
+        # A pathological over-plan can't compress a shot into a subliminal
+        # flicker: every shot floors at min_shot_s (the total then runs
+        # modestly over the target — bounded, and strictly better than the
+        # minutes-long silent tail it replaces).
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [2.0, 30.0]
+        out = _fit_scene_durations(
+            durs, 3.0, max_shot_s=30.0, min_shot_s=2.0, shortfall_hold_s=0.0,
+        )
+        assert out[0][1] == 2.0                   # floored, not 0.19
+        assert all(d >= 2.0 for _, d in out)
 
     def test_proportional_rescale_spans_narration_and_preserves_pacing(self):
         from services.video_renderers.shot_list_renderer import _fit_scene_durations
@@ -1981,10 +2023,13 @@ class TestFitSceneDurations:
 
 
 class TestRenderShotListNarrationFit:
-    """Part 1 (#867): ``render_shot_list(narration_fit=True)`` lays out the
-    scenes to span the ACTUAL narration (probed via ffprobe) so the compositor
-    never clones the final frame to cover an overhang (the frozen tail). Off by
-    default, so the long lane keeps the director's durations untouched."""
+    """Part 1 (#867 + the 2026-07-31 silent-tail fix):
+    ``render_shot_list(narration_fit=True)`` lays out the scenes to span the
+    ACTUAL narration (probed via ffprobe) — stretching so the compositor never
+    clones the final frame over an overhang (the frozen tail), and, with
+    ``narration_fit_hold_s`` set, compressing so the visuals never outlive the
+    voice by minutes (the silent tail). Off by default for the legacy
+    ``video_service`` caller."""
 
     def _image_gen_shots(self, durations: list[float]) -> VideoShotList:
         # Alternate image_kenburns/image_gen (both render via the mocked
@@ -2086,8 +2131,30 @@ class TestRenderShotListNarrationFit:
         assert abs(sum(scene_durs) - 54.0) < 0.1
 
     @pytest.mark.asyncio
+    async def test_narration_fit_compresses_over_planned_scenes(self, tmp_path, monkeypatch):
+        """45s of shots over a 30s narration + 3s hold → scenes span ~33s
+        (the silent-tail fix: the visuals no longer outlive the voice)."""
+        result, scene_durs, probe_calls = await self._render_capture(
+            tmp_path,
+            monkeypatch,
+            durations=[15.0, 15.0, 15.0],
+            probe_s=30.0,
+            fit_kwargs={
+                "narration_fit": True,
+                "narration_fit_max_shot_s": 30.0,
+                "narration_fit_min_shot_s": 2.0,
+                "narration_fit_hold_s": 3.0,
+            },
+        )
+        assert result.success is True
+        assert probe_calls == 1
+        assert abs(sum(scene_durs) - 33.0) < 0.1
+
+    @pytest.mark.asyncio
     async def test_narration_fit_off_keeps_director_durations(self, tmp_path, monkeypatch):
-        """Default (long lane): scenes keep the director's 45s total; no probe."""
+        """Default (legacy video_service caller): scenes keep the director's
+        45s total; no probe. (Both media atoms opt IN since the silent-tail
+        fix — this pins the renderer's own default, not the atom wiring.)"""
         result, scene_durs, probe_calls = await self._render_capture(
             tmp_path,
             monkeypatch,

@@ -45,6 +45,14 @@ def test_estimate_target_duration_clamps_below_20() -> None:
     assert _estimate_target_duration("ten words " * 5) == 20.0
 
 
+def test_estimate_target_duration_ceiling_is_configurable() -> None:
+    """The clamp ceiling threads from video_long_max_seconds (silent-tail fix)
+    — one ceiling shared with the narration-script trim, so the plan and the
+    voice can't disagree past it."""
+    long_script = "word " * 2000
+    assert _estimate_target_duration(long_script, max_s=120.0) == 120.0
+
+
 def test_estimate_target_duration_clamps_above_300() -> None:
     """Long scripts get clamped to 5 minutes — renderer practical limit."""
     long_script = " ".join(["word"] * 5000)
@@ -236,6 +244,83 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
     # Audit log got the success event.
     audit_call = db_service.pool.execute.call_args
     assert "video_director.shot_list_produced" in audit_call.args[1]
+
+
+@pytest.mark.asyncio
+async def test_long_director_plans_over_video_long_script() -> None:
+    """Silent-tail fix (2026-07-31): the long director's script AND target
+    duration come from the script the narration will actually voice
+    (video_long_script), not the ~2× longer podcast script — the old source
+    pinned every plan at the ~300s clamp while the voice ran ~175s, so every
+    long video shipped minutes of silent footage."""
+    db_service = _make_db_service()
+    long_script = "spoken word here " * 100   # 300 words ≈ 120s at 2.5 WPS
+    podcast = "podcast filler line " * 400    # 1200 words → would clamp at 300s
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "video_long_script": long_script,
+        "podcast_script": podcast,
+        "task_id": "task-narr-src",
+        "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text=_make_valid_director_output()),
+            model="director-model-x",
+        ),
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    kw = mock_pm.return_value.get_prompt.call_args_list[0].kwargs
+    # The {podcast_script} template var (legacy name, kept for frozen-override
+    # backcompat) carries the NARRATION script…
+    assert kw["podcast_script"] == long_script.strip()
+    # …and the target derives from ITS word count (300 words / 2.5 ≈ 120s),
+    # not the podcast's clamped 300s.
+    assert float(kw["target_duration_s"]) == pytest.approx(120.0, abs=2.0)
+
+
+@pytest.mark.asyncio
+async def test_long_director_falls_back_to_podcast_script() -> None:
+    """Without a video_long_script the podcast script remains the source —
+    the same fallback order media.render_narration uses at Stage 2."""
+    db_service = _make_db_service()
+    podcast = "podcast words spoken " * 50  # 150 words ≈ 60s
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": podcast,
+        "task_id": "task-narr-fb",
+        "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text=_make_valid_director_output()),
+            model="director-model-x",
+        ),
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    kw = mock_pm.return_value.get_prompt.call_args_list[0].kwargs
+    assert kw["podcast_script"] == podcast
+    assert float(kw["target_duration_s"]) == pytest.approx(60.0, abs=2.0)
 
 
 @pytest.mark.asyncio

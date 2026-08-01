@@ -68,6 +68,8 @@ async def render_from_state(
     narration_key: str = "podcast_audio_path",
     caption_key: str = "caption_srt_path",
     narration_fit: bool = False,
+    narration_fit_max_shot_key: str = "video_short_max_shot_seconds",
+    narration_fit_max_shot_default: float = 9.0,
 ) -> dict[str, Any]:
     """Render a video from a shot-list channel in graph state.
 
@@ -84,12 +86,22 @@ async def render_from_state(
         caption_key: Which state channel holds this lane's burned-in SRT
             (``long_caption_srt_path`` / ``short_caption_srt_path``). Defaults to
             ``caption_srt_path`` for backcompat.
-        narration_fit: Opt into short-lane fit-to-narration (issue #867). The
-            short atom passes True; the long atom leaves it False so its
-            legitimately-longer shots and deliberate pacing are untouched. Even
-            when True it's still gated by ``video_narration_fit_enabled`` (master
-            switch), and the per-shot ceiling comes from
-            ``video_short_max_shot_seconds``.
+        narration_fit: Opt into fit-to-narration (issue #867 stretch + the
+            2026-07-31 compression fix). BOTH render atoms pass True now — the
+            long lane's old opt-out ("deliberate pacing untouched") is exactly
+            what let a 300s director plan ride over a ~175s narration and ship
+            2 minutes of silent footage (the 2026-07 rejections). Still gated
+            by ``video_narration_fit_enabled`` (master switch); the shared
+            compression floor/hold come from ``video_fit_min_shot_seconds`` /
+            ``video_fit_trailing_hold_seconds``.
+        narration_fit_max_shot_key: Which app_setting holds this lane's
+            per-shot ceiling for the fit rescale — the short atom keeps the
+            default (``video_short_max_shot_seconds``, 9s retention pacing);
+            the long atom passes ``video_long_max_shot_seconds`` (30 — matching
+            the director's own per-shot rule, since a 9s ceiling would shred
+            legitimate 15-30s long-form holds into cycled fragments).
+        narration_fit_max_shot_default: Code default for that ceiling when the
+            setting is unreadable (9.0 short / 30.0 long).
 
     Returns:
         ``{output_key: <path-or-empty-string>}`` — empty on no-op /
@@ -168,17 +180,30 @@ async def render_from_state(
     caption = state.get(caption_key) or None
     width, height = _resolve_dims(shot_list.aspect)
 
-    # Narration-fit is opt-in per lane (short only) AND gated by the master
-    # setting; the per-shot ceiling is operator-tunable (issue #867).
+    # Narration-fit is opt-in per lane AND gated by the master setting; the
+    # per-shot ceiling is lane-appropriate (issue #867 + silent-tail fix) and
+    # the compression floor/hold are shared, all operator-tunable.
     fit_enabled = bool(narration_fit) and (
         site_config.get_bool("video_narration_fit_enabled", True)
         if site_config is not None
         else True
     )
     fit_max_shot_s = (
-        site_config.get_float("video_short_max_shot_seconds", 9.0)
+        site_config.get_float(
+            narration_fit_max_shot_key, narration_fit_max_shot_default,
+        )
         if site_config is not None
-        else 9.0
+        else narration_fit_max_shot_default
+    )
+    fit_min_shot_s = (
+        site_config.get_float("video_fit_min_shot_seconds", 2.0)
+        if site_config is not None
+        else 2.0
+    )
+    fit_hold_s = (
+        site_config.get_float("video_fit_trailing_hold_seconds", 3.0)
+        if site_config is not None
+        else 3.0
     )
 
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
@@ -234,6 +259,8 @@ async def render_from_state(
                     progress_cb=_progress,
                     narration_fit=fit_enabled,
                     narration_fit_max_shot_s=fit_max_shot_s,
+                    narration_fit_min_shot_s=fit_min_shot_s,
+                    narration_fit_hold_s=fit_hold_s,
                 )
             if not result.success:
                 act.fail()

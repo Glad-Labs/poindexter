@@ -54,12 +54,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render the long-form (16:9) video from ``video_shot_list``."""
     from modules.content.atoms._media_render import render_from_state
 
+    # narration_fit (silent-tail fix, 2026-07-31): fit the visuals to the
+    # ACTUAL narration in both directions. The long lane historically opted out
+    # to preserve director pacing — which let a 300s plan (estimated off the
+    # much longer PODCAST script) ride over a ~175s narration and ship ~2
+    # minutes of silent footage. The ceiling is the long-form
+    # video_long_max_shot_seconds (30s — the director's own per-shot rule), NOT
+    # the short lane's 9s, so legitimate long holds survive a gentle stretch.
     return await render_from_state(
         state,
         shot_list_key="video_shot_list",
         output_key="long_video_path",
         narration_key="long_narration_audio_path",
         caption_key="long_caption_srt_path",
+        narration_fit=True,
+        narration_fit_max_shot_key="video_long_max_shot_seconds",
+        narration_fit_max_shot_default=30.0,
     )
 
 

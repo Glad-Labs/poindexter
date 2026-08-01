@@ -5,10 +5,18 @@ duration+size-only check (``services/media_quality_service.py``) with three
 content-aware checks per rendered asset:
 
 A. **A/V duration sync** (deterministic): probe the rendered video's duration
-   (ffprobe) and compare to the director shot-list's ``total_duration_s``. A
-   drift beyond the DB-configurable ``media.qa.av_sync_tolerance_s`` (default
-   2.0s) emits an advisory ``av_desync`` finding — catches a video whose track
-   length diverged from the planned narration.
+   (ffprobe) and compare to the lane's ACTUAL narration audio when present
+   (silent-tail fix, 2026-07-31), falling back to the director shot-list's
+   ``total_duration_s`` when there is no narration to compare against. The
+   narration is the reference that matters — comparing against the PLAN both
+   missed the 2026-07 silent-tail rejections (video faithfully rendered an
+   over-long plan → zero drift vs plan, minutes of drift vs voice) AND
+   false-alarmed on every narration-fitted short (fitted video ≈ narration ≠
+   plan). Asymmetric tolerance: the video may run under the voice by at most
+   ``media.qa.av_sync_tolerance_s`` (default 2.0s — a shorter video cuts the
+   speaker off) and over it by ``video_fit_trailing_hold_seconds`` + the same
+   tolerance (the renderer deliberately holds one outro beat). Beyond either
+   bound emits an advisory ``av_desync`` finding.
 B. **Caption presence** (deterministic): captions are best-effort upstream
    (``media.transcribe_narration`` no-ops when whisper is absent), so a missing
    ``caption_srt_path`` is advisory — one ``missing_captions`` finding total.
@@ -83,6 +91,8 @@ ATOM_META = AtomMeta(
         FieldSpec(name="short_video_path", type="str", description="rendered 9:16 MP4 path", required=False),
         FieldSpec(name="video_shot_list", type="dict", description="16:9 director shot list (total_duration_s)", required=False),
         FieldSpec(name="short_shot_list", type="dict", description="9:16 director shot list (total_duration_s)", required=False),
+        FieldSpec(name="long_narration_audio_path", type="str", description="long narration MP3 — the A/V-sync reference when present", required=False),
+        FieldSpec(name="short_narration_audio_path", type="str", description="short narration MP3 — the A/V-sync reference when present", required=False),
         FieldSpec(name="caption_srt_path", type="str", description="burned-in SRT path ('' when unavailable)", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (QA thresholds / vision model)", required=False),
         FieldSpec(name="platform", type="object", description="capability handle — platform.dispatch for the vision LLM call (Seam 1, #667)", required=False),
@@ -114,6 +124,30 @@ def _resolve_tolerance(site_config: Any) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return _DEFAULT_AV_SYNC_TOLERANCE_S
+
+
+# Default deliberate post-voice outro hold (seconds) — mirrors the
+# settings_defaults seed for video_fit_trailing_hold_seconds.
+_DEFAULT_TRAILING_HOLD_S = 3.0
+
+
+def _resolve_trailing_hold(site_config: Any) -> float:
+    """Read the renderer's trailing-hold allowance (default 3.0s).
+
+    Same ``video_fit_trailing_hold_seconds`` setting the narration-fit
+    compression aims at, so QA and the renderer share one definition of
+    "acceptable tail". Same duck-typed ``.get`` + cast shape as
+    ``_resolve_tolerance`` (site_config fakes in tests only carry ``get``).
+    """
+    if site_config is None:
+        return _DEFAULT_TRAILING_HOLD_S
+    try:
+        raw = site_config.get(
+            "video_fit_trailing_hold_seconds", _DEFAULT_TRAILING_HOLD_S
+        )
+        return float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_TRAILING_HOLD_S
 
 
 def _frame_detection_enabled(site_config: Any) -> bool:
@@ -293,12 +327,28 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         caption_present = bool(state.get("caption_srt_path"))
         captions_finding_emitted = False
 
+        # The renderer's deliberate post-voice outro beat (silent-tail fix) —
+        # the video may outlive the narration by this much before it's a
+        # defect. Same setting the narration-fit compression aims at, so QA
+        # and the renderer share one definition of "acceptable tail".
+        trailing_hold_s = _resolve_trailing_hold(site_config)
+
         assets = [
-            ("long", state.get("long_video_path") or "", state.get("video_shot_list")),
-            ("short", state.get("short_video_path") or "", state.get("short_shot_list")),
+            (
+                "long",
+                state.get("long_video_path") or "",
+                state.get("video_shot_list"),
+                state.get("long_narration_audio_path") or "",
+            ),
+            (
+                "short",
+                state.get("short_video_path") or "",
+                state.get("short_shot_list"),
+                state.get("short_narration_audio_path") or "",
+            ),
         ]
 
-        for label, video_path, shot_list in assets:
+        for label, video_path, shot_list, narration_path in assets:
             # Skip assets that weren't rendered (empty path) or whose file is
             # missing — nothing to QA.
             if not video_path or not os.path.exists(video_path):
@@ -307,16 +357,74 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             asset: dict[str, Any] = {}
 
             # --- Check A: A/V duration sync (deterministic) ---
+            # Reference: the lane's ACTUAL narration audio when present (the
+            # property that matters — the 2026-07 silent-tail videos matched
+            # their over-long PLAN perfectly while running minutes past the
+            # voice, and narration-fitted shorts false-alarmed against the
+            # plan). Plan total is the fallback when there is no narration.
             actual = await _probe_duration(video_path)
-            expected = (shot_list or {}).get("total_duration_s") if shot_list else None
+            plan = (shot_list or {}).get("total_duration_s") if shot_list else None
+            narration_dur = None
+            if narration_path and os.path.exists(narration_path):
+                narration_dur = await _probe_duration(narration_path)
             asset["actual_duration_s"] = actual
-            asset["expected_duration_s"] = expected
+            asset["expected_duration_s"] = plan
+            asset["narration_duration_s"] = narration_dur
+            asset["av_sync_reference"] = "narration" if narration_dur else "plan"
             if actual is None:
                 asset["av_sync_ok"] = None  # unknown — probe failed
-            elif expected is None:
-                asset["av_sync_ok"] = None  # no planned duration to compare
+            elif narration_dur:
+                # Asymmetric bounds: under-run cuts the speaker off
+                # (tolerance only); over-run is allowed one deliberate outro
+                # hold beyond the voice (hold + tolerance) before it's a
+                # silent tail.
+                shortfall = float(narration_dur) - float(actual)  # voice cut
+                overrun = float(actual) - float(narration_dur)  # silent tail
+                voice_cut = shortfall > tolerance
+                silent_tail = overrun > trailing_hold_s + tolerance
+                in_sync = not (voice_cut or silent_tail)
+                asset["av_sync_ok"] = in_sync
+                if not in_sync:
+                    drift = shortfall if voice_cut else overrun
+                    shape = (
+                        "the narration outruns the video — the speaker is cut off"
+                        if voice_cut
+                        else "the video outlives the narration — silent footage tail"
+                    )
+                    emit_finding(
+                        source="media.qa",
+                        kind="av_desync",
+                        title=(
+                            f"{label} video A/V desync "
+                            f"{actual:.1f}s vs {narration_dur:.1f}s narration"
+                        ),
+                        body=(
+                            f"The rendered {label} video for task {task_id} is "
+                            f"{actual:.2f}s but its narration audio runs "
+                            f"{narration_dur:.2f}s: {shape} "
+                            f"(drift {drift:.2f}s; allowed under-run "
+                            f"{tolerance}s, allowed over-run "
+                            f"{trailing_hold_s + tolerance:.1f}s = trailing hold "
+                            f"+ tolerance). Advisory only."
+                        ),
+                        severity="warn",
+                        dedup_key=f"av_desync:{task_id}:{label}",
+                        extra={
+                            "task_id": str(task_id or ""),
+                            "label": label,
+                            "actual_duration_s": actual,
+                            "narration_duration_s": narration_dur,
+                            "expected_duration_s": plan,
+                            "drift_s": drift,
+                            "tolerance_s": tolerance,
+                            "trailing_hold_s": trailing_hold_s,
+                            "reference": "narration",
+                        },
+                    )
+            elif plan is None:
+                asset["av_sync_ok"] = None  # no reference to compare against
             else:
-                drift = abs(float(actual) - float(expected))
+                drift = abs(float(actual) - float(plan))
                 in_sync = drift <= tolerance
                 asset["av_sync_ok"] = in_sync
                 if not in_sync:
@@ -325,14 +433,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                         kind="av_desync",
                         title=(
                             f"{label} video A/V desync "
-                            f"{actual:.1f}s vs {expected:.1f}s"
+                            f"{actual:.1f}s vs {plan:.1f}s"
                         ),
                         body=(
                             f"The rendered {label} video for task {task_id} is "
                             f"{actual:.2f}s but the director shot list planned "
-                            f"{expected:.2f}s (drift {drift:.2f}s > tolerance "
-                            f"{tolerance}s). Likely a render truncation or an "
-                            "audio/video length mismatch. Advisory only."
+                            f"{plan:.2f}s (drift {drift:.2f}s > tolerance "
+                            f"{tolerance}s; no narration audio to compare "
+                            "against). Likely a render truncation. Advisory only."
                         ),
                         severity="warn",
                         dedup_key=f"av_desync:{task_id}:{label}",
@@ -340,9 +448,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                             "task_id": str(task_id or ""),
                             "label": label,
                             "actual_duration_s": actual,
-                            "expected_duration_s": expected,
+                            "expected_duration_s": plan,
                             "drift_s": drift,
                             "tolerance_s": tolerance,
+                            "reference": "plan",
                         },
                     )
 

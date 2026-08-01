@@ -185,6 +185,43 @@ The legacy host `:9837` slideshow path is replaced by the compositor for the liv
   is available.)
 - **`media_qa` also runs:** frame **human-detection** (catches photoreal-human policy violations before ship), caption-presence, and A/V duration sync — replacing the audit-era check that only validated duration + file size.
 
+### 6b. One duration contract per lane (silent-tail fix, 2026-07-31)
+
+The lane's **narration audio is the timing source of truth**, end to end. The
+2026-07 long videos were rejected for running ~2 minutes past end-of-speech
+because three components each used a different reference:
+
+- **Stage 1 (director)** planned shots over the **podcast script** — content
+  AND `target_duration_s` (`words/2.5`, clamped ≤300s) — while
+  `media.render_narration` voices the much shorter `video_long_script`. When
+  #689 split the narration scripts, the director stage was never moved over.
+  Now the long director + `review_video_shot_list` take script AND target from
+  `video_long_script` (fallback `podcast_script` — the exact resolution order
+  the narration atom uses), and the `video.long_form_narration` prompt carries
+  a `~{target_seconds}s / ~{target_words}w` ask from `video_long_target_seconds`
+  (it previously had **no length target at all**), with a sentence-safe trim +
+  `long_script_trimmed` finding above `video_long_max_seconds` — the same
+  ceiling the director's estimate clamps to.
+- **Stage 2 (render)** — narration-fit now covers **both lanes and both
+  directions**. Stretch (#867) fills a narration overhang by proportional
+  rescale or cycling; the new **compress** regime scales an over-planned list
+  down to `narration + video_fit_trailing_hold_seconds` (default 3s outro
+  beat), flooring shots at `video_fit_min_shot_seconds` so a deep over-plan
+  can't flicker. Ceilings are lane-appropriate: `video_short_max_shot_seconds`
+  (9) vs `video_long_max_shot_seconds` (30 — long-form legitimately holds a
+  shot 15-30s; the short ceiling would shred it into cycled fragments).
+  Because the fit is render-side, **rejected posts fix themselves on
+  re-render** (re-render ≠ regen: Stage-1 scripts stay frozen).
+- **QA (`media.qa` Check A)** compares the rendered video against the lane's
+  **actual narration audio** when present (asymmetric bounds: under-run beyond
+  `media.qa.av_sync_tolerance_s` = the speaker is cut off; over-run beyond
+  `video_fit_trailing_hold_seconds` + tolerance = a silent tail), falling back
+  to the plan total only when no narration exists. Comparing against the plan
+  both missed the silent-tail rejections (the video matched its over-long plan
+  perfectly) and false-alarmed on every narration-fitted short.
+  `media.persist` likewise records the **probed** file duration into
+  `media_assets` (plan total only as fallback).
+
 ---
 
 ## 7. Voice variety (deterministic rotation)

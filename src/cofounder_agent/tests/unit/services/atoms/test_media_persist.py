@@ -14,7 +14,7 @@ the post later (Plan 8 / 8b-2).
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -132,11 +132,43 @@ async def test_persist_derives_dims_and_duration_from_shot_list(
     await persist_run(state)
 
     call = patched_recorder.await_args_list[0]
-    # 9:16 vertical → 1080×1920; duration in ms.
+    # 9:16 vertical → 1080×1920; duration in ms (plan fallback — the fake
+    # file is unprobeable, so the shot-list total is the recorded value).
     assert call.kwargs["width"] == 1080
     assert call.kwargs["height"] == 1920
     assert call.kwargs["duration_ms"] == 12500
     assert call.kwargs["file_size_bytes"] > 0
+
+
+@pytest.mark.asyncio
+async def test_persist_prefers_probed_real_duration_over_plan(
+    tmp_path, monkeypatch, patched_recorder
+):
+    """Silent-tail fix: the recorded duration is the REAL file duration
+    (ffprobe), not the director's plan — narration-fit means the render
+    legitimately diverges from the plan (a 61.3s fitted short was booked as
+    45.0s before this)."""
+    durable = tmp_path / "durable_video"
+    monkeypatch.setattr("services.video_service.VIDEO_DIR", durable)
+    _write_tmp(tmp_path / "long.mp4")
+
+    state = {
+        "task_id": "t-probe",
+        "pool": _FakePool(),
+        "long_video_path": str(tmp_path / "long.mp4"),
+        "short_video_path": "",
+        "video_shot_list": {"aspect": "16:9", "total_duration_s": 45.0},
+    }
+    # _probed_duration_ms imports _probe_duration function-locally, so patch
+    # at its source module.
+    with patch(
+        "services.media_quality_service._probe_duration",
+        AsyncMock(return_value=61.3),
+    ):
+        await persist_run(state)
+
+    call = patched_recorder.await_args_list[0]
+    assert call.kwargs["duration_ms"] == 61300
 
 
 @pytest.mark.asyncio

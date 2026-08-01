@@ -1,7 +1,7 @@
 ---
 name: video-director
 description: >
-  Video director — given a post body + podcast script + target duration,
+  Video director — given a post body + narration script + target duration,
   produces a JSON shot list (ordered shots with per-shot source plugin,
   prompt/query, and duration) for the post's video. Enforces the
   no-AI-humans + stylized-not-photoreal policies. Used by the
@@ -48,7 +48,7 @@ POST TITLE: {title}
 POST BODY:
 {content}
 
-PODCAST SCRIPT (this is the audio narration that will play over the video):
+NARRATION SCRIPT (this is the audio narration that will play over the video):
 {podcast_script}
 
 TARGET TOTAL DURATION (seconds): {target_duration_s}
@@ -376,7 +376,7 @@ POST TITLE: {title}
 POST BODY:
 {content}
 
-PODCAST SCRIPT (the narration the video plays over):
+NARRATION SCRIPT (the narration the video plays over):
 {podcast_script}
 
 THE DRAFT SHOT LIST you are revising (JSON):

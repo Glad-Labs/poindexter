@@ -198,6 +198,11 @@ class GenerateMediaScriptsStage:
             # Long-form VIDEO narration script (poindexter#689) — distinct from
             # the podcast script, paced to on-screen visuals; its CTA is appended
             # at render time. Guarded + fail-soft like the scene call below.
+            # One canonical target (silent-tail fix): video_long_target_seconds
+            # drives the prompt's second/word ask, and the director's target-
+            # duration estimate downstream reads THIS script's actual words — so
+            # the voice and the visual plan can no longer disagree by minutes.
+            long_target_s = sc.get_int("video_long_target_seconds", 180) if sc is not None else 180
             if pool is not None and platform is not None:
                 try:
                     async with gpu.lock(
@@ -209,6 +214,8 @@ class GenerateMediaScriptsStage:
                             pool=pool,
                             messages=[{"role": "user", "content": _build_video_narration_prompt(
                                 title, clean_content,
+                                target_seconds=long_target_s,
+                                target_words=round(long_target_s * _WORDS_PER_SECOND),
                             )}],
                             model=model,
                             tier="standard",
@@ -234,6 +241,46 @@ class GenerateMediaScriptsStage:
                     )
                 except Exception as vn_exc:
                     logger.warning("[MEDIA] video narration script failed: %s", vn_exc)
+
+            # Runaway-long cap (silent-tail fix): a model that ignores the
+            # target can emit a podcast-length "video narration". Trim to the
+            # last full sentence within video_long_max_seconds — the SAME
+            # ceiling the director's target-duration estimate clamps to, so the
+            # script and the visual plan can't disagree past it. Deterministic,
+            # no LLM call, sentence-safe (mirrors the #867 short trim).
+            if video_long_script:
+                long_max_s = sc.get_int("video_long_max_seconds", 300) if sc is not None else 300
+                max_long_words = round(long_max_s * _WORDS_PER_SECOND)
+                video_long_script, long_orig_w, long_kept_w = _trim_to_word_budget(
+                    video_long_script, max_long_words,
+                )
+                if long_kept_w < long_orig_w:
+                    logger.info(
+                        "[MEDIA] long narration script trimmed %d->%d words (max %d)",
+                        long_orig_w, long_kept_w, max_long_words,
+                    )
+                    emit_finding(
+                        source="media.generate_scripts",
+                        kind="long_script_trimmed",
+                        title=f"long narration script trimmed {long_orig_w}->{long_kept_w} words",
+                        body=(
+                            f"The long video narration for task {context.get('task_id')} ran "
+                            f"{long_orig_w} words (~{long_orig_w / _WORDS_PER_SECOND:.0f}s), over the "
+                            f"video_long_max_seconds budget of {long_max_s}s "
+                            f"({max_long_words} words). Trimmed to the last full sentence "
+                            "within budget so the video stays inside the renderer's "
+                            "practical length. Advisory — raise video_long_target_seconds "
+                            "or tighten the long_form_narration prompt if this is frequent."
+                        ),
+                        severity="info",
+                        dedup_key=f"long_script_trimmed:{context.get('task_id')}",
+                        extra={
+                            "task_id": str(context.get("task_id") or ""),
+                            "original_words": long_orig_w,
+                            "trimmed_words": long_kept_w,
+                            "max_words": max_long_words,
+                        },
+                    )
 
             # Call 2: Video scenes + short summary (single LLM call).
             short_target_s = sc.get_int("video_short_target_seconds", 45) if sc is not None else 45
@@ -498,6 +545,8 @@ _VIDEO_NARRATION_FALLBACK = (
     "refer to any accompanying imagery — the supporting footage is generic and "
     "will not match specific visual references, so keep every line meaningful "
     "with the eyes closed.\n"
+    "- Aim for a ~{target_seconds}-second narration (about {target_words} "
+    "words of spoken prose).\n"
     "- Tighter and more focused than an audio-only podcast; no 'welcome back' "
     "radio filler.\n"
     "- Open with a brief hook, walk the key points in order, then a natural "
@@ -510,22 +559,44 @@ _VIDEO_NARRATION_FALLBACK = (
 )
 
 
-def _build_video_narration_prompt(title: str, clean_content: str) -> str:
+def _build_video_narration_prompt(
+    title: str,
+    clean_content: str,
+    *,
+    target_seconds: int,
+    target_words: int,
+) -> str:
     """Prompt for the long-form VIDEO narration script.
 
     Pure spoken narration (Bug A) — the renderer shows generic static imagery,
     so the script never references on-screen visuals. Operator-tunable via
     UnifiedPromptManager (``video.long_form_narration``); the module-level
     fallback mirrors the SKILL.md default for tests / bootstrap.
+
+    The second/word target is substituted from ``video_long_target_seconds``
+    (silent-tail fix, 2026-07-31) — never hardcoded — the same one-canonical-
+    target pattern as the short lane (#867). The prompt used to carry NO length
+    ask at all, so narration length was whatever the model felt like (358-592
+    words observed) while the director planned visuals from the much longer
+    podcast script — every long video ran minutes past the voice.
     """
     content = clean_content[:3500]
     try:
         from services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(
-            "video.long_form_narration", title=title, content=content,
+            "video.long_form_narration",
+            title=title,
+            content=content,
+            target_seconds=target_seconds,
+            target_words=target_words,
         )
     except Exception:  # noqa: BLE001 — prompt resolution is best-effort
-        return _VIDEO_NARRATION_FALLBACK.format(title=title, content=content)
+        return _VIDEO_NARRATION_FALLBACK.format(
+            title=title,
+            content=content,
+            target_seconds=target_seconds,
+            target_words=target_words,
+        )
 
 
 def _build_scene_prompt(

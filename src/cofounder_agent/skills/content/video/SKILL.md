@@ -49,10 +49,16 @@ NARRATION:
 
 ## video.long_form_narration
 
+The `{target_seconds}` / `{target_words}` placeholders are substituted from
+`video_long_target_seconds` (words = seconds × 2.5 WPS) — the same
+one-canonical-target pattern as the short lane, so the narration ask, the
+director's visual plan, and the runaway-trim ceiling can never disagree.
+
 ```text
 Write a voiceover narration script for a long-form video about the article below.
 
 The narration is spoken aloud and must stand on its own as audio. Write it for the ear: explain the subject directly to the listener. Do not refer to any accompanying imagery — the supporting footage is generic and will not match specific visual references, so keep every line meaningful with the eyes closed.
+- Aim for a ~{target_seconds}-second narration (about {target_words} words of spoken prose).
 - Tighter and more focused than an audio-only podcast; no 'welcome back' radio filler.
 - Open with a brief hook, walk the key points in order, then a natural closing line. Do NOT add a like/subscribe call-to-action — that is appended separately.
 - Plain spoken prose. No headings, no stage directions.

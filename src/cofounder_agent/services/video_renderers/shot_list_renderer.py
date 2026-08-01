@@ -1541,17 +1541,23 @@ def _fit_scene_durations(
     narration_dur_s: float,
     *,
     max_shot_s: float,
+    min_shot_s: float = 0.0,
+    shortfall_hold_s: float | None = None,
     max_scenes: int = 200,
     tail_pad_s: float = 0.0,
     overhang_tolerance_s: float = 1.0,
 ) -> list[tuple[int, float]]:
     """Lay out ``(shot_index, duration_s)`` pairs so the concat spans the
-    narration — the short-lane fix for the frozen tail (issue #867).
+    narration — the fit for the frozen tail (issue #867) and, with
+    ``shortfall_hold_s`` set, for the silent tail (2026-07-31 long-lane fix).
 
     No-op (returns the director's durations, one pair per shot in order) when the
-    narration already fits: the video is longer than the narration, or the
-    overhang is within ``overhang_tolerance_s`` (the compositor's tail-pad
-    absorbs it).
+    narration already fits: the overhang in either direction is within its
+    tolerance (``overhang_tolerance_s`` when the narration runs longer — the
+    compositor's tail-pad absorbs it; ``shortfall_hold_s`` when the visuals run
+    longer — a short outro hold after the voice is deliberate).
+
+    NARRATION LONGER THAN VISUALS (stretch):
 
     Gentle regime (``scale <= max_shot_s / avg_shot``): pure proportional
     rescale — every shot ×``narration/total`` — which spans the narration in one
@@ -1565,36 +1571,62 @@ def _fit_scene_durations(
     ``max_shot_s`` and CYCLE the sequence (repeating visuals at a steady cadence)
     until the narration is filled, so no single image is held absurdly long.
     ``max_scenes`` bounds a pathological fill.
+
+    VISUALS LONGER THAN NARRATION (compress — only when ``shortfall_hold_s`` is
+    not None): proportional scale-down aimed at ``narration + shortfall_hold_s``
+    (the visuals hold one deliberate beat after the voice stops instead of a
+    hard cut), flooring every shot at ``min_shot_s`` so a deep over-plan can't
+    compress the hook into a flicker. Floor collisions may leave the total
+    modestly over the target — bounded by ``n × min_shot_s``, and strictly
+    better than the minutes-long silent tail it replaces (a 300s director plan
+    over a ~175s narration was the shape that got the 2026-07 long videos
+    rejected). ``None`` (the default) disables compression entirely — the
+    pre-fix contract, which every legacy caller keeps.
     """
     n = len(shot_durations)
     total = sum(shot_durations)
     originals = list(enumerate(shot_durations))
     if n == 0 or total <= 0 or narration_dur_s <= 0:
         return originals
-    if narration_dur_s - total <= overhang_tolerance_s:
-        return originals
-    scale = narration_dur_s / total
-    target = narration_dur_s + max(0.0, tail_pad_s)
-    avg = total / n
-    if scale <= max_shot_s / avg:
-        # Gentle: pure proportional rescale, one pass, exact span, pacing kept.
-        return [(i, round(d * scale, 3)) for i, d in enumerate(shot_durations)]
-    # Pathological: cap each shot at the ceiling and cycle to fill the narration.
-    capped = [min(d * scale, max_shot_s) for d in shot_durations]
-    layout: list[tuple[int, float]] = []
-    acc = 0.0
-    i = 0
-    while acc < target - 1e-6 and len(layout) < max_scenes:
-        idx = i % n
-        dur = capped[idx]
-        remaining = target - acc
-        if dur >= remaining:
-            layout.append((idx, round(remaining, 3)))
-            break
-        layout.append((idx, round(dur, 3)))
-        acc += dur
-        i += 1
-    return layout
+    overhang = narration_dur_s - total
+    if overhang > overhang_tolerance_s:
+        # Stretch: the narration outruns the visuals (the #867 frozen tail).
+        scale = narration_dur_s / total
+        target = narration_dur_s + max(0.0, tail_pad_s)
+        avg = total / n
+        if scale <= max_shot_s / avg:
+            # Gentle: pure proportional rescale, one pass, exact span, pacing kept.
+            return [(i, round(d * scale, 3)) for i, d in enumerate(shot_durations)]
+        # Pathological: cap each shot at the ceiling and cycle to fill the narration.
+        capped = [min(d * scale, max_shot_s) for d in shot_durations]
+        layout: list[tuple[int, float]] = []
+        acc = 0.0
+        i = 0
+        while acc < target - 1e-6 and len(layout) < max_scenes:
+            idx = i % n
+            dur = capped[idx]
+            remaining = target - acc
+            if dur >= remaining:
+                layout.append((idx, round(remaining, 3)))
+                break
+            layout.append((idx, round(dur, 3)))
+            acc += dur
+            i += 1
+        return layout
+    if shortfall_hold_s is not None:
+        # Compress: the visuals outrun the voice (the long-lane silent tail).
+        # Trigger only past hold+tolerance so a deliberate outro beat (or a
+        # sub-second rounding gap) never churns a re-layout.
+        shortfall = -overhang
+        if shortfall > shortfall_hold_s + overhang_tolerance_s:
+            target = narration_dur_s + max(0.0, shortfall_hold_s)
+            scale = target / total
+            floor = max(0.0, min_shot_s)
+            return [
+                (i, round(max(d * scale, floor), 3))
+                for i, d in enumerate(shot_durations)
+            ]
+    return originals
 
 
 async def render_shot_list(
@@ -1614,6 +1646,8 @@ async def render_shot_list(
     progress_cb: ProgressCb | None = None,
     narration_fit: bool = False,
     narration_fit_max_shot_s: float = 9.0,
+    narration_fit_min_shot_s: float = 0.0,
+    narration_fit_hold_s: float | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -1654,15 +1688,26 @@ async def render_shot_list(
             the render. The Plan-4 media atom wires this to a live_activity
             ``media`` row so the console pulse shows real per-shot progress;
             ``None`` (the default, and the legacy caller) renders silently.
-        narration_fit: Short-lane fit-to-narration (issue #867). When True and
-            an ``audio_path`` exists, ffprobe the narration and lay out the
-            scenes (via ``_fit_scene_durations``) to span its ACTUAL duration —
-            so the compositor never clones the final frame to cover an overhang
-            (the frozen tail). Default False (the long lane keeps the director's
-            durations and deliberate pacing untouched); the short atom opts in.
+        narration_fit: Fit-to-narration (issue #867 + the 2026-07-31 long-lane
+            silent-tail fix). When True and an ``audio_path`` exists, ffprobe
+            the narration and lay out the scenes (via ``_fit_scene_durations``)
+            to span its ACTUAL duration — so the compositor never clones the
+            final frame to cover an overhang (the frozen tail), and — when
+            ``narration_fit_hold_s`` is set — the visuals never outlive the
+            voice by minutes (the silent tail). Both render atoms opt in;
+            default False for the legacy ``video_service`` caller.
         narration_fit_max_shot_s: Per-shot ceiling for the fit rescale — no
             single image is held longer than this; beyond it the shot sequence
-            cycles instead of stretching. Only consulted when ``narration_fit``.
+            cycles instead of stretching. Lane-appropriate: the short atom
+            passes ``video_short_max_shot_seconds`` (9), the long atom
+            ``video_long_max_shot_seconds`` (30 — long-form pacing legitimately
+            holds a shot 15-30s, so the short ceiling would shred it). Only
+            consulted when ``narration_fit``.
+        narration_fit_min_shot_s: Per-shot floor for the compression direction —
+            no shot is scaled below this when the visuals outrun the voice.
+        narration_fit_hold_s: How long the visuals may outlive the voice before
+            the fit compresses them (and the outro beat it compresses TO).
+            ``None`` disables compression (stretch-only, the pre-fix contract).
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -1760,11 +1805,12 @@ async def render_shot_list(
     # at the first transition (#media-render-fixes: audio cut off after
     # scene 2). Per-shot narration slicing is a follow-up — the schema's
     # ``narration_offset_s`` field is the seam.
-    # Narration-fit (short lane, issue #867): lay out the scenes to span the
-    # ACTUAL narration so the compositor never clones the final frame to cover
-    # an overhang (the frozen tail). No-op when the narration already fits;
-    # scoped by the caller to the short lane so the long lane's pacing is
-    # untouched. Cycling repeats a clip_path — free, no re-render.
+    # Narration-fit (issue #867 + the long-lane silent-tail fix): lay out the
+    # scenes to span the ACTUAL narration so the compositor never clones the
+    # final frame to cover an overhang (the frozen tail) and the visuals never
+    # outlive the voice by minutes (the silent tail — a 300s director plan over
+    # a ~175s narration got the 2026-07 long videos rejected). No-op when the
+    # narration already fits. Cycling repeats a clip_path — free, no re-render.
     shot_durs = [float(r.duration_s) for r in rendered]
     scene_plan: list[tuple[int, float]] = list(enumerate(shot_durs))
     if narration_fit and audio_path:
@@ -1774,6 +1820,8 @@ async def render_shot_list(
                 shot_durs,
                 narration_dur,
                 max_shot_s=narration_fit_max_shot_s,
+                min_shot_s=narration_fit_min_shot_s,
+                shortfall_hold_s=narration_fit_hold_s,
             )
             logger.info(
                 "[SHOT_LIST] narration-fit: %d shots (%.1fs) -> %d scenes "

@@ -683,9 +683,11 @@ class TestRenderShortVideoAtom:
 
 
 class TestNarrationFitPlumbing:
-    """Part 1 (#867): the short atom opts into narration-fit; the long atom does
-    not; the master setting can force it off. render_from_state resolves the
-    per-shot ceiling from site_config."""
+    """Part 1 (#867 + the 2026-07-31 silent-tail fix): BOTH atoms opt into
+    narration-fit with lane-appropriate ceilings (short 9s retention pacing,
+    long 30s matching the director's per-shot rule); the master setting can
+    force it off. render_from_state resolves ceiling + compression floor/hold
+    from site_config."""
 
     @pytest.mark.asyncio
     async def test_short_lane_passes_narration_fit_to_renderer(self):
@@ -706,12 +708,44 @@ class TestNarrationFitPlumbing:
         assert kw["narration_fit_max_shot_s"] == 9.0
 
     @pytest.mark.asyncio
-    async def test_long_lane_does_not_enable_narration_fit(self):
+    async def test_long_lane_enables_narration_fit_with_long_ceiling(self):
+        # The long lane's old opt-out let a 300s plan (estimated off the much
+        # longer podcast script) ride over a ~175s narration and ship ~2
+        # minutes of silent footage — the 2026-07 rejections. It now fits with
+        # the LONG ceiling (video_long_max_shot_seconds, not the short 9s).
+        site_config = SiteConfig(initial_config={
+            "video_narration_fit_enabled": "true",
+            "video_long_max_shot_seconds": "30",
+            "video_fit_min_shot_seconds": "2",
+            "video_fit_trailing_hold_seconds": "3",
+        })
+        state = {
+            "task_id": "t",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "site_config": site_config,
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await run_long(state)
+        kw = mock_render.await_args.kwargs
+        assert kw["narration_fit"] is True
+        assert kw["narration_fit_max_shot_s"] == 30.0
+        assert kw["narration_fit_min_shot_s"] == 2.0
+        assert kw["narration_fit_hold_s"] == 3.0
+
+    @pytest.mark.asyncio
+    async def test_long_lane_fit_defaults_without_site_config(self):
+        # No site_config ⇒ the long atom still fits, with its code defaults
+        # (30s ceiling / 2s floor / 3s hold).
         state = {"task_id": "t", "video_shot_list": _LONG_SHOT_LIST}
         mock_render = AsyncMock(return_value=_ok_result())
         with patch.object(_media_render, "render_shot_list", mock_render):
             await run_long(state)
-        assert mock_render.await_args.kwargs["narration_fit"] is False
+        kw = mock_render.await_args.kwargs
+        assert kw["narration_fit"] is True
+        assert kw["narration_fit_max_shot_s"] == 30.0
+        assert kw["narration_fit_min_shot_s"] == 2.0
+        assert kw["narration_fit_hold_s"] == 3.0
 
     @pytest.mark.asyncio
     async def test_narration_fit_disabled_via_setting(self):
