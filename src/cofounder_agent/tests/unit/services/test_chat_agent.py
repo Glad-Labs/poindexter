@@ -402,3 +402,67 @@ class TestLifecycle:
         events, _ = _run(monkeypatch, fs, completions=[_completion(text="ok")])
         for event in events:
             json.dumps(event)
+
+
+@pytest.mark.unit
+class TestTextualToolCallRecovery:
+    """The qwen text-encoded tool-call leak (live 2026-08-01) is recovered
+    into the normal gated path instead of surfacing as raw JSON prose."""
+
+    def test_textual_call_is_executed_not_printed(self, monkeypatch):
+        async def handler(ctx, **kwargs):
+            assert kwargs == {"limit": 3}
+            return "3 task(s)"
+
+        specs = {"list_tasks": _spec("list_tasks", handler)}
+        leaked = (
+            '{"id": "call_79f1", "type": "function", "function": '
+            '{"name": "list_tasks", "arguments": {"limit": 3}}}'
+        )
+        fs = FakeStore()
+        events, audits = _run(
+            monkeypatch, fs, tool_specs=specs,
+            completions=[
+                _completion(text=leaked),
+                _completion(text="There are 3 tasks."),
+            ],
+        )
+        kinds = [e["event"] for e in events]
+        assert "tool_start" in kinds and "tool_result" in kinds
+        assert events[-1]["turn_status"] == "complete"
+        final_text = [e for e in events if e["event"] == "text"][0]["text"]
+        assert "call_79f1" not in final_text
+        assert audits and audits[0]["tool"] == "list_tasks"
+
+    def test_fenced_textual_call_recovers(self, monkeypatch):
+        async def handler(ctx, **kwargs):
+            return "ok"
+
+        specs = {"get_budget": _spec("get_budget", handler)}
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs, tool_specs=specs,
+            completions=[
+                _completion(
+                    text='```json\n{"name": "get_budget", "arguments": {}}\n```'
+                ),
+                _completion(text="done"),
+            ],
+        )
+        assert any(e["event"] == "tool_result" and e["ok"] for e in events)
+
+    def test_prose_mentioning_json_stays_prose(self, monkeypatch):
+        fs = FakeStore()
+        text = 'The payload looks like {"name": "x"} but here is your answer.'
+        events, _ = _run(monkeypatch, fs, completions=[_completion(text=text)])
+        assert [e["event"] for e in events] == ["turn_started", "text", "done"]
+        assert events[1]["text"] == text
+
+    def test_non_toolcall_json_stays_prose(self, monkeypatch):
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs,
+            completions=[_completion(text='{"amount_spent": 4.31}')],
+        )
+        assert events[1]["event"] == "text"
+        assert "amount_spent" in events[1]["text"]

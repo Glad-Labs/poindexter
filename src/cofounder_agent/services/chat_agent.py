@@ -71,6 +71,53 @@ _UNKNOWN_TOOL = (
 _BAD_ARGS = "Could not parse arguments for {name}: {error}. Send valid JSON."
 
 
+def _textual_tool_calls(text: str) -> list[dict[str, Any]] | None:
+    """Recover tool calls a model emitted as TEXT instead of tool_calls.
+
+    Live failure mode (qwen2.5:7b, 2026-08-01 verification turn): the model
+    printed ``{"id": "call_…", "type": "function", "function": {"name": …}}``
+    in the content channel and the loop accepted it as the final answer —
+    the visible reply was raw JSON. Same class as the writer-path envelope
+    leak (``llm_text.maybe_unwrap_json`` / feedback_reasoning_models_empty_json);
+    same cure: recover the intent deterministically. Only fires when the
+    ENTIRE text (minus an optional ```json fence) parses as a tool-call
+    shape — prose that merely mentions JSON stays prose. Recovered calls
+    re-enter the normal per-call machinery (permission gates, repeat guard,
+    caps, audit), so this changes robustness, never policy.
+    """
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`").strip()
+        if t.lower().startswith("json"):
+            t = t[4:].strip()
+    if not t or t[0] not in "[{":
+        return None
+    try:
+        payload = json.loads(t)
+    except ValueError:
+        return None
+    items = payload if isinstance(payload, list) else [payload]
+    calls: list[dict[str, Any]] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            return None
+        fn = item.get("function") if isinstance(item.get("function"), dict) else item
+        name = fn.get("name")
+        if not isinstance(name, str) or not name:
+            return None
+        arguments = fn.get("arguments", {})
+        if isinstance(arguments, dict):
+            arguments = json.dumps(arguments)
+        elif not isinstance(arguments, str):
+            return None
+        calls.append({
+            "id": item.get("id") or f"textcall_{i}",
+            "name": name,
+            "arguments": arguments,
+        })
+    return calls or None
+
+
 def _digest(text: str, max_chars: int) -> str:
     text = (text or "").strip()
     if len(text) <= max_chars:
@@ -234,7 +281,19 @@ async def run_turn(
             completion_tokens += int(completion.completion_tokens or 0)
             cost_usd += float((completion.raw or {}).get("response_cost") or 0.0)
 
-            if not completion.tool_calls:
+            turn_tool_calls = completion.tool_calls
+            if not turn_tool_calls:
+                # Recover tool calls the model text-encoded (see
+                # _textual_tool_calls) — they re-enter the normal gated
+                # path below instead of leaking JSON into the thread.
+                recovered = _textual_tool_calls(completion.text)
+                if recovered and executed < max_tool_calls:
+                    logger.warning(
+                        "[chat] recovered %d textual tool call(s) from the "
+                        "content channel (model=%s)", len(recovered), model,
+                    )
+                    turn_tool_calls = recovered
+            if not turn_tool_calls:
                 final_text = (completion.text or "").strip()
                 if not final_text:
                     final_text = (
@@ -259,11 +318,11 @@ async def run_turn(
                             "arguments": tc["arguments"] or "{}",
                         },
                     }
-                    for i, tc in enumerate(completion.tool_calls)
+                    for i, tc in enumerate(turn_tool_calls)
                 ],
             })
 
-            for i, tc in enumerate(completion.tool_calls):
+            for i, tc in enumerate(turn_tool_calls):
                 call_id = tc["id"] or f"call_{i}"
                 name = tc["name"]
                 raw_args = tc["arguments"] or "{}"
