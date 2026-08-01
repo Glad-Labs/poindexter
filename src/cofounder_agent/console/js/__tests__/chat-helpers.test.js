@@ -357,3 +357,16 @@ test('threadFingerprint: moves on new messages, status flips, and card stamps', 
   assert.notEqual(PXChat.threadFingerprint(repaired), f0);
   assert.equal(PXChat.threadFingerprint(null), '');
 });
+
+test('expandSlash: self-contained commands send; argument-takers insert', () => {
+  const PXChat = load();
+  const brief = PXChat.expandSlash('/brief');
+  assert.ok(brief.send && brief.send.includes('status briefing'));
+  const bare = PXChat.expandSlash('/create-post');
+  assert.ok(bare.insert && bare.insert.startsWith('Write a post about'));
+  const withArgs = PXChat.expandSlash('/create-post edge caching patterns');
+  assert.equal(withArgs.send, 'Write a post about edge caching patterns');
+  assert.equal(PXChat.expandSlash('hello /brief'), null);
+  assert.equal(PXChat.expandSlash('/unknown'), null);
+  assert.equal(PXChat.expandSlash(''), null);
+});

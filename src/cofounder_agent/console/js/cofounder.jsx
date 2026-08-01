@@ -503,8 +503,19 @@ function CfComposer({ value, setValue, onSend, disabled, onStop }) {
   const slash = PXChat.slashMatches(value);
   const taRef = React.useRef(null);
   const send = () => {
-    const text = (value || '').trim();
+    let text = (value || '').trim();
     if (!text || disabled) return;
+    // Enter expands slash commands instead of sending them literally
+    // ('/brief' went out as-is in the first live session). An
+    // argument-taking command with no argument drops its template into
+    // the composer for completion rather than sending a bare stub.
+    const expanded = PXChat.expandSlash(text);
+    if (expanded && expanded.insert) {
+      setValue(expanded.insert);
+      if (taRef.current) taRef.current.focus();
+      return;
+    }
+    if (expanded && expanded.send) text = expanded.send;
     onSend(text);
   };
   return (

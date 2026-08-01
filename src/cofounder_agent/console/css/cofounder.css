@@ -13,6 +13,16 @@
   padding: 14px 18px 18px;
   min-height: 0;
 }
+/* Chat mode owns its own scroll regions (thread / list / rail). Locking
+   the shared .main scroller kills the ghost state a mid-resize or
+   mid-load paint can leave behind: a stale-height grid inside a
+   scrollable parent renders duplicated bands + dead space below the
+   composer (operator screenshot, 2026-08-01). With overflow hidden the
+   page can never scroll past the live grid, so a stale paint self-heals
+   on the next frame instead of lingering. */
+.mode-cofounder .main {
+  overflow: hidden;
+}
 
 /* ── conversation list ─────────────────────────────────────── */
 .cf-list {

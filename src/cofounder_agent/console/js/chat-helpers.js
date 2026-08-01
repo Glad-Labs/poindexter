@@ -210,6 +210,31 @@
     return SLASH.filter((s) => s.cmd.startsWith(q));
   }
 
+  // Enter-time slash expansion. The first live session sent '/brief' as a
+  // LITERAL message (the menu only expanded on click). Rules:
+  //   '/brief'                → {send: <template>}       (self-contained)
+  //   '/create-post'          → {insert: <template>}     (needs an argument
+  //                             — trailing-space templates must not send bare)
+  //   '/create-post edge x'   → {send: <template + args>}
+  //   anything else           → null (send literally, as typed)
+  function expandSlash(input) {
+    const t = (input || '').trim();
+    if (!t || t[0] !== '/') return null;
+    for (const s of SLASH) {
+      if (t.toLowerCase() === s.cmd) {
+        return s.text.endsWith(' ')
+          ? { insert: s.text }
+          : { send: s.text.trim() };
+      }
+      if (t.toLowerCase().startsWith(s.cmd + ' ')) {
+        const args = t.slice(s.cmd.length + 1).trim();
+        const joiner = s.text.endsWith(' ') ? '' : ' ';
+        return { send: (s.text + joiner + args).trim() };
+      }
+    }
+    return null;
+  }
+
   // Cheap change-detection fingerprint for a loaded thread. The open
   // thread refresh-polls (watcher completion messages land server-side
   // with no push channel), and re-setting identical state every poll
@@ -264,6 +289,7 @@
     statusMeta,
     suggestedPrompts,
     slashMatches,
+    expandSlash,
     threadFingerprint,
     watchProgress,
     SLASH,
