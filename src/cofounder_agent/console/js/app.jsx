@@ -1589,6 +1589,7 @@ function App() {
         <div className="modeswitch">
           {[
             ['console', 'overview', 'Console'],
+            ['cofounder', 'brain', 'Chat'],
             ['trace', 'pulse', 'Trace'],
             ['map', 'gpu', 'Map'],
             ['wall', 'overview', 'Wall'],

@@ -493,3 +493,25 @@ test('live: chatSend abort surfaces as AbortError to the caller', async () => {
     (e) => e.name === 'AbortError'
   );
 });
+
+test('live: the #745 error envelope (error_code/message) surfaces the message, not raw JSON', async () => {
+  const { api } = makeAdapter({
+    live: true,
+    apiHandler: () =>
+      res(
+        {
+          error_code: 'FORBIDDEN',
+          message:
+            'The Cofounder chat surface is disabled. Enable it with `poindexter settings set console_chat_enabled true`',
+          request_id: 'req-1',
+        },
+        403
+      ),
+  });
+  await assert.rejects(
+    () => api.chatTools(),
+    (e) =>
+      e.message.includes('console_chat_enabled') &&
+      !e.message.includes('error_code')
+  );
+});

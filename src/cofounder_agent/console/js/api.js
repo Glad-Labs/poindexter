@@ -219,7 +219,11 @@
       let detail = bodyText;
       try {
         const body = JSON.parse(bodyText);
-        const d = body && (body.detail ?? body.error);
+        // Three envelopes in the wild: FastAPI's {detail}, this app's
+        // legacy {error}, and the #745 response contract's
+        // {error_code, message, request_id} — read all three so a toast
+        // shows the human message, never the raw JSON blob.
+        const d = body && (body.detail ?? body.error ?? body.message);
         if (d != null) detail = typeof d === 'string' ? d : JSON.stringify(d);
       } catch {
         // Not JSON — use the raw body text as-is.
@@ -262,7 +266,7 @@
       let detail = bodyText;
       try {
         const b = JSON.parse(bodyText);
-        const d = b && (b.detail ?? b.error);
+        const d = b && (b.detail ?? b.error ?? b.message);
         if (d != null) detail = typeof d === 'string' ? d : JSON.stringify(d);
       } catch {
         // Not JSON — raw text as-is.
