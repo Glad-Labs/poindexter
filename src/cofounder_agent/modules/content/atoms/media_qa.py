@@ -93,7 +93,9 @@ ATOM_META = AtomMeta(
         FieldSpec(name="short_shot_list", type="dict", description="9:16 director shot list (total_duration_s)", required=False),
         FieldSpec(name="long_narration_audio_path", type="str", description="long narration MP3 — the A/V-sync reference when present", required=False),
         FieldSpec(name="short_narration_audio_path", type="str", description="short narration MP3 — the A/V-sync reference when present", required=False),
-        FieldSpec(name="caption_srt_path", type="str", description="burned-in SRT path ('' when unavailable)", required=False),
+        FieldSpec(name="long_caption_srt_path", type="str", description="long lane's SRT path — Check B reads per-lane since #689", required=False),
+        FieldSpec(name="short_caption_srt_path", type="str", description="short lane's SRT path — Check B reads per-lane since #689", required=False),
+        FieldSpec(name="caption_srt_path", type="str", description="legacy shared SRT path (pre-#689 fallback)", required=False),
         FieldSpec(name="site_config", type="object", description="DI seam (QA thresholds / vision model)", required=False),
         FieldSpec(name="platform", type="object", description="capability handle — platform.dispatch for the vision LLM call (Seam 1, #667)", required=False),
         FieldSpec(name="database_service", type="object", description="DB service (pool source)", required=False),
@@ -324,8 +326,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     try:
         tolerance = _resolve_tolerance(site_config)
-        caption_present = bool(state.get("caption_srt_path"))
-        captions_finding_emitted = False
 
         # The renderer's deliberate post-voice outro beat (silent-tail fix) —
         # the video may outlive the narration by this much before it's a
@@ -456,24 +456,35 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     )
 
             # --- Check B: caption presence (deterministic, advisory) ---
+            # Per-lane since #689: media.transcribe_narration writes
+            # long_caption_srt_path / short_caption_srt_path, and each render
+            # burns its own lane's track. This check read the pre-#689 shared
+            # caption_srt_path key long after it went permanently empty, so it
+            # emitted a false missing_captions on EVERY render while the
+            # actual per-lane captions were transcribed and burned fine
+            # (caught 2026-08-01: e68e's SRTs were on disk, finding fired
+            # anyway). Legacy key kept as a fallback for the podcast-era path.
+            caption_present = bool(
+                state.get(f"{label}_caption_srt_path")
+                or state.get("caption_srt_path"),
+            )
             asset["caption_present"] = caption_present
-            if not caption_present and not captions_finding_emitted:
-                # Emit ONCE total — the captions are shared across both renders.
+            if not caption_present:
                 emit_finding(
                     source="media.qa",
                     kind="missing_captions",
                     title=f"{label} video has no caption track",
                     body=(
-                        f"No caption_srt_path on state for task {task_id} — the "
-                        "rendered videos have no burned-in captions (ASR was "
-                        "unavailable upstream, e.g. whisper not installed). "
-                        "Captions are best-effort; advisory only."
+                        f"No {label}_caption_srt_path on state for task "
+                        f"{task_id} — the rendered {label} video has no "
+                        "burned-in captions (ASR was unavailable upstream, "
+                        "e.g. whisper not installed). Captions are "
+                        "best-effort; advisory only."
                     ),
                     severity="info",
-                    dedup_key=f"missing_captions:{task_id}",
-                    extra={"task_id": str(task_id or "")},
+                    dedup_key=f"missing_captions:{task_id}:{label}",
+                    extra={"task_id": str(task_id or ""), "label": label},
                 )
-                captions_finding_emitted = True
 
             # --- Check C: frame human-detection (vision, gated + fail-soft) ---
             human_detection = await _detect_human_in_frame(

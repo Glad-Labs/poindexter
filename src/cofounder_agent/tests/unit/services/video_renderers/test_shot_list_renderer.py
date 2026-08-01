@@ -1574,7 +1574,33 @@ class TestRenderCheckLoop:
             timeline.append(("score", shot.idx))
             return ShotQAResult(score=90.0, reason="great")
 
+        # poindexter#966: heroes route through the split still/animate helpers,
+        # not _render_one_shot — record both halves as "render" so the
+        # anti-thrash invariant (every render precedes every score) keeps
+        # covering the whole two-phase pass.
+        async def _fake_hero_still(shot, **kwargs):
+            timeline.append(("render", shot.idx))
+            still = str(tmp_path / f"shot_{shot.idx:02d}.png")
+            with open(still, "wb") as fh:
+                fh.write(b"png")
+            return ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path=still, duration_s=shot.duration_s,
+            )
+
+        async def _fake_animate(shot, *, still_path, **kwargs):
+            timeline.append(("render", shot.idx))
+            clip = str(tmp_path / f"shot_{shot.idx:02d}.mp4")
+            with open(clip, "wb") as fh:
+                fh.write(b"mp4")
+            return ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path=clip, duration_s=shot.duration_s,
+            )
+
         with patch.object(mod, "_render_one_shot", _fake_render), \
+             patch.object(mod, "_render_hero_still", _fake_hero_still), \
+             patch.object(mod, "_animate_hero", _fake_animate), \
              patch.object(mod, "score_shot_frame", _fake_score), \
              patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
@@ -1586,7 +1612,8 @@ class TestRenderCheckLoop:
 
         assert result.success is True
         # All three passed (90 ≥ 60) → each scored exactly once, no repair.
-        assert [k for k, _ in timeline].count("render") == 3
+        # 4 render events: idx0 + idx2 stills, and the hero's still + animate.
+        assert [k for k, _ in timeline].count("render") == 4
         assert [k for k, _ in timeline].count("score") == 3
         render_positions = [i for i, (k, _) in enumerate(timeline) if k == "render"]
         score_positions = [i for i, (k, _) in enumerate(timeline) if k == "score"]
@@ -1731,6 +1758,128 @@ class TestRenderBrandCard:
         # above the ~11px bitmap floor that would prove the size was ignored.
         assert large_h > small_h * 2
         assert large_h > 40
+
+
+class TestRenderPassHeroOrdering:
+    """poindexter#966: the render pass is two VRAM-coherent phases — every
+    image-gen call (non-hero shots AND hero init stills) completes before ANY
+    wan animation, so the hero path's image-gen hard-unload can no longer
+    poison the rest of the pass (e68e4fe8 substituted the identical 4 shots
+    on two consecutive renders because a mid-list hero evicted image-gen)."""
+
+    def _mixed_shots(self):
+        return [
+            Shot(idx=0, duration_s=5.0, intent="open", source="image_gen",
+                 prompt="abstract gradient one", narration_offset_s=0.0),
+            Shot(idx=1, duration_s=5.0, intent="hero a", source="generative",
+                 prompt="hero subject one", motion="slow push-in",
+                 narration_offset_s=5.0),
+            Shot(idx=2, duration_s=5.0, intent="mid", source="image_kenburns",
+                 prompt="abstract gradient two", kenburns_zoom=(1.0, 1.1),
+                 narration_offset_s=10.0),
+            Shot(idx=3, duration_s=5.0, intent="hero b", source="generative",
+                 prompt="hero subject two", motion="gentle parallax",
+                 narration_offset_s=15.0),
+            Shot(idx=4, duration_s=5.0, intent="close", source="holdover",
+                 narration_offset_s=20.0),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_all_stills_render_before_any_wan_animation(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        calls: list[str] = []
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            calls.append(f"image_gen:{prompt}")
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        async def fake_clip(*, prompt, output_path, image_path, **kwargs):
+            calls.append(f"wan:{image_path}")
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True, ""
+
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-order",
+        )
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_generative_clip", fake_clip):
+            states = await slr._render_pass(
+                self._mixed_shots(), render_kwargs=render_kwargs,
+            )
+
+        # Phase property: every image-gen call precedes every wan call.
+        first_wan = next(i for i, c in enumerate(calls) if c.startswith("wan:"))
+        assert all(not c.startswith("image_gen:") for c in calls[first_wan:]), calls
+        # 4 image-gen renders (idx 0 + idx 2 stills, idx 1 + idx 3 hero
+        # init stills — idx 4 is a holdover) then 2 wan animations.
+        assert sum(c.startswith("image_gen:") for c in calls) == 4
+        assert sum(c.startswith("wan:") for c in calls) == 2
+
+        # Results keyed to the right shots: heroes end as .mp4 clips.
+        by_idx = {st.shot.idx: st for st in states}
+        assert by_idx[1].result.success and by_idx[1].result.clip_path.endswith(".mp4")
+        assert by_idx[3].result.success and by_idx[3].result.clip_path.endswith(".mp4")
+        # The trailing holdover re-pointed from the hero's interim still to
+        # the finished clip (pre-split semantics preserved).
+        assert by_idx[4].is_reused
+        assert by_idx[4].result.clip_path == by_idx[3].result.clip_path
+
+    @pytest.mark.asyncio
+    async def test_failed_hero_animation_falls_back_to_its_still(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        async def fake_clip(*, prompt, output_path, image_path, **kwargs):
+            return False, "wan OOM"
+
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-fb",
+        )
+        shots = [s for s in self._mixed_shots() if s.idx in (0, 1)]
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_generative_clip", fake_clip), \
+             patch.object(slr, "_emit_hero_fallback_finding") as fb:
+            states = await slr._render_pass(shots, render_kwargs=render_kwargs)
+
+        hero = next(st for st in states if st.shot.idx == 1)
+        assert hero.result.success
+        assert hero.result.clip_path.endswith(".png")  # Ken-Burns still fallback
+        fb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_failed_hero_still_reaches_backfill_ladder(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            return False
+
+        async def fake_clip(*args, **kwargs):
+            raise AssertionError("wan must not be called when the still failed")
+
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-nostill",
+        )
+        shots = [s for s in self._mixed_shots() if s.idx == 1]
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_generative_clip", fake_clip):
+            states = await slr._render_pass(shots, render_kwargs=render_kwargs)
+
+        assert states[0].result.success is False
+        assert "still render failed" in (states[0].result.error or "")
 
 
 class TestBackfillPass:

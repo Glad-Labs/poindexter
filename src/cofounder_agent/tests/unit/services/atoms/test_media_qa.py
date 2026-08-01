@@ -312,6 +312,30 @@ async def test_av_sync_falls_back_to_plan_without_narration(tmp_path):
     assert result["av_sync_reference"] == "plan"
 
 
+@pytest.mark.asyncio
+async def test_captions_present_via_per_lane_key(tmp_path):
+    """#689 made captions per-lane (long_caption_srt_path); Check B read the
+    dead shared key and false-alarmed missing_captions on every render while
+    the per-lane SRTs were transcribed and burned fine (2026-08-01 e68e)."""
+    long_video = _existing_file(tmp_path, "long.mp4")
+    mock_emit = MagicMock()
+    state = {
+        "task_id": "t-lane-cap",
+        "long_video_path": long_video,
+        "video_shot_list": {"total_duration_s": 60.0},
+        "long_caption_srt_path": str(tmp_path / "long.srt"),
+        "site_config": _site_config(media_qa_frame_detection_enabled="false"),
+    }
+    with patch.object(media_qa, "_probe_duration", AsyncMock(return_value=60.0)), patch.object(
+        media_qa, "emit_finding", mock_emit
+    ):
+        out = await qa_run(state)
+
+    assert out["media_qa_result"]["long"]["caption_present"] is True
+    kinds = [c.kwargs.get("kind") for c in mock_emit.call_args_list]
+    assert "missing_captions" not in kinds
+
+
 # ---------------------------------------------------------------------------
 # Check B — caption presence
 # ---------------------------------------------------------------------------
@@ -341,8 +365,9 @@ async def test_captions_present_no_finding(tmp_path):
 
 @pytest.mark.asyncio
 async def test_captions_absent_emits_finding_once(tmp_path):
-    """No caption_srt_path → caption_present False on every asset, but the
-    missing_captions finding is emitted ONCE total (dedup_key handles it)."""
+    """No caption path on EITHER lane → caption_present False per asset and
+    one missing_captions finding PER LANE (per-lane since the #689 caption
+    split — the old once-total emit hid which lane lacked its track)."""
     long_video = _existing_file(tmp_path, "long.mp4")
     short_video = _existing_file(tmp_path, "short.mp4")
     mock_emit = MagicMock()
@@ -364,8 +389,9 @@ async def test_captions_absent_emits_finding_once(tmp_path):
     assert result["long"]["caption_present"] is False
     assert result["short"]["caption_present"] is False
     missing = [c for c in mock_emit.call_args_list if c.kwargs.get("kind") == "missing_captions"]
-    assert len(missing) == 1
-    assert missing[0].kwargs["severity"] == "info"
+    assert len(missing) == 2
+    assert {c.kwargs["extra"]["label"] for c in missing} == {"long", "short"}
+    assert all(c.kwargs["severity"] == "info" for c in missing)
 
 
 # ---------------------------------------------------------------------------

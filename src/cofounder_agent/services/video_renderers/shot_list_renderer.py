@@ -1100,72 +1100,22 @@ async def _render_one_shot(
         )
 
     if source in ("generative", "wan21"):
-        if not shot.prompt:
-            return ShotRenderResult(
-                idx=shot.idx,
-                source=source,
-                success=False,
-                error=f"{source} shot missing prompt",
-            )
-        # Render the stylized image-gen still FIRST — it's both the image-to-video
-        # init frame and the Ken-Burns fallback if the clip render misses
-        # (spec §3.3). If even the still fails there's nothing to animate or
-        # fall back to, so the shot hard-fails. The still is requested at the
-        # lane's hero geometry so the i2v init frame needs no crop/stretch and
-        # the Ken-Burns fallback fills the frame.
-        hero_w, hero_h, hero_fps = _hero_render_dims(orientation, site_config)
-        still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
-        _render_default = default_int("image_render_timeout_seconds")
-        render_timeout = (
-            site_config.get_int("image_render_timeout_seconds", _render_default)
-            if site_config is not None else _render_default
-        )
-        still_ok = await _render_image_gen_image(
-            prompt=shot.prompt,
-            output_path=still_path,
+        still_result = await _render_hero_still(
+            shot,
+            work_dir=work_dir,
             image_gen_url=image_gen_url,
-            http_client_factory=http_client_factory,
-            render_timeout=render_timeout,
-            width=hero_w,
-            height=hero_h,
-        )
-        if not still_ok:
-            return ShotRenderResult(
-                idx=shot.idx,
-                source=source,
-                success=False,
-                error="generative shot: image-gen still render failed",
-            )
-        clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
-        clip_ok, clip_error = await _render_generative_clip(
-            prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
-            output_path=clip_path,
-            image_path=still_path,
-            duration_s=int(shot.duration_s),
             site_config=site_config,
-            width=hero_w,
-            height=hero_h,
-            fps=hero_fps,
+            http_client_factory=http_client_factory,
+            orientation=orientation,
         )
-        if clip_ok:
-            return ShotRenderResult(
-                idx=shot.idx,
-                source=source,
-                success=True,
-                clip_path=clip_path,
-                duration_s=shot.duration_s,
-            )
-        # i2v miss → fall back to the still. The compositor applies Ken Burns
-        # to a PNG scene automatically, so returning the still path is all it
-        # takes; emit a finding so the operator sees the degrade. NOT a
-        # holdover of the prior clip (spec §3.3).
-        _emit_hero_fallback_finding(shot=shot, post_id=post_id, reason=clip_error)
-        return ShotRenderResult(
-            idx=shot.idx,
-            source=source,
-            success=True,
-            clip_path=still_path,
-            duration_s=shot.duration_s,
+        if not still_result.success or not still_result.clip_path:
+            return still_result
+        return await _animate_hero(
+            shot,
+            still_path=still_result.clip_path,
+            site_config=site_config,
+            orientation=orientation,
+            post_id=post_id,
         )
 
     return ShotRenderResult(
@@ -1173,6 +1123,118 @@ async def _render_one_shot(
         source=source,
         success=False,
         error=f"unknown source {source!r}",
+    )
+
+
+async def _render_hero_still(
+    shot: Shot,
+    *,
+    work_dir: Path,
+    image_gen_url: str,
+    site_config: Any,
+    http_client_factory: Any,
+    orientation: str,
+) -> ShotRenderResult:
+    """Render a hero shot's stylized image-gen INIT still (poindexter#966).
+
+    Split out of the generative branch so ``_render_pass`` can produce every
+    hero's still during the still phase — while image-gen is resident — and
+    defer the wan animation to the hero phase. The still is both the
+    image-to-video init frame and the Ken-Burns fallback if the clip render
+    misses (spec §3.3); if even the still fails there's nothing to animate or
+    fall back to, so the shot hard-fails into the backfill ladder. Requested
+    at the lane's hero geometry so the i2v init frame needs no crop/stretch
+    and the Ken-Burns fallback fills the frame.
+    """
+    if not shot.prompt:
+        return ShotRenderResult(
+            idx=shot.idx,
+            source=shot.source,
+            success=False,
+            error=f"{shot.source} shot missing prompt",
+        )
+    hero_w, hero_h, _hero_fps = _hero_render_dims(orientation, site_config)
+    still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
+    _render_default = default_int("image_render_timeout_seconds")
+    render_timeout = (
+        site_config.get_int("image_render_timeout_seconds", _render_default)
+        if site_config is not None else _render_default
+    )
+    still_ok = await _render_image_gen_image(
+        prompt=shot.prompt,
+        output_path=still_path,
+        image_gen_url=image_gen_url,
+        http_client_factory=http_client_factory,
+        render_timeout=render_timeout,
+        width=hero_w,
+        height=hero_h,
+    )
+    if not still_ok:
+        return ShotRenderResult(
+            idx=shot.idx,
+            source=shot.source,
+            success=False,
+            error="generative shot: image-gen still render failed",
+        )
+    return ShotRenderResult(
+        idx=shot.idx,
+        source=shot.source,
+        success=True,
+        clip_path=still_path,
+        duration_s=shot.duration_s,
+    )
+
+
+async def _animate_hero(
+    shot: Shot,
+    *,
+    still_path: str,
+    site_config: Any,
+    orientation: str,
+    post_id: str,
+) -> ShotRenderResult:
+    """Animate a hero shot's pre-rendered still via wan (poindexter#966).
+
+    The wan-side half of the generative branch. ``_render_generative_clip``
+    hard-unloads image-gen before the wan load (#907 defect 2) — running the
+    animations only AFTER every still has rendered means that unload fires
+    when image-gen has no work left this pass, so it can no longer poison
+    the remaining image-gen-family shots (the 2026-08-01 e68e renders
+    substituted the identical 4 shots twice because the first mid-list hero
+    evicted image-gen while ~24 GB of wan crowded the card).
+
+    On an i2v miss the shot falls back to its own still (the compositor
+    applies Ken Burns to a PNG scene automatically) with a
+    ``hero_render_fallback`` finding — NOT a holdover of the prior clip
+    (spec §3.3).
+    """
+    hero_w, hero_h, hero_fps = _hero_render_dims(orientation, site_config)
+    clip_path = str(Path(still_path).with_suffix(".mp4"))
+    clip_ok, clip_error = await _render_generative_clip(
+        prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
+        output_path=clip_path,
+        image_path=still_path,
+        duration_s=int(shot.duration_s),
+        site_config=site_config,
+        width=hero_w,
+        height=hero_h,
+        fps=hero_fps,
+    )
+    if clip_ok:
+        return ShotRenderResult(
+            idx=shot.idx,
+            source=shot.source,
+            success=True,
+            clip_path=clip_path,
+            duration_s=shot.duration_s,
+        )
+    _emit_hero_fallback_finding(shot=shot, post_id=post_id, reason=clip_error)
+    return ShotRenderResult(
+        idx=shot.idx,
+        source=shot.source,
+        success=True,
+        clip_path=still_path,
+        duration_s=shot.duration_s,
     )
 
 
@@ -1199,36 +1261,98 @@ async def _render_pass(
     render_kwargs: dict[str, Any],
     progress_cb: ProgressCb | None = None,
 ) -> list[_ShotState]:
-    """Render every shot once, with the image model resident across the pass.
+    """Render every shot once, in two VRAM-coherent phases (poindexter#966).
+
+    **Still phase** — every shot in list order, with image-gen resident for
+    the whole phase: non-hero shots render fully via ``_render_one_shot``;
+    hero shots render ONLY their image-gen init still
+    (``_render_hero_still``). **Hero phase** — each pending hero's still is
+    animated via wan (``_animate_hero``). The first animation hard-unloads
+    image-gen for the wan load (#907 defect 2, via
+    ``_render_generative_clip``); ordering the phases this way means that
+    unload fires when image-gen has NO work left this pass. Before the split,
+    a mid-list hero evicted image-gen while ~24 GB of wan crowded the card,
+    so every later image-gen-family shot — and every later hero's own init
+    still — failed deterministically into a Pexels substitute (2026-08-01:
+    task e68e4fe8 rendered twice and substituted the identical 4 shots both
+    times).
 
     Threads ``render_prior`` (the last successful fresh clip) so holdover and
     pexels-miss shots resolve against the prior clip exactly as the old
-    sequential loop did. The key property: only ``image_gen`` / ``wan21`` shots
-    touch the GPU here, and nothing scores, so image-gen loads once and stays warm
-    for the whole pass instead of being evicted by a per-shot vision call.
+    sequential loop did. During the still phase a hero's ``render_prior``
+    contribution is its still; after the hero phase, any reused result that
+    held a hero's still is re-pointed to the finished clip so a
+    holdover-after-hero carries the animated clip exactly as before the
+    split.
 
     ``is_reused`` flags a shot whose result reused the prior clip (a holdover,
     or a pexels miss that held over) — those are never scored (the prior clip
     was already vetted) and get re-pointed to the post-QA prior in finalize.
 
-    ``progress_cb`` (best-effort) fires ``("shot i/N", pct)`` at the top of each
-    shot, where ``pct`` is honest shot POSITION (``i/total``), capped 1..99 —
+    ``progress_cb`` (best-effort) fires ``("shot i/N", pct)`` at the top of
+    each still-phase shot and ``("hero clip j/M", pct)`` per animation —
     the media pulse row's real per-shot progress.
     """
     states: list[_ShotState] = []
     render_prior: str | None = None
     total = len(shots)
+    pending_heroes: list[_ShotState] = []
     for i, shot in enumerate(shots, start=1):
         pct = min(99, max(1, round(100 * i / total))) if total else None
         await _safe_progress(progress_cb, f"shot {i}/{total}", pct)
-        result = await _render_one_shot(shot, prior_clip=render_prior, **render_kwargs)
-        is_reused = bool(
-            result.success and result.clip_path
-            and result.clip_path == render_prior,
-        )
-        states.append(_ShotState(shot=shot, result=result, is_reused=is_reused))
+        if shot.source in _HERO_SOURCES:
+            result = await _render_hero_still(
+                shot,
+                work_dir=render_kwargs["work_dir"],
+                image_gen_url=render_kwargs["image_gen_url"],
+                site_config=render_kwargs["site_config"],
+                http_client_factory=render_kwargs["http_client_factory"],
+                orientation=render_kwargs["orientation"],
+            )
+            state = _ShotState(shot=shot, result=result, is_reused=False)
+            if result.success and result.clip_path:
+                pending_heroes.append(state)
+        else:
+            result = await _render_one_shot(
+                shot, prior_clip=render_prior, **render_kwargs,
+            )
+            state = _ShotState(
+                shot=shot,
+                result=result,
+                is_reused=bool(
+                    result.success and result.clip_path
+                    and result.clip_path == render_prior,
+                ),
+            )
+        states.append(state)
         if result.success and result.clip_path:
             render_prior = result.clip_path
+
+    # Hero phase: animate every pre-rendered still. The first
+    # _render_generative_clip call hard-unloads image-gen (once — later calls
+    # find nothing_to_reclaim); by now image-gen's work this pass is done.
+    hero_total = len(pending_heroes)
+    for j, state in enumerate(pending_heroes, start=1):
+        await _safe_progress(progress_cb, f"hero clip {j}/{hero_total}", None)
+        still_path = state.result.clip_path or ""
+        state.result = await _animate_hero(
+            state.shot,
+            still_path=still_path,
+            site_config=render_kwargs["site_config"],
+            orientation=render_kwargs["orientation"],
+            post_id=render_kwargs.get("post_id", ""),
+        )
+        # A holdover/pexels-miss that reused this hero's STILL during the
+        # still phase now points at the finished clip — the pre-split
+        # semantics, where a post-hero holdover carried the animated clip.
+        if (
+            state.result.success
+            and state.result.clip_path
+            and state.result.clip_path != still_path
+        ):
+            for other in states:
+                if other.is_reused and other.result.clip_path == still_path:
+                    other.result.clip_path = state.result.clip_path
     return states
 
 
