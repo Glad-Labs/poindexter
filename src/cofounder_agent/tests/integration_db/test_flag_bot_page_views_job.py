@@ -31,6 +31,7 @@ def _config():
                 "beacon_flood_window_hours": "24",
                 "beacon_flood_cap_per_window": "20",
                 "beacon_flood_backfill_cap": "30",
+                "beacon_sweep_max_distinct_paths": "25",
             }
         )
     }
@@ -134,3 +135,60 @@ async def test_backfill_sentinel_runs_once(test_pool) -> None:
     # Second run: sentinel set → no backfill.
     result2 = await FlagBotPageViewsJob().run(test_pool, _config())
     assert result2.metrics["backfill_ran"] == 0
+
+
+async def test_path_sweep_flags_window_only(test_pool) -> None:
+    """The distinct-paths sweep (poindexter#973): a UA visiting >cap distinct
+    paths in the window has its WINDOW rows flagged — rows outside the window
+    and modest browsing stay human (bare UA strings are shared across people)."""
+    async with test_pool.acquire() as conn:
+        async with conn.transaction():
+            await _reset(conn)
+            # Full-site crawl: 30 distinct paths in-window (over cap 25).
+            await conn.execute(
+                "INSERT INTO page_views (path, slug, user_agent, created_at) "
+                "SELECT '/posts/p' || g, 'p' || g, 'crawler-ua', now() "
+                "FROM generate_series(1, 30) g"
+            )
+            # Same UA, 2 rows OUTSIDE the 24h window — must stay human.
+            await conn.execute(
+                "INSERT INTO page_views (path, slug, user_agent, created_at) "
+                "VALUES ('/posts/old1', 'old1', 'crawler-ua', now() - interval '3 days'), "
+                "('/posts/old2', 'old2', 'crawler-ua', now() - interval '3 days')"
+            )
+            # Ordinary reader: 5 distinct paths, far under cap.
+            await conn.execute(
+                "INSERT INTO page_views (path, slug, user_agent, created_at) "
+                "SELECT '/posts/r' || g, 'r' || g, 'reader-ua', now() "
+                "FROM generate_series(1, 5) g"
+            )
+            # Boundary: exactly 25 distinct paths → NOT flagged (HAVING > cap).
+            await conn.execute(
+                "INSERT INTO page_views (path, slug, user_agent, created_at) "
+                "SELECT '/posts/b' || g, 'b' || g, 'boundary-ua', now() "
+                "FROM generate_series(1, 25) g"
+            )
+
+    result = await FlagBotPageViewsJob().run(test_pool, _config())
+    assert result.ok is True
+
+    async with test_pool.acquire() as conn:
+        swept = await conn.fetchval(
+            "SELECT COUNT(*) FROM page_views "
+            "WHERE user_agent='crawler-ua' AND is_bot=true "
+            "AND bot_reason='sweep:ua_distinct_paths'"
+        )
+        old_spared = await conn.fetchval(
+            "SELECT COUNT(*) FROM page_views "
+            "WHERE user_agent='crawler-ua' AND is_bot=false"
+        )
+        reader = await conn.fetchval(
+            "SELECT COUNT(*) FROM page_views WHERE user_agent='reader-ua' AND is_bot=true"
+        )
+        boundary = await conn.fetchval(
+            "SELECT COUNT(*) FROM page_views WHERE user_agent='boundary-ua' AND is_bot=true"
+        )
+    assert swept == 30       # the crawl's window rows, all flagged
+    assert old_spared == 2   # outside-window rows for the same UA stay human
+    assert reader == 0       # modest browsing spared
+    assert boundary == 0     # exactly-at-cap spared (HAVING strictly greater)

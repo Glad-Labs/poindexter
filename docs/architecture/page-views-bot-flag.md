@@ -3,8 +3,20 @@
 The first-party beacon (`CF Analytics Engine → sync_cloudflare_analytics →
 page_views`) is inflated by stealth scrapers that present a browser
 `User-Agent` and slip the ingest UA drop-filter. `FlagBotPageViewsJob`
-(`services/jobs/flag_bot_page_views.py`, 15-min) flags them via a windowed
-`(user_agent, path)` flood-cap, materialized as `page_views.is_bot`.
+(`services/jobs/flag_bot_page_views.py`, 15-min) flags them via two windowed
+signatures, materialized as `page_views.is_bot`:
+
+- **Flood cap** — a `(user_agent, path)` pair hit past the cap in the window
+  → the pair's entire history flagged (`flood:ua_path`).
+- **Path sweep** (poindexter#973) — a single `user_agent` hitting more than
+  `beacon_sweep_max_distinct_paths` DISTINCT paths in the window → that UA's
+  _window_ rows flagged (`sweep:ua_distinct_paths`). Catches full-site
+  crawlers that visit each page once — structurally invisible to the pair cap
+  (one hit per path never repeats a pair; observed 147 hits / 145 paths on
+  2026-07-26, which poisoned the traffic-anomaly baseline for a week).
+  Window-scoped on purpose: bare UA strings are shared across real humans, so
+  whole-history flagging on a UA alone would over-flag — and for the same
+  reason this signature has no all-history backfill twin.
 
 ## Two surfaces
 
@@ -26,14 +38,18 @@ the raw read and owns the pipe-liveness case.
 - `beacon_flood_window_hours` (`24`) — flood window.
 - `beacon_flood_cap_per_window` (`20`) — per-`(UA,path)` cap; over → whole pair flagged.
 - `beacon_flood_backfill_cap` (`30`) — one-time all-history backfill cap.
+- `beacon_sweep_max_distinct_paths` (`25`) — per-UA distinct-path cap; over →
+  the UA's window rows flagged. ~25 distinct pages/day is a sixth of the live
+  corpus — fanatical for a human reader; raise it if operator browsing sessions
+  start getting caught (flags are reversible, see Notes).
 
 ## Notes
 
 - `posts.view_count` is recomputed from `page_views_human` by the flag job — it
   is the single writer. The sync ingest no longer bumps it.
 - Flagging is monotonic (only sets `is_bot` true). To re-open after raising a
-  cap: `UPDATE page_views SET is_bot=false WHERE bot_reason LIKE 'flood:%'` then
-  let the next sweep re-evaluate.
+  cap: `UPDATE page_views SET is_bot=false WHERE bot_reason LIKE 'flood:%'` (or
+  `'sweep:%'` for the path-sweep signature) then let the next sweep re-evaluate.
 - No IP signal exists on the beacon (CF bot-score is plan-gated); the flood-cap
   is the near-term heuristic. Bot rows are retained (audit), not dropped.
 - The one-time backfill is guarded by the `beacon_bot_flag_backfilled`

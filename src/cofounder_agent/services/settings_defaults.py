@@ -2957,6 +2957,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # All-history cap for the one-time backfill pass (catches bots that flooded
     # historically but aren't active in the current window).
     'beacon_flood_backfill_cap': '30',
+    # Max DISTINCT paths one user_agent may hit in the window before its window
+    # rows are flagged (sweep:ua_distinct_paths). Catches full-site crawlers
+    # that visit each page once — invisible to the pair cap by construction
+    # (147 hits / 145 paths, 2026-07-26, poindexter#973). Window-scoped and
+    # backfill-less on purpose: bare UA strings are shared across real humans.
+    'beacon_sweep_max_distinct_paths': '25',
 
     # Social media distribution — Postiz integration
     'social_drafts_enabled': 'false',
@@ -3291,6 +3297,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'beacon_flood_backfill_cap': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
     'beacon_flood_cap_per_window': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
     'beacon_flood_window_hours': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
+    'beacon_sweep_max_distinct_paths': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
     'brain_anomaly_baseline_window_days': {'owner': 'detect_anomalies', 'value_type': 'integer'},
     'brain_anomaly_current_window_hours': {'owner': 'detect_anomalies', 'value_type': 'integer'},
     'brain_digest_window_hours': {'owner': 'brain_daemon', 'value_type': 'integer'},

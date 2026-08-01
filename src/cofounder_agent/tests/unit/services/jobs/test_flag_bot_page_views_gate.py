@@ -44,3 +44,85 @@ async def test_missing_site_config_skips():
     result = await job.run(_ExplodingPool(), {})
     assert result.ok is True
     assert result.changes_made == 0
+
+
+class _NullTxn:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _RecordingConn:
+    """Capture every execute() so the pass wiring is pinned without a DB."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, sql, *args):
+        self.calls.append((sql, args))
+        return "UPDATE 0"
+
+    async def fetchval(self, _sql, *args):
+        return "true"  # backfill sentinel already set → backfill pass skipped
+
+    def transaction(self):
+        return _NullTxn()
+
+
+class _RecordingPool:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def acquire(self):
+        pool = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return pool._conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_sweep_pass_runs_with_configured_cap():
+    """The path-sweep pass (poindexter#973) executes after the flood pass,
+    window-scoped, with beacon_sweep_max_distinct_paths as its cap."""
+    conn = _RecordingConn()
+    config = {
+        "_site_config": _FakeSiteConfig(
+            {
+                "beacon_flood_window_hours": "24",
+                "beacon_flood_cap_per_window": "20",
+                "beacon_sweep_max_distinct_paths": "25",
+            }
+        )
+    }
+    result = await FlagBotPageViewsJob().run(_RecordingPool(conn), config)
+    assert result.ok is True
+
+    sweep_calls = [c for c in conn.calls if "sweep:ua_distinct_paths" in c[0]]
+    assert len(sweep_calls) == 1
+    sql, args = sweep_calls[0]
+    assert args == ("24", 25)
+    # Window-scoped on BOTH sides: the CTE and the UPDATE filter by created_at.
+    assert sql.count("created_at >= now()") == 2
+    # Ordering: flood pass first, then sweep, then view-count recompute.
+    order = [
+        next(
+            k
+            for k in ("flood:ua_path", "sweep:ua_distinct_paths", "view_count")
+            if k in sql_text
+        )
+        for sql_text, _ in conn.calls
+        if any(
+            k in sql_text
+            for k in ("flood:ua_path", "sweep:ua_distinct_paths", "view_count")
+        )
+    ]
+    assert order == ["flood:ua_path", "sweep:ua_distinct_paths", "view_count"]
+    assert result.metrics["sweep_flagged"] == 0

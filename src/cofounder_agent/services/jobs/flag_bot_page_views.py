@@ -13,10 +13,17 @@ Per run (gated by app_settings.beacon_bot_flag_enabled):
    beacon_flood_cap_per_window inside beacon_flood_window_hours has its ENTIRE
    history flagged is_bot=true (whole-group semantics; biases to under-count over
    inflation). Flagging is monotonic: only ever sets is_bot true, never resets.
-2. One-time backfill — sentinel-guarded (beacon_bot_flag_backfilled), same
-   grouping over all history at beacon_flood_backfill_cap, to catch bots that
-   flooded historically but aren't active in the current window.
-3. Recompute posts.view_count authoritatively from page_views_human (this job is
+2. Windowed path-sweep pass (poindexter#973) — any user_agent hitting more than
+   beacon_sweep_max_distinct_paths DISTINCT paths inside the same window has its
+   WINDOW rows flagged. Catches full-site crawlers that visit each page once —
+   invisible to the pair cap by construction (147 hits / 145 paths, 2026-07-26,
+   poisoned the traffic-anomaly baseline for a week). Window-scoped on purpose:
+   bare UA strings are shared across real humans, so whole-history flagging
+   would over-flag — and for the same reason this pass has NO backfill twin.
+3. One-time backfill — sentinel-guarded (beacon_bot_flag_backfilled), same
+   pair grouping over all history at beacon_flood_backfill_cap, to catch bots
+   that flooded historically but aren't active in the current window.
+4. Recompute posts.view_count authoritatively from page_views_human (this job is
    the single writer of view_count; the sync job's incremental bump is removed in
    the same PR). Bot-only posts reset to 0.
 
@@ -46,6 +53,23 @@ SET is_bot = true, bot_reason = 'flood:ua_path', flagged_at = now()
 FROM flooded f
 WHERE pv.user_agent IS NOT DISTINCT FROM f.user_agent
   AND pv.path IS NOT DISTINCT FROM f.path
+  AND pv.is_bot = false
+"""
+
+_SWEEP_UPDATE = """
+WITH sweepers AS (
+    SELECT user_agent
+    FROM page_views
+    WHERE created_at >= now() - ($1 || ' hours')::interval
+      AND is_bot = false
+    GROUP BY user_agent
+    HAVING COUNT(DISTINCT path) > $2
+)
+UPDATE page_views pv
+SET is_bot = true, bot_reason = 'sweep:ua_distinct_paths', flagged_at = now()
+FROM sweepers s
+WHERE pv.user_agent IS NOT DISTINCT FROM s.user_agent
+  AND pv.created_at >= now() - ($1 || ' hours')::interval
   AND pv.is_bot = false
 """
 
@@ -123,14 +147,22 @@ class FlagBotPageViewsJob:
         window_hours = int((sc.get("beacon_flood_window_hours", "24") or "24").strip())
         window_cap = int((sc.get("beacon_flood_cap_per_window", "20") or "20").strip())
         backfill_cap = int((sc.get("beacon_flood_backfill_cap", "30") or "30").strip())
+        sweep_cap = int(
+            (sc.get("beacon_sweep_max_distinct_paths", "25") or "25").strip()
+        )
 
         flagged = 0
+        sweep_flagged = 0
         did_backfill = False
         try:
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     win = await conn.execute(_WINDOW_UPDATE, str(window_hours), window_cap)
                     flagged += _rowcount(win)
+
+                    swept = await conn.execute(_SWEEP_UPDATE, str(window_hours), sweep_cap)
+                    sweep_flagged = _rowcount(swept)
+                    flagged += sweep_flagged
 
                     sentinel = await conn.fetchval(
                         "SELECT value FROM app_settings WHERE key = 'beacon_bot_flag_backfilled'"
@@ -148,7 +180,14 @@ class FlagBotPageViewsJob:
 
         return JobResult(
             ok=True,
-            detail=f"flagged {flagged} bot page_views (backfill={did_backfill})",
+            detail=(
+                f"flagged {flagged} bot page_views "
+                f"(sweep={sweep_flagged}, backfill={did_backfill})"
+            ),
             changes_made=flagged,
-            metrics={"rows_flagged": flagged, "backfill_ran": int(did_backfill)},
+            metrics={
+                "rows_flagged": flagged,
+                "sweep_flagged": sweep_flagged,
+                "backfill_ran": int(did_backfill),
+            },
         )
