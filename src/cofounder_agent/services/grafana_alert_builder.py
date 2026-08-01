@@ -48,6 +48,9 @@ DEFAULT_GRAFANA_THRESHOLDS: dict[str, str] = {
     "quality_window_days": "7",            # SQL INTERVAL days
     # alert #7 — brain-traffic-anomaly
     "traffic_drop_ratio": "0.5",           # condition: ratio < N (0.5 = 50% drop)
+    "traffic_min_daily_views": "30",       # SQL: 7-day avg daily views below which
+                                           # the ratio is noise -> report neutral 1.0
+                                           # (41 fires/48h at 3-9 views/day, 2026-08-01)
     # alert #7b — brain-page-views-capture-dead
     "page_view_gsc_min_clicks": "20",      # SQL: GSC clicks min for dead-beacon check
     # alert #10 — brain-ollama-down

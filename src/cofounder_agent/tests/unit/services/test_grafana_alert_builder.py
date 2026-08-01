@@ -6,6 +6,7 @@ No DB required — every test uses a fake pool that returns scripted rows.
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -131,3 +132,46 @@ class TestBuildCurrent:
         ])
         rendered = await ab.build_current(pool, tmpl)
         assert "threshold: 50" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Real-template coverage: every {threshold.X} in the shipped tmpl must have a
+# code default. Unknown placeholders pass through literally by design
+# (test_leaves_unknown_placeholder), which inside rawSql means silently
+# broken SQL — this pins the failure to CI instead.
+# ---------------------------------------------------------------------------
+
+
+def _find_repo_tmpl() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        cand = (
+            parent
+            / "infrastructure"
+            / "grafana"
+            / "provisioning"
+            / "alerting"
+            / "alert-rules.yml.tmpl"
+        )
+        if cand.exists():
+            return cand
+    raise RuntimeError("alert-rules.yml.tmpl not found walking up from test")
+
+
+def test_real_template_placeholders_all_have_defaults():
+    import re
+
+    tmpl = _find_repo_tmpl().read_text(encoding="utf-8")
+    tokens = set(re.findall(r"\{threshold\.([a-z0-9_]+)\}", tmpl))
+    assert tokens, "template has no {threshold.*} tokens — anchor drifted?"
+    missing = tokens - set(ab.DEFAULT_GRAFANA_THRESHOLDS)
+    assert not missing, (
+        f"template placeholders without a DEFAULT_GRAFANA_THRESHOLDS entry: "
+        f"{sorted(missing)} — they would render as literal '{{threshold.…}}' "
+        f"inside rawSql"
+    )
+
+
+def test_traffic_volume_floor_default_is_numeric():
+    """The floor lands in SQL arithmetic — a non-numeric override would break
+    the query at eval time, so at least the shipped default must parse."""
+    assert float(ab.DEFAULT_GRAFANA_THRESHOLDS["traffic_min_daily_views"]) > 0

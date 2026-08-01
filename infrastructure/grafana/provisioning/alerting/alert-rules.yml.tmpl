@@ -309,6 +309,12 @@ groups:
       #    traffic was flat (2026-07-25 alarm audit). Relative-drop detection
       #    only means anything over the audience that doesn't arrive in floods;
       #    raw-feed liveness is owned by Page-View Capture Dead (#7b) below.
+      #    Volume floor ({threshold.traffic_min_daily_views} views/day): below it
+      #    the ratio is statistical noise — at single-digit daily views "0.1x the
+      #    weekly average" is one reader staying home, and the rule fired 41
+      #    times in 48h saying so (2026-08-01 triage). Under the floor the SQL
+      #    reports a neutral 1.0, keeping the row present so noDataState still
+      #    owns the dark-datasource case.
       - uid: brain-traffic-anomaly
         title: Traffic Anomaly
         condition: C
@@ -346,7 +352,11 @@ groups:
                     GROUP BY DATE(created_at)
                   ) daily
                 )
-                SELECT today.cnt::float / baseline.avg_cnt as ratio
+                SELECT CASE
+                  WHEN baseline.avg_cnt < {threshold.traffic_min_daily_views}
+                  THEN 1.0
+                  ELSE today.cnt::float / baseline.avg_cnt
+                END as ratio
                 FROM today, baseline
               format: table
               editorMode: code
