@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+## [0.115.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.114.0...v0.115.0) (2026-08-01)
+
+
+### Features
+
+* **chat:** Cofounder P1 — agent service, tool seam, conversation store ([#2944](https://github.com/Glad-Labs/glad-labs-stack/issues/2944)) ([668f516](https://github.com/Glad-Labs/glad-labs-stack/commit/668f5161dbfe02d5b6dfac3199f7ce62ed17c1ac))
+* **chat:** Cofounder P3 — approval cards, live run watch, completion messages, Stop ([#2965](https://github.com/Glad-Labs/glad-labs-stack/issues/2965)) ([51a610d](https://github.com/Glad-Labs/glad-labs-stack/commit/51a610d4d533e845b4a16754e67122316c632f86))
+* **chat:** P4 architect plan cards — design, review, and run pipelines from the thread ([#2981](https://github.com/Glad-Labs/glad-labs-stack/issues/2981)) ([9441055](https://github.com/Glad-Labs/glad-labs-stack/commit/944105581e8c9579a21b5f318747b38af41e93d2))
+* **console:** Cofounder P2 — chat tab with thread, activity rail, mock brain ([#2957](https://github.com/Glad-Labs/glad-labs-stack/issues/2957)) ([5a6e416](https://github.com/Glad-Labs/glad-labs-stack/commit/5a6e4169c2586941d4714cd6685ab3ea9029e3d7))
+* **console:** terminal reject — close a draft out instead of always regenerating ([#2934](https://github.com/Glad-Labs/glad-labs-stack/issues/2934)) ([4c1cbb9](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1cbb9fd1c25000628abe241cc6a43374c8918a))
+* **cost:** downgrade to a local model when the paid cap is hit ([#2949](https://github.com/Glad-Labs/glad-labs-stack/issues/2949)) ([a530edf](https://github.com/Glad-Labs/glad-labs-stack/commit/a530edf7f5b083a34221045a4df8b132affd7876))
+* **dev-diary:** gate on substance so thin days skip ([#2947](https://github.com/Glad-Labs/glad-labs-stack/issues/2947)) ([8d7c33b](https://github.com/Glad-Labs/glad-labs-stack/commit/8d7c33bc358adfd82486d04bbc7e6d1d1dcca2a6))
+* **ops:** UPS monitoring — NUT exporter, Hardware & Power row, Ups* alerts ([#2958](https://github.com/Glad-Labs/glad-labs-stack/issues/2958)) ([d5363f8](https://github.com/Glad-Labs/glad-labs-stack/commit/d5363f81c05e081ad48cf993c1a2e9894eb06eec))
+* **rig:** headset battery readout on the sensor strip ([#2975](https://github.com/Glad-Labs/glad-labs-stack/issues/2975)) ([2b1908c](https://github.com/Glad-Labs/glad-labs-stack/commit/2b1908c4c59c42a999ae9013f8e487bebaa70f30))
+* **settings:** derive METADATA annotations for 669 more keys ([#2967](https://github.com/Glad-Labs/glad-labs-stack/issues/2967)) ([7626305](https://github.com/Glad-Labs/glad-labs-stack/commit/7626305d3e65eab4b2382289566421ed7319a6b7))
+* **settings:** surface the [#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756) lifecycle metadata through the API ([#2956](https://github.com/Glad-Labs/glad-labs-stack/issues/2956)) ([2682296](https://github.com/Glad-Labs/glad-labs-stack/commit/2682296a82302f662fa05df895f13ddac9c844a3))
+
+
+### Bug Fixes
+
+* **architect:** survive thinking-model &lt;think&gt; leaks in compose ([#2985](https://github.com/Glad-Labs/glad-labs-stack/issues/2985)) ([cffd504](https://github.com/Glad-Labs/glad-labs-stack/commit/cffd504036743aa7f08eb80ef52544368e2627f1))
+* **chat:** list_tasks read the (rows, total) tuple as an object — reported 0 tasks ([#2970](https://github.com/Glad-Labs/glad-labs-stack/issues/2970)) ([72e8bf9](https://github.com/Glad-Labs/glad-labs-stack/commit/72e8bf93d770928231d282909d2a12eae01b2f1c))
+* **chat:** quality_score lives on pipeline_versions, not pipeline_tasks ([#2973](https://github.com/Glad-Labs/glad-labs-stack/issues/2973)) ([1697bd1](https://github.com/Glad-Labs/glad-labs-stack/commit/1697bd1b76d4ef83829bae88938cecc094ee38dc))
+* **chat:** recover text-encoded tool calls instead of printing raw JSON ([#2969](https://github.com/Glad-Labs/glad-labs-stack/issues/2969)) ([216a76a](https://github.com/Glad-Labs/glad-labs-stack/commit/216a76adc3d69cf300cc2df3c2455450283f94d3))
+* **chat:** tool execution shares the turn deadline ([#2989](https://github.com/Glad-Labs/glad-labs-stack/issues/2989)) ([026793e](https://github.com/Glad-Labs/glad-labs-stack/commit/026793ef183b626c7e386439ea035e06c4326703))
+* **chat:** tune system prompt + tool descriptions from live golden evals ([#2951](https://github.com/Glad-Labs/glad-labs-stack/issues/2951)) ([5e67a93](https://github.com/Glad-Labs/glad-labs-stack/commit/5e67a933a7115f2aa7cf4cc1d01dd9fe692872c3))
+* **ci:** make contract-drift refresh PRs actually mergeable ([#2953](https://github.com/Glad-Labs/glad-labs-stack/issues/2953)) ([d8f10b6](https://github.com/Glad-Labs/glad-labs-stack/commit/d8f10b628be37f212f06c5a207e1ccfedda797cf)), closes [#2952](https://github.com/Glad-Labs/glad-labs-stack/issues/2952)
+* **ci:** move docker-build's build-worker off the socketless self-hosted runners ([#2964](https://github.com/Glad-Labs/glad-labs-stack/issues/2964)) ([7923d75](https://github.com/Glad-Labs/glad-labs-stack/commit/7923d75cba24efa41f1be6aea4e77fb446b23148)), closes [#2963](https://github.com/Glad-Labs/glad-labs-stack/issues/2963)
+* **cli:** make the replace-image / remove-image client timeout tunable ([#2943](https://github.com/Glad-Labs/glad-labs-stack/issues/2943)) ([422a8c7](https://github.com/Glad-Labs/glad-labs-stack/commit/422a8c740a4320834516bf39871a714ea7868b77))
+* **console:** auto-refresh the open chat thread (watcher messages piled up) ([#2971](https://github.com/Glad-Labs/glad-labs-stack/issues/2971)) ([3feba34](https://github.com/Glad-Labs/glad-labs-stack/commit/3feba34c5ac3e34edee7f1b0efb53c4a37f8db8c))
+* **console:** Chat in the topbar modeswitch + parse the [#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) error envelope ([#2968](https://github.com/Glad-Labs/glad-labs-stack/issues/2968)) ([90520f0](https://github.com/Glad-Labs/glad-labs-stack/commit/90520f0469ed543d3a2e6c45fb02e3b1af05d535))
+* **console:** pin chat-mode layout + expand slash commands on Enter ([#2974](https://github.com/Glad-Labs/glad-labs-stack/issues/2974)) ([6ae2f34](https://github.com/Glad-Labs/glad-labs-stack/commit/6ae2f34ba5ef2ef9388ffecc5d4805a19918da66))
+* **console:** pin the chart readout to a fixed line — hover no longer reflows the cards ([#2976](https://github.com/Glad-Labs/glad-labs-stack/issues/2976)) ([1de2453](https://github.com/Glad-Labs/glad-labs-stack/commit/1de2453f04a79a4f70d80b79cac4d3c9e209fcbd))
+* **console:** serve console assets no-cache so a deploy invalidates atomically ([#2983](https://github.com/Glad-Labs/glad-labs-stack/issues/2983)) ([30a2606](https://github.com/Glad-Labs/glad-labs-stack/commit/30a2606f3f4b7e1f1727bf8eea1fc4a5117192be)), closes [#2982](https://github.com/Glad-Labs/glad-labs-stack/issues/2982)
+* **cost:** throttle on controllable spend, not idle electricity ([#2942](https://github.com/Glad-Labs/glad-labs-stack/issues/2942)) ([d45d7f2](https://github.com/Glad-Labs/glad-labs-stack/commit/d45d7f2372d1b03b4d258e30bf611094807195b2))
+* **gitignore:** match node_modules symlinks, not just directories ([#2948](https://github.com/Glad-Labs/glad-labs-stack/issues/2948)) ([c82a2d1](https://github.com/Glad-Labs/glad-labs-stack/commit/c82a2d1666ed8370414b20ce8f3ee93226c38ddd))
+* **gpu:** correct the VRAM estimator's weights and sliding-window KV ([#2937](https://github.com/Glad-Labs/glad-labs-stack/issues/2937)) ([95c2967](https://github.com/Glad-Labs/glad-labs-stack/commit/95c296701e2d8934a7ed2fe35ead25712038705a))
+* **gpu:** distinguish unknown eviction credit from zero, and fail open ([#2966](https://github.com/Glad-Labs/glad-labs-stack/issues/2966)) ([57fc460](https://github.com/Glad-Labs/glad-labs-stack/commit/57fc460c1865d4c7b3e70d4a12601ccea03799bd))
+* **gpu:** warm the GPU-pinned Ollama endpoints instead of assuming they stay hot ([#2939](https://github.com/Glad-Labs/glad-labs-stack/issues/2939)) ([6824b2d](https://github.com/Glad-Labs/glad-labs-stack/commit/6824b2dc61e3f7484a1c224d896e29b917e67614))
+* **images:** never inject an inline illustration above the article's lede ([#2936](https://github.com/Glad-Labs/glad-labs-stack/issues/2936)) ([8628242](https://github.com/Glad-Labs/glad-labs-stack/commit/862824239c4d73758b5ef49e4fca8041ec648c92))
+* **lint:** ruff --fix F401/F841 (ops codebase-audit) ([#2913](https://github.com/Glad-Labs/glad-labs-stack/issues/2913)) ([2617108](https://github.com/Glad-Labs/glad-labs-stack/commit/2617108f4bfd5f1fdd58c92dc80bc892a092672d))
+* **ops:** correct the UPS overload-trip incident math in alert/panel prose ([#2960](https://github.com/Glad-Labs/glad-labs-stack/issues/2960)) ([720f088](https://github.com/Glad-Labs/glad-labs-stack/commit/720f0886ce961a5de9448a632b86e2314a77687a))
+* **pipeline:** stop non-halting stage timeouts from silently discarding work ([#2932](https://github.com/Glad-Labs/glad-labs-stack/issues/2932)) ([6c27d54](https://github.com/Glad-Labs/glad-labs-stack/commit/6c27d5420a953f1741ebfe0a67b92f0f6dc8249d))
+* **prompts:** video.long_form_narration section was unparseable — prose sat between heading and fence ([#2980](https://github.com/Glad-Labs/glad-labs-stack/issues/2980)) ([7fdca8b](https://github.com/Glad-Labs/glad-labs-stack/commit/7fdca8b2c9153e179d72b40edb0b059e83425651))
+* **release:** manage the web/public-site version in package-lock.json ([#2962](https://github.com/Glad-Labs/glad-labs-stack/issues/2962)) ([f2bdea6](https://github.com/Glad-Labs/glad-labs-stack/commit/f2bdea6b33152f8a4cc786a7cfa4270805af01b0)), closes [#2961](https://github.com/Glad-Labs/glad-labs-stack/issues/2961)
+* **settings:** drop fabricated created_by_id/updated_by_id from the API ([#2950](https://github.com/Glad-Labs/glad-labs-stack/issues/2950)) ([a58271c](https://github.com/Glad-Labs/glad-labs-stack/commit/a58271c1d01700aaa9cc68e64ae0e1cc7005872d))
+* **settings:** report the stored updated_at instead of fabricating now() ([#2945](https://github.com/Glad-Labs/glad-labs-stack/issues/2945)) ([4a69173](https://github.com/Glad-Labs/glad-labs-stack/commit/4a691739b2ffc51193b524148664ea1428a92a09))
+* **video:** clear resident wan before a render's still phase — the between-lanes half of the hero poisoning ([#2990](https://github.com/Glad-Labs/glad-labs-stack/issues/2990)) ([6602132](https://github.com/Glad-Labs/glad-labs-stack/commit/66021325b25b5033ad45758d4366cd72186e009c))
+* **video:** one duration contract per lane — long videos no longer outlive their narration ([#2972](https://github.com/Glad-Labs/glad-labs-stack/issues/2972)) ([09601a8](https://github.com/Glad-Labs/glad-labs-stack/commit/09601a89352ca39ae92189eff1538862be02d382))
+* **video:** render-lane VRAM choreography — clear the card before wan loads ([#2930](https://github.com/Glad-Labs/glad-labs-stack/issues/2930)) ([57df5d2](https://github.com/Glad-Labs/glad-labs-stack/commit/57df5d2b0aa1d2b942311f4add6b250eba87c6f2))
+* **video:** two-phase render order — hero VRAM choreography no longer poisons post-hero shots ([#2987](https://github.com/Glad-Labs/glad-labs-stack/issues/2987)) ([9b6d9e6](https://github.com/Glad-Labs/glad-labs-stack/commit/9b6d9e649bc769899efd798fd47c27aa1d79e27e))
+* **video:** wan hard-unload + reclaim rung — the render gate can now claw back wan's idle reserved pool ([#2984](https://github.com/Glad-Labs/glad-labs-stack/issues/2984)) ([c062484](https://github.com/Glad-Labs/glad-labs-stack/commit/c0624846c78e29cc26208eca23857505cca49e94))
+* **voice:** default voice_agent_llm_model to qwen2.5:7b and tolerate the ollama/ prefix ([#2929](https://github.com/Glad-Labs/glad-labs-stack/issues/2929)) ([4ac4687](https://github.com/Glad-Labs/glad-labs-stack/commit/4ac4687232d114dd4662b1c739df123ec68a9997))
+
+
+### Code Refactoring
+
+* **config:** give image_render_timeout_seconds exactly one value ([#2941](https://github.com/Glad-Labs/glad-labs-stack/issues/2941)) ([00a2e31](https://github.com/Glad-Labs/glad-labs-stack/commit/00a2e31ac2e310f1ed578c0f38fb98d32918aac6))
+
 ## [0.114.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.113.0...v0.114.0) (2026-07-31)
 
 
