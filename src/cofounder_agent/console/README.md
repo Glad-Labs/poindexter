@@ -52,7 +52,7 @@ load makes that state unrepresentable: after a deploy you get all-new or
 all-old, never a blend.
 
 It wasn't always this way. `StaticFiles` sets no `Cache-Control` of its own, so
-console assets used to fall through to the catch-all in
+console assets used to fall through to a catch-all in
 `middleware/cache_control.py` and come back **`private, max-age=60`** — a
 60-second window per file in which the browser reused its copy _without asking_.
 Reload inside that window after a deploy and a freshly revalidated `index.html`
@@ -61,6 +61,15 @@ could pull cached copies of the very scripts it names. That is what bit on
 hard refresh to come back. Setting the header at the mount is also what makes
 the middleware stand down — it explicitly defers to any response that already
 carries a `Cache-Control`, so the two never disagree.
+
+That catch-all is gone: auditing it turned up 68 more routes inheriting the
+same silent caching, including the `/api/*` endpoints this console polls for
+live data, so the middleware is now deny-by-default —
+[`docs/architecture/2026-08-01-http-cache-policy.md`](../../../docs/architecture/2026-08-01-http-cache-policy.md).
+The mount still sets its own header rather than relying on that default,
+because `no-cache` (revalidate, keep the 304s) is specifically right for
+unhashed static assets, where the blanket `no-store` would re-send 2.9 MB of
+Babel on every load.
 
 The cost is ~33 conditional requests per full page load, all `304`s with no
 body, against a worker on localhost or the tailnet. Vendored `js/vendor/` files

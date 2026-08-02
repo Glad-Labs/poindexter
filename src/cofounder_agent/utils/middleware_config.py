@@ -136,11 +136,16 @@ class MiddlewareConfig:
         """
         Setup HTTP Cache-Control middleware.
 
-        Sets Cache-Control headers on all responses based on route category:
-        - Mutations (POST/PUT/PATCH/DELETE): no-store
-        - Auth / WebSocket routes: no-store
-        - Private data (tasks, workflows, user): private, max-age=60
-        - Public content (posts, cms, analytics): public, max-age=300
+        Caching is opt-in: anything not explicitly classified comes back
+        ``no-store``, and every storable response also gets
+        ``Vary: Authorization``. Only static catalogs (capabilities,
+        agent-registry, templates, ``/.well-known/``) and ETag-bearing file
+        routes opt in; see ``middleware/cache_control.py`` for why the default
+        is deny.
+
+        Registered here, INSIDE ``CORSMiddleware`` — CORS appends
+        ``Vary: Origin`` on the way out, which is why the Vary handling merges
+        rather than assigns.
         """
         from middleware.cache_control import CacheControlMiddleware
 

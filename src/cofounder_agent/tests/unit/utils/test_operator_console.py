@@ -19,7 +19,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from middleware.cache_control import CacheControlMiddleware
+from middleware.cache_control import NO_STORE, CacheControlMiddleware
 from utils.operator_console import (
     CONSOLE_CACHE_CONTROL,
     _default_console_dir,
@@ -158,7 +158,9 @@ class TestConsoleCacheHeaders:
 
     def test_api_routes_keep_the_middleware_default(self, tmp_path):
         # The mount must not leak its policy onto the rest of the app — the
-        # console's needs are specific to unhashed static assets.
+        # console's needs are specific to unhashed static assets. Bound to the
+        # middleware's own constant rather than a literal so a future policy
+        # change can't leave this asserting a directive that no longer exists.
         app = _console_app(tmp_path, with_middleware=True)
 
         @app.get("/api/tasks")
@@ -167,4 +169,5 @@ class TestConsoleCacheHeaders:
 
         resp = TestClient(app).get("/api/tasks")
 
-        assert resp.headers["cache-control"] == "private, max-age=60"
+        assert resp.headers["cache-control"] == NO_STORE
+        assert resp.headers["cache-control"] != CONSOLE_CACHE_CONTROL
