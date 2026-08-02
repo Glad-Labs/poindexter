@@ -1662,3 +1662,80 @@ def test_default_tts_pronunciations_valid_and_has_model_names():
     parsed = json.loads(DEFAULTS["tts_pronunciations"])
     for key in ("GLM", "vLLM", "SDXL"):
         assert key in parsed, f"expected model-name pronunciation for {key!r}"
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-01 normalizer split: scripts stay clean; phonetics live at the TTS
+# boundary only.
+# ---------------------------------------------------------------------------
+
+from services.podcast_service import (  # noqa: E402
+    _normalize_for_script,
+    _normalize_for_speech,
+)
+
+
+def _pron_sc():
+    import json
+
+    from services.site_config import SiteConfig
+    return SiteConfig(initial_config={
+        "tts_pronunciations": json.dumps({
+            "CI/CD": "See Eye See Dee",
+            "GitHub": "git hub",
+            "VRAM": "Vee RAM",
+        }),
+        "tts_acronym_replacements": json.dumps({"SOC": "security operations"}),
+    })
+
+
+class TestNormalizerSplit:
+    def test_script_normalizer_keeps_written_forms(self):
+        """The generation-side pass must NOT bake phonetics into the stored
+        script — 'See Eye See Dee pipeline' / 'git hub Actions' were frozen
+        into real scripts with zero audio benefit (the TTS boundary applies
+        the map itself)."""
+        text = "Our CI/CD pipeline runs on GitHub Actions with 24GB of VRAM. SOC matters."
+        out = _normalize_for_script(text, site_config=_pron_sc())
+        assert "CI/CD" in out
+        assert "GitHub" in out
+        assert "VRAM" in out
+        assert "SOC" in out
+        assert "See Eye" not in out
+
+    def test_speech_normalizer_still_applies_phonetics(self):
+        text = "Our CI/CD pipeline runs on GitHub."
+        out = _normalize_for_speech(text, site_config=_pron_sc())
+        assert "See Eye See Dee" in out
+        assert "git hub" in out
+
+    def test_speech_normalizer_idempotent_on_frozen_backlog(self):
+        """Pre-split scripts already carry phonetic spellings; the TTS
+        boundary re-applies the full pass — it must be a no-op on them."""
+        frozen = "the See Eye See Dee pipeline on git hub with Vee RAM limits"
+        once = _normalize_for_speech(frozen, site_config=_pron_sc())
+        assert once == _normalize_for_speech(once, site_config=_pron_sc())
+
+    def test_script_normalizer_strips_emoji(self):
+        text = "Meet the problem 🕒 at Glad Labs 💻🚀 today 📈."
+        out = _normalize_for_script(text, site_config=_pron_sc())
+        for ch in "🕒💻🚀📈":
+            assert ch not in out
+        assert "Meet the problem" in out
+
+    def test_script_normalizer_dashes_and_semicolons_to_commas(self):
+        text = "five tech giants; Alphabet, Microsoft — the architects; of AI"
+        out = _normalize_for_script(text, site_config=_pron_sc())
+        assert ";" not in out
+        assert "—" not in out
+        assert "giants, Alphabet" in out
+
+    def test_script_normalizer_preserves_money_figures(self):
+        """The #2876 regression class: '$1.65 trillion' must survive every
+        structural pass — a filename rule once ate the decimal and shipped
+        '$ trillion' narration."""
+        text = "hidden debt of $1.65 trillion versus $159 billion on-book and $400 wasted"
+        out = _normalize_for_script(text, site_config=_pron_sc())
+        assert "$1.65 trillion" in out
+        assert "$159 billion" in out
+        assert "$400" in out

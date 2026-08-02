@@ -62,9 +62,11 @@ Write a voiceover narration script for a long-form video about the article below
 
 The narration is spoken aloud and must stand on its own as audio. Write it for the ear: explain the subject directly to the listener. Do not refer to any accompanying imagery — the supporting footage is generic and will not match specific visual references, so keep every line meaningful with the eyes closed.
 - Aim for a ~{target_seconds}-second narration (about {target_words} words of spoken prose).
-- Tighter and more focused than an audio-only podcast; no 'welcome back' radio filler.
-- Open with a brief hook, walk the key points in order, then a natural closing line. Do NOT add a like/subscribe call-to-action — that is appended separately.
-- Plain spoken prose. No headings, no stage directions.
+- COLD OPEN: start mid-thought on the article's strongest concrete fact or tension. Never open with a greeting or a scene-setting frame — no "Welcome", "In today's", "Let's explore", "Imagine", "deep dive".
+- Close on the article's final insight in one natural sentence. Never "In conclusion", "In summary", "To wrap up". Do NOT add a like/subscribe call-to-action — that is appended separately.
+- Keep every number, dollar figure, and statistic exactly as the article states it — the numbers are the substance.
+- Banned words and phrases: delve, tapestry, testament, game-changer, revolutionize.
+- Plain spoken prose. Commas and periods, not semicolons. No headings, no stage directions, no emojis, no markdown.
 
 TITLE: {title}
 

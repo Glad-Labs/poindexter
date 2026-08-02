@@ -56,7 +56,7 @@ class GenerateMediaScriptsStage:
         from services.gpu_scheduler import gpu
         from services.podcast_service import (
             _build_script_with_llm,
-            _normalize_for_speech,
+            _normalize_for_script,
             _strip_markdown,
         )
 
@@ -225,7 +225,7 @@ class GenerateMediaScriptsStage:
                         )
                     vn_text = (getattr(vn_result, "text", "") or "").strip()
                     video_long_script = (
-                        _normalize_for_speech(vn_text, site_config=sc) if vn_text else ""
+                        _normalize_for_script(vn_text, site_config=sc) if vn_text else ""
                     )
                     if video_long_script:
                         logger.info("[MEDIA] Video narration script: %d chars", len(video_long_script))
@@ -292,6 +292,9 @@ class GenerateMediaScriptsStage:
             )
 
             scene_output = ""
+            short_min_words = (
+                sc.get_int("video_short_min_words", 25) if sc is not None else 25
+            )
             if pool is None or platform is None:
                 # Tests / bootstrap path — skip the LLM call gracefully.
                 # The stage is marked non-critical (halts_on_failure=False),
@@ -302,43 +305,92 @@ class GenerateMediaScriptsStage:
                     "skipping video-scenes LLM call",
                 )
             else:
-                async with gpu.lock(
-                    "ollama", model=model,
-                    task_id=context.get("task_id"), phase="media_scripts",
-                    max_wait_s=media_wait_budget_s(), priority="background",
-                ):
-                    result = await platform.dispatch.complete(
-                        pool=pool,
-                        messages=[{"role": "user", "content": scene_prompt}],
-                        model=model,
-                        tier="standard",
-                        timeout_s=120,
-                        temperature=0.7,
-                        max_tokens=2048,
+                # Validity-gated with ONE retry (2026-08-01): a model can emit
+                # scenes and then a garbage "short" — a bare **END**, or meta
+                # commentary — which used to freeze into task_metadata and get
+                # TTS'd into the render forever (a frozen 1-word short produced
+                # a 12s video over 3.8s of voice). A fresh sample usually
+                # fixes a formatting fumble; scenes are kept from whichever
+                # attempt produced them.
+                for scene_attempt in range(2):
+                    async with gpu.lock(
+                        "ollama", model=model,
+                        task_id=context.get("task_id"), phase="media_scripts",
+                        max_wait_s=media_wait_budget_s(), priority="background",
+                    ):
+                        result = await platform.dispatch.complete(
+                            pool=pool,
+                            messages=[{"role": "user", "content": scene_prompt}],
+                            model=model,
+                            tier="standard",
+                            timeout_s=120,
+                            temperature=0.7 if scene_attempt == 0 else 0.85,
+                            max_tokens=2048,
+                        )
+                        scene_output = (getattr(result, "text", "") or "").strip()
+                    if not scene_output:
+                        continue
+                    attempt_scenes, attempt_short = _parse_scene_output(
+                        scene_output,
+                        # Bind the run's site_config: the normalizer
+                        # requires it (#272) but _parse_scene_output invokes it
+                        # positionally. Passing it bare raised
+                        # "podcast_service requires a site_config", aborting the
+                        # stage and starving the video director (0 shot lists).
+                        # Script-safe variant (2026-08-01): structural cleanup
+                        # only — pronunciations now live at the TTS boundary, so
+                        # phonetic spellings are no longer frozen into scripts.
+                        lambda t: _normalize_for_script(t, site_config=sc),
                     )
-                    scene_output = (getattr(result, "text", "") or "").strip()
+                    if attempt_scenes:
+                        video_scenes = attempt_scenes
+                    if attempt_short and len(attempt_short.split()) >= short_min_words:
+                        short_summary = attempt_short
+                        break
+                    logger.info(
+                        "[MEDIA] short script invalid (%d words < %d min) on "
+                        "attempt %d%s",
+                        len((attempt_short or "").split()), short_min_words,
+                        scene_attempt + 1,
+                        " — retrying once" if scene_attempt == 0 else "",
+                    )
+                if video_scenes or short_summary:
+                    logger.info(
+                        "[MEDIA] Video scenes: %d, Short summary: %d chars",
+                        len(video_scenes), len(short_summary),
+                    )
+                if scene_output and not short_summary:
+                    # Both attempts produced no usable short. No short beats a
+                    # frozen-garbage short: the render lane treats a missing
+                    # short_shot_list as a graceful no-op, and a later regen
+                    # can supply one — a frozen **END** cannot self-heal.
+                    emit_finding(
+                        source="media.generate_scripts",
+                        kind="short_script_invalid",
+                        title="short script unusable after retry — task ships without a short",
+                        body=(
+                            f"Task {context.get('task_id')}: both scene-call "
+                            f"attempts produced a short below "
+                            f"video_short_min_words ({short_min_words}) after "
+                            "meta-commentary sanitization. The task proceeds "
+                            "with no short-form script (long lane unaffected); "
+                            "regenerate media scripts to add one."
+                        ),
+                        severity="warn",
+                        dedup_key=f"short_script_invalid:{context.get('task_id')}",
+                        extra={
+                            "task_id": str(context.get("task_id") or ""),
+                            "min_words": short_min_words,
+                        },
+                    )
 
-            if scene_output:
-                video_scenes, short_summary = _parse_scene_output(
-                    scene_output,
-                    # Bind the run's site_config: _normalize_for_speech
-                    # requires it (#272) but _parse_scene_output invokes the
-                    # normalizer positionally. Passing it bare raised
-                    # "podcast_service requires a site_config", aborting the
-                    # stage and starving the video director (0 shot lists).
-                    lambda t: _normalize_for_speech(t, site_config=sc),
-                )
-                logger.info(
-                    "[MEDIA] Video scenes: %d, Short summary: %d chars",
-                    len(video_scenes), len(short_summary),
-                )
-
+            if short_summary:
                 # Runaway-short cap (#867): a model that ignores the target can
                 # emit a 2-3 minute "short". Trim to the last full sentence
                 # within video_short_max_seconds so the narration can't outrun a
                 # short-form timeline (the renderer's narration-fit stretches the
                 # remaining gap). Deterministic, no LLM call, sentence-safe.
-                if short_summary:
+                if True:
                     short_max_s = sc.get_int("video_short_max_seconds", 60) if sc is not None else 60
                     max_short_words = round(short_max_s * _WORDS_PER_SECOND)
                     short_summary, orig_w, kept_w = _trim_to_word_budget(
@@ -547,12 +599,19 @@ _VIDEO_NARRATION_FALLBACK = (
     "with the eyes closed.\n"
     "- Aim for a ~{target_seconds}-second narration (about {target_words} "
     "words of spoken prose).\n"
-    "- Tighter and more focused than an audio-only podcast; no 'welcome back' "
-    "radio filler.\n"
-    "- Open with a brief hook, walk the key points in order, then a natural "
-    "closing line. Do NOT add a like/subscribe call-to-action — that is "
-    "appended separately.\n"
-    "- Plain spoken prose. No headings, no stage directions.\n\n"
+    "- COLD OPEN: start mid-thought on the article's strongest concrete fact "
+    "or tension. Never open with a greeting or a scene-setting frame — no "
+    "\"Welcome\", \"In today's\", \"Let's explore\", \"Imagine\", "
+    "\"deep dive\".\n"
+    "- Close on the article's final insight in one natural sentence. Never "
+    "\"In conclusion\", \"In summary\", \"To wrap up\". Do NOT add a "
+    "like/subscribe call-to-action — that is appended separately.\n"
+    "- Keep every number, dollar figure, and statistic exactly as the "
+    "article states it — the numbers are the substance.\n"
+    "- Banned words and phrases: delve, tapestry, testament, game-changer, "
+    "revolutionize.\n"
+    "- Plain spoken prose. Commas and periods, not semicolons. No headings, "
+    "no stage directions, no emojis, no markdown.\n\n"
     "TITLE: {title}\n\n"
     "ARTICLE:\n{content}\n\n"
     "NARRATION:"
@@ -623,7 +682,14 @@ def _build_scene_prompt(
         "PART 2 — After a blank line, write \"SHORT:\" on its own line, then write a "
         f"~{target_seconds}-second narration (about {target_words} words) "
         "summarizing the article for TikTok/YouTube Shorts. "
-        f"Start with a hook, cover 2-3 key takeaways, end with \"Full article at {site_name}.\"\n\n"
+        f"Start with a hook, cover 2-3 key takeaways, end with \"Full article at {site_name}.\"\n"
+        "Narration rules: spoken prose only — no emojis, no markdown, no "
+        "hashtags, at most one exclamation mark. Open on the article's single "
+        "most surprising concrete fact — never with \"Ever wondered\", "
+        "\"Imagine\", or a question cliche. Keep every number and statistic "
+        "exactly as the article states it. Use commas and periods, not "
+        "semicolons. Output NOTHING after the narration text — no notes, no "
+        "commentary about the script, no END marker.\n\n"
         f"ARTICLE: {title}\n\n"
         f"{clean_content[:3000]}\n\n"
         "SCENES:"
@@ -724,6 +790,52 @@ def _fallback_split_trailing_prose(scene_output: str) -> tuple[str, str]:
     return "\n\n".join(blocks[:-1]), last
 
 
+# Meta-commentary a model appends AFTER the narration it was asked for —
+# stage notes about its own output, sign-offs, or bare end markers. These are
+# not narration and must never reach TTS: a frozen short once read "These
+# elements aim to visually and narratively encapsulate the essence…" aloud
+# into the render, and another consisted entirely of "**END**".
+_SHORT_META_LINE = re.compile(
+    r"^\s*(?:"
+    r"these\s+(?:elements|scenes|visuals)\b"
+    r"|this\s+(?:script|narration|video|short)\b"
+    r"|note[:\s]"
+    r"|\**\s*(?:end|fin|stop)\s*\**\s*$"
+    r"|\(?\s*end\s+of\s+(?:script|narration|short)\s*\)?"
+    r")",
+    re.IGNORECASE,
+)
+# A markdown horizontal rule — everything after it is the model talking ABOUT
+# the script, not the script.
+_HR_LINE = re.compile(r"^\s*(?:-{3,}|_{3,}|\*{3,})\s*$")
+
+
+def _sanitize_short_script(short_raw: str) -> str:
+    """Cut model meta-commentary off a raw short script (2026-08-01).
+
+    1. Truncate at the first horizontal-rule line.
+    2. Drop trailing paragraphs whose first line is meta-commentary (see
+       ``_SHORT_META_LINE``) — from the end only, so a legit narration
+       paragraph that merely mentions "this" mid-script survives.
+    """
+    lines = short_raw.split("\n")
+    kept: list[str] = []
+    for ln in lines:
+        if _HR_LINE.match(ln):
+            break
+        kept.append(ln)
+    paras = _PARA_BREAK.split("\n".join(kept).strip())
+    while paras:
+        first_line = next(
+            (ln for ln in paras[-1].split("\n") if ln.strip()), "",
+        )
+        if first_line and _SHORT_META_LINE.match(first_line):
+            paras.pop()
+            continue
+        break
+    return "\n\n".join(p for p in paras if p.strip()).strip()
+
+
 def _parse_scene_output(
     scene_output: str,
     normalize_for_speech: Any,
@@ -734,5 +846,6 @@ def _parse_scene_output(
         scenes_raw, short_raw = parts[0], parts[1].strip()
     else:
         scenes_raw, short_raw = _fallback_split_trailing_prose(scene_output)
+    short_raw = _sanitize_short_script(short_raw) if short_raw else ""
     short_summary = normalize_for_speech(short_raw) if short_raw else ""
     return _extract_scene_lines(scenes_raw), short_summary

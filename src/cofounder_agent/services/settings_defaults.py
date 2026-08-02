@@ -541,6 +541,13 @@ DEFAULTS: dict[str, str] = {
     # long_script_trimmed finding), and the director's target-duration estimate
     # clamps here too — one ceiling for both, so they can't disagree.
     'video_long_max_seconds': '300',
+    # Minimum word count for a usable short-form script (2026-08-01). Below
+    # this after meta-commentary sanitization the scene call retries ONCE;
+    # still under → the task ships with NO short + a short_script_invalid
+    # finding, instead of freezing garbage into task_metadata forever (a
+    # frozen 1-word "**END**" short TTS'd into a 12s-visuals / 3.8s-voice
+    # render that no re-render could fix).
+    'video_short_min_words': '25',
     # Per-shot ceiling for the LONG-lane narration-fit rescale — the long-form
     # sibling of video_short_max_shot_seconds. Long-form pacing legitimately
     # holds a shot 15-30s (the director's own per-shot rule caps at 30), so the
@@ -3063,6 +3070,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_long_target_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_long_max_seconds': {'owner': 'video', 'value_type': 'integer'},
+    'video_short_min_words': {'owner': 'video', 'value_type': 'integer'},
     'video_long_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},

@@ -225,7 +225,7 @@ async def test_long_script_within_budget_is_not_trimmed():
 async def test_short_within_budget_is_not_trimmed():
     """A short comfortably under the budget rides untouched — no finding."""
     gpu = SimpleNamespace(lock=_fake_lock)
-    ok_short = " ".join(["Short and sweet."] * 5)  # 15 words, well under 150
+    ok_short = " ".join(["Short and sweet."] * 10)  # 30 words: over the 25-word validity floor, well under the 150-word budget
     result_obj = SimpleNamespace(text=f"1. a scene\n2. another\n\nSHORT:\n{ok_short}")
     ctx = _ctx()
     ctx["platform"] = MagicMock()
@@ -832,3 +832,134 @@ def test_resolve_media_title_prefers_full_h1_over_truncated_seo_title():
         "content": f"# {full_title}\n\nbody text",
     }
     assert _resolve_media_title(ctx) == full_title
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-01 script-quality fixes: sanitizer, validity gate, prompt voice rules
+# ---------------------------------------------------------------------------
+
+from modules.content.stages.generate_media_scripts import (  # noqa: E402
+    _VIDEO_NARRATION_FALLBACK,
+    _sanitize_short_script,
+)
+
+
+def test_sanitize_short_truncates_at_horizontal_rule() -> None:
+    """The 8ece shape: narration, then '---', then the model talking ABOUT
+    the script — which was frozen and read aloud into the render."""
+    raw = (
+        "A real narration sentence about pipelines. Another one here.\n\n"
+        "---\n\n"
+        "These elements aim to visually and narratively encapsulate the "
+        "essence of the episode."
+    )
+    out = _sanitize_short_script(raw)
+    assert "real narration" in out
+    assert "encapsulate" not in out
+    assert "---" not in out
+
+
+def test_sanitize_short_drops_trailing_meta_paragraph_without_rule() -> None:
+    raw = (
+        "Solid spoken narration with actual content in it.\n\n"
+        "This script covers the key points while engaging the audience."
+    )
+    out = _sanitize_short_script(raw)
+    assert "Solid spoken narration" in out
+    assert "This script covers" not in out
+
+
+def test_sanitize_short_kills_bare_end_marker() -> None:
+    """The e68e shape: the entire 'short' was **END** — 1 word, frozen
+    forever, rendered as 12s of visuals over 3.8s of voice."""
+    assert _sanitize_short_script("**END**") == ""
+
+
+def test_sanitize_short_keeps_mid_script_this_sentences() -> None:
+    # Meta-drop works from the END only — narration legitimately using
+    # "this" mid-paragraph survives.
+    raw = "This hidden debt is a shared concern. It ripples through pricing."
+    assert _sanitize_short_script(raw) == raw
+
+
+@pytest.mark.asyncio
+async def test_invalid_short_retries_once_then_ships_without_short():
+    """Both attempts produce a garbage short → the task ships with NO short
+    (never freezing garbage) + a short_script_invalid finding; scenes and the
+    podcast script survive."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    result_obj = SimpleNamespace(text="1. a scene here\n2. another scene\n\nSHORT:\n**END**")
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    assert result.context_updates["short_summary_script"] == ""
+    # Scene call ran twice (the retry), scenes kept from an attempt.
+    scene_calls = [
+        c for c in ctx["platform"].dispatch.complete.await_args_list
+        if "SHORT:" in c.kwargs["messages"][0]["content"]
+    ]
+    assert len(scene_calls) == 2
+    invalid = [
+        c for c in mock_finding.call_args_list
+        if c.kwargs.get("kind") == "short_script_invalid"
+    ]
+    assert len(invalid) == 1
+
+
+@pytest.mark.asyncio
+async def test_valid_short_on_retry_is_used():
+    """Attempt 1 garbage, attempt 2 valid → the retry's short is kept and no
+    invalid finding fires."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    good_short = " ".join(["A proper spoken sentence goes here."] * 6)  # 36w
+    bad = SimpleNamespace(text="1. a scene here\n2. another scene\n\nSHORT:\n**END**")
+    good = SimpleNamespace(text=f"1. a scene here\n2. another scene\n\nSHORT:\n{good_short}")
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    # Call 1 = podcast? No — podcast goes through _build_script_with_llm mock;
+    # dispatch serves ONLY the scene calls here: bad then good.
+    ctx["platform"].dispatch.complete = AsyncMock(side_effect=[bad, good])
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    assert "proper spoken sentence" in result.context_updates["short_summary_script"]
+    assert not [
+        c for c in mock_finding.call_args_list
+        if c.kwargs.get("kind") == "short_script_invalid"
+    ]
+
+
+def test_scene_prompt_carries_voice_rules() -> None:
+    p = _build_scene_prompt("T", "body", "Site", target_seconds=45, target_words=112)
+    assert "no emojis" in p
+    assert "Ever wondered" in p  # named as banned
+    assert "Output NOTHING after the narration" in p
+
+
+def test_long_narration_fallback_carries_voice_rules() -> None:
+    p = _VIDEO_NARRATION_FALLBACK
+    assert "COLD OPEN" in p
+    assert "delve" in p  # banned-word list present
+    assert "In conclusion" in p  # named as banned
+    assert "exactly as the" in p  # numbers-verbatim rule

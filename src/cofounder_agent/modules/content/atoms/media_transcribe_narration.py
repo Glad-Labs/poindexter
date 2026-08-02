@@ -266,19 +266,36 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     long_script = (state.get("video_long_script") or "").strip() or (
         state.get("podcast_script") or ""
     )
+    # 2026-08-01 normalizer split: scripts are stored CLEAN and the TTS
+    # boundary applies the full speech pass (pronunciations, acronyms, model
+    # names). The fidelity reference must be the text TTS actually received,
+    # so the same pass runs here — otherwise a clean-script "CI/CD" diffs
+    # against ASR of the spoken "See Eye See Dee" and tanks fidelity.
+    from services.podcast_service import _normalize_for_speech
+
+    def _tts_input(text: str) -> str:
+        # site_config=None (tests / degraded runs) would fail-loud inside the
+        # normalizer's DI seam (#272); the un-normalized composed text is the
+        # correct reference there because the TTS boundary can't normalize
+        # without a site_config either.
+        if site_config is None or not text:
+            return text
+        return _normalize_for_speech(text, site_config=site_config)
+
     long_srt = await _transcribe_one(
         audio_path=state.get("long_narration_audio_path") or "",
-        script=compose_narration_text(
-            script=long_script, cta_key="media.cta.video", site_config=site_config,
-        ),
+        script=_tts_input(compose_narration_text(
+            script=long_script, cta_key="media.cta.video",
+            site_config=site_config,
+        )),
         task_id=task_id, label="long", site_config=site_config,
     )
     short_srt = await _transcribe_one(
         audio_path=state.get("short_narration_audio_path") or "",
-        script=compose_narration_text(
+        script=_tts_input(compose_narration_text(
             script=state.get("short_summary_script") or "",
             cta_key="media.cta.video_short", site_config=site_config,
-        ),
+        )),
         task_id=task_id, label="short", site_config=site_config,
     )
     return {

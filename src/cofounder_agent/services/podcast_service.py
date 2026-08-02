@@ -393,8 +393,69 @@ def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
     return pattern.sub(_repl, text)
 
 
+# Emoji / pictograph ranges — models decorate short-form scripts with these
+# (clock/laptop/rocket pictographs observed frozen into a short, then read
+# into the render); TTS either skips them or names them aloud, and captions
+# show them verbatim. Scripts are spoken artifacts, so strip at generation.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f300-\U0001faff"  # symbols, pictographs, transport, supplemental
+    "\U00002700-\U000027bf"  # dingbats
+    "\U0001f1e6-\U0001f1ff"  # regional indicators
+    "\u2600-\u26ff"          # misc symbols
+    "\ufe0f\u200d"           # variation selector + ZWJ (emoji glue)
+    "]+",
+)
+
+
+def _normalize_for_script(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Structural cleanup for a STORED narration script (2026-08-01 split).
+
+    Everything here improves the script in every medium — the stored artifact,
+    the QA fidelity reference, and the audio: URL/filename removal, spoken
+    version numbers, parenthetical-to-pause, emoji strip, dash/semicolon to
+    comma, quote/ellipsis/whitespace hygiene.
+
+    What it deliberately does NOT do is apply pronunciation opinions — the
+    ``tts_pronunciations`` / ``tts_acronym_replacements`` maps and the
+    model-name collapse. Those used to run at generation too, which FROZE
+    phonetic spellings into the stored scripts ("See Eye See Dee pipeline",
+    "git hub Actions", "Vee RAM") with zero audio benefit: the TTS render
+    boundary (``_generate_with_voice``) applies the speech pass itself, so
+    baking phonetics in only made the scripts and everything derived from
+    them read wrong. Pronunciations now live exclusively at the TTS boundary.
+    """
+    # Structural regex patterns (static)
+    for pattern, replacement in _SPOKEN_REGEX_STATIC:
+        text = pattern.sub(replacement, text)  # type: ignore[call-overload]
+    # Emoji/pictographs — never part of a spoken script.
+    text = _EMOJI_RE.sub("", text)
+    # Smart quotes → straight quotes (TTS handles these better)
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    # Ellipsis → pause
+    text = text.replace("\u2026", "...")
+    # Dashes and semicolons → comma pauses. Models lean hard on em-dashes and
+    # semicolons; TTS treats them all as roughly the same pause, and in the
+    # stored script a comma reads naturally where "giants; Alphabet,
+    # Microsoft" does not. Spoken prose has no semicolon semantics to lose.
+    text = re.sub(r"\s*[\u2014\u2013]\s*", ", ", text)
+    text = re.sub(r"\s*;\s*", ", ", text)
+    # Clean up double spaces and comma-space issues
+    text = re.sub(r"  +", " ", text)
+    text = re.sub(r",\s*,", ",", text)
+    return text
+
+
 def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
-    """Convert written English conventions to natural spoken form."""
+    """Convert written English conventions to natural spoken form.
+
+    The full TTS-input pass: the structural script cleanup plus every
+    pronunciation opinion (model-name collapse, ``tts_pronunciations``,
+    ``tts_acronym_replacements``). Applied at the TTS render boundary; safe
+    (idempotent) on the frozen backlog of scripts that were generated when
+    the pronunciation maps still ran at generation time.
+    """
     # Model identifiers first — collapse gemma-4-31B-it-qat:latest → "gemma 4
     # 31B" BEFORE the pronunciation map, so the split-off family still gets its
     # spoken form (glm → G L M) instead of being stranded in a config token.
@@ -402,21 +463,12 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # Simple replacements (DB-configurable via tts_pronunciations).
     for written, spoken in _get_tts_replacements(site_config=site_config):
         text = _apply_spoken_replacement(text, written, spoken)
-    # Structural regex patterns (static)
-    for pattern, replacement in _SPOKEN_REGEX_STATIC:
-        text = pattern.sub(replacement, text)  # type: ignore[call-overload]
+    # Shared structural pass (URLs/filenames, versions, parentheticals, emoji,
+    # dashes, quotes, whitespace).
+    text = _normalize_for_script(text, site_config=site_config)
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
     for pattern, replacement in _get_acronym_regex(site_config=site_config):
         text = pattern.sub(replacement, text)  # type: ignore[call-overload]
-    # Smart quotes → straight quotes (TTS handles these better)
-    text = text.replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u2018", "'").replace("\u2019", "'")
-    # Ellipsis → pause
-    text = text.replace("\u2026", "...")
-    # Clean up double spaces and comma-space issues
-    text = re.sub(r"  +", " ", text)
-    text = re.sub(r",\s*,", ",", text)
-    text = re.sub(r";\s*;", ";", text)
     return text
 
 
@@ -1304,16 +1356,14 @@ class PodcastService:
         """
         from services import tts_service
 
-        # Apply DB-configurable pronunciation fixes at the TTS render boundary
-        # (e.g. VRAM → "Vee RAM"). The structural normalization runs at script
-        # generation (generate_media_scripts); re-applying ONLY the simple
-        # pronunciation map here lets operator-tuned pronunciations reach the
-        # EXISTING script backlog on re-render without regeneration. Idempotent
-        # — the spoken forms never contain their written keys. Uses the same
-        # word-boundary helper as _normalize_for_speech so short tokens (CI,
-        # MB) fire only as whole words — never inside "social" or "number".
-        for written, spoken in _get_tts_replacements(site_config=self._site_config):
-            script = _apply_spoken_replacement(script, written, spoken)
+        # Apply the FULL speech pass at the TTS render boundary (2026-08-01
+        # split): model-name collapse + tts_pronunciations + structural pass +
+        # tts_acronym_replacements. Scripts are now stored CLEAN
+        # (_normalize_for_script only — no phonetics baked in), so this is the
+        # single place written English becomes spoken English. Idempotent on
+        # the frozen backlog of pre-split scripts that already carry phonetic
+        # spellings — the spoken forms never contain their written keys.
+        script = _normalize_for_speech(script, site_config=self._site_config)
 
         engine = str(self._site_config.get("podcast_tts_engine", "") or "").strip()
         if engine == "chatterbox":
