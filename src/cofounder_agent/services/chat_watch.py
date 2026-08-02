@@ -58,10 +58,10 @@ async def watch_task(pool: Any, task_id: str) -> dict[str, Any] | None:
 
     rows = await pool.fetch(
         """
-        SELECT node_id, atom, status, duration_ms, started_at
+        SELECT node_id, atom, status, latency_ms AS duration_ms
           FROM atom_runs
          WHERE run_id = $1
-         ORDER BY started_at
+         ORDER BY id
         """,
         task["task_id"],
     )

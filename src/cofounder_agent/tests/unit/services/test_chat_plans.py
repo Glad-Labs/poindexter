@@ -147,7 +147,8 @@ class TestCreatePlan:
         ))
         assert cached["spec"]["name"] == "plan_canonical blog"
         assert out["slug"].startswith("plan_")
-        assert out["node_count"] == 3
+        # 3 composed nodes + the appended ensure_terminal_status node.
+        assert out["node_count"] == 4
         assert out["nodes"][0] == "verify_task"
 
     def test_escaped_namespace_refused(self, plan_env, monkeypatch):
@@ -254,7 +255,7 @@ class TestPlanPipelineTool:
                 ctx, intent="write about X, skip video", topic="X",
             )
         )
-        assert "Plan ready: 3 steps" in out
+        assert "Plan ready: 4 steps" in out
         assert len(ctx.emitted_cards) == 1
         card = ctx.emitted_cards[0]
         assert card["kind"] == "plan" and card["state"] == "draft"
@@ -315,3 +316,86 @@ class TestLoopCardDrain:
             and (p.get("card") or {}).get("kind") == "plan"
         ]
         assert card_parts and card_parts[0]["card"]["state"] == "draft"
+
+
+@pytest.mark.unit
+class TestEnsureTerminal:
+    """A plan graph without a status-setting node can never complete —
+    the task loops through the 30-min stale sweep until the retry cap
+    (first live plan batch: 2 of 3 architect graphs). create_plan must
+    guarantee a terminal."""
+
+    def test_appends_status_node_wired_from_sinks(self):
+        spec = {
+            "name": "plan_x",
+            "nodes": [
+                {"id": "draft", "atom": "content.generate_draft"},
+                {"id": "qa1", "atom": "qa.web_factcheck"},
+                {"id": "meta", "atom": "content.compile_meta"},
+            ],
+            "edges": [
+                {"from": "draft", "to": "qa1"},
+                {"from": "qa1", "to": "meta"},
+            ],
+        }
+        out = chat_plans.ensure_terminal(spec)
+        assert out["nodes"][-1]["atom"] == "atoms.set_task_status"
+        assert out["nodes"][-1]["config"]["target_status"] == "awaiting_approval"
+        term = out["nodes"][-1]["id"]
+        # meta is the only sink; exactly one new edge, from it.
+        new_edges = [e for e in out["edges"] if e["to"] == term]
+        assert new_edges == [{"from": "meta", "to": term}]
+        # Original spec untouched.
+        assert len(spec["nodes"]) == 3 and len(spec["edges"]) == 2
+
+    def test_multiple_sinks_all_wired(self):
+        spec = {
+            "name": "plan_x",
+            "nodes": [
+                {"id": "a", "atom": "content.generate_draft"},
+                {"id": "b", "atom": "qa.web_factcheck"},
+                {"id": "c", "atom": "content.compile_meta"},
+            ],
+            "edges": [{"from": "a", "to": "b"}, {"from": "a", "to": "c"}],
+        }
+        out = chat_plans.ensure_terminal(spec)
+        term = out["nodes"][-1]["id"]
+        assert {e["from"] for e in out["edges"] if e["to"] == term} == {"b", "c"}
+
+    def test_noop_when_set_task_status_present(self):
+        spec = {"name": "plan_x", "nodes": [
+            {"id": "s", "atom": "atoms.set_task_status",
+             "config": {"target_status": "completed"}},
+        ], "edges": []}
+        assert chat_plans.ensure_terminal(spec) is spec
+
+    def test_noop_when_finalize_stage_present(self):
+        spec = {"name": "plan_x", "nodes": [
+            {"id": "d", "atom": "content.generate_draft"},
+            {"id": "f", "atom": "stage.finalize_task"},
+        ], "edges": [{"from": "d", "to": "f"}]}
+        assert chat_plans.ensure_terminal(spec) is spec
+
+    def test_edgeless_spec_wires_from_last_node(self):
+        spec = {"name": "plan_x", "nodes": [
+            {"id": "only", "atom": "content.generate_draft"},
+        ]}
+        out = chat_plans.ensure_terminal(spec)
+        term = out["nodes"][-1]["id"]
+        assert out["edges"] == [{"from": "only", "to": term}]
+
+    def test_empty_spec_untouched(self):
+        spec = {"name": "plan_x"}
+        assert chat_plans.ensure_terminal(spec) is spec
+
+    def test_create_plan_caches_the_terminal_ensured_spec(self, plan_env):
+        pool, cached, _, _ = plan_env
+        asyncio.run(chat_plans.create_plan(
+            pool, conversation_id="c1", message_id="m1",
+            intent="i", topic="t",
+            spec={"name": "x", "nodes": [
+                {"id": "d", "atom": "content.generate_draft"},
+            ], "edges": []},
+        ))
+        atoms = [n["atom"] for n in cached["spec"]["nodes"]]
+        assert atoms[-1] == "atoms.set_task_status"

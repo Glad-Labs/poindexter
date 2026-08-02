@@ -257,7 +257,11 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
           </>
         ) : (
           <span className="cf-plan__ranchip">
-            <Icon name="check" size={12} /> running
+            {/* No live-state claim here — the card doesn't track the task
+                (a static "running" label outlived cancelled tasks and read
+                as an infinite run). The watch rail + completion card are
+                the live-status surfaces; this chip just links the task. */}
+            <Icon name="check" size={12} /> started
             {card.task_id ? (
               <button
                 className="mbtn mbtn--ghost"

@@ -48,6 +48,46 @@ def namespace_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# Atoms that transition the task off ``in_progress``. A graph containing
+# none of these can NEVER complete: the run finishes its nodes, the task
+# row stays in_progress, the 30-min stale sweep re-queues it, and the
+# pipeline re-runs until the retry cap (first live plan batch: 2 of 3
+# architect graphs looped exactly this way).
+_TERMINAL_ATOMS = ("atoms.set_task_status", "stage.finalize_task")
+
+
+def ensure_terminal(spec: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy guaranteed to end in a status-setting node.
+
+    When the composed spec lacks a terminal atom, append
+    ``atoms.set_task_status`` (``target_status='awaiting_approval'`` — the
+    reviewable landing state; approve≠publish still applies) wired from
+    every sink node. Deterministic code, not LLM trust: the architect is
+    free to design any pipeline shape, but a plan run must always land
+    somewhere the operator can see.
+    """
+    nodes = list(spec.get("nodes") or [])
+    if not nodes:
+        return spec
+    if any((n.get("atom") or "") in _TERMINAL_ATOMS for n in nodes):
+        return spec
+    out = dict(spec)
+    edges = [dict(e) for e in (spec.get("edges") or [])]
+    node_ids = [n.get("id") for n in nodes if n.get("id")]
+    sources = {e.get("from") for e in edges}
+    sinks = [nid for nid in node_ids if nid not in sources] or node_ids[-1:]
+    term_id = "ensure_terminal_status"
+    nodes = nodes + [{
+        "id": term_id,
+        "atom": "atoms.set_task_status",
+        "config": {"target_status": "awaiting_approval"},
+    }]
+    edges = edges + [{"from": sink, "to": term_id} for sink in sinks]
+    out["nodes"] = nodes
+    out["edges"] = edges
+    return out
+
+
 async def create_plan(
     pool: Any,
     *,
@@ -60,7 +100,7 @@ async def create_plan(
     """Cache the composed spec and insert the plan row; returns card fields."""
     from services.pipeline_architect import cache_template
 
-    safe_spec = namespace_spec(spec)
+    safe_spec = ensure_terminal(namespace_spec(spec))
     slug = await cache_template(pool, safe_spec)
     if not slug.startswith(_SLUG_PREFIX):
         # cache_template normalizes the name itself; a prefix that didn't
