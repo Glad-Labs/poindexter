@@ -89,7 +89,8 @@ _HEAL_MARKER_SQL = """
 
 
 async def _regen_one(
-    task_id: str, *, pool: Any, site_config: Any, platform: Any, apply: bool,
+    task_id: str, *, pool: Any, site_config: Any, platform: Any,
+    database_service: Any, apply: bool,
 ) -> bool:
     from modules.content.stages.generate_media_scripts import (
         GenerateMediaScriptsStage,
@@ -113,17 +114,13 @@ async def _regen_one(
     # Minimal stage context — mirrors what content_router_service seeds for
     # these stages: content/title (+ seo_title for _resolve_media_title's
     # clean-title preference), the DI seams, and the task id.
-    class _DB:
-        def __init__(self, p: Any) -> None:
-            self.pool = p
-
     context: dict[str, Any] = {
         "task_id": task_id,
         "title": row["title"] or "",
         "seo_title": row["seo_title"] or "",
         "content": row["content"] or "",
         "site_config": site_config,
-        "database_service": _DB(pool),
+        "database_service": database_service,
         "platform": platform,
     }
 
@@ -201,27 +198,35 @@ async def _main() -> int:
     parser.add_argument("--apply", action="store_true", help="write back + heal (default: dry run)")
     args = parser.parse_args()
 
-    import asyncpg
-    from brain.bootstrap import resolve_database_url
-
     from services.di_wiring import (
         build_and_wire_subprocess_with_container,
         build_platform_for_subprocess,
     )
+    from services.flows.content_generation import _build_default_database_service
 
-    pool = await asyncpg.create_pool(resolve_database_url(), min_size=1, max_size=3)
+    # A REAL DatabaseService (not a bare pool): its initialize() also sets the
+    # global AuditLogger, without which build_platform_for_subprocess returns
+    # None and generate_video_shot_list SKIPS ("no Platform handle").
+    database_service = await _build_default_database_service()
+    pool = database_service.pool
     try:
         site_config, _container = await build_and_wire_subprocess_with_container(pool)
         platform = build_platform_for_subprocess(pool, site_config)
+        if platform is None:
+            logger.error("platform handle unavailable — the director would skip; aborting")
+            return 1
         ok = True
         for task_id in args.task_ids:
             ok = await _regen_one(
                 task_id, pool=pool, site_config=site_config,
-                platform=platform, apply=args.apply,
+                platform=platform, database_service=database_service,
+                apply=args.apply,
             ) and ok
         return 0 if ok else 1
     finally:
-        await pool.close()
+        close = getattr(database_service, "close", None)
+        if close is not None:
+            await close()
 
 
 if __name__ == "__main__":
