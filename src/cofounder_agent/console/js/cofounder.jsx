@@ -713,7 +713,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
   const [watches, setWatches] = React.useState({}); // taskId → watch snapshot
   const scrollRef = React.useRef(null);
   const abortRef = React.useRef(null); // Stop button (P3)
-  const readSeqRef = React.useRef(0); // token-serializes thread reads
+  const readGateRef = React.useRef(PXChat.readGate()); // serializes thread reads
   const threadRef = React.useRef(null);
   React.useEffect(() => {
     threadRef.current = thread;
@@ -746,19 +746,28 @@ function CofounderMode({ onOpenTask, pushToast }) {
       });
   }, []);
 
-  // Every thread read flows through here, token-serialized: a read
-  // superseded by a later-started read is discarded on arrival, so a slow
-  // response can never regress the pane to an older snapshot (live
-  // symptom: watcher message rendered, vanished, then re-appeared on the
-  // next poll — the refresh poll's stale GET was landing after the
-  // watch-effect's fresher one). Returns false only on a fetch failure —
-  // and a failed refresh never blanks rows already on screen; the next
-  // poll repairs instead.
-  const syncThread = async (id, { background = false } = {}) => {
-    const token = ++readSeqRef.current;
+  // Every thread read flows through here, gated by PXChat.readGate with
+  // MONOTONIC APPLY semantics (both directions earned by live incidents):
+  // a stale response landing after a fresher one applied is discarded —
+  // but a slow response with nothing newer applied still wins, so reads
+  // keep making forward progress when the worker is busy and every fetch
+  // is slower than the poll cadence (the Run-button freeze: the plan's
+  // own pipeline task slowed the API the instant it started, and
+  // latest-started-wins discarded every response until the task
+  // finished). Background ticks are skipped while one is in flight.
+  // Returns false only on a fetch failure — and a failed refresh never
+  // blanks rows already on screen; the next poll repairs instead.
+  // quiet: swallow fetch errors (background refreshes must never toast or
+  // blank). skippable: poll ticks only — a tick may be dropped while a
+  // read is in flight, but action-triggered refreshes (Run/approve/post-
+  // turn) always fetch so their update is never left to the next tick.
+  const syncThread = async (id, { quiet = false, skippable = false } = {}) => {
+    const gate = readGateRef.current;
+    const token = gate.begin(skippable);
+    if (!token) return true; // a read is already in flight; tick dropped
     try {
       const fresh = await api.chatGet(id);
-      if (token !== readSeqRef.current) return true; // superseded
+      if (!gate.settle(token)) return true; // a newer read already applied
       if (
         PXChat.threadFingerprint(fresh) !==
         PXChat.threadFingerprint(threadRef.current)
@@ -766,7 +775,8 @@ function CofounderMode({ onOpenTask, pushToast }) {
         setThread(fresh);
       return true;
     } catch (e) {
-      if (!background && !threadRef.current) {
+      gate.fail();
+      if (!quiet && !threadRef.current) {
         setThread(null);
         if (!disabled403(e))
           pushToast(`Thread load failed — ${e.message}`, 'red', '✕');
@@ -781,6 +791,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
     setLive(null);
     setPendingUserText(null);
     setWatches({});
+    readGateRef.current.reset(); // in-flight reads of the old thread are stale
     if (selectedId) syncThread(selectedId);
   }, [selectedId]);
 
@@ -797,7 +808,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
     const timer = setInterval(() => {
       // Transient read failures are swallowed inside syncThread — errors
       // here must never toast-spam or blank an idle thread.
-      syncThread(selectedId, { background: true });
+      syncThread(selectedId, { quiet: true, skippable: true });
     }, ms);
     return () => clearInterval(timer);
   }, [selectedId, sending, catalog]);
@@ -828,7 +839,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
           if (!alive) return;
           setWatches((w) => ({ ...w, [id]: snap }));
           if (snap.terminal && !(watches[id] && watches[id].terminal)) {
-            await syncThread(selectedId, { background: true });
+            await syncThread(selectedId, { quiet: true });
           }
         } catch (e) {
           // Unknown task / transient read failure: drop silently; the rail
@@ -930,10 +941,10 @@ function CofounderMode({ onOpenTask, pushToast }) {
       // Swap the live fold for the canonical persisted rows. One quick
       // retry before giving up: a transient read failure right here would
       // otherwise vanish the exchange until the next poll repairs it.
-      const ok = await syncThread(convId, { background: true });
+      const ok = await syncThread(convId, { quiet: true });
       if (!ok) {
         await new Promise((r) => setTimeout(r, 1200));
-        await syncThread(convId, { background: true });
+        await syncThread(convId, { quiet: true });
       }
       refreshList();
       setLive(null);
@@ -1031,7 +1042,7 @@ function CofounderMode({ onOpenTask, pushToast }) {
               onOpenTask={onOpenTask}
               pushToast={pushToast}
               onAdjust={(t) => setInput(t)}
-              onResolved={() => syncThread(selectedId, { background: true })}
+              onResolved={() => syncThread(selectedId, { quiet: true })}
               onRetry={
                 m.role !== 'user' &&
                 (m.turn_status === 'interrupted' || m.turn_status === 'failed')

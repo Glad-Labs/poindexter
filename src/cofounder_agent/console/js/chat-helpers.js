@@ -329,6 +329,50 @@
     };
   }
 
+  // Serializes concurrent thread reads with MONOTONIC APPLY semantics.
+  // Two failure modes bracketed by live incidents, and the gate must hold
+  // both at once:
+  //  - Regression (first live session): a slow STALE read landing after a
+  //    fresher one applied would clobber the pane backwards. A response
+  //    whose read began at-or-before the last APPLIED read's start is
+  //    discarded (settle → false).
+  //  - Livelock (Run-button incident): "latest-started wins" discarded
+  //    every response once read latency exceeded the poll cadence — the
+  //    worker gets busy the moment a plan task starts, each poll tick
+  //    superseded the previous still-in-flight read, and the pane froze
+  //    on 'draft' until the pipeline finished. A slow response now still
+  //    applies (forward progress) as long as nothing newer applied first,
+  //    and background ticks are SKIPPED while a background read is in
+  //    flight so reads never convoy on a busy worker.
+  // begin(background) → token (0 = skip this tick); settle(token) → true
+  // when the caller should apply; fail(token) on fetch error; reset() on
+  // conversation switch (marks every in-flight read stale).
+  function readGate() {
+    let seq = 0;
+    let applied = 0;
+    let inFlight = 0;
+    return {
+      begin(background) {
+        if (background && inFlight > 0) return 0;
+        inFlight += 1;
+        seq += 1;
+        return seq;
+      },
+      settle(token) {
+        inFlight = Math.max(0, inFlight - 1);
+        if (!token || token <= applied) return false;
+        applied = token;
+        return true;
+      },
+      fail() {
+        inFlight = Math.max(0, inFlight - 1);
+      },
+      reset() {
+        applied = seq;
+      },
+    };
+  }
+
   window.PXChat = {
     splitNdjson,
     newTurnView,
@@ -341,6 +385,7 @@
     planBlocks,
     threadFingerprint,
     watchProgress,
+    readGate,
     SLASH,
   };
 })();

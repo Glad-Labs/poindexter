@@ -411,3 +411,69 @@ test('planBlocks: groups node ids into plain-language blocks, in order', () => {
   assert.equal(blocks.find((b) => b.label === 'Quality checks').count, 3);
   assert.deepEqual(j(PXChat.planBlocks([])), []);
 });
+
+// ── readGate — monotonic thread-read serialization ─────────────────
+// Both semantics earned by live incidents: stale reads must not regress
+// the pane, AND slow reads must still make forward progress when the
+// worker is busy (the Run-button freeze).
+
+test('readGate: out-of-order stale response is discarded', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  const older = g.begin(false);
+  const newer = g.begin(false);
+  assert.equal(g.settle(newer), true); // newer read applies first
+  assert.equal(g.settle(older), false); // stale arrival discarded
+});
+
+test('readGate: slow reads still apply when nothing newer applied (livelock fix)', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  // Simulates reads slower than the poll cadence: each begins before the
+  // previous settles. Under latest-started-wins every settle would be
+  // discarded and the pane would freeze; monotonic apply keeps progress.
+  const t1 = g.begin(false);
+  const t2 = g.begin(false);
+  assert.equal(g.settle(t1), true); // slow but nothing newer applied yet
+  assert.equal(g.settle(t2), true); // and the newer one still applies after
+});
+
+test('readGate: background ticks are skipped while a read is in flight', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  const t1 = g.begin(true);
+  assert.ok(t1 > 0);
+  assert.equal(g.begin(true), 0); // tick dropped — no convoy on a busy worker
+  g.settle(t1);
+  assert.ok(g.begin(true) > 0); // next tick fetches again
+});
+
+test('readGate: action reads are never skipped', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  const poll = g.begin(true);
+  const action = g.begin(false); // Run/approve refresh during an in-flight poll
+  assert.ok(action > 0);
+  assert.equal(g.settle(action), true);
+  assert.equal(g.settle(poll), false); // the older poll read is now stale
+});
+
+test('readGate: failed reads release the in-flight slot without applying', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  const t1 = g.begin(true);
+  g.fail(t1);
+  const t2 = g.begin(true); // not skipped — the failed read released it
+  assert.ok(t2 > 0);
+  assert.equal(g.settle(t2), true);
+});
+
+test('readGate: reset marks all in-flight reads stale (conversation switch)', () => {
+  const PXChat = load();
+  const g = PXChat.readGate();
+  const oldConv = g.begin(false);
+  g.reset();
+  const newConv = g.begin(false);
+  assert.equal(g.settle(oldConv), false); // old conversation's read discarded
+  assert.equal(g.settle(newConv), true);
+});
