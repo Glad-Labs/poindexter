@@ -26,20 +26,40 @@ episode routes at `public, max-age=86400` by theirs — none of them appear in a
 allowlist, and adding them would be inert. When auditing what is cached, read
 the responses, not just this middleware.
 
-### Known boundary
+### Position in the stack (closed the original known boundary)
 
-The guarantee covers responses that reach this middleware. Anything
-short-circuited by a middleware registered _outside_ it — `InputValidation`,
-`PayloadInspection`, `SecurityHeaders`, `CORS`, `TokenValidation`, all of which
-`utils/middleware_config.py` registers later and therefore wraps outer — returns
-with **no `Cache-Control` at all** and falls back to browser heuristic caching.
+`CacheControlMiddleware` is registered **outermost-but-one**: only the
+Prometheus RED timer wraps it, and that middleware is pure observation — it can
+never mint a response, so "every response is stamped" still holds while RED
+latency keeps timing the full request.
 
-This was left alone deliberately rather than reordering the stack. Those paths
-reject with `400`/`401`, which RFC 9111 §4.2.2 does not list as heuristically
-cacheable, so the practical exposure is a `404`/`405`/`410` emitted by an outer
-middleware — none currently do. If one ever starts, the fix is to register
-`CacheControlMiddleware` last (outermost) so it stamps everything, which is a
-larger blast radius than this change wanted to take on.
+As first shipped, the middleware sat _innermost_, so any middleware that
+produced its own response bypassed it entirely: `TokenValidation` 401s,
+`InputValidation`/`PayloadInspection` 400s, and CORS preflights all returned
+with **no `Cache-Control` at all** and fell back to browser heuristic caching.
+The 2026-08-02 reorder closed that: those responses now carry `no-store`,
+verified by composed-stack tests that trigger each short-circuit for real
+(`tests/unit/utils/test_middleware_config.py`) — the same probes returned no
+header at all under the old order.
+
+Preflights deserve a note: stamping `no-store` on an `OPTIONS` response does
+**not** defeat preflight caching. The browser's CORS-preflight cache is a
+separate cache governed by `Access-Control-Max-Age` (Fetch spec), not by
+`Cache-Control`, so the preflight response correctly carries both
+(`no-store` + `max-age=600` for the preflight cache).
+
+Ordering rules, should the stack grow:
+
+- A middleware that **can produce a response** must be registered before
+  (inside) `CacheControlMiddleware`.
+- A middleware that **must observe the whole request** (timers) may sit
+  outside it only if it never responds.
+
+The one remaining gap is unhandled-exception **500s**: they propagate as
+exceptions through `dispatch` — there is no response object to stamp — and the
+500 is built by Starlette's `ServerErrorMiddleware`, which no user middleware
+can wrap. RFC 9111 §4.2.2 does not make 500s heuristically cacheable, so this
+is acceptable and not worth chasing.
 
 ## Why
 
@@ -93,10 +113,10 @@ Two implementation details that are easy to get wrong:
   route set for itself. A route opting into a long `max-age` (the podcast and
   video episode routes use `public, max-age=86400`) is exactly where a missing
   `Vary` would hurt most.
-- It **merges** rather than assigns. `CORSMiddleware` is registered _outside_
-  `CacheControlMiddleware`, so it appends `Vary: Origin` on the way out;
-  assigning would drop it. `Vary: *` already means "never reuse" and is left
-  alone.
+- It **merges** rather than assigns. `CORSMiddleware` runs _inside_
+  `CacheControlMiddleware` (since the 2026-08-02 reorder), so its
+  `Vary: Origin` is already on the response when the merge happens; assigning
+  would drop it. `Vary: *` already means "never reuse" and is left alone.
 
 `no-store` responses get no `Vary` — nothing stores them, so it would be dead
 weight on the overwhelming majority of responses.

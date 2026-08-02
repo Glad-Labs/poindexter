@@ -17,6 +17,8 @@ Covers:
 import os
 from unittest.mock import MagicMock, patch
 
+from fastapi.testclient import TestClient
+
 from utils.middleware_config import MiddlewareConfig, create_middleware_config, middleware_config
 
 
@@ -298,3 +300,126 @@ class TestRegisterAllMiddleware:
         mc.register_all_middleware(app)
         # Multiple middlewares are registered
         assert app.add_middleware.call_count >= 3
+
+
+# ---------------------------------------------------------------------------
+# Composed stack — the REAL middleware chain on a real FastAPI app.
+#
+# Cache-Control must be outermost of every response-PRODUCING middleware so
+# that short-circuited responses (auth 401s, validation 400s, CORS preflights)
+# are stamped too. When it sat innermost, all of those escaped with no
+# Cache-Control at all and fell back to browser heuristic caching — measured
+# live 2026-08-01 (stack#3000's known-boundary section, closed by this
+# reorder). Mock-based tests can't see ordering, hence the real app here.
+# ---------------------------------------------------------------------------
+
+
+def _real_stacked_app():
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    MiddlewareConfig().register_all_middleware(app)
+
+    @app.get("/api/tasks/probe")
+    async def _probe():
+        return {"ok": True}
+
+    return app
+
+
+def _stack_names(app):
+    """user_middleware class names, outermost first."""
+    return [m.cls.__name__ for m in app.user_middleware]
+
+
+class TestComposedStackOrdering:
+    def test_cache_control_wraps_every_response_producer(self):
+        names = _stack_names(_real_stacked_app())
+        cache_pos = names.index("CacheControlMiddleware")
+        # Smaller index = more outer. Every middleware that can mint its own
+        # response must sit INSIDE cache-control or its responses go
+        # unstamped again.
+        for producer in (
+            "CORSMiddleware",
+            "TokenValidationMiddleware",
+            "InputValidationMiddleware",
+            "PayloadInspectionMiddleware",
+        ):
+            assert cache_pos < names.index(producer), (
+                f"CacheControlMiddleware (pos {cache_pos}) must be outside "
+                f"{producer} (pos {names.index(producer)}); stack: {names}"
+            )
+
+    def test_only_the_red_timer_sits_outside_cache_control(self):
+        # Prometheus stays outermost so RED latency captures full wall-clock;
+        # that's safe only because it is pure observation. Anything else
+        # migrating outside cache-control would open the unstamped-response
+        # hole again.
+        names = _stack_names(_real_stacked_app())
+        outside = names[: names.index("CacheControlMiddleware")]
+        assert outside == ["PrometheusMetricsMiddleware"], (
+            f"unexpected middleware outside CacheControl: {outside}"
+        )
+
+
+class TestComposedStackShortCircuits:
+    """The three response-minting middlewares, triggered for real."""
+
+    def test_token_validation_401_is_stamped_no_store(self):
+        # /api/tasks is in PROTECTED_PATHS; no Authorization header → the 401
+        # comes from TokenValidationMiddleware, never reaching a route. This
+        # exact response carried NO Cache-Control before the reorder.
+        client = TestClient(_real_stacked_app())
+        resp = client.get("/api/tasks/probe")
+
+        assert resp.status_code == 401
+        assert resp.headers["cache-control"] == "no-store"
+
+    def test_malformed_bearer_401_is_stamped_no_store(self):
+        client = TestClient(_real_stacked_app())
+        resp = client.get("/api/tasks/probe", headers={"Authorization": "Basic xyz"})
+
+        assert resp.status_code == 401
+        assert resp.headers["cache-control"] == "no-store"
+
+    def test_cors_preflight_is_stamped_and_still_functional(self):
+        # Preflights are answered by CORSMiddleware directly. Stamping them
+        # no-store must not break preflight caching: the browser's preflight
+        # cache is a separate cache governed by Access-Control-Max-Age (Fetch
+        # spec), not by Cache-Control — so both headers coexisting is correct.
+        client = TestClient(_real_stacked_app())
+        resp = client.options(
+            "/api/tasks/probe",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["cache-control"] == "no-store"
+        # CORS still fully answered the preflight through the outer stamp
+        assert resp.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert resp.headers["access-control-max-age"] == "600"
+        assert "GET" in resp.headers["access-control-allow-methods"]
+
+    def test_route_response_still_stamped_and_vary_merges_with_cors(self):
+        # End-to-end through the whole real chain: a cacheable opt-in path
+        # keeps its directive, and CORS's Vary: Origin (inner) merges with
+        # Vary: Authorization (outer) instead of either clobbering the other.
+        app = _real_stacked_app()
+
+        @app.get("/api/capabilities/probe")
+        async def _caps():
+            return {"ok": True}
+
+        client = TestClient(app)
+        resp = client.get(
+            "/api/capabilities/probe", headers={"Origin": "http://localhost:3000"}
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["cache-control"] == "public, max-age=300"
+        vary = {v.strip() for v in resp.headers["vary"].split(",")}
+        assert {"Origin", "Authorization"} <= vary

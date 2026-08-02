@@ -166,8 +166,8 @@ class TestAddVaryAuthorization:
         assert h["vary"] == "Authorization"
 
     def test_merges_with_existing_vary(self):
-        # CORSMiddleware is registered OUTSIDE this one and appends
-        # `Vary: Origin` on the way out; a clobber here would drop it.
+        # CORSMiddleware runs INSIDE this one, so its `Vary: Origin` is
+        # already on the response by the time we stamp; a clobber would drop it.
         h = MutableHeaders({"vary": "Origin"})
         _add_vary_authorization(h)
         assert h["vary"] == "Origin, Authorization"

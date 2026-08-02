@@ -133,9 +133,10 @@ def _is_storable(cache_control: str) -> bool:
 def _add_vary_authorization(headers: MutableHeaders) -> None:
     """Merge ``Authorization`` into any existing ``Vary``.
 
-    Must merge rather than assign: ``CORSMiddleware`` is registered outside
-    this one and appends ``Vary: Origin`` on the way out, and a route may have
-    set its own. ``Vary: *`` already means "never reuse", so it is left alone.
+    Must merge rather than assign: ``CORSMiddleware`` runs inside this one, so
+    its ``Vary: Origin`` is already on the response by the time it gets here,
+    and a route may have set its own. ``Vary: *`` already means "never reuse",
+    so it is left alone.
     """
     existing = headers.get("vary")
     if not existing:
@@ -155,6 +156,16 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     endpoint can opt into a stricter or more permissive policy than the prefix
     tables give it. ``utils/operator_console.py`` relies on exactly that to
     serve the console's unhashed static assets ``no-cache``.
+
+    Registered outermost-but-one (only the Prometheus RED timer wraps it — see
+    ``utils/middleware_config.py``), so responses minted by inner middleware
+    (auth 401s, validation 400s, CORS preflights) are stamped too, not just
+    ones that reached a route. Keep it there: as the innermost middleware it
+    silently missed every short-circuit. The remaining gap is unhandled-
+    exception 500s — those propagate as exceptions through ``dispatch`` (there
+    is no response object to stamp) and are built by Starlette's
+    ``ServerErrorMiddleware``, which no user middleware can wrap. RFC 9111
+    §4.2.2 does not make 500s heuristically cacheable, so that is acceptable.
     """
 
     async def dispatch(

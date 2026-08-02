@@ -37,13 +37,15 @@ class MiddlewareConfig:
         Middleware is registered in reverse order of actual execution
         (middleware added last is executed first).
 
-        Order of execution (first to last):
-        1. Profiling middleware (tracks request latency)
-        2. CORS middleware (handles cross-origin requests)
-        3. Token validation (validates JWT tokens on protected endpoints)
-        4. Rate limiting (protects against abuse)
-        5. Input validation (sanitizes requests)
-        6. Payload inspection (logs payloads for debugging)
+        Order of execution (outermost to innermost):
+        1. Prometheus RED metrics (times the full request — never responds)
+        2. Cache-Control + Vary (stamps EVERY response, incl. short-circuits)
+        3. Profiling (tracks request latency)
+        4. Request ID (generates/propagates X-Request-ID)
+        5. CORS (handles cross-origin requests; answers preflights)
+        6. Security headers
+        7. Token validation (401s protected paths missing a Bearer header)
+        8. Input validation + payload inspection (400s malformed requests)
 
         Args:
             app: FastAPI application instance
@@ -56,8 +58,6 @@ class MiddlewareConfig:
             middleware_config.register_all_middleware(app)
         """
         # Register in reverse order (last added = first executed)
-        # Profiling should execute FIRST, so it's added LAST
-        self._setup_cache_control(app)
         self._setup_input_validation(app)
         self._setup_rate_limiting(app, site_config=site_config)
         self._setup_token_validation(app)
@@ -67,9 +67,18 @@ class MiddlewareConfig:
         # the profiling middleware logs request completion.
         self._setup_request_id(app)
         self._setup_profiling(app)
+        # Cache-Control is added second-to-LAST so it wraps every middleware
+        # that can mint a response — TokenValidation 401s, InputValidation
+        # 400s, CORS preflights all used to escape unstamped when it sat
+        # innermost (see the Known-boundary section of
+        # docs/architecture/2026-08-01-http-cache-policy.md). Only the
+        # Prometheus timer sits outside it, and that one never responds.
+        self._setup_cache_control(app)
         # Prometheus HTTP RED metrics — added LAST so it executes FIRST
         # (outermost), timing the full request including every inner
         # middleware. Capturing total wall-clock is the point of RED latency.
+        # Safe outside Cache-Control because it is pure observation: it can
+        # never produce a response, so "every response is stamped" still holds.
         self._setup_prometheus_metrics(app)
 
         logger.info("✅ All middleware registered successfully")
@@ -139,13 +148,14 @@ class MiddlewareConfig:
         Caching is opt-in: anything not explicitly classified comes back
         ``no-store``, and every storable response also gets
         ``Vary: Authorization``. Only static catalogs (capabilities,
-        agent-registry, templates, ``/.well-known/``) and ETag-bearing file
-        routes opt in; see ``middleware/cache_control.py`` for why the default
-        is deny.
+        agent-registry, templates) and ETag-bearing file routes opt in; see
+        ``middleware/cache_control.py`` for why the default is deny.
 
-        Registered here, INSIDE ``CORSMiddleware`` — CORS appends
-        ``Vary: Origin`` on the way out, which is why the Vary handling merges
-        rather than assigns.
+        Positioned OUTSIDE every response-producing middleware (only the
+        Prometheus timer wraps it), so short-circuited responses — auth 401s,
+        validation 400s, CORS preflights — are stamped too. CORS is inner and
+        puts ``Vary: Origin`` on the response before this middleware sees it,
+        which is why the Vary handling merges rather than assigns.
         """
         from middleware.cache_control import CacheControlMiddleware
 
