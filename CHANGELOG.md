@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## [0.116.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.115.0...v0.116.0) (2026-08-02)
+
+
+### Features
+
+* **analytics:** bot flagger catches path-sweeping crawlers (distinct-paths-per-UA signature) ([#2998](https://github.com/Glad-Labs/glad-labs-stack/issues/2998)) ([c54000d](https://github.com/Glad-Labs/glad-labs-stack/commit/c54000d13db0f2b686f03a9fcfd631202600c380))
+
+
+### Bug Fixes
+
+* **alerts:** Traffic Anomaly gets a volume floor — sub-30/day baselines report neutral ([#2996](https://github.com/Glad-Labs/glad-labs-stack/issues/2996)) ([e062b52](https://github.com/Glad-Labs/glad-labs-stack/commit/e062b52c7eda9acfce316bfa6527a99c74aa0294))
+* **api:** invert cache policy to deny-by-default, add Vary: Authorization ([#3000](https://github.com/Glad-Labs/glad-labs-stack/issues/3000)) ([edd8f38](https://github.com/Glad-Labs/glad-labs-stack/commit/edd8f3857ded40b9ebbaecfafac2accb21be7660)), closes [#2999](https://github.com/Glad-Labs/glad-labs-stack/issues/2999)
+* **api:** move CacheControlMiddleware outermost-but-one so short-circuits are stamped ([#3005](https://github.com/Glad-Labs/glad-labs-stack/issues/3005)) ([9c9d5bb](https://github.com/Glad-Labs/glad-labs-stack/commit/9c9d5bb5364ffccd49f112d8252a3ec95f685773)), closes [#3004](https://github.com/Glad-Labs/glad-labs-stack/issues/3004)
+* **architect:** grammar-constrained JSON output — think-spiral can't reach the wire ([#2997](https://github.com/Glad-Labs/glad-labs-stack/issues/2997)) ([adf4e1b](https://github.com/Glad-Labs/glad-labs-stack/commit/adf4e1b08891a46fbe85b97a150531b860b9eefe))
+* **chat:** plan runs always terminate + watch read matches the real schema ([#3007](https://github.com/Glad-Labs/glad-labs-stack/issues/3007)) ([d1c7375](https://github.com/Glad-Labs/glad-labs-stack/commit/d1c737542ca7b4572b5e98e92ac1091cc9965375))
+* **console:** monotonic thread reads — Run button no longer freezes on a busy worker ([#3002](https://github.com/Glad-Labs/glad-labs-stack/issues/3002)) ([0de87c7](https://github.com/Glad-Labs/glad-labs-stack/commit/0de87c7d17b199f6b222b6d1862d695cbb285730))
+* **media:** idle unload actually returns VRAM — wan floor-exits on idle, hygiene loops survive exceptions ([#2995](https://github.com/Glad-Labs/glad-labs-stack/issues/2995)) ([f5938d3](https://github.com/Glad-Labs/glad-labs-stack/commit/f5938d33a83cb1545360364d972aba2dee5fb719))
+* **media:** regen one-off builds a real DatabaseService so the Platform handle exists ([#3003](https://github.com/Glad-Labs/glad-labs-stack/issues/3003)) ([08b080d](https://github.com/Glad-Labs/glad-labs-stack/commit/08b080d477f59d75ce755bd3536837dc6a7cdd50))
+* **media:** script quality — clean stored scripts, hardened short parser, voice-ruled prompts ([#3001](https://github.com/Glad-Labs/glad-labs-stack/issues/3001)) ([9c00bce](https://github.com/Glad-Labs/glad-labs-stack/commit/9c00bcee6a14d2112810eb96fc531b64571e2df8))
+* **telemetry:** shim OTel span-namer crash that 500'd every CORS preflight ([#3006](https://github.com/Glad-Labs/glad-labs-stack/issues/3006)) ([6b4f708](https://github.com/Glad-Labs/glad-labs-stack/commit/6b4f708c264ae39edb7b54bad109057f3bbed54a))
+
 ## [0.115.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.114.0...v0.115.0) (2026-08-01)
 
 
