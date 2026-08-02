@@ -61,6 +61,12 @@ exceptions through `dispatch` — there is no response object to stamp — and t
 can wrap. RFC 9111 §4.2.2 does not make 500s heuristically cacheable, so this
 is acceptable and not worth chasing.
 
+(Deploying the reorder surfaced one real instance of that gap: OTel's FastAPI
+span-namer crashed on any partial-match-only request — CORS preflights — and
+500'd it before the middleware stack ran at all. Fixed separately by the shim
+in `services/telemetry.py::_patch_otel_fastapi_partial_match_crash`; the live
+preflight check below is the regression probe for both changes.)
+
 ## Why
 
 The previous policy inverted these defaults, and the "safe default" for

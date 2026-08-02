@@ -71,6 +71,62 @@ except ImportError:
     HTTPXClientInstrumentor = None  # type: ignore[assignment,misc]
 
 
+def _patch_otel_fastapi_partial_match_crash() -> None:
+    """Guard OTel's FastAPI span-namer against routes that have no ``.path``.
+
+    ``opentelemetry-instrumentation-fastapi`` 0.62b1's ``_get_route_details``
+    guards ``route.path`` behind try/except on FULL matches ("routes added via
+    host routing won't have a path attribute") but leaves the PARTIAL branch
+    two lines below unguarded. FastAPI ≥ 0.138 registers every
+    ``include_router`` block as an ``_IncludedRouter`` entry in ``app.routes``
+    — an object that PARTIAL-matches method-mismatched requests and has no
+    ``.path``. Any request that only partial-matches — a CORS preflight
+    ``OPTIONS``, an unknown method — therefore raises ``AttributeError``
+    inside the OTel ASGI wrapper, which sits OUTSIDE every user middleware,
+    and the whole request 500s before CORS can even answer it. Found live
+    2026-08-02 when the first-ever preflight hit the worker (the operator
+    console is same-origin, so nothing had sent one before).
+
+    Wrapping rather than reimplementing keeps the shim inert the moment
+    upstream adds the missing guard; the canary in
+    ``tests/unit/services/test_telemetry_otel_patch.py`` goes red when that
+    happens, which is the signal to delete this function and the canary both.
+
+    Idempotent (marker attribute) and fail-open: a shape change in the
+    upstream module logs a warning and leaves it unpatched rather than
+    breaking boot for an observability helper.
+    """
+    try:
+        from opentelemetry.instrumentation import fastapi as _otel_fastapi
+    except ImportError:
+        return
+
+    original = getattr(_otel_fastapi, "_get_route_details", None)
+    if original is None:
+        logging.warning(
+            "[setup_telemetry] opentelemetry.instrumentation.fastapi no longer "
+            "exposes _get_route_details — partial-match 500 shim NOT applied; "
+            "verify the upstream fix landed and delete "
+            "_patch_otel_fastapi_partial_match_crash"
+        )
+        return
+    if getattr(original, "_px_partial_match_guard", False):
+        return
+
+    def _guarded_get_route_details(scope):
+        try:
+            return original(scope)
+        except AttributeError:
+            # A path-less route (FastAPI _IncludedRouter) partial-matched.
+            # Fall back to the raw request path: coarser span cardinality for
+            # these few requests, instead of a 500 for the whole request.
+            return scope.get("path")
+
+    _guarded_get_route_details._px_partial_match_guard = True  # type: ignore[attr-defined]
+    _guarded_get_route_details._px_original = original  # type: ignore[attr-defined]
+    _otel_fastapi._get_route_details = _guarded_get_route_details
+
+
 def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
     """
     Sets up OpenTelemetry tracing for the FastAPI application and OpenAI SDK.
@@ -201,6 +257,10 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
         # Instrument the FastAPI app (skipped when app is None — worker
         # processes that have no FastAPI surface but still want spans).
         if app is not None and FastAPIInstrumentor is not None:
+            # Must precede instrument_app in spirit, but the patch swaps a
+            # module-level function the instrumentation resolves per-request,
+            # so it also protects an app instrumented earlier in the process.
+            _patch_otel_fastapi_partial_match_crash()
             try:
                 FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
             except Exception as e:
