@@ -477,3 +477,62 @@ test('readGate: reset marks all in-flight reads stale (conversation switch)', ()
   assert.equal(g.settle(oldConv), false); // old conversation's read discarded
   assert.equal(g.settle(newConv), true);
 });
+
+// ── planWarnings (absence chips, poindexter#950 follow-up) ──────────
+
+test('planWarnings: bare writer plan flags qa / fact-check / images', () => {
+  const PXChat = load();
+  assert.deepEqual(j(PXChat.planWarnings(['gen_draft', 'compile_meta'])), [
+    'no quality checks',
+    'no fact-check',
+    'no images',
+  ]);
+});
+
+test('planWarnings: full canonical-style plan warns nothing', () => {
+  const PXChat = load();
+  assert.deepEqual(
+    j(
+      PXChat.planWarnings([
+        'gen_draft',
+        'qa_web_factcheck',
+        'generate_images',
+        'persist_task',
+      ])
+    ),
+    []
+  );
+});
+
+test('planWarnings: qa presence clears quality but not fact-check', () => {
+  const PXChat = load();
+  assert.deepEqual(
+    j(PXChat.planWarnings(['draft', 'qa_critic', 'hero_image'])),
+    ['no fact-check']
+  );
+});
+
+test('planWarnings: auto-added terminal shows as reassurance', () => {
+  const PXChat = load();
+  assert.deepEqual(
+    j(
+      PXChat.planWarnings([
+        'draft',
+        'qa_rails',
+        'fact_check',
+        'inject_images',
+        'ensure_terminal_status',
+      ])
+    ),
+    ['auto-added: lands in your approval queue']
+  );
+});
+
+test('planWarnings: empty node list flags everything absent', () => {
+  const PXChat = load();
+  assert.deepEqual(j(PXChat.planWarnings([])), [
+    'no quality checks',
+    'no fact-check',
+    'no images',
+  ]);
+});

@@ -303,6 +303,31 @@
     return blocks;
   }
 
+  // Absence warnings for a plan card, derived from node ids the same way
+  // planBlocks derives presence. The first live batch shipped a plan whose
+  // closing text CLAIMED fact-checking while the graph had no such node —
+  // the card must make what's MISSING visible before the operator presses
+  // Run. Honest over clever: a podcast plan will show "no images", and
+  // that is fine — these are informative amber chips, not blockers.
+  const _WARN_RULES = [
+    [/qa|quality|critic|review/, 'no quality checks'],
+    [/fact/, 'no fact-check'],
+    [/image|hero|visual/, 'no images'],
+  ];
+
+  function planWarnings(nodes) {
+    const ids = (nodes || []).map((n) => String(n).toLowerCase());
+    const warnings = [];
+    for (const [re, warn] of _WARN_RULES) {
+      if (!ids.some((id) => re.test(id))) warnings.push(warn);
+    }
+    // The auto-added terminal is a reassurance, not a warning: the plan
+    // had no landing state of its own and the system supplied one.
+    if (ids.some((id) => id === 'ensure_terminal_status'))
+      warnings.push('auto-added: lands in your approval queue');
+    return warnings;
+  }
+
   // Watched-run snapshot (GET /api/chat/watch/{id}) → rail progress view.
   // pct is null when the graph's expected node count is unknown (dev_diary /
   // capture disabled) — the bar renders indeterminate, never fabricated.
@@ -383,6 +408,7 @@
     slashMatches,
     expandSlash,
     planBlocks,
+    planWarnings,
     threadFingerprint,
     watchProgress,
     readGate,

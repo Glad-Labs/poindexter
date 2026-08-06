@@ -723,3 +723,24 @@
   font-size: 11px;
   color: var(--gl-mint);
 }
+
+/* Plan-card absence warnings (informative amber, never blockers) */
+.cf-plan__warns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 2px 0 4px;
+}
+.cf-plan__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 600 10px/1 var(--mono, ui-monospace, monospace);
+  letter-spacing: 0.04em;
+  color: var(--amber, #d8a942);
+  background: color-mix(in srgb, var(--amber, #d8a942) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber, #d8a942) 35%, transparent);
+  border-radius: 4px;
+  padding: 3px 7px;
+  text-transform: uppercase;
+}

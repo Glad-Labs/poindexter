@@ -195,6 +195,7 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
   const [detail, setDetail] = React.useState(false);
   const draft = card.state === 'draft';
   const blocks = PXChat.planBlocks(card.nodes || []);
+  const warnings = PXChat.planWarnings(card.nodes || []);
   const run = async () => {
     if (busy || !draft) return;
     setBusy(true);
@@ -228,6 +229,15 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
           </span>
         ))}
       </div>
+      {warnings.length > 0 && (
+        <div className="cf-plan__warns">
+          {warnings.map((w) => (
+            <span key={w} className="cf-plan__warn">
+              <Icon name="alert" size={10} /> {w}
+            </span>
+          ))}
+        </div>
+      )}
       {detail && (
         <pre className="cf-tool__pre cf-plan__nodes">
           {(card.nodes || []).join('\n')}
