@@ -134,3 +134,57 @@ class TestRuntimeReloadReachesRoutes:
         after = get_site_config_dependency(request)
         assert after is _site_cfg  # one instance, not a stale copy
         assert after.get_bool("enforce_niche_allowlist", True) is False
+
+
+# ---------------------------------------------------------------------------
+# Quality-model watch (Glad-Labs/poindexter#985)
+# ---------------------------------------------------------------------------
+
+
+class TestQualityModelWatch:
+    async def test_watched_pin_change_emits_finding(self, monkeypatch):
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        sc = SiteConfig(initial_config={"pipeline_critic_model": "old-judge"})
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=_rows(pipeline_critic_model="new-judge"))
+
+        result = await ReloadSiteConfigJob().run(pool, {"_site_config": sc})
+
+        assert result.ok is True
+        assert result.changes_made == 1
+        assert result.metrics == {"quality_model_changes": 1}
+        assert [f["kind"] for f in findings] == ["quality_model_changed"]
+        assert findings[0]["extra"] == {
+            "key": "pipeline_critic_model", "old": "old-judge", "new": "new-judge",
+        }
+
+    async def test_unwatched_change_is_silent(self, monkeypatch):
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        sc = SiteConfig(initial_config={"some_other_key": "old"})
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=_rows(some_other_key="new"))
+
+        result = await ReloadSiteConfigJob().run(pool, {"_site_config": sc})
+
+        assert result.ok is True
+        assert result.changes_made == 0
+        assert findings == []
+
+    async def test_no_change_no_finding(self, monkeypatch):
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        sc = SiteConfig(initial_config={"pipeline_critic_model": "same-judge"})
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=_rows(pipeline_critic_model="same-judge"))
+
+        result = await ReloadSiteConfigJob().run(pool, {"_site_config": sc})
+        assert result.ok is True
+        assert findings == []

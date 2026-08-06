@@ -59,6 +59,25 @@ class ReloadSiteConfigJob:
         if pool is None:
             return JobResult(ok=False, detail="no pool available", changes_made=0)
 
+        # Quality-model watch (Glad-Labs/poindexter#985): snapshot the
+        # judge/writer model pins BEFORE the reload so a change made via any
+        # write surface (console, CLI, MCP, raw SQL) is announced within one
+        # cycle. The 2026-06-29 approval collapse traced to a critic-model
+        # swap that no surface announced — it ran 5+ weeks unnoticed.
+        watch_keys = [
+            k.strip()
+            for k in (
+                site_config.get(
+                    "quality_model_watch_keys",
+                    "pipeline_critic_model,qa_fallback_critic_model,"
+                    "pipeline_writer_model,pipeline_local_writer_model,"
+                    "qa_rewrite_model",
+                ) or ""
+            ).split(",")
+            if k.strip()
+        ]
+        before = {k: site_config.get(k, None) for k in watch_keys}
+
         try:
             count = await site_config.reload(pool)
         except Exception as e:  # noqa: BLE001 — site_config.reload swallows
@@ -68,8 +87,44 @@ class ReloadSiteConfigJob:
             return JobResult(ok=False, detail=f"reload failed: {e}", changes_made=0)
 
         logger.debug("[reload_site_config] reloaded %d keys", count)
+        changed = {
+            k: (before.get(k), site_config.get(k, None))
+            for k in watch_keys
+            if site_config.get(k, None) != before.get(k)
+        }
+        for key, (old, new) in changed.items():
+            try:
+                from utils.findings import emit_finding
+
+                emit_finding(
+                    source="services.jobs.reload_site_config",
+                    kind="quality_model_changed",
+                    title=f"Quality-critical model pin changed: {key}",
+                    body=(
+                        f"`{key}` changed from {old!r} to {new!r} (detected on "
+                        f"the site_config reload cycle — the write surface did "
+                        f"not announce it). Judge/writer swaps shift the whole "
+                        f"QA distribution; calibrate the new judge with "
+                        f"`poindexter model-eval run --slot critic` before "
+                        f"trusting threshold-sensitive decisions "
+                        f"(Glad-Labs/poindexter#985)."
+                    ),
+                    severity="warn",
+                    dedup_key=f"quality_model_changed:{key}:{new}",
+                    extra={"key": key, "old": old, "new": new},
+                )
+            except Exception:  # noqa: BLE001 — announcement is best-effort
+                logger.warning(
+                    "[reload_site_config] failed to emit quality_model_changed "
+                    "finding for %s", key,
+                )
+
         return JobResult(
             ok=True,
-            detail=f"site_config refreshed ({count} keys)",
-            changes_made=0,
+            detail=(
+                f"site_config refreshed ({count} keys)"
+                + (f"; quality-model changes: {sorted(changed)}" if changed else "")
+            ),
+            changes_made=len(changed),
+            metrics={"quality_model_changes": len(changed)},
         )

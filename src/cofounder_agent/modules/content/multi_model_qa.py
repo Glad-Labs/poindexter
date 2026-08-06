@@ -296,6 +296,45 @@ def format_qa_feedback_from_reviews(
     return text
 
 
+# Appended to the critic's content window when the article is longer than
+# ``qa_review_content_max_chars``. The qa.review prompt teaches the judge the
+# marker's meaning: the article CONTINUES past this point, so the cutoff must
+# never be judged as unfinished content. Before this existed the critic saw a
+# bare ``content[:8000]`` slice — a complete 13K-char draft presented as prose
+# cut mid-word at char 8000, and the judge (correctly, per its own rubric)
+# rejected it as unfinished with the score capped at 25. That artifact, not
+# content quality, drove most "truncation" vetoes of 2026-07/08
+# (Glad-Labs/poindexter#985; the 2026-06-29 approval collapse coincided with
+# average draft length crossing the old 8000-char window).
+REVIEW_EXCERPT_MARKER = (
+    "[REVIEW EXCERPT ENDS — the full article continues beyond this review "
+    "window; judge only the text shown and do NOT treat this cutoff as an "
+    "unfinished or truncated ending]"
+)
+
+
+def build_review_excerpt(content: str, max_chars: int) -> tuple[str, bool]:
+    """Bound ``content`` to the critic's review window without lying to it.
+
+    Returns ``(text, was_excerpted)``. Short content passes through
+    untouched. Longer content is cut at the last paragraph boundary inside
+    the window (falling back to a hard cut when no boundary lands in the
+    back 40%) and the :data:`REVIEW_EXCERPT_MARKER` is appended so the
+    judge knows the article continues — a mid-word slice with no marker
+    reads as truncated prose and triggers the rubric's unfinished-content
+    auto-reject on perfectly complete drafts.
+    """
+    text = content or ""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text, False
+    window = text[:max_chars]
+    boundary = window.rfind("\n\n")
+    if boundary < int(max_chars * 0.6):
+        boundary = max_chars
+    excerpt = window[:boundary].rstrip()
+    return excerpt + "\n\n" + REVIEW_EXCERPT_MARKER, True
+
+
 class MultiModelQA:
     """Multi-model quality assurance for content pipeline.
 
@@ -536,17 +575,47 @@ class MultiModelQA:
                 fallback = self._site_config.get(setting_key)
         except Exception:
             fallback = None
-        if not fallback:
-            await notify_operator(
-                f"qa critic ({site}): pipeline_critic_model is empty "
-                f"AND {setting_key} is empty — review failed",
-                critical=True,
-            )
-            raise RuntimeError(
-                f"qa critic ({site}): no critic model — set "
-                f"pipeline_critic_model or {setting_key}"
-            )
-        return fallback
+        if fallback:
+            # The judge silently changing identity is how the 2026-06-29
+            # approval collapse ran unnoticed for 5+ weeks — announce the
+            # engagement per feedback_flag_quality_downgrades
+            # (Glad-Labs/poindexter#985). Daily dedup keeps it one finding
+            # per engaged model, not one per review.
+            try:
+                from utils.findings import emit_finding
+
+                emit_finding(
+                    source="modules.content.multi_model_qa",
+                    kind="critic_fallback_engaged",
+                    title=(
+                        f"QA critic ({site}) running on the FALLBACK model "
+                        f"{fallback!r}"
+                    ),
+                    body=(
+                        f"pipeline_critic_model is empty, so the {site} "
+                        f"reviewer resolved {setting_key}={fallback!r}. "
+                        f"Reviews still run, but the judge identity changed "
+                        f"without a calibration pass — run `poindexter "
+                        f"model-eval run --slot critic` to baseline it, or "
+                        f"set pipeline_critic_model explicitly."
+                    ),
+                    severity="warn",
+                    dedup_key=f"critic_fallback_engaged:{site}:{fallback}",
+                    extra={"site": site, "fallback_model": fallback},
+                )
+            except Exception:  # noqa: BLE001 — announcement is best-effort
+                # silent-ok: the finding is observability, never load-bearing
+                pass
+            return fallback
+        await notify_operator(
+            f"qa critic ({site}): pipeline_critic_model is empty "
+            f"AND {setting_key} is empty — review failed",
+            critical=True,
+        )
+        raise RuntimeError(
+            f"qa critic ({site}): no critic model — set "
+            f"pipeline_critic_model or {setting_key}"
+        )
 
     async def review(
         self,
@@ -1225,6 +1294,33 @@ class MultiModelQA:
             )
             return None
 
+    async def critic_review_once(
+        self,
+        *,
+        title: str,
+        content: str,
+        topic: str,
+        model: str | None = None,
+    ) -> "ReviewerResult | None":
+        """Run ONE critic review and return its verdict — the public seam
+        for judge calibration (Glad-Labs/poindexter#985).
+
+        Delegates to the exact production critic path
+        (:meth:`_review_with_ollama` — same prompt pack, review window,
+        parse, and score-over-boolean approval rule), so a calibration run
+        measures what the pipeline will actually do. ``model`` overrides
+        the configured ``pipeline_critic_model`` for candidate-judge
+        scoring; ``None`` uses the live resolution chain. Exported via
+        ``modules.content.api`` for the substrate model-eval loop.
+        """
+        result = await self._review_with_ollama(
+            title, content, topic, model_override=model,
+        )
+        if result is None:
+            return None
+        review, _cost_log = result
+        return review
+
     async def _review_with_ollama(
         self,
         title: str,
@@ -1271,11 +1367,29 @@ class MultiModelQA:
                     f"{trimmed}\n"
                     f"---END SOURCES---\n\n"
                 )
+            # Review window (Glad-Labs/poindexter#985). Sized so a normal
+            # draft fits WHOLE (p99 observed is ~18K chars ≈ 5K tokens,
+            # comfortably inside the 16384-token qa_review context window
+            # alongside prompt + sources + output). When content still
+            # exceeds it, cut at a paragraph boundary and append the
+            # excerpt marker the qa.review prompt explains — never hand
+            # the judge a bare mid-word slice of a complete article.
+            max_chars = (
+                self._platform.config.get_int("qa_review_content_max_chars", 24000)
+                if self._platform else 24000
+            )
+            review_content, was_excerpted = build_review_excerpt(content, max_chars)
+            if was_excerpted:
+                logger.info(
+                    "[MULTI_QA] critic reviewing a %d-char excerpt of a "
+                    "%d-char article (qa_review_content_max_chars=%d)",
+                    len(review_content), len(content), max_chars,
+                )
             prompt = get_prompt_manager().get_prompt(
                 "qa.review",
                 title=title,
                 topic=topic or title,
-                content=content[:8000],
+                content=review_content,
                 current_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                 sources_block=sources_block,
             )

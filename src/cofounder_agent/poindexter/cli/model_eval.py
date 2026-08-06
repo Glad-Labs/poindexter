@@ -59,25 +59,66 @@ async def _load_cfg(pool: Any) -> Any:
 
 @model_eval_group.command("run")
 @click.option(
+    "--slot",
+    type=click.Choice(["reranker", "critic"]),
+    default="reranker",
+    show_default=True,
+    help=(
+        "Which model slot to evaluate. 'reranker' bakes off rag_rerank_model; "
+        "'critic' calibrates the QA judge (pipeline_critic_model) on the "
+        "posts-derived critic golden set (poindexter#985)."
+    ),
+)
+@click.option(
     "--challenger",
     "challengers",
     multiple=True,
-    required=True,
-    help="Candidate model id to test against the champion. Repeatable.",
+    help=(
+        "Candidate model id to test against the champion. Repeatable. "
+        "Required for the reranker slot; optional for the critic slot "
+        "(a champion-only run is the calibration baseline)."
+    ),
 )
 @click.option("--json", "json_output", is_flag=True, help="Emit JSON instead of text.")
-def model_eval_run(challengers: tuple[str, ...], json_output: bool) -> None:
-    """Bake the current reranker champion (``rag_rerank_model``) off against
-    ``--challenger``s. (Plan 1 covers the reranker slot; Plan 3 generalizes.)"""
+def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -> None:
+    """Bake the slot's current champion off against ``--challenger``s.
+
+    NB the critic slot makes real LLM calls through the dispatcher — on an
+    operator install where provider URLs are docker-network hostnames, run
+    it in-container: ``docker exec poindexter-worker poindexter model-eval
+    run --slot critic``.
+    """
+    if slot == "reranker" and not challengers:
+        raise click.UsageError("--challenger is required for the reranker slot.")
 
     async def _impl() -> tuple[Any, Any]:
         import asyncpg
 
-        from services.model_eval.bakeoff import run_reranker_bakeoff
-
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
             cfg = await _load_cfg(pool)
+            if slot == "critic":
+                from plugins.kernel_platform import KernelPlatform
+                from services.llm_providers.dispatcher import dispatch_complete
+                from services.model_eval.bakeoff import run_critic_bakeoff
+
+                async def _noop_audit(*_a: Any, **_kw: Any) -> None:
+                    return None
+
+                platform = KernelPlatform(
+                    site_config=cfg,
+                    pool=pool,
+                    dispatch=dispatch_complete,
+                    audit_write=_noop_audit,
+                )
+                return await run_critic_bakeoff(
+                    pool=pool,
+                    site_config=cfg,
+                    platform=platform,
+                    challengers=list(challengers),
+                )
+            from services.model_eval.bakeoff import run_reranker_bakeoff
+
             return await run_reranker_bakeoff(
                 pool=pool, site_config=cfg, challengers=list(challengers)
             )
@@ -115,6 +156,17 @@ def model_eval_run(challengers: tuple[str, ...], json_output: bool) -> None:
             f"{report.best_challenger_score:.4f}  (margin {report.margin:+.2%})"
         )
     click.echo(f"  winner: {report.winner}  beats_margin={report.beats_margin}")
+    if slot == "critic":
+        click.echo("\nPer-judge detail (good-approve / bad-veto / unusable):")
+        for r in report.results:
+            d = r.detail
+            click.echo(
+                f"  {r.model}: balanced={r.value:.2f}  "
+                f"good={d.get('good_approve_rate')}  "
+                f"bad={d.get('bad_veto_rate')}  "
+                f"by_kind={d.get('veto_rate_by_kind')}  "
+                f"unusable={d.get('unusable_reviews')}"
+            )
     if proposal is not None:
         click.echo(f"\nPromotion proposal ({proposal.kind}):\n")
         click.echo(proposal.body)
@@ -125,7 +177,7 @@ def model_eval_run(challengers: tuple[str, ...], json_output: bool) -> None:
 @model_eval_group.command("status")
 @click.option(
     "--slot",
-    type=click.Choice([_DEFAULT_SLOT]),
+    type=click.Choice([_DEFAULT_SLOT, "pipeline_critic_model"]),
     default=_DEFAULT_SLOT,
     show_default=True,
     help="Model slot to report.",
@@ -138,13 +190,17 @@ def model_eval_status(slot: str, json_output: bool) -> None:
         import asyncpg
 
         from services.model_eval.harness import LangfuseEvalHarness
-        from services.model_eval.scorers.reranker import RerankerScorer
+
+        if slot == "pipeline_critic_model":
+            from services.model_eval.scorers.critic import CriticScorer as _Scorer
+        else:
+            from services.model_eval.scorers.reranker import RerankerScorer as _Scorer
 
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
             cfg = await _load_cfg(pool)
             harness = LangfuseEvalHarness(site_config=cfg)
-            return await harness.latest_by_model(slot, RerankerScorer.primary_metric)
+            return await harness.latest_by_model(slot, _Scorer.primary_metric)
         finally:
             await pool.close()
 

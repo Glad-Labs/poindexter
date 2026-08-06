@@ -353,3 +353,61 @@ class TestSummary:
         assert "Validator" in s
         assert "2 critical" in s
         assert "3 warnings" in s
+
+
+# ---------------------------------------------------------------------------
+# Critic review window (Glad-Labs/poindexter#985)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildReviewExcerpt:
+    """The critic must never see a bare mid-word slice of a complete
+    article — that shape trips the rubric's unfinished-content auto-reject
+    (the 2026-06-29 approval collapse: a complete 13K-char draft presented
+    as prose cut mid-word at ``content[:8000]``)."""
+
+    def test_short_content_passes_through_untouched(self):
+        from modules.content.multi_model_qa import build_review_excerpt
+
+        text, excerpted = build_review_excerpt("Short article. Done.", 24000)
+        assert text == "Short article. Done."
+        assert excerpted is False
+
+    def test_long_content_cut_at_paragraph_boundary_with_marker(self):
+        from modules.content.multi_model_qa import (
+            REVIEW_EXCERPT_MARKER,
+            build_review_excerpt,
+        )
+
+        paragraphs = [f"Paragraph {i} with several words in it." for i in range(200)]
+        content = "\n\n".join(paragraphs)
+        text, excerpted = build_review_excerpt(content, 2000)
+        assert excerpted is True
+        assert text.endswith(REVIEW_EXCERPT_MARKER)
+        body = text[: -len(REVIEW_EXCERPT_MARKER)].rstrip()
+        # Cut lands on a paragraph boundary — the body ends with a COMPLETE
+        # paragraph, never mid-word.
+        assert body.endswith("words in it.")
+        assert len(body) <= 2000
+
+    def test_no_boundary_falls_back_to_hard_cut_with_marker(self):
+        from modules.content.multi_model_qa import (
+            REVIEW_EXCERPT_MARKER,
+            build_review_excerpt,
+        )
+
+        content = "x" * 5000  # no paragraph boundaries at all
+        text, excerpted = build_review_excerpt(content, 2000)
+        assert excerpted is True
+        assert text.endswith(REVIEW_EXCERPT_MARKER)
+
+    def test_excerpted_content_not_flagged_as_truncated(self):
+        """Cross-gate invariant: an excerpt produced for the critic must not
+        read as truncated to the #984 detector — the marker line ends
+        terminally by construction."""
+        from modules.content.content_validator import detect_truncated_content
+        from modules.content.multi_model_qa import build_review_excerpt
+
+        paragraphs = [f"Paragraph {i} with several words in it." for i in range(200)]
+        text, _ = build_review_excerpt("\n\n".join(paragraphs), 2000)
+        assert detect_truncated_content(text) == []

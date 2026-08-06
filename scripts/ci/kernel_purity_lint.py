@@ -71,6 +71,11 @@ KERNEL_PURITY_BASELINE: dict[str, int] = {
     "services/deepeval_rails.py::modules.content.api": 1,
     # guardrails_rails calls content_validator lazily for the same reason.
     "services/guardrails_rails.py::modules.content.api": 1,
+    # The critic-judge calibration scorer runs the REAL production critic
+    # (MultiModelQA.critic_review_once) lazily via the modules/content/api
+    # public seam, so a calibration run measures exactly what the pipeline
+    # will do with a candidate judge (poindexter#985).
+    "services/model_eval/scorers/critic.py::modules.content.api": 1,
     # pipeline_templates' dev_diary factory imports the narrate_bundle atom
     # lazily; dev_diary is the one remaining non-graph_def template path.
     "services/pipeline_templates/__init__.py::modules.content.api": 1,

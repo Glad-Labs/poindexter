@@ -544,8 +544,12 @@ class TestGroupingMakesSense:
         # 4-line sibling of ollama_model_validation_enabled in the same
         # already-tolerated interleave — it belongs beside use_ollama, and the
         # only way to keep it out of this span would be to exile it ~300 lines
-        # from the setting it extends.
-        assert span < 349, (
+        # from the setting it extends. Bumped 349→355 for the judge-calibration
+        # block (poindexter#985): qa_review_content_max_chars +
+        # model_eval_critic_* + quality_model_watch_keys with their comments
+        # live beside the model-eval section inside the qa cluster's
+        # tolerated interleave.
+        assert span < 355, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

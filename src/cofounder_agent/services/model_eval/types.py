@@ -17,10 +17,16 @@ class GoldenCase:
     """One test case. ``candidates`` is a list of dicts shaped
     ``{"doc_id": str, "text": str, "relevance": int}`` — the relevance
     label is the ground truth the metric scores a model's ranking against.
+
+    ``payload`` carries capability-specific case data for non-reranker
+    slots (the critic slot stores ``{title, topic, content, expected,
+    kind}`` there and leaves ``candidates`` empty) — widening here keeps
+    the ``GoldenSet``/harness/runner contract untouched per slot.
     """
 
     query: str
     candidates: list[dict[str, Any]]
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

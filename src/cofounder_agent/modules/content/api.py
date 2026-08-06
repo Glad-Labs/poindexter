@@ -132,6 +132,9 @@ from modules.content.multi_model_qa import (
     ReviewerResult as ReviewerResult,
 )
 from modules.content.multi_model_qa import (
+    build_review_excerpt as build_review_excerpt,
+)
+from modules.content.multi_model_qa import (
     format_qa_feedback_from_reviews as format_qa_feedback_from_reviews,
 )
 
@@ -181,6 +184,7 @@ __all__ = [
     "ReviewerResult",
     "MultiModelResult",
     "format_qa_feedback_from_reviews",
+    "build_review_excerpt",
     # content_validator
     "content_validator",
     "validate_content",

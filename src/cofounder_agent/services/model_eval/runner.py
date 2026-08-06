@@ -48,7 +48,19 @@ async def run_slot_eval(
     improvement is at least ``promotion_margin`` (keep-best / no-regress).
     """
     models = [champion, *challengers]
-    results = [scorer.score(model=m, golden_set=golden_set, site_config=site_config) for m in models]
+    # Scorers with an ``ascore`` coroutine (LLM-calling slots like the
+    # critic) are awaited; sync scorers (reranker) keep the original path.
+    ascore = getattr(scorer, "ascore", None)
+    results: list[MetricResult] = []
+    for m in models:
+        if ascore is not None:
+            results.append(
+                await ascore(model=m, golden_set=golden_set, site_config=site_config)
+            )
+        else:
+            results.append(
+                scorer.score(model=m, golden_set=golden_set, site_config=site_config)
+            )
     by_model: dict[str, MetricResult] = {r.model: r for r in results}
 
     run = run_name or f"{slot}-v{golden_set.version}-{int(time.time())}"

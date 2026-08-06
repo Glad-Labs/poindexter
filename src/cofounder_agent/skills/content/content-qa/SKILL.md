@@ -206,6 +206,12 @@ Evaluate:
    are never publishable — whether they make up the whole text or only
    open it before the article begins.
 
+REVIEW WINDOW: if the CONTENT ends with a "[REVIEW EXCERPT ENDS ...]"
+marker, you are seeing the opening portion of a longer article that
+continues past the marker. Judge only the text shown. The excerpt
+boundary is NOT an unfinished or truncated ending — never reject or
+lower the score because the excerpt stops there.
+
 UNFINISHED CONTENT IS AN AUTOMATIC REJECT:
 
 When any part of the CONTENT is a plan, outline, instruction echo, or

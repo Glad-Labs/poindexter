@@ -880,6 +880,29 @@ DEFAULTS: dict[str, str] = {
     'model_eval_promotion_margin': '0.02',
     'model_eval_reranker_golden_size': '50',
     'model_eval_reranker_candidates_per_case': '20',
+    # Critic-judge calibration slot (poindexter#985): N published posts as
+    # known-good cases (each also yields 2 deterministic corruptions as
+    # known-bad), and the good-approve floor a judge must clear before a
+    # pipeline_critic_model swap is trusted.
+    'model_eval_critic_good_posts': '8',
+    'model_eval_critic_min_good_approve': '0.7',
+    # Critic review window (poindexter#985). The judge previously saw a bare
+    # content[:8000] slice — a complete >8K-char draft presented as prose cut
+    # mid-word, tripping the rubric's unfinished-content auto-reject on
+    # perfectly good articles (the 2026-06-29 approval collapse coincided
+    # with average draft length crossing 8K chars). 24000 chars ≈ 6.5K
+    # tokens fits the 16384-token qa_review context alongside prompt +
+    # sources + output; longer content is cut at a paragraph boundary with
+    # an explicit excerpt marker the qa.review prompt explains.
+    'qa_review_content_max_chars': '24000',
+    # Quality-critical model pins watched by reload_site_config — a change
+    # to any of these emits a quality_model_changed finding within one
+    # reload cycle, whatever surface wrote it (poindexter#985: the Jun 29
+    # critic swap ran 5+ weeks unannounced).
+    'quality_model_watch_keys': (
+        'pipeline_critic_model,qa_fallback_critic_model,'
+        'pipeline_writer_model,pipeline_local_writer_model,qa_rewrite_model'
+    ),
     'qa_fallback_critic_model': 'ollama/qwen2.5:32b',
     'qa_fallback_writer_model': 'ollama/gemma3:27b',
     # Cross-model rescue reviser for qa.rewrite. EMPTY = reuse the resident
@@ -3165,6 +3188,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
     'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
+    'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},
+    'model_eval_critic_min_good_approve': {'owner': 'model_eval', 'value_type': 'float'},
+    'qa_review_content_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'quality_model_watch_keys': {'owner': 'reload_site_config', 'value_type': 'string'},
     'model_eval_reranker_candidates_per_case': {'owner': 'model_eval', 'value_type': 'integer'},
     'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'string'},
     'gpu_desktop_reserve_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
