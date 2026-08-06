@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       43 nodes; dev_diary template, 5 nodes)               │ │
+│  │       44 nodes; dev_diary template, 5 nodes)               │ │
 │  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
 │  │     Ollama default, cloud providers behind cost_guard +    │ │
 │  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │
@@ -142,7 +142,7 @@ LOCKED` and hands them to `content_router_service`. Retry /
    ↓
 7. Provider Protocol invokes the configured LLM (Ollama by default)
    ↓
-8. the 12-atom qa.* rail block (qa.programmatic → qa.critic → qa.deepeval → qa.ragas → … → qa.aggregate) runs each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
+8. the 14-node qa.* rail block — 13 rails (qa.programmatic → qa.critic → qa.deepeval → qa.ragas → … → qa.web_factcheck) then qa.aggregate — runs each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
    ↓
 9. finalize_task writes pipeline_tasks (status=awaiting_approval)
    ↓
@@ -178,7 +178,7 @@ LOCKED` and hands them to `content_router_service`. Retry /
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (43 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
+- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (44 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -336,9 +336,9 @@ GET  /api/tags                     # List tags
 
 A pipeline is a **template** — a LangGraph `StateGraph` plus a `PipelineState` `TypedDict`. As of atom-cutover #355 (2026-06-02) `canonical_blog` ships as a static `graph_def` row in the `pipeline_templates` table (authored in `services/canonical_blog_spec.py`, compiled by `services/pipeline_architect.py::build_graph_from_spec`), preferred by `TemplateRunner.run` when `pipeline_use_graph_def=true` (the prod default). `dev_diary` still ships in-tree as a Python factory in `services/pipeline_templates/__init__.py` — the only entry left in `TEMPLATES` after the hand-coded `canonical_blog` factory was deleted:
 
-- `canonical_blog` — the 42-node default for blog posts (`services/canonical_blog_spec.py` is the authoritative node list; 11 `stage.*` + 13 `content.*` + 13 `qa.*` + 1 `qa.rewrite` + 2 `atoms.approval_gate` + 1 `seo.*` + 1 `social.generate_drafts`). Six linear blocks plus a bounded QA rescue cycle: verify → **writer** (generate_draft → generate_title → check_title_originality → normalize_draft → optional `draft_gate` → writer_self_review → resolve_internal_link_placeholders → reconcile_citations) → **quality + images** (quality_evaluation → url_validation → plan/generate/inject inline images → source_featured_image → caption_images) → the **12-atom qa.\* rail block** (qa.programmatic → … → qa.aggregate, which replaced the deleted `cross_model_qa` stage; rescuable rejects branch to `qa.rewrite` for one revision pass, bounded by `qa_rewrite_max_attempts`) → **seo.generate_all_metadata** → media scripts + `review_video_shot_list` → **finalize** (compile_meta → persist_task → record_pipeline_version → evaluate_auto_publish)
+- `canonical_blog` — the 44-node default for blog posts (`services/canonical_blog_spec.py` is the authoritative node list — recount from it rather than trusting this line; 11 `stage.*` + 14 `content.*` + 14 `qa.*` + 1 `qa.rewrite` + 2 `atoms.approval_gate` + 1 `seo.*` + 1 `social.generate_drafts`). Seven linear blocks (43 nodes) plus the off-chain `qa.rewrite` rescue node: verify → **writer** (generate_draft → generate_title → check_title_originality → normalize_draft → optional `draft_gate` → writer_self_review → resolve_internal_link_placeholders → reconcile_citations → llm_reconcile_citations → inject_affiliate_links, dark-launched behind `affiliate_injection_enabled` → quality_evaluation → url_validation) → **images** (plan/generate/inject inline images → source_featured_image → caption_images) → the **14-node qa.\* rail block** (13 rails, qa.programmatic → … → qa.web_factcheck, then qa.aggregate — which replaced the deleted `cross_model_qa` stage; rescuable rejects branch to `qa.rewrite` for one revision pass and loop back to qa.programmatic, bounded by `qa_rewrite_max_attempts`) → **seo.generate_all_metadata** → **media** (generate_media_scripts → generate_video_shot_list → review_video_shot_list → capture_training_data) → **finalize** (compile_meta → persist_task → social.generate_drafts → record_pipeline_version → optional `preview_gate` → evaluate_auto_publish)
 - `dev_diary` — 5-node subset for the build-in-public stream (verify_task → narrate_bundle → generate_seo_metadata → source_featured_image → finalize_task)
-- `image_rebuild` — 7-node utility graph behind `poindexter tasks rebuild-images` (`services/image_rebuild_spec.py`): load_draft → plan → generate → featured → gate → inject → persist. Rebuilds every image on an `awaiting_approval` draft by re-planning from the article text, reusing the same `content.plan_image_markers` / `content.generate_images` / `content.inject_images` atoms canonical_blog runs; the fail-loud gate atom rejects stock fallback unless `--allow-stock`, leaving the draft unchanged. Replaced the synchronous in-request `ImageRebuildService` (which blocked the CLI for the whole render) — the CLI/route now enqueue a `pipeline_tasks` row and return immediately.
+- `image_rebuild` — 8-node utility graph behind `poindexter tasks rebuild-images` (`services/image_rebuild_spec.py`): load_draft → plan → generate → featured → gate → inject → persist → finalize. Rebuilds every image on an `awaiting_approval` draft by re-planning from the article text, reusing the same `content.plan_image_markers` / `content.generate_images` / `content.inject_images` atoms canonical_blog runs; the fail-loud gate atom rejects stock fallback unless `--allow-stock`, leaving the draft unchanged. Replaced the synchronous in-request `ImageRebuildService` (which blocked the CLI for the whole render) — the CLI/route now enqueue a `pipeline_tasks` row and return immediately.
 
 Per-task template selection lives on `pipeline_tasks.template_slug`. A NULL value fails loud per `feedback_no_silent_defaults`.
 
