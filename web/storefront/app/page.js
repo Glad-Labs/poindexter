@@ -35,9 +35,10 @@ export default function Landing() {
               className="sf-reveal sf-reveal--3 gl-body gl-body--lg"
               style={{ maxWidth: '640px' }}
             >
-              One post a day at 80+ quality. Every channel. Fully autonomous.
-              Runs on your hardware with Ollama — no paid APIs, no subscription,
-              no vendor deciding what you&apos;re allowed to write about.
+              A full content factory on one PC: a post a day at 80+ quality,
+              with images, podcast episodes, and social drafts riding along.
+              Runs local with Ollama — no paid APIs, no vendor deciding what
+              you&apos;re allowed to write about.
             </p>
 
             <div className="sf-reveal sf-reveal--4 sf-hero__ctas">
