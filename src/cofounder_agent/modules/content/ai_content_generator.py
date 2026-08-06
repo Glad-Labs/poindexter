@@ -172,6 +172,58 @@ class AIContentGenerator:
             logger.debug("[INTERNAL_LINKS] Failed to load internal links: %s", e)
             self._internal_links_cache = []
 
+    @staticmethod
+    def _completion_truncated(completion: Any) -> bool:
+        """True when the provider reports the completion stopped at its
+        output-token cap rather than finishing — LiteLLM/OpenAI ``length``,
+        Anthropic ``max_tokens``, Ollama ``done_reason='length'``, all
+        normalized onto ``finish_reason`` by the provider layer."""
+        finish = str(getattr(completion, "finish_reason", "") or "").strip().lower()
+        return finish in {"length", "max_tokens"}
+
+    async def _dispatch_with_truncation_retry(
+        self,
+        *,
+        pool: Any,
+        messages: list[dict[str, str]],
+        model_name: str,
+        max_tokens: int,
+    ) -> Any:
+        """``dispatch.complete`` with one bounded cap-bump retry on truncation.
+
+        A completion that stops at ``max_tokens`` is guillotined mid-word —
+        unusable, and previously undetected until the QA critic burned a
+        full LLM pass to say so (Glad-Labs/poindexter#984). Retry once at
+        ``content_gen_truncation_retry_mult`` × the cap; callers re-check
+        :meth:`_completion_truncated` and treat a still-truncated result as
+        a failed attempt.
+        """
+        completion = await self._platform.dispatch.complete(
+            pool=pool,
+            messages=messages,
+            model=model_name,
+            tier="standard",
+            max_tokens=max_tokens,
+        )
+        if not self._completion_truncated(completion):
+            return completion
+        retry_mult = self._site_config.get_float(
+            "content_gen_truncation_retry_mult", 2.0
+        )
+        raised_cap = int(max_tokens * retry_mult)
+        logger.warning(
+            "      Output hit the %d-token cap (finish_reason=length) — "
+            "retrying %s once at %d tokens",
+            max_tokens, model_name, raised_cap,
+        )
+        return await self._platform.dispatch.complete(
+            pool=pool,
+            messages=messages,
+            model=model_name,
+            tier="standard",
+            max_tokens=raised_cap,
+        )
+
     def _validate_content(
         self, content: str, topic: str, target_length: int
     ) -> ContentValidationResult:
@@ -198,6 +250,21 @@ class AIContentGenerator:
         """
         issues = []
         score = 10.0
+
+        # 0. Truncation gate (Glad-Labs/poindexter#984) — a draft that ends
+        # mid-word/mid-structure is unusable no matter how the lint below
+        # scores it. Same detector as the qa.programmatic rail's
+        # ``truncated_content`` rule, applied here so THIS writer pass
+        # retries instead of shipping a severed draft into the pipeline.
+        from modules.content.content_validator import detect_truncated_content
+        truncation_reasons = detect_truncated_content(content)
+        if truncation_reasons:
+            issues.append(
+                "CRITICAL: Truncated output ("
+                + "; ".join(truncation_reasons[:3])
+                + ") — the completion hit its output-token cap"
+            )
+            score -= 4.0
 
         # 1. Check length
         word_count = len(content.split())
@@ -258,7 +325,9 @@ class AIContentGenerator:
         # Ensure score stays in valid range
         score = max(0, min(10, score))
 
-        is_valid = score >= self.quality_threshold
+        # A truncated draft can never be valid regardless of lint score —
+        # the severed tail is unusable and un-fixable by prompt feedback.
+        is_valid = score >= self.quality_threshold and not truncation_reasons
 
         feedback = ""
         if is_valid:
@@ -634,24 +703,30 @@ class AIContentGenerator:
         _is_thinking_refine = is_thinking_model(
             model_name, substrings=resolve_thinking_substrings(_sc)
         )
-        _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
-        _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
+        _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 12.0)
+        _standard_mult = _sc.get_float("content_gen_token_mult_standard", 8.0)
         max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
         if self._platform is not None:
-            completion = await self._platform.dispatch.complete(
+            completion = await self._dispatch_with_truncation_retry(
                 pool=pool,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": refinement_prompt},
                 ],
-                model=model_name,
-                tier="standard",
+                model_name=model_name,
                 max_tokens=max_tokens_refinement,
             )
         else:
             raise RuntimeError(
                 "platform handle required for dispatch — check pipeline context threading"
             )
+
+        if self._completion_truncated(completion):
+            logger.warning(
+                "      Refinement output still truncated after the cap-bump "
+                "retry — keeping the pre-refinement draft",
+            )
+            return None
 
         refined_content = (getattr(completion, "text", "") or "").strip()
         logger.debug(
@@ -917,11 +992,24 @@ class AIContentGenerator:
 
                 # Calculate max tokens: thinking models (qwen3, glm-4.7) split
                 # output between reasoning + answer; give them extra headroom.
+                # Same app_settings keys as the refinement pass — the writer
+                # overshoots the word target with markdown structure (links,
+                # fences, image markers). The old hardcoded 4.0× cap sat
+                # exactly at the observed need: sonnet-5 drafts stopped AT
+                # the cap mid-word and the critic vetoed every one
+                # (Glad-Labs/poindexter#984).
                 _is_thinking = _is_thinking_model(
                     model_name,
                     substrings=_resolve_thinking_substrings(self._site_config),
                 )
-                _multiplier = 6.0 if _is_thinking else 4.0
+                if _is_thinking:
+                    _multiplier = self._site_config.get_float(
+                        "content_gen_token_mult_thinking", 12.0
+                    )
+                else:
+                    _multiplier = self._site_config.get_float(
+                        "content_gen_token_mult_standard", 8.0
+                    )
                 max_tokens = int(target_length * _multiplier)
                 logger.debug(
                     "      Max tokens: %d (target_length: %d, thinking=%s)",
@@ -929,16 +1017,25 @@ class AIContentGenerator:
                 )
 
                 logger.info("      Generating content via dispatcher...")
-                completion = await self._platform.dispatch.complete(
+                completion = await self._dispatch_with_truncation_retry(
                     pool=pool,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": generation_prompt},
                     ],
-                    model=model_name,
-                    tier="standard",
+                    model_name=model_name,
                     max_tokens=max_tokens,
                 )
+                if self._completion_truncated(completion):
+                    logger.warning(
+                        "      Output still truncated after the cap-bump "
+                        "retry — failing this attempt",
+                    )
+                    attempts.append((
+                        "dispatcher",
+                        f"{model_name}: output truncated at max_tokens cap",
+                    ))
+                    continue
                 generated_content = (getattr(completion, "text", "") or "").strip()
 
                 logger.info(

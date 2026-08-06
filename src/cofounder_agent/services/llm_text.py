@@ -231,6 +231,7 @@ async def ollama_chat_text(
     phase: str = "ollama_chat_text",
     think: bool | None = None,
     response_format: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """Plain-text LLM chat call.
 
@@ -327,6 +328,13 @@ async def ollama_chat_text(
             extra["think"] = think
         if response_format is not None:
             extra["response_format"] = response_format
+        if max_tokens is not None:
+            # Output-token cap for the completion. Without it, cloud routes
+            # inherit the provider default (LiteLLM capped claude qa_rewrite
+            # calls at 8192 and truncated full-article revisions mid-word —
+            # Glad-Labs/poindexter#984). Dispatcher path only: the httpx
+            # bootstrap fallback below stays byte-identical.
+            extra["max_tokens"] = int(max_tokens)
         completion = await dispatch_complete(
             pool=pool,
             messages=messages,

@@ -1008,6 +1008,84 @@ def detect_planning_dump_preamble(text: str) -> list[str]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Truncated-output detection (Glad-Labs/poindexter#984)
+# ---------------------------------------------------------------------------
+# A completion that hits its output-token cap is guillotined mid-token — the
+# text ends mid-word ("### Wha", "the wrong shape for th") or inside a
+# markdown/HTML structure (a URL severed mid-path). The pipeline was burning
+# a full LLM QA pass (13 rails + critic) per occurrence to conclude what a
+# string check proves for free. Rules are structural only — no length or
+# word-count heuristics — and were tuned against the full published corpus
+# (165/168 clean; the 3 flags were genuinely truncated live posts) plus the
+# critic-vetoed truncated drafts of 2026-07/08.
+
+_TRUNCATION_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_TRUNCATION_HR_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
+_TRUNCATION_HEADING_RE = re.compile(r"^#{1,6}(\s|$)")
+_TRUNCATION_OPEN_LINK_URL_RE = re.compile(r"!?\[[^\]]*\]\([^)]*$")
+_TRUNCATION_OPEN_LINK_TEXT_RE = re.compile(r"!?\[[^\]]*$")
+_TRUNCATION_OPEN_HTML_TAG_RE = re.compile(r"<[^>]*$")
+# Characters that legitimately end finished prose or a closed markdown/HTML
+# structure. ``>`` matters: published posts routinely end on a source list of
+# autolinks ("- <https://…>") — the closing angle bracket is exactly what
+# separates a complete final link from one severed mid-URL. ``|`` closes a
+# table row, backtick an inline code span. Emphasis markers (``*``/``_``)
+# are deliberately NOT here: they are PEELED before the check (the b9aab2fe
+# lesson — "*Read more on X.*" is finished, "*the migration script will*"
+# is a cutoff inside emphasis and must still fire).
+_TRUNCATION_TERMINAL_CHARS = frozenset(".!?…\"'”’»)]}`|~>")
+
+
+def detect_truncated_content(content: str) -> list[str]:
+    """Detect output that ends mid-word / mid-structure (truncated).
+
+    Returns a list of human-readable evidence strings; empty when the
+    content ends like finished prose. Shared by three gates: the writer's
+    internal retry lint (``ai_content_generator._validate_content``), the
+    ``truncated_content`` rule in :func:`validate_content` (the
+    ``qa.programmatic`` hard rail), and the ``qa.rewrite`` reviser guard —
+    so a truncated revision can never silently replace a complete draft.
+    """
+    reasons: list[str] = []
+    text = (content or "").rstrip()
+    if not text:
+        return reasons
+
+    fence_lines = sum(
+        1 for ln in text.splitlines() if _TRUNCATION_FENCE_RE.match(ln)
+    )
+    if fence_lines % 2 == 1:
+        reasons.append("unclosed code fence")
+
+    non_empty = [ln for ln in text.splitlines() if ln.strip()]
+    last = non_empty[-1].strip()
+
+    if _TRUNCATION_HEADING_RE.match(last):
+        reasons.append(f"ends on a heading with no body: {last[:60]!r}")
+        return reasons
+    if _TRUNCATION_OPEN_LINK_URL_RE.search(last):
+        reasons.append(f"ends inside a markdown link URL: {last[-60:]!r}")
+        return reasons
+    if _TRUNCATION_OPEN_LINK_TEXT_RE.search(last):
+        reasons.append(f"ends inside markdown link text: {last[-60:]!r}")
+        return reasons
+    if _TRUNCATION_HR_RE.match(last):
+        return reasons  # a horizontal rule is a complete structure
+    if _TRUNCATION_OPEN_HTML_TAG_RE.search(last):
+        reasons.append(f"ends inside an HTML tag: {last[-60:]!r}")
+        return reasons
+    # Peel trailing emphasis markers so a complete-but-emphasized closer
+    # ("*Read more on X.*") reads as finished while a sentence cut off
+    # INSIDE emphasis ("*the migration script will*") still fires.
+    peeled = last.rstrip("*_")
+    if peeled and peeled[-1] not in _TRUNCATION_TERMINAL_CHARS:
+        reasons.append(
+            f"final line ends without terminal punctuation: {last[-60:]!r}"
+        )
+    return reasons
+
+
 def _check_patterns(
     text: str,
     patterns: list,
@@ -2273,52 +2351,45 @@ def validate_content(
     if _enabled("truncated_content"):
         stripped_content = content.rstrip()
         if stripped_content and len(stripped_content) > 200:
-            # A finished sentence wrapped in markdown emphasis ends with the
-            # emphasis marker, not terminal punctuation — e.g. an italic CTA
-            # closer "*Read more on X.*" or a bold takeaway "**The point.**".
-            # Peel a trailing run of * _ ` before the terminal-punctuation
-            # check so a complete-but-emphasized final line isn't misread as a
-            # token-limit cutoff (captured live 2026-06-06: task b9aab2fe,
-            # quality 97, hard-rejected on "*Read more on AI Health and
-            # monitoring.*"). A sentence cut off *inside* emphasis still fails:
-            # peeling the markers leaves a non-terminal char, so it still fires.
-            _deemphasized_tail = stripped_content.rstrip("*_`")
-            last_char = _deemphasized_tail[-1] if _deemphasized_tail else ""
-            if last_char not in '.!?"”)’':
-                # Check it's not a code block or list that legitimately ends without punctuation
-                last_line = stripped_content.split('\n')[-1].strip()
-                _in_code = last_line.startswith('```') or last_line.startswith('    ')
-                _is_heading = last_line.startswith('#')
-                _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line) or re.match(r'^[-*]\s', last_line)
-                # Final line is a lone ``}`` / ``]`` — JSON envelope leak,
-                # not truncation. Tag it accordingly so the operator can
-                # tell at a glance which producer to fix.
-                _is_envelope_terminator = last_line in ("}", "]") or last_line in ('"}', '"]')
-                if _is_envelope_terminator:
-                    issues.append(ValidationIssue(
-                        severity="critical",
-                        category="json_envelope_leak",
-                        description=(
-                            f"Content ends with a JSON envelope terminator "
-                            f"({last_line!r}) — a writer/LLM stage emitted "
-                            f"``{{\"content\": \"...\"}}`` and nothing un-wrapped "
-                            f"it before validation. Fix the producer (most "
-                            f"common: a chat helper forcing ``format=json``)."
-                        ),
-                        matched_text=stripped_content[-160:],
-                    ))
-                elif _is_heading and not _in_code:
-                    # Final line is a bare section heading with no body under
-                    # it — an early-stop truncation shape distinct from a
-                    # mid-sentence cut. The generic ``truncated_content`` branch
-                    # below EXEMPTS headings (a heading legitimately has no
-                    # terminal punctuation), which let a draft that ENDS at a
-                    # heading pass the truncation gate. A post never ends at a
-                    # bare heading (0/133 published posts do), so flag it with a
-                    # producer-specific category. The two_pass writer trims this
-                    # shape proactively (``_trim_dangling_heading``); this is the
-                    # safety net for any other producer (dev_diary / future
-                    # paths). 2026-07-06 gemma early-stop investigation.
+            last_line = stripped_content.split('\n')[-1].strip()
+            # Final line is a lone ``}`` / ``]`` — JSON envelope leak,
+            # not truncation. Tag it accordingly so the operator can
+            # tell at a glance which producer to fix. Checked BEFORE the
+            # detector because ``}`` is a legitimate terminal char there.
+            _is_envelope_terminator = last_line in ("}", "]") or last_line in ('"}', '"]')
+            if _is_envelope_terminator:
+                issues.append(ValidationIssue(
+                    severity="critical",
+                    category="json_envelope_leak",
+                    description=(
+                        f"Content ends with a JSON envelope terminator "
+                        f"({last_line!r}) — a writer/LLM stage emitted "
+                        f"``{{\"content\": \"...\"}}`` and nothing un-wrapped "
+                        f"it before validation. Fix the producer (most "
+                        f"common: a chat helper forcing ``format=json``)."
+                    ),
+                    matched_text=stripped_content[-160:],
+                ))
+            else:
+                # Structural detection lives in detect_truncated_content —
+                # one detector, three consumers (this rule, the writer's
+                # _validate_content retry lint, the qa.rewrite reviser
+                # guard), so the gates can never drift. Corpus-tuned
+                # (poindexter#984): 165/168 published posts clean, the 3
+                # fires genuinely truncated; the rule it replaced
+                # blanket-exempted list items — exactly where the 2026-07/08
+                # truncations lived (source lists severed mid-URL) — and
+                # peeled emphasis (kept: the b9aab2fe "*Read more on X.*"
+                # false positive stays fixed).
+                truncation_evidence = detect_truncated_content(stripped_content)
+                if any("heading" in r for r in truncation_evidence):
+                    # Bare section heading with no body under it — an
+                    # early-stop truncation shape distinct from a
+                    # mid-sentence cut. A post never ends at a bare heading
+                    # (0/133 published posts do). The two_pass writer trims
+                    # this shape proactively (``_trim_dangling_heading``);
+                    # this is the safety net for any other producer.
+                    # 2026-07-06 gemma early-stop investigation.
                     issues.append(ValidationIssue(
                         severity="critical",
                         category="truncated_at_heading",
@@ -2332,16 +2403,27 @@ def validate_content(
                         ),
                         matched_text=stripped_content[-160:],
                     ))
-                elif not (_in_code or _is_heading or _is_list_item):
+                    CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(
+                        rule="truncated_at_heading"
+                    ).inc()
+                elif truncation_evidence:
                     issues.append(ValidationIssue(
                         severity="critical",
                         category="truncated_content",
                         description=(
-                            f"Content appears truncated — ends with '{last_line[-60:]}' "
-                            f"which is not a complete sentence. The LLM likely hit its token limit."
+                            "Content is truncated — "
+                            + "; ".join(truncation_evidence[:3])
+                            + ". The producing call hit its output-token cap "
+                            "(num_ctx / max_tokens). Raise the cap or retry "
+                            "the producer (writer, expand pass, or qa.rewrite "
+                            "reviser); a text rewrite cannot fix a severed "
+                            "tail."
                         ),
-                        matched_text=stripped_content[-100:],
+                        matched_text=stripped_content[-160:],
                     ))
+                    CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(
+                        rule="truncated_content"
+                    ).inc()
 
     # 10b. Prompt-scaffolding leak — the writer or qa.rewrite reviser echoed its
     # instructions / persona / planning outline into the body instead of prose

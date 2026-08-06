@@ -873,6 +873,44 @@ stays silent. Posts replay re-run at introduction: 0 fires across all
 `pipeline_versions` titles — every one a genuine planning-note or
 blockquote-prefix leak, zero FPs.
 
+Truncation rule rework — `truncated_content` (rule 10, reworked
+2026-08-06, poindexter#984): the content ends mid-word / mid-structure
+because the **producing call hit its output-token cap** (Ollama
+`num_ctx`, cloud `max_tokens` — a completion stopped at the cap is
+guillotined mid-token). In 2026-07, 38% of `ollama_critic` vetoes were
+exactly this shape (`### Wha`, `the wrong shape for th`, a URL severed
+mid-path), each burning the full 13-rail chain + critic to conclude
+what a string check proves for free — and the qa.rewrite rescue loop
+went 0-for-116 largely because the reviser (capped at LiteLLM's 8192
+default) re-truncated its own revisions. Rule 10 existed but
+blanket-exempted list items — exactly where those truncations lived
+(source lists severed mid-URL). The rework moves detection into
+`detect_truncated_content` (structural only: unclosed code fence,
+dangling final heading, severed markdown link text/URL, unclosed HTML
+tag, final line without terminal punctuation) with the list exemption
+replaced by a terminal set that includes `>` — published posts
+routinely end on a source list of autolinks (`- <https://…>`), and the
+closing angle bracket is exactly what separates a complete final link
+from one severed mid-URL. The b9aab2fe emphasis peel and the distinct
+`json_envelope_leak` / `truncated_at_heading` categories are preserved.
+Corpus tuning at introduction: 165/168 published `posts` bodies clean,
+and the 3 fires were genuinely truncated live posts
+(`the-silent-killer-of-startup-growth` ends "the lean, the agile, and
+the"). One detector, three consumers, same no-drift idiom as
+`planning_dump`: the writer's `_validate_content` retry lint (a
+truncated draft can never be `is_valid` — the writer retries instead
+of shipping it), rule 10 via `qa.programmatic` (a hard gate, so a
+truncated draft that slips through is a NON-rescuable reject — no
+futile rewrite pass), and the `qa.rewrite` reviser guard (a truncated
+revision is discarded like an empty one — prior draft kept, attempt
+burned, `qa_rewrite_truncated_revision` finding emitted). Upstream of
+all three, the writer now checks `finish_reason` at the dispatch
+boundary and retries once at `content_gen_truncation_retry_mult`× the
+cap before failing the attempt, and the caps themselves got
+data-derived headroom (`content_gen_token_mult_standard/thinking`
+4.5/7.0 → 8.0/12.0; `content_router_qa_rewrite_max_tokens` re-wired to
+the atom and raised 8000 → 16384).
+
 **Third guard — degenerate-draft floor (2026-07-14 follow-up,
 Glad-Labs/poindexter#806):** the echo and planning-dump guards above
 recover a draft that regurgitates its OWN prompt scaffolding — they

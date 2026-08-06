@@ -60,7 +60,7 @@ class TestQaRewriteAtom:
 
         async def _fake_chat(prompt, **kw):
             seen["prompt"] = prompt
-            return "revised body"
+            return "revised body."
 
         monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
         state = {
@@ -138,7 +138,7 @@ class TestQaRewriteAtom:
 
         async def _fake_chat(prompt, **kw):
             seen["model"] = kw.get("model")
-            return "revised body"
+            return "revised body."
 
         monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
         sc = SiteConfig(initial_config={
@@ -162,7 +162,7 @@ class TestQaRewriteAtom:
 
         async def _fake_chat(prompt, **kw):
             seen["model"] = kw.get("model")
-            return "revised body"
+            return "revised body."
 
         monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
         sc = SiteConfig(initial_config={
@@ -277,3 +277,77 @@ class TestQaRewriteBriefingLeakStrip:
         }
         out = await qa_rewrite.run(state)
         assert out["content"] == "## Clean Heading\n\nNo scaffold here, just prose."
+
+
+@pytest.mark.unit
+class TestQaRewriteTruncationGuard:
+    """A truncated revision must never replace the complete draft under
+    review (Glad-Labs/poindexter#984) — same degrade-to-reject shape as an
+    empty revision, plus a dedicated finding."""
+
+    _STATE = {
+        "task_id": "t-trunc",
+        "qa_rewrite_attempts": 0,
+        "qa_rail_reviews": [
+            {"reviewer": "ollama_critic", "approved": False, "advisory": False,
+             "provider": "ollama", "feedback": "weak"},
+        ],
+    }
+
+    async def test_truncated_revision_degrades_to_reject(self, monkeypatch):
+        async def _fake_chat(prompt, **kw):
+            # Verbatim failure shape from prod: severed mid-word.
+            return "## Revised\n\nreplicas solve read scaling, but th"
+
+        findings = []
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr(
+            "utils.findings.emit_finding",
+            lambda **kw: findings.append(kw),
+        )
+        state = {
+            **self._STATE,
+            "content": "# Original\n\nComplete draft to keep.\n",
+            "site_config": _site_config(),
+        }
+        out = await qa_rewrite.run(state)
+        assert "content" not in out  # prior draft kept
+        assert out["qa_rewrite_attempts"] == 1
+        assert out["qa_rail_reviews"] == [{"__reset__": True}]
+        assert [f["kind"] for f in findings] == ["qa_rewrite_truncated_revision"]
+
+    async def test_complete_revision_still_flows(self, monkeypatch):
+        async def _fake_chat(prompt, **kw):
+            return "## Revised\n\nReplicas solve read scaling properly now."
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        state = {
+            **self._STATE,
+            "content": "# Original\n\ndraft.\n",
+            "site_config": _site_config(),
+        }
+        out = await qa_rewrite.run(state)
+        assert out["content"].endswith("properly now.")
+
+    async def test_max_tokens_forwarded_from_setting(self, monkeypatch):
+        seen = {}
+
+        async def _fake_chat(prompt, **kw):
+            seen.update(kw)
+            return "revised body."
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        state = {
+            **self._STATE,
+            "content": "draft.",
+            "site_config": _site_config(),  # key unset -> code default
+        }
+        await qa_rewrite.run(state)
+        assert seen["max_tokens"] == 16384
+
+        sc = SiteConfig(initial_config={
+            "pipeline_writer_model": "test-writer",
+            "content_router_qa_rewrite_max_tokens": "9000",
+        })
+        await qa_rewrite.run({**self._STATE, "content": "draft.", "site_config": sc})
+        assert seen["max_tokens"] == 9000

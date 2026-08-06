@@ -145,6 +145,36 @@ def _failing_review_feedback(reviews: list[dict[str, Any]]) -> str:
     )
 
 
+def _emit_truncated_finding(model: str, evidence: list[str]) -> None:
+    """Best-effort observability when the revision came back truncated."""
+    try:
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.atoms.qa_rewrite",
+            kind="qa_rewrite_truncated_revision",
+            title=(
+                f"QA rescue revision from {model!r} was truncated — "
+                "kept the prior draft"
+            ),
+            body=(
+                f"qa.rewrite got a revision from {model!r} that ends "
+                f"mid-word/mid-structure ({'; '.join(evidence[:3])}). The "
+                f"revision was discarded, the prior draft kept, and the "
+                f"attempt counter burned — a truncated revision replacing a "
+                f"complete draft guarantees a critic veto on the re-review "
+                f"(Glad-Labs/poindexter#984). If this recurs, raise "
+                f"`content_router_qa_rewrite_max_tokens` or check the "
+                f"reviser's context window (`qa_rewrite_num_ctx`)."
+            ),
+            severity="warn",
+            dedup_key=f"qa_rewrite_truncated_revision:{model}",
+            extra={"model": model, "evidence": evidence[:5]},
+        )
+    except Exception:  # noqa: BLE001 — finding emission must never raise here
+        # silent-ok: emitting the observability finding is itself best-effort
+        pass
+
+
 def _emit_empty_finding(model: str) -> None:
     """Best-effort observability when the revise call yields nothing usable."""
     try:
@@ -212,6 +242,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             timeout_default=600.0,
             task_id=task_id,
             phase="qa_rewrite",
+            # Output cap for the full-article revision. Without it, cloud
+            # routes fall to the provider default — LiteLLM capped claude
+            # revisions at 8192 tokens and truncated them mid-word, which the
+            # critic then (correctly) vetoed: the rescue loop went 0-for-116
+            # in 30d largely on this (Glad-Labs/poindexter#984).
+            max_tokens=site_config.get_int(
+                "content_router_qa_rewrite_max_tokens", 16384
+            ),
         )
         revised = (raw or "").strip()
         # The reviser can echo its revision briefing ("Task: Revise a draft
@@ -243,6 +281,27 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "[qa.rewrite] revise call failed (%s) — keeping prior draft", exc,
         )
         revised = ""
+
+    # Truncated-revision guard (Glad-Labs/poindexter#984): a revision that
+    # ends mid-word must never replace the (complete) draft under review —
+    # the re-review would veto it as unfinished and the reject would stand
+    # anyway, minus one full rail re-run. Same degrade-to-reject path as an
+    # empty revision: keep the prior content, burn the attempt.
+    if revised:
+        from modules.content.content_validator import detect_truncated_content
+
+        truncation_evidence = detect_truncated_content(revised)
+        if truncation_evidence:
+            logger.warning(
+                "[qa.rewrite] revision came back truncated (%s) — "
+                "keeping prior draft (task=%s)",
+                truncation_evidence[0], str(task_id or "?")[:8],
+            )
+            _emit_truncated_finding(model, truncation_evidence)
+            return {
+                "qa_rewrite_attempts": attempts + 1,
+                "qa_rail_reviews": list(_REVIEW_RESET),
+            }
 
     if not revised:
         _emit_empty_finding(model)

@@ -1314,7 +1314,25 @@ DEFAULTS: dict[str, str] = {
     'content_router_contradiction_review_max_tokens': '1500',
     'content_router_contradiction_revise_max_tokens': '8000',
     'content_router_contradiction_timeout_seconds': '120',
-    'content_router_qa_rewrite_max_tokens': '8000',
+    # Output-token cap for the qa.rewrite full-article revision call. Raised
+    # 8000 → 16384 when the key was re-wired to the atom (poindexter#984): the
+    # key had gone zero-reader with the deleted chunked content_router path,
+    # so cloud revisions fell to LiteLLM's 8192 default and came back severed
+    # mid-word — a full revised article plus markdown needs writer-class
+    # headroom, and the cap only bounds runaway cost (it buys no tokens).
+    'content_router_qa_rewrite_max_tokens': '16384',
+    # Writer max_tokens = target_length × these multipliers (main generation
+    # AND the refinement pass — ai_content_generator). Raised 4.5/7.0 →
+    # 8.0/12.0 (poindexter#984): observed sonnet-5 drafts stopped exactly AT
+    # the old 4× cap mid-word (4,138 avg / 5,287 max output tokens against
+    # ~1,000–1,300-word targets) — the writer overshoots the word target with
+    # markdown structure, and thinking models spend reasoning tokens from the
+    # same budget. On a still-truncated completion the writer retries once at
+    # the retry multiple, then fails the attempt instead of shipping a
+    # severed draft.
+    'content_gen_token_mult_standard': '8.0',
+    'content_gen_token_mult_thinking': '12.0',
+    'content_gen_truncation_retry_mult': '2.0',
     # The qa.rewrite rescue pass is a writer-class full-revision LLM call, so it
     # gets the same budget as the writer (niche_ollama_chat_timeout_seconds=600).
     # The inherited 240s default (orphaned from the deleted cross_model_qa) was
@@ -3377,8 +3395,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_router_contradiction_review_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
     'content_router_contradiction_revise_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
     'content_router_contradiction_timeout_seconds': {'owner': 'self_review', 'value_type': 'integer'},
-    'content_router_qa_rewrite_max_tokens': {'value_type': 'integer'},
+    'content_router_qa_rewrite_max_tokens': {'owner': 'qa_rewrite', 'value_type': 'integer'},
     'content_router_qa_rewrite_timeout_seconds': {'owner': 'qa_rewrite', 'value_type': 'integer'},
+    'content_gen_token_mult_standard': {'owner': 'ai_content_generator', 'value_type': 'float'},
+    'content_gen_token_mult_thinking': {'owner': 'ai_content_generator', 'value_type': 'float'},
+    'content_gen_truncation_retry_mult': {'owner': 'ai_content_generator', 'value_type': 'float'},
     'content_router_seo_title_max_tokens': {'owner': 'title_generation', 'value_type': 'integer'},
     'content_type_classifier_model': {'owner': 'classify_content_types'},
     'content_type_labels': {'owner': 'classify_content_types', 'value_type': 'string'},

@@ -83,9 +83,11 @@ Next steps: learn more about {topic} and begin implementing what you've read.
 """
     words = base.split()
     if len(words) < word_count:
-        # Pad to target word count
+        # Pad to target word count. End with a period — finished prose ends
+        # terminally, and the #984 truncation gate (correctly) fails a draft
+        # that stops mid-word.
         padding = f" {topic}" * (word_count - len(words) + 10)
-        base += padding
+        base += padding + "."
     return base
 
 
@@ -1545,3 +1547,79 @@ class TestWriterModelPrecedence:
         ):
             with pytest.raises(RuntimeError):
                 await _resolve_rag_writer_model(site_config=sc)
+
+
+# ---------------------------------------------------------------------------
+# Truncation guards (Glad-Labs/poindexter#984)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestTruncationGuards:
+    """finish_reason detection, the cap-bump retry, and the validate gate."""
+
+    def test_completion_truncated_variants(self):
+        gen = _make_generator()
+        assert gen._completion_truncated(SimpleNamespace(finish_reason="length"))
+        assert gen._completion_truncated(SimpleNamespace(finish_reason="MAX_TOKENS"))
+        assert not gen._completion_truncated(SimpleNamespace(finish_reason="stop"))
+        assert not gen._completion_truncated(SimpleNamespace(finish_reason=""))
+        assert not gen._completion_truncated(SimpleNamespace())  # attr missing
+
+    def test_validate_content_fails_truncated_draft(self):
+        """A well-formed article that ends mid-word must fail regardless of
+        how the structural lint scores it."""
+        gen = _make_generator()
+        content = _good_content(topic="Python programming", word_count=1000)
+        truncated = content.rstrip().rstrip(".")  # sever the terminal period
+        truncated = truncated[: len(truncated) - 3]  # ...and the last word's tail
+        result = gen._validate_content(truncated, "Python programming", 1000)
+        assert result.is_valid is False
+        assert any("Truncated output" in issue for issue in result.issues)
+
+    def test_validate_content_passes_complete_draft(self):
+        gen = _make_generator()
+        content = _good_content(topic="Python programming", word_count=1000)
+        result = gen._validate_content(content, "Python programming", 1000)
+        assert result.is_valid is True
+        assert not any("Truncated output" in issue for issue in result.issues)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_retry_bumps_cap_once_on_truncation(self):
+        """First call truncated → one retry at retry_mult × cap; a clean
+        second completion is returned as-is."""
+        truncated = SimpleNamespace(text="cut mid-wor", finish_reason="length")
+        complete = SimpleNamespace(text="Full article.", finish_reason="stop")
+        platform = MagicMock()
+        platform.dispatch.complete = AsyncMock(side_effect=[truncated, complete])
+        gen = _make_generator(platform=platform)
+        gen._site_config.get_float = MagicMock(side_effect=lambda k, d=None: d)
+
+        result = await gen._dispatch_with_truncation_retry(
+            pool=object(),
+            messages=[{"role": "user", "content": "write"}],
+            model_name="test-model",
+            max_tokens=4000,
+        )
+        assert result is complete
+        assert platform.dispatch.complete.await_count == 2
+        first_kwargs = platform.dispatch.complete.await_args_list[0].kwargs
+        second_kwargs = platform.dispatch.complete.await_args_list[1].kwargs
+        assert first_kwargs["max_tokens"] == 4000
+        assert second_kwargs["max_tokens"] == 8000  # default retry mult 2.0
+
+    @pytest.mark.asyncio
+    async def test_dispatch_retry_not_triggered_when_complete(self):
+        complete = SimpleNamespace(text="Full article.", finish_reason="stop")
+        platform = MagicMock()
+        platform.dispatch.complete = AsyncMock(return_value=complete)
+        gen = _make_generator(platform=platform)
+
+        result = await gen._dispatch_with_truncation_retry(
+            pool=object(),
+            messages=[{"role": "user", "content": "write"}],
+            model_name="test-model",
+            max_tokens=4000,
+        )
+        assert result is complete
+        assert platform.dispatch.complete.await_count == 1
