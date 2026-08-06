@@ -46,7 +46,14 @@ RUN pip install --no-cache-dir --upgrade pip && \
     x-transformers \
     "transformers>=4.44,<5.0" \
     accelerate \
-    ema-pytorch
+    ema-pytorch \
+    einops-exts \
+    encodec \
+    laion-clap \
+    pywavelets \
+    sentencepiece \
+    v-diffusion-pytorch \
+    webdataset
 
 COPY stable-audio-server.py /app/server.py
 
