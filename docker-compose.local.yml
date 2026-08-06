@@ -1278,6 +1278,9 @@ services:
       - "9839:9839"
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Decrypts the huggingface_token app_settings secret via pgcrypto —
+      # same env the worker receives (mirror of bootstrap.toml).
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
       HF_TOKEN: "${HF_TOKEN:-}"
       PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
     volumes:

@@ -451,8 +451,12 @@ def _build_soundtrack_mix_cmd(
     if hwaccel:
         cmd.extend(["-hwaccel", hwaccel])
 
-    # First input: composed video; second: soundtrack.
-    cmd.extend(["-i", video_in, "-i", soundtrack_path])
+    # First input: composed video; second: soundtrack. The soundtrack input
+    # loops (2026-08-06): Stable Audio Open clips cap at ~47s, so an ambient
+    # bed under a multi-minute video would otherwise go silent partway
+    # through. duration=first (or the narration length on the pad path)
+    # still bounds the mix, so the loop can never extend the video.
+    cmd.extend(["-i", video_in, "-stream_loop", "-1", "-i", soundtrack_path])
 
     # ``volume`` in dB is exactly what the operator wants, then amix blends.
     # ``normalize=0`` sums (keeps the primary track at full volume);

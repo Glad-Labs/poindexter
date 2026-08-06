@@ -437,6 +437,10 @@ class GenerateMediaScriptsStage:
                         ambient_prompt,
                         "ambient",
                         site_config=sc,
+                        # Model max (~47s): the compositor loops the bed under
+                        # the whole video, so the longest clip = fewest audible
+                        # loop seams (provider default 5s is sting-sized).
+                        duration_s=47.0,
                     )
                     if ambient_result is not None:
                         path = ambient_result.file_path or ""

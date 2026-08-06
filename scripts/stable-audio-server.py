@@ -118,13 +118,34 @@ _state = _State()
 # ---------------------------------------------------------------------------
 
 async def _read_setting(key: str, default: str = "") -> str:
-    """Read a single value from app_settings."""
+    """Read a single value from app_settings, decrypting ``enc:v1:`` secrets.
+
+    Secrets are pgcrypto-encrypted at rest (plugins/secrets.py contract):
+    the ciphertext is base64 in the row and Postgres itself decrypts via
+    ``pgp_sym_decrypt`` with the symmetric key from POINDEXTER_SECRET_KEY —
+    so this standalone sidecar needs no Python crypto, just the same env
+    the worker already receives. A missing key on an encrypted row raises,
+    which reload_config converts into a DEGRADED reason (loud, not silent).
+    """
     try:
         conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
         try:
             row = await conn.fetchrow(
                 "SELECT value FROM app_settings WHERE key = $1", key
             )
+            if row and row["value"] and row["value"].startswith("enc:v1:"):
+                secret_key = os.getenv("POINDEXTER_SECRET_KEY", "")
+                if not secret_key:
+                    raise RuntimeError(
+                        f"app_settings.{key} is encrypted but "
+                        "POINDEXTER_SECRET_KEY is not set in this container"
+                    )
+                plaintext = await conn.fetchval(
+                    "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
+                    row["value"][len("enc:v1:"):],
+                    secret_key,
+                )
+                return (plaintext or "").strip() or default
         finally:
             await conn.close()
         if row and row["value"]:
@@ -148,6 +169,15 @@ async def reload_config() -> None:
         )
         _unload_model()
         return
+
+    # DB-first HF auth (#198): the gated-model token lives in app_settings as
+    # the ``huggingface_token`` secret. Stashed on _state here (async, DB in
+    # reach) so the sync _load_model can use it without an event loop; env
+    # HF_TOKEN / a mounted cache token remain fallbacks.
+    try:
+        _state.hf_token = await _read_setting("huggingface_token", "")
+    except Exception:
+        _state.hf_token = ""
 
     _state.mark_healthy()
     logger.info("[CONFIG] audio_gen_engine=%r — ready", engine)
@@ -174,6 +204,15 @@ def _load_model() -> bool:
         return True
 
     logger.info("[MODEL] Loading Stable Audio Open 1.0 — this takes ~20s on first run")
+    token = getattr(_state, "hf_token", "") or os.getenv("HF_TOKEN", "")
+    if token:
+        os.environ["HF_TOKEN"] = token
+    else:
+        logger.warning(
+            "[MODEL] no huggingface_token in app_settings and no HF_TOKEN env "
+            "— the gated model download will 401 until one is set "
+            "(poindexter settings set huggingface_token <hf_...>)"
+        )
     try:
         from stable_audio_tools import get_pretrained_model
         from stable_audio_tools.inference.generation import generate_diffusion_cond
