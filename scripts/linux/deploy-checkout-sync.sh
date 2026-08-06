@@ -9,10 +9,13 @@
 #   1. git fetch (always safe — never touches the working tree)
 #   2. behind-check: 0 commits behind -> no-op (fail-safe parse: junk = behind)
 #   3. Prefect flow-gap guard: prefer resetting between flow runs; wait up to
-#      SYNC_FLOW_WAIT_MAX_SEC (default 90s) for a gap, then FORCE the reset —
-#      a long-running flow already imported its modules, so a mid-run reset is
-#      safe for it; only a subprocess *starting* mid-reset can read a torn tree
-#      (fails once, reclaimed + retried). Never starve the deploy.
+#      SYNC_FLOW_WAIT_MAX_SEC (default 90s) for a gap. Still busy after that:
+#      DEFER — write status deferred-active-flow and exit 0; the timer's next
+#      tick retries (poindexter#964 — the container bounce in step 7 kills the
+#      in-flight run: a media render's nodes routinely exceed any sane gap
+#      window, and each kill costs 20-40 GPU-minutes plus a wedged dispatch
+#      claim). --force-flow-reset / SYNC_FLOW_FORCE=1 restores the old
+#      force-through behavior for genuinely stuck queues.
 #   4. git reset --hard origin/main + git clean -fd   (SAFE: dedicated clone,
 #      nothing else ever edits it — never point this at a working checkout)
 #   5. rebuild map: diff (last-deployed..HEAD) -> image-baked services whose
@@ -47,9 +50,11 @@
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone)
 # Log     : ~/.poindexter/deploy-checkout-sync.log    (single .1 rotation)
 # Status  : ~/.poindexter/deploy-checkout-sync.status.json
-#   result: deployed | synced-no-change | synced-norestart | baseline-recorded | error
+#   result: deployed | synced-no-change | synced-norestart | baseline-recorded
+#           | deferred-active-flow | error
 #
 # Flags: --status (read-only health view) | --no-restart | --no-flow-check
+#        | --force-flow-reset
 set -uo pipefail
 
 DEPLOY_DIR="${POINDEXTER_DEPLOY_ROOT:-$HOME/.poindexter/deploy/glad-labs-stack}"
@@ -57,6 +62,11 @@ SOURCE_REMOTE="${SOURCE_REMOTE:-origin}"
 SYNC_BRANCH="${SYNC_BRANCH:-main}"
 PREFECT_API_URL="${PREFECT_API_URL:-http://localhost:4200/api}"
 MAX_WAIT_SEC="${SYNC_FLOW_WAIT_MAX_SEC:-90}"
+# When a flow is STILL running after MAX_WAIT_SEC: 0 (default) = defer the
+# deploy (exit 0; the timer's next tick retries — a media render's nodes
+# routinely exceed any sane gap window, and a kill costs 20-40 GPU-minutes).
+# 1 = legacy behavior: force the reset+restarts anyway. Also --force-flow-reset.
+FORCE_FLOW_RESET="${SYNC_FLOW_FORCE:-0}"
 RESTART_CONTAINERS=(${SYNC_RESTART_CONTAINERS:-poindexter-worker poindexter-pipeline-bot})
 SKEW_MARGIN_SEC=5
 
@@ -77,6 +87,7 @@ for arg in "$@"; do
       exit 0 ;;
     --no-restart) NO_RESTART=1 ;;
     --no-flow-check) NO_FLOW_CHECK=1 ;;
+    --force-flow-reset) FORCE_FLOW_RESET=1 ;;
   esac
 done
 
@@ -131,7 +142,16 @@ if [ "$need_reset" = "1" ]; then
       sleep 5; waited=$((waited + 5))
     done
     if [ "$waited" -ge "$MAX_WAIT_SEC" ] && flow_running; then
-      log "No flow gap after ${MAX_WAIT_SEC}s; forcing reset ($behind_raw commit(s) behind) to avoid deploy starvation." WARN
+      if [ "$FORCE_FLOW_RESET" = "1" ]; then
+        log "No flow gap after ${MAX_WAIT_SEC}s; forcing reset ($behind_raw commit(s) behind) — --force-flow-reset/SYNC_FLOW_FORCE set." WARN
+      else
+        # Killing an in-flight flow costs a full re-run (media renders:
+        # 20-40 GPU-minutes) and wedges the piece's dispatch claim. Deploys
+        # are idempotent and retried by the timer, so defer instead.
+        log "No flow gap after ${MAX_WAIT_SEC}s; DEFERRING deploy ($behind_raw commit(s) behind) — an in-flight flow holds the slot. Retry lands on the next timer tick; pass --force-flow-reset to override." WARN
+        write_status deferred-active-flow "$(git -C "$DEPLOY_DIR" rev-parse HEAD | tr -d '[:space:]')" "" "" "deferred: active flow run after ${MAX_WAIT_SEC}s wait; $behind_raw commit(s) behind"
+        exit 0
+      fi
     fi
   fi
   if ! git -C "$DEPLOY_DIR" reset --hard "$SOURCE_REMOTE/$SYNC_BRANCH" >>"$LOG_FILE" 2>&1; then
