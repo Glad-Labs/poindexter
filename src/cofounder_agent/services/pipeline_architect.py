@@ -225,6 +225,10 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
 - An atom whose REQUIRES lists key K must be downstream of an atom
   whose PRODUCES lists K (or of an upstream stage that seeds K).
+- config values are LITERALS only — there is NO template substitution.
+  Never write placeholders like ${{task_id}}. Run-time identifiers
+  (task_id, post_id, the operator's target) arrive on the pipeline
+  state automatically; leave them OUT of config.
 - Multiple edges from the same source create a parallel fan-out —
   every successor runs concurrently. Use this for parallel critic
   reviews or independent media generation.
@@ -519,6 +523,23 @@ def _largest_balanced_json_object(raw: str) -> dict[str, Any] | None:
     return best
 
 
+def _find_config_placeholder(config: Any) -> str | None:
+    """Return the first ``${...}``-style string in a node config, if any."""
+    if isinstance(config, dict):
+        for v in config.values():
+            hit = _find_config_placeholder(v)
+            if hit is not None:
+                return hit
+    elif isinstance(config, list):
+        for v in config:
+            hit = _find_config_placeholder(v)
+            if hit is not None:
+                return hit
+    elif isinstance(config, str) and "${" in config:
+        return config
+    return None
+
+
 def _validate_spec(
     spec: dict[str, Any], *, seed_keys: set[str] | None = None
 ) -> tuple[bool, list[str]]:
@@ -571,6 +592,20 @@ def _validate_spec(
             errors.append(
                 f"FIX node {nid!r}: add 'atom' field naming an atom "
                 "from the catalog (e.g. 'atoms.narrate_bundle')"
+            )
+            continue
+        # Config values are literals seeded onto state — there is no
+        # template engine. A hallucinated ${...} placeholder would land
+        # verbatim on state and shadow the REAL value (first live media
+        # plan wrote config task_id="${task_id}").
+        placeholder = _find_config_placeholder(n.get("config"))
+        if placeholder is not None:
+            errors.append(
+                f"FIX node {nid!r}: config value {placeholder!r} uses "
+                "template syntax — there is no substitution. Use a "
+                "concrete literal, or OMIT the key: run-time identifiers "
+                "(task_id, post_id) arrive on the pipeline state "
+                "automatically."
             )
             continue
         # Tolerant lookup: LLMs sometimes drop the namespace prefix.

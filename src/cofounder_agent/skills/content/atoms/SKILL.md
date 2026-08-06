@@ -280,6 +280,10 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
 - An atom whose REQUIRES lists key K must be downstream of an atom
   whose PRODUCES lists K (or of an upstream stage that seeds K).
+- config values are LITERALS only — there is NO template substitution.
+  Never write placeholders like ${{task_id}}. Run-time identifiers
+  (task_id, post_id, the operator's target) arrive on the pipeline
+  state automatically; leave them OUT of config.
 - Multiple edges from the same source create a parallel fan-out —
   every successor runs concurrently. Use this for parallel critic
   reviews or independent media generation.

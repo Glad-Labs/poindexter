@@ -270,6 +270,10 @@ async def _resolve(
 
 class RunPlanRequest(BaseModel):
     topic: str = Field("", max_length=200)
+    # Per-run values (e.g. post_id for a load_existing_post entry) merged
+    # into task metadata → flattened onto the initial pipeline state.
+    # Sanitized by chat_plans.validate_run_params (fail loud → 422).
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 @router.post("/plans/{plan_id}/run")
@@ -287,7 +291,10 @@ async def run_plan_route(
         return await run_plan(
             pool=db_service.pool, db_service=db_service, plan_id=plan_id,
             topic_override=(body.topic if body and body.topic else None),
+            params=(body.params if body else None),
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404, detail=f"Unknown plan: {plan_id!r}",

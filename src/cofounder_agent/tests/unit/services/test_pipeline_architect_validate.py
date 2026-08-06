@@ -316,3 +316,34 @@ def test_resolve_system_prompt_renders_site_name_registry_down():
     assert "{site_name}" not in rendered, "left a literal {site_name} placeholder"
     assert "{{" not in rendered, "fallback JSON-schema braces were not rendered"
     assert '"name":' in rendered
+
+
+def test_validate_rejects_template_placeholders_in_config() -> None:
+    """First live media plan wrote config task_id='${task_id}' — there is
+    no substitution engine, so the literal would shadow the real state
+    value. The validator turns it into a FIX retry signal."""
+    spec = {
+        "name": "podcast_plan",
+        "nodes": [
+            {"id": "s", "atom": "atoms.set_task_status",
+             "config": {"task_id": "${task_id}",
+                        "target_status": "in_progress"}},
+        ],
+        "edges": [],
+    }
+    ok, errors = pipeline_architect._validate_spec(spec)
+    assert not ok
+    assert any("template syntax" in e and "'s'" in e for e in errors)
+
+
+def test_validate_placeholder_scan_reaches_nested_config() -> None:
+    spec = {
+        "name": "p",
+        "nodes": [
+            {"id": "n", "atom": "atoms.set_task_status",
+             "config": {"opts": {"list": ["ok", "${post_id}"]}}},
+        ],
+        "edges": [],
+    }
+    ok, errors = pipeline_architect._validate_spec(spec)
+    assert not ok and any("template syntax" in e for e in errors)

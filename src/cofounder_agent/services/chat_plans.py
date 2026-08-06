@@ -27,6 +27,7 @@ run is an explicit, hand-designed operator action, not a bulk create path.
 from __future__ import annotations
 
 import json
+import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
 from typing import Any
@@ -148,19 +149,70 @@ async def get_plan(pool: Any, plan_id: str) -> dict[str, Any] | None:
     return d
 
 
+# Per-run parameter hygiene. Params ride task metadata, which
+# content_router_service flattens onto the initial pipeline state (the
+# seo_refresh post_id seam) — so a plan whose entry atom requires e.g.
+# ``post_id`` receives it without the architect having to know a concrete
+# id at design time. Reserved keys guard the task's own envelope.
+_PARAM_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+_RESERVED_PARAM_KEYS = frozenset({
+    "created_via", "chat_plan_id", "plan_intent", "conversation_id",
+    "task_id", "template_slug", "topic", "status", "id", "user_id",
+})
+_MAX_PARAMS = 10
+_MAX_PARAM_VALUE_CHARS = 500
+
+
+def validate_run_params(params: dict[str, Any] | None) -> dict[str, Any]:
+    """Return sanitized per-run params or raise ``ValueError`` (fail loud)."""
+    if not params:
+        return {}
+    if len(params) > _MAX_PARAMS:
+        raise ValueError(f"too many params (max {_MAX_PARAMS})")
+    out: dict[str, Any] = {}
+    for key, value in params.items():
+        if not _PARAM_KEY_RE.match(str(key)):
+            raise ValueError(f"invalid param key {key!r} (want [a-z][a-z0-9_]*)")
+        if str(key) in _RESERVED_PARAM_KEYS:
+            raise ValueError(f"param key {key!r} is reserved")
+        if isinstance(value, bool) or isinstance(value, int):
+            out[key] = value
+        elif isinstance(value, str):
+            if len(value) > _MAX_PARAM_VALUE_CHARS:
+                raise ValueError(
+                    f"param {key!r} too long (max {_MAX_PARAM_VALUE_CHARS} chars)"
+                )
+            out[key] = value
+        else:
+            raise ValueError(
+                f"param {key!r} must be a string, int, or bool "
+                f"(got {type(value).__name__})"
+            )
+    return out
+
+
 async def run_plan(
     *,
     pool: Any,
     db_service: Any,
     plan_id: str,
     topic_override: str | None = None,
+    params: dict[str, Any] | None = None,
     user_id: str = "operator",
 ) -> dict[str, Any]:
     """One-shot: draft → ran, create the task, link + stamp + report.
 
+    ``params`` are operator-supplied per-run values (e.g. ``post_id`` for a
+    plan built on ``content.load_existing_post``) merged into task metadata
+    — the router flattens metadata onto the initial state, which is where
+    entry atoms read run-time identifiers from. Validated BEFORE the
+    one-shot resolve so a bad call never consumes the draft.
+
     Returns the resolved plan (with ``task_id``); ``already_resolved: True``
-    when this call lost the race. Raises ``KeyError`` for an unknown id.
+    when this call lost the race. Raises ``KeyError`` for an unknown id and
+    ``ValueError`` for bad params.
     """
+    clean_params = validate_run_params(params)
     row = await pool.fetchrow(
         """
         UPDATE chat_plans
@@ -192,6 +244,7 @@ async def run_plan(
         "status": "pending",
         "user_id": user_id,
         "metadata": {
+            **clean_params,
             "created_via": "chat_plan",
             "chat_plan_id": plan_id,
             "plan_intent": row["intent"][:500],

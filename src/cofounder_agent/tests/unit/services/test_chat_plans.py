@@ -399,3 +399,73 @@ class TestEnsureTerminal:
         ))
         atoms = [n["atom"] for n in cached["spec"]["nodes"]]
         assert atoms[-1] == "atoms.set_task_status"
+
+
+@pytest.mark.unit
+class TestRunParams:
+    """Per-run params (poindexter#950 shakedown): a plan built on
+    content.load_existing_post cannot know a concrete post_id at design
+    time — the operator supplies it at Run; it rides task metadata onto
+    the initial pipeline state."""
+
+    def test_valid_params_pass_through(self):
+        out = chat_plans.validate_run_params(
+            {"post_id": "abc-123", "max_shots": 4, "dry_run": True})
+        assert out == {"post_id": "abc-123", "max_shots": 4, "dry_run": True}
+
+    def test_empty_and_none_are_empty(self):
+        assert chat_plans.validate_run_params(None) == {}
+        assert chat_plans.validate_run_params({}) == {}
+
+    def test_reserved_key_refused(self):
+        with pytest.raises(ValueError, match="reserved"):
+            chat_plans.validate_run_params({"task_id": "x"})
+
+    def test_bad_key_shape_refused(self):
+        with pytest.raises(ValueError, match="invalid param key"):
+            chat_plans.validate_run_params({"Post-ID": "x"})
+
+    def test_too_many_refused(self):
+        with pytest.raises(ValueError, match="too many"):
+            chat_plans.validate_run_params(
+                {f"k{i}": "v" for i in range(11)})
+
+    def test_oversize_value_refused(self):
+        with pytest.raises(ValueError, match="too long"):
+            chat_plans.validate_run_params({"post_id": "x" * 501})
+
+    def test_non_scalar_refused(self):
+        with pytest.raises(ValueError, match="must be a string"):
+            chat_plans.validate_run_params({"nested": {"a": 1}})
+
+    def test_run_plan_merges_params_into_metadata(self, plan_env):
+        pool, _, _, _ = plan_env
+        plan = asyncio.run(chat_plans.create_plan(
+            pool, conversation_id="c1", message_id="m1",
+            intent="podcast from post", topic="t", spec=_spec(),
+        ))
+        pool.messages["m1"] = [{
+            "type": "card",
+            "card": {"kind": "plan", "plan_id": plan["plan_id"],
+                     "state": "draft"},
+        }]
+        db = FakeDb()
+        asyncio.run(chat_plans.run_plan(
+            pool=pool, db_service=db, plan_id=plan["plan_id"],
+            params={"post_id": "78f8a6cc"},
+        ))
+        assert db.added["metadata"]["post_id"] == "78f8a6cc"
+        assert db.added["metadata"]["created_via"] == "chat_plan"
+
+    def test_bad_params_fail_before_consuming_the_draft(self, plan_env):
+        pool, _, _, _ = plan_env
+        plan = asyncio.run(chat_plans.create_plan(
+            pool, conversation_id="c1", message_id="m1",
+            intent="i", topic="t", spec=_spec(),
+        ))
+        with pytest.raises(ValueError):
+            asyncio.run(chat_plans.run_plan(
+                pool=pool, db_service=FakeDb(), plan_id=plan["plan_id"],
+                params={"task_id": "hijack"},
+            ))
+        assert pool.plans[plan["plan_id"]]["status"] == "draft"

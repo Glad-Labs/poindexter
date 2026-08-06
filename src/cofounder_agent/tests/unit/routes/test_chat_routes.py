@@ -186,16 +186,35 @@ class TestPlanRunRoute:
         seen = {}
 
         async def run_plan(*, pool, db_service, plan_id, topic_override=None,
-                           user_id="operator"):
-            seen.update({"id": plan_id, "topic": topic_override})
+                           params=None, user_id="operator"):
+            seen.update({"id": plan_id, "topic": topic_override,
+                         "params": params})
             return {"id": plan_id, "status": "ran", "task_id": "t-1"}
 
         monkeypatch.setattr(chat_plans, "run_plan", run_plan)
         client = _build_client()
-        resp = client.post("/api/chat/plans/p-1/run", json={"topic": "Better"})
+        resp = client.post(
+            "/api/chat/plans/p-1/run",
+            json={"topic": "Better", "params": {"post_id": "78f8a6cc"}},
+        )
         assert resp.status_code == 200
         assert resp.json()["task_id"] == "t-1"
-        assert seen == {"id": "p-1", "topic": "Better"}
+        assert seen == {"id": "p-1", "topic": "Better",
+                        "params": {"post_id": "78f8a6cc"}}
+
+    def test_bad_params_422(self, fake_store, monkeypatch):
+        import services.chat_plans as chat_plans
+
+        async def run_plan(**kwargs):
+            raise ValueError("param key 'task_id' is reserved")
+
+        monkeypatch.setattr(chat_plans, "run_plan", run_plan)
+        client = _build_client()
+        resp = client.post(
+            "/api/chat/plans/p-1/run", json={"params": {"task_id": "x"}},
+        )
+        assert resp.status_code == 422
+        assert "reserved" in resp.json()["detail"]
 
     def test_unknown_plan_404(self, fake_store, monkeypatch):
         import services.chat_plans as chat_plans

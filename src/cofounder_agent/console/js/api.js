@@ -2245,13 +2245,19 @@
     // pipeline task from the cached plan template; the thread reload picks
     // up the stamped card + system message, and the watch rail follows the
     // linked task.
-    chatPlanRun(planId, topic) {
+    chatPlanRun(planId, topic, params) {
+      // params: per-run values (e.g. {post_id}) merged into task metadata
+      // server-side and flattened onto the initial pipeline state — how a
+      // plan built on load_existing_post learns WHICH post at run time.
+      const body = {};
+      if (topic) body.topic = topic;
+      if (params && Object.keys(params).length) body.params = params;
       return pick(
         () =>
           http(
             'POST',
             `/api/chat/plans/${encodeURIComponent(planId)}/run`,
-            topic ? { topic } : {}
+            body
           ),
         () => window.PX.chatMock.runPlan(planId)
       );
