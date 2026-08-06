@@ -128,7 +128,7 @@ def _quiet_ctx(date: str = "2026-05-02") -> DevDiaryContext:
 def _bookkeeping_ctx(date: str = "2026-05-02") -> DevDiaryContext:
     """A day with real merge activity but zero shipped work.
 
-    Verbatim shape of 2026-07-27 on Glad-Labs/glad-labs-stack: five
+    Verbatim shape of 2026-07-27 on Glad-Labs/poindexter: five
     merged PRs, all release-bot or dependabot, plus a post the pipeline
     published on its own. ``is_empty()`` is False for this bundle — that
     is precisely why the substance bar had to replace it.
@@ -287,7 +287,7 @@ class TestRun:
 
         A day of release-please + dependabot + docs PRs is NOT empty, so
         the old ``is_empty()`` gate wrote a diary about nothing. Modelled
-        on 2026-07-27, a real day from Glad-Labs/glad-labs-stack.
+        on 2026-07-27, a real day from Glad-Labs/poindexter.
         """
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
