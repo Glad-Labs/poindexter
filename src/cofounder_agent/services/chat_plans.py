@@ -49,28 +49,46 @@ def namespace_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-# Atoms that transition the task off ``in_progress``. A graph containing
-# none of these can NEVER complete: the run finishes its nodes, the task
-# row stays in_progress, the 30-min stale sweep re-queues it, and the
-# pipeline re-runs until the retry cap (first live plan batch: 2 of 3
-# architect graphs looped exactly this way).
-_TERMINAL_ATOMS = ("atoms.set_task_status", "stage.finalize_task")
+# A graph that never transitions the task off ``in_progress`` can NEVER
+# complete: the run finishes its nodes, the task row stays in_progress,
+# the 30-min stale sweep re-queues it, and the pipeline re-runs until the
+# retry cap (first live plan batch: 2 of 3 architect graphs looped this
+# way). Statuses the sweep leaves alone — a set_task_status node only
+# counts as terminal when it TARGETS one of these (the first live media
+# plan carried a mid-graph ``target_status='in_progress'`` marker that
+# satisfied a name-only check while terminating nothing).
+_TERMINAL_STATUSES = frozenset({
+    "awaiting_approval", "completed", "approved", "published",
+    "failed", "rejected", "rejected_final", "cancelled", "dismissed",
+})
+
+
+def _has_terminal_node(nodes: list[dict[str, Any]]) -> bool:
+    for n in nodes:
+        atom = n.get("atom") or ""
+        if atom == "stage.finalize_task":
+            return True
+        if atom == "atoms.set_task_status":
+            target = str((n.get("config") or {}).get("target_status") or "")
+            if target in _TERMINAL_STATUSES:
+                return True
+    return False
 
 
 def ensure_terminal(spec: dict[str, Any]) -> dict[str, Any]:
     """Return a copy guaranteed to end in a status-setting node.
 
-    When the composed spec lacks a terminal atom, append
-    ``atoms.set_task_status`` (``target_status='awaiting_approval'`` — the
-    reviewable landing state; approve≠publish still applies) wired from
-    every sink node. Deterministic code, not LLM trust: the architect is
-    free to design any pipeline shape, but a plan run must always land
+    When the composed spec lacks a node that sets a TERMINAL status,
+    append ``atoms.set_task_status`` (``target_status='awaiting_approval'``
+    — the reviewable landing state; approve≠publish still applies) wired
+    from every sink node. Deterministic code, not LLM trust: the architect
+    is free to design any pipeline shape, but a plan run must always land
     somewhere the operator can see.
     """
     nodes = list(spec.get("nodes") or [])
     if not nodes:
         return spec
-    if any((n.get("atom") or "") in _TERMINAL_ATOMS for n in nodes):
+    if _has_terminal_node(nodes):
         return spec
     out = dict(spec)
     edges = [dict(e) for e in (spec.get("edges") or [])]

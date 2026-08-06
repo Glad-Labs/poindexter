@@ -101,6 +101,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "podcast_intro_audio_path", _EMPTY["podcast_intro_audio_path"],
         ),
     }
+    if not (result["podcast_script"] or "").strip():
+        # Fail loud, never pass an empty script downstream: the first live
+        # architect-composed podcast plan wired this atom against a task
+        # with no persisted scripts and the whole media chain "succeeded"
+        # in 0ms producing empty artifacts (feedback_no_silent_defaults).
+        raise ValueError(
+            f"podcast.load_script: no persisted podcast script for task "
+            f"{task_id} — this atom LOADS a script written by an earlier "
+            "run (stage.generate_media_scripts). To create one from post "
+            "content, compose stage.generate_media_scripts upstream "
+            "instead of (or before) this loader."
+        )
     logger.info(
         "[podcast.load_script] task=%s loaded: podcast_script=%dc intro=%s",
         task_id,

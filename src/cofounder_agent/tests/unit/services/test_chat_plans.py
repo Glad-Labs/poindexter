@@ -469,3 +469,48 @@ class TestRunParams:
                 params={"task_id": "hijack"},
             ))
         assert pool.plans[plan["plan_id"]]["status"] == "draft"
+
+
+@pytest.mark.unit
+class TestEnsureTerminalTargetAware:
+    """A set_task_status node only counts as terminal when it TARGETS a
+    terminal status — the first live media plan carried a mid-graph
+    target_status='in_progress' marker that satisfied a name-only check
+    while terminating nothing (task looped through the stale sweep)."""
+
+    def _spec_with_status(self, target):
+        return {
+            "name": "plan_x",
+            "nodes": [
+                {"id": "load", "atom": "content.load_existing_post"},
+                {"id": "mark", "atom": "atoms.set_task_status",
+                 "config": {"target_status": target}},
+                {"id": "work", "atom": "media.render_narration"},
+            ],
+            "edges": [
+                {"from": "load", "to": "mark"},
+                {"from": "mark", "to": "work"},
+            ],
+        }
+
+    def test_in_progress_marker_still_gets_terminal_appended(self):
+        out = chat_plans.ensure_terminal(self._spec_with_status("in_progress"))
+        assert out["nodes"][-1]["id"] == "ensure_terminal_status"
+        assert out["nodes"][-1]["config"]["target_status"] == "awaiting_approval"
+        term = out["nodes"][-1]["id"]
+        assert {e["from"] for e in out["edges"] if e["to"] == term} == {"work"}
+
+    def test_awaiting_approval_target_counts_as_terminal(self):
+        spec = self._spec_with_status("awaiting_approval")
+        assert chat_plans.ensure_terminal(spec) is spec
+
+    def test_completed_target_counts_as_terminal(self):
+        spec = self._spec_with_status("completed")
+        assert chat_plans.ensure_terminal(spec) is spec
+
+    def test_missing_config_still_gets_terminal(self):
+        spec = {"name": "p", "nodes": [
+            {"id": "s", "atom": "atoms.set_task_status"},
+        ], "edges": []}
+        out = chat_plans.ensure_terminal(spec)
+        assert out["nodes"][-1]["id"] == "ensure_terminal_status"

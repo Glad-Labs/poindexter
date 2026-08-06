@@ -139,6 +139,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "video_ambient_audio_path", _EMPTY["video_ambient_audio_path"],
         ),
     }
+    if not any(
+        (v if isinstance(v, str) else json.dumps(v) if v else "").strip()
+        for v in result.values()
+    ):
+        # Fail loud, never pass an all-empty script bundle downstream: the
+        # first live architect-composed media plan ran this loader against
+        # a task with no persisted scripts and the whole render chain
+        # "succeeded" in 0ms producing empty artifacts
+        # (feedback_no_silent_defaults).
+        raise ValueError(
+            f"media.load_scripts: no persisted media scripts for task "
+            f"{task_id} — this atom LOADS scripts written by an earlier "
+            "run (stage.generate_media_scripts). To create them from post "
+            "content, compose stage.generate_media_scripts upstream "
+            "instead of (or before) this loader."
+        )
     logger.info(
         "[media.load_scripts] task=%s loaded: podcast=%dc scenes=%d shot_list=%s",
         task_id,

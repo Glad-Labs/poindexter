@@ -58,10 +58,15 @@ async def test_handles_jsonb_returned_as_string() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_defaults_when_no_row() -> None:
-    result = await podcast_load_script.run({"task_id": "t1", "pool": _FakePool(None)})
-    assert result["podcast_script"] == ""
-    assert result["podcast_intro_audio_path"] == ""
+async def test_no_persisted_script_fails_loud() -> None:
+    """No pipeline_versions row → raise with the compose-repair hint.
+
+    Was a silent empty-defaults pass-through: the first live
+    architect-composed podcast plan wired this loader against a task with
+    no scripts and the whole media chain "succeeded" in 0ms producing
+    empty artifacts (feedback_no_silent_defaults)."""
+    with pytest.raises(ValueError, match="generate_media_scripts"):
+        await podcast_load_script.run({"task_id": "t1", "pool": _FakePool(None)})
 
 
 @pytest.mark.asyncio

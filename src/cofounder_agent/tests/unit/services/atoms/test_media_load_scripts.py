@@ -85,22 +85,14 @@ async def test_media_load_scripts_parses_json_string_metadata():
 
 
 @pytest.mark.asyncio
-async def test_media_load_scripts_handles_missing_metadata():
-    """No pipeline_versions row → empty defaults, no raise (graceful no-op)."""
+async def test_media_load_scripts_missing_metadata_fails_loud():
+    """No pipeline_versions row → raise with the compose-repair hint (was a
+    silent all-empty pass-through; feedback_no_silent_defaults)."""
     pool, _ = _pool_returning(None)
     db = SimpleNamespace(pool=pool)
 
-    result = await load_scripts_run({"task_id": "t-3", "database_service": db})
-
-    assert result == {
-        "podcast_script": "",
-        "video_long_script": "",
-        "video_scenes": [],
-        "short_summary_script": "",
-        "video_shot_list": None,
-        "short_shot_list": None,
-        "video_ambient_audio_path": "",
-    }
+    with pytest.raises(ValueError, match="generate_media_scripts"):
+        await load_scripts_run({"task_id": "t-3", "database_service": db})
 
 
 @pytest.mark.asyncio
