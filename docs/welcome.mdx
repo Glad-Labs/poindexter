@@ -1,14 +1,19 @@
 ---
 title: "Poindexter"
-description: "Open-source AI content pipeline. Self-host, full local-LLM control, multi-niche."
+description: "The open-source AI content factory that runs on your PC — writes, reviews, and publishes on its own. Local-first, Ollama-powered, $0 API costs."
 ---
 
 <Note>
-Poindexter is an open-source, self-hosted AI content pipeline. It researches,
+Poindexter is an open-source, self-hosted AI content factory. It researches,
 writes, reviews, and publishes long-form content on your own hardware — with a
-human-in-the-loop approval queue and six independent QA rails that catch
-hallucinations before anything ships.
+human-in-the-loop approval queue and 13 QA rails that catch hallucinations
+before anything ships.
 </Note>
+
+<img
+  src="/docs/assets/readme/grafana-pipeline.png"
+  alt="The Pipeline dashboard that ships with Poindexter — drafts arrive scored, weak ones auto-rejected, survivors queued for one-click approval"
+/>
 
 <CardGroup cols={2}>
   <Card title="Get up and running" icon="rocket" href="/docs/quickstart">
@@ -21,7 +26,7 @@ hallucinations before anything ships.
     Day-2 runbooks: incident response, backups, secret rotation, disaster recovery, and the CI/deploy chain.
   </Card>
   <Card title="Extend with plugins" icon="puzzle-piece" href="/docs/operations/extending-poindexter">
-    Add a new Stage, Reviewer, Publishing Adapter, Tap, or Module — twenty plugin entry-point groups, all step-by-step.
+    Add a new Stage, Reviewer, Publishing Adapter, Tap, or Module — eighteen plugin entry-point groups, all step-by-step.
   </Card>
 </CardGroup>
 
@@ -30,7 +35,7 @@ hallucinations before anything ships.
 Poindexter is a single-operator content engine. One person, one machine, a
 local Ollama install, and a Postgres database. The pipeline pulls topics from
 configurable sources, drafts with a writer LLM, reviews adversarially with a
-different LLM, runs six OSS QA rails over the result, and hands you a queue of
+different LLM, runs 13 QA rails over the result, and hands you a queue of
 posts to approve from your phone. Everything tunable lives in the
 `app_settings` table — no `.env` to babysit.
 
@@ -42,15 +47,16 @@ and runs without it.
 ## By the numbers
 
 <CardGroup cols={3}>
-  <Card title="6 OSS QA rails" icon="shield-check">
-    DeepEval (×3), guardrails (×2, native), and Ragas — every generated post is
-    judged by all six before it can be auto-published.
+  <Card title="13 QA rails" icon="shield-check">
+    Cross-model critics, DeepEval (×3), native guardrails (×2), Ragas,
+    citation verification, vision QA — every post survives the gauntlet or
+    gets rejected.
   </Card>
-  <Card title="39 scheduled jobs" icon="clock">
+  <Card title="60+ registered jobs" icon="clock">
     PluginScheduler boots taps, retention sweeps, memory hygiene, and content
     surfaces on declarative DB rows. No hand-rolled cron.
   </Card>
-  <Card title="20 plugin entry points" icon="plug">
+  <Card title="18 plugin entry points" icon="plug">
     Tap, Probe, Job, Stage, TopicSource, LLMProvider, ImageProvider,
     PublishAdapter, Module, and more — every surface is a registered
     Protocol.
@@ -59,12 +65,12 @@ and runs without it.
     Fully self-hosted. Ollama on your GPU, Postgres on the box, no paid API
     in the critical path.
   </Card>
-  <Card title="13 Grafana dashboards" icon="chart-line">
+  <Card title="12 Grafana dashboards" icon="chart-line">
     Mission Control, Pipeline, Cost, Observability, System Health,
-    Integrations, QA Rails, Findings, Revenue, Experiments & Dry-Run,
-    Database, Hardware & Power, and SEO Harvest — pre-provisioned.
+    Integrations, QA Rails, Findings, Experiments & Dry-Run, Database,
+    Hardware & Power, and SEO Harvest — pre-provisioned.
   </Card>
-  <Card title="38-node pipeline" icon="list-check">
+  <Card title="44-node pipeline" icon="list-check">
     `canonical_blog` graph_def: write → self-review → citation repair →
     images → QA rails → SEO → media scripts → finalize.
   </Card>
