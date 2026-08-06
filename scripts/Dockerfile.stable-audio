@@ -1,0 +1,64 @@
+# Stable Audio Open 1.0 inference server — GPU sidecar for the ambient
+# music bed + intro/outro stings (audio_gen_engine=stable-audio-open-1.0).
+# Mirrors Dockerfile.wan in shape; CMD launches scripts/stable-audio-server.py.
+#
+# Same PyTorch 2.8 / CUDA 12.8 base as wan — required for Blackwell
+# (sm_120, RTX 5090) kernels.
+#
+# Model: stabilityai/stable-audio-open-1.0 (Stability AI Community
+# License — free for commercial use under $1M annual revenue). The HF
+# repo is GATED: the operator's HF account must accept the license once,
+# and the container needs HF_TOKEN. Until both are true the server runs
+# DEGRADED with the reason on /health — loud, never silent.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# stable-audio-tools pins its own torch floor; install with --no-deps and
+# supply the runtime deps explicitly so the base image's Blackwell torch
+# survives (the Dockerfile.chatterbox lesson: letting pip resolve torch
+# downgraded to a build with no sm_120 kernels).
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --no-deps stable-audio-tools && \
+    pip install --no-cache-dir \
+    fastapi \
+    "uvicorn[standard]" \
+    pydantic \
+    asyncpg \
+    httpx \
+    einops \
+    "huggingface_hub[cli]" \
+    safetensors \
+    soundfile \
+    torchaudio \
+    alias-free-torch \
+    auraloss \
+    descript-audio-codec \
+    k-diffusion \
+    local-attention \
+    pedalboard \
+    prefigure \
+    vector-quantize-pytorch \
+    x-transformers \
+    "transformers>=4.44,<5.0" \
+    accelerate \
+    ema-pytorch
+
+COPY stable-audio-server.py /app/server.py
+
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+    mkdir -p /home/appuser/.cache && \
+    chown -R appuser:appgroup /app /home/appuser
+USER appuser
+
+EXPOSE 9839
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:9839/health || exit 1
+
+CMD ["python", "server.py"]

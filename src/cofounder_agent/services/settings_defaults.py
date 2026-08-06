@@ -566,6 +566,18 @@ DEFAULTS: dict[str, str] = {
     # 2026-07 long-video rejections: a 300s plan over a ~175s narration) never
     # ship. media.qa's silent-tail check allows the same hold before flagging.
     'video_fit_trailing_hold_seconds': '3',
+    # Hero-phase wan ready-wait (poindexter#899 reliability half, 2026-08-06):
+    # before animating, poll the wan-server /health up to this many seconds —
+    # animate calls racing a cold-booting wan (its own idle exit, or the
+    # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
+    # 0 disables; timeout proceeds into the normal still-fallback.
+    'video_hero_wan_ready_wait_s': '90',
+    # Frame-delta motion gate on rendered hero clips (poindexter#899): frames
+    # at 25%/75% compared on a small grayscale plate; below the delta the clip
+    # is treated as motion-dead and the shot uses its Ken-Burns still + a
+    # hero_motion_dead finding. Single-frame vision QA cannot see dead motion.
+    'video_hero_motion_check_enabled': 'true',
+    'video_hero_min_motion_delta': '2.0',
     # Render-GPU VRAM preflight (2026-07-12 desktop-lockup fix). The Wan render
     # loads ~24 GB onto pipeline_gpu_index (the RTX 5090 that also drives the
     # desktop). dispatch_media_pipeline defers the whole cycle unless the card
@@ -3085,6 +3097,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_long_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_motion_check_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_hero_min_motion_delta': {'owner': 'media_render', 'value_type': 'float'},
     'demo_clip_dir': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_family': {'owner': 'demo_clips', 'value_type': 'string'},
     'demo_clip_font_size': {'owner': 'demo_clips', 'value_type': 'integer'},

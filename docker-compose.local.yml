@@ -1261,6 +1261,44 @@ services:
       retries: 3
 
   # ===========================================
+  # Stable Audio Open — ambient music bed + stings (audio_gen, 2026-08-06)
+  # Lazy-loads stabilityai/stable-audio-open-1.0 (~1.2GB weights, gated HF
+  # repo — accept the Stability Community License once + supply HF_TOKEN),
+  # 5-min idle self-unload, /unload for the GPU scheduler. Consumed via
+  # plugin.audio_gen_provider.stable-audio-open-1.0.server_url
+  # (http://stable-audio-server:9839). DEGRADED-not-dead on any config/
+  # license gap — /health carries the reason.
+  stable-audio-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.stable-audio
+    container_name: poindexter-stable-audio
+    restart: unless-stopped
+    ports:
+      - "9839:9839"
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      HF_TOKEN: "${HF_TOKEN:-}"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    volumes:
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9839/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
   # Speaches — warm STT + TTS sidecar (#1088)
   # ONE GPU container serving BOTH OpenAI-compatible endpoints:
   #   POST /v1/audio/transcriptions  (faster-whisper)

@@ -492,7 +492,12 @@ class TestBuildKenBurnsFilter:
             width=1280, height=720, fps=30, duration_s=2.0,
             zoom_factor=1.10, variant_idx=0,
         )
-        assert "s=1280x720" in vf
+        # Subpixel smoothing (2026-08-06): zoompan renders at the 2x plate
+        # size and a lanczos downscale to target averages the integer-pixel
+        # steps into smooth motion — final size appears in the trailing
+        # scale, not in zoompan itself.
+        assert "s=2560x1440" in vf
+        assert "scale=w=1280:h=720:flags=lanczos" in vf
         assert "fps=30" in vf
 
 
@@ -1217,3 +1222,31 @@ class TestProbe:
         ):
             out = await compositor.probe(str(media))
         assert out == {}
+
+
+class TestKenBurnsRateZoom:
+    """2026-08-06: zoom is a per-second RATE capped per shot — a flat
+    per-shot total made long narration-fitted shots crawl sub-pixel
+    ('jumpy, moving pixel by pixel')."""
+
+    def _vf(self, duration_s, rate=0.012, cap=1.25):
+        scene = CompositionScene(
+            clip_path="/tmp/x.png", narration_path=None, duration_s=duration_s,
+        )
+        cmd = _build_normalize_cmd(
+            binary="ffmpeg", scene=scene, output_path="/tmp/o.mp4",
+            width=1920, height=1080, fps=30, encoder="libx264",
+            preset="medium", crf=20, audio_bitrate="192k", loglevel="error",
+            hwaccel="", ken_burns_enabled=True, ken_burns_zoom=cap,
+            ken_burns_zoom_per_s=rate, scene_idx=0,
+        )
+        return cmd[cmd.index("-vf") + 1]
+
+    def test_ten_second_shot_sweeps_twelve_percent(self):
+        assert "1+(0.1200/" in self._vf(10.0)
+
+    def test_long_shot_caps_at_zoom_cap(self):
+        assert "1+(0.2500/" in self._vf(60.0)  # 72% uncapped → 25% cap
+
+    def test_tiny_shot_floors_at_four_percent(self):
+        assert "1+(0.0400/" in self._vf(1.0)  # 1.2% uncapped → 4% floor

@@ -21,6 +21,21 @@ from services.video_renderers.shot_list_renderer import (
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_wan_ready_wait():
+    """The hero phase now polls wan /health before animating (#899
+    reliability half). Unpatched, every hero-phase test would attempt real
+    HTTP for up to the 90s budget — same hermeticity contract as the wan
+    unload fixture below; tests asserting the wait re-patch locally."""
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    with patch(
+        "services.video_renderers.shot_list_renderer._wait_wan_ready",
+        _AsyncMock(return_value=True),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _neutralize_wan_unload():
     """Every _render_pass now fires a best-effort wan hard-unload before its
     still phase (`_clear_wan_for_stills`, poindexter#966 between-lanes half).
@@ -2511,3 +2526,116 @@ class TestHeroMotionThreading:
         assert captured["still_dims"] == (704, 1280)
         assert (captured["width"], captured["height"]) == (704, 1280)
         assert captured["fps"] == 24
+
+
+class TestHeroReliability:
+    """#899 reliability half: wan ready-wait before the hero phase + the
+    frame-delta motion gate — 44 still-fallbacks in one week traced mostly to
+    animate calls racing a cold-booting wan-server, and dead-motion clips
+    sailing past single-frame vision QA."""
+
+    def _hero_shot(self):
+        return Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
+                    prompt="hero subject", motion="slow push", narration_offset_s=0.0)
+
+    @pytest.mark.asyncio
+    async def test_hero_phase_waits_for_wan(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        async def fake_clip(*, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True, ""
+
+        wait_mock = AsyncMock(return_value=True)
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-wait",
+        )
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_render_generative_clip", fake_clip), \
+             patch.object(slr, "_wait_wan_ready", wait_mock), \
+             patch.object(slr, "_clip_has_motion", AsyncMock(return_value=True)):
+            await slr._render_pass([self._hero_shot()], render_kwargs=render_kwargs)
+        wait_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_heroes_no_wait(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def fake_still(*, prompt, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"png")
+            return True
+
+        wait_mock = AsyncMock(return_value=True)
+        shots = [Shot(idx=0, duration_s=5.0, intent="still", source="image_gen",
+                      prompt="backdrop", narration_offset_s=0.0)]
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="http://image-gen:9836",
+            site_config=None, http_client_factory=None, pexels_key="",
+            orientation="landscape", post_id="p-nowait",
+        )
+        with patch.object(slr, "_render_image_gen_image", fake_still), \
+             patch.object(slr, "_wait_wan_ready", wait_mock):
+            await slr._render_pass(shots, render_kwargs=render_kwargs)
+        wait_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dead_motion_clip_falls_back_to_still_with_finding(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        still = tmp_path / "shot_00.png"
+        still.write_bytes(b"png")
+
+        async def fake_clip(*, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True, ""
+
+        with patch.object(slr, "_render_generative_clip", fake_clip), \
+             patch.object(slr, "_clip_has_motion", AsyncMock(return_value=False)), \
+             patch.object(slr, "emit_finding") as fb:
+            result = await slr._animate_hero(
+                self._hero_shot(), still_path=str(still),
+                site_config=None, orientation="landscape", post_id="p-dead",
+            )
+        assert result.success
+        assert result.clip_path == str(still)  # fell back to its own still
+        kinds = [c.kwargs.get("kind") for c in fb.call_args_list]
+        assert "hero_motion_dead" in kinds
+
+    @pytest.mark.asyncio
+    async def test_live_motion_clip_kept(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        still = tmp_path / "shot_00.png"
+        still.write_bytes(b"png")
+
+        async def fake_clip(*, output_path, **kwargs):
+            with open(output_path, "wb") as fh:
+                fh.write(b"mp4")
+            return True, ""
+
+        with patch.object(slr, "_render_generative_clip", fake_clip), \
+             patch.object(slr, "_clip_has_motion", AsyncMock(return_value=True)):
+            result = await slr._animate_hero(
+                self._hero_shot(), still_path=str(still),
+                site_config=None, orientation="landscape", post_id="p-live",
+            )
+        assert result.clip_path.endswith(".mp4")
+
+    @pytest.mark.asyncio
+    async def test_motion_check_fails_open_on_probe_error(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        with patch.object(slr, "_probe_duration_s", AsyncMock(return_value=None)):
+            assert await slr._clip_has_motion(
+                "/nonexistent.mp4", min_delta=2.0, work_dir=tmp_path,
+            ) is True

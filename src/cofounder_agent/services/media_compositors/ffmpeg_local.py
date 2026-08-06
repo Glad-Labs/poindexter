@@ -70,10 +70,15 @@ _DEFAULT_CRF = 20
 _DEFAULT_AUDIO_BITRATE = "192k"
 _DEFAULT_LOGLEVEL = "error"
 _DEFAULT_KEN_BURNS_ENABLED = True
-_DEFAULT_KEN_BURNS_ZOOM = 1.10  # 10% zoom over scene duration — slow,
-# gentle motion. Matt called the original 20% too fast; settled here
-# after one A/B sample. Operators can override per-install via
-# plugin.media_compositor.ffmpeg_local.ken_burns_zoom.
+_DEFAULT_KEN_BURNS_ZOOM = 1.25  # per-shot zoom CAP since 2026-08-06 —
+# see ken_burns_zoom_per_second below. History: originally 20% flat per
+# shot ("too fast" — Matt, on ~8s scenes), then 1.10 flat per shot,
+# which on the long lane's 15-30s narration-fitted shots crawled at
+# ~0.3-0.7%/s and read as pixel-stepping jitter ("jumpy, moving pixel
+# by pixel" — Matt, 2026-08-06). Zoom is now a RATE so perceived speed
+# is constant regardless of shot length; this value only caps the total.
+_DEFAULT_KEN_BURNS_ZOOM_PER_S = 0.012  # 1.2%/s — a 10s shot sweeps 12%,
+# comparable to the original tuned feel, without the long-shot crawl.
 
 # Seconds of held final frame AFTER the narration finishes when the
 # voiceover runs longer than the assembled visuals (the 9:16 short
@@ -233,10 +238,16 @@ def _build_ken_burns_filter(
         # increasing then crop to fit.
         f"scale=w={width * 2}:h={height * 2}:force_original_aspect_ratio=increase,"
         f"crop=w={width * 2}:h={height * 2},"
-        # zoompan operates on the 2× plate; output at target dimensions.
+        # zoompan quantizes x/y/zoom to INTEGER pixels per output frame —
+        # rendered at final size, slow zooms advance sub-pixel per frame and
+        # the image visibly steps ("jumpy, moving pixel by pixel"). Render
+        # zoompan at the 2× plate size and lanczos-downscale to target: each
+        # integer step lands on half-pixels after the resample, and the
+        # downscale filters the remaining stair-step into smooth motion.
         f"zoompan=z='{zoom_expr}':"
         f"x='{start_x}':y='{start_y}':"
-        f"d={duration_frames}:s={width}x{height}:fps={fps}"
+        f"d={duration_frames}:s={width * 2}x{height * 2}:fps={fps},"
+        f"scale=w={width}:h={height}:flags=lanczos"
     )
 
 
@@ -256,6 +267,7 @@ def _build_normalize_cmd(
     hwaccel: str,
     ken_burns_enabled: bool = False,
     ken_burns_zoom: float = _DEFAULT_KEN_BURNS_ZOOM,
+    ken_burns_zoom_per_s: float = _DEFAULT_KEN_BURNS_ZOOM_PER_S,
     scene_idx: int = 0,
 ) -> list[str]:
     """Build the per-scene normalization argv.
@@ -305,12 +317,20 @@ def _build_normalize_cmd(
     # video clips and stills with Ken Burns disabled keep the original
     # static-fit graph.
     if ken_burns_enabled and _is_still_image(scene.clip_path):
+        # Rate-based zoom (2026-08-06): perceived speed is constant per
+        # SECOND, capped per shot — a flat per-shot total made 25s shots
+        # crawl (sub-pixel stepping) while 5s shots sprinted. Floor keeps
+        # even a 2s hook visibly alive.
+        effective_zoom = min(
+            max(1.0 + ken_burns_zoom_per_s * duration_s, 1.04),
+            max(ken_burns_zoom, 1.04),
+        )
         vf = _build_ken_burns_filter(
             width=width,
             height=height,
             fps=fps,
             duration_s=duration_s,
-            zoom_factor=ken_burns_zoom,
+            zoom_factor=effective_zoom,
             variant_idx=scene_idx,
         )
     else:
@@ -712,6 +732,13 @@ class FFmpegLocalCompositor:
             )
         except (TypeError, ValueError):
             ken_burns_zoom = _DEFAULT_KEN_BURNS_ZOOM
+        try:
+            ken_burns_zoom_per_s = float(
+                self._get("ken_burns_zoom_per_second", _DEFAULT_KEN_BURNS_ZOOM_PER_S)
+                or _DEFAULT_KEN_BURNS_ZOOM_PER_S,
+            )
+        except (TypeError, ValueError):
+            ken_burns_zoom_per_s = _DEFAULT_KEN_BURNS_ZOOM_PER_S
         caption_position = str(
             self._get("caption_position", _DEFAULT_CAPTION_POSITION)
             or _DEFAULT_CAPTION_POSITION,
@@ -757,6 +784,7 @@ class FFmpegLocalCompositor:
                         hwaccel=hwaccel,
                         ken_burns_enabled=ken_burns_enabled,
                         ken_burns_zoom=ken_burns_zoom,
+                        ken_burns_zoom_per_s=ken_burns_zoom_per_s,
                         scene_idx=idx,
                     )
                     rc, _, err = await asyncio.to_thread(_run_blocking, cmd)

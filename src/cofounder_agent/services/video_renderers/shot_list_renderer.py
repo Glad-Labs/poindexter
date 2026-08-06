@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -536,6 +537,84 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
             "[SHOT_LIST] image-gen pre-hero unload failed (%s) — attempting "
             "the hero render anyway", exc,
         )
+
+
+async def _wait_wan_ready(site_config: Any, *, budget_s: float) -> bool:
+    """Poll the wan-server /health until it answers, up to ``budget_s``.
+
+    poindexter#966 follow-up (the #899 reliability half): 44 hero shots fell
+    back to Ken-Burns stills in one week, dominated by animate calls racing a
+    wan-server that was still cold-booting after a hard-unload (its own idle
+    exit, or the reclaim rung). The container restart takes seconds — the
+    render can afford to wait for /health instead of burning the shot. Any
+    HTTP 200 counts (the model itself lazy-loads on the generate call);
+    timeout returns False and the caller proceeds — the attempt then fails
+    into the same still-fallback as before, never worse.
+    """
+    import httpx
+
+    from services.video_providers.wan2_1 import _resolve_server_url
+
+    url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
+    deadline = time.monotonic() + max(0.0, budget_s)
+    while True:
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(5.0, connect=3.0),
+            ) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return True
+        except Exception:  # noqa: BLE001  # silent-ok: unreachable IS the
+            # condition being waited out; each miss just polls again until
+            # the budget expires.
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(3.0)
+
+
+async def _clip_has_motion(
+    clip_path: str, *, min_delta: float, work_dir: Path,
+) -> bool:
+    """Frame-delta motion check for a hero clip (poindexter#899).
+
+    Vision QA samples ONE frame, so a structurally valid clip whose motion
+    silently died scores like a masterpiece. Extract frames at ~25% and ~75%
+    of the clip, downscale to a small grayscale plate, and compare mean
+    absolute pixel difference — a genuinely animated clip lands well above
+    ``min_delta`` (0-255 scale); a frozen one sits near zero. Fail-open: any
+    probe/extract/compare error returns True (assume motion) — the checker
+    must never cost a working clip.
+    """
+    try:
+        duration = await _probe_duration_s(clip_path)
+        if not duration or duration <= 0.2:
+            return True
+        frames: list[str] = []
+        for tag, frac in (("m1", 0.25), ("m2", 0.75)):
+            out = str(work_dir / f"motion_{tag}_{os.path.basename(clip_path)}.png")
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-loglevel", "error", "-y",
+                "-ss", f"{duration * frac:.3f}", "-i", clip_path,
+                "-frames:v", "1", "-vf", "scale=96:54", out,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.communicate()
+            if proc.returncode != 0 or not os.path.exists(out):
+                return True
+            frames.append(out)
+        from PIL import Image, ImageChops, ImageStat
+
+        with Image.open(frames[0]) as a, Image.open(frames[1]) as b:
+            diff = ImageChops.difference(a.convert("L"), b.convert("L"))
+            delta = ImageStat.Stat(diff).mean[0]
+        return delta >= min_delta
+    except Exception as exc:  # noqa: BLE001  # silent-ok: fail-open by
+        # contract — a broken checker must never fail a rendered clip.
+        logger.debug("[SHOT_LIST] motion check errored for %s: %s", clip_path, exc)
+        return True
 
 
 async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
@@ -1270,6 +1349,49 @@ async def _animate_hero(
         fps=hero_fps,
     )
     if clip_ok:
+        # Motion check (poindexter#899): a clip can render structurally valid
+        # with dead motion — single-frame vision QA can't see it. Frame-delta
+        # gate; a dead clip falls back to its own still (which at least gets
+        # honest Ken Burns motion) with a distinct finding.
+        check_enabled = True
+        min_delta = 2.0
+        if site_config is not None:
+            try:
+                check_enabled = site_config.get_bool(
+                    "video_hero_motion_check_enabled", True,
+                )
+                min_delta = site_config.get_float(
+                    "video_hero_min_motion_delta", 2.0,
+                )
+            except Exception:  # noqa: BLE001  # silent-ok: settings read must
+                # not decide a render's fate; fall back to code defaults.
+                check_enabled, min_delta = True, 2.0
+        if check_enabled and not await _clip_has_motion(
+            clip_path, min_delta=min_delta, work_dir=Path(still_path).parent,
+        ):
+            emit_finding(
+                source="shot_list_renderer",
+                kind="hero_motion_dead",
+                title=f"hero shot {shot.idx} rendered with no motion — using still",
+                body=(
+                    f"The wan clip for shot {shot.idx} (post {post_id}) passed "
+                    f"render but its frames are near-identical (delta below "
+                    f"video_hero_min_motion_delta={min_delta}). Falling back to "
+                    "the Ken-Burns still so the shot at least moves. Recurring "
+                    "hits mean the i2v motion prompt or the wan-server needs "
+                    "attention (poindexter#899)."
+                ),
+                severity="warn",
+                dedup_key=f"hero_motion_dead:{post_id}:{shot.idx}",
+                extra={"shot_idx": shot.idx, "post_id": post_id, "min_delta": min_delta},
+            )
+            return ShotRenderResult(
+                idx=shot.idx,
+                source=shot.source,
+                success=True,
+                clip_path=still_path,
+                duration_s=shot.duration_s,
+            )
         return ShotRenderResult(
             idx=shot.idx,
             source=shot.source,
@@ -1386,7 +1508,26 @@ async def _render_pass(
     # Hero phase: animate every pre-rendered still. The first
     # _render_generative_clip call hard-unloads image-gen (once — later calls
     # find nothing_to_reclaim); by now image-gen's work this pass is done.
+    # Ready-wait first (#899 reliability half): a wan-server mid-cold-boot
+    # (its own idle exit, or the reclaim rung) fails every animate call it
+    # races — 44 still-fallbacks in one week. Bounded + best-effort: a
+    # timeout proceeds into the same still-fallback as before.
     hero_total = len(pending_heroes)
+    if pending_heroes:
+        sc = render_kwargs.get("site_config")
+        try:
+            wait_budget = (
+                sc.get_float("video_hero_wan_ready_wait_s", 90.0)
+                if sc is not None else 90.0
+            )
+        except Exception:  # noqa: BLE001  # silent-ok: a settings read must
+            # not decide whether heroes render; default budget applies.
+            wait_budget = 90.0
+        if wait_budget > 0 and not await _wait_wan_ready(sc, budget_s=wait_budget):
+            logger.warning(
+                "[SHOT_LIST] wan-server not reachable within %.0fs — "
+                "attempting %d hero animation(s) anyway", wait_budget, hero_total,
+            )
     for j, state in enumerate(pending_heroes, start=1):
         await _safe_progress(progress_cb, f"hero clip {j}/{hero_total}", None)
         still_path = state.result.clip_path or ""
