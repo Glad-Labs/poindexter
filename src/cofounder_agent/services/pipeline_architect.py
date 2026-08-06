@@ -25,8 +25,8 @@ code generation because:
 
 1. Local LLMs follow JSON schemas more reliably than emit Python.
 2. JSON is trivial to validate (every node atom must exist in the
-   catalog, every edge must reference a declared node, the graph
-   must be a DAG).
+   catalog, every edge must reference a declared node, and the graph
+   must be acyclic apart from explicitly ``"loop": true`` back-edges).
 3. JSON serializes cleanly into ``pipeline_templates.graph_def`` for
    caching.
 
@@ -678,9 +678,13 @@ def _validate_spec(
     if not errors:
         adj: dict[str, list[str]] = {nid: [] for nid in seen_ids}
         for e in edges:
-            # A "loop"-flagged edge is the one designated rescue back-edge
-            # (qa.rewrite -> qa.programmatic). Skip it in cycle detection so
-            # the deliberate cycle validates; unflagged back-edges still error.
+            # A "loop"-flagged edge is a sanctioned bounded back-edge. Skip it
+            # in cycle detection so the deliberate cycle validates; unflagged
+            # back-edges still error. canonical_blog has three today:
+            # qa.rewrite -> qa.programmatic, and preview_gate -> {
+            # plan_image_markers, generate_draft} (component-scoped regen,
+            # #1851). Each bounds itself with an app_settings attempt cap;
+            # the compiler does NOT verify that bound.
             if e.get("loop"):
                 continue
             src, dst = e["from"], e["to"]
@@ -688,9 +692,10 @@ def _validate_spec(
                 adj.setdefault(src, []).append(dst)
         if _has_cycle(adj):
             errors.append(
-                "FIX: the graph contains a cycle. Every edge must move "
-                "the pipeline forward; remove edges that loop back to "
-                "an earlier node. Pipelines must be DAGs."
+                "FIX: the graph contains an unflagged cycle. Either remove "
+                "the edge that loops back to an earlier node, or — if the "
+                "back-edge is deliberate — mark it '\"loop\": true' and bound "
+                "it with an attempt cap, as qa.rewrite and preview_gate do."
             )
 
     # I/O contract check (#355): every node's atom.requires must be
@@ -707,10 +712,11 @@ def _validate_spec(
         indeg = dict.fromkeys(seen_ids, 0)
         adj2: dict[str, list[str]] = {nid: [] for nid in seen_ids}
         for e in edges:
-            # Skip the designated rescue back-edge: counting it would inflate
-            # the loopback target's indegree so it never reaches 0, silently
+            # Skip loop-flagged back-edges: counting one would inflate the
+            # loopback target's indegree so it never reaches 0, silently
             # dropping it and its whole downstream chain from the requires
-            # reachability check below. The cycle itself is permitted (above).
+            # reachability check below. The cycles themselves are permitted
+            # (above).
             if e.get("loop"):
                 continue
             if e.get("to") != "END" and e.get("from") in seen_ids and e.get("to") in seen_ids:

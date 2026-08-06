@@ -188,7 +188,7 @@ registers into **one shared catalog** with a uniform, LLM-readable descriptor:
   and safety
 
 The architect's loop: **read catalog + order → emit a `graph_def` → validator
-checks types/reachability/acyclicity → engine runs it.** Three of those four
+checks types/reachability/cycle-safety → engine runs it.** Three of those four
 pieces exist today (`AtomMeta` descriptors, the `graph_def` format,
 `build_graph_from_spec`).
 
@@ -387,16 +387,33 @@ A **kernel** service (cross-cutting; operates across all modules). Given the
 catalog + an intent, it emits a `graph_def`, the validator checks it, the engine
 runs it.
 
-**The `graph_def` is a strict DAG — no cycles.** This is a chosen property, not
-a limitation to lift later. A DAG lets the validator **prove termination** (a
-cyclic flow-chart cannot be), and it is far easier for the architect LLM to
-compose and reason about. Iteration is therefore **never a back-edge**. The two
-sanctioned ways to "try again" are: (a) **bounded retry inside a node** — a node
-may internally retry N times; this is exactly how the old `cross_model_qa`
-rewrite loop collapsed into `qa.aggregate`, which **halts** on reject rather than
-looping back; and (b) **re-invocation of the whole graph** by the orchestrator or
-operator with new feedback. A "loop until quality passes" construct, if ever
-wanted, lives inside a node's bounded logic — not as a cycle the architect draws.
+**The `graph_def` is acyclic _by default_ — cycles are opt-in, flagged, and
+bounded.** (Amended 2026-08-06. This was originally a strict-DAG rule — "no
+cycles, iteration is never a back-edge" — on the theory that acyclicity lets the
+validator **prove termination**. That did not survive contact: the QA rescue
+cycle and the component-scoped regen gate (#1851) both needed real back-edges
+within three weeks of this doc, and both got them. The paragraph's own worked
+example aged the worst — it cited `qa.aggregate` **halting** on reject "rather
+than looping back", which is exactly the behaviour `qa.rewrite` reversed.)
+
+The rule today is narrower and still enforced. An edge carrying `"loop": true`
+is skipped during cycle detection in `_validate_spec`, so a deliberate back-edge
+validates; **every _unflagged_ back-edge is still a hard error**, so a graph
+cannot acquire a cycle by accident. What's gone is the structural termination
+proof: a cycle now bounds itself with a durable attempt counter checked against
+an `app_settings` cap (`qa_rewrite_max_attempts`, `regen_images_max_attempts`,
+`regen_text_max_attempts`). **The compiler does not verify that bound** — it is
+the author's responsibility, which is why adding a cycle means adding its cap in
+the same change.
+
+**Architect-composed graphs stay DAG-only**, which is a narrower constraint than
+the format's and is currently structural rather than stylistic: the emit schema
+in the architect's system prompt has no `branch`/`loop` edge fields, so the LLM
+cannot draw a back-edge even if told it may. Lifting that is real work (schema +
+bounding rules + validation), not a wording change. Until then the architect's
+two ways to "try again" remain (a) **bounded retry inside a node** and (b)
+**re-invocation of the whole graph** by the orchestrator or operator with new
+feedback.
 
 It is **half-built already**: `atom_registry.to_catalog_text()`
 (literally "so the architect can scan"), the DB-stored `graph_def`, and
@@ -457,8 +474,11 @@ around them.
 - **Untrusted bundles are a first-class constraint** — least-privilege handle,
   brokered secrets, per-module data namespacing, earned trust tiers, swappable
   isolation boundary (see [Trust & isolation](#trust--isolation)).
-- **The `graph_def` is a strict DAG** — termination is provable; iteration lives
-  inside a node or as a re-invocation, never as a cycle (see
+- **The `graph_def` is acyclic by default, with flagged + bounded exceptions**
+  (amended 2026-08-06 — was "strict DAG, termination is provable"). Unflagged
+  back-edges are rejected; a `"loop": true` edge validates and must carry its own
+  attempt cap, which the compiler does not check. Architect-composed graphs stay
+  DAG-only because the emit schema has no loop field (see
   [The architect](#the-architect-the-chef)).
 
 **Named, designed later**
