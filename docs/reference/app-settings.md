@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-08-01.**  
+> **Auto-generated from live `app_settings` table on 2026-08-06.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 682 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -287,7 +287,7 @@ The worker re-reads on every poll; no restart needed.
 | `content_router_contradiction_review_max_tokens` | `1500` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_revise_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_contradiction_timeout_seconds` | `120` |  | Auto-seeded by services.settings_defaults (#379) |
-| `content_router_qa_rewrite_max_tokens` | `8000` |  | Auto-seeded by services.settings_defaults (#379) |
+| `content_router_qa_rewrite_max_tokens` | `16384` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_qa_rewrite_timeout_seconds` | `600` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_router_seo_title_max_tokens` | `4000` |  | Auto-seeded by services.settings_defaults (#379) |
 | `content_validator_warning_reject_threshold` | `5` |  |  |
