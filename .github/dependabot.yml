@@ -57,6 +57,8 @@ updates:
     #   eslint runs in lint-staged on EVERY commit touching .ts/.tsx, so
     #   adopting TS 7 today breaks the local commit loop for all work.
     #   Re-check that peer range; when it admits 7.x, do the steps below.
+    #   Still blocked as of 2026-08-06: @typescript-eslint/parser 8.66.0 (the
+    #   then-latest) declares `typescript: >=4.8.4 <6.1.0` unchanged.
     #
     #   Everything else already works. TS 7 is the native (Go) compiler
     #   rewrite, and the production source needed ZERO changes — `tsc
@@ -98,6 +100,28 @@ updates:
       #
       # Re-check by commenting `@dependabot recreate` on the open production
       # group PR: if the rebuilt PR still lists typescript, this form failed too.
+      #
+      # UPDATE 2026-08-06 — it failed too. The range form above landed
+      # 2026-07-30 (#2925), and dependabot still opened #3022 four days later
+      # (2026-08-03) carrying typescript 6.0.3 -> 7.0.2, which broke the build:
+      # "TypeScript 7.0.2 does not provide the compiler API required by
+      # Next.js". So BOTH declarative forms — `update-types` and `versions` —
+      # have now demonstrably failed to hold this dependency.
+      #
+      # The hold that actually works is the COMMAND form, registered against
+      # dependabot's own per-repo state by commenting on #3022:
+      #     @dependabot ignore typescript major version
+      # The `versions:` entry below is kept as the visible, in-repo record of
+      # intent, but do NOT trust it alone — it is not what is holding the line.
+      #
+      # TO LIFT when typescript-eslint admits 7.x: deleting the entry below is
+      # NOT sufficient. You must also comment `@dependabot unignore typescript`
+      # on any dependabot PR, or the command-form ignore silently persists.
+      #
+      # Contributing factor worth fixing separately: web/public-site declares
+      # typescript (and @types/react, @types/react-dom, postcss, tailwindcss,
+      # autoprefixer) under `dependencies` rather than `devDependencies`, which
+      # is why a build-only compiler lands in the PRODUCTION group at all.
       - dependency-name: 'typescript'
         versions: ['>=7.0.0']
       # Held at the NEXT major only — every manifest is on ^26.1.2 today, so
