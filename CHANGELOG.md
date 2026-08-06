@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## [0.117.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.116.0...v0.117.0) (2026-08-06)
+
+
+### Features
+
+* **architect:** stage/renderer I/O contracts — the architect composes with eyes ([#3042](https://github.com/Glad-Labs/glad-labs-stack/issues/3042)) ([d3d9a2c](https://github.com/Glad-Labs/glad-labs-stack/commit/d3d9a2c1ab6e9fbfdd1fee176f10b9407c7b55a7))
+* **chat:** per-run plan params + no-template-placeholder validation ([#3035](https://github.com/Glad-Labs/glad-labs-stack/issues/3035)) ([d1a3d96](https://github.com/Glad-Labs/glad-labs-stack/commit/d1a3d960dbed2e14a2de5ed0e7f870a41f8f7f2f))
+* **console:** plan-card absence chips — what a plan WON'T do, visible before Run ([#3032](https://github.com/Glad-Labs/glad-labs-stack/issues/3032)) ([c7e0cb1](https://github.com/Glad-Labs/glad-labs-stack/commit/c7e0cb104e403a80b1050558aa6c81520f3e613e))
+* **taps:** detect dark taps and export corpus staleness (poindexter[#989](https://github.com/Glad-Labs/glad-labs-stack/issues/989)) ([#3065](https://github.com/Glad-Labs/glad-labs-stack/issues/3065)) ([d374d1b](https://github.com/Glad-Labs/glad-labs-stack/commit/d374d1b5800fb41e7625ea187b31d79cad32e386))
+* **video:** hero ready-wait + motion gate, smooth rate-based Ken Burns, stable-audio sidecar ([#3043](https://github.com/Glad-Labs/glad-labs-stack/issues/3043)) ([2168e2f](https://github.com/Glad-Labs/glad-labs-stack/commit/2168e2fea583c0c3643ed49613eab9a010aa3350))
+
+
+### Bug Fixes
+
+* **audio-gen:** complete stable-audio-tools' transitive deps in the sidecar image ([#3055](https://github.com/Glad-Labs/glad-labs-stack/issues/3055)) ([5212c5e](https://github.com/Glad-Labs/glad-labs-stack/commit/5212c5e81cf649a212a81cd606aadc35d73021dc))
+* **audio-gen:** stable-audio sidecar reads the gated-model HF token from app_settings ([#3048](https://github.com/Glad-Labs/glad-labs-stack/issues/3048)) ([8914fab](https://github.com/Glad-Labs/glad-labs-stack/commit/8914fab6fb8f5cb6caf15c5133c2444dd4c86a88))
+* **audio:** stable-audio sidecar — unpack (model, model_config) correctly ([#3057](https://github.com/Glad-Labs/glad-labs-stack/issues/3057)) ([5753966](https://github.com/Glad-Labs/glad-labs-stack/commit/575396618d437ac1cd74a0d530af782cb3a11d29))
+* **captions:** burned captions read the script — forced alignment onto ASR timings ([#3034](https://github.com/Glad-Labs/glad-labs-stack/issues/3034)) ([35045d5](https://github.com/Glad-Labs/glad-labs-stack/commit/35045d57d31788b8dd8d48d18b94c0c3514ef99e))
+* **chat:** media loaders fail loud on missing scripts + terminal check is target-aware ([#3036](https://github.com/Glad-Labs/glad-labs-stack/issues/3036)) ([eb15c8c](https://github.com/Glad-Labs/glad-labs-stack/commit/eb15c8c30f3e4c0039de09b9cf2249fae6072f5a))
+* **content:** stop truncated drafts/rewrites at every seam (poindexter[#984](https://github.com/Glad-Labs/glad-labs-stack/issues/984)) ([#3046](https://github.com/Glad-Labs/glad-labs-stack/issues/3046)) ([ce3f435](https://github.com/Glad-Labs/glad-labs-stack/commit/ce3f435f0194481a4eb00368a9c9c0d0df43861b))
+* **deploy:** defer deploy-sync when a flow outlives the gap window instead of killing it ([#3068](https://github.com/Glad-Labs/glad-labs-stack/issues/3068)) ([c276852](https://github.com/Glad-Labs/glad-labs-stack/commit/c2768520e7a8cee2bb279126994c9254fee9db3c))
+* **public-site:** drop deprecated tsconfig baseUrl — unblocks next 16.3.0 ([#3060](https://github.com/Glad-Labs/glad-labs-stack/issues/3060)) ([fd793d0](https://github.com/Glad-Labs/glad-labs-stack/commit/fd793d03fc145fcd8454fdbdfc899ec3aaf60bd4))
+* **public-site:** exclude test globs from tsconfig — unblocks next 16.3.0 ([#3061](https://github.com/Glad-Labs/glad-labs-stack/issues/3061)) ([82125b5](https://github.com/Glad-Labs/glad-labs-stack/commit/82125b5ee4c05f5b195e28b71d6941c4887724a0))
+* **qa:** critic review window + judge calibration harness (poindexter[#985](https://github.com/Glad-Labs/glad-labs-stack/issues/985)) ([#3056](https://github.com/Glad-Labs/glad-labs-stack/issues/3056)) ([8db67ec](https://github.com/Glad-Labs/glad-labs-stack/commit/8db67ecbaafe3681a06c11001d2f0e52e62925d2))
+* **rig:** keep the sensor strip anchored — watch RandR after launch ([#3037](https://github.com/Glad-Labs/glad-labs-stack/issues/3037)) ([014c38b](https://github.com/Glad-Labs/glad-labs-stack/commit/014c38b93e1f50a9c19eeddb0a6e11cd3b59df1a))
+* **taps:** deliver zero-yield findings from the auto-embed sidecar ([#3066](https://github.com/Glad-Labs/glad-labs-stack/issues/3066)) ([531c8e6](https://github.com/Glad-Labs/glad-labs-stack/commit/531c8e6594784ee13dba819e1a9061cbddf9f42b))
+* **taps:** memory + session taps ingested nothing for 17 days (poindexter[#988](https://github.com/Glad-Labs/glad-labs-stack/issues/988)) ([#3064](https://github.com/Glad-Labs/glad-labs-stack/issues/3064)) ([94d4f13](https://github.com/Glad-Labs/glad-labs-stack/commit/94d4f1303b797ec45131bce6dfee3bdddc609b24))
+
 ## [0.116.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.115.0...v0.116.0) (2026-08-02)
 
 
