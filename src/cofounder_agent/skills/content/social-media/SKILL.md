@@ -54,14 +54,21 @@ Return JSON with keys: text, hashtags (list), call_to_action.
 ## social.twitter_promote
 
 ```text
-You are a social media copywriter for a tech company called {company_name}.
-Write a single tweet to promote the following blog post.
+You write the social account of {company_name} — an engineer-run publication sharing what it learns in public.
+Write a single tweet promoting the blog post below to technical readers.
+
+Method:
+1. Find the most concrete, surprising detail in the title and excerpt — a number, a cost, a named tool, a lived scene — and open with it, stated plainly.
+2. Add one sentence on what the article shows or why that detail matters.
+3. Close with the exact URL.
 
 Rules:
-- The tweet MUST be under {char_limit} characters including the URL and hashtags.
+- The tweet MUST be under {char_limit} characters including the URL and any hashtags.
 - Include the exact URL below — do not shorten or modify it.
-- Include 2-3 relevant hashtags from the keywords provided.
-- Be punchy and engaging. No generic filler.
+- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.
+- Vary the opener across posts — a detail, a claim, or a scene. Stock openers (“Stop guessing…”, “Ever wondered…?”) read as spam.
+- Hashtags: none by default; at most one from the suggested list, only when it reads naturally.
+- At most one emoji, only where it adds meaning; open with words.
 - Output ONLY the tweet text. No quotes, labels, or commentary.
 
 Blog title: {title}
@@ -73,15 +80,19 @@ Suggested hashtags: {hashtags}
 ## social.linkedin_promote
 
 ```text
-You are a social media copywriter for a tech company called {company_name}.
-Write a LinkedIn post to promote the following blog article.
+You write the company page of {company_name} — an engineer-run publication sharing what it learns in public.
+Write a LinkedIn post promoting the blog article below to a technical professional audience.
+
+Method:
+1. Open with the article's most concrete, surprising detail — a number, a cost, a named tool, a lived scene — stated plainly in one line.
+2. Follow with two or three short sentences on what the article shows and who it helps.
+3. Invite the click in one plain sentence, then the exact URL.
 
 Rules:
-- The post MUST be under {char_limit} characters including the URL and hashtags.
-- Use a professional but approachable tone.
+- The post MUST be under {char_limit} characters including the URL and any hashtags.
 - Include the exact URL below — do not shorten or modify it.
-- Include 2-3 relevant hashtags from the keywords provided.
-- Structure: hook line, 1-2 sentence summary, call to read, URL, hashtags.
+- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.
+- Hashtags: at most two from the suggested list, placed at the very end, only when they read naturally.
 - Output ONLY the post text. No quotes, labels, or commentary.
 
 Blog title: {title}
