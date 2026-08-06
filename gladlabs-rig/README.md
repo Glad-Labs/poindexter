@@ -14,7 +14,7 @@ Deep lore (every gotcha found while building this) lives in Claude's memory:
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `applications/` | App-menu entry that drives `conky-strip.service` (shadows the packaged one)                                                                                                      | `~/.local/share/applications/`                       |
 | `btop/`         | btop config + deuteranomaly-safe theme                                                                                                                                           | `~/.config/btop/`                                    |
-| `conky/`        | 8.8" 1920x480 sensor-strip panel (renderer, launcher, loop poller, bg generator)                                                                                                 | `~/.config/conky/`                                   |
+| `conky/`        | 8.8" 1920x480 sensor-strip panel (renderer, launcher + its test, loop poller, bg generator)                                                                                      | `~/.config/conky/`                                   |
 | `openrgb/`      | OpenRGB detector config (Corsair disabled) + ARGB temp-sync daemon                                                                                                               | `~/.config/OpenRGB/`, `~/.config/openrgb-temp-sync/` |
 | `openlinkhub/`  | OLH config, gladlabs thermal RGB palette, quiet fan curves, hub/XC7 device profiles (channel assignments, adapter declaration, probe binds, LCD rotation), coolant bridge script | `/opt/OpenLinkHub/...`, `/usr/local/bin/`            |
 | `systemd-user/` | conky-strip / openrgb-server / argb-temp-sync units                                                                                                                              | `~/.config/systemd/user/`                            |
@@ -34,8 +34,17 @@ Deep lore (every gotcha found while building this) lives in Claude's memory:
 ```
 
 Idempotent; uses sudo for the OpenLinkHub/system paths, then restarts the
-services. The conky launcher re-derives display/monitor positions per boot, so
-no display config is baked.
+services. The conky launcher re-derives display/monitor positions per boot _and
+keeps watching for layout changes afterwards_, so no display config is baked.
+
+Check the launcher's placement logic without touching the running strip:
+
+```bash
+conky/test-launch-strip.sh
+```
+
+It stubs xrandr/pgrep/conky and drives the settle + re-anchor loops at ~20x
+speed — no X server, no systemd, ~9s.
 
 ## Machine-specific facts baked into these files
 
@@ -56,6 +65,12 @@ no display config is baked.
   it mid-settle picks up whichever output woke first and mispositions the panel
   for the whole session — hit 2026-07-27, head 0 sampled as HDMI-A-3 `@+5360`
   and the strip drew 3440px off-screen.
+- conky resolves `-x/-y` **once at startup**, so the launcher stays resident and
+  re-polls RandR every 5s, relaunching conky when the strip-vs-monitor-0 offset
+  changes and holds for 3 reads. Without that, any layout change _after_ launch
+  strands the panel at its old absolute position — hit 2026-08-05, a COSMIC
+  rearrange left it drawn across the Acer while the strip had moved to
+  `+4423+1920`, and only a manual unit restart fixed it.
 - Editing OLH RGB colors later: change `openlinkhub/rgb.json` **and bump the
   profile's `version`** before copying — devices render from per-serial copies
   in `database/rgb/` that only refresh on a version mismatch (upstream #487).
