@@ -33,7 +33,11 @@ ATOM_META = AtomMeta(
     outputs=(
         FieldSpec(name="podcast_audio_path", type="str", description="temp path of the rendered narration MP3"),
     ),
-    requires=("task_id",),
+    # podcast_script required (poindexter#983): this atom read the key with
+    # an empty-string fallback, so a graph with no script producer upstream
+    # validated clean and rendered silence. Producers: stage.generate_media_scripts
+    # (forward pipeline) or podcast.load_script (re-render lane).
+    requires=("task_id", "podcast_script"),
     produces=("podcast_audio_path",),
     capability_tier=None,
     cost_class="free",

@@ -47,6 +47,11 @@ class GenerateMediaScriptsStage:
     # Two LLM calls, each up to 120s. Budget 300 for slow disks.
     timeout_seconds = 300
     halts_on_failure = False  # Legacy marked this "non-critical".
+    # Surfaced onto the virtual atom's contract (poindexter#983) so the
+    # architect can SEE this is the script writer and chain it to the
+    # renderers. Mirrors the docstring's Context reads/writes.
+    atom_requires = ("content",)
+    atom_produces = ("podcast_script", "video_scenes", "short_summary_script")
 
     async def execute(
         self,

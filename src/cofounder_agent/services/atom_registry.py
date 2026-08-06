@@ -269,8 +269,16 @@ def _stage_to_atom_meta(stage_name: str, stage: Any) -> AtomMeta | None:
         description=description[:500],  # keep prompt budget tight
         inputs=(),         # stages share the LangGraph state dict
         outputs=(),
-        requires=(),
-        produces=(),
+        # Stages MAY declare their state I/O via ``atom_requires`` /
+        # ``atom_produces`` class attrs. Without these the architect
+        # composes blind (poindexter#983: every virtual stage advertised
+        # requires:()/produces:[], so 'generate the media scripts' could
+        # not be mapped to the stage that does it, and reachability
+        # validation green-lit render nodes with no script source).
+        # Declaring them changes the atom's contract_fingerprint — any
+        # active graph_def referencing the stage needs a reseed.
+        requires=tuple(getattr(stage, "atom_requires", ()) or ()),
+        produces=tuple(getattr(stage, "atom_produces", ()) or ()),
         capability_tier=None,
         cost_class="compute",
         idempotent=False,

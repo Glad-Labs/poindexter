@@ -506,6 +506,10 @@ class GenerateVideoShotListStage:
     # so it never pre-empts the dispatches it wraps.
     timeout_seconds = (1 + _DIRECTOR_MAX_RETRIES_DEFAULT) * 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
     halts_on_failure = False  # Director failure shouldn't block the post
+    # Surfaced onto the virtual atom's contract (poindexter#983) — mirrors
+    # the docstring's Context reads/writes.
+    atom_requires = ("content", "podcast_script")
+    atom_produces = ("video_shot_list",)
 
     async def _produce_shot_list(
         self,

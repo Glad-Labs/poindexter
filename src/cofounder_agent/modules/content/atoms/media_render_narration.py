@@ -42,7 +42,11 @@ ATOM_META = AtomMeta(
         FieldSpec(name="long_narration_audio_path", type="str", description="long narration MP3 ('' on no-op/failure)"),
         FieldSpec(name="short_narration_audio_path", type="str", description="short narration MP3 ('' on no-op/failure)"),
     ),
-    requires=("task_id",),
+    # short_summary_script required (poindexter#983): unconditionally read
+    # for the short lane (the long lane falls back video_long_script →
+    # podcast_script). Producers: stage.generate_media_scripts (forward) or
+    # media.load_scripts (re-render lane).
+    requires=("task_id", "short_summary_script"),
     produces=("long_narration_audio_path", "short_narration_audio_path"),
     capability_tier=None,
     cost_class="free",
