@@ -12,7 +12,8 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 export const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN || 'gladlabs.io';
 export const SITE_TAGLINE =
-  process.env.NEXT_PUBLIC_SITE_TAGLINE || 'Technology & Innovation';
+  process.env.NEXT_PUBLIC_SITE_TAGLINE ||
+  'AI, Hardware & the Edges Where They Meet';
 export const SITE_DESCRIPTION =
   process.env.NEXT_PUBLIC_SITE_DESCRIPTION ||
   'One person + AI = unlimited scale';

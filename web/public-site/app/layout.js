@@ -15,7 +15,7 @@ import '../styles/globals.css';
 export const metadata = {
   title: `${SITE_NAME} - ${SITE_TAGLINE}`,
   description:
-    'Exploring the future of technology, AI, and digital innovation. In-depth articles on AI agents, cloud infrastructure, and modern development.',
+    'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, and published from one local machine. Free to read.',
   metadataBase: new URL(SITE_URL),
   openGraph: {
     type: 'website',
@@ -23,7 +23,7 @@ export const metadata = {
     url: SITE_URL,
     title: SITE_NAME,
     description:
-      'Exploring the future of technology, AI, and digital innovation',
+      'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, free to read.',
     images: [
       {
         url: '/og-image.jpg',
@@ -35,8 +35,8 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    site: '@GladLabsAI',
-    creator: '@GladLabsAI',
+    site: '@_gladlabs',
+    creator: '@_gladlabs',
   },
   verification: {
     google:

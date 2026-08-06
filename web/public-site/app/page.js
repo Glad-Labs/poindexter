@@ -18,16 +18,16 @@ export const revalidate = 3600;
 
 // SEO Metadata
 export const metadata = {
-  title: `${SITE_NAME} - AI & Technology Insights`,
+  title: `${SITE_NAME} - AI, Hardware & the Edges Where They Meet`,
   description:
-    'Deep dives into AI, technology, and digital transformation. Explore our latest insights, expert analysis, and practical guides.',
+    'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, and published from one local machine. Free to read.',
   alternates: {
     canonical: `${SITE_URL}/`,
   },
   openGraph: {
-    title: `${SITE_NAME} - AI & Technology Insights`,
+    title: `${SITE_NAME} - AI, Hardware & the Edges Where They Meet`,
     description:
-      'Deep dives into AI, technology, and digital transformation. Explore our latest insights, expert analysis, and practical guides.',
+      'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, and published from one local machine. Free to read.',
     type: 'website',
     locale: 'en_US',
     url: `${SITE_URL}/`,
@@ -36,7 +36,7 @@ export const metadata = {
         url: '/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: `${SITE_NAME} - AI & Technology Insights`,
+        alt: `${SITE_NAME} - AI, Hardware & the Edges Where They Meet`,
       },
     ],
   },
@@ -95,7 +95,7 @@ export default async function HomePage() {
     name: SITE_NAME,
     url: SITE_URL,
     description:
-      'Deep dives into AI, technology, and digital transformation. Explore our latest insights, expert analysis, and practical guides.',
+      'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, and published from one local machine. Free to read.',
     publisher: {
       '@type': 'Organization',
       name: SITE_NAME,

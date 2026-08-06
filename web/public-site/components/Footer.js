@@ -150,7 +150,7 @@ const Footer = () => {
               className="flex items-center gap-4 mt-6"
             >
               <a
-                href="https://x.com/GladLabsAI"
+                href="https://x.com/_gladlabs"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Follow Glad Labs on X (Twitter)"
