@@ -92,6 +92,7 @@ class _State:
         self.model: Any = None
         self._generate_fn: Any = None
         self.sample_rate: int = 44100
+        self.native_sample_size: int = 0
         self.last_used: float = 0.0
         self.degraded: bool = False
         self.degraded_reason: str | None = None
@@ -217,12 +218,18 @@ def _load_model() -> bool:
         from stable_audio_tools import get_pretrained_model
         from stable_audio_tools.inference.generation import generate_diffusion_cond
 
-        model, sample_rate = get_pretrained_model("stabilityai/stable-audio-open-1.0")
+        # get_pretrained_model returns (model, model_config) — the second
+        # element is the CONFIG DICT, not the sample rate.
+        model, model_config = get_pretrained_model("stabilityai/stable-audio-open-1.0")
         model = model.eval().cuda()
         _state.model = model
-        _state.sample_rate = sample_rate
+        _state.sample_rate = int(model_config["sample_rate"])
+        _state.native_sample_size = int(model_config["sample_size"])
         _state._generate_fn = generate_diffusion_cond   # cache the fn ref
-        logger.info("[MODEL] Loaded. sample_rate=%dHz", sample_rate)
+        logger.info(
+            "[MODEL] Loaded. sample_rate=%dHz native_window=%d samples",
+            _state.sample_rate, _state.native_sample_size,
+        )
         return True
     except Exception as e:
         _state.mark_degraded(f"Model load failed: {e}")
@@ -256,12 +263,15 @@ def _generate_sync(
             "seconds_total": duration_s,
         }]
 
+        # The DiT generates its full native window (~47.5s); seconds_total
+        # conditioning places the content in the head, and we trim to the
+        # requested duration afterwards (official stable-audio-tools usage).
         with torch.no_grad():
             output = generate_fn(
                 model,
                 conditioning=conditioning,
                 batch_size=1,
-                sample_size=int(sample_rate * duration_s),
+                sample_size=_state.native_sample_size,
                 sample_rate=sample_rate,
                 device="cuda",
                 init_audio=None,
@@ -269,9 +279,24 @@ def _generate_sync(
             )
 
         audio = rearrange(output, "b d n -> d (b n)")
-        audio = audio.cpu().clamp(-1, 1).numpy()
+        audio = audio.to(torch.float32).cpu().numpy()
+        want = int(sample_rate * duration_s)
+        if audio.shape[-1] > want:
+            audio = audio[:, :want]
 
-        sf.write(output_path, audio.T, sample_rate, format=output_format.upper())
+        # Raw diffusion output is NOT full-scale — official stable-audio-tools
+        # usage peak-normalizes before writing; without this the WAV is
+        # near-silent (measured max -54 dBFS). Normalize to -1 dBFS headroom
+        # so the compositor's dBFS mix targeting sees real signal.
+        peak = float(abs(audio).max())
+        if peak > 0:
+            audio = audio * (0.891 / peak)
+        audio = audio.clip(-1, 1)
+
+        sf.write(
+            output_path, audio.T, sample_rate,
+            format=output_format.upper(), subtype="PCM_16",
+        )
         rendered = audio.shape[-1] / sample_rate
         logger.info(
             "[GENERATE] wrote %s (%.2fs, %d samples)",
