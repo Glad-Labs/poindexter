@@ -1,91 +1,75 @@
-# Poindexter
+<div align="center">
 
-**A plug-and-play AI/ML content creation OSS stack.** Your PC is the factory: Poindexter researches, writes, reviews, and publishes — autonomously. Local-first, Ollama-powered, zero API costs. Built by [Glad Labs LLC](https://www.gladlabs.io).
+<img src="docs/assets/readme/banner.png" alt="Poindexter — the open-source AI content factory that runs on your PC" width="100%">
+
+**One engine that discovers topics, researches them, writes long-form posts, tears them apart in review, and publishes the survivors — on your GPU, with zero API costs.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-11%2C000%2B_passing-brightgreen)](<>)
-[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](<>)
+[![Unit tests](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
+[![Release](https://img.shields.io/github/v/release/Glad-Labs/poindexter)](https://github.com/Glad-Labs/poindexter/releases)
+[![Tests](https://img.shields.io/badge/tests-11%2C400%2B-brightgreen)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
+[![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#project-status)
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
-## Who this is for
+[Quick start](#quick-start) · [What it does](#what-it-does) · [The QA gauntlet](#built-to-reject-its-own-work) · [Architecture](#architecture) · [Docs](https://gladlabs.mintlify.app/docs/welcome) · [Pro](#poindexter-pro)
 
-If you've ever thought _"I could publish good content at scale if I had a system that didn't just spam mediocre AI text,"_ — Poindexter is that system.
+</div>
 
-It's built for:
+---
 
-- **Solo operators** who want to run a content business from one machine, with their own GPU, without paying per-token API fees
-- **Indie publishers** who need automation but refuse to ship hallucinated text
-- **AI/ML engineers** who want a working content stack to fork, extend, and learn from — every layer is OSS, every layer is swappable
+This is not a demo repo. Poindexter is the production system behind [gladlabs.io](https://www.gladlabs.io) — 166 live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
 
-It is _not_ for: marketing teams who want a one-click web app (use Jasper / Copy.ai), or anyone unwilling to run Docker on their machine.
+<img src="docs/assets/readme/grafana-pipeline.png" alt="Grafana Pipeline dashboard — approval queue with average quality 93, 8 approved, 4 auto-rejected, live pipeline activity" width="100%">
 
-The pitch is "plug and play": `poindexter setup --auto` takes you from a fresh clone to a healthy local stack in one command — Postgres provisioned, OAuth client minted, migrations run, models pulled, services up. After that, every component is swappable through `app_settings` or plugins.
-
-## What it does
-
-One engine, eight jobs:
-
-1. **Discovers** trending topics from HackerNews, Dev.to, and your niche feeds
-2. **Researches** each topic with deep web search and source verification
-3. **Writes** long-form posts using local LLMs (Ollama) — or cloud models via the optional LiteLLM provider plugin
-4. **Reviews** every draft with multi-model adversarial QA on 7 quality dimensions
-5. **Validates** against hallucinations — catches fake people, stats, quotes, impossible claims
-6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
-7. **Generates** podcast episodes, AI images, and short text-to-video clips (Wan 2.1 T2V — alpha, opt-in)
-8. **Monitors** itself with Grafana dashboards, auto-heals via brain daemon, alerts on Telegram/Discord
-
-Run it on your machine. Own your data. No cloud lock-in.
-
-**Not a spam cannon.** ~50% of generated drafts are rejected by QA. Multi-model adversarial review, deterministic anti-hallucination validation, and research-backed content. Speed comes from generating more candidates and filtering hard — not from lowering the bar.
+_The Pipeline dashboard (ships with the repo): drafts arrive scored, weak ones are auto-rejected, survivors wait for your one-click approval._
 
 ## Quick start
 
-> **Windows users:** run from Git Bash or WSL. The setup script needs `bash`.
+From clean machine to a running pipeline in about 30 minutes — most of it one-time model downloads.
+
+**Prereqs:** [Docker](https://docker.com) · [Ollama](https://ollama.com) · Python 3.13+ · NVIDIA GPU with 8 GB+ VRAM (CPU works, just slowly) · Node.js 22+ only if you want the optional Next.js frontend. **Windows:** run from Git Bash or WSL2.
 
 ```bash
 # 1. Clone
-git clone https://github.com/Glad-Labs/poindexter.git
-cd poindexter
+git clone https://github.com/Glad-Labs/poindexter.git && cd poindexter
 
-# 2. Setup — generates secrets, tests DB, writes ~/.poindexter/bootstrap.toml
+# 2. Bootstrap — generates secrets, spins up Postgres, runs migrations, mints your OAuth client
 pip install -e src/cofounder_agent
-poindexter setup --auto    # spins up local Postgres automatically
+poindexter setup --auto
 
-# 3. Pull AI models (writer, QA critic, fast tasks, embeddings)
+# 3. Pull the core models (one-time, ~30 GB total)
 ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull qwen3:8b && ollama pull nomic-embed-text
 
-# 4. Start the full stack
-bash scripts/start-stack.sh
+# 4. Start everything
+bash scripts/start-stack.sh up -d
 
-# 5. Generate your first post
-poindexter tasks create "Why Docker changed everything" --category technology
+# 5. Queue your first post
+poindexter tasks create "Why Docker changed everything"
 ```
 
-The pipeline runs automatically. Watch progress at `http://localhost:3000` (Grafana).
+Then watch it work:
 
-### Prerequisites
+- **Grafana** — [localhost:3000](http://localhost:3000), the Pipeline dashboard fills in as stages complete
+- **Prefect** — [localhost:4200](http://localhost:4200), the orchestrator's view of the run
+- **Terminal** — `poindexter doctor` for a full health report, `poindexter tasks list` for the queue
 
-- **Docker Desktop** — [docker.com](https://docker.com)
-- **Ollama** — [ollama.com](https://ollama.com)
-- **Node.js 22+** — [nodejs.org](https://nodejs.org) (for the optional Next.js public site)
-- **GPU** — RTX 3060+ (8 GB VRAM minimum). Works on CPU, just slowly.
+A few minutes later the draft lands in your approval queue with its QA scores attached (`poindexter tasks list --status awaiting_approval`). You approve; it publishes. That's the loop.
 
-### Required models
+<details>
+<summary><b>Which model does what — and what to upgrade first</b></summary>
 
-`poindexter setup --auto` doesn't pull these — Ollama does, but you trigger it. With these four, the core blog pipeline runs end-to-end on any 8 GB+ GPU:
+<br>
 
 | Model              | Size   | Role                                                  |
 | ------------------ | ------ | ----------------------------------------------------- |
-| `qwen3:8b`         | 5 GB   | Fast tasks — SEO, image decisions, summaries, routing |
 | `gemma3:27b`       | 16 GB  | Writer, fallback, structured + media-script tasks     |
 | `phi4:14b`         | 9 GB   | Adversarial QA critic — the hard quality gate         |
+| `qwen3:8b`         | 5 GB   | Fast tasks — SEO, image decisions, summaries, routing |
 | `nomic-embed-text` | 274 MB | Embeddings for semantic search + memory retrieval     |
 
-> These four cover the **core blog pipeline** (research → write → QA → publish). The critic (`phi4:14b`) is a different model family from the writer on purpose — cross-model QA means their biases don't cancel. Feature roles pull additional public models on demand: image QA + captioning use `qwen3-vl:30b` (~20 GB — needs headroom past the 8 GB minimum), the inline-image-prompt and ops-triage helpers use small `llama3` / `llama3.2` tags, and the optional voice agent loads its own STT/TTS models. The core pipeline runs without them.
+These four run the core blog pipeline (research → write → QA → publish) on any 8 GB+ GPU. The critic is a different model family from the writer **on purpose** — cross-model QA means their biases don't cancel. Feature roles pull additional public models on demand: image QA + captioning use `qwen3-vl:30b` (~20 GB — needs headroom past the 8 GB minimum), and the optional voice agent loads its own STT/TTS models. The core pipeline runs without them.
 
-### Writer model — configurable
-
-The writer is the one model worth upgrading. Set `pipeline_writer_model` in `app_settings` (or via `poindexter settings set`) to any Ollama model you have. Trade-offs:
+**The writer is the one model worth upgrading.** Set `pipeline_writer_model` to any Ollama model you have:
 
 ```bash
 ollama pull qwen3:30b          # 18 GB — best speed/quality balance publicly available
@@ -94,118 +78,143 @@ ollama pull llama3.3:70b       # 42 GB — highest quality, needs 48 GB+ VRAM or
 ollama pull glm-4.7:9b         # 6 GB — lighter fallback for <16 GB VRAM
 ```
 
-Glad Labs production runs a custom RTX 5090 fine-tune (`glm-4.7-5090`, 19 GB) not on the public registry; any of the above work fine.
+Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy. Cloud models (Anthropic, OpenAI, Groq, OpenRouter) are an opt-in plugin gated by a spend guard.
 
-Every model routing decision (writer / critic / research / summarizer / embedder) lives in `app_settings` and can be swapped at runtime — no restart, no redeploy.
+</details>
+
+## What it does
+
+One engine, eight jobs:
+
+1. **Discovers** trending topics from HackerNews, Dev.to, and your niche feeds
+2. **Researches** each topic with deep web search and source verification
+3. **Writes** long-form posts using local LLMs — or cloud models via the optional LiteLLM plugin
+4. **Reviews** every draft with multi-model adversarial QA (more on that below)
+5. **Validates** against hallucinations — catches fake people, stats, quotes, impossible claims
+6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
+7. **Generates** podcast episodes, AI images, and short text-to-video clips (alpha, opt-in)
+8. **Monitors** itself with Grafana dashboards, self-heals via a watchdog daemon, alerts on Telegram/Discord
+
+Run it on your machine. Own your data. No cloud lock-in.
+
+## Built to reject its own work
+
+Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 13 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
+
+<img src="docs/assets/readme/grafana-qa-reviewers.png" alt="Grafana QA Rails panel — average score per reviewer across 18 signals, from web_factcheck at 100 down to strict originality rails" width="100%">
+
+_Real 30-day per-reviewer averages from the QA Rails dashboard. The strict rails at the bottom are why the output doesn't read like AI slop — speed comes from generating more candidates and filtering hard, not from lowering the bar._
+
+Every rail is DB-configurable: advisory or blocking per rail, thresholds tunable at runtime, and a bounded rescue cycle gives near-miss drafts one revision pass before the hard reject.
+
+## It monitors itself, too
+
+The stack treats itself like production infrastructure. A standalone watchdog daemon (the "brainstem") checks every service on a 5-minute cycle, restarts what it can, and pages you on Telegram/Discord for what it can't. The `doctor` command aggregates every health probe into one score:
+
+<img src="docs/assets/readme/terminal-doctor.png" alt="poindexter doctor output — health score 80/100, one FAIL flagged (pipeline throughput drop), 26 probes OK" width="100%">
+
+_Real output. Note the FAIL: the system caught its own throughput drop and said so — you find out from the tool, not from silence._
+
+And the output side is a real website, not a JSON blob in a bucket somewhere:
+
+<img src="docs/assets/readme/site-gladlabs.png" alt="gladlabs.io — the production site published by Poindexter" width="100%">
+
+_[gladlabs.io](https://www.gladlabs.io) — built on the static JSON export. Bring any frontend: Next.js, Hugo, Astro, or a single HTML file._
+
+## Who this is for
+
+- **Solo operators** who want to run a content business from one machine, with their own GPU, without paying per-token API fees
+- **Indie publishers** who need automation but refuse to ship hallucinated text
+- **AI/ML engineers** who want a working content stack to fork, extend, and learn from — every layer is OSS, every layer is swappable
+
+It is _not_ for marketing teams who want a one-click web app (use Jasper / Copy.ai), or anyone unwilling to run Docker.
 
 ## Architecture
 
-Poindexter is built as a **kernel + modules + capabilities** stack. The kernel is the substrate everything rents — plugin registry, DI container, pipeline engine, settings. Business **modules** (content, finance) compose **capability** plugins — 20 entry-point groups spanning llm / image / video / audio / tts. Components communicate only through PostgreSQL; there are no cross-component imports. Two standalone pieces sit alongside the app: the **Brainstem** watchdog daemon and the **Spinal Cord** (PostgreSQL itself, the shared bus).
+Poindexter is a **kernel + modules + capabilities** stack. The kernel is the substrate everything rents — plugin registry, DI container, pipeline engine, settings. Business **modules** (content, finance, yours) compose **capability plugins** across 18 entry-point groups. Components never import each other — everything communicates through PostgreSQL (the "spinal cord"), and a standalone watchdog daemon (the "brainstem") can crash and restart without taking down the API.
 
+```mermaid
+flowchart LR
+    subgraph pc["Your PC — the whole factory"]
+        direction TB
+        brain["Brainstem — watchdog daemon<br>(standalone, self-healing)"]
+        modules["Modules<br>content · finance · yours"]
+        kernel["Kernel<br>plugin registry · DI · pipeline engine · settings"]
+        caps["Capabilities — 18 plugin groups<br>llm · image · video · audio · tts · taps · …"]
+        pg[("PostgreSQL + pgvector<br>the shared bus — no cross-imports")]
+        ollama["Ollama<br>local inference"]
+    end
+    store["Any S3-compatible storage<br>static JSON + RSS"]
+    fe["Any frontend<br>Next.js · Hugo · Astro · plain HTML"]
+
+    modules --> kernel
+    modules --> caps
+    caps --> ollama
+    kernel <--> pg
+    brain -.->|monitors + restarts| pg
+    kernel --> store --> fe
 ```
-Brainstem    (brain/)                 — standalone self-healing watchdog daemon
-Kernel       (plugins/, services/)    — substrate: plugin registry, DI container,
-                                        pipeline engine, settings service
-Modules      (modules/content,        — manifested business functions that
-              modules/finance)          compose capability plugins
-Capabilities (20 plugin entry points) — llm / image / video / audio / tts, …
-Spinal Cord  (PostgreSQL + pgvector)  — shared substrate; every component talks
-                                        through it, not through imports
 
-Any frontend reads static JSON from CDN — Next.js, Hugo, Astro, or a single HTML file.
-```
-
-The brainstem can crash and restart without taking down the API. The content pipeline can be swapped for a different implementation as long as it writes the same tables. The architecture is designed to be poked at one piece at a time.
-
-Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
+The content pipeline itself is a declarative LangGraph DAG stored in the database — 44 nodes covering research, writing, image generation, the 13 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
 
 ## Key features
 
-| Feature                      | Description                                                                                  |
-| ---------------------------- | -------------------------------------------------------------------------------------------- |
-| **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                   |
-| **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard  |
-| **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                       |
-| **DB-as-config**             | 1,090+ settings (68 secret) in PostgreSQL. Change with SQL or REST. No deploys.              |
-| **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline             |
-| **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                                |
-| **Multi-modal output**       | Markdown posts, AI images (image-gen / Flux), podcast audio, text-to-video (Wan 2.1 — alpha) |
-| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                               |
-| **Multi-site**               | One daemon manages N sites. Each site = config row + storage bucket.                         |
-| **Self-healing**             | Brain daemon monitors all services, restarts failures, alerts via Telegram/Discord           |
-| **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry/GlitchTip                       |
-| **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, brain, scripts) mints scoped JWTs. No static API keys.             |
-| **11,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                    |
+| Feature                      | Description                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
+| **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
+| **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
+| **DB-as-config**             | 1,300+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
+| **LangGraph pipelines**      | Declarative DAGs with Postgres checkpointing — resumable mid-run                            |
+| **Multi-modal output**       | Markdown posts, AI images, podcast audio, text-to-video (alpha)                             |
+| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
+| **Multi-site**               | One daemon manages N sites. Each site = config row + storage bucket.                        |
+| **Self-healing**             | Watchdog daemon monitors all services, restarts failures, alerts via Telegram/Discord       |
+| **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry-compatible (GlitchTip)         |
+| **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, scripts) mints scoped JWTs. No static API keys.                   |
+| **11,400+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
 
 ## Stack
 
 - **Backend:** Python 3.13 / FastAPI / asyncpg
 - **LLM (default):** [Ollama](https://ollama.com) — local inference, your GPU
 - **LLM (optional):** [LiteLLM](https://github.com/BerriAI/litellm) provider plugin — Anthropic, OpenAI, Groq, OpenRouter, Bedrock, Vertex (gated by `cost_guard`)
-- **Orchestration:** [LangGraph](https://github.com/langchain-ai/langgraph) (declarative pipelines via `template_runner`)
-- **Prompt management:** [Langfuse](https://langfuse.com) (UI-editable, runtime fallback to YAML)
+- **Orchestration:** [LangGraph](https://github.com/langchain-ai/langgraph) declarative pipelines + [Prefect](https://www.prefect.io) dispatch
+- **Prompt management:** versioned SKILL.md packs in-repo, mirrored to [Langfuse](https://langfuse.com) for trace-side review
 - **Embeddings:** `nomic-embed-text` via Ollama → pgvector
 - **Database:** PostgreSQL 16 + pgvector
 - **Auth:** OAuth 2.1 Client Credentials Grant (per-consumer JWTs)
 - **Observability:** Grafana + Prometheus + Loki + [Pyroscope](https://pyroscope.io) + Sentry-compatible (GlitchTip)
 - **Voice (optional):** LiveKit + Whisper (STT) + Kokoro (TTS)
 - **Storage:** any S3-compatible (Cloudflare R2, AWS S3, Backblaze B2, MinIO)
-- **CI/CD:** GitHub Actions
-- **Infrastructure:** Docker Compose — 45 containers for the full operator stack (`docker-compose.local.yml`: observability + voice + image-gen + Postiz sidecars), 23 for the consumer/minimal variant (`docker-compose.consumer.yml`, 8-16 GB VRAM hardware), 4 for the bare OSS default (`docker-compose.yml`)
+- **Infrastructure:** Docker Compose — 4 containers for the bare OSS default, 23 for the consumer variant (8-16 GB VRAM hardware), 45 for the full operator stack
 
 ## Configuration
 
-Everything tunable lives in the `app_settings` database table — not environment variables. The only file you write to disk is `~/.poindexter/bootstrap.toml`, created by `poindexter setup`. It contains the database URL plus a small number of pre-DB-reachable secrets (Postgres password, OAuth signing key, optional Telegram/Discord operator alerts).
-
-After that, every config knob is managed via API, SQL, or the CLI:
+Everything tunable lives in the `app_settings` database table — not environment variables. The only file on disk is `~/.poindexter/bootstrap.toml`, created by `poindexter setup`: the database URL plus the few pre-DB secrets (Postgres password, OAuth signing key, optional Telegram/Discord alert channels).
 
 ```bash
-# View all settings
-poindexter settings list
-
-# Change a setting at runtime
-poindexter settings set auto_publish_threshold 80
-
-# Rotate via REST (with OAuth-issued JWT)
-curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
-  -H "Authorization: Bearer $(poindexter auth mint-token --client-id <id> --client-secret <secret>)" \
-  -d '{"value": "80"}'
+poindexter settings list                                  # view all settings
+poindexter settings set auto_publish_threshold 80         # change at runtime — no restart
 ```
 
-No restart required for most settings. See [`docs/operations/environment-variables.md`](docs/operations/environment-variables.md).
+Every knob is also reachable over REST with an OAuth-minted JWT. See [environment-variables](https://gladlabs.mintlify.app/docs/operations/environment-variables).
 
 ## Plugins
 
-Poindexter is built on a small extension framework. Eighteen plugin types let you customize the system without touching core code — the most commonly extended ones:
+Eighteen plugin entry-point groups let you extend the system without touching core code: **Taps** (pull data in — RSS, Slack, social), **TopicSources** (discover candidate topics), **LLMProviders** / **ImageProviders** / TTS / video / audio / captions, **PublishAdapters** (where finished posts go), **Probes**, **Jobs**, **Stages**, **Reviewers**, and full **Modules** that bundle plugins + migrations + routes into a versioned business function. The canonical list lives in `plugins/registry.py::ENTRY_POINT_GROUPS`.
 
-| Type               | Role                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------- |
-| **Tap**            | Pulls data into the system (RSS, Slack, social feeds, etc.)                            |
-| **Probe**          | Reports state to the brain (health checks, business metrics)                           |
-| **Job**            | Scheduled work (cron-like, lives in the worker)                                        |
-| **Stage**          | A step in the content pipeline (research, draft, QA, etc.)                             |
-| **TopicSource**    | Discovers candidate topics (HackerNews, dev.to, web search, etc.)                      |
-| **LLMProvider**    | Inference backend (Ollama is default; LiteLLM, OpenAI-compat, etc.)                    |
-| **ImageProvider**  | Featured + inline images (image-gen, Flux, Pexels, etc.)                               |
-| **PublishAdapter** | Where finished posts go (S3-compatible, Discord, custom CMS, etc.)                     |
-| **Module**         | Bundles the above + migrations + routes into a versioned business function (Module v1) |
-
-The full set also includes Reviewers, Adapters, Providers (generic), Packs, AudioGenProviders, VideoProviders, TTSProviders, CaptionProviders, and MediaCompositors. See `plugins/registry.py::ENTRY_POINT_GROUPS` for the canonical list.
-
-Each plugin lives in its own pip package and registers via setuptools `entry_points`.
-
-### Using a plugin
+Each plugin is a pip package registering a setuptools entry point:
 
 ```bash
 pip install poindexter-tap-slack
 poindexter settings set plugin.tap.slack '{"enabled": true, "config": {"workspace": "myteam"}}'
 ```
 
-Next worker restart picks it up. No core code changes.
+<details>
+<summary><b>Authoring a plugin — a complete Tap in ~20 lines</b></summary>
 
-### Authoring a plugin
-
-A package needs three things — a class implementing the relevant Protocol, an `entry_points` registration, and per-install config docs. Example Tap:
+<br>
 
 ```python
 # my_package/slack_tap.py
@@ -232,7 +241,9 @@ class SlackTap:
 slack = "my_package.slack_tap:SlackTap"
 ```
 
-The shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) live in `src/cofounder_agent/plugins/samples/`. The first real plugin in production is the `LiteLLMProvider` — Glad Labs eats its own dog food. Full design in [`docs/architecture/plugin-architecture.md`](docs/architecture/plugin-architecture.md).
+Shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) live in `src/cofounder_agent/plugins/samples/`. The first production plugin is the `LiteLLMProvider` — Glad Labs eats its own dog food. Full design in [plugin-architecture](https://gladlabs.mintlify.app/docs/architecture/plugin-architecture).
+
+</details>
 
 ## Project status
 
@@ -241,62 +252,68 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
-- 159 live posts on [gladlabs.io](https://www.gladlabs.io) (333 total posts, 1,975 pipeline runs).
-- 11,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
-- `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes bootstrap.toml. No `.env` file required.
-- Live in-place upgrades — schema changes, container renames, env var migrations applied to a running instance with zero data loss and no in-flight task downtime.
-- Multi-model QA scoring with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
-- Push-only static export to any S3-compatible storage. Frontend is decoupled — Next.js, Hugo, Astro, or a static HTML file.
+- 166 live posts on [gladlabs.io](https://www.gladlabs.io) (340 posts total, 2,000+ pipeline runs).
+- 11,400+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
+- `poindexter setup` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling.
+- Live in-place upgrades — schema changes applied to a running instance with zero data loss.
+- Multi-model QA with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
+- Push-only static export to any S3-compatible storage; frontend fully decoupled.
 - OAuth 2.1 throughout (per-consumer scoped JWTs, no static API keys).
 
 **Known rough edges**
 
-- No managed/hosted Poindexter offering yet. Self-host only.
+- No managed/hosted offering yet. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
 - Native Windows cmd / PowerShell not supported. Use Git Bash or WSL.
 - Database schema is not yet stable across releases. Read the CHANGELOG before upgrading.
-- Plugin framework is real (LiteLLMProvider runs in production), but the community ecosystem is nascent — you may be writing the second-ever third-party plugin.
-- **Text-to-video is alpha.** The Wan 2.1 T2V provider plugin and `wan-server` Docker sidecar exist and pass smoke tests, but it's an opt-in path (not in the default content pipeline) and the inference server needs ~28 GB VRAM headroom on a 32 GB+ card. Track Glad-Labs/poindexter#124 for production-readiness.
+- The plugin framework is real (LiteLLMProvider runs in production), but the ecosystem is nascent — you may be writing the second-ever third-party plugin.
+- **Text-to-video is alpha.** The T2V provider plugin passes smoke tests but is opt-in and needs ~28 GB VRAM headroom. Track [Glad-Labs/poindexter#124](https://github.com/Glad-Labs/poindexter/issues/124).
 
-If any of those would block your use case, that's worth knowing before you start. PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING).
+If any of those would block your use case, that's worth knowing before you start. PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Pricing
+## Poindexter Pro
 
-The engine is free and open-source under Apache 2.0. **Pro** is a subscription for operators who want production-grade output without tuning from scratch.
+The engine is free and open-source under Apache 2.0. **Pro** is for operators who want production-grade output without months of tuning.
 
-| Tier     | Price                                      | What you get                                                                                                                                                                                    |
-| -------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free** | $0                                         | Full pipeline engine, nothing feature-gated — baseline prompts, all 11 Grafana dashboards this repo ships, GitHub issues support                                                                |
-| **Pro**  | See [gladlabs.ai](https://www.gladlabs.ai) | Production-tuned prompt packs exported from the live system, a refreshed copy of 5 curated dashboards, prompt refreshes as the system is tuned, private VIP Discord, the Poindexter book (perk) |
+| Tier     | Price                                      | What you get                                                                                                                                                                     |
+| -------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free** | $0                                         | Full pipeline engine, nothing feature-gated — baseline prompts, all Grafana dashboards this repo ships, GitHub issues support                                                    |
+| **Pro**  | See [gladlabs.ai](https://www.gladlabs.ai) | Production-tuned prompt packs exported from the live system, curated dashboard refreshes, prompt updates as the system is tuned, private VIP Discord, the Poindexter book (perk) |
 
-Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily. Pro gives you the months of prompt tuning in a single install.
+Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily.
 
-- **[See Poindexter Pro → gladlabs.ai](https://www.gladlabs.ai)**
+**[See Poindexter Pro → gladlabs.ai](https://www.gladlabs.ai)**
 
 ## Documentation
 
-Full technical docs live under [`docs/`](docs/welcome). Recommended path:
+Full technical docs at [gladlabs.mintlify.app](https://gladlabs.mintlify.app/docs/welcome). Recommended path:
 
-- **[Architecture overview](docs/architecture/overview)** — how the pieces fit together
-- **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline)** — the content pipeline + cross-model QA
-- **[Database schema](docs/architecture/database-schema)** — every table + migration system
-- **[CLI reference](docs/operations/cli-reference)** — every `poindexter` subcommand
-- **[Plugin authoring](docs/operations/extending-poindexter)** — write Stages, Reviewers, Adapters, Taps, Jobs, Probes
-- **[Local development setup](docs/operations/local-development-setup)** — end-to-end walkthrough
-- **[Troubleshooting](docs/operations/troubleshooting)** — production issues we've hit
+- **[Quickstart](https://gladlabs.mintlify.app/docs/quickstart)** — the long-form version of the setup above, with verification at every step
+- **[Architecture overview](https://gladlabs.mintlify.app/docs/architecture/overview)** — how the pieces fit together
+- **[Multi-agent pipeline](https://gladlabs.mintlify.app/docs/architecture/multi-agent-pipeline)** — the content pipeline + cross-model QA
+- **[Database schema](https://gladlabs.mintlify.app/docs/architecture/database-schema)** — every table + the migration system
+- **[CLI reference](https://gladlabs.mintlify.app/docs/operations/cli-reference)** — every `poindexter` subcommand
+- **[Plugin authoring](https://gladlabs.mintlify.app/docs/operations/extending-poindexter)** — write Taps, Stages, Reviewers, Jobs, Probes, Modules
+- **[Troubleshooting](https://gladlabs.mintlify.app/docs/operations/troubleshooting)** — production issues we've actually hit
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING). Issues and PRs welcome.
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The screenshots above re-bake with `node scripts/capture-readme-screenshots.mjs` against a running stack.
 
 ## Security & SBOM
 
-- Report vulnerabilities to **security@gladlabs.io** ([SECURITY.md](SECURITY))
+- Report vulnerabilities to **security@gladlabs.io** ([SECURITY.md](SECURITY.md))
 - Every push to `main` runs gitleaks (secrets), Trivy (CVEs), and syft+grype (SBOM + CVE scan)
 - A CycloneDX-JSON **SBOM** is published as a workflow artifact on every release; enterprise buyers can request one directly
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2025-2026 Glad Labs LLC
+[Apache License 2.0](LICENSE) — Copyright 2025-2026 Glad Labs LLC. Relicensed from AGPL-3.0 on 2026-04-29 — see [CHANGELOG](CHANGELOG.md).
 
-Relicensed from AGPL-3.0 to Apache 2.0 on 2026-04-29 — see [CHANGELOG](CHANGELOG.md).
+---
+
+<div align="center">
+
+Built in the open by <a href="https://www.gladlabs.io">Glad Labs</a>. If Poindexter is interesting, a ⭐ helps other operators find it.
+
+</div>

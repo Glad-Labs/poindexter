@@ -30,4 +30,11 @@ module.exports = [
       'no-console': 'off',
     },
   },
+  {
+    // .mjs is always an ES module — override the commonjs default above.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+    },
+  },
 ];
