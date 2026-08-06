@@ -3,10 +3,19 @@
 Replaces Phase 1 of ``scripts/auto-embed.py``. Preserves every fix that
 landed in the pre-refactor pipeline:
 
-- **Multi-scope discovery** (commit ``c84a9032``): scans every
-  ``~/.claude/projects/C--*/memory/`` directory, not just a single
-  hardcoded scope. Prevents the 2026-04-18 incident where files
-  written from a ``C:\\WINDOWS\\system32`` cwd were silently skipped.
+- **Multi-scope discovery** (commit ``c84a9032``): scans the ``memory/``
+  subdirectory of every ``~/.claude/projects/<scope>/`` directory, not
+  just a single hardcoded scope. Prevents the 2026-04-18 incident where
+  files written from a ``C:\\WINDOWS\\system32`` cwd were silently skipped.
+
+  Scope discovery is **platform-neutral**: any subdirectory holding a
+  ``memory/`` folder is a scope. It used to glob ``C--*``, which encoded
+  the Windows project-scope naming (``C--Users-<you>-...``). The Pop!_OS
+  migration re-keyed scopes to the Linux checkout path
+  (``-home-<you>-<project>``), so that glob matched **zero**
+  directories and the tap silently ingested nothing for 17 days — every
+  memory file written after 2026-07-20 was invisible to semantic recall.
+  Discovery must never assume a host-specific scope-naming convention.
 - **Scope-aware source_id** (commit ``59fcbdde``): each file gets
   ``claude-code/<scope>/<relpath>`` as its source_id so same-named
   files across scopes (e.g. ``MEMORY.md`` in two scopes) don't collide
@@ -41,6 +50,55 @@ logger = logging.getLogger(__name__)
 _SENTINEL_SKIP = "__skip__"
 
 
+def _is_readable_dir(path: Path) -> bool:
+    """``path.is_dir()`` that treats "permission denied" as "not a dir".
+
+    ``Path.is_dir()`` only swallows ENOENT/ENOTDIR/EBADF/ELOOP —
+    ``EACCES`` propagates. A single unreadable scope directory would
+    therefore abort discovery for *every* scope. Docker bind-mounts of
+    ``~/.claude/projects`` hit this constantly: Claude Code creates
+    per-session scope dirs mode ``0700``, so a container running under a
+    different uid cannot stat them.
+
+    Logged at WARNING, never swallowed silently — an unreadable scope is
+    a real coverage gap the operator needs to see (fix the uid mismatch),
+    not a condition to paper over.
+    """
+    try:
+        return path.is_dir()
+    except PermissionError:
+        logger.warning(
+            "MemoryFilesTap: permission denied reading %s — skipping this scope. "
+            "The embedding container's uid likely differs from the owner of "
+            "~/.claude/projects; scope dirs are mode 0700.",
+            path,
+        )
+        return False
+    except OSError as exc:
+        logger.warning("MemoryFilesTap: cannot stat %s (%s) — skipping.", path, exc)
+        return False
+
+
+def _iter_scope_dirs(projects_root: Path) -> list[Path]:
+    """Every project scope directory holding a ``memory/`` subdirectory.
+
+    Platform-neutral by construction: a scope is identified by *having*
+    a ``memory/`` folder, not by matching a naming convention. Windows
+    (``C--Users-alice``) and Linux (``-home-alice-project``) scopes are
+    both discovered, so this is back-compatible with pre-migration hosts.
+    """
+    try:
+        entries = sorted(projects_root.iterdir())
+    except OSError as exc:  # includes PermissionError
+        logger.warning(
+            "MemoryFilesTap: cannot list project scopes under %s (%s).",
+            projects_root,
+            exc,
+        )
+        return []
+    return [d for d in entries if _is_readable_dir(d) and _is_readable_dir(d / "memory")]
+
+
 def _discover_memory_dirs(
     claude_projects_dir: str | None = None,
     openclaw_memory_dir: str | None = None,
@@ -63,7 +121,7 @@ def _discover_memory_dirs(
     entirely — useful for tests that shouldn't touch real home dirs.
 
     ``scope_allowlist`` is a comma-separated list of ``claude-code`` project
-    scopes (the ``C--*`` directory names) to ingest; when set, every other
+    scopes (the scope directory names) to ingest; when set, every other
     scope is skipped. Empty means "all scopes" (back-compat). Matching is
     case-insensitive because Docker bind mounts can lowercase Windows dir
     names. This is the dedup guard for the ``C--Users-alice`` ⇄
@@ -71,12 +129,18 @@ def _discover_memory_dirs(
     Junction to the former, so on the host (where the reparse point
     resolves) both scopes would otherwise embed the same files twice.
 
+    An allowlist that matches **no** scope on disk is logged at WARNING —
+    it means every scope was filtered out and the tap will ingest nothing.
+    That is exactly how the stale Windows-era ``C--Users-<you>`` allowlist
+    survived the Pop!_OS migration unnoticed; a silent empty result here
+    is indistinguishable from "no memory files exist".
+
     site_config is the DI seam (glad-labs-stack#330) — passed in by the
     tap dispatcher rather than imported as a module-level singleton.
     """
     _sc = site_config
 
-    def _resolve(cfg_value, sc_key, default):
+    def _resolve(cfg_value: Any, sc_key: str, default: Path) -> Path | None:
         if cfg_value == _SENTINEL_SKIP:
             return None
         if cfg_value:
@@ -108,12 +172,29 @@ def _discover_memory_dirs(
     allow = {s.strip().lower() for s in scope_allowlist.split(",") if s.strip()}
 
     if projects_root and projects_root.is_dir():
-        for scope_dir in sorted(projects_root.glob("C--*")):
-            if allow and scope_dir.name.lower() not in allow:
-                continue  # scope not on the allowlist — skip (junction dedup)
-            mem = scope_dir / "memory"
-            if mem.is_dir():
-                dirs.append((mem, "claude-code", scope_dir.name))
+        scope_dirs = _iter_scope_dirs(projects_root)
+        matched = [d for d in scope_dirs if not allow or d.name.lower() in allow]
+        for scope_dir in matched:
+            dirs.append((scope_dir / "memory", "claude-code", scope_dir.name))
+
+        # Fail loud rather than return an empty list that reads as "no
+        # memory files exist". Both branches below are silent-ingest-nothing
+        # states that previously looked identical to a healthy empty run.
+        if scope_dirs and not matched:
+            logger.warning(
+                "MemoryFilesTap: scope allowlist %s matched none of the %d scope(s) "
+                "under %s — ingesting nothing. Scopes on disk: %s",
+                sorted(allow),
+                len(scope_dirs),
+                projects_root,
+                sorted(d.name for d in scope_dirs)[:10],
+            )
+        elif not scope_dirs:
+            logger.warning(
+                "MemoryFilesTap: no project scopes with a memory/ subdirectory "
+                "found under %s — ingesting nothing.",
+                projects_root,
+            )
 
     if shared_root and shared_root.is_dir():
         dirs.append((shared_root, "shared-context", ""))

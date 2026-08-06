@@ -1501,6 +1501,13 @@ services:
     build:
       context: .
       dockerfile: scripts/Dockerfile.auto-embed
+      args:
+        # Must match the owner of ~/.claude/projects — the scope dirs are
+        # mode 0700, so a uid mismatch makes the memory + session taps
+        # silently ingest nothing (see Dockerfile.auto-embed for the full
+        # story). Defaults to 1000, the standard first-user uid on Linux.
+        EMBEDDER_UID: ${POINDEXTER_HOST_UID:-1000}
+        EMBEDDER_GID: ${POINDEXTER_HOST_GID:-1000}
     container_name: poindexter-auto-embed
     restart: unless-stopped
     environment:
@@ -1525,9 +1532,12 @@ services:
       - ${USERPROFILE:-${HOME}}/.claude/projects:/home/embedder/.claude/projects:ro
       - ${USERPROFILE:-${HOME}}/.openclaw/workspace/memory:/memory/openclaw:ro
       # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
-      # without needing `docker exec`. Script writes to Path.home()/.gladlabs
-      # which resolves to /root/.gladlabs inside the container (GitHub #62).
-      - ${USERPROFILE:-${HOME}}/.gladlabs:/root/.gladlabs
+      # without needing `docker exec`. The script writes to
+      # Path.home()/.gladlabs, and HOME is /home/embedder since the
+      # container dropped to a non-root user — the old /root/.gladlabs
+      # target stopped matching then, so the host log silently went stale
+      # while the failure-alert text kept pointing operators at it.
+      - ${USERPROFILE:-${HOME}}/.gladlabs:/home/embedder/.gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Boot order: postgres (data) → brain-daemon (seeds + self-checks) → auto-embed

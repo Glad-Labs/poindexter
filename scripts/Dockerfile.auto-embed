@@ -45,9 +45,24 @@ ENV PYTHONPATH="/app:/"
 # Drop privileges (Trivy DS-0002 / poindexter#488). auto-embed reads
 # pg via asyncpg and writes embeddings back to pg — no filesystem
 # state outside /app, so a non-root user is straightforward.
-RUN groupadd --system --gid 1001 embedder \
- && useradd  --system --uid 1001 --gid embedder --create-home --home-dir /home/embedder embedder \
- && chown -R embedder:embedder /app /brain /home/embedder
+#
+# The uid MUST match the owner of the host's ~/.claude/projects tree.
+# Claude Code creates per-session scope dirs mode 0700, so a mismatched
+# uid cannot even stat them — which is exactly what silently blinded the
+# claude_code_sessions tap for 17 days after the Pop!_OS migration (the
+# image baked uid 1001; the host user is uid 1000). Because the mount is
+# read-only, there is no chown fix from inside — the uid has to line up.
+#
+# 1000 is the first-user uid on essentially every Linux desktop distro.
+# Operators whose uid differs override at build time:
+#   docker compose build --build-arg EMBEDDER_UID=$(id -u) \
+#                        --build-arg EMBEDDER_GID=$(id -g) auto-embed
+ARG EMBEDDER_UID=1000
+ARG EMBEDDER_GID=1000
+RUN groupadd --gid ${EMBEDDER_GID} embedder \
+ && useradd  --uid ${EMBEDDER_UID} --gid embedder --create-home --home-dir /home/embedder embedder \
+ && chown -R embedder:embedder /app /brain /home/embedder \
+ && chmod 0755 /home/embedder
 USER embedder
 
 # Run every hour via shell loop (no cron daemon needed)

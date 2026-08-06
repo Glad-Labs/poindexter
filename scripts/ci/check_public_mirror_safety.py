@@ -464,6 +464,21 @@ _LEAK_PATTERNS = (
         "C--Users-<user>; use a placeholder like C--Users-<you>.",
     ),
     LeakPattern(
+        # The Linux successor to the pattern above. The Pop!_OS migration
+        # re-keyed every Claude project scope from the Windows encoding to the
+        # POSIX checkout path: ``/home/mattm/glad-labs-website`` ->
+        # ``-home-mattm-glad-labs-website``. The Windows-only pattern above
+        # stopped covering the live naming the moment that landed, so new refs
+        # could leak the operator username unchecked — the same
+        # Windows-shaped-leftover class of bug that blinded the memory tap
+        # (poindexter#988). Scoped to the operator username so generic
+        # ``-home-<you>-<project>`` placeholders don't false-positive.
+        re.compile(r"-home-mattm", re.IGNORECASE),
+        "operator Claude-projects path encoding (Linux)",
+        "Generalize the path — Claude Code encodes /home/<user>/<project> as "
+        "-home-<user>-<project>; use a placeholder like -home-<you>-<project>.",
+    ),
+    LeakPattern(
         re.compile(r"mattg-stack"),
         "operator GitHub username",
         "Don't hardcode the operator's GitHub handle in OSS files.",

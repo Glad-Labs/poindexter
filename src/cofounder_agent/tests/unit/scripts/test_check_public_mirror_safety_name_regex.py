@@ -225,6 +225,59 @@ def test_claude_projects_path_does_not_match_generic_placeholder() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Linux Claude-projects encoding (2026-08-06).
+#
+# The Pop!_OS migration re-keyed every project scope from the Windows encoding
+# to the POSIX checkout path: ``/home/mattm/glad-labs-website`` becomes
+# ``-home-mattm-glad-labs-website``. The Windows-only pattern stopped covering
+# the live naming the moment that landed, so new refs could leak the operator
+# username unchecked — the same Windows-shaped-leftover class of bug that
+# blinded the memory tap for 17 days (poindexter#988).
+# ---------------------------------------------------------------------------
+
+
+def _linux_projects_path_pattern() -> re.Pattern[str]:
+    """Extract the LeakPattern matching the Linux Claude-projects encoding."""
+    for lp in CHECK._LEAK_PATTERNS:
+        if lp.regex.search("-home-mattm-glad-labs-website"):
+            return lp.regex
+    raise AssertionError(
+        "No LEAK_PATTERNS entry matches '-home-mattm-<project>'. Claude Code "
+        "flattens /home/<user>/<project> to -home-<user>-<project> for "
+        "project-dir namespaces; post-Pop!_OS this is the LIVE scope naming, "
+        "so the guard must catch it (the C--Users- pattern does not)."
+    )
+
+
+def test_linux_projects_path_pattern_is_registered() -> None:
+    assert _linux_projects_path_pattern() is not None
+
+
+def test_linux_projects_path_matches_real_scope_forms() -> None:
+    """Both the bare scope and the worktree-suffixed variants must fire."""
+    pat = _linux_projects_path_pattern()
+    for form in (
+        "-home-mattm-glad-labs-website",
+        "~/.claude/projects/-home-mattm-glad-labs-website/memory/MEMORY.md",
+        "-home-mattm-glad-labs-website--claude-worktrees-foo-1a2b3c",
+        "-HOME-MATTM-glad-labs-website",  # casing must not matter
+    ):
+        assert pat.search(form), f"must fire on {form!r}"
+
+
+def test_linux_projects_path_does_not_match_generic_placeholder() -> None:
+    """Genericized examples must NOT fire — they're what the docs now use."""
+    pat = _linux_projects_path_pattern()
+    safe = [
+        "-home-alice-project",
+        "-home-<you>-<project>",
+        "/home/runner/work/poindexter",
+    ]
+    matched = [s for s in safe if pat.search(s)]
+    assert not matched, f"false positive on generic placeholders: {matched}"
+
+
+# ---------------------------------------------------------------------------
 # Windows home-path regex — source-escaped backslash form (2026-06-13).
 #
 # In Python source a Windows path is written with ESCAPED backslashes

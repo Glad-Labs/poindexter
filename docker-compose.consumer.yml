@@ -562,6 +562,12 @@ services:
     build:
       context: .
       dockerfile: scripts/Dockerfile.auto-embed
+      args:
+        # Must match the owner of ~/.claude/projects — scope dirs are mode
+        # 0700, so a uid mismatch silently ingests nothing. See
+        # scripts/Dockerfile.auto-embed.
+        EMBEDDER_UID: ${POINDEXTER_HOST_UID:-1000}
+        EMBEDDER_GID: ${POINDEXTER_HOST_GID:-1000}
     container_name: poindexter-auto-embed
     restart: unless-stopped
     environment:
@@ -572,9 +578,14 @@ services:
     volumes:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
-      - ${USERPROFILE:-.}/.claude/projects:/home/embedder/.claude/projects:ro
-      - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
-      - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
+      # ${USERPROFILE:-${HOME}} — matches docker-compose.local.yml. The old
+      # `:-.` fallback resolved to the compose *project directory* on any
+      # non-Windows host (USERPROFILE is Windows-only), so this silently
+      # mounted ./.claude/projects and ingested nothing.
+      - ${USERPROFILE:-${HOME}}/.claude/projects:/home/embedder/.claude/projects:ro
+      - ${USERPROFILE:-${HOME}}/.openclaw/workspace/memory:/memory/openclaw:ro
+      # HOME is /home/embedder (non-root user), not /root — see local compose.
+      - ${USERPROFILE:-${HOME}}/.gladlabs:/home/embedder/.gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

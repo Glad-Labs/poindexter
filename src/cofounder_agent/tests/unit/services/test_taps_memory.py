@@ -3,7 +3,10 @@
 Uses ``tmp_path`` to simulate a Claude projects + OpenClaw memory
 directory structure. Verifies:
 
-- Multi-scope discovery (every ``C--*/memory/`` directory is scanned)
+- Multi-scope discovery (every ``<scope>/memory/`` directory is scanned,
+  whatever the scope naming convention — Windows ``C--*`` or Linux
+  ``-home-*``; regression test for the 2026-07-20 Pop!_OS migration where
+  a hardcoded ``C--*`` glob silently matched zero scopes for 17 days)
 - Scope-aware source_ids (same-named file in two scopes produces
   distinct source_ids — regression test for the 2026-04-18 collision bug)
 - Chunking (files >MAX_CHARS yield multiple Documents with
@@ -14,7 +17,10 @@ directory structure. Verifies:
 
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -34,9 +40,46 @@ class TestDiscoverMemoryDirs:
         scopes = [scope for _, origin, scope in dirs if origin == "claude-code"]
         assert "C--users-alice" in scopes
         assert "C--WINDOWS-system32" in scopes
-        # Case-insensitive glob `C--*` matches `c--Users-...` too on Windows.
-        # On Linux the glob is case-sensitive so the lowercase scope may not match.
-        # Accept either outcome — the Phase B user is on Windows.
+        # Discovery keys off "has a memory/ subdir", not a name pattern, so
+        # casing no longer changes the outcome on any platform.
+        assert "c--Users-alice-website" in scopes
+
+    def test_finds_linux_scopes(self, tmp_path: Path):
+        """Linux scope dirs are discovered — the Pop!_OS migration regression.
+
+        The old ``projects_root.glob("C--*")`` encoded Windows scope naming.
+        After the migration re-keyed scopes to the Linux checkout path it
+        matched nothing, and the tap ingested zero files for 17 days while
+        still reporting a healthy run.
+        """
+        projects = tmp_path / "projects"
+        (projects / "-home-alice-project" / "memory").mkdir(parents=True)
+        (projects / "-home-alice-other-project" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir=str(projects),
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+        )
+
+        scopes = [scope for _, origin, scope in dirs if origin == "claude-code"]
+        assert "-home-alice-project" in scopes
+        assert "-home-alice-other-project" in scopes
+
+    def test_finds_windows_and_linux_scopes_together(self, tmp_path: Path):
+        """Back-compat: a host carrying both naming conventions gets both."""
+        projects = tmp_path / "projects"
+        (projects / "C--Users-alice-project" / "memory").mkdir(parents=True)
+        (projects / "-home-alice-project" / "memory").mkdir(parents=True)
+
+        dirs = _discover_memory_dirs(
+            claude_projects_dir=str(projects),
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+        )
+
+        scopes = {scope for _, _, scope in dirs}
+        assert scopes == {"C--Users-alice-project", "-home-alice-project"}
 
     def test_skips_scopes_without_memory_subdir(self, tmp_path: Path):
         projects = tmp_path / "projects"
@@ -117,6 +160,99 @@ class TestDiscoverMemoryDirs:
         scopes = {s for _, _, s in dirs}
         assert "C--Users-alice" in scopes
         assert "C--Users-alice-myproject" in scopes
+
+
+class TestDiscoveryFailsLoud:
+    """A tap that ingests nothing must say so — never return a quiet []."""
+
+    def test_allowlist_matching_no_scope_warns(self, tmp_path: Path, caplog):
+        """The exact shape of the 2026-07-20 outage: a stale allowlist.
+
+        ``memory_scope_allowlist='C--Users-<you>'`` survived the Pop!_OS
+        migration and filtered out every Linux scope. An empty result is
+        indistinguishable from "no memory files exist" unless it warns.
+        """
+        projects = tmp_path / "projects"
+        (projects / "-home-alice-project" / "memory").mkdir(parents=True)
+
+        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+            dirs = _discover_memory_dirs(
+                claude_projects_dir=str(projects),
+                openclaw_memory_dir="__skip__",
+                shared_context_dir="__skip__",
+                scope_allowlist="C--Users-alice",
+            )
+
+        assert dirs == []
+        assert "matched none of the 1 scope(s)" in caplog.text
+        # The operator needs the real scope names to fix the setting.
+        assert "-home-alice-project" in caplog.text
+
+    def test_no_scopes_at_all_warns(self, tmp_path: Path, caplog):
+        projects = tmp_path / "projects"
+        projects.mkdir()
+
+        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+            dirs = _discover_memory_dirs(
+                claude_projects_dir=str(projects),
+                openclaw_memory_dir="__skip__",
+                shared_context_dir="__skip__",
+            )
+
+        assert dirs == []
+        assert "no project scopes with a memory/ subdirectory" in caplog.text
+
+
+class TestDiscoveryPermissions:
+    """EACCES on one scope must not abort discovery of the others.
+
+    ``Path.is_dir()`` propagates EACCES (it only ignores ENOENT/ENOTDIR/
+    EBADF/ELOOP). Claude Code writes session scope dirs mode 0700, so a
+    container running under a different uid raises on the first one.
+    """
+
+    @pytest.mark.skipif(
+        os.geteuid() == 0, reason="root bypasses directory permission bits"
+    )
+    def test_unreadable_scope_is_skipped_not_fatal(self, tmp_path: Path, caplog):
+        projects = tmp_path / "projects"
+        (projects / "-home-alice-readable" / "memory").mkdir(parents=True)
+        locked = projects / "-home-alice-locked"
+        (locked / "memory").mkdir(parents=True)
+        locked.chmod(0o000)
+
+        try:
+            with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+                dirs = _discover_memory_dirs(
+                    claude_projects_dir=str(projects),
+                    openclaw_memory_dir="__skip__",
+                    shared_context_dir="__skip__",
+                )
+
+            scopes = [s for _, _, s in dirs]
+            assert scopes == ["-home-alice-readable"]
+            assert "permission denied" in caplog.text.lower()
+        finally:
+            locked.chmod(0o700)  # let tmp_path cleanup succeed
+
+    def test_unlistable_projects_root_returns_empty(self, tmp_path: Path, caplog):
+        """iterdir() raising must degrade to [], not propagate."""
+        projects = tmp_path / "projects"
+        projects.mkdir()
+
+        def _boom(self):
+            raise PermissionError(13, "Permission denied")
+
+        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+            with mock.patch.object(Path, "iterdir", _boom):
+                dirs = _discover_memory_dirs(
+                    claude_projects_dir=str(projects),
+                    openclaw_memory_dir="__skip__",
+                    shared_context_dir="__skip__",
+                )
+
+        assert dirs == []
+        assert "cannot list project scopes" in caplog.text
 
 
 class TestBuildSourceId:
