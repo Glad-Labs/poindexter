@@ -2254,6 +2254,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',
+    # A tap producing nothing means part of the RAG / semantic-recall corpus
+    # is going stale. Discord, not Telegram: it degrades recall but blocks
+    # neither the pipeline nor publishing (feedback_telegram_vs_discord). The
+    # 12h cooldown keeps a persistently dark tap to twice-daily rather than
+    # hourly, while still re-surfacing until an operator acts.
+    'findings.tap_zero_yield.delivery': 'discord',
+    'findings.tap_zero_yield.fallback': 'log_only',
+    'findings.tap_zero_yield.cooldown_minutes': '720',
+    'findings.tap_zero_yield.min_severity': 'warn',
     # Stale-batch reaper (reap_stale_topic_batches). A wedged open batch =
     # niche content-dark, so route the alert to the ops channel. severity is
     # 'warn' when the batch still wedges the niche (pages) and 'info' when the
@@ -2774,6 +2783,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # only bounds peak memory / round-trip granularity — it does not affect
     # dedup output.
     'tap_dedup_batch_size': '256',
+
+    # Emit a `tap_zero_yield` finding when an enabled tap's extract() yields
+    # no documents at all. Distinct from a healthy no-op: an unchanged source
+    # still yields its documents and reports them skipped, so zero *yield*
+    # means the source was unreachable, empty, or filtered out. This is the
+    # signal that was missing when the memory + claude_code_sessions taps ran
+    # dark for 17 days after the Pop!_OS migration (poindexter#988) — the
+    # auto-embed watchdog measures run completion, not coverage, so it stayed
+    # green the whole time.
+    'tap_zero_yield_finding_enabled': 'true',
 
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
@@ -3963,6 +3982,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_chunk_max_chars': {'owner': 'runner', 'value_type': 'integer'},
     'tap_dedup_batch_size': {'owner': 'runner', 'value_type': 'integer'},
     'tap_run_timeout_seconds': {'owner': 'runner', 'value_type': 'integer'},
+    'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'template_runner_progress_streaming': {'owner': 'template_runner', 'value_type': 'boolean'},
     'title_junk_regen_max_retries': {'owner': 'title_generation', 'value_type': 'integer'},
     'title_max_length': {'owner': 'title_generation', 'value_type': 'integer'},

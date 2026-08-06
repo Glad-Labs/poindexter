@@ -2701,6 +2701,203 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 731,
+      "type": "row",
+      "title": "Embedding Ingestion — corpus coverage",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 128
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 732,
+      "title": "Corpus staleness by source (age of newest row)",
+      "description": "poindexter_embeddings_age_seconds — seconds since the newest embeddings row per source_table. This is the flatline detector: a row COUNT can sit healthy-looking while ingestion is dead, which is exactly what happened when the memory and claude_code_sessions taps went dark for 17 days after the Pop!_OS migration (poindexter#988) — the count held at 507 and nothing was watching. Age climbs the moment a tap stops producing, whatever the cause. Expected steady state differs per source: brain/audit are continuous (minutes), memory hourly, claude_sessions ~2h, posts only moves when a post publishes — so read each series against its own baseline, not a single global threshold.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 129
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_embeddings_age_seconds",
+          "legendFormat": "{{source_table}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 733,
+      "title": "Embedding sources — rows and staleness",
+      "description": "Live per-source_table corpus state straight from the embeddings table. 'Stale' is advisory and deliberately generous (>48h) — it flags rot, not a missed beat. Sources with no writer at all (a one-off backfill never made recurring) show here as permanently stale, which is how the 'issues' rows sat untouched since 2026-04-02 without anyone noticing.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 138
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "stale": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "fresh": {
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "age_hours"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "age_hours",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT source_table,\n       COUNT(*) AS rows,\n       COUNT(DISTINCT source_id) AS distinct_sources,\n       MAX(created_at) AS newest,\n       ROUND(EXTRACT(EPOCH FROM (now() - MAX(created_at)))/3600.0, 1)\n         AS age_hours,\n       CASE WHEN now() - MAX(created_at) > interval '48 hours'\n            THEN 'stale' ELSE 'fresh' END AS state\n  FROM embeddings\n GROUP BY source_table\n ORDER BY age_hours DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 734,
+      "title": "Dark taps — zero-yield findings (7d)",
+      "description": "tap_zero_yield findings: an enabled tap ran fine but its extract() produced no documents at all. Distinct from a healthy no-op — an unchanged source still yields its documents and reports them skipped, so zero YIELD means the source was unreachable, empty, or filtered out. Emitted by services/taps/runner.py; routed to Discord on a 12h cooldown. Empty here is the healthy state.",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 147
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT details->'extra'->>'tap' AS tap,\n       COUNT(*) AS findings,\n       MAX(\"timestamp\") AS last_seen,\n       MIN(\"timestamp\") AS first_seen\n  FROM audit_log\n WHERE event_type = 'finding'\n   AND details->>'kind' = 'tap_zero_yield'\n   AND \"timestamp\" > now() - interval '7 days'\n GROUP BY 1\n ORDER BY last_seen DESC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

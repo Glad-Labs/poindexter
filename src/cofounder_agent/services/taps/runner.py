@@ -103,6 +103,75 @@ class TapStats:
         }
 
 
+def is_zero_yield(stats: TapStats) -> bool:
+    """True when an enabled tap's ``extract()`` produced **no documents**.
+
+    This is the signal that separates "broken" from "nothing new", which
+    the run summary alone cannot express. Compare two real lines from the
+    same healthy-looking run:
+
+    - ``posts   ok 0 embedded, 168 skipped, 0 failed``  — 168 documents
+      yielded, all unchanged since last run. Healthy.
+    - ``memory  ok 0 embedded,   0 skipped, 0 failed``  — the tap yielded
+      *nothing at all*. Its source is unreachable, empty, or filtered out.
+
+    Both report ``ok`` and ``0 embedded``. Only the second is a fault, and
+    it is the shape the memory + claude_code_sessions taps held for 17 days
+    after the Pop!_OS migration (poindexter#988) while the auto-embed
+    watchdog stayed green — it measures run completion, not coverage.
+
+    Disabled taps are excluded (deliberately off, not broken), as are taps
+    that already recorded an ``error`` — those surface through the failure
+    path and would otherwise be reported twice.
+    """
+    if not stats.enabled or stats.error:
+        return False
+    return (stats.embedded + stats.skipped + stats.failed) == 0
+
+
+def _emit_zero_yield_finding(stats: TapStats) -> None:
+    """Route a dark tap to the findings pipeline (Discord + Findings board).
+
+    ``warn``, not ``critical``: stale embeddings degrade semantic recall but
+    block neither the pipeline nor publishing, so this is Discord-routine
+    rather than a Telegram page (feedback_telegram_vs_discord). The stable
+    ``dedup_key`` lets the dispatcher collapse the hourly repeat — a tap
+    that stays dark should not re-page every run.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="tap_runner",
+            kind="tap_zero_yield",
+            title=f"Tap '{stats.name}' produced no documents",
+            body=(
+                f"The `{stats.name}` tap ran successfully but its extract() "
+                f"yielded zero documents, so nothing was embedded and nothing "
+                f"was even considered for embedding.\n\n"
+                f"This is distinct from a healthy no-op: a tap with unchanged "
+                f"content still yields its documents and reports them as "
+                f"skipped. Zero *yield* means the source was unreachable, "
+                f"empty, or filtered out entirely.\n\n"
+                f"Common causes: the source path is not mounted or is "
+                f"unreadable by the container's uid; a scope/allowlist filter "
+                f"no longer matches anything on disk; upstream credentials "
+                f"expired.\n\n"
+                f"Check `docker logs poindexter-auto-embed` for this tap's "
+                f"own warnings."
+            ),
+            severity="warn",
+            dedup_key=f"tap-zero-yield:{stats.name}",
+            extra={"tap": stats.name, "duration_s": round(stats.duration_s, 3)},
+        )
+    except Exception:  # noqa: BLE001 — observability must never break ingest
+        logger.warning(
+            "[TAP_RUNNER] failed to emit zero-yield finding for tap %s",
+            stats.name,
+            exc_info=True,
+        )
+
+
 @dataclass
 class RunSummary:
     """Top-level summary of a full runner pass."""
@@ -410,6 +479,7 @@ async def run_all(
     if tap_timeout_s is None:
         tap_timeout_s = float(_DEFAULT_TAP_TIMEOUT_S)
     dedup_batch_size = _DEFAULT_DEDUP_BATCH_SIZE
+    zero_yield_findings = True
     try:
         from services.site_config import SiteConfig
 
@@ -421,6 +491,7 @@ async def run_all(
                 _sc.get_int("tap_run_timeout_seconds", _DEFAULT_TAP_TIMEOUT_S)
             )
         dedup_batch_size = _sc.get_int("tap_dedup_batch_size", _DEFAULT_DEDUP_BATCH_SIZE)
+        zero_yield_findings = _sc.get_bool("tap_zero_yield_finding_enabled", True)
     except Exception:  # noqa: BLE001 — config read is best-effort
         # Visible (warning, not debug): a failed settings read means the DB
         # read path hiccuped, which is worth surfacing even though ingest
@@ -480,6 +551,8 @@ async def run_all(
             "Tap %s: %d embedded, %d skipped, %d failed (%.2fs)",
             stats.name, stats.embedded, stats.skipped, stats.failed, stats.duration_s,
         )
+        if zero_yield_findings and is_zero_yield(stats):
+            _emit_zero_yield_finding(stats)
 
     summary.duration_s = time.monotonic() - start
     return summary

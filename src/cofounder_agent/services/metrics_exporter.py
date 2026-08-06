@@ -234,6 +234,17 @@ EMBEDDINGS_MISSING_POSTS = Gauge(
     "Published posts without a corresponding embeddings row (source_table='posts')",
 )
 
+# poindexter#989: a *count* can look healthy while ingestion is dead —
+# EMBEDDINGS_TOTAL{source_table="memory"} sat flat at 507 for 17 days after
+# the Pop!_OS migration broke the memory + session taps, and nothing was
+# watching for flatness. Age of the newest row is the direct staleness
+# signal: it climbs the moment a tap stops producing, whatever the reason.
+EMBEDDINGS_AGE_SECONDS = Gauge(
+    "poindexter_embeddings_age_seconds",
+    "Seconds since the newest embeddings row per source_table (ingestion staleness)",
+    ["source_table"],
+)
+
 POSTS_TOTAL = Gauge(
     "poindexter_posts_total",
     "Total posts, labeled by status",
@@ -747,14 +758,31 @@ async def refresh_metrics(
         OLLAMA_REACHABLE.set(0)
         OLLAMA_MODEL_COUNT.set(0)
 
-    # Embeddings by source_table + per-post coverage gap.
+    # Embeddings by source_table: row count + ingestion staleness. One query
+    # for both so the two series can never disagree about which source_tables
+    # exist. ``.clear()`` first because labeled Gauges are never auto-reset —
+    # a source_table that stops appearing would otherwise freeze at its last
+    # value and read as healthy forever (the poindexter#576 lesson).
     try:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT source_table, COUNT(*) AS n FROM embeddings GROUP BY source_table"
+                """
+                SELECT source_table,
+                       COUNT(*) AS n,
+                       EXTRACT(EPOCH FROM (now() - MAX(created_at))) AS age_seconds
+                  FROM embeddings
+                 GROUP BY source_table
+                """
             )
+        EMBEDDINGS_TOTAL.clear()
+        EMBEDDINGS_AGE_SECONDS.clear()
         for r in rows:
-            EMBEDDINGS_TOTAL.labels(source_table=r["source_table"] or "unknown").set(r["n"])
+            source_table = r["source_table"] or "unknown"
+            EMBEDDINGS_TOTAL.labels(source_table=source_table).set(r["n"])
+            if r["age_seconds"] is not None:
+                EMBEDDINGS_AGE_SECONDS.labels(source_table=source_table).set(
+                    float(r["age_seconds"])
+                )
     except Exception as e:
         _note_refresh_error("embeddings", e)
 
