@@ -11,7 +11,7 @@
     "@cloudflare/workers-types": "^4.20240924.0",
     "esbuild": "^0.28.1",
     "vitest": "^3.2.6",
-    "wrangler": "^4.102.0"
+    "wrangler": "^4.118.0"
   },
   "overrides": {
     "esbuild": "$esbuild"
