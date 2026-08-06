@@ -38,6 +38,14 @@ COPY src/cofounder_agent/plugins /app/plugins
 COPY src/cofounder_agent/services /app/services
 COPY src/cofounder_agent/modules /app/modules
 COPY src/cofounder_agent/schemas /app/schemas
+#   - utils/ (poindexter#989): the tap runner emits tap_zero_yield findings
+#     via utils.findings. Without this the import raises ModuleNotFoundError
+#     inside the sidecar, the runner's best-effort guard swallows it, and the
+#     detection silently no-ops in the one process where taps actually run.
+#     utils/ is a namespace package (no __init__.py), so importing
+#     utils.findings pulls in only that module + services.audit_log — both
+#     already present. Nothing FastAPI-shaped is loaded.
+COPY src/cofounder_agent/utils /app/utils
 COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/"

@@ -235,6 +235,20 @@ async def main() -> None:
         await http.aclose()
         return
 
+    # Wire the global AuditLogger before running any tap. Without this every
+    # audit_log_bg() call from this process — including the tap_zero_yield
+    # findings that flag a tap capturing nothing (poindexter#989) — is DROPPED
+    # at the sink, because emit_finding routes through the global logger and
+    # the sidecar is a separate process from the worker that normally
+    # initialises it. The drop is logged loudly by services.audit_log, but a
+    # detection signal that never leaves the process is no detection at all.
+    try:
+        from services.audit_log import init_global_audit_logger
+
+        init_global_audit_logger(pool)
+    except Exception as e:  # noqa: BLE001 — observability must not block ingest
+        logger.warning("Could not initialise the audit logger: %s", e, exc_info=True)
+
     local_conn = None
     try:
         from services.taps.runner import run_all
