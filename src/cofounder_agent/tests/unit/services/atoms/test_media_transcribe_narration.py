@@ -199,7 +199,7 @@ async def test_transcribe_one_threshold_from_site_config():
 async def test_run_transcribes_both_lanes(monkeypatch):
     seen = []
 
-    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+    async def _fake_one(*, audio_path, script, caption_text="", task_id, label, site_config):
         seen.append((label, audio_path, script))
         return f"/tmp/{task_id}_{label}.srt"
 
@@ -233,7 +233,7 @@ async def test_run_diffs_against_voiced_text_script_plus_cta(monkeypatch):
     behind the caption_fidelity 0.00 alerts."""
     seen = {}
 
-    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+    async def _fake_one(*, audio_path, script, caption_text="", task_id, label, site_config):
         seen[label] = script
         return f"/tmp/{task_id}_{label}.srt"
 
@@ -263,3 +263,98 @@ def test_atom_meta_shape():
     assert ATOM_META.name == "media.transcribe_narration"
     assert ATOM_META.requires == ("task_id",)
     assert set(ATOM_META.produces) == {"long_caption_srt_path", "short_caption_srt_path"}
+
+
+# ---------------------------------------------------------------------------
+# Script-alignment (2026-08-03): burned captions read the SCRIPT text on ASR
+# timings — Whisper's homophones ("gait") and phonetic names ("PHY 4") never
+# reach the video.
+# ---------------------------------------------------------------------------
+
+
+def _aligned_provider(monkeypatch, segments):
+    from plugins.caption_provider import CaptionResult
+
+    result = CaptionResult(
+        success=True,
+        segments=segments,
+        srt_text="1\n00:00:00,000 --> 00:00:04,000\n" + segments[0].text + "\n",
+        error=None,
+    )
+
+    class _P:
+        async def transcribe(self, *, audio_path, task_id):
+            return result
+
+    monkeypatch.setattr(
+        media_transcribe_narration, "get_caption_provider", lambda sc: _P(),
+    )
+    return result
+
+
+@pytest.mark.asyncio
+async def test_alignment_rewrites_captions_from_script(tmp_path, monkeypatch):
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=4.0, text="the PHY 4 model guards the gait"),
+    ])
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script="the Phi-4 model guards the gate",
+        caption_text="The Phi-4 model guards the gate.",
+        task_id="t-align", label="long", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    assert "Phi-4" in content
+    assert "gate." in content
+    assert "PHY" not in content
+    assert "gait" not in content
+
+
+@pytest.mark.asyncio
+async def test_alignment_disabled_keeps_asr_text(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=4.0, text="the PHY 4 model guards the gait"),
+    ])
+    sc = SimpleNamespace(
+        get=lambda key, default=None: default,
+        get_bool=lambda key, default=True: (
+            False if key == "media.caption.script_alignment_enabled" else default
+        ),
+    )
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script="the Phi-4 model guards the gate",
+        caption_text="The Phi-4 model guards the gate.",
+        task_id="t-alignoff", label="long", site_config=sc,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    assert "PHY 4" in content  # legacy ASR text preserved
+
+
+@pytest.mark.asyncio
+async def test_alignment_low_match_falls_back_to_asr(tmp_path, monkeypatch):
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=4.0, text="totally unrelated audio content here"),
+    ])
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script="quarterly numbers tell a different story",
+        caption_text="Quarterly numbers tell a different story.",
+        task_id="t-alignlow", label="long", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    assert "unrelated audio" in content  # ASR kept — bad alignment never burned

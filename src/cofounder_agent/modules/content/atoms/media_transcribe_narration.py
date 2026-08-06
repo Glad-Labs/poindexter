@@ -122,6 +122,7 @@ async def _transcribe_one(
     *,
     audio_path: str,
     script: str,
+    caption_text: str = "",
     task_id: Any,
     label: str,
     site_config: Any,
@@ -129,9 +130,13 @@ async def _transcribe_one(
     """One ASR pass over a single lane's narration → its SRT caption path.
 
     ``script`` is the fidelity reference the ASR transcript is diffed against —
-    in production the fully **voiced** text (labels stripped + CTA outro),
-    composed by ``run`` via ``compose_narration_text`` so it matches what TTS
-    actually said, not the raw script.
+    in production the fully **voiced** text (labels stripped + CTA outro +
+    the TTS speech-normalization pass), composed by ``run`` so it matches
+    what TTS actually said. ``caption_text`` is the CLEAN written sibling
+    (same composition, no speech pass): when script-alignment is enabled the
+    burned captions are rebuilt from it on the ASR timings, so viewers read
+    "Phi-4" / "CI/CD" / "gate" instead of Whisper's phonetic guesses
+    ("PHY 4", "gait" — the 2026-08-03 operator finding).
 
     Returns the SRT path, or ``""`` on any no-op/failure (no audio, whisper
     unavailable, write error). Best-effort — never raises. Emits per-lane
@@ -189,10 +194,55 @@ async def _transcribe_one(
         )
         return ""
 
+    # Script-alignment (2026-08-03): the captions' TEXT comes from the known
+    # script; ASR contributes only the timings. Whisper transcribing the TTS
+    # audio wrote homophones ("gait") and phonetic product names ("PHY 4")
+    # into burned captions — but we synthesized that audio from exact text, so
+    # map the clean written script onto the ASR segments instead. Gated on
+    # alignment quality: a poor match (heavy TTS dropout, wrong audio) keeps
+    # the ASR captions rather than smearing script text across wrong timings.
+    srt_text = result.srt_text
+    align_enabled = True
+    min_ratio = 0.5
+    if site_config is not None:
+        try:
+            align_enabled = site_config.get_bool(
+                "media.caption.script_alignment_enabled", True,
+            )
+        except Exception:  # noqa: BLE001 — settings read must not kill captions
+            align_enabled = True
+        try:
+            min_ratio = float(site_config.get(
+                "media.caption.alignment_min_ratio", 0.5,
+            ))
+        except (TypeError, ValueError):
+            min_ratio = 0.5
+    if align_enabled and caption_text and result.segments:
+        from services.caption_align import align_script_to_segments, segments_to_srt
+
+        aligned, fraction = align_script_to_segments(
+            list(result.segments), caption_text,
+        )
+        if fraction >= min_ratio:
+            rebuilt = segments_to_srt(aligned)
+            if rebuilt:
+                srt_text = rebuilt
+                logger.info(
+                    "[media.transcribe_narration] task=%s lane=%s captions "
+                    "aligned to script (match %.2f, %d segments)",
+                    task_id, label, fraction, len(aligned),
+                )
+        else:
+            logger.info(
+                "[media.transcribe_narration] task=%s lane=%s alignment match "
+                "%.2f < %.2f — keeping ASR captions",
+                task_id, label, fraction, min_ratio,
+            )
+
     srt_path = f"{tempfile.gettempdir()}/captions_{task_id}_{label}.srt"
     try:
         with open(srt_path, "w", encoding="utf-8") as f:
-            f.write(result.srt_text)
+            f.write(srt_text)
     except OSError as exc:
         logger.warning(
             "[media.transcribe_narration] task=%s lane=%s failed to write SRT %s: %s",
@@ -282,20 +332,23 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             return text
         return _normalize_for_speech(text, site_config=site_config)
 
+    long_caption_text = compose_narration_text(
+        script=long_script, cta_key="media.cta.video", site_config=site_config,
+    )
+    short_caption_text = compose_narration_text(
+        script=state.get("short_summary_script") or "",
+        cta_key="media.cta.video_short", site_config=site_config,
+    )
     long_srt = await _transcribe_one(
         audio_path=state.get("long_narration_audio_path") or "",
-        script=_tts_input(compose_narration_text(
-            script=long_script, cta_key="media.cta.video",
-            site_config=site_config,
-        )),
+        script=_tts_input(long_caption_text),
+        caption_text=long_caption_text,
         task_id=task_id, label="long", site_config=site_config,
     )
     short_srt = await _transcribe_one(
         audio_path=state.get("short_narration_audio_path") or "",
-        script=_tts_input(compose_narration_text(
-            script=state.get("short_summary_script") or "",
-            cta_key="media.cta.video_short", site_config=site_config,
-        )),
+        script=_tts_input(short_caption_text),
+        caption_text=short_caption_text,
         task_id=task_id, label="short", site_config=site_config,
     )
     return {

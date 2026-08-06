@@ -1955,6 +1955,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # ``caption_fidelity`` finding fires (likely a TTS dropout / truncation).
     # Advisory only — never fails the render.
     'media.caption.fidelity_min_ratio': '0.80',
+    # Script-alignment for burned captions (2026-08-03): rebuild the SRT text
+    # from the KNOWN narration script mapped onto Whisper's segment timings —
+    # ASR contributes timings only. Kills the homophone/phonetic caption class
+    # ("gait" for gate, "PHY 4" for Phi-4) at the source. false ⇒ legacy
+    # behaviour (captions are the raw ASR transcript).
+    'media.caption.script_alignment_enabled': 'true',
+    # Minimum ASR↔script token-match fraction for the alignment to rewrite the
+    # captions. Below this (heavy TTS dropout / wrong audio) the ASR text is
+    # kept — a bad alignment smears script text across wrong timings, which is
+    # worse than a homophone.
+    'media.caption.alignment_min_ratio': '0.5',
     # Gate for the Stage-2 media QA frame human-detection check
     # (media.qa, Plan 6 #1193). When 'true', a midpoint frame of each
     # rendered video is vision-checked for a photorealistic human (policy
@@ -3602,6 +3613,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'max_log_size_mb': {'value_type': 'integer'},
     'mcp_http_probe_min_consecutive_failures': {'owner': 'mcp_http_probe', 'value_type': 'integer'},
     'media.caption.fidelity_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
+    'media.caption.script_alignment_enabled': {'owner': 'media_transcribe_narration', 'value_type': 'boolean'},
+    'media.caption.alignment_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
     'media.cta.podcast': {'value_type': 'string'},
     'media.cta.video': {'value_type': 'string'},
     'media.cta.video_short': {'value_type': 'string'},
