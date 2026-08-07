@@ -266,7 +266,19 @@ async def main() -> None:
 
         logger.info("--- Tap runner summary ---")
         for ts in summary.taps:
-            status = "disabled" if not ts.enabled else "ok"
+            # Three distinct states, and they must LOOK distinct here. This is
+            # the operator-facing log, and a throttled tap reports 0/0/0 —
+            # byte-identical to the "source went dark" shape that
+            # `tap_zero_yield` exists to catch (poindexter#989). The finding
+            # logic already excludes not-due taps; printing them as plain "ok"
+            # would still teach a human reading auto-embed.log that a dark tap
+            # is normal. `not-due` is the state, not an absence of activity.
+            if not ts.enabled:
+                status = "disabled"
+            elif not getattr(ts, "due", True):
+                status = "not-due"
+            else:
+                status = "ok"
             logger.info(
                 "  %-20s %s %d embedded, %d skipped, %d failed (%.2fs)",
                 ts.name, status, ts.embedded, ts.skipped, ts.failed, ts.duration_s,
