@@ -184,6 +184,16 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     hard unload declines (``nothing_to_reclaim``) when the pool is below the
     ``WAN_HARD_UNLOAD_MIN_RESERVED_MB`` floor, so repeat reclaims are cheap.
 
+    stable-audio was added 2026-08-07 (Glad-Labs/poindexter#999) — the same
+    defect a third time, and the most expensive because this service had no
+    hard-unload contract AND no seat here, so nothing could reach it.
+    Measured: **10,952 MiB held on the render GPU with ``model_loaded:
+    false``**; soft ``/unload`` freed **3 MiB**, a process restart freed
+    **10.96 GiB**. wan peaks at 25.4 GiB on a 31.8 GiB card, so that ghost by
+    itself made every hero render arithmetically impossible — and it is why
+    ``vram_reclaim_ineffective`` kept firing while this ladder dutifully
+    evicted four services that between them held almost nothing.
+
     Each lever is isolated: the callees are best-effort and catch internally,
     but that made "never raises" an incidental property of their current
     implementations rather than a guarantee of this one. An exception
@@ -202,6 +212,7 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
         ("image-gen", lambda: gpu._unload_image_gen(hard=True)),
         ("chatterbox", gpu._unload_chatterbox),
         ("wan", lambda: gpu._unload_wan(hard=True)),
+        ("stable-audio", lambda: gpu._unload_stable_audio(hard=True)),
     )
     for name, call in levers:
         try:

@@ -70,6 +70,13 @@ HOST_DB_URL = _resolve_db_url()
 
 PORT = int(os.getenv("STABLE_AUDIO_PORT", "9839"))
 IDLE_TIMEOUT = 300        # seconds — unload after 5min idle so other GPU tasks run
+# Reserved-pool floor for the process-exit reclaim (poindexter#999). Mirrors
+# WAN_HARD_UNLOAD_MIN_RESERVED_MB / image_gen_hard_unload_min_reserved_mb —
+# env, not app_settings, because this server must be able to reclaim VRAM
+# without a reachable DB (same posture as wan).
+HARD_UNLOAD_MIN_RESERVED_MB = int(
+    os.getenv("STABLE_AUDIO_HARD_UNLOAD_MIN_RESERVED_MB", "512")
+)
 DEGRADED_POLL_MIN = 5     # seconds — fast heal on boot race
 DEGRADED_POLL_MAX = 60    # seconds — max retry interval
 HEALTHY_POLL = 60         # seconds — idle heartbeat
@@ -97,6 +104,11 @@ class _State:
         self.degraded: bool = False
         self.degraded_reason: str | None = None
         self.next_retry_delay: float = DEGRADED_POLL_MIN
+        # Requests currently executing (or streaming their response). The
+        # hard unload must never exit the process while one is in flight —
+        # poindexter#992 cost every hero clip of 2026-08-06/-07 exactly that
+        # way on the wan-server.
+        self.inflight: int = 0
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -197,6 +209,52 @@ def _unload_model():
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             logger.info("[MODEL] VRAM freed")
+
+
+def _hard_exit_if_reserved_pool(*, quiet_skip: bool = False) -> dict[str, Any]:
+    """Floor-gated process exit (poindexter#999). Caller must have already
+    soft-unloaded, so ``memory_allocated`` is ~0 by construction and the gate
+    measures ``memory_reserved`` — the caching-allocator pool that ONLY a
+    process exit returns to the host.
+
+    This is the whole fix. ``_unload_model`` drops the model objects and calls
+    ``empty_cache()``, which returns nothing: measured 2026-08-07, this server
+    sat at **10,952 MiB on the render GPU with ``model_loaded: false``**, a
+    soft ``/unload`` freed **3 MiB**, and a process restart freed **10.96 GiB**.
+    Because the reclaim ladder had never heard of this service, that 11 GiB was
+    invisible to every lever in the system — wan needed 25.4 GiB on a 31.8 GiB
+    card and OOM'd against a ghost.
+
+    Below the floor: no exit (``quiet_skip`` silences the log for the 10s
+    watchdog cadence). At or above: flush + ``os._exit(0)``; Docker's restart
+    policy revives the server and it lazy-loads on the next ``/generate``.
+    """
+    if not torch.cuda.is_available():
+        return {"status": "nothing_to_reclaim", "vram_reserved_mb": 0,
+                "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB}
+    reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
+    if reserved_mb < HARD_UNLOAD_MIN_RESERVED_MB:
+        if not quiet_skip:
+            logger.info(
+                "[HARD UNLOAD] skipped — %d MB reserved is below the %d MB "
+                "floor; exiting would reclaim nothing and cost a cold reload "
+                "on the next render",
+                reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+            )
+        return {
+            "status": "nothing_to_reclaim",
+            "vram_reserved_mb": reserved_mb,
+            "min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
+        }
+    logger.warning(
+        "[HARD UNLOAD] exiting process to return the CUDA context to the host "
+        "(vram_reserved=%d MB >= %d MB floor); Docker restart policy brings "
+        "it back", reserved_mb, HARD_UNLOAD_MIN_RESERVED_MB,
+    )
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+    return {"status": "exiting"}  # unreachable outside tests
 
 
 def _load_model() -> bool:
@@ -333,11 +391,39 @@ async def health():
         "model_loaded": _state.model is not None,
         "degraded_reason": _state.degraded_reason,
         "last_used": _state.last_used,
+        "inflight": _state.inflight,
+        # The number that mattered and wasn't visible (poindexter#999): this
+        # server reported model_loaded=false while holding 10,952 MiB, so
+        # "is it holding VRAM?" was unanswerable without nvidia-smi and a PID
+        # lookup. vram_reserved_mb is what the hard-unload floor gates on.
+        "vram_reserved_mb": (
+            torch.cuda.memory_reserved(0) // 1024 // 1024
+            if torch.cuda.is_available() else 0
+        ),
+        "hard_unload_min_reserved_mb": HARD_UNLOAD_MIN_RESERVED_MB,
     }
 
 
 @app.post("/generate")
 async def generate(req: GenerateRequest):
+    """In-flight bracket around the real handler (poindexter#999).
+
+    Wraps rather than inlines so the counter covers the FileResponse stream
+    too: FastAPI returns from the handler before the body is sent, so a
+    counter decremented inside would let a hard unload exit mid-stream and
+    hand the caller a dropped connection on a render that actually succeeded.
+    ``last_used`` is stamped on the way OUT for the same reason — the idle
+    window must start when the response is done, not when inference ended.
+    """
+    _state.inflight += 1
+    try:
+        return await _generate_inner(req)
+    finally:
+        _state.last_used = time.monotonic()
+        _state.inflight -= 1
+
+
+async def _generate_inner(req: GenerateRequest):
     if _state.degraded:
         raise HTTPException(
             status_code=503,
@@ -394,9 +480,45 @@ async def generate(req: GenerateRequest):
     )
 
 
+class UnloadRequest(BaseModel):
+    """Body for ``POST /unload``. ``hard`` opts into the process-exit path."""
+
+    hard: bool = False
+
+
 @app.post("/unload")
-async def unload():
+async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
+    """Manual VRAM release — called by the worker's GPU reclaim ladder.
+
+    Soft (default, no body or ``{"hard": false}``): drop the model +
+    ``empty_cache()`` — the pre-existing behaviour, unchanged.
+
+    Hard (``{"hard": true}``, poindexter#999): also exit the process. This is
+    the only thing that actually returns the reserved pool + CUDA context;
+    measured on this server, a soft unload freed 3 MiB where a process exit
+    freed 10.96 GiB. Gated on the reserved pool clearing
+    ``STABLE_AUDIO_HARD_UNLOAD_MIN_RESERVED_MB`` so repeat reclaims are cheap
+    (the image-gen lesson: ~24 consecutive no-op exits before its gate).
+    """
+    # Never unload out from under a live generation. The reclaim ladder calls
+    # this with hard=True whenever the render-GPU gate looks unhealthy — and a
+    # generation in progress IS part of that unhealthy-looking state. Obeying
+    # would kill the very GPU work the reclaim exists to make room for, which
+    # is precisely how the wan-server discarded every hero clip on
+    # 2026-08-06/-07 (poindexter#992). Declining is strictly better: the
+    # reclaim wants VRAM to START work, and the work already running is what
+    # the VRAM is for.
+    if _state.inflight > 0:
+        logger.warning(
+            "[UNLOAD] declining %s unload — %d generation(s) in flight",
+            "hard" if (req and req.hard) else "soft", _state.inflight,
+        )
+        return {"status": "busy_generation_in_flight",
+                "inflight": _state.inflight}
+
     _unload_model()
+    if req is not None and req.hard:
+        return {"status": "unloaded", **_hard_exit_if_reserved_pool()}
     return {"status": "unloaded"}
 
 
@@ -418,14 +540,21 @@ async def _watchdog():
     while True:
         await asyncio.sleep(10)
 
-        # Idle unload
+        # Idle unload. The second stage is what actually returns VRAM to the
+        # card (poindexter#999): without it this server sat at 10,952 MiB with
+        # model_loaded=false because dropping the objects leaves the reserved
+        # pool behind — invisible to every reclaim lever and, since nothing
+        # else could touch it, a permanent 11 GiB tax on the render GPU.
+        # Self-driven so it heals without waiting for a consumer to notice.
         if (
-            _state.model is not None
+            _state.inflight == 0
             and _state.last_used > 0
             and (time.monotonic() - _state.last_used) > IDLE_TIMEOUT
         ):
-            logger.info("[WATCHDOG] Idle timeout — unloading model")
-            _unload_model()
+            if _state.model is not None:
+                logger.info("[WATCHDOG] Idle timeout — unloading model")
+                _unload_model()
+            _hard_exit_if_reserved_pool(quiet_skip=True)
 
         # Self-heal from degraded state
         if _state.degraded:

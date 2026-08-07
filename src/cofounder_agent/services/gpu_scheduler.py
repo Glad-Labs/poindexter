@@ -1574,6 +1574,58 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
+    async def _unload_stable_audio(self, hard: bool = False):
+        """Tell the stable-audio server to release its VRAM (poindexter#999).
+
+        The third instance of one defect: its idle unloader drops the model
+        objects but the process keeps the caching-allocator pool, and unlike
+        wan / image-gen it had no hard-unload contract AND no seat on the
+        reclaim ladder — so nothing in the system could reach it. Measured
+        2026-08-07: **10,952 MiB held on the render GPU with
+        ``model_loaded: false``**; a soft ``/unload`` freed **3 MiB**, a
+        process restart freed **10.96 GiB**. wan needs 25.4 GiB on a 31.8 GiB
+        card, so that ghost alone made every hero render impossible and
+        produced the "VRAM reclaim freed nothing" findings — the ladder was
+        faithfully evicting four services that between them held almost
+        nothing.
+
+        ``hard=True`` asks the server to exit after unloading (same contract
+        as wan / image-gen, including the ``nothing_to_reclaim`` decline below
+        its floor); Docker's restart policy brings it back and it lazy-loads
+        on the next ``/generate``.
+
+        URL resolution reuses the provider's own chain so the reclaim hits the
+        exact server a render will.
+        """
+        from services.audio_gen_providers.stable_audio_open import (
+            _resolve_server_url,
+        )
+
+        base = _resolve_server_url({}, _sc()).rstrip("/")
+        try:
+            client = self._get_http_client()
+            kwargs: dict = {"timeout": 10}
+            if hard:
+                kwargs["json"] = {"hard": True}
+            resp = await client.post(f"{base}/unload", **kwargs)
+            if resp.status_code == 200:
+                logger.info(
+                    "[GPU] stable-audio unloaded via /unload endpoint%s (%s)",
+                    " (hard)" if hard else "",
+                    (getattr(resp, "text", "") or "")[:120],
+                )
+        except Exception as exc:
+            # silent-ok: identical posture to _unload_wan / _unload_image_gen —
+            # for hard=True a reset connection IS the reclaim working
+            # (os._exit(0) fires before uvicorn flushes), and for soft the
+            # server being idle-down between renders is the common case.
+            logger.debug(
+                "[GPU] stable-audio /unload call failed (%s): %s: %s",
+                "expected — hard unload may exit before responding" if hard
+                else "server likely offline",
+                type(exc).__name__, exc,
+            )
+
     @property
     def is_busy(self) -> bool:
         return self._lock.locked()

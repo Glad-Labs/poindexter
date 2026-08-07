@@ -758,3 +758,50 @@ async def test_budget_zero_never_unclaims():
         await job.run(pool, {"_site_config": _sc_gated(media_pipeline_unclaim_max="0")})
     assert pool.sql_matching("media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1")[0][1] == ("a", 0)
     assert emit_mock.call_args.kwargs["kind"] == "media_unclaim_budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_attempt_vram_reclaim_hard_unloads_stable_audio():
+    """poindexter#999 — the same defect a third time, and the most expensive
+    because this service had NO hard-unload contract AND no seat on the ladder,
+    so nothing in the system could reach it.
+
+    Measured 2026-08-07: 10,952 MiB held on the render GPU with
+    ``model_loaded: false``; soft /unload freed 3 MiB, a process restart freed
+    10.96 GiB. wan peaks at 25.4 GiB on a 31.8 GiB card, so that ghost alone
+    made every hero render arithmetically impossible — and it is why
+    vram_reclaim_ineffective kept firing while this ladder faithfully evicted
+    four services that between them held almost nothing.
+
+    Hard, not soft: what squats is the caching-allocator pool + CUDA context,
+    which only a process exit returns (that is the 3 MiB vs 10.96 GiB above).
+    """
+    from services.gpu_scheduler import gpu as real_gpu
+
+    stable_audio_mock = AsyncMock()
+    with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
+         patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
+         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
+         patch.object(real_gpu, "_unload_wan", AsyncMock()), \
+         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    stable_audio_mock.assert_awaited_once_with(hard=True)
+
+
+@pytest.mark.asyncio
+async def test_reclaim_lever_isolation_covers_stable_audio():
+    """The ladder isolates each lever so an early failure can't skip a later
+    one. stable-audio is LAST, so it is the lever most exposed to that bug —
+    and the one carrying the most VRAM. Pin it: every earlier lever raising
+    must still leave stable-audio called."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    stable_audio_mock = AsyncMock()
+    boom = AsyncMock(side_effect=RuntimeError("lever exploded"))
+    with patch.object(real_gpu, "_unload_ollama_models", boom), \
+         patch.object(real_gpu, "_unload_image_gen", boom), \
+         patch.object(real_gpu, "_unload_chatterbox", boom), \
+         patch.object(real_gpu, "_unload_wan", boom), \
+         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    stable_audio_mock.assert_awaited_once_with(hard=True)

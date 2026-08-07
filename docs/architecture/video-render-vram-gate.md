@@ -48,6 +48,24 @@ The gate alone only _prevents_ the lockup — it doesn't free anything, so with 
 
    The **wan rung** (poindexter#962, 2026-08-01) exists because wan's own idle unloader frees only the pipeline _objects_: the process keeps its multi-GB CUDA reserved pool until exit — observed **10,240 MiB still held ~6.5 h after the last render**, pinning the gate under its floor all night with no lever able to touch it. `POST /unload {"hard": true}` mirrors image-gen's contract exactly: measures `memory_reserved` (allocated is ~0 by construction after the object drop), declines with `nothing_to_reclaim` below the `WAN_HARD_UNLOAD_MIN_RESERVED_MB` floor (default 512, env — the wan-server is deliberately DB-free), else exits so Docker's `restart: unless-stopped` revives it cold. `scripts/wan-server.py` is **baked into its image** — activating a change there needs `start-stack.sh build wan-server`, not a restart.
 
+### The ghost on the ladder (poindexter#999, 2026-08-07)
+
+`stable-audio` — the SFX server — was squatting **~11 GiB on the render GPU** with `"model_loaded": false`, and no lever in the system could touch it: its `/unload` was soft-only, and it had never been added to `_attempt_vram_reclaim`.
+
+| step                      | GPU0                           |
+| ------------------------- | ------------------------------ |
+| before                    | 13071 MiB                      |
+| after soft `POST /unload` | 13068 MiB — **freed 3 MiB**    |
+| after process restart     | 2107 MiB — **freed 10.96 GiB** |
+
+This is the same defect as wan (#962) and image-gen before it — dropping the model objects returns nothing, because what squats is torch's caching-allocator pool plus the CUDA context, and only a process exit returns those. It is the third instance, so **treat it as a class, not an incident**: any GPU sidecar that lazy-loads a model needs the hard-unload contract _and_ a seat on the ladder, or it becomes invisible dead weight.
+
+It also explains the `vram_reclaim_ineffective` findings. wan peaks at **25.4 GiB** (measured, production geometry 480x832 x117f x50steps — 144.1s, matching the live server's logged 147.3s / 147.8s renders) on a 31.8 GiB card. With an 11 GiB ghost the arithmetic was 36.4 GiB on a 31.8 GiB card: **impossible**, and the reclaim reported "freed nothing" because it was dutifully evicting four services that between them held almost nothing.
+
+Fixed by mirroring wan's contract exactly — floor-gated `os._exit(0)` behind `{"hard": true}` (`STABLE_AUDIO_HARD_UNLOAD_MIN_RESERVED_MB`, default 512), the in-flight decline from #992 so the reclaim can never kill a render it is trying to make room for, a self-driven hard exit on the idle path, and `vram_reserved_mb` + `inflight` on `/health` so the next squat is one curl away instead of an nvidia-smi PID hunt.
+
+> **Measured, not computed.** CPU offload was evaluated as an alternative (`enable_model_cpu_offload`): it does work now that the old ~23 GB WSL RAM ceiling is gone, cutting wan's peak to **15.5 GiB** — but at **324.8s vs 144.1s**, a 2.25× penalty. Reclaiming the ghost buys more headroom for free, so offload stays unused. Keep it in mind only for a card that genuinely cannot be cleared.
+
 ### Two-phase render order (poindexter#966, 2026-08-01)
 
 The per-clip pre-hero unload above turned out to need the render order #907 originally proposed. The render pass was sequential, so a **mid-list** hero evicted image-gen while ~24 GB of wan crowded the card — every later image-gen-family shot, and every later hero's own init still, failed deterministically into a Pexels substitute (task e68e4fe8 rendered twice, substituting the identical 4 shots both times; QA can't see it because substitutes are real footage). `_render_pass` (`shot_list_renderer.py`) now runs two VRAM-coherent phases: **still phase** — every non-hero shot plus every hero's image-gen init still, in list order, with image-gen resident throughout; **hero phase** — each pre-rendered still animated via wan (`_render_hero_still` / `_animate_hero`). The first animation's hard-unload now fires when image-gen has no work left in the pass; later heroes' unload calls no-op via the `nothing_to_reclaim` decline.
