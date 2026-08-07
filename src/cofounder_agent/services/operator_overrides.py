@@ -53,8 +53,20 @@ OPERATOR_MODEL_PINS: dict[str, str] = {
     "preferred_ollama_model": "gemma-4-31B-it-qat:latest",
     # glm-4.7-5090 — custom RTX 5090 fine-tune (pipeline architect).
     "pipeline_architect_model": "ollama/glm-4.7-5090:latest",
-    # gemma-4-E2B-Q2 — tiny custom quant for the low-latency voice agent.
-    "voice_agent_llm_model": "ollama/gemma-4-E2B-Q2:latest",
+    # NOTE: voice_agent_llm_model is deliberately NOT pinned here. It used to
+    # carry "ollama/gemma-4-E2B-Q2:latest" — a tiny custom quant for voice
+    # latency — but that model is no longer installed on the rig, so every boot
+    # warned `MISSING: key='voice_agent_llm_model' references model
+    # 'gemma-4-E2B-Q2:latest' which is not installed in Ollama`. The pin also
+    # carried an `ollama/` prefix, which is wrong for this key specifically:
+    # the voice agent talks to Ollama's own API, which 404s on the prefixed
+    # form (voice_agent._normalize_ollama_tag strips it and warns).
+    #
+    # Unpinned, it inherits the OSS default qwen2.5:7b, which is the
+    # benchmarked choice for this role anyway — docs/operations/voice-stt-tts.md
+    # measures 0.22s TTFT (the ceiling is ~0.5s before it reads as laggy) and
+    # 4/4 tool calls, which the voice persona needs for its three tools.
+    # Re-pin only if a custom low-latency quant is rebuilt AND installed.
 }
 
 # The operator's personalised voice persona — addresses Matt by name and at Glad
