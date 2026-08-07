@@ -131,6 +131,9 @@ class ServerState:
         self.t2v_pipeline: Any | None = None  # WanPipeline.from_pipe (shares VRAM)
         self.mod_value: int = 32  # dim alignment; recomputed from the pipe on load
         self.last_used: float = 0.0
+        # Requests currently executing (or about to). The idle-unloader must
+        # never exit the process while one is in flight — see _idle_unload_tick.
+        self.inflight: int = 0
         self.degraded: bool = False
         self.degraded_reason: str | None = None
         # Single GPU lock — concurrent /generate calls would compete
@@ -376,6 +379,17 @@ async def _idle_unload_tick() -> None:
     card: without it an idle wan squats ~10 GB between renders until some
     consumer event (a render gate reclaim) happens to notice, starving
     ollama-primary on the shared GPU (2026-08-01 incident)."""
+    # In-flight guard (2026-08-07): a generation can run LONGER than
+    # IDLE_TIMEOUT_S (a 480p i2v hero takes ~147s vs the 120s default), and
+    # last_used is only stamped when it finishes. Without this check the tick
+    # reads a stale last_used mid-generation, blocks on gpu_lock for the rest
+    # of the run, and then hard-exits the process the instant the lock frees —
+    # BEFORE FastAPI sends the response. The clip was written to disk, but the
+    # worker saw a dropped connection, logged "wan provider returned no
+    # result", and fell back to a Ken Burns still. Every hero of the 2026-08-06
+    # /-07 renders was lost this way, ~147 GPU-seconds each.
+    if state.inflight > 0:
+        return
     if (time.time() - state.last_used) <= IDLE_TIMEOUT_S:
         return
     # Cheap pre-check outside the lock: nothing loaded and no reserved pool
@@ -388,6 +402,10 @@ async def _idle_unload_tick() -> None:
     ):
         return
     async with state.gpu_lock:
+        # Re-check under the lock: a request may have arrived (and finished)
+        # while we waited for it. Exiting now would kill its response.
+        if state.inflight > 0 or (time.time() - state.last_used) <= IDLE_TIMEOUT_S:
+            return
         _unload_pipeline_blocking()
         _hard_exit_if_reserved_pool(quiet_skip=True)
 
@@ -644,6 +662,20 @@ async def generate(req: GenerateRequest) -> Response:
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is empty")
 
+    state.inflight += 1
+    try:
+        return await _generate_inner(req)
+    finally:
+        # Stamp on the way out too: the idle tick's window must start when the
+        # RESPONSE is done, not when inference ended, or a long FileResponse
+        # stream could still race the hard exit.
+        state.last_used = time.time()
+        state.inflight -= 1
+
+
+async def _generate_inner(req: GenerateRequest) -> Response:
+    """The actual generate path — wrapped by ``generate`` so the in-flight
+    counter brackets the whole request including response streaming."""
     output_filename = f"wan_{uuid.uuid4().hex}.mp4"
     output_path = OUTPUT_DIR / output_filename
 
