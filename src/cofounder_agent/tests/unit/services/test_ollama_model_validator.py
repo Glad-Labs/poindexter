@@ -24,8 +24,18 @@ from utils.startup_manager import StartupManager
 # ---------------------------------------------------------------------------
 
 _GOOD_TEMPLATE = "{{ if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}"
-_SUSPECT_TEMPLATE = "{{ .Input }}<|turn>assistant<turn|>{{ .Response }}"
+# `<|im_turn|>` belongs to no published family -- a mangled ChatML variant.
+# NB this used to be the Gemma 4 `<|turn>…<turn|>` shape, which is legitimate;
+# see _GEMMA4_TEMPLATE below.
+_SUSPECT_TEMPLATE = "{{ .Input }}<|im_turn|>assistant{{ .Response }}"
 _ESTABLISHED_TEMPLATE = "<start_of_turn>user\n{{ .Input }}<end_of_turn>"
+# Gemma 4's real paired-delimiter DSL, trimmed from the live
+# gemma-4-31B-it-qat:latest template.
+_GEMMA4_TEMPLATE = (
+    "{{- '<|turn>system\n' -}}{{- '<turn|>\n' -}}"
+    "{%- for message in loop_messages -%}{{- '<|turn>' + role + '\n' }}"
+    "{{- '<turn|>\n' -}}{%- endfor -%}{{- '<|turn>model\n' -}}"
+)
 
 
 def _make_site_config(overrides: dict[str, str] | None = None) -> MagicMock:
@@ -242,8 +252,8 @@ class TestSuspectTemplate:
 
     @pytest.mark.asyncio
     async def test_suspect_tokens_with_established_delimiter_ok(self):
-        """A template with <|turn> AND <start_of_turn> is not flagged."""
-        combined = "<start_of_turn>user\n{{ .Input }}<|turn>end"
+        """A template with <|im_turn|> AND <start_of_turn> is not flagged."""
+        combined = "<start_of_turn>user\n{{ .Input }}<|im_turn|>end"
         notify = await _run_validator(
             model_rows=[
                 {"key": "cost_tier.standard.model", "value": "ollama/combo-model:latest"},
@@ -255,14 +265,35 @@ class TestSuspectTemplate:
 
     @pytest.mark.asyncio
     async def test_im_start_delimiter_not_flagged(self):
-        """<|im_start|> is an established delimiter; <|turn> alongside it is OK."""
-        template_with_im_start = "<|im_start|>user\n{{ .Input }}<|turn>foo"
+        """<|im_start|> is established; <|im_turn|> alongside it is OK."""
+        template_with_im_start = "<|im_start|>user\n{{ .Input }}<|im_turn|>foo"
         notify = await _run_validator(
             model_rows=[
                 {"key": "cost_tier.standard.model", "value": "ollama/im-start-model:latest"},
             ],
             tags_data={"models": [{"name": "im-start-model:latest"}]},
             show_data={"template": template_with_im_start},
+        )
+        notify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_gemma4_turn_template_not_flagged(self):
+        """Regression: Gemma 4's <|turn>/<turn|> DSL is legitimate, not suspect.
+
+        gemma-4-31B-it-qat declares `stop "<|turn>"` / `stop "<turn|>"` in its
+        own Ollama parameters (family=gemma4). Before this was recognised, every
+        boot warned about a model backing 20 *_model settings -- a pure false
+        positive that trains operators to ignore startup warnings.
+        """
+        notify = await _run_validator(
+            model_rows=[
+                {
+                    "key": "pipeline_local_writer_model",
+                    "value": "ollama/gemma-4-31B-it-qat:latest",
+                },
+            ],
+            tags_data={"models": [{"name": "gemma-4-31B-it-qat:latest"}]},
+            show_data={"template": _GEMMA4_TEMPLATE},
         )
         notify.assert_not_called()
 

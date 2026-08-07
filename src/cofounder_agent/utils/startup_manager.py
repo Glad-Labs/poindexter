@@ -910,9 +910,25 @@ class StartupManager:
         # ------------------------------------------------------------------ #
         # Suspicious template tokens (chat-template quality check)           #
         # ------------------------------------------------------------------ #
-        _SUSPECT_TOKENS = ("<|turn>", "<turn|>", "<|im_turn|>")
+        # `<|turn>` / `<turn|>` are ESTABLISHED, not suspect: that paired form is
+        # Gemma 4's published turn format, and the model declares it itself --
+        # `ollama show gemma-4-31B-it-qat` lists `stop "<|turn>"` and
+        # `stop "<turn|>"` in its own parameters (family=gemma4). Gemma 4 shipped
+        # after this check landed (#1430, 2026-06-11), so the original lists only
+        # knew Gemma 2/3's `<start_of_turn>` and flagged every Gemma 4 model at
+        # boot. That was a pure false positive on a model backing 20 *_model
+        # settings and ~13.7k calls/14d, i.e. exactly the kind of noise that
+        # trains operators to ignore startup warnings.
+        #
+        # `<|im_turn|>` stays suspect: no published family uses it, so it still
+        # reads as a mangled/hallucinated ChatML variant.
+        _SUSPECT_TOKENS = ("<|im_turn|>",)
         _ESTABLISHED_DELIMITERS = (
-            "<start_of_turn>", "<|im_start|>", "[INST]", "<|user|>"
+            "<start_of_turn>",  # Gemma 2 / 3
+            "<|im_start|>",     # ChatML (Qwen, many others)
+            "[INST]",           # Llama 2 / Mistral
+            "<|user|>",         # Zephyr / TinyLlama et al
+            "<|turn>",          # Gemma 4
         )
 
         template_fetch_failures: list[str] = []
