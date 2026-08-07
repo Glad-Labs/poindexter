@@ -50,7 +50,13 @@ scrape_configs:
         # psu_.* = the Shelly outlet meter's psu_total_power_watts (true wall
         # power) — this family rode the retired nvidia-smi-host job's keep-list
         # on Windows; the containerized exporter emits it on this job now.
-        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*'
+        # gpu_12vhpwr_.* = ASUS Astral per-pin 12V-2x6 connector telemetry
+        # (stack#3107). NOTE this keep-list is an allowlist: any NEW metric
+        # family the exporter grows must be added here or Prometheus drops it
+        # silently at ingestion (the exporter serves it, the scrape reads up=1,
+        # and the series just never exists — exactly how the 12vhpwr family
+        # shipped dark for one deploy).
+        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*|gpu_12vhpwr_.*'
         action: keep
 
   # (RETIRED at the Pop!_OS migration) The `nvidia-smi-host` job scraped the
