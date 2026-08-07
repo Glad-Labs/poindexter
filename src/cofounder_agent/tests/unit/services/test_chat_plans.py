@@ -74,7 +74,7 @@ class FakePlanPool:
             row["resolved_at"] = dt.datetime.now(dt.timezone.utc)
             return {k: row[k] for k in
                     ("id", "conversation_id", "message_id", "intent",
-                     "topic", "template_slug")}
+                     "topic", "template_slug", "spec")}
         if s.startswith("SELECT parts FROM chat_messages"):
             parts = self.messages.get(args[0])
             return None if parts is None else {"parts": json.dumps(parts)}
@@ -514,3 +514,58 @@ class TestEnsureTerminalTargetAware:
         ], "edges": []}
         out = chat_plans.ensure_terminal(spec)
         assert out["nodes"][-1]["id"] == "ensure_terminal_status"
+
+
+@pytest.mark.unit
+class TestInferTaskType:
+    """Plan runs carry the honest task_type derived from the composition —
+    the first podcast run shipped as blog_post and rendered in the console
+    as an empty draft with no path to the audio (live operator report)."""
+
+    def test_podcast_atoms_give_podcast(self):
+        spec = {"nodes": [
+            {"id": "a", "atom": "content.load_existing_post"},
+            {"id": "b", "atom": "podcast.render"},
+        ]}
+        assert chat_plans.infer_task_type(spec) == "podcast"
+
+    def test_video_render_beats_podcast(self):
+        spec = {"nodes": [
+            {"id": "a", "atom": "podcast.render"},
+            {"id": "b", "atom": "media.render_long_video"},
+        ]}
+        assert chat_plans.infer_task_type(spec) == "video"
+
+    def test_content_only_stays_blog_post(self):
+        spec = {"nodes": [
+            {"id": "a", "atom": "content.generate_draft"},
+            {"id": "b", "atom": "qa.web_factcheck"},
+        ]}
+        assert chat_plans.infer_task_type(spec) == "blog_post"
+
+    def test_empty_or_missing_spec_defaults_blog(self):
+        assert chat_plans.infer_task_type(None) == "blog_post"
+        assert chat_plans.infer_task_type({}) == "blog_post"
+
+    def test_run_plan_sets_type_from_cached_spec(self, plan_env):
+        pool, _, _, _ = plan_env
+        spec = {"name": "pod", "nodes": [
+            {"id": "load", "atom": "content.load_existing_post"},
+            {"id": "r", "atom": "podcast.render"},
+            {"id": "t", "atom": "atoms.set_task_status",
+             "config": {"target_status": "awaiting_approval"}},
+        ], "edges": [{"from": "load", "to": "r"}, {"from": "r", "to": "t"}]}
+        plan = asyncio.run(chat_plans.create_plan(
+            pool, conversation_id="c1", message_id="m1",
+            intent="podcast it", topic="t", spec=spec,
+        ))
+        pool.messages["m1"] = [{
+            "type": "card",
+            "card": {"kind": "plan", "plan_id": plan["plan_id"],
+                     "state": "draft"},
+        }]
+        db = FakeDb()
+        asyncio.run(chat_plans.run_plan(
+            pool=pool, db_service=db, plan_id=plan["plan_id"],
+        ))
+        assert db.added["task_type"] == "podcast"

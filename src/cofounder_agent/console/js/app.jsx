@@ -2091,6 +2091,15 @@ function approvalToInbox(t) {
       featured_image_url: t.featured_image_url,
       task: t.task_id,
       preview_url: previewUrl,
+      task_type: t.task_type || 'blog_post',
+      // Podcast-type tasks (architect plan runs, poindexter#983 family):
+      // the artifact is audio, not a draft — podcast.persist writes
+      // PODCAST_DIR/{task_id}.mp3, which the public episodes route
+      // streams. The drawer renders a player from this.
+      audio_url:
+        t.task_type === 'podcast'
+          ? `${(PX.api.config && PX.api.config.base) || ''}/api/podcast/episodes/${t.task_id}.mp3`
+          : null,
     },
   };
 }

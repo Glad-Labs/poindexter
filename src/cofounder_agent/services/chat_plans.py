@@ -181,6 +181,27 @@ _MAX_PARAMS = 10
 _MAX_PARAM_VALUE_CHARS = 500
 
 
+def infer_task_type(spec: dict[str, Any] | None) -> str:
+    """Derive the honest ``pipeline_tasks.task_type`` from a plan's atoms.
+
+    P4 hardcoded ``blog_post`` for every plan run; the first podcast plan
+    then rendered in the console as an empty blog draft with no way to
+    reach the audio (live operator report). The composition already says
+    what the run produces — read it. Precedence: video beats podcast
+    (a video plan usually also narrates), podcast beats blog.
+    """
+    atoms = [
+        str(n.get("atom") or "")
+        for n in (spec or {}).get("nodes") or []
+    ]
+    if any(a in ("media.render_long_video", "media.render_short_video")
+           for a in atoms):
+        return "video"
+    if any(a.startswith("podcast.") for a in atoms):
+        return "podcast"
+    return "blog_post"
+
+
 def validate_run_params(params: dict[str, Any] | None) -> dict[str, Any]:
     """Return sanitized per-run params or raise ``ValueError`` (fail loud)."""
     if not params:
@@ -236,7 +257,8 @@ async def run_plan(
         UPDATE chat_plans
            SET status = 'ran', resolved_at = now()
          WHERE id = $1::uuid AND status = 'draft'
-        RETURNING id, conversation_id, message_id, intent, topic, template_slug
+        RETURNING id, conversation_id, message_id, intent, topic,
+                  template_slug, spec
         """,
         plan_id,
     )
@@ -251,12 +273,19 @@ async def run_plan(
     message_id = str(row["message_id"])
     slug = row["template_slug"]
     topic = (topic_override or row["topic"] or row["intent"])[:200]
+    spec = row["spec"]
+    if isinstance(spec, str):
+        try:
+            spec = json.loads(spec)
+        except json.JSONDecodeError:
+            spec = None
+    task_type = infer_task_type(spec)
 
     task_id = str(uuid_lib.uuid4())
     task_data = {
         "id": task_id,
         "task_name": f"Plan run: {topic}",
-        "task_type": "blog_post",
+        "task_type": task_type,
         "topic": topic,
         "template_slug": slug,
         "status": "pending",

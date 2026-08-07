@@ -128,6 +128,22 @@ function Drawer({ entity, onClose, actions }) {
                   />
                 </>
               ) : null}
+              {d.audio_url ? (
+                <>
+                  <div className="section-label">
+                    Podcast episode
+                    {d.task_type ? ` · ${d.task_type}` : ''}
+                  </div>
+                  {/* The artifact IS the audio (architect plan runs) — a
+                      blog-style empty draft preview here read as broken. */}
+                  <audio
+                    controls
+                    preload="metadata"
+                    src={d.audio_url}
+                    style={{ width: '100%', margin: '4px 0 10px' }}
+                  />
+                </>
+              ) : null}
               <div
                 className="section-label"
                 style={{
@@ -136,7 +152,7 @@ function Drawer({ entity, onClose, actions }) {
                   alignItems: 'center',
                 }}
               >
-                <span>Draft preview</span>
+                <span>{d.audio_url ? 'Notes' : 'Draft preview'}</span>
                 {d.preview_url ? (
                   <a
                     className="mbtn mbtn--ghost"
