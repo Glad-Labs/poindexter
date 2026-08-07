@@ -566,6 +566,79 @@ class TestPsuInternalsRules:
         assert "(12 * 3 / 100)" in rail
 
 
+class TestGpuPowerPinRules:
+    """Per-pin 12V-2x6 current alerting on the ASUS Astral IT8915FN data
+    (``gpu_12vhpwr_pin_*`` from the gpu-exporter).
+
+    The connector-melt failure mode is current concentrating on a few pins
+    while total board power looks fine — so the rules watch per-pin absolutes
+    (disjoint warning/critical bands) plus the pin-to-pin spread precursor.
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        for name in (
+            "GpuPowerPinCurrentHigh",
+            "GpuPowerPinCurrentCritical",
+            "GpuPowerPinImbalance",
+        ):
+            assert name in rb.DEFAULT_RULES
+        assert rb.DEFAULT_THRESHOLDS["gpu_pin_current_warning_amps"] == "8.0"
+        # 9.2 = the community vhpwr-guard shutdown line, just under the
+        # Micro-Fit+ 9.5A pin rating.
+        assert rb.DEFAULT_THRESHOLDS["gpu_pin_current_critical_amps"] == "9.2"
+        assert rb.DEFAULT_THRESHOLDS["gpu_pin_imbalance_spread_amps"] == "3"
+        assert rb.DEFAULT_THRESHOLDS["gpu_pin_imbalance_min_load_amps"] == "2"
+
+    def test_bands_are_disjoint_so_one_hot_pin_pages_once(self):
+        """Same rationale as the MainsVoltage pair: nested bands with
+        different alertnames would page twice for one event."""
+        warn = rb.DEFAULT_RULES["GpuPowerPinCurrentHigh"]["expr"]
+        crit = rb.DEFAULT_RULES["GpuPowerPinCurrentCritical"]["expr"]
+        assert "< {threshold.gpu_pin_current_critical_amps}" in warn
+        assert ">= {threshold.gpu_pin_current_critical_amps}" in crit
+
+    def test_severities_escalate_discord_to_telegram(self):
+        assert rb.DEFAULT_RULES["GpuPowerPinCurrentHigh"]["severity"] == "warning"
+        assert (
+            rb.DEFAULT_RULES["GpuPowerPinCurrentCritical"]["severity"] == "critical"
+        )
+        assert rb.DEFAULT_RULES["GpuPowerPinImbalance"]["severity"] == "warning"
+
+    def test_imbalance_is_load_gated(self):
+        """At idle the pins carry a few hundred mA and spread math would be
+        noise — the rule must only judge balance under real load."""
+        expr = rb.DEFAULT_RULES["GpuPowerPinImbalance"]["expr"]
+        assert "avg(gpu_12vhpwr_pin_current_amps)" in expr
+        assert "{threshold.gpu_pin_imbalance_min_load_amps}" in expr
+
+    @pytest.mark.asyncio
+    async def test_default_render_is_armed_and_fully_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        for name in (
+            "GpuPowerPinCurrentHigh",
+            "GpuPowerPinCurrentCritical",
+            "GpuPowerPinImbalance",
+        ):
+            section = out.split(f"alert: {name}")[1].split("alert:", 1)[0]
+            assert "{threshold." not in section
+        warn = out.split("alert: GpuPowerPinCurrentHigh")[1].split("alert:", 1)[0]
+        crit = out.split("alert: GpuPowerPinCurrentCritical")[1].split("alert:", 1)[0]
+        imb = out.split("alert: GpuPowerPinImbalance")[1].split("alert:", 1)[0]
+        assert ">= 8.0" in warn and "< 9.2" in warn
+        assert ">= 9.2" in crit
+        assert "> 3" in imb and "> 2" in imb
+
+    @pytest.mark.asyncio
+    async def test_thresholds_operator_tunable(self):
+        pool = _FakePool([
+            {"key": "prometheus.threshold.gpu_pin_current_critical_amps",
+             "value": "8.8"},
+        ])
+        out = await rb.build_current(pool)
+        crit = out.split("alert: GpuPowerPinCurrentCritical")[1].split("alert:", 1)[0]
+        assert ">= 8.8" in crit
+
+
 class TestUpsRules:
     """UPS alerting on the ``network_ups_tools_*`` series (NUT nut-exporter,
     job="nut").

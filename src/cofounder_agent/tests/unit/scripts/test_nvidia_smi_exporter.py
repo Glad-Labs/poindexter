@@ -459,3 +459,60 @@ def test_process_rows_full_cmdline_becomes_executable_basename():
         series['nvidia_gpu_process_memory_mib{gpu="0",pid="7",process="ollama"}']
         == "18432.0"
     )
+
+
+# ---------------------------------------------------------------------------
+# ASUS Astral per-pin 12V-2x6 telemetry (IT8915FN over I2C)
+# ---------------------------------------------------------------------------
+
+# Real 24-byte block captured from the operator rig's RTX 5090 Astral
+# (i2c-9 @ 0x2B reg 0x80, 2026-08-07, card idle at ~36W): six pins at
+# ~12.04V carrying 0.46-0.54A each. The chip returns pins in REVERSE order.
+_ASTRAL_REAL_BLOCK = bytes.fromhex(
+    "2f1001f42f10021c2f10021c2f0801f42f0801cc2f0801cc"
+)
+
+
+class TestAstralPinTelemetry:
+    def test_decode_real_block_reverses_pin_order_and_scales(self):
+        pins = EXPORTER._astral_decode(_ASTRAL_REAL_BLOCK)
+        assert [p for p, _v, _a in pins] == [0, 1, 2, 3, 4, 5]
+        # First 4 raw bytes belong to the LAST pin (5).
+        assert pins[5] == (5, 12.048, 0.5)
+        assert pins[0] == (0, 12.04, 0.46)
+        assert round(sum(a for _p, _v, a in pins), 2) == 3.0
+
+    def test_plausibility_accepts_real_block_rejects_strays(self):
+        assert EXPORTER._astral_plausible(EXPORTER._astral_decode(_ASTRAL_REAL_BLOCK))
+        # An EDID-ish device ACKing 0x2B would return nothing like a 12V rail.
+        assert not EXPORTER._astral_plausible(EXPORTER._astral_decode(b"\x00" * 24))
+        assert not EXPORTER._astral_plausible(EXPORTER._astral_decode(b"\xff" * 24))
+
+    def test_emission_labels_every_pin(self, monkeypatch):
+        monkeypatch.setattr(EXPORTER, "_astral_bus", 9)
+        monkeypatch.setattr(
+            EXPORTER, "_astral_read_block", lambda bus: _ASTRAL_REAL_BLOCK
+        )
+        text = EXPORTER.get_astral_pin_metrics()
+        for pin in range(6):
+            assert f'gpu_12vhpwr_pin_volts{{pin="{pin}"}}' in text
+            assert f'gpu_12vhpwr_pin_current_amps{{pin="{pin}"}}' in text
+        assert 'gpu_12vhpwr_pin_current_amps{pin="5"} 0.500' in text
+
+    def test_read_failure_degrades_to_empty_and_rescans(self, monkeypatch):
+        """A bus hiccup must not fail the scrape, and must drop the cached
+        bus number so the next cycle re-scans (bus numbering rotates per
+        boot)."""
+
+        def _boom(bus):
+            raise OSError(5, "i2c read failed")
+
+        monkeypatch.setattr(EXPORTER, "_astral_bus", 9)
+        monkeypatch.setattr(EXPORTER, "_astral_read_block", _boom)
+        assert EXPORTER.get_astral_pin_metrics() == ""
+        assert EXPORTER._astral_bus is None
+
+    def test_absent_hardware_emits_nothing(self, monkeypatch):
+        monkeypatch.setattr(EXPORTER, "_astral_bus", None)
+        monkeypatch.setattr(EXPORTER, "_astral_find_bus", lambda: None)
+        assert EXPORTER.get_astral_pin_metrics() == ""

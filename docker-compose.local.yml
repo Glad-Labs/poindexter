@@ -1891,6 +1891,15 @@ services:
       # no-op wherever the var is unset.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
+      # ASUS Astral per-pin 12V-2x6 telemetry: the IT8915FN answers on one of
+      # the GPU's I2C buses (/dev/i2c-N, char major 89). N ROTATES per boot,
+      # so we bind /dev and grant the whole i2c char class below instead of
+      # pinning one node — a pinned device: entry would silently break at the
+      # next reboot (same trap as the corsair-psu hwmon chip label). Absent
+      # hardware = the reader finds no plausible chip and emits nothing.
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 89:* rmw"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Healthcheck (issue #319): catches the silent-hang failure mode where the

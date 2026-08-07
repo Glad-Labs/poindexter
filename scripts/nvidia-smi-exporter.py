@@ -861,6 +861,155 @@ def _dedupe_psu_metric(text: str) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# ASUS Astral per-pin 12V-2x6 connector telemetry
+#
+# ROG Astral cards carry an ITE IT8915FN that reports per-pin voltage and
+# current for all six 12V pins of the GPU power connector — the data that
+# predicts the connector-melt failure mode (current concentrating on a few
+# pins while the total looks normal). The chip answers at 0x2B on one of the
+# card's NVIDIA I2C buses; the block at register 0x80 is 24 bytes, 4 per pin
+# (mV then mA, big-endian), pins in reverse order. Read protocol per the
+# open-source readers (eugeneoh04/vhpwr-guard, humza-khalid/12vhpwr-guard):
+# SMBus byte-data reads — the Astral does not serve a combined rdwr block.
+# ---------------------------------------------------------------------------
+
+_ASTRAL_ADDR = 0x2B
+_ASTRAL_REG = 0x80
+_ASTRAL_PINS = 6
+# Cached bus number. I2C bus numbering ROTATES across boots (same trap as
+# the corsair-psu hwmon chip label), so any failure resets the cache and the
+# next collector cycle re-scans.
+_astral_bus: int | None = None
+_astral_warned = False
+
+
+def _astral_read_block(bus: int) -> bytes:
+    """24-byte SMBus byte-data read from the IT8915FN.
+
+    Imports are local so the module still imports on Windows hosts (fcntl is
+    POSIX-only); on such hosts the auto-detect simply never finds a bus.
+    """
+    import ctypes
+    import fcntl
+    import os
+
+    I2C_SLAVE = 0x0703
+    I2C_SMBUS = 0x0720
+    I2C_SMBUS_READ = 1
+    I2C_SMBUS_BYTE_DATA = 2
+
+    class _SmbusData(ctypes.Union):
+        _fields_ = [
+            ("byte", ctypes.c_uint8),
+            ("word", ctypes.c_uint16),
+            ("block", ctypes.c_uint8 * 34),
+        ]
+
+    class _SmbusIoctl(ctypes.Structure):
+        _fields_ = [
+            ("read_write", ctypes.c_uint8),
+            ("command", ctypes.c_uint8),
+            ("size", ctypes.c_uint32),
+            ("data", ctypes.POINTER(_SmbusData)),
+        ]
+
+    fd = os.open(f"/dev/i2c-{bus}", os.O_RDWR)
+    try:
+        fcntl.ioctl(fd, I2C_SLAVE, _ASTRAL_ADDR)
+        raw = bytearray()
+        for i in range(_ASTRAL_PINS * 4):
+            data = _SmbusData()
+            args = _SmbusIoctl(
+                read_write=I2C_SMBUS_READ,
+                command=_ASTRAL_REG + i,
+                size=I2C_SMBUS_BYTE_DATA,
+                data=ctypes.pointer(data),
+            )
+            fcntl.ioctl(fd, I2C_SMBUS, args)
+            raw.append(data.byte)
+        return bytes(raw)
+    finally:
+        os.close(fd)
+
+
+def _astral_decode(raw: bytes) -> list[tuple[int, float, float]]:
+    """(pin, volts, amps) triples, pin-sorted. 4 bytes per pin — mV then mA,
+    both big-endian — and the chip returns pins in reverse order."""
+    pins = []
+    for i in range(_ASTRAL_PINS):
+        o = i * 4
+        mv = (raw[o] << 8) | raw[o + 1]
+        ma = (raw[o + 2] << 8) | raw[o + 3]
+        pins.append(((_ASTRAL_PINS - 1) - i, mv / 1000.0, ma / 1000.0))
+    return sorted(pins)
+
+
+def _astral_plausible(pins: list[tuple[int, float, float]]) -> bool:
+    """At least 5 pins on a real ~12V rail under 25A — rejects any stray
+    device that happens to ACK address 0x2B on some other bus."""
+    return sum(1 for _p, v, a in pins if 11.0 <= v <= 13.5 and 0.0 <= a < 25.0) >= 5
+
+
+def _astral_find_bus() -> int | None:
+    """Probe every NVIDIA I2C adapter for a plausible IT8915FN, read-only."""
+    import glob
+
+    for name_path in sorted(glob.glob("/sys/bus/i2c/devices/i2c-*/name")):
+        try:
+            with open(name_path) as fh:
+                if "nvidia" not in fh.read().lower():
+                    continue
+            bus = int(name_path.split("i2c-")[-1].split("/")[0])
+            if _astral_plausible(_astral_decode(_astral_read_block(bus))):
+                return bus
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def get_astral_pin_metrics() -> str:
+    """Per-pin ``gpu_12vhpwr_pin_volts`` / ``gpu_12vhpwr_pin_current_amps``
+    from an ASUS Astral card, labelled ``pin="0".."5"``.
+
+    Zero-config: auto-detects the chip and emits nothing when the hardware
+    (or /dev/i2c access) is absent — absent series keep the GpuPowerPin*
+    alert rules naturally inert, same posture as the profile-gated NUT rules.
+    Any error degrades to empty output so a flaky bus can never break the
+    whole /metrics snapshot (same contract as the Shelly poll).
+    """
+    global _astral_bus, _astral_warned
+    try:
+        if _astral_bus is None:
+            _astral_bus = _astral_find_bus()
+            if _astral_bus is None:
+                return ""
+            logger.info("astral: per-pin connector sensor found on i2c-%d", _astral_bus)
+        pins = _astral_decode(_astral_read_block(_astral_bus))
+        if not _astral_plausible(pins):
+            _astral_bus = None
+            return ""
+    except Exception as exc:  # noqa: BLE001 — a bus hiccup must not fail the scrape
+        if not _astral_warned:
+            logger.warning("astral: pin read failed (%s: %s)", type(exc).__name__, exc)
+            _astral_warned = True
+        _astral_bus = None
+        return ""
+    lines = [
+        "# HELP gpu_12vhpwr_pin_volts Per-pin voltage at the GPU 12V-2x6 connector (ASUS Astral IT8915FN)",
+        "# TYPE gpu_12vhpwr_pin_volts gauge",
+    ]
+    for pin, volts, _amps in pins:
+        lines.append(f'gpu_12vhpwr_pin_volts{{pin="{pin}"}} {volts:.3f}')
+    lines += [
+        "# HELP gpu_12vhpwr_pin_current_amps Per-pin current at the GPU 12V-2x6 connector (ASUS Astral IT8915FN)",
+        "# TYPE gpu_12vhpwr_pin_current_amps gauge",
+    ]
+    for pin, _volts, amps in pins:
+        lines.append(f'gpu_12vhpwr_pin_current_amps{{pin="{pin}"}} {amps:.3f}')
+    return "\n".join(lines) + "\n"
+
+
 def get_lm_sensors_metrics():
     """Read hardware sensors via lm-sensors on Linux.
 
@@ -947,11 +1096,12 @@ def _collect_all_metrics() -> bytes:
     procs = get_gpu_process_metrics()
     cpu = get_cpu_power_metrics()
     shelly = get_shelly_psu_metrics()
+    astral = get_astral_pin_metrics()
     aida = get_aida64_metrics()
     hwinfo = get_hwinfo_metrics()
     lm = get_lm_sensors_metrics()
     total = get_total_power_metrics(gpu, cpu)
-    combined = gpu + procs + cpu + shelly + aida + hwinfo + lm + total
+    combined = gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + total
     return _dedupe_psu_metric(combined).encode()
 
 

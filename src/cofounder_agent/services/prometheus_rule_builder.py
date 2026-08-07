@@ -160,6 +160,19 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # trip points while still catching a failing fan / blocked intake early.
     "psu_vrm_temp_warning_celsius": "85",
     "psu_rail_voltage_tolerance_percent": "5",
+    # GPU 12V-2x6 per-pin current (ASUS Astral IT8915FN via the gpu-exporter).
+    # The connector-melt failure mode is current CONCENTRATING on a few pins
+    # while total board power looks normal, so the meaningful thresholds are
+    # per-pin absolutes and the pin-to-pin spread. The Micro-Fit+ pin rating
+    # is 9.5A: warning at 8.0 (84% of rating) leaves reaction room; critical
+    # at 9.2 matches the shutdown line the community vhpwr-guard watchdogs
+    # use. Spread of 3A under ≥2A average load = one pin doing half again
+    # its share — the contact-degradation precursor, worth a look long
+    # before any absolute trips.
+    "gpu_pin_current_warning_amps": "8.0",
+    "gpu_pin_current_critical_amps": "9.2",
+    "gpu_pin_imbalance_spread_amps": "3",
+    "gpu_pin_imbalance_min_load_amps": "2",
     # UPS via NUT (Glad-Labs/poindexter#958). All Ups* rules read the
     # network_ups_tools_* series from the profile-gated nut-exporter
     # container (job="nut"), so on a host without the `ups` compose profile
@@ -658,6 +671,100 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "is upstream undervoltage reaching the PSU, not the PSU itself. "
             "Rails drifting at healthy AC-in = an aging/failing PSU — plan a "
             "swap before it becomes an uncommanded power-off."
+        ),
+    },
+    # --- GPU 12V-2x6 per-pin current (ASUS Astral) ---
+    # gpu_12vhpwr_pin_* come from the gpu-exporter's IT8915FN reader — an
+    # independent exporter, so raw instant reads per the restart-gap policy.
+    # On hardware without the sensor the series are absent → no samples, no
+    # fire. Warning/critical bands are DISJOINT (same single-page rationale
+    # as the MainsVoltage pair): one overloaded pin moves from a Discord
+    # heads-up to a Telegram page as it worsens, never both at once.
+    "GpuPowerPinCurrentHigh": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "gpu_12vhpwr_pin_current_amps"
+            " >= {threshold.gpu_pin_current_warning_amps}"
+            "\nand gpu_12vhpwr_pin_current_amps"
+            " < {threshold.gpu_pin_current_critical_amps}"
+        ),
+        "for": "3m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": (
+            "GPU power pin {{ $labels.pin }} at {{ $value | humanize }}A "
+            "(rating 9.5A)"
+        ),
+        "description": (
+            "Pin {{ $labels.pin }} of the GPU 12V-2x6 connector is carrying "
+            "{{ $value | humanize }}A — over "
+            "prometheus.threshold.gpu_pin_current_warning_amps (default 8.0; "
+            "the Micro-Fit+ pin rating is 9.5A). A single hot pin at normal "
+            "total power means the other pins have degraded contact and load "
+            "is concentrating — the connector-melt precursor. Compare the "
+            "per-pin panel on Hardware & Power: if the spread is also "
+            "alerting, plan a reseat of BOTH cable ends (GPU and PSU side) "
+            "at the next shutdown and inspect for discoloration."
+        ),
+    },
+    "GpuPowerPinCurrentCritical": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        "expr": (
+            "gpu_12vhpwr_pin_current_amps"
+            " >= {threshold.gpu_pin_current_critical_amps}"
+        ),
+        "for": "1m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": (
+            "GPU power pin {{ $labels.pin }} at {{ $value | humanize }}A — "
+            "melt risk, shed GPU load"
+        ),
+        "description": (
+            "Pin {{ $labels.pin }} is at {{ $value | humanize }}A, past "
+            "prometheus.threshold.gpu_pin_current_critical_amps (default "
+            "9.2 — effectively the 9.5A pin rating). This is the melting-"
+            "connector regime measured in the field on 5090s. Shed GPU load "
+            "NOW: pause the pipeline / `nvidia-smi -i 0 -pl 250` to floor "
+            "the card, then power down and reseat/inspect both connector "
+            "ends before the next heavy run. Do not wait for smell."
+        ),
+    },
+    "GpuPowerPinImbalance": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        # Load-gated: at idle the pins read a few hundred mA and tiny
+        # absolute differences would dominate any spread math, so the rule
+        # only judges balance once average load clears the floor.
+        "expr": (
+            "(max(gpu_12vhpwr_pin_current_amps)"
+            " - min(gpu_12vhpwr_pin_current_amps))"
+            " > {threshold.gpu_pin_imbalance_spread_amps}"
+            "\nand avg(gpu_12vhpwr_pin_current_amps)"
+            " > {threshold.gpu_pin_imbalance_min_load_amps}"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": (
+            "GPU power pins imbalanced ({{ $value | humanize }}A spread "
+            "under load)"
+        ),
+        "description": (
+            "The spread between the hottest and coldest 12V-2x6 pin has held "
+            "above prometheus.threshold.gpu_pin_imbalance_spread_amps "
+            "(default 3A) for 10m with the card under real load. Balanced "
+            "pins share within ~1A; a growing spread is degrading contact "
+            "resistance on the light pins pushing current onto the heavy "
+            "ones — the slow path to the per-pin absolute alerts. Reseat "
+            "both cable ends at the next natural shutdown and inspect the "
+            "connector faces; if the spread returns after a reseat, replace "
+            "the cable."
         ),
     },
     # --- UPS via NUT (Glad-Labs/poindexter#958) ---

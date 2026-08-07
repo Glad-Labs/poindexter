@@ -77,6 +77,39 @@ at the next reboot. A userspace HID reader (e.g. OpenLinkHub with a PSU entry,
 or liquidctl) would reintroduce the dual-reader contention — leave the PSU to
 the kernel driver.
 
+### GPU 12V-2x6 per-pin monitoring (ASUS Astral)
+
+ROG Astral cards carry an ITE IT8915FN that reports per-pin voltage and
+current for all six 12V pins of the GPU power connector — the data that
+predicts the connector-melt failure mode (current concentrating on a few pins
+while total board power looks normal; balanced pins share within ~1 A, the
+Micro-Fit+ pin rating is 9.5 A). The chip answers at I2C address `0x2B` on one
+of the card's NVIDIA I2C buses; `get_astral_pin_metrics()` in
+`scripts/nvidia-smi-exporter.py` auto-detects it (read-only SMBus probe,
+plausibility-checked so a stray device ACKing `0x2B` is rejected) and emits
+`gpu_12vhpwr_pin_volts` / `gpu_12vhpwr_pin_current_amps` labelled
+`pin="0".."5"`. No hardware → no series → the alert rules stay naturally
+inert.
+
+Three DB-rendered alert rules watch it: `GpuPowerPinCurrentHigh`
+(`prometheus.threshold.gpu_pin_current_warning_amps`, default 8.0, Discord),
+`GpuPowerPinCurrentCritical` (`…gpu_pin_current_critical_amps`, default 9.2 —
+the community vhpwr-guard shutdown line — Telegram), and `GpuPowerPinImbalance`
+(spread > `…gpu_pin_imbalance_spread_amps` (3 A) while average load >
+`…gpu_pin_imbalance_min_load_amps` (2 A), Discord) — the spread is the
+contact-degradation precursor that moves long before any absolute trips.
+Panels live in the Hardware & Power GPU row.
+
+Two gotchas: the I2C **bus number rotates per boot** (the reader re-scans on
+any failure rather than pinning), and the containerized gpu-exporter needs the
+i2c character class granted (`device_cgroup_rules: c 89:* rmw` + `/dev` bind
+in `docker-compose.local.yml`) — a pinned `devices:` entry would silently
+break at the next reboot. If a hard-shutdown backstop is ever wanted on top of
+alerting, the open-source watchdogs (eugeneoh04/vhpwr-guard,
+humza-khalid/12vhpwr-guard) read the same chip and power the machine off at
+9.2–9.5 A/pin; reads through the kernel are per-transaction locked, so they
+coexist with this exporter.
+
 ### Historical: Windows-era sensor split (pre-Linux migration)
 
 Until 2026-07 the split was: AIDA64 shared memory for CPU/GPU/board temps,

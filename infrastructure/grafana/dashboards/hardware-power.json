@@ -542,6 +542,141 @@
       ]
     },
     {
+      "id": 88,
+      "title": "12V-2x6 per-pin current (Astral 5090)",
+      "type": "timeseries",
+      "description": "Source: gpu_12vhpwr_pin_current_amps — the ASUS Astral's onboard IT8915FN read over the GPU's I2C bus by the gpu-exporter (bus number rotates per boot; the reader re-scans). The connector-melt failure mode is current CONCENTRATING on a few pins while total power looks normal: balanced pins share within ~1A. Micro-Fit+ pin rating 9.5A. Alerts: GpuPowerPinCurrentHigh (8.0A, Discord), GpuPowerPinCurrentCritical (9.2A, Telegram), GpuPowerPinImbalance (3A spread under load, Discord).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "gpu_12vhpwr_pin_current_amps",
+          "legendFormat": "pin {{pin}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "amp",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 8.0
+              },
+              {
+                "color": "red",
+                "value": 9.2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 89,
+      "title": "12V-2x6 connector health (spread · total)",
+      "type": "timeseries",
+      "description": "Source: derived from gpu_12vhpwr_pin_current_amps (Astral IT8915FN). Pin spread = hottest minus coldest pin — the contact-degradation precursor: a growing spread under steady load means some pins are shedding current onto others long before any absolute limit trips. Total = sum of all six 12V pins (x12V approximates connector watts).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "max(gpu_12vhpwr_pin_current_amps) - min(gpu_12vhpwr_pin_current_amps)",
+          "legendFormat": "pin spread",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "sum(gpu_12vhpwr_pin_current_amps)",
+          "legendFormat": "total (all pins)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "amp",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pin spread"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 12
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
       "type": "row",
       "title": "Power — wall & PSU (Shelly · corsair-psu)",
       "collapsed": false,
@@ -549,7 +684,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 29
       },
       "panels": [],
       "id": 6
@@ -563,11 +698,11 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "options": {
         "mode": "markdown",
-        "content": "**Metering chain:** `wall receptacle ─[Shelly plug]─▶ UPS ─[HX1500i AC-in]─▶ PSU ─▶ DC rails` — the UPS also reports its own line-side (wall) register via NUT.\n\n| Series | Instrument | Physical node |\n|---|---|---|\n| `psu_line_voltage_volts` · `psu_total_power_watts` · `psu_line_current_amps` | Shelly smart plug (polled by gpu-exporter) | **Wall receptacle** |\n| `network_ups_tools_*` | UPS via NUT (1V steps) | **Wall side** (input) + UPS battery/output |\n| `node_hwmon_*` chip `1b1c:1c1f` | PSU via corsair-psu kernel driver | **UPS output side** (AC-in) + DC rails / temps / fan |\n| `nvidia_gpu_*` | nvidia-smi gpu-exporter | GPU boards (DC) |\n\n⚠ The HX chip label embeds the USB path and **rotates every boot** — always match `chip=~\".*1b1c:1c1f.*\"`, never a literal label. ⚠ Shelly placement history: Jul 31 – Aug 7 2026 it sat on the UPS **output** (that stretch = conditioned power, not wall)."
+        "content": "**Metering chain:** `wall receptacle ─[Shelly plug]─▶ UPS ─[HX1500i AC-in]─▶ PSU ─▶ DC rails` — the UPS also reports its own line-side (wall) register via NUT.\n\n| Series | Instrument | Physical node |\n|---|---|---|\n| `psu_line_voltage_volts` · `psu_total_power_watts` · `psu_line_current_amps` | Shelly smart plug (polled by gpu-exporter) | **Wall receptacle** |\n| `network_ups_tools_*` | UPS via NUT (1V steps) | **Wall side** (input) + UPS battery/output |\n| `node_hwmon_*` chip `1b1c:1c1f` | PSU via corsair-psu kernel driver | **UPS output side** (AC-in) + DC rails / temps / fan |\n| `gpu_12vhpwr_pin_*` | ASUS Astral IT8915FN over GPU I2C (gpu-exporter; bus rotates per boot) | GPU 12V-2x6 connector pins |\n| `nvidia_gpu_*` | nvidia-smi gpu-exporter | GPU boards (DC) |\n\n⚠ The HX chip label embeds the USB path and **rotates every boot** — always match `chip=~\".*1b1c:1c1f.*\"`, never a literal label. ⚠ Shelly placement history: Jul 31 – Aug 7 2026 it sat on the UPS **output** (that stretch = conditioned power, not wall)."
       }
     },
     {
@@ -582,7 +717,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -645,7 +780,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -705,7 +840,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 39
       },
       "datasource": {
         "type": "prometheus",
@@ -780,7 +915,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 39
       },
       "datasource": {
         "type": "prometheus",
@@ -868,7 +1003,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "fieldConfig": {
         "defaults": {
@@ -939,7 +1074,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -1070,7 +1205,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -1125,7 +1260,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 59
       },
       "fieldConfig": {
         "defaults": {
@@ -1203,7 +1338,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 67
       },
       "panels": []
     },
@@ -1220,7 +1355,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 60
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1288,7 +1423,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 60
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1350,7 +1485,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 60
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1411,7 +1546,7 @@
         "h": 4,
         "w": 5,
         "x": 15,
-        "y": 60
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1473,7 +1608,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 60
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1534,7 +1669,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 72
       },
       "fieldConfig": {
         "defaults": {
@@ -1676,7 +1811,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 64
+        "y": 72
       },
       "fieldConfig": {
         "defaults": {
@@ -1750,7 +1885,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 72
+        "y": 80
       },
       "fieldConfig": {
         "defaults": {
@@ -1903,7 +2038,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 72
+        "y": 80
       },
       "fieldConfig": {
         "defaults": {
@@ -2016,7 +2151,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 72
+        "y": 80
       },
       "fieldConfig": {
         "defaults": {
@@ -2128,7 +2263,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 88
       },
       "fieldConfig": {
         "defaults": {
@@ -2281,7 +2416,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 94
       },
       "panels": [],
       "id": 13
@@ -2298,7 +2433,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 87
+        "y": 95
       },
       "fieldConfig": {
         "defaults": {
@@ -2339,7 +2474,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 96
+        "y": 104
       },
       "fieldConfig": {
         "defaults": {
@@ -2377,7 +2512,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 113
       }
     },
     {
@@ -2393,7 +2528,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 106
+        "y": 114
       },
       "targets": [
         {
@@ -2426,7 +2561,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 106
+        "y": 114
       },
       "targets": [
         {
@@ -2459,7 +2594,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 114
+        "y": 122
       },
       "targets": [
         {
@@ -2492,7 +2627,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 122
+        "y": 130
       },
       "targets": [
         {
@@ -2520,7 +2655,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 130
+        "y": 138
       },
       "panels": [],
       "id": 59
@@ -2538,7 +2673,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 131
+        "y": 139
       },
       "fieldConfig": {
         "defaults": {
@@ -2600,7 +2735,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 131
+        "y": 139
       },
       "fieldConfig": {
         "defaults": {
@@ -2662,7 +2797,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 131
+        "y": 139
       },
       "fieldConfig": {
         "defaults": {
@@ -2724,7 +2859,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 135
+        "y": 143
       },
       "fieldConfig": {
         "defaults": {
@@ -2791,7 +2926,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 135
+        "y": 143
       },
       "fieldConfig": {
         "defaults": {
@@ -2855,7 +2990,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 143
+        "y": 151
       },
       "panels": []
     },
@@ -2872,7 +3007,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 144
+        "y": 152
       },
       "fieldConfig": {
         "defaults": {
@@ -2937,7 +3072,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 152
+        "y": 160
       },
       "id": 69,
       "panels": [],
@@ -2980,7 +3115,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 153
+        "y": 161
       },
       "id": 70,
       "options": {
@@ -3037,7 +3172,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 153
+        "y": 161
       },
       "id": 71,
       "options": {
