@@ -99,3 +99,11 @@ speed — no X server, no systemd, ~9s.
   (needs `temperature` anchors on the palette colors; includes workaround)
 - jurkovic-nikola/OpenLinkHub#488 — `/api/hub/linkAdapter` success response
   says "Non-existing device"
+- pop-os/cosmic-comp#701 — Xwayland dies repeatedly and is never restarted, so
+  every X11 app stays dead until the next login. Commented rather than filed
+  fresh: #701 is the same bug (hybrid AMD-iGPU + nvidia), open since 2024-08-08.
+  Our contribution is the quantified GPU correlation (5 deaths in ~10h with the
+  strip on the iGPU, 0 in 14.5h across 3 boots after moving it to the 5090), the
+  all-displays-on-one-GPU workaround, and two asks: re-arm Xwayland after an
+  unexpected exit, and forward its stderr to the journal — it is captured
+  nowhere today, which is why nobody in that thread has the fatal message.
