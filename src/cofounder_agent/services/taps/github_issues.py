@@ -1,4 +1,4 @@
-"""GitHubIssuesTap — ingest issues from the public + private GitHub repos.
+"""GitHubIssuesTap — ingest issues from the configured GitHub repositories.
 
 Issues are where design decisions, incident post-mortems and rejected
 approaches actually get written down. Embedding them makes that history
