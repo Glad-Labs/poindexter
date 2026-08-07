@@ -1,5 +1,1091 @@
 {
-  "count": 0,
-  "events": [],
-  "server_time": "2026-08-03T11:16:26.970074+00:00"
+  "count": 50,
+  "events": [
+    {
+      "id": 278050,
+      "timestamp": "2026-08-07T08:48:24.600110+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 0
+      }
+    },
+    {
+      "id": 278033,
+      "timestamp": "2026-08-07T08:44:03.943042+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "topic": "The Poindexter Philosophy",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 278030,
+      "timestamp": "2026-08-07T08:43:41.862787+00:00",
+      "event_type": "template_completed",
+      "source": "content_router",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "ok": true,
+        "records": [
+          "stage.verify_task",
+          "content.generate_draft",
+          "content.generate_title",
+          "content.check_title_originality",
+          "content.normalize_draft",
+          "atoms.approval_gate",
+          "stage.writer_self_review",
+          "stage.resolve_internal_link_placeholders",
+          "content.reconcile_citations",
+          "content.llm_reconcile_citations",
+          "content.inject_affiliate_links",
+          "stage.quality_evaluation",
+          "stage.url_validation",
+          "content.plan_image_markers",
+          "content.generate_images",
+          "content.inject_images",
+          "stage.source_featured_image",
+          "stage.caption_images",
+          "qa.programmatic",
+          "qa.critic",
+          "qa.deepeval",
+          "qa.ragas",
+          "qa.vision",
+          "qa.topic_delivery",
+          "qa.citations",
+          "qa.unlinked_attribution",
+          "qa.consistency",
+          "qa.self_consistency",
+          "qa.content_originality",
+          "qa.title_coherence",
+          "qa.web_factcheck",
+          "qa.aggregate",
+          "seo.generate_all_metadata",
+          "stage.generate_media_scripts",
+          "stage.generate_video_shot_list",
+          "stage.review_video_shot_list",
+          "stage.capture_training_data",
+          "content.compile_meta",
+          "content.persist_task",
+          "social.generate_drafts",
+          "content.record_pipeline_version",
+          "atoms.approval_gate",
+          "content.evaluate_auto_publish"
+        ],
+        "template": "canonical_blog",
+        "halted_at": null
+      }
+    },
+    {
+      "id": 278029,
+      "timestamp": "2026-08-07T08:43:41.636870+00:00",
+      "event_type": "auto_publish_gate",
+      "source": "content.evaluate_auto_publish",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "reason": "glad-labs_auto_publish_threshold < 0 — gate disabled by default",
+        "dry_run": true,
+        "threshold": -1,
+        "gate_state": "disabled",
+        "would_fire": false,
+        "quality_score": 90,
+        "required_clean_runs": 3,
+        "trailing_clean_runs": 0
+      }
+    },
+    {
+      "id": 278002,
+      "timestamp": "2026-08-07T08:38:55.208436+00:00",
+      "event_type": "qa_pass_completed",
+      "source": "qa.aggregate",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "rescued": false,
+        "reviews": [
+          {
+            "score": 70,
+            "advisory": false,
+            "approved": true,
+            "provider": "programmatic",
+            "reviewer": "programmatic_validator",
+            "feedback_preview": "clean (no fabrication); 6 warning(s)"
+          },
+          {
+            "score": 96,
+            "advisory": false,
+            "approved": true,
+            "provider": "ollama",
+            "reviewer": "ollama_critic",
+            "feedback_preview": "The article is excellent—it transforms a specific technical failure into a universal engineering lesson. The narrative arc from the 'Dot Incident' to the discovery of systemic bugs like the byline reg"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_brand_fabrication",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
+          },
+          {
+            "score": 90,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_g_eval",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) The response aligns well with the evaluation steps. Each paragraph of the actual output directly relates to and expands upon the input topic, ensuring relevan"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_faithfulness",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) The score is 1.00 because there are no contradictions present, indicating that the 'actual output' aligns perfectly with the information in the 'retrieval con"
+          },
+          {
+            "score": 54.8,
+            "advisory": true,
+            "approved": true,
+            "provider": "ragas",
+            "reviewer": "ragas_eval",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) answer_relevancy=0.67, context_precision=0.00, faithfulness=0.98"
+          },
+          {
+            "score": 65,
+            "advisory": true,
+            "approved": true,
+            "provider": "vision_gate",
+            "reviewer": "image_relevance",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=65, overall=65. [85] v/images/featured/9f850778-af15e368.webp: Image visually represents the 'dot' incident through circular holes symbolizing ;"
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
+            "provider": "consistency_gate",
+            "reviewer": "topic_delivery",
+            "feedback_preview": "The article perfectly aligns with the topic: it details 'The Dot's Incident' as the catalyst and explains the subsequent implementation and impact of 'Topic Sanity Checks'."
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
+            "provider": "http_head",
+            "reviewer": "citation_verifier",
+            "feedback_preview": "All 1 external URL(s) verified alive"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "unlinked_attribution",
+            "reviewer": "unlinked_attribution",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
+          },
+          {
+            "score": 96.8,
+            "advisory": true,
+            "approved": true,
+            "provider": "self_consistency_gate",
+            "reviewer": "self_consistency",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.968 across 3 samples (threshold=0.55) PASS"
+          },
+          {
+            "score": 22.3,
+            "advisory": true,
+            "approved": true,
+            "provider": "content_originality_gate",
+            "reviewer": "content_originality",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'retiring-gen-1-topicdiscovery-and-hunting-invisibl-fcd3152c' at worst-chunk cosine 0.78"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "title_coherence_gate",
+            "reviewer": "title_coherence",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: Why LLM Rankers Fail at Absolute Quality: Lessons From the Dot Incident] The article directly explains why LLM rankers struggle with absolute quality "
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "web_factcheck",
+            "reviewer": "web_factcheck",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) Web fact-check: 1/1 claims verified, 0 contradicted.\n  gemma4: VERIFIED (web confirms)"
+          }
+        ],
+        "approved": true,
+        "terminal": true,
+        "final_score": 90.4,
+        "reviewer_count": 14,
+        "schema_version": 1,
+        "approval_threshold": 80,
+        "qa_rewrite_attempts": 0
+      }
+    },
+    {
+      "id": 277988,
+      "timestamp": "2026-08-07T08:35:41.452339+00:00",
+      "event_type": "ragas_score",
+      "source": "ragas_eval",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "score": 0.5484,
+        "topic": "The Dot's Incident and the Implementation of Topic Sanity Checks",
+        "faithfulness": 0.98,
+        "metric_count": 3,
+        "answer_relevancy": 0.6651,
+        "context_precision": 0
+      }
+    },
+    {
+      "id": 277929,
+      "timestamp": "2026-08-07T08:27:55.696440+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277906,
+      "timestamp": "2026-08-07T08:23:37.860179+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "style": "soft watercolor washes with sharp technical line overlays",
+        "topic": "The Dot's Incident and the Implementation of Topic Sanity Checks"
+      }
+    },
+    {
+      "id": 277905,
+      "timestamp": "2026-08-07T08:23:37.127031+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277904,
+      "timestamp": "2026-08-07T08:23:32.417546+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277902,
+      "timestamp": "2026-08-07T08:23:26.835985+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277871,
+      "timestamp": "2026-08-07T08:18:15.460096+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 0
+      }
+    },
+    {
+      "id": 277860,
+      "timestamp": "2026-08-07T08:16:12.327742+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "info",
+      "details": {
+        "topic": "The Dot's Incident and the Implementation of Topic Sanity Checks",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 277748,
+      "timestamp": "2026-08-07T07:53:35.479703+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277744,
+      "timestamp": "2026-08-07T07:51:59.475489+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "style": "soft watercolor washes with sharp technical line overlays",
+        "topic": "The Poindexter Philosophy"
+      }
+    },
+    {
+      "id": 277743,
+      "timestamp": "2026-08-07T07:51:58.914565+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277742,
+      "timestamp": "2026-08-07T07:51:54.263146+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277741,
+      "timestamp": "2026-08-07T07:51:49.159488+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277720,
+      "timestamp": "2026-08-07T07:47:52.430996+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 0
+      }
+    },
+    {
+      "id": 277714,
+      "timestamp": "2026-08-07T07:45:52.606350+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "68252b36-6f94-4549-90c1-70eea41a3854",
+      "severity": "info",
+      "details": {
+        "topic": "The Poindexter Philosophy",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 277595,
+      "timestamp": "2026-08-07T07:24:30.272523+00:00",
+      "event_type": "qa_pass_completed",
+      "source": "qa.aggregate",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "warning",
+      "details": {
+        "rescued": false,
+        "reviews": [
+          {
+            "score": 80,
+            "advisory": false,
+            "approved": true,
+            "provider": "programmatic",
+            "reviewer": "programmatic_validator",
+            "feedback_preview": "clean (no fabrication); 4 warning(s)"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "deepeval",
+            "reviewer": "deepeval_brand_fabrication",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
+          },
+          {
+            "score": 85.5,
+            "advisory": true,
+            "approved": true,
+            "provider": "ragas",
+            "reviewer": "ragas_eval",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.77, faithfulness=0.94"
+          },
+          {
+            "score": 78,
+            "advisory": true,
+            "approved": true,
+            "provider": "vision_gate",
+            "reviewer": "image_relevance",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=78, overall=78. [70] v/images/featured/9f850778-514ddd5d.webp: The metallic spheres visually represent the 'dots' in the headline but are abstr;"
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
+            "provider": "http_head",
+            "reviewer": "citation_verifier",
+            "feedback_preview": "All 2 external URL(s) verified alive"
+          },
+          {
+            "score": 92,
+            "advisory": true,
+            "approved": true,
+            "provider": "unlinked_attribution",
+            "reviewer": "unlinked_attribution",
+            "feedback_preview": "[advisory] (failed, not required_to_pass) 1 named source(s) cited without a link or corpus match: Nobody"
+          },
+          {
+            "score": 17.5,
+            "advisory": true,
+            "approved": true,
+            "provider": "content_originality_gate",
+            "reviewer": "content_originality",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'retiring-gen-1-topicdiscovery-and-hunting-invisibl-fcd3152c' at worst-chunk cosine 0.83"
+          }
+        ],
+        "approved": false,
+        "terminal": true,
+        "final_score": 91.11,
+        "reviewer_count": 7,
+        "schema_version": 1,
+        "approval_threshold": 80,
+        "qa_rewrite_attempts": 0
+      }
+    },
+    {
+      "id": 277594,
+      "timestamp": "2026-08-07T07:24:30.267488+00:00",
+      "event_type": "qa_flagged_surfaced",
+      "source": "qa.aggregate",
+      "task_id": "9f850778-a27d-495c-8591-e4c6d745a80d",
+      "severity": "warning",
+      "details": {
+        "attempts": 0,
+        "threshold": 80,
+        "vetoed_by": [
+          "missing_required:llm_critic",
+          "missing_required:topic_delivery"
+        ],
+        "final_score": 91.11
+      }
+    },
+    {
+      "id": 277534,
+      "timestamp": "2026-08-07T07:12:05.655846+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277533,
+      "timestamp": "2026-08-07T07:12:05.655298+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 6,
+        "duration_s": 5,
+        "qa_outcome": "unscored"
+      }
+    },
+    {
+      "id": 277532,
+      "timestamp": "2026-08-07T07:12:05.654792+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277531,
+      "timestamp": "2026-08-07T07:12:05.654331+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 4,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277530,
+      "timestamp": "2026-08-07T07:12:05.653840+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277529,
+      "timestamp": "2026-08-07T07:12:05.653032+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277528,
+      "timestamp": "2026-08-07T07:12:05.652161+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 4.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277527,
+      "timestamp": "2026-08-07T07:12:05.650411+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "unscored"
+      }
+    },
+    {
+      "id": 277498,
+      "timestamp": "2026-08-07T07:08:03.292665+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277497,
+      "timestamp": "2026-08-07T07:07:58.705613+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277496,
+      "timestamp": "2026-08-07T07:07:56.811008+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277495,
+      "timestamp": "2026-08-07T07:07:52.293215+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277494,
+      "timestamp": "2026-08-07T07:07:50.005356+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "warning",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": false,
+        "attempts": 3,
+        "threshold": 6,
+        "text_chars": 179,
+        "attempt_scores": [
+          483,
+          413,
+          179
+        ]
+      }
+    },
+    {
+      "id": 277468,
+      "timestamp": "2026-08-07T07:00:39.021184+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 10,
+        "duration_s": 25.2,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277466,
+      "timestamp": "2026-08-07T07:00:39.020511+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 20,
+        "shot_idx": 9,
+        "duration_s": 25,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 277465,
+      "timestamp": "2026-08-07T07:00:39.019491+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 8,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277464,
+      "timestamp": "2026-08-07T07:00:39.018894+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 25,
+        "qa_outcome": "regenerated"
+      }
+    },
+    {
+      "id": 277463,
+      "timestamp": "2026-08-07T07:00:39.018427+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 6,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277462,
+      "timestamp": "2026-08-07T07:00:39.017960+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 20,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277461,
+      "timestamp": "2026-08-07T07:00:39.017484+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 4,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277460,
+      "timestamp": "2026-08-07T07:00:39.016997+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 25,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277459,
+      "timestamp": "2026-08-07T07:00:39.016493+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 2,
+        "duration_s": 30,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277458,
+      "timestamp": "2026-08-07T07:00:39.015855+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 22,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277457,
+      "timestamp": "2026-08-07T07:00:39.014375+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "8faf3617-2acb-4ab0-a03f-67a8a2b2dd5a",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 277428,
+      "timestamp": "2026-08-07T06:56:43.895678+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277427,
+      "timestamp": "2026-08-07T06:56:39.132666+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277426,
+      "timestamp": "2026-08-07T06:56:37.184423+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 277425,
+      "timestamp": "2026-08-07T06:56:32.718898+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "attempts": 1,
+        "threshold": 6,
+        "text_chars": 3,
+        "attempt_scores": [
+          3
+        ]
+      }
+    }
+  ],
+  "server_time": "2026-08-07T08:51:44.536489+00:00"
 }
