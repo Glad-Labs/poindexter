@@ -572,6 +572,10 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
+    # Evict Ollama models before a wan hero render. The media pipeline's own
+    # QA/vision calls leave the ~21GB writer resident on keep_alive, which
+    # OOM'd wan (~25.3GB at 832x480) on a 32GB card. Reload costs ~20-30s.
+    'video_hero_evict_ollama': 'true',
     # Ambient music-bed prompt for generate_audio("ambient") — {mood} is
     # replaced with cleaned first-scene text. Music-directed on purpose:
     # verbatim visual scene prompts make Stable Audio render literal room
@@ -3196,6 +3200,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_evict_ollama': {'owner': 'media_render', 'value_type': 'boolean'},
     'audio_gen_ambient_prompt_template': {'owner': 'media_scripts', 'value_type': 'string'},
     'video_hero_motion_check_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_hero_min_motion_delta': {'owner': 'media_render', 'value_type': 'float'},

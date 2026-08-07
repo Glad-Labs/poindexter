@@ -495,7 +495,16 @@ def _compose_hero_wan_prompt(
 
 
 async def _clear_image_gen_for_hero(site_config: Any) -> None:
-    """Hard-unload image-gen so the wan hero load has the card (poindexter#907).
+    """Hard-unload image-gen AND evict Ollama so the wan hero load has the card.
+
+    Two co-residents, not one (poindexter#907, then #992 on 2026-08-07): the
+    media pipeline runs its own LLM work — vision QA, caption re-scoring,
+    self-consistency — on this same GPU, and Ollama keeps the ~21 GB writer
+    resident on its keep_alive timer well past the last call. So the hero
+    phase would begin with image-gen cleared but Ollama still squatting, and
+    wan (~25.3 GB at 832x480) OOM'd by as little as 320 MiB. Evicting Ollama
+    is confirmed, not fire-and-forget: ``_unload_ollama_models`` re-polls
+    /api/ps until the model is actually gone.
 
     Best-effort by design: the caller is about to attempt a render either way,
     and a reclaim that fails should not convert a possible render into a
@@ -519,6 +528,14 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         from services.gpu_scheduler import gpu
 
         await gpu._unload_image_gen(hard=True)
+        # The pipeline's own QA/vision calls leave the writer resident on
+        # Ollama's keep_alive timer; it reloads on demand in ~20-30s, which is
+        # cheap against a 147s hero that would otherwise fail outright.
+        if (
+            site_config.get_bool("video_hero_evict_ollama", True)
+            if site_config is not None else True
+        ):
+            await gpu._unload_ollama_models()
         settle = (
             site_config.get_float("video_hero_unload_settle_seconds", 3.0)
             if site_config is not None else 3.0
@@ -527,14 +544,15 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         # it — the exit is asynchronous from this process's point of view.
         await asyncio.sleep(settle)
         logger.info(
-            "[SHOT_LIST] hard-unloaded image-gen before hero clip "
-            "(settle %.1fs) — poindexter#907", settle,
+            "[SHOT_LIST] cleared co-residents before hero clip (image-gen "
+            "hard-unload + Ollama evict, settle %.1fs) — poindexter#907/#992",
+            settle,
         )
     except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
         # optimisation, not a precondition. Logged so a persistently failing
         # unload is visible, but never allowed to block the render attempt.
         logger.warning(
-            "[SHOT_LIST] image-gen pre-hero unload failed (%s) — attempting "
+            "[SHOT_LIST] pre-hero co-resident clear failed (%s) — attempting "
             "the hero render anyway", exc,
         )
 

@@ -121,3 +121,68 @@ async def test_settings_read_failure_defaults_to_unloading():
         await slr._clear_image_gen_for_hero(broken)
 
     unload.assert_awaited_once_with(hard=True)
+
+
+# ---------------------------------------------------------------------------
+# Second co-resident: Ollama (poindexter#992, 2026-08-07)
+#
+# Clearing image-gen alone was not enough on the operator box. The media
+# pipeline runs its OWN LLM work on this GPU — vision QA, caption re-scoring,
+# self-consistency — and Ollama keeps the ~21 GB writer resident on its
+# keep_alive timer long after the last call. Measured during take 10:
+#
+#     wan needs ~25.3 GB at 832x480
+#     ollama still holds  21.4 GB
+#     -> CUDA OOM "Tried to allocate 320.00 MiB" — missed by a rounding error
+#
+# So the pre-hero clear evicts Ollama too. Reload costs ~20-30s on the next
+# QA call, against a 147s hero that would otherwise fail outright.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ollama_is_evicted_before_the_hero_load():
+    from services.video_renderers import shot_list_renderer as slr
+
+    unload_img = AsyncMock()
+    unload_ollama = AsyncMock()
+    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
+         patch("services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._clear_image_gen_for_hero(_sc())
+
+    unload_ollama.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ollama_evict_is_operator_disableable():
+    """An operator whose card fits both should not pay the writer's reload."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    unload_img = AsyncMock()
+    unload_ollama = AsyncMock()
+    with patch("services.gpu_scheduler.gpu._unload_image_gen", unload_img), \
+         patch("services.gpu_scheduler.gpu._unload_ollama_models", unload_ollama), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._clear_image_gen_for_hero(_sc(video_hero_evict_ollama="false"))
+
+    unload_ollama.assert_not_awaited()
+    unload_img.assert_awaited_once_with(hard=True)  # image-gen still cleared
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ollama_evict_failure_still_attempts_the_render():
+    """Same best-effort contract as the image-gen lever: a failed reclaim must
+    never convert a possible render into a certain skip."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()), \
+         patch(
+             "services.gpu_scheduler.gpu._unload_ollama_models",
+             AsyncMock(side_effect=RuntimeError("ollama unreachable")),
+         ), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        await slr._clear_image_gen_for_hero(_sc())  # must not raise
