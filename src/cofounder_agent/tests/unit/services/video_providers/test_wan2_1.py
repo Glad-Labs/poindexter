@@ -702,3 +702,117 @@ class TestPluginDiscovery:
             )
         finally:
             clear_registry_cache()
+
+
+# ---------------------------------------------------------------------------
+# last_error — the server's own account of a miss (poindexter#996)
+#
+# fetch() returning [] is the VideoProvider contract and stays. But a bare []
+# cost the caller the one fact that mattered: shot_list_renderer could only
+# report "wan provider returned no result — check wan-server logs/health" for a
+# server that had answered with e.g. 500 OutOfMemoryError. wan hard-exits after
+# an OOM, so by the time that finding is read the container has been recreated
+# and its logs are gone — the reason has to travel WITH the finding.
+# ---------------------------------------------------------------------------
+
+
+def _fastapi_error_response(status: int, detail: str):
+    """The wan-server's real error shape: FastAPI HTTPException -> {"detail"}."""
+    resp = MagicMock()
+    resp.status_code = status
+    resp.headers = {"content-type": "application/json"}
+    resp.text = f'{{"detail":"{detail}"}}'
+    resp.content = b""
+    resp.json = MagicMock(return_value={"detail": detail})
+    return resp
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestLastErrorReason:
+
+    async def test_oom_detail_survives_to_last_error(self, tmp_path):
+        """The exact case that cost a debugging cycle on 2026-08-07: the server
+        answered with a CUDA OOM and the caller reported 'no result'."""
+        oom = (
+            "OutOfMemoryError: CUDA out of memory. Tried to allocate 1.48 GiB. "
+            "GPU 0 has a total capacity of 31.34 GiB of which 1.47 GiB is free."
+        )
+        out = str(tmp_path / "hero.mp4")
+        provider = Wan21Provider()
+        with _mock_httpx_post(_fastapi_error_response(500, oom)):
+            results = await provider.fetch("a hero shot", {"output_path": out})
+        assert results == []
+        assert "500" in provider.last_error
+        assert "OutOfMemoryError" in provider.last_error
+        # The TAIL is the diagnostic half — it must not be clipped away.
+        assert "1.47 GiB is free" in provider.last_error
+        # The JSON scaffolding is unwrapped, not echoed.
+        assert '{"detail"' not in provider.last_error
+
+    async def test_plain_text_error_body_is_used_raw(self, tmp_path):
+        """A non-JSON body (proxy/nginx in front of the server) still lands."""
+        provider = Wan21Provider()
+        with _mock_httpx_post(_error_response(502, "upstream connect error")):
+            await provider.fetch("p", {"output_path": str(tmp_path / "a.mp4")})
+        assert "502" in provider.last_error
+        assert "upstream connect error" in provider.last_error
+
+    async def test_empty_error_body_still_reports_the_status(self, tmp_path):
+        provider = Wan21Provider()
+        with _mock_httpx_post(_error_response(503, "")):
+            await provider.fetch("p", {"output_path": str(tmp_path / "a.mp4")})
+        assert "503" in provider.last_error
+
+    async def test_unreachable_names_the_url_and_exception(self, tmp_path):
+        """'Which server, and what happened' — both are needed to act."""
+        provider = Wan21Provider()
+        with _mock_httpx_post(RuntimeError("connection refused")):
+            await provider.fetch(
+                "p",
+                {
+                    "output_path": str(tmp_path / "a.mp4"),
+                    "server_url": "http://wan-server:9840",
+                },
+            )
+        assert "http://wan-server:9840" in provider.last_error
+        assert "RuntimeError" in provider.last_error
+        assert "connection refused" in provider.last_error
+
+    async def test_empty_prompt_has_its_own_reason(self):
+        provider = Wan21Provider()
+        assert await provider.fetch("   ", {}) == []
+        assert "empty prompt" in provider.last_error
+
+    async def test_success_leaves_last_error_empty(self, tmp_path):
+        out = str(tmp_path / "ok.mp4")
+        provider = Wan21Provider()
+        with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")):
+            results = await provider.fetch("p", {"output_path": out})
+        assert results
+        assert provider.last_error == ""
+
+    async def test_reason_is_reset_between_calls(self, tmp_path):
+        """A reused instance must never report a STALE reason — that would be
+        worse than the generic string it replaces."""
+        provider = Wan21Provider()
+        with _mock_httpx_post(_error_response(500, "first failure")):
+            await provider.fetch("p", {"output_path": str(tmp_path / "a.mp4")})
+        assert "first failure" in provider.last_error
+        with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")):
+            await provider.fetch("p", {"output_path": str(tmp_path / "b.mp4")})
+        assert provider.last_error == ""
+
+    async def test_reason_is_capped(self, tmp_path):
+        """It rides a Discord-routed finding body — bounded, but generously."""
+        from services.video_providers.wan2_1 import _MAX_REASON_CHARS
+
+        provider = Wan21Provider()
+        with _mock_httpx_post(_fastapi_error_response(500, "x" * 5000)):
+            await provider.fetch("p", {"output_path": str(tmp_path / "a.mp4")})
+        assert len(provider.last_error) < _MAX_REASON_CHARS + 100
+
+    async def test_fresh_provider_exposes_the_attribute(self):
+        """The renderer reads it off a brand-new instance every clip, so it has
+        to exist before any fetch runs."""
+        assert Wan21Provider().last_error == ""

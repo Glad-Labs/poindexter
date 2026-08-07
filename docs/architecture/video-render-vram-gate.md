@@ -83,6 +83,24 @@ Two fixes, matching the two defects in the issue:
 1. **Clear the card at the point of use.** `shot_list_renderer._clear_image_gen_for_hero` hard-unloads image-gen immediately before each wan load (`video_hero_unload_image_gen`, default on). Best-effort — a failed reclaim must not turn a _possible_ render into a _certain_ skip. Cheap to repeat: once image-gen holds nothing the server declines the exit (`nothing_to_reclaim`), so only the first call of a run actually pays.
 2. **Stop a failed load from latching.** `wan-server._ensure_pipeline_loaded` now releases the partial load (`_release_partial_load` — an OOM part-way through `.to("cuda")` used to strand ~14.9 GB with no handle) and only latches `degraded` for _persistent_ causes. An OOM is a statement about the card at that moment, not about the model, so it stays retryable instead of 503-ing every later request until a container restart.
 
+### The finding carries the server's own reason (poindexter#996, 2026-08-07)
+
+Every failure above surfaces as a `hero_render_fallback` finding — and until this fix all of them said the same thing:
+
+> `wan provider returned no result — check wan-server logs/health`
+
+That is the least useful true statement available. It points at a server that had usually answered, and answered precisely: `500 OutOfMemoryError: CUDA out of memory. Tried to allocate 1.48 GiB. GPU 0 has a total capacity of 31.34 GiB of which 1.47 GiB is free.` And because wan hard-exits after an OOM (and after a reclaim), the container that produced the miss is normally gone by the time anyone reads the finding — the logs it directs you to no longer exist.
+
+The plumbing for this was already correct end to end: `_emit_hero_fallback_finding` takes a `reason` and puts it in `extra.reason`, and `_render_generative_clip` returns `(ok, reason)`. The break was one layer down — `wan2_1._generate_to_path` returned a bare `bool`, logging the status and body at ERROR level and discarding both.
+
+Now:
+
+- `_generate_to_path` returns `(ok, reason)`, unwrapping FastAPI's `{"detail": …}` so the reason reads as the exception the server actually hit.
+- `Wan21Provider.last_error` carries it out of `fetch()`. The `VideoProvider` contract is unchanged — `fetch` still returns `[]` — so no other consumer is affected. It is reset at the top of every `fetch`, so a reused instance can never report a stale reason.
+- `_render_generative_clip` prefers it; the old generic string survives only as the last resort for a provider that somehow reported nothing (an unlabelled miss being worse than a vague one).
+
+The reason is capped at `_MAX_REASON_CHARS` (400) — deliberately more generous than the 200-char log clip, because the _tail_ of a CUDA OOM message ("Tried to allocate 1.48 GiB … 1.47 GiB is free") is its diagnostic half.
+
 ### Settings (`settings_defaults.py`)
 
 | Key                                     | Default | Meaning                                                                                                                  |

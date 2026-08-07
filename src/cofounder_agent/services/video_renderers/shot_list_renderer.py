@@ -467,7 +467,7 @@ def _hero_render_dims(
 
 
 def _compose_hero_wan_prompt(
-    still_prompt: str, motion: str | None, site_config: Any,
+    still_prompt: str | None, motion: str | None, site_config: Any,
 ) -> str:
     """Build the i2v prompt: the still's description + explicit motion.
 
@@ -753,7 +753,16 @@ async def _render_generative_clip(
         return False, f"{type(exc).__name__}: {exc}"
 
     if not results:
-        return False, "wan provider returned no result — check wan-server logs/health"
+        # Prefer the server's own account of the failure (poindexter#996). The
+        # old generic string sent operators to check a server that was often
+        # fine and had already answered — e.g. "500 OutOfMemoryError: CUDA out
+        # of memory" — and wan hard-exits after an OOM, so its logs are usually
+        # gone by the time the finding is read. The generic text survives only
+        # as the last resort for a provider that somehow reported nothing.
+        return False, (
+            getattr(provider, "last_error", "")
+            or "wan provider returned no result — check wan-server logs/health"
+        )
     ok = bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
     if not ok:
         return False, "wan provider result had no output file on disk"

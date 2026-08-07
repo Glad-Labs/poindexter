@@ -94,6 +94,14 @@ _DEFAULT_FPS = 24
 # guarantees only one /generate runs at a time.
 _HTTP_TIMEOUT = httpx.Timeout(900.0, connect=10.0)
 
+# Cap on the server-supplied failure text carried back to the caller
+# (poindexter#996). It lands in a hero_render_fallback finding body that
+# routes to Discord, so it has to stay readable — but a CUDA OOM message is
+# ~250 chars and its *tail* ("Tried to allocate 1.48 GiB … 1.47 GiB is free")
+# is the diagnostic half, so this is deliberately generous rather than the
+# 200-char clip the log line uses.
+_MAX_REASON_CHARS = 400
+
 
 def _write_video_bytes(path: str, content: bytes) -> None:
     """Sync helper for ``asyncio.to_thread`` — writes server response
@@ -115,18 +123,37 @@ def _read_image_bytes(path: str) -> bytes:
 
 
 class Wan21Provider:
-    """Wan 2.1 T2V 1.3B text-to-video via dedicated inference server."""
+    """Wan 2.1 T2V 1.3B text-to-video via dedicated inference server.
+
+    ``last_error`` carries WHY the most recent :meth:`fetch` returned no
+    result (poindexter#996). The empty-list return is the ``VideoProvider``
+    contract and stays as-is — but a bare ``[]`` cost the caller the one fact
+    that mattered: ``shot_list_renderer`` could only report "wan provider
+    returned no result — check wan-server logs/health" for a server that had
+    answered with, e.g., ``500 OutOfMemoryError: CUDA out of memory``. Worse,
+    wan hard-exits after an OOM, so by the time anyone reads that finding the
+    container has been recreated and its logs are gone.
+
+    A fresh provider is constructed per clip by the renderer, so this is
+    per-call state with no cross-call leakage. It is reset at the top of every
+    ``fetch`` regardless, so a reused instance can never report a stale reason.
+    """
 
     name = "wan2.1-1.3b"
     kind = "generate"
+
+    def __init__(self) -> None:
+        self.last_error: str = ""
 
     async def fetch(
         self,
         query_or_prompt: str,
         config: dict[str, Any],
     ) -> list[VideoResult]:
+        self.last_error = ""
         prompt = (query_or_prompt or "").strip()
         if not prompt:
+            self.last_error = "empty prompt — nothing was sent to the wan-server"
             return []
 
         # Phase H step 5 (GH#95): site_config arrives via the
@@ -197,7 +224,7 @@ class Wan21Provider:
                 model_label = configured
                 model_repo = configured
 
-        success = await _generate_to_path(
+        success, reason = await _generate_to_path(
             prompt=prompt,
             negative=negative,
             output_path=output_path,
@@ -213,6 +240,11 @@ class Wan21Provider:
         )
 
         if not success or not os.path.exists(output_path):
+            # A "successful" generate whose file is missing is its own failure
+            # mode — don't let it inherit the (empty) reason from the HTTP leg.
+            self.last_error = reason or (
+                f"wan-server reported success but no file landed at {output_path}"
+            )
             if cleanup_on_failure and os.path.exists(output_path):
                 try:
                     os.remove(output_path)
@@ -355,9 +387,17 @@ async def _generate_to_path(
     fps: int,
     image_b64: str | None = None,
     site_config: Any = None,
-) -> bool:
+) -> tuple[bool, str]:
     """POST the prompt to the Wan inference server; write the resulting
-    MP4 to ``output_path``. Returns True when the file was written.
+    MP4 to ``output_path``. Returns ``(ok, reason)`` — ``reason`` is empty on
+    success, else a short operator-facing string.
+
+    The reason is the point (poindexter#996): every failure branch here has
+    the actionable detail in hand (the connect error, or the server's status
+    + body, which for a CUDA OOM reads ``500 OutOfMemoryError: CUDA out of
+    memory. Tried to allocate 1.48 GiB…``). It used to be logged and dropped,
+    leaving the caller to report a generic "no result" against a server that
+    had explained itself perfectly.
 
     When ``image_b64`` is set (a base64 PNG — the shot's image-gen still), it
     rides the request body so an image-to-video server conditions the
@@ -418,7 +458,7 @@ async def _generate_to_path(
             "the hero clip (hero_render_fallback finding).",
             server_url, e,
         )
-        return False
+        return False, f"wan-server unreachable at {server_url}: {type(e).__name__}: {e}"
 
     ct = resp.headers.get("content-type", "")
 
@@ -429,21 +469,44 @@ async def _generate_to_path(
             "[Wan21Provider] video generated in %ss: %s",
             elapsed, output_path,
         )
-        return True
+        return True, ""
 
     if resp.status_code == 200 and ct.startswith("application/json"):
         if await asyncio.to_thread(
             _materialize_sidecar_json, resp, output_path, site_config,
         ):
-            return True
-        return False
+            return True, ""
+        return False, (
+            "wan-server returned a sidecar JSON path but the file could not be "
+            "materialized (parse failure, or the advertised path was unreadable "
+            "from the worker — see the [Wan21Provider] warning in the log)"
+        )
 
+    # NB: not ``body`` — that name is the request payload built above.
+    err_body = (resp.text or "").strip()
     logger.error(
         "[Wan21Provider] inference server returned %s "
         "(content-type=%r): %s",
-        resp.status_code, ct, (resp.text or "")[:200],
+        resp.status_code, ct, err_body[:200],
     )
-    return False
+    # FastAPI errors arrive as {"detail": "..."} — unwrap so the reason reads
+    # as the exception the server actually hit, not as JSON scaffolding.
+    detail = err_body
+    try:
+        parsed = resp.json()
+    except Exception:  # noqa: BLE001  # silent-ok: this IS the error path —
+        # `detail` already holds the raw body, so a non-JSON response (nginx,
+        # a proxy, a bare string) simply keeps it verbatim. Logging here would
+        # report "couldn't parse the error" over the top of the error the
+        # operator actually needs to read.
+        pass
+    else:
+        if isinstance(parsed, dict) and parsed.get("detail"):
+            detail = str(parsed["detail"]).strip()
+    return False, (
+        f"wan-server {resp.status_code}: {detail[:_MAX_REASON_CHARS]}"
+        if detail else f"wan-server {resp.status_code} with an empty body"
+    )
 
 
 def _materialize_sidecar_json(
