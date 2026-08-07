@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot-robust launcher for the sensor-strip conky (8.8" 1920x480, HDMI-A-1).
+# Boot-robust launcher for the sensor-strip conky (8.8" 1920x480 panel).
 # Xwayland's display number and monitor order can change between boots, and the
 # layout can be rearranged long after login, so:
 #  1. discover the session's Xwayland display,
@@ -12,7 +12,8 @@ set -u
 # drive the same logic fast against stub binaries.
 CONKY_BIN=${CONKY_BIN:-/usr/bin/conky}
 CONKY_CONF=${CONKY_CONF:-$HOME/.config/conky/sensor-strip.conf}
-STRIP_OUTPUT=${STRIP_OUTPUT:-HDMI-A-1}
+STRIP_OUTPUT=${STRIP_OUTPUT:-HDMI-A-2} # fast path; STRIP_MODE is the fallback
+STRIP_MODE=${STRIP_MODE:-1920x480}     # the panel's mode — unique among the rig's displays
 SETTLE_READS=${SETTLE_READS:-3} # identical consecutive reads before a layout is trusted
 BOOT_POLL=${BOOT_POLL:-2}       # seconds between reads while waiting to anchor
 BOOT_TRIES=${BOOT_TRIES:-60}
@@ -40,16 +41,31 @@ nap() {
 # Echo "<x> <y>" — where the strip sits relative to X monitor 0. Silent when
 # RandR is unreadable or either monitor is missing from the layout, which the
 # callers treat as "hold whatever is on screen".
+#
+# The panel is found by connector name first, then by its mode. The connector
+# name is NOT stable: moving the strip's cable from the AMD iGPU to the RTX 5090
+# on 2026-08-06 renamed it HDMI-A-1 -> HDMI-A-2, and a name-only match then
+# reports "never settled" forever on a display that is plugged in and working.
+# The mode match only fires when exactly one output has it, so it cannot pick
+# the wrong display.
 read_offset() {
-  xrandr --listmonitors 2>/dev/null | awk -v out="$STRIP_OUTPUT" '
+  xrandr --listmonitors 2>/dev/null | awk -v out="$STRIP_OUTPUT" -v mode="$STRIP_MODE" '
     $1 ~ /^[0-9]+:$/ {
       # $3 is WIDTH/mmxHEIGHT/mm+X+Y, e.g. 1920/50x480/210+4423+1920
       n = split($3, g, "+")
       if (n < 3 || g[2] == "" || g[3] == "") next
       if ($1 == "0:") { px = g[2]; py = g[3]; have0 = 1 }
-      if ($NF == out) { sx = g[2]; sy = g[3]; have_strip = 1 }
+      if ($NF == out) { sx = g[2]; sy = g[3]; have_name = 1 }
+      split(g[1], wh, "x")
+      w = wh[1]; sub(/\/.*/, "", w)
+      h = wh[2]; sub(/\/.*/, "", h)
+      if (w "x" h == mode) { mx = g[2]; my = g[3]; mode_hits++ }
     }
-    END { if (have0 && have_strip) print sx - px, sy - py }
+    END {
+      if (!have0) exit
+      if (have_name) print sx - px, sy - py
+      else if (mode_hits == 1) print mx - px, my - py
+    }
   '
 }
 
@@ -137,7 +153,7 @@ if [ "$STABLE" -ge "$SETTLE_READS" ]; then
 else
   # Degraded-but-visible beats invisible: if it never settled, go with the last
   # readable sample rather than exiting and leaving the strip blank.
-  [ -n "$LAST" ] || { log "RandR never reported both monitor 0 and $STRIP_OUTPUT"; exit 1; }
+  [ -n "$LAST" ] || { log "RandR never reported monitor 0 plus $STRIP_OUTPUT or a unique $STRIP_MODE panel"; exit 1; }
   log "layout never settled; anchoring on the last readable sample"
   OFFSET=$LAST
 fi

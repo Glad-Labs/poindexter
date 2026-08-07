@@ -91,8 +91,12 @@ new_state() {
 }
 
 set_layout() { # set_layout <m0-x> <m0-y> <strip-x> <strip-y>
-  printf 'Monitors: 2\n 0: +*DP-3 3440/790x1440/350+%s+%s  DP-3\n 1: +HDMI-A-1 1920/50x480/210+%s+%s  HDMI-A-1\n' \
-    "$1" "$2" "$3" "$4" > "$STATE/current.tmp"
+  set_layout_as HDMI-A-1 "$@"
+}
+
+set_layout_as() { # set_layout_as <connector> <m0-x> <m0-y> <strip-x> <strip-y> [w] [h]
+  printf 'Monitors: 2\n 0: +*DP-3 3440/790x1440/350+%s+%s  DP-3\n 1: +%s %s/50x%s/210+%s+%s  %s\n' \
+    "$2" "$3" "$1" "${6:-1920}" "${7:-480}" "$4" "$5" "$1" > "$STATE/current.tmp"
   mv "$STATE/current.tmp" "$STATE/current" # atomic: no half-written read
 }
 
@@ -277,6 +281,33 @@ t_propagates_conky_exit() {
   LAUNCHER_PID=""
 }
 
+# Moving the strip's cable renames its connector (HDMI-A-1 -> HDMI-A-2 when it
+# went from the iGPU to the 5090 on 2026-08-06). A name-only match reports
+# "never settled" forever on a panel that is plugged in and working.
+t_finds_the_panel_by_mode_when_renamed() {
+  echo "finds the panel by mode when the connector is renamed"
+  new_state
+  set_layout_as HDMI-A-9 0 480 4424 1920 # configured name is absent entirely
+  start_launcher
+  if wait_launches 1 10; then
+    check "anchors via the mode fallback" "-c /dev/null -x4424 -y1440" "$(launch_args 1)"
+  else
+    fail "never anchored despite a 1920x480 panel being present"
+  fi
+  stop_launcher
+}
+
+# The fallback must never guess: two panels sharing the mode is ambiguous.
+t_mode_fallback_refuses_when_ambiguous() {
+  echo "mode fallback refuses to guess when two outputs share the mode"
+  new_state
+  printf 'Monitors: 3\n 0: +*DP-3 3440/790x1440/350+0+480  DP-3\n 1: +HDMI-A-8 1920/50x480/210+4424+1920  HDMI-A-8\n 2: +HDMI-A-9 1920/50x480/210+9000+0  HDMI-A-9\n' > "$STATE/current"
+  start_launcher 4
+  wait_reads 6
+  check "did not anchor on an ambiguous match" "0" "$(launch_count)"
+  stop_launcher
+}
+
 # ------------------------------------------------------------------ main ----
 
 bash -n "$LAUNCHER" || {
@@ -290,6 +321,8 @@ t_holds_the_anchor_when_randr_is_unreadable
 t_launches_degraded_when_it_never_settles
 t_term_stops_conky_too
 t_propagates_conky_exit
+t_finds_the_panel_by_mode_when_renamed
+t_mode_fallback_refuses_when_ambiguous
 
 if [ "$FAILURES" -eq 0 ]; then
   echo "all checks passed"

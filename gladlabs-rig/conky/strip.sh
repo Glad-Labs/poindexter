@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sensor-strip renderer v3 for the 8.8" 1920x480 display (HDMI-A-1).
+# Sensor-strip renderer v3 for the 8.8" 1920x480 display.
 # Called by conky via ${execpi 1 ...} — emits conky markup, one frame per call.
 # hwmon devices are resolved by NAME every call: indices shuffle across boots.
 # v3: background image (make-strip-bg.py), scrolling graphs (cpugraph native;

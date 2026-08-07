@@ -71,6 +71,24 @@ speed — no X server, no systemd, ~9s.
   strands the panel at its old absolute position — hit 2026-08-05, a COSMIC
   rearrange left it drawn across the Acer while the strip had moved to
   `+4423+1920`, and only a manual unit restart fixed it.
+- **The graph row is positioned by TEXT FLOW, so it drifts.** `${goto}` fixes X,
+  but the graphs' Y is wherever `strip.sh`'s output left the cursor. The footer's
+  last column renders to **x=1909 — 11px clear of the 1920 edge**, so a wider live
+  value (net throughput flipping to MiB, a two-digit loadavg) wraps that row and
+  shoves the graphs a line down; when it stops wrapping they jump back up. That is
+  how they came adrift on 2026-08-06 with no file having changed. `voffset 75` is
+  calibrated for the **unwrapped** case: 54px graphs at y402-456, inside the
+  y398-460 wells `make-strip-bg.py` bakes. Verify after any layout edit by
+  capturing the live window and diffing it against `strip-bg.png` rather than
+  eyeballing it. A durable fix means removing the wrap risk: trim the footer's
+  last column, or emit the footer as a second `execpi` **after** the graph objects
+  so its wrapping cannot move them.
+- **The strip's connector name is not stable — match it by mode.** It moved
+  `HDMI-A-1` (AMD iGPU) → `HDMI-A-2` (RTX 5090) on 2026-08-06 when the cable was
+  swapped to put every display on one GPU. A name-only match makes
+  `launch-strip.sh` report "never settled" forever on a panel that is plugged in
+  and working, so it now falls back to the panel's unique `1920x480` mode
+  (`STRIP_MODE`), and only when exactly one output has it.
 - Editing OLH RGB colors later: change `openlinkhub/rgb.json` **and bump the
   profile's `version`** before copying — devices render from per-serial copies
   in `database/rgb/` that only refresh on a version mismatch (upstream #487).

@@ -1,5 +1,5 @@
 [Unit]
-Description=Conky sensor strip (8.8in 1920x480 HDMI-A-1)
+Description=Conky sensor strip (8.8in 1920x480, found by mode)
 PartOf=graphical-session.target
 After=graphical-session.target
 
