@@ -112,12 +112,16 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from plugins.job import JobResult
 from utils.findings import emit_finding
+
+if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
+    # _probe_infra_health, so importing this job never pulls the probe stack.
+    from services.media_infra_health import MediaInfraHealth
 
 logger = logging.getLogger(__name__)
 
@@ -296,8 +300,10 @@ class MediaReconciliationJob:
         # build a fresh R2UploadService per regen attempt.
         self._site_config = config.get("_site_config")
         # Fresh infra-health probe per cycle (consumed lazily by the
-        # cap-reset self-heal only — see _probe_infra_health).
-        self._infra_health_cache = None
+        # cap-reset self-heal only — see _probe_infra_health). Annotated so
+        # the lazy fill at _probe_infra_health type-checks; without it mypy
+        # infers `None` from this assignment and rejects the cache write.
+        self._infra_health_cache: MediaInfraHealth | None = None
 
         lookback_days = int(config.get("lookback_days", 14))
         # Row-stamp pass scans the full window (default unbounded). The
@@ -1055,10 +1061,17 @@ class MediaReconciliationJob:
     # (marker NULL while the dispatch job defers through an infra outage) used
     # to have its count bumped every 15-min cycle, hitting the cap in ~45 min
     # with zero real render attempts.
+    #
+    # ``media_pipeline_unclaim_count`` resets here (poindexter#995): this IS a
+    # fresh, deliberately-authorised attempt, so it should start with a full
+    # free-outage-retry budget. Without the reset a piece that once exhausted
+    # that budget would permanently lose its outage tolerance — the exact
+    # wedge the un-claim path was built to prevent.
     _CLEAR_MARKER_SQL = """
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
-               media_pipeline_redispatch_count = media_pipeline_redispatch_count + 1
+               media_pipeline_redispatch_count = media_pipeline_redispatch_count + 1,
+               media_pipeline_unclaim_count = 0
          WHERE task_id = $1
            AND media_pipeline_redispatch_count < $2
            AND media_pipeline_dispatched_at IS NOT NULL
@@ -1075,6 +1088,7 @@ class MediaReconciliationJob:
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
                media_pipeline_redispatch_count = 1,
+               media_pipeline_unclaim_count = 0,
                media_pipeline_cap_reset_at = NOW()
          WHERE task_id = $1
            AND media_pipeline_redispatch_count >= $2

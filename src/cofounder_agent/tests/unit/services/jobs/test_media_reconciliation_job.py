@@ -1051,6 +1051,19 @@ class TestVideoCapReset:
         assert "media_pipeline_cap_reset_at IS NULL" in sql
         assert "make_interval(hours => $3)" in sql
 
+    def test_watchdog_rearm_refunds_the_unclaim_budget(self):
+        """poindexter#995: both watchdog re-arm paths reset
+        ``media_pipeline_unclaim_count``. Each is a deliberately-authorised
+        fresh attempt, so it must start with a full free-outage-retry budget —
+        otherwise a piece that once exhausted that budget permanently loses the
+        outage tolerance the un-claim path exists to provide."""
+        assert "media_pipeline_unclaim_count = 0" in (
+            MediaReconciliationJob._CLEAR_MARKER_SQL
+        )
+        assert "media_pipeline_unclaim_count = 0" in (
+            MediaReconciliationJob._CAP_RESET_SQL
+        )
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

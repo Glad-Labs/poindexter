@@ -94,6 +94,26 @@ Two fixes, matching the two defects in the issue:
 | `video_hero_unload_image_gen`           | `true`  | Hard-unload image-gen immediately before each wan hero load (#907). Off = skip the cold reload on a card that fits both. |
 | `video_hero_unload_settle_seconds`      | `3`     | Pause after that unload so the CUDA context returns to the host before wan asks for it.                                  |
 
+### The un-claim is bounded (poindexter#995, 2026-08-07)
+
+When a `media_pipeline` run raises **and** the post-failure probe is unhealthy, `dispatch_media_pipeline` un-claims the piece (`media_pipeline_dispatched_at` back to `NULL`) instead of leaving it for the watchdog. That is deliberate: an outage fast-fail must never consume one of the task's bounded `media_pipeline_redispatch_count` attempts — six posts wedged permanently at that cap before the health gate existed.
+
+The gap that made it a **loop**: the post-failure probe cannot distinguish _"infra died independently"_ from _"this render's own VRAM footprint is why the probe fails."_ wan holds 23–27 GB mid-render, so any failure leaves the card under `media_render_min_free_vram_gb` and reads as an outage. A piece that fails **because of itself** was therefore re-claimed for free, forever, on a 5-minute cron. Task `8faf3617` (published 2026-07-17, no `video_url`) rode that loop for weeks — three full ~15-minute GPU renders a day, **40 of 147 findings in one 24h window (27%)**, with `media_pipeline_redispatch_count` still reading `0` because no capped path ever ran.
+
+So the un-claim now carries its own budget, `media_pipeline_unclaim_max`, tracked on `pipeline_tasks.media_pipeline_unclaim_count`:
+
+- The un-claim UPDATE is guarded (`AND media_pipeline_unclaim_count < $2`) and bumps the counter atomically. A 0-row result means the budget is spent.
+- **Spent → the marker stays set.** The piece stops re-rendering and a `media_unclaim_budget_exhausted` finding fires, because "stopped looping" must not be indistinguishable from "silently wedged".
+- The counter **resets on any successful dispatch**, and on either `media_reconciliation` re-arm path (`_CLEAR_MARKER_SQL` / `_CAP_RESET_SQL`) — those are deliberately-authorised fresh attempts and should start with a full budget. So the ceiling caps _consecutive self-inflicted_ retries; it is not a lifetime quota, and a task that fails once a month never accumulates its way to it.
+
+It is a **separate** budget from `media_pipeline_redispatch_max` on purpose. Sharing one would re-create the 2026-07-03 wedge, where a genuine multi-hour outage burns every in-flight piece's cap in minutes.
+
+The full escalation ladder is now finite at every rung: **N free outage retries → the bounded watchdog re-dispatches → the 24h cap-reset self-heal.**
+
+| Key                          | Default | Meaning                                                                                                             |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `media_pipeline_unclaim_max` | `3`     | Free outage retries per task before the dispatch marker is left set. `0` disables the un-claim (watchdog owns all). |
+
 ## Idle-only WSL/Docker reset (PR 2, host-side — build shipped, registration deferred)
 
 The ~8.6 GB `vmwp`/`vmmemWSL` retention only returns to the host on `wsl --shutdown` + a Docker Desktop restart — a container restart doesn't touch it, and `wsl --shutdown` alone breaks GPU passthrough until Docker restarts too. The containerized worker runs _inside_ WSL and cannot reset it; this has to be a Windows host task.
@@ -104,5 +124,5 @@ The ~8.6 GB `vmwp`/`vmmemWSL` retention only returns to the host on `wsl --shutd
 
 ## What this does and doesn't do
 
-- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.** Actively reclaims the ~7 GB image-gen slice before giving up on a cycle.
+- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.** Actively reclaims the ~7 GB image-gen slice before giving up on a cycle. Bounds the outage un-claim so a piece that fails on its own footprint stops re-rendering instead of looping on the 5-minute cron.
 - **Doesn't (yet):** touch the ~8.6 GB WSL2 retention — that needs the idle-only host reset, which is built but not yet enabled on this machine (supervised activation pending).

@@ -86,8 +86,12 @@ async def test_dispatches_eligible_task_under_media_thread():
     # Helper is called (pool, site_config, task_id) — task_id is the source id.
     args, _ = run_mock.call_args
     assert args[2] == "abc"
-    # Claim happened before the run (marker stamped).
-    pool.execute.assert_awaited_once()
+    # Claim happened before the run (marker stamped), then the un-claim budget
+    # was refunded after it (poindexter#995) — two writes, in that order.
+    executed = [c.args[0] for c in pool.execute.await_args_list]
+    assert len(executed) == 2
+    assert "SET media_pipeline_dispatched_at = NOW()" in executed[0]
+    assert "SET media_pipeline_unclaim_count = 0" in executed[1]
 
 
 @pytest.mark.asyncio
@@ -589,3 +593,168 @@ def test_cooldown_of_zero_disables_the_feature():
     dmp._last_ineffective_reclaim = _time.monotonic()
     sc = _sc_gated(media_render_reclaim_cooldown_minutes="0")
     assert dmp._reclaim_on_cooldown(sc, now=_time.monotonic()) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Bounded outage un-claim budget (poindexter#995)
+#
+# The un-claim path is free of the RE-DISPATCH budget on purpose — an outage
+# must never wedge a piece at that cap. But "free" was also "unbounded": the
+# post-failure probe cannot tell "infra died independently" from "this render's
+# own VRAM footprint is why the probe fails" (wan holds 23-27 GB mid-render),
+# so a piece that fails because of ITSELF was re-claimed forever. Task 8faf3617
+# rode that loop to 40 findings in 24h with redispatch_count still reading 0.
+# ---------------------------------------------------------------------------
+
+
+class _RoutingPool:
+    """Pool whose ``execute`` returns a command tag chosen by SQL content, so a
+    test can make the claim succeed while the un-claim is refused."""
+
+    def __init__(self, rows, *, unclaim_tag="UPDATE 1", default_tag="UPDATE 1"):
+        self.fetch = AsyncMock(return_value=rows)
+        self._unclaim_tag = unclaim_tag
+        self._default_tag = default_tag
+        self.calls: list[tuple] = []
+        self.execute = AsyncMock(side_effect=self._execute)
+
+    async def _execute(self, sql, *args):
+        self.calls.append((sql, args))
+        if "media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1" in sql:
+            return self._unclaim_tag
+        return self._default_tag
+
+    def sql_matching(self, needle):
+        return [(s, a) for s, a in self.calls if needle in s]
+
+
+def _fail_then_unhealthy():
+    """Healthy at cycle start (so the dispatch proceeds), dead by the re-probe."""
+    return AsyncMock(
+        side_effect=[
+            MediaInfraHealth(True, "ok"),
+            MediaInfraHealth(False, "render GPU free VRAM 18.6 GB < 25 GB required"),
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_unclaim_is_bounded_by_the_configured_budget():
+    """The un-claim UPDATE carries the budget as a bind param and bumps the
+    counter — the WHERE clause is what makes the loop terminate."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "a"}])
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock(side_effect=RuntimeError("boom"))), \
+         patch.object(dmp, "check_media_infra_health", _fail_then_unhealthy()), \
+         patch.object(dmp, "emit_finding", MagicMock()):
+        out = await job.run(
+            pool, {"_site_config": _sc_gated(media_pipeline_unclaim_max="5")}
+        )
+    assert out.ok
+    unclaims = pool.sql_matching("media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1")
+    assert len(unclaims) == 1
+    sql, args = unclaims[0]
+    assert "SET media_pipeline_dispatched_at = NULL" in sql
+    assert "AND media_pipeline_unclaim_count < $2" in sql
+    assert args == ("a", 5)  # budget is bound, not interpolated
+
+
+@pytest.mark.asyncio
+async def test_spent_budget_leaves_marker_set_and_emits_finding():
+    """0-row un-claim = budget spent. The marker stays set (piece stops
+    re-rendering) and a finding fires — 'stopped looping' must not look
+    identical to 'silently wedged'."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "loop-victim"}], unclaim_tag="UPDATE 0")
+    emit_mock = MagicMock()
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock(side_effect=RuntimeError("boom"))), \
+         patch.object(dmp, "check_media_infra_health", _fail_then_unhealthy()), \
+         patch.object(dmp, "emit_finding", emit_mock):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.ok
+    emit_mock.assert_called_once()
+    kwargs = emit_mock.call_args.kwargs
+    assert kwargs["kind"] == "media_unclaim_budget_exhausted"
+    assert kwargs["extra"]["task_id"] == "loop-victim"
+    assert kwargs["extra"]["unclaim_max"] == 3
+    # dedup per task: two different wedged pieces must not silence each other.
+    assert kwargs["dedup_key"] == "media_unclaim_budget_exhausted:loop-victim"
+
+
+@pytest.mark.asyncio
+async def test_healthy_infra_failure_still_emits_dispatch_failed_not_budget_finding():
+    """A failure on HEALTHY infra is a bad piece, not an outage — it keeps the
+    pre-existing media_dispatch_failed path and never touches the budget."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "a"}])
+    emit_mock = MagicMock()
+    health = AsyncMock(side_effect=[MediaInfraHealth(True, "ok"), MediaInfraHealth(True, "ok")])
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock(side_effect=RuntimeError("boom"))), \
+         patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "emit_finding", emit_mock):
+        await job.run(pool, {"_site_config": _sc_gated()})
+    assert emit_mock.call_args.kwargs["kind"] == "media_dispatch_failed"
+    assert not pool.sql_matching("media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1")
+
+
+@pytest.mark.asyncio
+async def test_successful_dispatch_refunds_the_budget():
+    """A clean render resets the counter, so the ceiling caps CONSECUTIVE
+    self-inflicted retries rather than imposing a lifetime quota."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "good"}])
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock()), \
+         patch.object(dmp, "check_media_infra_health", AsyncMock(return_value=MediaInfraHealth(True, "ok"))):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.changes_made == 1
+    resets = pool.sql_matching("SET media_pipeline_unclaim_count = 0")
+    assert len(resets) == 1
+    assert resets[0][1] == ("good",)
+
+
+@pytest.mark.asyncio
+async def test_budget_reset_failure_does_not_fail_a_successful_render():
+    """Bookkeeping is best-effort — a reset error must not turn a completed
+    ~15-minute GPU render into a job failure."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "good"}])
+
+    async def _boom(sql, *args):
+        pool.calls.append((sql, args))
+        if "SET media_pipeline_unclaim_count = 0" in sql:
+            raise RuntimeError("deadlock")
+        return "UPDATE 1"
+
+    pool.execute = AsyncMock(side_effect=_boom)
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock()), \
+         patch.object(dmp, "check_media_infra_health", AsyncMock(return_value=MediaInfraHealth(True, "ok"))):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.ok
+    assert out.changes_made == 1
+
+
+def test_unclaim_max_parsing():
+    """Default 3; garbage falls back to 3; 0 is honoured (an operator choosing
+    'never un-claim, always let the bounded watchdog own it') and must NOT be
+    silently promoted to 1; negatives floor at 0."""
+    assert dmp._unclaim_max(_sc_gated()) == 3
+    assert dmp._unclaim_max(_sc_gated(media_pipeline_unclaim_max="7")) == 7
+    assert dmp._unclaim_max(_sc_gated(media_pipeline_unclaim_max="not-a-number")) == 3
+    assert dmp._unclaim_max(_sc_gated(media_pipeline_unclaim_max="")) == 3
+    assert dmp._unclaim_max(_sc_gated(media_pipeline_unclaim_max="0")) == 0
+    assert dmp._unclaim_max(_sc_gated(media_pipeline_unclaim_max="-4")) == 0
+
+
+@pytest.mark.asyncio
+async def test_budget_zero_never_unclaims():
+    """Budget 0 → the guarded UPDATE can never match, so the marker always
+    stays set and the watchdog owns every retry."""
+    job = DispatchMediaPipelineJob()
+    pool = _RoutingPool([{"task_id": "a"}], unclaim_tag="UPDATE 0")
+    emit_mock = MagicMock()
+    with patch.object(dmp, "_run_media_pipeline", AsyncMock(side_effect=RuntimeError("boom"))), \
+         patch.object(dmp, "check_media_infra_health", _fail_then_unhealthy()), \
+         patch.object(dmp, "emit_finding", emit_mock):
+        await job.run(pool, {"_site_config": _sc_gated(media_pipeline_unclaim_max="0")})
+    assert pool.sql_matching("media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1")[0][1] == ("a", 0)
+    assert emit_mock.call_args.kwargs["kind"] == "media_unclaim_budget_exhausted"

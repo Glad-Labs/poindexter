@@ -33,6 +33,18 @@ consume one of the task's bounded ``media_pipeline_redispatch_count``
 attempts (six posts wedged permanently at the cap this way during the
 wan/image-gen/DNS outage windows).
 
+**Bounded un-claim (poindexter#995).** That free re-claim gets its own ceiling,
+``media_pipeline_unclaim_max`` (default 3), tracked on
+``pipeline_tasks.media_pipeline_unclaim_count``. The post-failure probe cannot
+distinguish "infra died independently" from "this render's own VRAM footprint
+is why the probe fails" — wan holds 23-27 GB mid-render — so without a ceiling
+a piece that fails *because of itself* is re-claimed for free forever. The
+counter resets on any successful dispatch (and whenever ``media_reconciliation``
+authorises a fresh attempt), so it caps consecutive self-inflicted retries
+rather than imposing a lifetime quota. When it is spent the marker stays set,
+a ``media_unclaim_budget_exhausted`` finding fires, and the bounded watchdog
+owns retry — leaving the full escalation ladder finite at every rung.
+
 **Source-task scripts + media-scoped thread.** ``media.load_scripts`` loads the
 persisted scripts by ``task_id`` from ``pipeline_versions``, so the media graph
 runs with the *source* (approved) task's id. It runs under a distinct
@@ -85,10 +97,35 @@ _CLAIM_SQL = """
 # marker goes back to NULL so the next healthy cycle re-claims the piece
 # directly — no media_reconciliation re-dispatch (and no
 # media_pipeline_redispatch_count burn) is needed to recover from an outage.
+#
+# Bounded since poindexter#995. The un-claim is free of the RE-DISPATCH budget
+# on purpose (an outage must never wedge a piece at that cap — six posts did
+# exactly that before 2026-07-03), but "free" was also "unbounded", and the
+# post-failure probe cannot tell "infra died independently" from "this render's
+# own VRAM footprint is why the probe fails": wan holds 23-27 GB mid-render, so
+# a self-inflicted failure leaves the card under media_render_min_free_vram_gb
+# and reads as an outage. Task 8faf3617 rode that loop for weeks — three full
+# ~15-min GPU renders a day, 40 findings in 24h, redispatch_count still 0.
+#
+# So the path keeps its own separate budget. A 0-row result means the budget is
+# spent: the marker stays set, the piece stops re-rendering, and the (bounded,
+# self-healing) media_reconciliation watchdog owns it from there.
 _UNCLAIM_SQL = """
     UPDATE pipeline_tasks
-       SET media_pipeline_dispatched_at = NULL
+       SET media_pipeline_dispatched_at = NULL,
+           media_pipeline_unclaim_count = media_pipeline_unclaim_count + 1
      WHERE task_id = $1
+       AND media_pipeline_unclaim_count < $2
+"""
+
+# A piece that rendered cleanly owes nothing to the free-retry budget — reset it
+# so a task that fails once a month never accumulates its way to the cap. This
+# is what keeps the ceiling a loop-breaker rather than a lifetime quota.
+_RESET_UNCLAIM_SQL = """
+    UPDATE pipeline_tasks
+       SET media_pipeline_unclaim_count = 0
+     WHERE task_id = $1
+       AND media_pipeline_unclaim_count > 0
 """
 
 
@@ -219,6 +256,19 @@ def _max_per_cycle(site_config: Any) -> int:
         return max(1, int(site_config.get("media_pipeline_max_per_cycle", "1") or "1"))
     except (TypeError, ValueError):
         return 1
+
+
+def _unclaim_max(site_config: Any) -> int:
+    """Free outage-retry budget per task (default 3, 0 disables the un-claim).
+
+    Floored at 0, not 1: an operator setting this to 0 means "never un-claim",
+    which is a coherent choice (leave every failure to the bounded watchdog),
+    so it must not be silently promoted to 1.
+    """
+    try:
+        return max(0, int(site_config.get("media_pipeline_unclaim_max", "3") or "3"))
+    except (TypeError, ValueError):
+        return 3
 
 
 class DispatchMediaPipelineJob:
@@ -357,6 +407,17 @@ class DispatchMediaPipelineJob:
                     "[DISPATCH_MEDIA] media_pipeline dispatched for task %s",
                     task_id,
                 )
+                # Clean run — refund the free-retry budget (poindexter#995).
+                # Best-effort: a bookkeeping failure must not turn a successful
+                # render into a job failure.
+                try:
+                    await pool.execute(_RESET_UNCLAIM_SQL, task_id)
+                except Exception as reset_exc:  # noqa: BLE001
+                    logger.warning(
+                        "[DISPATCH_MEDIA] un-claim budget reset failed for %s: "
+                        "%s — the render itself succeeded",
+                        task_id, reset_exc,
+                    )
             except Exception as exc:  # noqa: BLE001 — one failure must not halt the job
                 logger.warning(
                     "[DISPATCH_MEDIA] media_pipeline run failed for %s: %s",
@@ -370,19 +431,65 @@ class DispatchMediaPipelineJob:
                 # attempts just to recover from downtime.
                 post_health = await check_media_infra_health(sc)
                 if not post_health.healthy:
+                    budget = _unclaim_max(sc)
                     try:
-                        await pool.execute(_UNCLAIM_SQL, task_id)
-                        logger.warning(
-                            "[DISPATCH_MEDIA] infra unhealthy after failure "
-                            "(%s) — un-claimed %s and deferring the rest of "
-                            "the cycle", post_health.detail, task_id,
-                        )
+                        unclaimed = str(
+                            await pool.execute(_UNCLAIM_SQL, task_id, budget)
+                        ).strip().endswith(" 1")
                     except Exception as unclaim_exc:  # noqa: BLE001
+                        unclaimed = False
                         logger.warning(
                             "[DISPATCH_MEDIA] un-claim failed for %s: %s — "
                             "the reconciliation watchdog will re-dispatch it",
                             task_id, unclaim_exc,
                         )
+                    else:
+                        if unclaimed:
+                            logger.warning(
+                                "[DISPATCH_MEDIA] infra unhealthy after failure "
+                                "(%s) — un-claimed %s and deferring the rest of "
+                                "the cycle", post_health.detail, task_id,
+                            )
+                        else:
+                            # Budget spent (or disabled). The marker stays set,
+                            # so this piece stops re-rendering — surface it, or
+                            # "stopped looping" looks exactly like "silently
+                            # wedged" (poindexter#995).
+                            logger.warning(
+                                "[DISPATCH_MEDIA] %s exhausted its un-claim "
+                                "budget (%d) — leaving the marker set; the "
+                                "reconciliation watchdog owns retry now",
+                                task_id, budget,
+                            )
+                            emit_finding(
+                                source="dispatch_media_pipeline",
+                                kind="media_unclaim_budget_exhausted",
+                                title=(
+                                    f"media task {task_id} stopped free-retrying "
+                                    f"(un-claim budget {budget} spent)"
+                                ),
+                                body=(
+                                    f"The Stage-2 media_pipeline run for task "
+                                    f"{task_id} failed again and the post-failure "
+                                    f"infra probe was unhealthy ({post_health.detail}), "
+                                    f"but its {budget} free outage retries are spent. "
+                                    "The dispatch marker stays set, so the piece no "
+                                    "longer re-renders every cycle. If the infra "
+                                    "problem is real it will clear on its own; if the "
+                                    "piece itself is bad it now needs operator triage "
+                                    "— a render that only fails on ITS OWN VRAM "
+                                    "footprint looks identical to an outage from here. "
+                                    "media_reconciliation still owns bounded re-dispatch "
+                                    "while the post is inside the regen window."
+                                ),
+                                severity="warn",
+                                dedup_key=f"media_unclaim_budget_exhausted:{task_id}",
+                                extra={
+                                    "task_id": str(task_id),
+                                    "unclaim_max": budget,
+                                    "infra_detail": post_health.detail,
+                                },
+                            )
                     deferred_mid_cycle = True
                     break
                 emit_finding(
