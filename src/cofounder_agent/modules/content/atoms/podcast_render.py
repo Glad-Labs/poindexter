@@ -13,9 +13,11 @@ the graph finishes and the ``media_reconciliation`` watchdog re-dispatches.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.findings import emit_finding
 
 ATOM_META = AtomMeta(
     name="podcast.render",
@@ -68,6 +70,46 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         task_id=task_id,
         key=str(task_id),
     )
+
+    # Intro/outro sting mix (poindexter#690, finished 2026-08): when
+    # generate_media_scripts synthesized a sting, wrap the narration in
+    # it. Read undeclared from state on purpose — the sting is optional
+    # ambience, not wiring: declaring it on the contract would force a
+    # sting producer into every podcast graph (and re-stamp every stored
+    # graph_def) for a feature that degrades gracefully to a dry cut.
+    sting = str(state.get("podcast_intro_audio_path") or "")
+    site_config = state.get("site_config")
+    enabled = (
+        str(
+            site_config.get("podcast_sting_mix_enabled", "true")
+            if site_config is not None else "true"
+        ).lower() == "true"
+    )
+    if path and sting and enabled and os.path.exists(sting):
+        from services.podcast_sting_mixer import mix_intro_outro
+
+        mixed = await mix_intro_outro(
+            path, sting, site_config=site_config, task_id=str(task_id),
+        )
+        if mixed:
+            return {"podcast_audio_path": mixed}
+        # Sting existed but the mix failed — the episode ships dry, which
+        # is a quality downgrade the operator should hear about
+        # (feedback_flag_quality_downgrades), not a silent fallback.
+        emit_finding(
+            source="podcast.render",
+            kind="podcast_sting_mix_failed",
+            title="podcast: sting mix failed — episode shipped without music",
+            body=(
+                f"A generated intro sting existed for task {task_id} but the "
+                f"ffmpeg mix failed (see worker log '[sting_mixer]'); the "
+                "episode was persisted as dry narration. Re-render after "
+                "fixing to get the produced cut."
+            ),
+            severity="warn",
+            dedup_key=f"podcast_sting_mix_failed:{task_id}",
+            extra={"task_id": str(task_id or ""), "sting": sting},
+        )
     return {"podcast_audio_path": path}
 
 

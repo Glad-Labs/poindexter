@@ -71,3 +71,100 @@ async def test_render_failsoft_when_synthesis_raises() -> None:
 async def test_render_noop_when_no_site_config() -> None:
     result = await podcast_render.run({"task_id": "t1", "podcast_script": "Body."})
     assert result == {"podcast_audio_path": ""}
+
+
+# ── Intro/outro sting mix (poindexter#690 finish) ────────────────────────
+
+
+def _sting_state(tmp_path, *, enabled="true"):
+    sting = tmp_path / "sting.wav"
+    sting.write_bytes(b"RIFFfake")
+    sc = SiteConfig(initial_config={
+        "podcast_sting_mix_enabled": enabled,
+        "media.cta.podcast": "",
+    })
+    return {
+        "task_id": "t-sting",
+        "podcast_script": "Hello world, this is the show.",
+        "podcast_intro_audio_path": str(sting),
+        "site_config": sc,
+    }
+
+
+@pytest.mark.asyncio
+async def test_sting_mix_replaces_path_on_success(tmp_path, monkeypatch) -> None:
+    async def fake_narration(**kwargs):
+        return "/tmp/dry.mp3"
+
+    async def fake_mix(narration, sting, *, site_config=None, task_id=None):
+        assert narration == "/tmp/dry.mp3"
+        return "/tmp/mixed.mp3"
+
+    import modules.content.atoms._narration_render as nr
+    import services.podcast_sting_mixer as mixer
+
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+    monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
+    out = await podcast_render.run(_sting_state(tmp_path))
+    assert out == {"podcast_audio_path": "/tmp/mixed.mp3"}
+
+
+@pytest.mark.asyncio
+async def test_sting_mix_failure_ships_dry_and_flags(tmp_path, monkeypatch) -> None:
+    async def fake_narration(**kwargs):
+        return "/tmp/dry.mp3"
+
+    async def fake_mix(*a, **k):
+        return None
+
+    findings = []
+
+    import modules.content.atoms._narration_render as nr
+    import services.podcast_sting_mixer as mixer
+
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+    monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
+    monkeypatch.setattr(
+        podcast_render, "emit_finding",
+        lambda **kw: findings.append(kw),
+    )
+    out = await podcast_render.run(_sting_state(tmp_path))
+    assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
+    assert findings and findings[0]["kind"] == "podcast_sting_mix_failed"
+
+
+@pytest.mark.asyncio
+async def test_sting_mix_disabled_skips(tmp_path, monkeypatch) -> None:
+    async def fake_narration(**kwargs):
+        return "/tmp/dry.mp3"
+
+    calls = []
+
+    async def fake_mix(*a, **k):
+        calls.append(a)
+        return "/tmp/mixed.mp3"
+
+    import modules.content.atoms._narration_render as nr
+    import services.podcast_sting_mixer as mixer
+
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+    monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
+    out = await podcast_render.run(
+        _sting_state(tmp_path, enabled="false"))
+    assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_no_sting_no_mix(monkeypatch) -> None:
+    async def fake_narration(**kwargs):
+        return "/tmp/dry.mp3"
+
+    import modules.content.atoms._narration_render as nr
+
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+    sc = SiteConfig(initial_config={"media.cta.podcast": ""})
+    out = await podcast_render.run({
+        "task_id": "t", "podcast_script": "hi", "site_config": sc,
+    })
+    assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
