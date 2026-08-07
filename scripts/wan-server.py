@@ -594,6 +594,29 @@ async def unload(req: UnloadRequest | None = None) -> dict[str, Any]:
     ``nothing_to_reclaim`` instead of paying a pointless cold-start window
     (the image-gen lesson: ~24 consecutive no-op exits before its gate).
     """
+    # Never unload out from under a live generation (2026-08-07).
+    # dispatch_media_pipeline's VRAM reclaim ladder calls this with
+    # hard=True whenever the render-GPU gate looks unhealthy — and a wan
+    # generation IS the unhealthy-looking state (23 GB resident for ~147s).
+    # Obeying meant the media dispatcher killed the very GPU work it was
+    # trying to schedule: the process exited ~10ms after the clip was
+    # written, so the MP4 landed on disk but the caller got
+    # RemoteDisconnected, logged "wan provider returned no result", and fell
+    # back to a Ken Burns still. Every hero of the 2026-08-06/-07 renders
+    # died this way, ~147 GPU-seconds each. Declining is strictly better
+    # than obeying: the reclaim wants VRAM to START a render, and the render
+    # already running is what the VRAM is for.
+    if state.inflight > 0:
+        logger.warning(
+            "[UNLOAD] declining %s unload — %d generation(s) in flight; "
+            "unloading now would destroy the in-flight clip AND its response",
+            "hard" if (req and req.hard) else "soft", state.inflight,
+        )
+        return {
+            "status": "busy_generation_in_flight",
+            "inflight": state.inflight,
+        }
+
     if req and req.hard:
         async with state.gpu_lock:
             _unload_pipeline_blocking()

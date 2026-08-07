@@ -195,3 +195,55 @@ def test_generate_releases_inflight_even_when_the_request_fails():
         assert wan.state.inflight == 0
 
     asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_hard_unload_declines_while_a_generation_is_in_flight():
+    """dispatch_media_pipeline's reclaim ladder calls /unload {"hard": true}
+    whenever the render-GPU gate looks unhealthy — and an active wan
+    generation IS that state (23 GB resident for ~147s). Obeying killed the
+    clip and its response; the endpoint must decline instead."""
+    async def body():
+        wan.state.inflight = 1
+        with _fat_reserved(), \
+                patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+                patch.object(os, "_exit") as mock_exit:
+            result = await wan.unload(wan.UnloadRequest(hard=True))
+
+        mock_exit.assert_not_called()
+        unload_mock.assert_not_called()
+        assert result["status"] == "busy_generation_in_flight"
+        assert result["inflight"] == 1
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_soft_unload_also_declines_while_in_flight():
+    """A soft unload mid-generation would drop the pipeline objects the
+    running inference is using — same refusal, different blast radius."""
+    async def body():
+        wan.state.inflight = 1
+        with patch.object(wan, "_unload_pipeline_blocking") as unload_mock:
+            result = await wan.unload()
+
+        unload_mock.assert_not_called()
+        assert result["status"] == "busy_generation_in_flight"
+
+    asyncio.run(body())
+
+
+@pytest.mark.unit
+def test_hard_unload_still_reclaims_when_idle():
+    """The guard must not defeat the reclaim: with nothing in flight, a hard
+    unload still drops the pipelines and exits."""
+    async def body():
+        with _fat_reserved(), \
+                patch.object(wan, "_unload_pipeline_blocking") as unload_mock, \
+                patch.object(os, "_exit") as mock_exit:
+            await wan.unload(wan.UnloadRequest(hard=True))
+
+        unload_mock.assert_called_once()
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
