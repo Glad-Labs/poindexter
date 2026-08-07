@@ -10,6 +10,7 @@ Each Tap yields Documents with one per source item (file, row, record).
 The runner is responsible for:
 
 - Loading PluginConfig (enable/disable, per-Tap settings)
+- Honouring each Tap's ``interval_seconds`` against ``tap_run_state``
 - Calling ``tap.extract(pool, config)``
 - For each yielded Document:
   - Checking content_hash dedup against the existing chunk-0 row
@@ -21,6 +22,24 @@ The runner is responsible for:
 This is also the place to add cross-cutting concerns later: per-Tap
 timing metrics (for Prometheus), per-Tap error quarantine (disable
 after N consecutive failures), etc.
+
+## Scheduling
+
+``run_all`` has TWO hourly callers — ``RunTapsJob`` in the worker and the
+auto-embed sidecar's loop — in separate processes. Per-tap intervals are
+therefore held in the ``tap_run_state`` TABLE, not in memory: shared state
+is what lets the two agree, and it also stopped every tap from running
+twice an hour.
+
+Three states a tap can be in, and they must stay distinguishable:
+
+- ``enabled=False`` — deliberately off.
+- ``due=False`` — live and healthy, interval simply has not elapsed.
+- ran — ``embedded``/``skipped``/``failed`` are meaningful.
+
+Only the third is eligible for :func:`is_zero_yield`. A not-due tap reports
+0/0/0, which is byte-identical to "the source went dark"; conflating them
+would page every skipped cycle.
 """
 
 from __future__ import annotations
@@ -65,6 +84,14 @@ _DEFAULT_TAP_TIMEOUT_S = 300
 # dedup output. Operator-tunable via ``app_settings.tap_dedup_batch_size``.
 _DEFAULT_DEDUP_BATCH_SIZE = 256
 
+# Slack allowed when deciding whether a tap's interval has elapsed. The
+# runner's callers fire hourly, so a tap declaring exactly 3600s would
+# measure 3599s about half the time, skip, and quietly become 2-hourly.
+# Running slightly EARLY is harmless (idempotent handlers + content-hash
+# dedup); running late-by-a-whole-cycle is the surprising failure.
+# Operator-tunable via ``app_settings.tap_interval_grace_seconds``.
+_DEFAULT_INTERVAL_GRACE_S = 300
+
 # Sentinel so ``_store_document`` can distinguish "no hash supplied → run the
 # per-document fallback query" from an explicit ``None`` ("no stored chunk-0
 # row → treat as new"). The hot tap path always supplies a value (possibly
@@ -78,6 +105,13 @@ class TapStats:
 
     name: str
     enabled: bool = True
+    # False when the tap's interval has not elapsed yet. Distinct from
+    # ``enabled``: the tap is live and healthy, it simply is not due. This
+    # MUST be excluded from ``is_zero_yield`` — a not-due tap reports 0/0/0,
+    # which is byte-identical to the "source went dark" signal that finding
+    # exists to catch. Conflating them would page on every skipped cycle and
+    # train the operator to ignore it.
+    due: bool = True
     embedded: int = 0
     skipped: int = 0
     failed: int = 0
@@ -94,6 +128,7 @@ class TapStats:
         return {
             "name": self.name,
             "enabled": self.enabled,
+            "due": self.due,
             "embedded": self.embedded,
             "skipped": self.skipped,
             "failed": self.failed,
@@ -101,6 +136,93 @@ class TapStats:
             "error": self.error,
             "failures": list(self.failures),
         }
+
+
+def resolve_interval_seconds(tap: Any, cfg: Any) -> int:
+    """Seconds between runs for this tap. ``0`` = no throttle.
+
+    Operator config wins over the class default, so an install can slow a
+    chatty tap down (or speed one up) without a code change. ``0``/absent in
+    config falls through to the ``interval_seconds`` the Tap class declares.
+
+    **``0`` means "run every cycle", not "never".** ``PluginConfig`` defaults
+    the field to 0 when the app_settings row omits it, so treating 0 as
+    "never" would silently stop every tap that has no explicit interval —
+    the opposite of the intended behaviour, and indistinguishable from an
+    outage. A tap that genuinely wants to be on-demand only should be
+    disabled instead.
+    """
+    from_config = int(getattr(cfg, "interval_seconds", 0) or 0)
+    if from_config > 0:
+        return from_config
+    return max(0, int(getattr(tap, "interval_seconds", 0) or 0))
+
+
+async def is_tap_due(
+    pool: Any, tap_name: str, interval_seconds: int, *, grace_seconds: int
+) -> bool:
+    """True when ``interval_seconds`` has elapsed since the last run.
+
+    The comparison happens in SQL so the runner and the database agree on
+    "now" — the auto-embed sidecar and the worker are separate processes and
+    a clock difference between them would make scheduling drift.
+
+    ``grace_seconds`` exists because the callers fire on a fixed cadence
+    (hourly) and a tap declaring exactly 3600s would measure 3599s elapsed
+    about half the time, skip, and quietly become 2-hourly. The grace makes
+    "every hour" mean every hour. It only ever runs a tap slightly EARLY,
+    which is harmless — every handler is idempotent and the runner dedups on
+    content hash.
+
+    Unknown tap (no row) = never run = due, which is right for a
+    newly-installed plugin.
+    """
+    if interval_seconds <= 0:
+        return True
+    effective = max(0, interval_seconds - max(0, grace_seconds))
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT (last_run_at IS NULL
+                        OR now() - last_run_at >= make_interval(secs => $2)) AS due
+                  FROM tap_run_state
+                 WHERE tap_name = $1
+                """,
+                tap_name,
+                float(effective),
+            )
+    except Exception:  # noqa: BLE001 — scheduling must never block ingest
+        # Fail OPEN: a missing table (pre-migration) or a DB hiccup should
+        # run the tap, not silently starve it. Under-running is the failure
+        # mode that hides for weeks; over-running costs a dedup pass.
+        logger.warning(
+            "[TAP_RUNNER] due-check failed for %s; running it", tap_name, exc_info=True
+        )
+        return True
+    return True if row is None else bool(row["due"])
+
+
+async def mark_tap_run(pool: Any, tap_name: str, status: str) -> None:
+    """Record that ``tap_name`` just ran. Best-effort."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO tap_run_state (tap_name, last_run_at, last_status)
+                     VALUES ($1, now(), $2)
+                ON CONFLICT (tap_name) DO UPDATE
+                        SET last_run_at = now(),
+                            last_status = EXCLUDED.last_status,
+                            updated_at  = now()
+                """,
+                tap_name,
+                status,
+            )
+    except Exception:  # noqa: BLE001 — bookkeeping must not fail a good run
+        logger.warning(
+            "[TAP_RUNNER] could not record run state for %s", tap_name, exc_info=True
+        )
 
 
 def is_zero_yield(stats: TapStats) -> bool:
@@ -122,9 +244,10 @@ def is_zero_yield(stats: TapStats) -> bool:
 
     Disabled taps are excluded (deliberately off, not broken), as are taps
     that already recorded an ``error`` — those surface through the failure
-    path and would otherwise be reported twice.
+    path and would otherwise be reported twice — and taps that were not due
+    this cycle, which report 0/0/0 for a completely healthy reason.
     """
-    if not stats.enabled or stats.error:
+    if not stats.enabled or not stats.due or stats.error:
         return False
     return (stats.embedded + stats.skipped + stats.failed) == 0
 
@@ -370,6 +493,8 @@ async def run_tap(
     *,
     max_chars: int | None = None,
     dedup_batch_size: int = _DEFAULT_DEDUP_BATCH_SIZE,
+    enforce_intervals: bool = False,
+    interval_grace_seconds: int = _DEFAULT_INTERVAL_GRACE_S,
 ) -> TapStats:
     """Run one Tap end-to-end, returning a stats summary.
 
@@ -391,6 +516,20 @@ async def run_tap(
     if not cfg.enabled:
         stats.enabled = False
         logger.info("Tap %s disabled; skipping", stats.name)
+        return stats
+
+    # Interval gate. Checked AFTER the enabled check so a disabled tap never
+    # writes run state, and BEFORE extract() so a not-due tap costs nothing.
+    interval = resolve_interval_seconds(tap, cfg)
+    if enforce_intervals and not await is_tap_due(
+        pool, stats.name, interval, grace_seconds=interval_grace_seconds
+    ):
+        stats.due = False
+        logger.info(
+            "Tap %s not due (interval %ds); skipping this cycle",
+            stats.name,
+            interval,
+        )
         return stats
 
     embed_model = getattr(mem, "embed_model", None) or EMBED_MODEL
@@ -443,6 +582,16 @@ async def run_tap(
     finally:
         stats.duration_s = time.monotonic() - start
 
+    # Record the run so the interval gate can throttle the next cycle.
+    #
+    # A tap that ERRORED is deliberately not marked: it retries on the next
+    # cycle instead of waiting out its full interval. Otherwise a transient
+    # GitHub 500 would take github_issues offline for six hours. Per-document
+    # failures (``failed > 0`` with no ``error``) DO mark it — the tap itself
+    # worked, and those documents retry via the normal dedup path anyway.
+    if enforce_intervals and stats.error is None:
+        await mark_tap_run(pool, stats.name, "ok" if not stats.failed else "partial")
+
     return stats
 
 
@@ -480,6 +629,8 @@ async def run_all(
         tap_timeout_s = float(_DEFAULT_TAP_TIMEOUT_S)
     dedup_batch_size = _DEFAULT_DEDUP_BATCH_SIZE
     zero_yield_findings = True
+    enforce_intervals = True
+    interval_grace_s = _DEFAULT_INTERVAL_GRACE_S
     try:
         from services.site_config import SiteConfig
 
@@ -492,6 +643,10 @@ async def run_all(
             )
         dedup_batch_size = _sc.get_int("tap_dedup_batch_size", _DEFAULT_DEDUP_BATCH_SIZE)
         zero_yield_findings = _sc.get_bool("tap_zero_yield_finding_enabled", True)
+        enforce_intervals = _sc.get_bool("tap_interval_enforcement_enabled", True)
+        interval_grace_s = _sc.get_int(
+            "tap_interval_grace_seconds", _DEFAULT_INTERVAL_GRACE_S
+        )
     except Exception:  # noqa: BLE001 — config read is best-effort
         # Visible (warning, not debug): a failed settings read means the DB
         # read path hiccuped, which is worth surfacing even though ingest
@@ -524,6 +679,8 @@ async def run_all(
                     mem,
                     max_chars=chunk_max_chars,
                     dedup_batch_size=dedup_batch_size,
+                    enforce_intervals=enforce_intervals,
+                    interval_grace_seconds=interval_grace_s,
                 ),
                 timeout=tap_timeout_s,
             )
@@ -547,10 +704,14 @@ async def run_all(
         summary.total_embedded += stats.embedded
         summary.total_skipped += stats.skipped
         summary.total_failed += stats.failed
-        logger.info(
-            "Tap %s: %d embedded, %d skipped, %d failed (%.2fs)",
-            stats.name, stats.embedded, stats.skipped, stats.failed, stats.duration_s,
-        )
+        if not stats.due:
+            logger.info("Tap %s: not due this cycle", stats.name)
+        else:
+            logger.info(
+                "Tap %s: %d embedded, %d skipped, %d failed (%.2fs)",
+                stats.name, stats.embedded, stats.skipped, stats.failed,
+                stats.duration_s,
+            )
         if zero_yield_findings and is_zero_yield(stats):
             _emit_zero_yield_finding(stats)
 

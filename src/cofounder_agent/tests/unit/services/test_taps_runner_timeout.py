@@ -38,6 +38,9 @@ class _FakeSiteConfig:
     def get_int(self, key, default):
         return default
 
+    def get_bool(self, key, default):
+        return default
+
 
 def _patch_discovery(monkeypatch, taps):
     """Make run_all see exactly ``taps`` and nothing from the real registry."""
@@ -52,7 +55,7 @@ class TestPerTapTimeout:
         taps = [SimpleNamespace(name="hangs"), SimpleNamespace(name="healthy")]
         _patch_discovery(monkeypatch, taps)
 
-        async def fake_run_tap(tap, pool, mem, *, max_chars=None, dedup_batch_size=None):
+        async def fake_run_tap(tap, pool, mem, **_kwargs):
             if tap.name == "hangs":
                 await asyncio.Event().wait()  # never resolves
             return runner_mod.TapStats(name=tap.name, embedded=1)
@@ -77,7 +80,7 @@ class TestPerTapTimeout:
         taps = [SimpleNamespace(name="a"), SimpleNamespace(name="b")]
         _patch_discovery(monkeypatch, taps)
 
-        async def fake_run_tap(tap, pool, mem, *, max_chars=None, dedup_batch_size=None):
+        async def fake_run_tap(tap, pool, mem, **_kwargs):
             return runner_mod.TapStats(name=tap.name, embedded=2, skipped=1)
 
         monkeypatch.setattr(runner_mod, "run_tap", fake_run_tap)

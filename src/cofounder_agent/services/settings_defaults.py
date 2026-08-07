@@ -2890,6 +2890,28 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # services/jobs/run_taps.py), so `enabled` is the only real switch today.
     'plugin.tap.hello': '{"enabled": false}',
 
+    # Per-tap interval enforcement (poindexter#998). Every Tap declares
+    # `interval_seconds` and PluginConfig parses an operator override, but for
+    # a long time nothing read either: the runner walked every enabled tap on
+    # every invocation, so a 6-hourly tap ran hourly. Worse, the runner has
+    # TWO hourly callers (RunTapsJob in the worker + the auto-embed sidecar),
+    # so each tap actually ran twice an hour from two processes. Shared state
+    # in `tap_run_state` is what lets them agree.
+    #
+    # Kill switch: set false to restore run-everything-every-cycle. Left as a
+    # switch rather than a code constant because it changes WHEN every tap
+    # fires — the kind of thing an operator wants to flip without a deploy if
+    # ingestion ever looks starved.
+    'tap_interval_enforcement_enabled': 'true',
+
+    # Slack when deciding whether a tap's interval has elapsed. The callers
+    # fire hourly, so a tap declaring exactly 3600s would measure 3599s about
+    # half the time, skip, and quietly become 2-hourly. 300s makes "every
+    # hour" mean every hour. Running slightly EARLY is harmless — handlers are
+    # idempotent and the runner dedups on content hash — whereas running
+    # late-by-a-whole-cycle is the surprising failure.
+    'tap_interval_grace_seconds': '300',
+
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 
@@ -4096,6 +4118,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_chunk_max_chars': {'owner': 'runner', 'value_type': 'integer'},
     'tap_dedup_batch_size': {'owner': 'runner', 'value_type': 'integer'},
     'tap_run_timeout_seconds': {'owner': 'runner', 'value_type': 'integer'},
+    'tap_interval_enforcement_enabled': {'owner': 'runner', 'value_type': 'boolean'},
+    'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'template_runner_progress_streaming': {'owner': 'template_runner', 'value_type': 'boolean'},
     'title_junk_regen_max_retries': {'owner': 'title_generation', 'value_type': 'integer'},
