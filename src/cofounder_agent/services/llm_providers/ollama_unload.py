@@ -47,6 +47,7 @@ no-opping. The operator should know if their VRAM guard is broken.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 from typing import Any
@@ -120,9 +121,49 @@ async def _confirm_models_released(
     return False
 
 
+def ollama_base_urls(site_config: Any) -> list[str]:
+    """Every Ollama host this deployment talks to, primary first.
+
+    A single ``ollama_base_url`` is not the whole picture: per-model routing
+    can pin a model to its own instance via the LiteLLM plugin's
+    ``model_api_base_overrides`` (the operator box runs a second, GPU-pinned
+    Ollama for ``qwen3-vl`` on :11435). A VRAM reclaim that only cleared the
+    primary left the ~20 GB vision model resident — and the media pipeline
+    loads exactly that model for vision QA immediately before the hero
+    render, so wan OOM'd anyway (poindexter#992).
+
+    Derived from config, never hardcoded: an operator with one instance gets
+    a one-element list and identical behaviour to before.
+    """
+    urls: list[str] = []
+
+    primary = _ollama_base_url(site_config).rstrip("/")
+    if primary:
+        urls.append(primary)
+
+    if site_config is None:
+        return urls
+    try:
+        raw_cfg = site_config.get("plugin.llm_provider.litellm", "") or "{}"
+        plugin_cfg = json.loads(raw_cfg) if isinstance(raw_cfg, str) else raw_cfg
+        overrides = (plugin_cfg.get("config") or {}).get(
+            "model_api_base_overrides", {},
+        ) or {}
+    except Exception:  # noqa: BLE001 — a config read must never break reclaim
+        return urls
+
+    for raw in overrides.values():
+        url = str(raw or "").rstrip("/")
+        # Only Ollama-shaped hosts: an override may point at a cloud
+        # endpoint, which has no /api/ps and must not be probed.
+        if url and url not in urls and "/v1" not in url:
+            urls.append(url)
+    return urls
+
 async def unload_loaded_ollama_models(
     *,
     site_config: Any,
+    base_url_override: str = "",
     grace_seconds: float = 2.0,
     timeout_seconds: float = 10.0,
     confirm: bool = False,
@@ -150,7 +191,9 @@ async def unload_loaded_ollama_models(
     advisory; the downstream image-gen phase still works (just on a tighter
     VRAM budget), so an exception here would needlessly fail the task.
     """
-    base_url = _ollama_base_url(site_config).rstrip("/")
+    base_url = (
+        base_url_override or _ollama_base_url(site_config)
+    ).rstrip("/")
     unloaded: list[str] = []
 
     try:

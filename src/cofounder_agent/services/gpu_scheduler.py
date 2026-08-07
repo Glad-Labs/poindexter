@@ -1373,22 +1373,39 @@ class GPUScheduler:
         overlaps the two models, exhausts VRAM, and freezes WDDM. Tunable via
         the ``pipeline_writer_unload_confirm_*`` app_settings.
         """
+        # EVERY configured Ollama host, not just the primary (poindexter#992).
+        # Per-model routing can pin a model to its own instance — the operator
+        # box runs a second GPU-pinned Ollama for qwen3-vl — and the media
+        # pipeline loads exactly that vision model right before the hero
+        # render. Clearing only the primary left ~20 GB resident and wan
+        # OOM'd anyway. One host = identical behaviour to before.
+        from services.llm_providers.ollama_unload import ollama_base_urls
+
+        site_config = _sc()
         try:
-            await unload_loaded_ollama_models(
-                site_config=_sc(),
-                confirm=_cfg_bool("pipeline_writer_unload_confirm_enabled", True),
-                confirm_timeout_seconds=_cfg_int(
-                    "pipeline_writer_unload_confirm_timeout_seconds", 15,
-                ),
-                poll_interval_seconds=_cfg_float(
-                    "pipeline_writer_unload_poll_interval_seconds", 0.5,
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001 — eviction is best-effort; a
-            # failure here must never wedge the GPU lock or fail the task.
-            # (unload_loaded_ollama_models is already non-raising; this is a
-            # belt-and-suspenders guard preserving the pre-delegation contract.)
-            logger.warning("Failed to unload Ollama models: %s", exc)
+            hosts = ollama_base_urls(site_config)
+        except Exception:  # noqa: BLE001 — fall back to the primary-only path
+            hosts = [""]
+        for host in hosts or [""]:
+            try:
+                await unload_loaded_ollama_models(
+                    site_config=site_config,
+                    base_url_override=host,
+                    confirm=_cfg_bool("pipeline_writer_unload_confirm_enabled", True),
+                    confirm_timeout_seconds=_cfg_int(
+                        "pipeline_writer_unload_confirm_timeout_seconds", 15,
+                    ),
+                    poll_interval_seconds=_cfg_float(
+                        "pipeline_writer_unload_poll_interval_seconds", 0.5,
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 — eviction is best-effort;
+                # a failure here must never wedge the GPU lock or fail the
+                # task, and one unreachable host must not skip the others.
+                logger.warning(
+                    "Failed to unload Ollama models at %s: %s",
+                    host or "primary", exc,
+                )
 
     async def prepare_mode(self, mode: str):
         """Actively prepare GPU for a specific workload mode.
