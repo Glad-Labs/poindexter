@@ -2,9 +2,11 @@
 
 Moves the rendered narration MP3 out of the temp dir into the durable podcast
 dir (``~/.poindexter/podcast``) and records a **task-keyed** ``media_assets``
-row (``type='podcast'``, ``post_id=NULL``). The post is resolved later by the
-``podcast_distribute`` job via ``posts.metadata->>'pipeline_task_id'`` (mirrors
-``media.persist``'s task-keyed/post-deferred split for video).
+row (``type='podcast'``). ``post_id`` is stamped directly when the run already
+knows its post (architect plan runs seed ``state['post_id']`` via run params);
+otherwise it stays NULL and the ``podcast_distribute`` job resolves it later via
+``posts.metadata->>'pipeline_task_id'`` (mirrors ``media.persist``'s
+task-keyed/post-deferred split for video).
 
 Best-effort: a missing render or a no-pool environment never raises — the node
 returns the list of recorded asset ids and lets the graph finish.
@@ -30,8 +32,8 @@ ATOM_META = AtomMeta(
     version="1.0.0",
     description=(
         "Move the rendered podcast narration MP3 out of temp into the durable "
-        "podcast dir and record a task-keyed media_assets row (type='podcast'; "
-        "post resolved later at distribution)."
+        "podcast dir and record a media_assets row (type='podcast'; post stamped "
+        "from state when known, else resolved later at distribution)."
     ),
     inputs=(
         FieldSpec(name="task_id", type="str", description="pipeline task id"),
@@ -113,6 +115,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     try:
         PODCAST_DIR.mkdir(parents=True, exist_ok=True)
         shutil.move(src, durable)
+        # NamedTemporaryFile creates 0600 and move preserves it — which
+        # locks the episode to the container uid and breaks host-side
+        # `poindexter media open` (live operator report). These files are
+        # operator/feed artifacts, not secrets.
+        os.chmod(durable, 0o644)
     except OSError as exc:
         # NOT the no-op above: the TTS already succeeded and the audio exists —
         # only the move to durable storage failed. Returning the same empty list
@@ -150,9 +157,19 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     except OSError:
         size = 0
 
+    # Canonical Stage-2 runs leave post_id NULL — podcast_distribute
+    # resolves it later via posts.metadata->>'pipeline_task_id'. That seam
+    # only works for tasks that CREATED their post; an architect plan run
+    # LOADS a pre-existing post (state post_id arrives via the run params,
+    # the seo_refresh seam), so the resolver never matches and the asset
+    # sits post-less — invisible to `poindexter media pending/open`, and a
+    # candidate for the job's orphan reaper (live operator report,
+    # poindexter#990 family). Stamp it now when the run already knows.
+    state_post_id = str(state.get("post_id") or "").strip() or None
+
     asset_id = await record_media_asset(
         pool=pool,
-        post_id=None,  # resolved later at distribution (podcast_distribute)
+        post_id=state_post_id,  # else resolved later (podcast_distribute)
         task_id=task_id,
         asset_type="podcast",
         storage_path=str(durable),

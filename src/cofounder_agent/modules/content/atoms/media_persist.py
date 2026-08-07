@@ -198,6 +198,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         try:
             VIDEO_DIR.mkdir(parents=True, exist_ok=True)
             shutil.move(src, durable)
+            # Same 0600-tempfile trap as podcast_persist — host-side
+            # `media open` needs world-readable artifacts.
+            os.chmod(durable, 0o644)
         except OSError as exc:
             logger.warning(
                 "[media.persist] move failed for %s (%s): %s",
@@ -214,7 +217,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
         asset_id = await record_media_asset(
             pool=pool,
-            post_id=None,  # resolved later at distribution (Plan 8 / 8b-2)
+            # Stamp the post when the run already knows it (architect plan
+            # runs seed state post_id via run params — the canonical
+            # pipeline_task_id resolver never matches a task that LOADED
+            # its post; see podcast_persist for the full note). Canonical
+            # Stage-2 runs still pass None and resolve at distribution.
+            post_id=(str(state.get("post_id") or "").strip() or None),
             task_id=task_id,
             asset_type=asset_type,
             storage_path=str(durable),

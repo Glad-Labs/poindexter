@@ -127,3 +127,48 @@ async def test_skips_when_no_pool(tmp_path: Path) -> None:
 async def test_requires_task_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         await podcast_persist.run({"podcast_audio_path": "x"})
+
+
+@pytest.mark.asyncio
+async def test_stamps_post_id_when_state_carries_one(tmp_path: Path) -> None:
+    """Architect plan runs LOAD a pre-existing post (state post_id arrives
+    via run params) — the pipeline_task_id resolver in podcast_distribute
+    never matches those tasks, so the asset must be stamped at persist or
+    it stays invisible to the media approval surface (live operator
+    report) and becomes orphan-reaper bait."""
+    src = tmp_path / "tmp_render.mp3"
+    src.write_bytes(b"ID3fake-audio-bytes")
+
+    state = {
+        "task_id": "task-plan",
+        "podcast_audio_path": str(src),
+        "post_id": "78f8a6cc-f18d-4ba8-b57e-8a09f0f85d8c",
+        "pool": _FakePool(),
+    }
+
+    with patch.object(podcast_persist, "PODCAST_DIR", tmp_path / "p"), patch.object(
+        podcast_persist, "record_media_asset", new=AsyncMock(return_value="a-2")
+    ) as rec:
+        result = await podcast_persist.run(state)
+
+    assert result == {"media_assets_recorded": ["a-2"]}
+    assert rec.await_args.kwargs["post_id"] == (
+        "78f8a6cc-f18d-4ba8-b57e-8a09f0f85d8c"
+    )
+
+
+@pytest.mark.asyncio
+async def test_blank_post_id_stays_none(tmp_path: Path) -> None:
+    src = tmp_path / "tmp_render.mp3"
+    src.write_bytes(b"ID3fake-audio-bytes")
+    state = {
+        "task_id": "task-c",
+        "podcast_audio_path": str(src),
+        "post_id": "   ",
+        "pool": _FakePool(),
+    }
+    with patch.object(podcast_persist, "PODCAST_DIR", tmp_path / "p"), patch.object(
+        podcast_persist, "record_media_asset", new=AsyncMock(return_value="a-3")
+    ) as rec:
+        await podcast_persist.run(state)
+    assert rec.await_args.kwargs["post_id"] is None
