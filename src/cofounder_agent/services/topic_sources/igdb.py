@@ -181,7 +181,7 @@ class IGDBSource:
         if not client_id or not client_secret:
             logger.info(
                 "IGDBSource: igdb_twitch_client_id / igdb_twitch_client_secret "
-                "not configured — skipping. Set via `poindexter set-setting`."
+                "not configured — skipping. Set via `poindexter settings set`."
             )
             return []
 

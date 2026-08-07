@@ -291,7 +291,7 @@ async def run_discord_bot_probe(
                 detail=(
                     f"Discord users/@me returned HTTP {status_code}. The bot "
                     f"token is rejected — rotate {TOKEN_KEY} via "
-                    "`poindexter setting set` or check the Discord developer "
+                    "`poindexter settings set` or check the Discord developer "
                     "portal."
                 ),
             )

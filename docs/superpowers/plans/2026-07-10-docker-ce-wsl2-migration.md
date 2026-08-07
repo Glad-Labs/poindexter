@@ -469,7 +469,7 @@ Verify `localhost:3000` renders and no false `docker_port_forward` / worker-down
 If Phase 0 required the `0.0.0.0`-bind lever, update the setting:
 
 ```bash
-docker exec poindexter-worker poindexter set-setting plugin.llm_provider.litellm.config.model_api_base_overrides '{"ollama/qwen3-vl:30b":"http://host.docker.internal:11435"}'
+docker exec poindexter-worker poindexter settings set plugin.llm_provider.litellm.config.model_api_base_overrides '{"ollama/qwen3-vl:30b":"http://host.docker.internal:11435"}'
 ```
 
 Expected: setting persists; `qa.vision` routes to the pinned instance. If mirrored made `host.docker.internal:11435` reachable unchanged, no edit needed.

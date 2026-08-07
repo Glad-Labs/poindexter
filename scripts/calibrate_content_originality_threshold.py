@@ -23,7 +23,7 @@ Run from the repo root with the backend poetry env:
 Read-only against the DB + local Ollama. Prints the per-post max-cosine
 distribution (percentiles), the top self-echoing posts (eyeball the VRAM
 cluster), and a recommended threshold. Nothing is written — seed the chosen
-value via ``settings_defaults.py`` + ``poindexter set-setting`` on prod.
+value via ``settings_defaults.py`` + ``poindexter settings set`` on prod.
 """
 from __future__ import annotations
 

@@ -99,7 +99,7 @@ def resolve_writer_model(model: str | None = None, *, site_config: Any = None) -
         return writer.removeprefix("ollama/")
     raise ValueError(
         "llm_text: no writer model resolvable from app_settings — set "
-        "``pipeline_writer_model`` via `poindexter set-setting` "
+        "``pipeline_writer_model`` via `poindexter settings set` "
         "(the cost_tier.* fallback was removed)."
     )
 
@@ -172,7 +172,7 @@ def resolve_local_writer_model(
         "llm_text.resolve_local_writer_model: no LOCAL writer-grade model "
         "resolvable — pipeline_writer_model is unset or a paid/cloud model and "
         "pipeline_local_writer_model is empty. Set pipeline_local_writer_model "
-        "to a local Ollama tag (e.g. `poindexter set-setting "
+        "to a local Ollama tag (e.g. `poindexter settings set "
         "pipeline_local_writer_model ollama/gemma3:27b`) so satellite phases "
         "(self-consistency probe, dev-diary narration) never bill cloud writer "
         "prices."
@@ -212,7 +212,7 @@ def resolve_structured_model(
         return val.removeprefix("ollama/")
     raise ValueError(
         "llm_text: no structured-extraction model resolvable — set "
-        "``structured_extraction_model`` via `poindexter set-setting`."
+        "``structured_extraction_model`` via `poindexter settings set`."
     )
 
 

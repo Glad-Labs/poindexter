@@ -39,7 +39,7 @@ def _r2_url(site_config: Any) -> str:
             status_code=503,
             detail=(
                 "storage_public_url not configured — video feed unavailable. "
-                "Set via `poindexter set-setting storage_public_url 'https://<bucket>.r2.dev'`."
+                "Set via `poindexter settings set storage_public_url 'https://<bucket>.r2.dev'`."
             ),
         )
     return url

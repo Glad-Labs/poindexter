@@ -418,7 +418,7 @@ def build_voice_pipeline_task(
     if not llm_model:
         raise ValueError(
             "voice_agent: ``voice_agent_llm_model`` is unset — set "
-            "the Ollama model tag via `poindexter set-setting "
+            "the Ollama model tag via `poindexter settings set "
             "voice_agent_llm_model <tag>` before starting the voice "
             "agent."
         )

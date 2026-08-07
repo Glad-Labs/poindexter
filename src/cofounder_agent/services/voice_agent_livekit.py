@@ -507,7 +507,7 @@ async def get_recent_pull_requests(params: Any) -> None:
 # own. Closes the leak that #538-540 papered over (per Matt 2026-05-22).
 #
 # Example seed (operator picks their own repos):
-#   poindexter set-setting voice_agent_pr_repos=your-org/repo-one,your-org/repo-two
+#   poindexter settings set voice_agent_pr_repos your-org/repo-one,your-org/repo-two
 async def _read_voice_agent_pr_repos(conn: Any) -> list[str]:
     """Read CSV of repo slugs from ``app_settings.voice_agent_pr_repos``.
 
