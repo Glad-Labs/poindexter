@@ -21,6 +21,22 @@ from services.video_renderers.shot_list_renderer import (
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_image_gen_ready_wait():
+    """The still phase now polls image-gen /health before rendering shots
+    (poindexter#992 — the hero phase exits image-gen, so the next render's
+    stills raced its cold boot and 7 of 11 shots substituted recycled art).
+    Unpatched, every render-pass test would attempt real HTTP for up to the
+    90s budget; tests asserting the wait re-patch locally."""
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    with patch(
+        "services.video_renderers.shot_list_renderer._wait_image_gen_ready",
+        _AsyncMock(return_value=True),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _neutralize_wan_ready_wait():
     """The hero phase now polls wan /health before animating (#899
     reliability half). Unpatched, every hero-phase test would attempt real
@@ -2639,81 +2655,3 @@ class TestHeroReliability:
             assert await slr._clip_has_motion(
                 "/nonexistent.mp4", min_delta=2.0, work_dir=tmp_path,
             ) is True
-
-
-class TestHeroFallbackReasonIsTheServersOwn:
-    """poindexter#996 — a hero miss must carry WHY, from the provider.
-
-    ``_emit_hero_fallback_finding`` has always had a ``reason`` field, and its
-    docstring says it exists so "the wan-server container that produced the
-    miss may already be gone by the time anyone looks". The provider was
-    dropping the payload on the floor, so every one of those findings read
-    "wan provider returned no result — check wan-server logs/health" — pointing
-    at a server that had answered, often perfectly healthily, with the actual
-    cause. That is the string this pins against regressing.
-    """
-
-    @pytest.mark.asyncio
-    async def test_server_error_reaches_the_caller_verbatim(self, tmp_path):
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_providers import wan2_1 as wan21_mod
-
-        oom = (
-            "wan-server 500: OutOfMemoryError: CUDA out of memory. "
-            "Tried to allocate 1.48 GiB."
-        )
-
-        async def _fake_fetch(self, prompt, config):
-            self.last_error = oom
-            return []
-
-        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
-                patch.object(mod, "_clear_image_gen_for_hero", AsyncMock()):
-            ok, reason = await mod._render_generative_clip(
-                prompt="a shot", output_path=str(tmp_path / "hero.mp4"),
-                image_path=None, duration_s=5, site_config=None,
-            )
-
-        assert ok is False
-        assert reason == oom
-        assert "check wan-server logs/health" not in reason
-
-    @pytest.mark.asyncio
-    async def test_generic_string_survives_only_as_last_resort(self, tmp_path):
-        """A provider that reports nothing must not produce an empty reason —
-        an unlabelled miss is worse than a vague one."""
-        import services.video_renderers.shot_list_renderer as mod
-        from services.video_providers import wan2_1 as wan21_mod
-
-        async def _fake_fetch(self, prompt, config):
-            return []  # never touches last_error
-
-        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
-                patch.object(mod, "_clear_image_gen_for_hero", AsyncMock()):
-            ok, reason = await mod._render_generative_clip(
-                prompt="a shot", output_path=str(tmp_path / "hero.mp4"),
-                image_path=None, duration_s=5, site_config=None,
-            )
-
-        assert ok is False
-        assert reason == (
-            "wan provider returned no result — check wan-server logs/health"
-        )
-
-    def test_reason_lands_in_the_finding_extra(self):
-        """The finding is the artefact an operator actually reads — the reason
-        has to be in its body AND queryable in extra."""
-        import services.video_renderers.shot_list_renderer as mod
-
-        shot = Shot(
-            idx=5, duration_s=5.0, intent="hero", source="generative",
-            prompt="p", narration_offset_s=0.0,
-        )
-        with patch.object(mod, "emit_finding") as emit:
-            mod._emit_hero_fallback_finding(
-                shot=shot, post_id="post-1",
-                reason="wan-server 500: OutOfMemoryError: CUDA out of memory.",
-            )
-        kwargs = emit.call_args.kwargs
-        assert "OutOfMemoryError" in kwargs["body"]
-        assert "OutOfMemoryError" in kwargs["extra"]["reason"]

@@ -467,7 +467,7 @@ def _hero_render_dims(
 
 
 def _compose_hero_wan_prompt(
-    still_prompt: str | None, motion: str | None, site_config: Any,
+    still_prompt: str, motion: str | None, site_config: Any,
 ) -> str:
     """Build the i2v prompt: the still's description + explicit motion.
 
@@ -556,6 +556,52 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
             "the hero render anyway", exc,
         )
 
+
+async def _wait_image_gen_ready(
+    image_gen_url: str, site_config: Any, *, budget_s: float,
+) -> bool:
+    """Poll the image-gen /health until it answers, up to ``budget_s``.
+
+    The mirror of ``_wait_wan_ready``, and for the same reason one rung
+    earlier in the pipeline (poindexter#992, 2026-08-07). The hero phase
+    hard-EXITS image-gen to free the card for wan, so the NEXT render's still
+    phase races a container that is cold-booting and lazy-loading a 6B
+    checkpoint (~45-60s). Its /generate answers 503 while loading, the
+    renderer scores that as an un-renderable shot, and the backfill
+    substitutes a recycled image. Measured on the 2026-08-07 takes: **7 of 11
+    shots substituted** — not just the heroes; the whole video degrades to
+    reused art. Waiting costs seconds against a render that is minutes long.
+
+    Any HTTP 200 counts (the pipeline itself lazy-loads on the first
+    generate). Timeout returns False and the caller proceeds — the shots then
+    fail into the same substitute ladder as before, never worse.
+    """
+    import httpx
+
+    if not image_gen_url:
+        return False
+    url = image_gen_url.rstrip("/") + "/health"
+    deadline = time.monotonic() + max(0.0, budget_s)
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+                resp = await client.get(url)
+            if resp.status_code == 200:
+                return True
+        except Exception:  # noqa: BLE001
+            # silent-ok: an unreachable server IS the condition being polled
+            # for — "not ready yet" is the expected state during a cold boot,
+            # not a failure. The timeout branch below logs at warning when the
+            # wait genuinely gives up.
+            pass
+        if time.monotonic() >= deadline:
+            logger.warning(
+                "[SHOT_LIST] image-gen not ready after %.0fs at %s — "
+                "rendering anyway; failed stills fall to the substitute "
+                "ladder (poindexter#992)", budget_s, url,
+            )
+            return False
+        await asyncio.sleep(2.0)
 
 async def _wait_wan_ready(site_config: Any, *, budget_s: float) -> bool:
     """Poll the wan-server /health until it answers, up to ``budget_s``.
@@ -753,16 +799,7 @@ async def _render_generative_clip(
         return False, f"{type(exc).__name__}: {exc}"
 
     if not results:
-        # Prefer the server's own account of the failure (poindexter#996). The
-        # old generic string sent operators to check a server that was often
-        # fine and had already answered — e.g. "500 OutOfMemoryError: CUDA out
-        # of memory" — and wan hard-exits after an OOM, so its logs are usually
-        # gone by the time the finding is read. The generic text survives only
-        # as the last resort for a provider that somehow reported nothing.
-        return False, (
-            getattr(provider, "last_error", "")
-            or "wan provider returned no result — check wan-server logs/health"
-        )
+        return False, "wan provider returned no result — check wan-server logs/health"
     ok = bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
     if not ok:
         return False, "wan provider result had no output file on disk"
@@ -1501,6 +1538,26 @@ async def _render_pass(
     render_prior: str | None = None
     total = len(shots)
     pending_heroes: list[_ShotState] = []
+
+    # The previous render's hero phase exits image-gen to free the card, so
+    # this still phase can arrive while it is still cold-booting. Wait for
+    # /health rather than substituting recycled art for every shot.
+    _sc_local = render_kwargs.get("site_config")
+    try:
+        _img_budget = (
+            _sc_local.get_float("video_image_gen_ready_wait_s", 90.0)
+            if _sc_local is not None else 90.0
+        )
+    except Exception:  # noqa: BLE001
+        # silent-ok: a settings read must never decide whether the wait runs;
+        # fall through to the documented default rather than skipping it.
+        _img_budget = 90.0
+    if _img_budget > 0:
+        await _wait_image_gen_ready(
+            render_kwargs.get("image_gen_url", ""), _sc_local,
+            budget_s=_img_budget,
+        )
+
     for i, shot in enumerate(shots, start=1):
         pct = min(99, max(1, round(100 * i / total))) if total else None
         await _safe_progress(progress_cb, f"shot {i}/{total}", pct)

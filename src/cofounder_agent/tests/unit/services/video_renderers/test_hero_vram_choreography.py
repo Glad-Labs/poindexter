@@ -186,3 +186,61 @@ async def test_ollama_evict_failure_still_attempts_the_render():
          ), \
          patch.object(slr.asyncio, "sleep", AsyncMock()):
         await slr._clear_image_gen_for_hero(_sc())  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# The hero fix's cost to the NEXT render (poindexter#992, 2026-08-07)
+#
+# _clear_image_gen_for_hero EXITS image-gen to free the card for wan. The next
+# render's still phase then races a container cold-booting a 6B checkpoint
+# (~45-60s): /generate answers 503, the renderer scores the shot un-renderable,
+# and the backfill substitutes recycled art. Measured live: 7 of 11 shots
+# substituted — the whole video degrades, not just the heroes.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_gen_ready_wait_returns_true_on_health_200():
+    from services.video_renderers import shot_list_renderer as slr
+
+    class _Resp:
+        status_code = 200
+
+    class _Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return _Resp()
+
+    with patch("httpx.AsyncClient", lambda **kw: _Client()):
+        assert await slr._wait_image_gen_ready(
+            "http://image-gen:9836", None, budget_s=5,
+        ) is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_gen_ready_wait_times_out_without_raising():
+    """Timeout must return False and let the render proceed — the shots then
+    fall into the same substitute ladder as before, never worse."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    class _Client:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): raise ConnectionError("cold booting")
+
+    with patch("httpx.AsyncClient", lambda **kw: _Client()), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        assert await slr._wait_image_gen_ready(
+            "http://image-gen:9836", None, budget_s=0,
+        ) is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_gen_ready_wait_skips_when_url_missing():
+    """No URL configured must not hang or raise."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    assert await slr._wait_image_gen_ready("", None, budget_s=5) is False

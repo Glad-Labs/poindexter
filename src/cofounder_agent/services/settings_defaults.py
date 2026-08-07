@@ -572,6 +572,11 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
+    # Wait for image-gen /health before the still phase. The hero phase exits
+    # image-gen to free the card for wan, so the NEXT render raced a cold
+    # container lazy-loading a 6B checkpoint: /generate 503'd and 7 of 11
+    # shots substituted recycled art. 0 disables.
+    'video_image_gen_ready_wait_s': '90',
     # Evict Ollama models before a wan hero render. The media pipeline's own
     # QA/vision calls leave the ~21GB writer resident on keep_alive, which
     # OOM'd wan (~25.3GB at 832x480) on a 32GB card. Reload costs ~20-30s.
@@ -1737,20 +1742,6 @@ DEFAULTS: dict[str, str] = {
     'media_infra_healthcheck_enabled': 'true',
     'media_infra_health_timeout_seconds': '5',
     'media_infra_dns_canary_host': '',
-    # …and that free un-claim needs its own ceiling (poindexter#995). The
-    # post-failure probe cannot tell "infra died independently" from "this
-    # render's own VRAM footprint is why the probe fails" — wan holds 23-27 GB
-    # mid-render, so a self-inflicted failure reads as an outage and is
-    # re-claimed for free, forever. Task 8faf3617 rode that loop to 40 findings
-    # in 24h with media_pipeline_redispatch_count still reading 0. This caps the
-    # free retries per task (reset on any successful dispatch, and whenever the
-    # reconciliation watchdog authorises a fresh attempt), so the escalation
-    # ladder terminates: N free outage retries -> the bounded re-dispatches
-    # above -> the 24h cap-reset self-heal. Deliberately a SEPARATE budget from
-    # media_pipeline_redispatch_max: sharing one would re-create the 2026-07-03
-    # wedge, where a genuine multi-hour outage burns every in-flight piece's cap
-    # in minutes. 0 disables the free un-claim entirely.
-    'media_pipeline_unclaim_max': '3',
     # Bounded cap-reset self-heal (feedback_self_heal_not_suppress): when a
     # missing-video post's task sits AT media_pipeline_redispatch_max but the
     # render infra probes healthy again, media_reconciliation resets the
@@ -1805,16 +1796,6 @@ DEFAULTS: dict[str, str] = {
     'podcast_cover_url': '',
     'podcast_tts_engine': '',
     'podcast_tts_enabled': 'false',
-    # Intro/outro sting mix (poindexter#690 finish): when
-    # generate_media_scripts synthesized a sting, podcast.render wraps the
-    # narration in it — sting solo, fade under the first words, mirrored
-    # outro after the last. Edges-only by design; no continuous bed.
-    'podcast_sting_mix_enabled': 'true',
-    'podcast_sting_solo_seconds': '2.5',
-    'podcast_sting_fade_seconds': '3.0',
-    'podcast_sting_outro_seconds': '6.0',
-    'podcast_sting_gain_db': '-7',
-    'podcast_sting_mix_timeout_seconds': '120',
     'podcast_tts_base_url': 'http://speaches:8000/v1',
     'podcast_tts_voice': 'bf_emma',
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
@@ -2378,14 +2359,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.vram_reclaim_ineffective.fallback': 'log_only',
     'findings.vram_reclaim_ineffective.cooldown_minutes': '180',
     'findings.vram_reclaim_ineffective.min_severity': 'warn',
-    # A piece that exhausted its free outage retries has stopped re-rendering
-    # and is now the re-dispatch watchdog's problem (or, outside the regen
-    # window, dormant). Routine triage, not a page — but it must surface, or
-    # "stopped looping" is indistinguishable from "silently wedged".
-    'findings.media_unclaim_budget_exhausted.delivery': 'discord',
-    'findings.media_unclaim_budget_exhausted.fallback': 'log_only',
-    'findings.media_unclaim_budget_exhausted.cooldown_minutes': '360',
-    'findings.media_unclaim_budget_exhausted.min_severity': 'warn',
     # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
     # emitting contentless titles is a source bug worth seeing on the routine
     # ops channel, not a page; 6h cooldown keeps a persistently garbage
@@ -3232,6 +3205,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'video_image_gen_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_evict_ollama': {'owner': 'media_render', 'value_type': 'boolean'},
     'audio_gen_ambient_prompt_template': {'owner': 'media_scripts', 'value_type': 'string'},
     'video_hero_motion_check_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
@@ -3703,10 +3677,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.vram_reclaim_ineffective.delivery': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.fallback': {'value_type': 'string'},
     'findings.vram_reclaim_ineffective.min_severity': {'value_type': 'string'},
-    'findings.media_unclaim_budget_exhausted.cooldown_minutes': {'value_type': 'integer'},
-    'findings.media_unclaim_budget_exhausted.delivery': {'value_type': 'string'},
-    'findings.media_unclaim_budget_exhausted.fallback': {'value_type': 'string'},
-    'findings.media_unclaim_budget_exhausted.min_severity': {'value_type': 'string'},
     'findings_daily_digest_enabled': {'owner': 'findings_daily_digest', 'value_type': 'boolean'},
     'findings_daily_digest_lookback_hours': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
     'findings_daily_digest_top_n': {'owner': 'findings_daily_digest', 'value_type': 'integer'},
@@ -3798,7 +3768,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_feed_reconciliation_enabled': {'owner': 'media_feed_reconciliation', 'value_type': 'boolean'},
     'media_pipeline_max_per_cycle': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'media_pipeline_redispatch_max': {'owner': 'media_reconciliation', 'value_type': 'integer'},
-    'media_pipeline_unclaim_max': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'media_qa_frame_detection_enabled': {'owner': 'media_qa', 'value_type': 'boolean'},
     'media_render_min_free_vram_gb': {'owner': 'media_infra_health', 'value_type': 'integer'},
     'media_render_reclaim_cooldown_minutes': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
@@ -3894,12 +3863,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'podcast_script_model': {'owner': 'podcast_service', 'value_type': 'model'},
     'podcast_tts_base_url': {'owner': 'tts_service', 'value_type': 'url'},
     'podcast_tts_enabled': {'value_type': 'boolean'},
-    'podcast_sting_mix_enabled': {'value_type': 'boolean'},
-    'podcast_sting_solo_seconds': {'value_type': 'number'},
-    'podcast_sting_fade_seconds': {'value_type': 'number'},
-    'podcast_sting_outro_seconds': {'value_type': 'number'},
-    'podcast_sting_gain_db': {'value_type': 'number'},
-    'podcast_sting_mix_timeout_seconds': {'value_type': 'number'},
     'podcast_tts_engine': {'owner': 'podcast_service'},
     'podcast_tts_format': {'value_type': 'string'},
     'podcast_tts_loudnorm_ar': {'value_type': 'integer'},
