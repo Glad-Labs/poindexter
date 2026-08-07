@@ -33,6 +33,33 @@ from services.gpu_scheduler import media_wait_budget_s
 from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from utils.findings import emit_finding
 
+_AMBIENT_PROMPT_FALLBACK = (
+    "Lo-fi chillhop instrumental background music for a technology explainer "
+    "video: mellow electric piano chords, warm bass, soft drum loop, 80 BPM, "
+    "relaxed and focused. No vocals, no sound effects, no foley. "
+    "Mood cues: {mood}"
+)
+
+
+def _ambient_mood_cues(scenes: list[Any]) -> str:
+    """First real scene description, reduced to plain mood text.
+
+    Scene entries are SDXL *visual* prompts (and legacy rows carry markdown
+    headers like ``### PART 1``). Fed verbatim to the music model they produce
+    literal soundscapes — an office scene became engine-room hum — so the
+    scene text is demoted to trailing mood cues inside a music-directed
+    template, and markdown/header junk is stripped before use.
+    """
+    for entry in scenes or []:
+        text = str(entry).strip()
+        text = re.sub(r"^#+\s.*$", "", text, flags=re.MULTILINE)
+        text = re.sub(r"[*#_`]+", " ", text)
+        text = re.sub(r"^\s*Scene\s+\w+\s*[:.\-]\s*", "", text, flags=re.IGNORECASE)
+        text = " ".join(text.split())
+        if len(text) >= 20:
+            return text[:160]
+    return ""
+
 logger = logging.getLogger(__name__)
 
 # Narration pace estimate — mirrors generate_video_shot_list._WORDS_PER_SECOND
@@ -432,7 +459,14 @@ class GenerateMediaScriptsStage:
             ambient_audio_path = ""
             if video_scenes and is_audio_gen_enabled(sc):
                 try:
-                    ambient_prompt = video_scenes[0][:200] if video_scenes else title
+                    # Music-directed template (operator-tunable); the scene
+                    # text rides along as mood cues only — verbatim visual
+                    # prompts make the model render room tone, not music.
+                    mood = _ambient_mood_cues(video_scenes) or (title or "calm focus")
+                    template = sc.get(
+                        "audio_gen_ambient_prompt_template", _AMBIENT_PROMPT_FALLBACK,
+                    ) or _AMBIENT_PROMPT_FALLBACK
+                    ambient_prompt = template.replace("{mood}", mood)
                     ambient_result = await generate_audio(
                         ambient_prompt,
                         "ambient",

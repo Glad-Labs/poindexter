@@ -572,6 +572,16 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
+    # Ambient music-bed prompt for generate_audio("ambient") — {mood} is
+    # replaced with cleaned first-scene text. Music-directed on purpose:
+    # verbatim visual scene prompts make Stable Audio render literal room
+    # tone (engine-room hum) instead of a music bed.
+    'audio_gen_ambient_prompt_template': (
+        'Lo-fi chillhop instrumental background music for a technology explainer '
+        'video: mellow electric piano chords, warm bass, soft drum loop, 80 BPM, '
+        'relaxed and focused. No vocals, no sound effects, no foley. '
+        'Mood cues: {mood}'
+    ),
     # Frame-delta motion gate on rendered hero clips (poindexter#899): frames
     # at 25%/75% compared on a small grayscale plate; below the delta the clip
     # is treated as motion-dead and the shot uses its Ken-Burns still + a
@@ -3167,6 +3177,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'audio_gen_ambient_prompt_template': {'owner': 'media_scripts', 'value_type': 'string'},
     'video_hero_motion_check_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_hero_min_motion_delta': {'owner': 'media_render', 'value_type': 'float'},
     'demo_clip_dir': {'owner': 'demo_clips', 'value_type': 'string'},

@@ -963,3 +963,34 @@ def test_long_narration_fallback_carries_voice_rules() -> None:
     assert "delve" in p  # banned-word list present
     assert "In conclusion" in p  # named as banned
     assert "exactly as the" in p  # numbers-verbatim rule
+
+
+class TestAmbientMoodCues:
+    """_ambient_mood_cues + the music-directed prompt template (engine-room-hum fix)."""
+
+    def test_skips_header_junk_and_strips_markup(self) -> None:
+        from modules.content.stages.generate_media_scripts import _ambient_mood_cues
+
+        scenes = [
+            "### PART 1: Stable Diffusion XL Prompts for Video Slideshow",
+            "**Scene One:** A dimly lit office at twilight, rows of glowing screens.",
+        ]
+        mood = _ambient_mood_cues(scenes)
+        assert mood.startswith("A dimly lit office")
+        assert "###" not in mood and "*" not in mood and "Scene One" not in mood
+
+    def test_empty_and_short_entries_yield_empty(self) -> None:
+        from modules.content.stages.generate_media_scripts import _ambient_mood_cues
+
+        assert _ambient_mood_cues([]) == ""
+        assert _ambient_mood_cues(["## x", "tiny"]) == ""
+
+    def test_fallback_template_is_music_directed(self) -> None:
+        from modules.content.stages.generate_media_scripts import (
+            _AMBIENT_PROMPT_FALLBACK,
+        )
+
+        p = _AMBIENT_PROMPT_FALLBACK.replace("{mood}", "calm focus")
+        assert "music" in p
+        assert "No vocals" in p and "no sound effects" in p
+        assert "calm focus" in p
