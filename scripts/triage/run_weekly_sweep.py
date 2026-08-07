@@ -31,7 +31,7 @@ from services.triage.sweep import find_gaps  # noqa: E402
 # -> glad-labs-stack), and a label is an issue-write, so the sweep applies the
 # derivable type label in either repo. (CODE/PRs still go to glad-labs-stack
 # only, but the sweep never touches code.)
-REPOS = ["Glad-Labs/poindexter", "Glad-Labs/glad-labs-stack"]
+REPOS = ["Glad-Labs/poindexter", "Glad-Labs/poindexter"]
 
 
 def _gh_json(repo: str, *args: str) -> list[dict]:
