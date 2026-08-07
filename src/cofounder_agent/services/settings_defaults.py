@@ -2862,6 +2862,24 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         '"state": "all", "max_issues_per_repo": 0, "max_body_chars": 20000}}'
     ),
 
+    # HelloTap (plugins/samples/hello_tap.py) is a reference implementation for
+    # third-party Tap authors — the smallest possible Tap. It yields one static
+    # Document ("hello from the HelloTap sample plugin"), which lands in
+    # `embeddings` as source_table='samples' and then never changes again.
+    #
+    # Off by default: fabricated content does not belong in a real corpus
+    # (feedback_no_dummy_data). On Matt's install that row sat untouched from
+    # 2026-06-05, permanently reading as the stalest source on the
+    # corpus-freshness panel added in poindexter#989 — a fake red that trains
+    # you to ignore the panel.
+    #
+    # The tap stays REGISTERED so authors can still read it and flip this to
+    # true to watch a Tap work end-to-end. Note the class declares
+    # `interval_seconds = 0` ("on-demand only; don't auto-schedule") — the
+    # runner does not honour per-tap intervals yet (see
+    # services/jobs/run_taps.py), so `enabled` is the only real switch today.
+    'plugin.tap.hello': '{"enabled": false}',
+
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 
