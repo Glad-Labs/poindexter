@@ -810,6 +810,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # advisory disabled_capabilities finding so silence never reads as
         # "working" (glad-labs-stack#2133).
         ("jobs", "services.jobs.probe_disabled_capabilities", "ProbeDisabledCapabilitiesJob"),
+        # ProbeRescueYieldJob — daily watchdog for the QA rescue loop's
+        # conversion rate: emits an advisory qa_rescue_yield_zero finding on a
+        # 0-for-N rewrite streak so rescue burn is never silent again (the
+        # 2026-07 collapse ran 0-for-116 unnoticed; poindexter#986).
+        ("jobs", "services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live

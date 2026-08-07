@@ -218,6 +218,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             reviews, result.get("vetoed_by", []),
             final_score=float(final_score), threshold=float(threshold),
             broaden=flag_instead,
+            # #986: a draft the #984 detector reads as truncated is never
+            # rescued — the severed tail is gone, so a revision can only
+            # invent an ending. Under broaden=True a programmatic
+            # truncated_content veto would otherwise be rescue-eligible.
+            content=str(state.get("content") or "") or None,
         )
     ):
         _platform = state.get("platform")

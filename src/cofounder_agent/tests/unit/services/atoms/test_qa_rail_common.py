@@ -497,3 +497,64 @@ class TestAllRailVisibility:
         )
         assert out["qa_all_rail_score"] == 0.0
         assert out["rail_breakdown"] == []
+
+
+@pytest.mark.unit
+class TestTruncatedContentNeverRescuable:
+    """poindexter#986: a draft the #984 detector reads as truncated is
+    non-rescuable in BOTH modes — the severed tail no longer exists, so a
+    revision can only invent an ending (fabrication vector) or re-fail."""
+
+    _TRUNCATED = (
+        "## Read Scaling\n\n"
+        "Replicas solve read scaling, but they don't solve write scaling, "
+        "and the wrong shape for th"
+    )
+    _COMPLETE = "## Read Scaling\n\nReplicas solve read scaling properly."
+
+    def _critic_veto(self):
+        return [
+            {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+             "provider": "ollama", "advisory": False, "feedback": "weak"},
+        ]
+
+    def test_truncated_content_blocks_rescue_default_mode(self):
+        assert is_rescuable_reject(
+            self._critic_veto(), ["ollama_critic"],
+            final_score=55.0, threshold=70.0,
+            content=self._TRUNCATED,
+        ) is False
+
+    def test_truncated_content_blocks_rescue_broaden_mode(self):
+        # broaden=True widens rescue to programmatic vetoes — truncation
+        # must still block it (the 2026-07 loop burned 116 rescues here).
+        reviews = [
+            {"reviewer": "programmatic_validator", "approved": False,
+             "score": 0.0, "provider": "programmatic", "advisory": False,
+             "feedback": "truncated_content"},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["programmatic_validator"],
+            final_score=0.0, threshold=70.0,
+            broaden=True, content=self._TRUNCATED,
+        ) is False
+
+    def test_truncated_content_blocks_score_threshold_rescue(self):
+        assert is_rescuable_reject(
+            [], [], final_score=55.0, threshold=70.0,
+            content=self._TRUNCATED,
+        ) is False
+
+    def test_complete_content_keeps_existing_behavior(self):
+        assert is_rescuable_reject(
+            self._critic_veto(), ["ollama_critic"],
+            final_score=55.0, threshold=70.0,
+            content=self._COMPLETE,
+        ) is True
+
+    def test_none_content_keeps_existing_behavior(self):
+        # Callers that don't thread content (older paths, tests) are unchanged.
+        assert is_rescuable_reject(
+            self._critic_veto(), ["ollama_critic"],
+            final_score=55.0, threshold=70.0,
+        ) is True

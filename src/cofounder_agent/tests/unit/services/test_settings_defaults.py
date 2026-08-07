@@ -548,8 +548,11 @@ class TestGroupingMakesSense:
         # block (poindexter#985): qa_review_content_max_chars +
         # model_eval_critic_* + quality_model_watch_keys with their comments
         # live beside the model-eval section inside the qa cluster's
-        # tolerated interleave.
-        assert span < 355, (
+        # tolerated interleave. Bumped 355→364 for the rescue-yield watchdog
+        # keys (poindexter#986): qa_rescue_yield_* with their comment sit
+        # directly beside qa_rewrite_max_attempts — the setting they extend —
+        # inside the same cluster.
+        assert span < 364, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

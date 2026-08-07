@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "RAG Retrieval Stack doc",
-      "tooltip": "Path A vs Path B — LlamaIndex retriever activation runbook",
+      "tooltip": "Path A vs Path B \u2014 LlamaIndex retriever activation runbook",
       "type": "link",
       "url": "https://github.com/Glad-Labs/poindexter/blob/main/docs/architecture/rag-retrieval-stack.md"
     },
@@ -38,7 +38,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "LLM trace explorer — drill into specific reviewer LLM calls",
+      "tooltip": "LLM trace explorer \u2014 drill into specific reviewer LLM calls",
       "type": "link",
       "url": "http://localhost:3010"
     },
@@ -50,14 +50,14 @@
       "tags": [],
       "targetBlank": true,
       "title": "GlitchTip",
-      "tooltip": "Self-hosted error tracker — reviewer exceptions land here",
+      "tooltip": "Self-hosted error tracker \u2014 reviewer exceptions land here",
       "type": "link",
       "url": "http://localhost:8050/glad-labs/poindexter/issues/"
     }
   ],
   "tags": ["qa", "lane-d", "issue-329"],
   "timezone": "browser",
-  "title": "QA Rails — Multi-Model Review",
+  "title": "QA Rails \u2014 Multi-Model Review",
   "uid": "qa-rails",
   "version": 1,
   "schemaVersion": 39,
@@ -225,7 +225,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of MemoryClient.search → rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ — investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` — operator-enabled rails must never silently degrade.",
+      "description": "Count of MemoryClient.search \u2192 rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ \u2014 investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` \u2014 operator-enabled rails must never silently degrade.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -237,7 +237,7 @@
               "options": {
                 "0": {
                   "color": "blue",
-                  "text": "✓ 0"
+                  "text": "\u2713 0"
                 }
               }
             }
@@ -387,7 +387,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of QA reviewer skips in the last 24h. Each row is one operator-enabled rail (deepeval g_eval / faithfulness, guardrails brand / competitor, ragas_eval) raising at runtime — chain still completes without that rail's signal, but the failure is surfaced loudly per `feedback_no_silent_defaults`. Click into the audit_log to see which reviewer + exception. RED at 1+.",
+      "description": "Count of QA reviewer skips in the last 24h. Each row is one operator-enabled rail (deepeval g_eval / faithfulness, guardrails brand / competitor, ragas_eval) raising at runtime \u2014 chain still completes without that rail's signal, but the failure is surfaced loudly per `feedback_no_silent_defaults`. Click into the audit_log to see which reviewer + exception. RED at 1+.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -399,7 +399,7 @@
               "options": {
                 "0": {
                   "color": "blue",
-                  "text": "✓ 0"
+                  "text": "\u2713 0"
                 }
               }
             }
@@ -461,7 +461,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-reviewer skip count in the last 24h — which rails are flaking. Empty table = all rails healthy.",
+      "description": "Per-reviewer skip count in the last 24h \u2014 which rails are flaking. Empty table = all rails healthy.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -804,7 +804,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Last 20 QA passes — full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
+      "description": "Last 20 QA passes \u2014 full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -850,11 +850,11 @@
                     "options": {
                       "true": {
                         "color": "blue",
-                        "text": "✓ APPROVED"
+                        "text": "\u2713 APPROVED"
                       },
                       "false": {
                         "color": "orange",
-                        "text": "✗ REJECTED"
+                        "text": "\u2717 REJECTED"
                       }
                     }
                   }
@@ -946,7 +946,7 @@
     },
     {
       "type": "row",
-      "title": "Ragas Eval — RAG Retrieval Quality",
+      "title": "Ragas Eval \u2014 RAG Retrieval Quality",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1067,7 +1067,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true → ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost — consider sampling.",
+      "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true \u2192 ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost \u2014 consider sampling.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1132,7 +1132,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels — that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
+      "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels \u2014 that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1305,7 +1305,7 @@
       },
       "id": 18,
       "panels": [],
-      "title": "Self-Heal Before Paging — Flag vs Discard",
+      "title": "Self-Heal Before Paging \u2014 Flag vs Discard",
       "type": "row"
     },
     {
@@ -1535,7 +1535,7 @@
       },
       "id": 22,
       "panels": [],
-      "title": "Vision Rail — Scored vs Pass-Open",
+      "title": "Vision Rail \u2014 Scored vs Pass-Open",
       "type": "row"
     },
     {
@@ -1543,7 +1543,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Share of image_relevance (vision_gate) reviews in the window that PASSED OPEN — the vision scorer no-op'd (model/infra unavailable) and the gate accepted without looking. 0% is healthy; a sustained high value means the vision leg is dark (it ran at 100% silently for weeks pre-fix). Vacuous passes (no images to assess) are excluded from the denominator.",
+      "description": "Share of image_relevance (vision_gate) reviews in the window that PASSED OPEN \u2014 the vision scorer no-op'd (model/infra unavailable) and the gate accepted without looking. 0% is healthy; a sustained high value means the vision leg is dark (it ran at 100% silently for weeks pre-fix). Vacuous passes (no images to assess) are excluded from the denominator.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1857,7 +1857,124 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 102
+      },
+      "id": 28,
+      "panels": [],
+      "title": "QA Rescue Cycle \u2014 Yield",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Rescue rewrites scheduled vs converted to a terminal approve in the selected window (poindexter#986). The 2026-07 loop ran 0-for-116 unnoticed; ProbeRescueYieldJob pages on a zero-yield streak.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 103
+      },
+      "id": 29,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE details->>'rescue_deferred' = 'true') AS \"Attempts\", COUNT(*) FILTER (WHERE details->>'terminal' = 'true' AND details->>'approved' = 'true' AND COALESCE((details->>'qa_rewrite_attempts')::int, 0) >= 1) AS \"Rescued\", ROUND(100.0 * COUNT(*) FILTER (WHERE details->>'terminal' = 'true' AND details->>'approved' = 'true' AND COALESCE((details->>'qa_rewrite_attempts')::int, 0) >= 1) / NULLIF(COUNT(*) FILTER (WHERE details->>'rescue_deferred' = 'true'), 0), 1) AS \"Yield %\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Rescue yield (window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Terminal QA decisions that went through >= 1 rescue rewrite \u2014 did the revision convert the reject or not.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 103
+      },
+      "id": 30,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, LEFT(task_id::text, 8) AS task, details->>'approved' AS approved, (details->>'final_score')::numeric AS score, (details->>'qa_rewrite_attempts')::int AS rewrites FROM audit_log WHERE event_type = 'qa_pass_completed' AND details->>'terminal' = 'true' AND COALESCE((details->>'qa_rewrite_attempts')::int, 0) >= 1 AND $__timeFilter(timestamp) ORDER BY timestamp DESC LIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Rescued decisions (window)",
+      "type": "table"
     }
   ],
-  "description": "CHARTER: per-reviewer QA behavior — pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."
+  "description": "CHARTER: per-reviewer QA behavior \u2014 pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."
 }

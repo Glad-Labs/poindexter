@@ -899,9 +899,10 @@ and the 3 fires were genuinely truncated live posts
 the"). One detector, three consumers, same no-drift idiom as
 `planning_dump`: the writer's `_validate_content` retry lint (a
 truncated draft can never be `is_valid` — the writer retries instead
-of shipping it), rule 10 via `qa.programmatic` (a hard gate, so a
-truncated draft that slips through is a NON-rescuable reject — no
-futile rewrite pass), and the `qa.rewrite` reviser guard (a truncated
+of shipping it), rule 10 via `qa.programmatic` (a hard gate — and rescue is blocked
+deterministically in BOTH `is_rescuable_reject` modes when the draft
+fails the detector, closing the broaden-mode gap where a programmatic
+truncation veto was still rewrite-eligible; poindexter#986), and the `qa.rewrite` reviser guard (a truncated
 revision is discarded like an empty one — prior draft kept, attempt
 burned, `qa_rewrite_truncated_revision` finding emitted). Upstream of
 all three, the writer now checks `finish_reason` at the dispatch

@@ -105,6 +105,7 @@ def is_rescuable_reject(
     final_score: float,
     threshold: float,
     broaden: bool = False,
+    content: str | None = None,
 ) -> bool:
     """Decide whether a qa.aggregate REJECT is eligible for one rewrite pass.
 
@@ -133,7 +134,22 @@ def is_rescuable_reject(
 
     Returns False for an empty veto whose score already clears the threshold
     (i.e. an approve) under either mode.
+
+    ``content`` (Glad-Labs/poindexter#986): when the caller passes the draft
+    under review and it is TRUNCATED by the deterministic #984 detector, the
+    reject is non-rescuable under BOTH modes regardless of who vetoed. The
+    severed tail no longer exists — a text revision can only invent an
+    ending (a fabrication vector) or ship a shorter mangle, and every 2026-07
+    rescue of a truncated draft re-failed after burning a full rail re-run.
+    The producer must regenerate; a rewrite cannot restore lost content.
     """
+    # Truncated input is unrecoverable by revision — both modes (#986).
+    if content is not None:
+        from modules.content.content_validator import detect_truncated_content
+
+        if detect_truncated_content(content):
+            return False
+
     # (b) Score-threshold reject: nothing vetoed, just below the bar.
     if not vetoed_by:
         return final_score < threshold

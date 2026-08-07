@@ -205,7 +205,7 @@ class TestQaAggregateParity:
             # rescue disabled (max_attempts=0) — this test pins the hard-reject/halt path
             "platform": FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
             "task_id": "task-9",
-            "content": "the body",
+            "content": "the body.",
             "title": "A Title",
             "models_used_by_phase": {},
             "database_service": db,
@@ -318,7 +318,7 @@ class TestQaAggregateBumpsGateCounters:
         state = {
             "platform": FakePlatform(),
             "task_id": "task-553",
-            "content": "body",
+            "content": "body.",
             "title": "T",
             "models_used_by_phase": {},
             "database_service": db,
@@ -548,7 +548,7 @@ class TestQaAggregateRescueDispatch:
         state = {
             "platform": FakePlatform(),  # default max_attempts -> 2 (rescue on)
             "task_id": "task-r",
-            "content": "the body",
+            "content": "the body.",
             "title": "T",
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
@@ -607,7 +607,7 @@ class TestQaAggregateRescueDispatch:
         state = {
             "platform": FakePlatform(),
             "task_id": "task-s",
-            "content": "body", "title": "T",
+            "content": "body.", "title": "T",
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": True, "score": 62.0,
                  "provider": "ollama", "advisory": False, "feedback": "ok-ish"},
@@ -651,7 +651,7 @@ class TestQaAggregateRescueDispatch:
         state = {
             "platform": FakePlatform(),       # rescue ON (max 1)
             "task_id": "task-fab",
-            "content": "body", "title": "T",
+            "content": "body.", "title": "T",
             "models_used_by_phase": {},
             "database_service": db,
             "qa_rail_reviews": [
@@ -689,7 +689,7 @@ class TestQaAggregateMaxAttemptsDefault:
         state = {
             "platform": FakePlatform(),  # no qa_rewrite_max_attempts -> default
             "task_id": "task-ma",
-            "content": "the body",
+            "content": "the body.",
             "title": "T",
             "qa_rail_reviews": [
                 {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
@@ -737,7 +737,7 @@ class TestQaAggregateKeepBest:
         state = {
             "platform": FakePlatform(),
             "task_id": "task-kb1",
-            "content": "draft v0",
+            "content": "draft v0.",
             "title": "T",
             "qa_rewrite_attempts": 0,
             "qa_rail_reviews": [
@@ -747,7 +747,7 @@ class TestQaAggregateKeepBest:
         }
         out = await qa_aggregate.run(state)
         assert out["_goto"] == "qa_rewrite"
-        assert out["qa_best_content"] == "draft v0"
+        assert out["qa_best_content"] == "draft v0."
         assert out["qa_best_score"] == 50.0
 
     async def test_defer_keeps_prior_higher_stash(self):
@@ -931,7 +931,7 @@ class TestQaAggregateFlagAndContinue:
         state = {
             "platform": FakePlatform(config=cfg),
             "task_id": "task-flag",
-            "content": "the body",
+            "content": "the body.",
             "title": "T",
             "models_used_by_phase": {},
             "qa_rail_reviews": [
@@ -1025,7 +1025,7 @@ class TestQaAggregateDurableApproval:
         state = {
             "platform": FakePlatform(),
             "task_id": "task-snap",
-            "content": "approved body",
+            "content": "approved body.",
             "title": "The Title",
             "featured_image_url": "https://img/x.png",
             "models_used_by_phase": {"writer": "gemma"},
@@ -1051,7 +1051,7 @@ class TestQaAggregateDurableApproval:
         assert out["qa_final_verdict"] == "approve"
         assert len(calls) == 1
         assert calls[0]["task_id"] == "task-snap"
-        assert calls[0]["content"] == "approved body"
+        assert calls[0]["content"] == "approved body."
         assert calls[0]["final_score"] == 88.0
         assert calls[0]["featured_image_url"] == "https://img/x.png"
 

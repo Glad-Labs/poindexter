@@ -1237,8 +1237,17 @@ DEFAULTS: dict[str, str] = {
     # Fabrication/gate/missing_required vetoes are never rescued — only soft
     # critic vetoes + below-threshold scores. The cycle keeps the best-scoring
     # draft across passes (qa.aggregate keep-best guard), so a worse revision
-    # never replaces a better earlier draft.
+    # never replaces a better earlier draft. A draft the #984 truncation
+    # detector flags is never rescued in either mode (poindexter#986) — the
+    # severed tail is gone, so a revision can only invent an ending.
     'qa_rewrite_max_attempts': '2',
+    # Rescue-yield watchdog (poindexter#986): daily probe over qa_pass_completed
+    # rows — when >= min_attempts rescues were scheduled in the window and ZERO
+    # converted to a terminal approve, emit an advisory qa_rescue_yield_zero
+    # finding (the 2026-07 loop ran 0-for-116 with nothing watching).
+    'qa_rescue_yield_probe_enabled': 'true',
+    'qa_rescue_yield_window_days': '14',
+    'qa_rescue_yield_min_attempts': '8',
 
     # Self-heal before paging (#qa-self-heal): when true, qa.aggregate stops
     # discarding a non-approvable draft — after the bounded regen cycle it FLAGS
@@ -3236,6 +3245,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- QA thresholds -----
     'qa_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_rewrite_max_attempts': {'owner': 'qa_aggregate', 'value_type': 'integer'},
+    'qa_rescue_yield_probe_enabled': {'owner': 'probe_rescue_yield', 'value_type': 'boolean'},
+    'qa_rescue_yield_window_days': {'owner': 'probe_rescue_yield', 'value_type': 'integer'},
+    'qa_rescue_yield_min_attempts': {'owner': 'probe_rescue_yield', 'value_type': 'integer'},
     'qa_flag_instead_of_reject': {'owner': 'qa_aggregate', 'value_type': 'boolean'},
     'qa_critical_floor': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
