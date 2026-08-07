@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.118.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.117.0...v0.118.0) (2026-08-07)
+
+
+### Features
+
+* **taps:** ingest GitHub issues from both repos (poindexter[#991](https://github.com/Glad-Labs/glad-labs-stack/issues/991)) ([#3076](https://github.com/Glad-Labs/glad-labs-stack/issues/3076)) ([ce3c14d](https://github.com/Glad-Labs/glad-labs-stack/commit/ce3c14d8856d3bdb04113920964045a195e21412))
+
+
+### Bug Fixes
+
+* **chat:** plan runs carry their real task_type + the console plays podcast artifacts ([#3080](https://github.com/Glad-Labs/glad-labs-stack/issues/3080)) ([6c02884](https://github.com/Glad-Labs/glad-labs-stack/commit/6c02884d4b45239fd53eb97b63a994d23caf909c))
+* **deploy:** flow-gap guard also checks GPU advisory locks — media renders aren't Prefect flows ([#3079](https://github.com/Glad-Labs/glad-labs-stack/issues/3079)) ([32dd624](https://github.com/Glad-Labs/glad-labs-stack/commit/32dd624fdac0731d34bcfbbd88108e8392f25f29))
+* **llm:** skip LiteLLMProvider registration when the SDK is absent ([#3074](https://github.com/Glad-Labs/glad-labs-stack/issues/3074)) ([4ab88ee](https://github.com/Glad-Labs/glad-labs-stack/commit/4ab88ee4750c821b901dd3bff5ac234c5a584bcf))
+* **media:** don't loop the narration overlay (bed-only -stream_loop) ([#3081](https://github.com/Glad-Labs/glad-labs-stack/issues/3081)) ([3ca8d6c](https://github.com/Glad-Labs/glad-labs-stack/commit/3ca8d6c7cc2d6887761e552ea6d01d38af95caa2))
+* **media:** music-directed ambient-bed prompt (stop literal scene-to-sound renders) ([#3078](https://github.com/Glad-Labs/glad-labs-stack/issues/3078)) ([80d9c72](https://github.com/Glad-Labs/glad-labs-stack/commit/80d9c72221f9a7924ebf37f926b5df09312b060d))
+* **media:** plan renders join the post-keyed approval surface + artifacts are host-readable ([#3083](https://github.com/Glad-Labs/glad-labs-stack/issues/3083)) ([095a209](https://github.com/Glad-Labs/glad-labs-stack/commit/095a2093ac892857a9c1d3477a0c421016b5d044))
+* **public-site:** classify build-only deps as devDependencies ([#3075](https://github.com/Glad-Labs/glad-labs-stack/issues/3075)) ([0ccac87](https://github.com/Glad-Labs/glad-labs-stack/commit/0ccac87bebde89e4eb68c22026fcc46a29f3af61))
+* **qa:** rescue-loop economics — truncation never rescued + yield watchdog (poindexter[#986](https://github.com/Glad-Labs/glad-labs-stack/issues/986)) ([#3077](https://github.com/Glad-Labs/glad-labs-stack/issues/3077)) ([8824166](https://github.com/Glad-Labs/glad-labs-stack/commit/882416613c73e06b24576992fffd6ddf916bc3b0))
+* **rig:** find the strip by its mode, not its connector name ([#3073](https://github.com/Glad-Labs/glad-labs-stack/issues/3073)) ([99a3a0b](https://github.com/Glad-Labs/glad-labs-stack/commit/99a3a0b1a50301ea0de996a3c6a51b5d5f730c2b))
+
 ## [0.117.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.116.0...v0.117.0) (2026-08-06)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "poindexter-backend"
-version = "0.117.0"
+version = "0.118.0"
 description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
 authors = [{ name = "Glad Labs LLC", email = "hello@gladlabs.io" }]
 # SPDX license — Apache-2.0, matching LICENSE / src/LICENSE.md (poindexter#645).
