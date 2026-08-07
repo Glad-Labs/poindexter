@@ -133,15 +133,30 @@ flow_running() {
   [ "${n:-0}" -gt 0 ]
 }
 
+# Media renders are NOT Prefect flows — they run inside the worker's scheduler
+# job and hold the Postgres GPU advisory lock for their whole duration
+# (poindexter#964: a take was killed while the Prefect queue happened to be
+# idle, sailing straight past flow_running). Any granted advisory lock counts
+# as GPU work in flight. Fail-open: an unreachable DB must never block deploys.
+gpu_work_running() {
+  local n
+  n="$(docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA \
+        -c "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted" 2>/dev/null \
+      | tr -d '[:space:]')" || return 1
+  [ "${n:-0}" -gt 0 ]
+}
+
+stack_busy() { flow_running || gpu_work_running; }
+
 reset_at_epoch=""
 if [ "$need_reset" = "1" ]; then
   if [ "$NO_FLOW_CHECK" = "0" ]; then
     waited=0
-    while [ "$waited" -lt "$MAX_WAIT_SEC" ] && flow_running; do
-      log "Active Prefect flow run; waiting for a gap before reset (${waited}/${MAX_WAIT_SEC}s)..."
+    while [ "$waited" -lt "$MAX_WAIT_SEC" ] && stack_busy; do
+      log "Active flow run or GPU job; waiting for a gap before reset (${waited}/${MAX_WAIT_SEC}s)..."
       sleep 5; waited=$((waited + 5))
     done
-    if [ "$waited" -ge "$MAX_WAIT_SEC" ] && flow_running; then
+    if [ "$waited" -ge "$MAX_WAIT_SEC" ] && stack_busy; then
       if [ "$FORCE_FLOW_RESET" = "1" ]; then
         log "No flow gap after ${MAX_WAIT_SEC}s; forcing reset ($behind_raw commit(s) behind) — --force-flow-reset/SYNC_FLOW_FORCE set." WARN
       else
