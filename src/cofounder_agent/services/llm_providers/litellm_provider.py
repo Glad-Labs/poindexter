@@ -85,6 +85,7 @@ and can ground decisions on that.
 from __future__ import annotations
 
 import base64
+import importlib.util
 import logging
 import os
 import re
@@ -94,6 +95,31 @@ from typing import Any
 from plugins.llm_provider import Completion, Token
 from services.cost_guard import is_local_base_url
 from services.llm_providers.thinking_models import strip_reasoning_artifacts
+
+# Refuse to import when the backing SDK is absent, so ``plugins.registry``
+# excludes this provider instead of registering one that cannot run. Every
+# ``import litellm`` in this module sits inside a method, so without this
+# guard the module imports cleanly on an install without litellm, registers
+# as an available provider, gets selected by the dispatcher (prod pins
+# ``plugin.llm_provider.primary.*='litellm'``), and only then explodes —
+# surfacing as a per-document ``ModuleNotFoundError`` at call time rather
+# than a clean "provider unavailable → fall back to ollama_native".
+#
+# That is not hypothetical: the auto-embed sidecar ships a deliberately
+# minimal image with no litellm. It had been silently protected because the
+# module ALSO failed to import for an unrelated missing package; the moment
+# that was fixed (poindexter#989 follow-up), litellm registered and every
+# embedding store in the sidecar started failing.
+#
+# ``find_spec`` rather than a real ``import``: litellm is slow to import and
+# the worker pays that cost lazily at first call today. This keeps that.
+if importlib.util.find_spec("litellm") is None:  # pragma: no cover - env-dependent
+    raise ImportError(
+        "LiteLLMProvider requires the 'litellm' package, which is not "
+        "installed in this environment. The provider is being skipped rather "
+        "than registered — callers fall back to the next configured provider "
+        "(typically ollama_native). Install litellm to enable it."
+    )
 
 logger = logging.getLogger(__name__)
 
