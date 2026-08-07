@@ -152,6 +152,14 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # theoretical.
     "psu_line_voltage_warning_percent": "92",
     "psu_line_voltage_critical_percent": "87",
+    # HX1500i PSU internals via the corsair-psu kernel hwmon driver →
+    # node_exporter (job="node"). No regional dependence here: DC rails are
+    # ATX physical constants (12/5/3.3V) and VRM temperature is absolute, so
+    # unlike the mains pair above these ship ARMED with sane defaults. ±5% =
+    # the ATX rail tolerance; 85°C leaves margin under the HX1500i's firmware
+    # trip points while still catching a failing fan / blocked intake early.
+    "psu_vrm_temp_warning_celsius": "85",
+    "psu_rail_voltage_tolerance_percent": "5",
     # UPS via NUT (Glad-Labs/poindexter#958). All Ups* rules read the
     # network_ups_tools_* series from the profile-gated nut-exporter
     # container (job="nut"), so on a host without the `ups` compose profile
@@ -579,6 +587,77 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "2026-07-23. Shed load NOW (pause GPU jobs — draw and sag are "
             "coupled when the circuit is the problem) and stop Postgres "
             "cleanly if you can, so the crash doesn't land mid-write."
+        ),
+    },
+    # --- PSU internals via corsair-psu hwmon (HX1500i) ---
+    # node_hwmon_* from node_exporter (job="node") — an independent exporter,
+    # so raw instant reads per the restart-gap policy above. The hwmon chip
+    # label embeds the USB path + HID instance and ROTATES on every boot /
+    # re-enumeration (…_0005 → _0006 → _000c observed on the operator rig),
+    # so both rules match chip=~".*1b1c:1c1f.*" — never a literal chip label.
+    # On a host without this PSU (or the driver) the series are absent →
+    # no samples, no fire.
+    "PsuVrmTempHigh": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        # Label-join so the rule self-documents which sensor it reads (the
+        # driver's temp1 = "vrm temp", temp2 = "case temp").
+        "expr": (
+            '(node_hwmon_temp_celsius{chip=~".*1b1c:1c1f.*"}'
+            " * on(chip, sensor) group_left(label)"
+            ' node_hwmon_sensor_label{chip=~".*1b1c:1c1f.*",label="vrm temp"})'
+            " > {threshold.psu_vrm_temp_warning_celsius}"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "PSU VRM temperature high ({{ $value | humanize }}°C)",
+        "description": (
+            "The HX1500i's VRM reads {{ $value | humanize }}°C — over "
+            "prometheus.threshold.psu_vrm_temp_warning_celsius (default 85) "
+            "for 10m. Note the PSU fan may legitimately be in zero-RPM mode "
+            "(node_hwmon_fan_rpm fan1 = 0 is normal below ~40% load) — but a "
+            "VRM this hot with the fan still stopped means a failing fan or "
+            "a blocked intake. Panels: Hardware & Power → PSU Temperatures "
+            "and Fans (hwmon)."
+        ),
+    },
+    "PsuRailVoltageOutOfBand": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        # 12 / 5 / 3.3 are the ATX rail nominals — physical constants of the
+        # standard, not operator tunables; the tolerance percent is the knob.
+        # The driver's own firmware crit bands (in*_crit / in*_lcrit) are far
+        # wider (8.4–15.6V on the +12V rail) — by the time those trip the
+        # machine is already crashing, so the rule holds the ATX ±5% line.
+        # Comparison filtering keeps the LEFT operand, so $value = the
+        # absolute deviation in volts and $labels.sensor names the rail.
+        "expr": (
+            '(abs(node_hwmon_in_volts{chip=~".*1b1c:1c1f.*",sensor="in1"} - 12)'
+            " > (12 * {threshold.psu_rail_voltage_tolerance_percent} / 100))"
+            '\nor (abs(node_hwmon_in_volts{chip=~".*1b1c:1c1f.*",sensor="in2"} - 5)'
+            " > (5 * {threshold.psu_rail_voltage_tolerance_percent} / 100))"
+            '\nor (abs(node_hwmon_in_volts{chip=~".*1b1c:1c1f.*",sensor="in3"} - 3.3)'
+            " > (3.3 * {threshold.psu_rail_voltage_tolerance_percent} / 100))"
+        ),
+        "for": "5m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": (
+            "PSU rail {{ $labels.sensor }} off ATX nominal by "
+            "{{ $value | humanize }}V"
+        ),
+        "description": (
+            "DC rail {{ $labels.sensor }} (in1=+12V, in2=+5V, in3=+3.3V) is "
+            "{{ $value | humanize }}V away from its ATX nominal — outside "
+            "prometheus.threshold.psu_rail_voltage_tolerance_percent "
+            "(default 5%). First check the 'AC voltage — full path' panel on "
+            "Hardware & Power: if the HX1500i's AC-in is also sagging, this "
+            "is upstream undervoltage reaching the PSU, not the PSU itself. "
+            "Rails drifting at healthy AC-in = an aging/failing PSU — plan a "
+            "swap before it becomes an uncommanded power-off."
         ),
     },
     # --- UPS via NUT (Glad-Labs/poindexter#958) ---

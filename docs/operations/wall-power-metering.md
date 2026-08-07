@@ -2,16 +2,14 @@
 
 The Hardware & Power dashboard's `psu_total_power_watts` panel and the brain's
 electricity-cost calc want **true wall power** — the AC watts actually pulled
-from the outlet. The Corsair HX1500i reports this over USB, but only iCUE can
-own that USB HID (it drives the pump and fans). Any second process that reaches
-for the **HX1500i itself** contends with iCUE and crashes its PSU sensor — that's
-why HWiNFO64 was retired (2026-07-10): it read the HXi over the same HID and
-destabilised iCUE unless the Corsair integration was disabled. **AIDA64 is safe
-to run alongside iCUE** precisely because it does _not_ read the HX1500i — it
-reads the CPU/GPU/motherboard sensors over other interfaces and never touches the
-contended HID. (The flip side: AIDA64 exposes no Corsair PSU sensor, so it cannot
-populate `psu_total_power_watts` either.) The robust, contention-free source of
-true wall power is a smart plug that meters the outlet directly.
+from the outlet. The robust source is a smart plug that meters the outlet
+directly: it reads the wall side of the UPS, includes every conversion loss the
+utility actually bills, and no host software can silently stop it. (The
+Windows-era USB-HID contention that originally forced this choice — iCUE owning
+the HX1500i's HID, HWiNFO crashing it — is preserved under
+[Historical](#historical-windows-era-sensor-split-pre-linux-migration); on
+Linux the `corsair-psu` kernel driver reads the PSU without contention, but it
+measures a different node — see the chain below.)
 
 ## Source priority
 
@@ -20,42 +18,75 @@ true wall power is a smart plug that meters the outlet directly.
 1. **`psu_total_power_watts`** — real metered wall power from a Shelly outlet
    plug (`shelly_psu_url`). Primary. _(Before the HWiNFO64 retirement this metric
    could also come from HWiNFO reading the HXi; that path is gone — see above.)_
-2. **iCUE CSV tap** — `sensor_samples.psu_power_in`, the always-on fallback
-   (`tap.corsair_csv`). This is the live PSU source today until a Shelly plug is
-   wired, and the same tap now also feeds the Wall/DC Output and Fan panels. Used
-   when the primary metric is absent.
+2. **iCUE CSV tap** — `sensor_samples.psu_power_in` (`tap.corsair_csv`).
+   **Dead since the Linux migration** — iCUE was Windows software, so nothing
+   produces the CSV anymore; the chain skips straight past it. Listed because
+   `select_power_source` still knows the source id (and a Windows operator
+   could still light it up).
 3. **`system_total_power_estimate_watts`** — CPU + GPU + overhead software
    estimate. Degraded; the brain pages the operator when it falls to this.
 
 ## Why a smart plug over the PSU's own USB reading
 
-Only one process can own the HX1500i's USB HID, and it must be iCUE (cooling
-control). A Shelly plug sits on the outlet as a separate device, so it cannot
-fight iCUE, cannot be crashed by it, and measures the true metered draw
-(including PSU conversion loss) — the number the utility actually bills. It is
-also reboot-proof: no software toggle can silently stop it the way iCUE's CSV
-logging does.
+On Windows, only one process could own the HX1500i's USB HID, and it had to be
+iCUE (cooling control) — the original reason the Shelly exists. On Linux that
+contention is gone (see the next section), but the Shelly stays the wall-power
+source of truth for reasons that survived the migration: it sits on the wall
+side of the UPS (the PSU's own AC-in reads the UPS _output_ node and misses UPS
+overhead and charging), it measures the true metered draw the utility bills,
+and it is reboot-proof — a separate device no host software toggle can silently
+stop.
 
-## Sensor sources after the HWiNFO64 retirement
+## Sensor sources on Linux (current)
 
-With HWiNFO64 dropped (2026-07-10), the live hardware telemetry splits cleanly by
-interface and nothing contends with iCUE for the HX1500i:
+The metering chain, wall to silicon:
 
-| Signal                       | Source               | Path                                                                    | Dashboard panel                    |
-| ---------------------------- | -------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| CPU / GPU / board **temps**  | AIDA64 shared memory | Prometheus `aida64_temperature_celsius`                                 | Temperatures (AIDA64)              |
-| Rail + core **voltages**     | AIDA64 shared memory | Prometheus `aida64_voltage_volts`                                       | Voltages (AIDA64)                  |
-| CPU package + GPU **power**  | AIDA64 shared memory | Prometheus `aida64_power_watts`                                         | Component Power — live (AIDA64)    |
-| **PSU** wall / DC power      | Corsair iCUE CSV     | `sensor_samples` (`source=corsair_csv`, `psu_power_in`/`psu_power_out`) | Wall Power / DC Output (HX1500i)   |
-| Case + PSU **fan RPMs**      | Corsair iCUE CSV     | `sensor_samples` (`source=corsair_csv`, `fan_*`)                        | Fans (iCUE)                        |
-| True **wall power** (billed) | Shelly smart plug    | Prometheus `psu_total_power_watts`                                      | Power Over Time / Electricity Cost |
+```
+wall receptacle ─[Shelly plug]─▶ UPS ─[HX1500i AC-in]─▶ PSU ─▶ DC rails
+                       │              (NUT reads the UPS's own wall-side
+                       │               line register + battery/output)
+```
 
-AIDA64 owns everything it can read over SMBus/PCIe; the iCUE CSV owns everything
-behind the Corsair USB HID (the PSU rails and the LINK fan controller — neither
-of which AIDA64 can see). The exporter's HWiNFO reader (`get_hwinfo_metrics` in
-`scripts/nvidia-smi-exporter.py`) stays as a no-op when the shared memory is
-absent, so an operator who runs HWiNFO _without_ the Corsair integration can opt
-back in — it just isn't part of the default Glad Labs sensor set anymore.
+| Signal                                                                         | Source                            | Path                                                                                                                 | Dashboard panel (Hardware & Power)                                      |
+| ------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Wall** voltage / power / current (billed)                                    | Shelly smart plug, wall side      | Prometheus `psu_line_voltage_volts` / `psu_total_power_watts` / `psu_line_current_amps` (polled by the gpu-exporter) | Wall Power · Mains Voltage · AC voltage — full path                     |
+| Wall voltage (2nd meter, 1 V steps) + battery/load                             | UPS via NUT                       | Prometheus `network_ups_tools_*` (job `nut`)                                                                         | UPS row                                                                 |
+| PSU **AC-in** (UPS-output side), **DC rails**, VRM/case **temps**, PSU **fan** | `corsair-psu` kernel hwmon driver | Prometheus `node_hwmon_*` with `chip=~".*1b1c:1c1f.*"` (job `node`)                                                  | PSU DC Output · PSU rails — deviation · PSU Temperatures · Fans (hwmon) |
+| CPU / board temps, board fans, board rails                                     | `k10temp` / `asusec` hwmon        | Prometheus `node_hwmon_*` (job `node`)                                                                               | Sensors — hwmon row                                                     |
+| GPU temps / power / VRAM                                                       | nvidia-smi gpu-exporter           | Prometheus `nvidia_gpu_*` (job `nvidia-smi`)                                                                         | GPU rows                                                                |
+
+The board's "How this board is metered" text panel carries this same map, so an
+operator reading a chart can always tell which instrument and which physical
+node produced it.
+
+### HX1500i via corsair-psu (no more HID war)
+
+With no iCUE on Linux, the kernel's `corsair-psu` driver auto-binds to the PSU
+(USB id `1b1c:1c1f`) and node_exporter's hwmon collector picks it up with zero
+configuration — AC-in voltage, 12/5/3.3 V rails with firmware crit bands,
+per-rail wattage, VRM/case temperatures, and fan RPM (0 RPM = zero-RPM mode,
+normal below roughly 40% load). Two DB-rendered alert rules watch it:
+`PsuVrmTempHigh` (`prometheus.threshold.psu_vrm_temp_warning_celsius`, default 85) and `PsuRailVoltageOutOfBand`
+(`prometheus.threshold.psu_rail_voltage_tolerance_percent`, default 5 — the ATX
+tolerance), both warning-severity → Discord.
+
+**Gotcha:** the hwmon chip label embeds the USB path + HID instance and
+**rotates on every boot** (`…_0005` → `…_0006` → `…_000c` observed). Panels and
+rules must match `chip=~".*1b1c:1c1f.*"` — a pinned literal label goes silent
+at the next reboot. A userspace HID reader (e.g. OpenLinkHub with a PSU entry,
+or liquidctl) would reintroduce the dual-reader contention — leave the PSU to
+the kernel driver.
+
+### Historical: Windows-era sensor split (pre-Linux migration)
+
+Until 2026-07 the split was: AIDA64 shared memory for CPU/GPU/board temps,
+voltages and power (`aida64_*`); the iCUE CSV tap (`sensor_samples`,
+`source=corsair_csv`) for PSU rails and case/PSU fan RPMs — the only
+contention-free HX1500i reader while iCUE owned the HID; HWiNFO retired
+2026-07-10 for crashing iCUE's PSU sensor. All of these died with the OS
+migration: `aida64_*` series no longer exist and the corsair_csv tap has no
+producer. Case-fan RPMs (the LINK controller) are the one signal that did not
+come back — OpenLinkHub owns the LINK hubs now and does not feed Prometheus.
 
 ## Setup
 
@@ -69,8 +100,12 @@ back in — it just isn't part of the default Glad Labs sensor set anymore.
    shelly_psu_url = "http://192.168.1.50"
    ```
 
-4. Restart the exporter task so it re-reads bootstrap:
-   `scripts/background-services.ps1` service `poindexter-nvidia-smi-exporter`.
+4. Re-up the containerized exporter so the new URL rides in:
+   `bash scripts/start-stack.sh up -d gpu-exporter` (start-stack exports
+   `SHELLY_PSU_URL` from that bootstrap key into the container's env). If you
+   instead run `scripts/nvidia-smi-exporter.py` directly on the host, there is
+   nothing to restart — `_read_shelly_url_from_bootstrap()` re-parses the TOML
+   on every scrape.
 
 The exporter (`scripts/nvidia-smi-exporter.py`) polls
 `http://<plug>/rpc/Switch.GetStatus?id=0`, reads `apower`, and emits

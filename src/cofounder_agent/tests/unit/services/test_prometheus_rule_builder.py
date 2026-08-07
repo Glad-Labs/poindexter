@@ -9,6 +9,7 @@ without spinning up Postgres.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -494,6 +495,75 @@ _UPS_RULES = (
     "UpsLoadHigh",
     "UpsLoadCritical",
 )
+
+
+class TestPsuInternalsRules:
+    """HX1500i internals via the corsair-psu kernel hwmon driver →
+    node_exporter (``node_hwmon_*``, job="node").
+
+    Discovered 2026-08-07: the driver had been auto-binding and exporting
+    since at least Jul 23 with nothing alerting on it. These rules watch the
+    two failure modes the sensors actually predict — a cooking VRM and DC
+    rails drifting out of ATX tolerance.
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        assert "PsuVrmTempHigh" in rb.DEFAULT_RULES
+        assert "PsuRailVoltageOutOfBand" in rb.DEFAULT_RULES
+        assert rb.DEFAULT_THRESHOLDS["psu_vrm_temp_warning_celsius"] == "85"
+        assert rb.DEFAULT_THRESHOLDS["psu_rail_voltage_tolerance_percent"] == "5"
+
+    def test_ships_armed_because_atx_rails_are_not_regional(self):
+        """Contrast with the mains pair above: AC nominal is regional (120V vs
+        230V) so those ship inert, but DC rails are ATX physical constants
+        (12/5/3.3V) and VRM temperature is absolute — shipping these disarmed
+        would just be shipping them broken."""
+        assert float(rb.DEFAULT_THRESHOLDS["psu_vrm_temp_warning_celsius"]) > 0
+        assert float(rb.DEFAULT_THRESHOLDS["psu_rail_voltage_tolerance_percent"]) > 0
+
+    def test_chip_label_is_regex_never_pinned(self):
+        """The hwmon chip label embeds the USB path + HID instance and rotates
+        every boot (``…_0005`` → ``_0006`` → ``_000c`` observed on the operator
+        rig). A pinned label goes permanently silent at the next reboot."""
+        for name in ("PsuVrmTempHigh", "PsuRailVoltageOutOfBand"):
+            expr = rb.DEFAULT_RULES[name]["expr"]
+            assert 'chip=~".*1b1c:1c1f.*"' in expr
+            # No literal HID-instance suffix anywhere in the matcher.
+            assert not re.search(r'chip="[^"]*_[0-9a-f]{4}"', expr), name
+
+    def test_severities_route_to_discord_not_telegram(self):
+        # Both are act-this-week signals, not act-this-minute — routine tier.
+        assert rb.DEFAULT_RULES["PsuVrmTempHigh"]["severity"] == "warning"
+        assert rb.DEFAULT_RULES["PsuRailVoltageOutOfBand"]["severity"] == "warning"
+
+    @pytest.mark.asyncio
+    async def test_default_render_is_armed_and_fully_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        vrm = out.split("alert: PsuVrmTempHigh")[1].split("alert:", 1)[0]
+        rail = out.split("alert: PsuRailVoltageOutOfBand")[1].split("alert:", 1)[0]
+        assert "{threshold." not in vrm
+        assert "{threshold." not in rail
+        assert "> 85" in vrm
+        # Each ATX rail is present with the tolerance substituted in. The
+        # renderer backslash-escapes embedded quotes in the YAML, so match
+        # the escaped form.
+        for sensor, nominal in (("in1", "12"), ("in2", "5"), ("in3", "3.3")):
+            assert f'sensor=\\"{sensor}\\"' in rail
+            assert f"({nominal} * 5 / 100)" in rail
+
+    @pytest.mark.asyncio
+    async def test_thresholds_operator_tunable(self):
+        pool = _FakePool([
+            {"key": "prometheus.threshold.psu_vrm_temp_warning_celsius",
+             "value": "70"},
+            {"key": "prometheus.threshold.psu_rail_voltage_tolerance_percent",
+             "value": "3"},
+        ])
+        out = await rb.build_current(pool)
+        vrm = out.split("alert: PsuVrmTempHigh")[1].split("alert:", 1)[0]
+        rail = out.split("alert: PsuRailVoltageOutOfBand")[1].split("alert:", 1)[0]
+        assert "> 70" in vrm
+        assert "(12 * 3 / 100)" in rail
 
 
 class TestUpsRules:

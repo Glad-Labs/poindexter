@@ -328,7 +328,8 @@
             ]
           }
         ]
-      }
+      },
+      "description": "Source: nvidia_gpu_utilization_percent + nvidia_gpu_temperature_celsius — nvidia-smi gpu-exporter (job nvidia-smi), per GPU."
     },
     {
       "id": 4,
@@ -378,7 +379,8 @@
             ]
           }
         ]
-      }
+      },
+      "description": "Source: nvidia_gpu_memory_used_mib + nvidia_gpu_power_draw_watts — nvidia-smi gpu-exporter. Board power is GPU-only; whole-PC wall power is the Shelly panel in the Power row."
     },
     {
       "id": 5,
@@ -541,7 +543,7 @@
     },
     {
       "type": "row",
-      "title": "Power — PSU / wall / CPU",
+      "title": "Power — wall & PSU (Shelly · corsair-psu)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -551,6 +553,22 @@
       },
       "panels": [],
       "id": 6
+    },
+    {
+      "id": 85,
+      "title": "How this board is metered",
+      "type": "text",
+      "description": "Instrument → node map for every power/voltage series on this board.",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Metering chain:** `wall receptacle ─[Shelly plug]─▶ UPS ─[HX1500i AC-in]─▶ PSU ─▶ DC rails` — the UPS also reports its own line-side (wall) register via NUT.\n\n| Series | Instrument | Physical node |\n|---|---|---|\n| `psu_line_voltage_volts` · `psu_total_power_watts` · `psu_line_current_amps` | Shelly smart plug (polled by gpu-exporter) | **Wall receptacle** |\n| `network_ups_tools_*` | UPS via NUT (1V steps) | **Wall side** (input) + UPS battery/output |\n| `node_hwmon_*` chip `1b1c:1c1f` | PSU via corsair-psu kernel driver | **UPS output side** (AC-in) + DC rails / temps / fan |\n| `nvidia_gpu_*` | nvidia-smi gpu-exporter | GPU boards (DC) |\n\n⚠ The HX chip label embeds the USB path and **rotates every boot** — always match `chip=~\".*1b1c:1c1f.*\"`, never a literal label. ⚠ Shelly placement history: Jul 31 – Aug 7 2026 it sat on the UPS **output** (that stretch = conditioned power, not wall)."
+      }
     },
     {
       "id": 8,
@@ -564,7 +582,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -627,7 +645,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -679,10 +697,169 @@
       "description": "Total DC output power from the corsair-psu kernel driver via node_exporter hwmon. Pairs with the Shelly wall stat: wall − DC = conversion loss. (The driver's own input-power estimate reads garbage, hence the plug.)"
     },
     {
+      "id": 86,
+      "title": "AC voltage — full path (which node sags?)",
+      "type": "timeseries",
+      "description": "All AC voltmeters overlaid, ordered by node: wall (Shelly 0.1V + UPS line register 1V) vs UPS output (NUT output register + HX1500i AC-in). Wall sagging while output holds = the UPS AVR is doing its job; all four sagging together = passthrough undervoltage reaching the PSU.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "psu_line_voltage_volts",
+          "legendFormat": "Wall — Shelly",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_input_voltage",
+          "legendFormat": "Wall — UPS line register",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "network_ups_tools_output_voltage",
+          "legendFormat": "UPS output — NUT",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_hwmon_in_volts{chip=~\".*1b1c:1c1f.*\",sensor=\"in0\"}",
+          "legendFormat": "UPS output — HX1500i AC-in",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt",
+          "min": 90,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "min"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 87,
+      "title": "PSU rails — deviation from nominal (HX1500i)",
+      "type": "timeseries",
+      "description": "Source: node_hwmon_in_volts in1/in2/in3 (corsair-psu kernel driver) as percent deviation from the ATX nominals (12/5/3.3V). ATX spec allows ±5%; the PsuRailVoltageOutOfBand alert fires past prometheus.threshold.psu_rail_voltage_tolerance_percent (default 5).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "(node_hwmon_in_volts{chip=~\".*1b1c:1c1f.*\",sensor=\"in1\"} / 12 - 1) * 100",
+          "legendFormat": "+12V rail",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "(node_hwmon_in_volts{chip=~\".*1b1c:1c1f.*\",sensor=\"in2\"} / 5 - 1) * 100",
+          "legendFormat": "+5V rail",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "(node_hwmon_in_volts{chip=~\".*1b1c:1c1f.*\",sensor=\"in3\"} / 3.3 - 1) * 100",
+          "legendFormat": "+3.3V rail",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": -8,
+          "max": 8,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -5
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
       "id": 72,
       "type": "timeseries",
       "title": "Mains Voltage (Shelly, AC in)",
-      "description": "True outlet voltage from the Shelly wall-plug meter — not a PSU-internal estimate. Dashed lines mirror the MainsVoltageLow / MainsVoltageCritical alert bands at 92% / 87% of a 120V nominal (110.4V / 104.4V). Those alert thresholds live in app_settings (prometheus.threshold.psu_nominal_line_voltage_volts and the two percent keys); if you retune them there, update these lines to match. Sustained undervoltage ends in an uncommanded hard power-off that leaves no journal entry — see docs/operations/wall-power-metering.md.",
+      "description": "True outlet voltage from the Shelly wall-plug meter (psu_line_voltage_volts, 0.1V steps) — not a PSU-internal estimate. PLACEMENT HISTORY: Jul 31 – Aug 7 2026 the Shelly sat on the UPS's OUTPUT side, so that stretch of this series records conditioned power, not the wall; the UPS line register (network_ups_tools_input_voltage) is the wall record for that window. Wall-side again since Aug 7.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -691,7 +868,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 39
       },
       "fieldConfig": {
         "defaults": {
@@ -762,7 +939,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -893,7 +1070,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 43
       },
       "fieldConfig": {
         "defaults": {
@@ -932,7 +1109,8 @@
           "rawSql": "SELECT created_at AS time, (cost_usd / NULLIF(duration_ms, 0) * 3600000.0 * 24)::float AS \"Est. Daily Cost\" FROM cost_logs WHERE cost_type LIKE 'electricity%' AND $__timeFilter(created_at) ORDER BY created_at",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Source: Postgres cost_logs (cost_type like 'electricity%') — computed by cost_guard from measured wall watts (Shelly) × the EIA $/kWh rate. Derived figure, not a sensor."
     },
     {
       "id": 12,
@@ -947,7 +1125,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -1025,7 +1203,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 59
       },
       "panels": []
     },
@@ -1042,7 +1220,7 @@
         "h": 4,
         "w": 5,
         "x": 0,
-        "y": 47
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1110,7 +1288,7 @@
         "h": 4,
         "w": 5,
         "x": 5,
-        "y": 47
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1172,7 +1350,7 @@
         "h": 4,
         "w": 5,
         "x": 10,
-        "y": 47
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1233,7 +1411,7 @@
         "h": 4,
         "w": 5,
         "x": 15,
-        "y": 47
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1295,7 +1473,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 47
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -1356,7 +1534,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 51
+        "y": 64
       },
       "fieldConfig": {
         "defaults": {
@@ -1498,7 +1676,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 51
+        "y": 64
       },
       "fieldConfig": {
         "defaults": {
@@ -1572,7 +1750,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 59
+        "y": 72
       },
       "fieldConfig": {
         "defaults": {
@@ -1725,7 +1903,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 59
+        "y": 72
       },
       "fieldConfig": {
         "defaults": {
@@ -1838,7 +2016,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 59
+        "y": 72
       },
       "fieldConfig": {
         "defaults": {
@@ -1950,7 +2128,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 80
       },
       "fieldConfig": {
         "defaults": {
@@ -2103,7 +2281,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 86
       },
       "panels": [],
       "id": 13
@@ -2120,7 +2298,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 87
       },
       "fieldConfig": {
         "defaults": {
@@ -2146,7 +2324,8 @@
           "rawSql": "SELECT to_char(\"timestamp\",'HH24:MI') as sample_time, utilization as util, temperature as temp, ROUND(power_draw::numeric) as watts, memory_used as vram, fan_speed as fan, clock_graphics as clock FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") ORDER BY \"timestamp\" DESC LIMIT 20",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Source: Postgres gpu_metrics table — worker-sampled history rows (survives Prometheus retention). Live GPU truth is the Prometheus row above."
     },
     {
       "id": 15,
@@ -2160,7 +2339,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 96
       },
       "fieldConfig": {
         "defaults": {
@@ -2186,18 +2365,19 @@
           "rawSql": "SELECT date_trunc('day',\"timestamp\")::date as day, ROUND(AVG(utilization)::numeric,1) as util, ROUND(AVG(temperature)::numeric,1) as temp, ROUND(AVG(power_draw)::numeric) as watts, COUNT(*) as samples FROM gpu_metrics WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 1 DESC",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Source: Postgres gpu_metrics table — daily aggregate of the same worker-sampled history."
     },
     {
       "id": 50,
       "type": "row",
-      "title": "Sensors — AIDA64 + iCUE (live)",
+      "title": "Sensors — hwmon (k10temp · asusec · corsairpsu)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 92
+        "y": 105
       }
     },
     {
@@ -2213,7 +2393,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 93
+        "y": 106
       },
       "targets": [
         {
@@ -2246,7 +2426,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 93
+        "y": 106
       },
       "targets": [
         {
@@ -2279,7 +2459,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 101
+        "y": 114
       },
       "targets": [
         {
@@ -2312,7 +2492,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 109
+        "y": 122
       },
       "targets": [
         {
@@ -2340,7 +2520,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 117
+        "y": 130
       },
       "panels": [],
       "id": 59
@@ -2358,7 +2538,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 118
+        "y": 131
       },
       "fieldConfig": {
         "defaults": {
@@ -2420,7 +2600,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 118
+        "y": 131
       },
       "fieldConfig": {
         "defaults": {
@@ -2482,7 +2662,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 118
+        "y": 131
       },
       "fieldConfig": {
         "defaults": {
@@ -2544,7 +2724,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 122
+        "y": 135
       },
       "fieldConfig": {
         "defaults": {
@@ -2611,7 +2791,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 122
+        "y": 135
       },
       "fieldConfig": {
         "defaults": {
@@ -2675,7 +2855,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 130
+        "y": 143
       },
       "panels": []
     },
@@ -2692,7 +2872,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 131
+        "y": 144
       },
       "fieldConfig": {
         "defaults": {
@@ -2757,7 +2937,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 139
+        "y": 152
       },
       "id": 69,
       "panels": [],
@@ -2800,7 +2980,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 140
+        "y": 153
       },
       "id": 70,
       "options": {
@@ -2857,7 +3037,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 140
+        "y": 153
       },
       "id": 71,
       "options": {
