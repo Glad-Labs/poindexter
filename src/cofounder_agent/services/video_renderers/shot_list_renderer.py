@@ -76,8 +76,16 @@ _WAN21_MAX_DURATION_S = 5
 # swap width/height. The prior defaults (832×480@16fps) were the Wan 2.1
 # 1.3B native profile left behind by the Piece-4 model swap — off the 5B's
 # training distribution, so clips came out soft.
-_HERO_DEFAULT_WIDTH = 1280
-_HERO_DEFAULT_HEIGHT = 704
+# Wan 2.2 TI2V-5B's documented 480P working range. NOT the 720P range it also
+# supports: i2v activation memory scales ~quadratically with the plate, and at
+# 1152x640 the model peaked ~25-26 GB — enough that a single co-resident (the
+# writer LLM, the vision model, image-gen) OOM'd it by as little as 320 MiB on
+# a 32 GB card, and it cannot fit an 8-16 GB consumer card at all. At 832x480
+# it peaks ~19-20 GB and generated 4-for-4 on the 2026-08-07 validation runs.
+# The compositor upscales the clip to the canvas, so the visible cost is
+# nil at feed scale. Operators with headroom raise video_hero_width/height.
+_HERO_DEFAULT_WIDTH = 832
+_HERO_DEFAULT_HEIGHT = 480
 _HERO_DEFAULT_FPS = 24
 
 # Motion direction appended to the wan prompt when a (pre-motion-field,

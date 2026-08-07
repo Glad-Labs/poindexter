@@ -242,10 +242,12 @@ class TestRenderOneShot:
         assert "duration_s" in captured_config
         assert captured_config["duration_s"] <= 5  # wan-server 121-frame cap
         assert captured_config["image_path"].endswith(".png")  # i2v init still
-        # Hero geometry rides the config — TI2V-5B's 720P@24 working range
-        # (landscape lane, no site_config → code defaults).
-        assert captured_config["width"] == 1280
-        assert captured_config["height"] == 704
+        # Hero geometry rides the config — TI2V-5B's 480P@24 working range
+        # (landscape lane, no site_config → code defaults). 720P was the
+        # default until poindexter#992: it peaked ~25-26GB and OOM'd against
+        # a single co-resident on a 32GB card.
+        assert captured_config["width"] == 832
+        assert captured_config["height"] == 480
         assert captured_config["fps"] == 24
         assert "image_paths" not in captured_config
         assert "audio_path" not in captured_config
@@ -2439,14 +2441,18 @@ class TestHeroRenderDims:
     """_hero_render_dims — TI2V-5B geometry resolution + portrait swap."""
 
     def test_defaults_landscape(self):
+        """480P, not 720P (poindexter#992): i2v activation memory scales
+        ~quadratically with the plate, and at 1280x704 the model peaked
+        ~25-26GB — OOM against a single co-resident on a 32GB card, and
+        impossible on a consumer 8-16GB one."""
         import services.video_renderers.shot_list_renderer as mod
-        assert mod._hero_render_dims("landscape", None) == (1280, 704, 24)
+        assert mod._hero_render_dims("landscape", None) == (832, 480, 24)
 
     def test_portrait_swaps_width_height(self):
         """The 9:16 short lane gets a vertical hero clip — before this,
         shorts letterboxed a landscape clip into a 1080×1920 canvas."""
         import services.video_renderers.shot_list_renderer as mod
-        assert mod._hero_render_dims("portrait", None) == (704, 1280, 24)
+        assert mod._hero_render_dims("portrait", None) == (480, 832, 24)
 
     def test_settings_override(self):
         import services.video_renderers.shot_list_renderer as mod
@@ -2539,8 +2545,8 @@ class TestHeroMotionThreading:
             "Camera and motion: slow dolly forward as streams flow"
         )
         # Portrait lane: the still AND the clip are requested vertical.
-        assert captured["still_dims"] == (704, 1280)
-        assert (captured["width"], captured["height"]) == (704, 1280)
+        assert captured["still_dims"] == (480, 832)
+        assert (captured["width"], captured["height"]) == (480, 832)
         assert captured["fps"] == 24
 
 

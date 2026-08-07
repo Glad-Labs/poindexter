@@ -821,6 +821,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 0-for-N rewrite streak so rescue burn is never silent again (the
         # 2026-07 collapse ran 0-for-116 unnoticed; poindexter#986).
         ("jobs", "services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
+        # ProbeHeroFallbackJob — 6-hourly watchdog for hero (i2v) animation:
+        # per-shot hero_render_fallback findings are info-level and invisible
+        # in aggregate, so a four-day outage shipped stills as "video" while
+        # the operator, not the system, noticed the missing motion
+        # (poindexter#992). Pages once per window on a fallback cluster.
+        ("jobs", "services.jobs.probe_hero_fallback", "ProbeHeroFallbackJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live

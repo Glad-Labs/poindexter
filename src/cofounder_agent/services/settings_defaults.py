@@ -450,8 +450,11 @@ DEFAULTS: dict[str, str] = {
     # width/height for the portrait (9:16) short lane
     # (shot_list_renderer._hero_render_dims). Drop back to 832x480@16 to
     # trade quality for VRAM headroom / render time on smaller cards.
-    'video_hero_width': '1280',
-    'video_hero_height': '704',
+    # Wan 2.2 TI2V-5B's 480P working range — see _HERO_DEFAULT_WIDTH in
+    # shot_list_renderer.py. 720P (1280x704) peaks ~25-26GB and OOMs against
+    # a single co-resident on 32GB, and cannot fit consumer 8-16GB cards.
+    'video_hero_width': '832',
+    'video_hero_height': '480',
     'video_hero_fps': '24',
     # Hard-unload image-gen immediately before each wan hero load
     # (poindexter#907 defect 2). The dispatch-time VRAM gate checks free VRAM
@@ -572,6 +575,13 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
+    # ProbeHeroFallbackJob — the aggregate watchdog over the per-shot
+    # hero_render_fallback findings. Those are info-level by design (a still
+    # beats a hole), which made a four-day total hero outage invisible until
+    # a human noticed the missing motion (poindexter#992).
+    'hero_fallback_probe_enabled': 'true',
+    'hero_fallback_window_hours': '24',
+    'hero_fallback_min_count': '3',
     # Wait for image-gen /health before the still phase. The hero phase exits
     # image-gen to free the card for wan, so the NEXT render raced a cold
     # container lazy-loading a 6B checkpoint: /generate 503'd and 7 of 11
@@ -3244,6 +3254,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'hero_fallback_probe_enabled': {'owner': 'probe_hero_fallback', 'value_type': 'boolean'},
+    'hero_fallback_window_hours': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
+    'hero_fallback_min_count': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
     'video_image_gen_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_evict_ollama': {'owner': 'media_render', 'value_type': 'boolean'},
     'audio_gen_ambient_prompt_template': {'owner': 'media_scripts', 'value_type': 'string'},
