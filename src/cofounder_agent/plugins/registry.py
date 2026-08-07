@@ -627,6 +627,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # GiteaIssuesTap retired 2026-05-08 — Gitea was decommissioned
         # 2026-04-30; the corresponding settings.taps.gitea_issues row
         # is harmless and is left in app_settings for historical reference.
+        # Its replacement took 3 months to arrive: nothing kept
+        # source_table='issues' current in the meantime, so it sat frozen at
+        # the 2026-04-02 backfill until the corpus-staleness panel
+        # (poindexter#989) surfaced it. GitHubIssuesTap covers both the
+        # public mirror and the private stack repo (poindexter#991).
+        ("taps", "services.taps.github_issues", "GitHubIssuesTap"),
         ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
         # OpenClawSQLiteTap — ingests pre-embedded chunks from OpenClaw
         # into pgvector. Registered 2026-05-20 (finding #189): had the

@@ -81,6 +81,18 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # operator-facing timestamp rendering. Applied over the UTC default by
     # apply_operator_overrides only while the row still holds the OSS default.
     "operator_timezone": "America/New_York",
+    # The Glad Labs issue trackers (poindexter#991). The OSS default ships
+    # `repos: ""` — which repos to scrape is per-install, and a default naming
+    # anyone's repos would make a fresh install ingest a stranger's tracker.
+    # Both are needed here because issue filing is content-routed: public
+    # product work to poindexter, business/operator work to glad-labs-stack
+    # (feedback_check_issue_routing_first), so either alone loses half the
+    # decision history. The private repo requires the `gh_token` secret.
+    "plugin.tap.github_issues": (
+        '{"enabled": true, "interval_seconds": 21600, '
+        '"config": {"repos": "Glad-Labs/poindexter,Glad-Labs/glad-labs-stack", '
+        '"state": "all", "max_issues_per_repo": 0, "max_body_chars": 20000}}'
+    ),
     "voice_agent_system_prompt": _VOICE_AGENT_SYSTEM_PROMPT,
     "gpu_model": "NVIDIA RTX 5090 (32GB VRAM)",
     "company_founder_name": "Matt",

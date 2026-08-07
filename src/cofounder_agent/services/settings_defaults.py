@@ -2813,6 +2813,25 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # green the whole time.
     'tap_zero_yield_finding_enabled': 'true',
 
+    # GitHub issues tap (poindexter#991). Issues are where design decisions,
+    # post-mortems and rejected approaches get written down, so embedding them
+    # makes that history reachable from semantic recall. 6h interval: issue
+    # text is not fast-moving and this stays well inside the authenticated API
+    # budget. Auth comes from the `gh_token` SECRET row — a private repo 404s
+    # without it.
+    #
+    # `repos` ships EMPTY: which repos to ingest is per-install, and a default
+    # pointing at anyone's repos would make a fresh install scrape a stranger's
+    # issue tracker. The tap warns and ingests nothing until an operator sets
+    # it (`poindexter settings set` or the console). The Glad Labs pair lives
+    # in services/operator_overrides.py, which is stripped from the public
+    # mirror — enforced by tests/unit/services/test_oss_seed_model_hygiene.py.
+    'plugin.tap.github_issues': (
+        '{"enabled": true, "interval_seconds": 21600, '
+        '"config": {"repos": "", '
+        '"state": "all", "max_issues_per_repo": 0, "max_body_chars": 20000}}'
+    ),
+
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 
