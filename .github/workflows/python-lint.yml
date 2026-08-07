@@ -63,7 +63,11 @@ jobs:
     # The public mirror is force-pushed (checks gate nothing there). A FORK
     # (repo name != Glad-Labs/poindexter) still runs it.
     if: github.repository != 'Glad-Labs/poindexter'
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
@@ -81,7 +85,11 @@ jobs:
 
   syntax-check:
     if: github.repository != 'Glad-Labs/poindexter'
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12

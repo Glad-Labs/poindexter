@@ -42,7 +42,11 @@ jobs:
   # CI-minutes sweep 2026-06-10.
   changes:
     name: classify changed paths
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     outputs:
       workflows: ${{ steps.classify.outputs.workflows }}
@@ -111,7 +115,11 @@ jobs:
 
   gitleaks:
     name: gitleaks — secret scan
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
@@ -238,7 +246,11 @@ jobs:
 
   action-pins:
     name: Lint third-party Actions for SHA pins
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     needs: changes
     # Only when workflow files change (or the comprehensive scans). CI-minutes sweep.
@@ -250,11 +262,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
       - name: Run check-action-pins
-        run: python scripts/ci/check-action-pins.py
+        run: python3 scripts/ci/check-action-pins.py
+      # Same trigger + same inputs (only .github/workflows/), so it rides
+      # along here rather than paying for a second checkout in its own job.
+      - name: Run ci-runner-seam lint
+        run: python3 scripts/ci/ci_runner_seam_lint.py
 
   shell-line-endings:
     name: Lint shell + PowerShell scripts
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     needs: changes
     # Only when shell scripts change (or the comprehensive scans). CI-minutes sweep.
@@ -270,17 +290,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
       - name: Run check-shell-line-endings
-        run: python scripts/ci/check-shell-line-endings.py
+        run: python3 scripts/ci/check-shell-line-endings.py
       # Companion gate: PowerShell scripts must be ASCII or UTF-8-with-BOM.
       # Windows PowerShell 5.1 decodes BOM-less ``.ps1`` as ANSI, turning
       # multi-byte UTF-8 chars (e.g. em-dash) into string-delimiter
       # smart-quotes -- the script then fails to parse before it runs.
       - name: Run check-powershell-encoding
-        run: python scripts/ci/check-powershell-encoding.py
+        run: python3 scripts/ci/check-powershell-encoding.py
 
   poetry-lock:
     name: poetry check --lock (src/cofounder_agent)
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 10
     needs: changes
     # Only when pyproject.toml / poetry.lock change (or the comprehensive scans). CI-minutes sweep.

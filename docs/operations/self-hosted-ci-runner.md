@@ -9,15 +9,44 @@ allowance** (~10× over), and the `unit-tests` workflow alone was **~60%** of it
 on Matt's always-on PC instead of in GitHub's cloud — self-hosted runner minutes
 are **not** billed.
 
-Scope is deliberately narrow: **only pytest-shaped jobs move to self-hosted** —
-`unit-tests`, plus `benchmarks`, `rerank-import-guard` and
-`console-contract-drift`, which later adopted the same seam. Every other
-workflow (jest-unit, integration-db, security, public-mirror-safety,
-grafana-panels-lint, playwright-e2e, migrations-smoke, releases, syncs) stays on
-`ubuntu-latest`. `migrations-smoke` in particular stays hosted as a cheap
-always-available liveness check, and **anything that needs the Docker daemon
-(`docker-build`'s `build-worker`) must stay hosted** — the runners mount no
-docker.sock; see [Extending to another workflow](#extending-to-another-workflow).
+Scope is **capability-based, not job-shaped**: a job may use the seam if it
+needs no Docker daemon. That covers the pytest jobs plus the lint / scan /
+codegen jobs (`python-lint`, `mcp-server-tests`, `public-mirror-safety`,
+`security`'s `gitleaks` / `action-pins` / `poetry-lock` /
+`shell-line-endings` / `changes`, `ports-lint`, `phantom-poindexter-set`,
+`regen-services-doc`, `console-unit`, `jest-unit`).
+
+The set was widened on 2026-08-07 after a GitHub hosted-runner outage left
+**19 jobs queued and 0 running** for hours while the self-hosted fleet sat
+idle: only 5 jobs read the seam, and the required checks were not among them,
+so the repo was blocked rather than degraded. The seam now covers six of the
+seven required checks.
+
+**Do not enumerate seam members from memory** — the list above will drift.
+The authority is `grep -l 'vars.CI_RUNNER' .github/workflows/*.yml`.
+
+**What must stay hosted, and why:**
+
+| Job(s)                                                                                              | Reason                                                                                                          |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `migrations-smoke`, `integration-db`, `grafana-panels-lint`, `regen-app-settings-doc`, `benchmarks` | declare `services:` — GitHub starts service containers through the Docker daemon, which the runners do not have |
+| `docker-build` (`build-brain`, `build-worker`)                                                      | build images; `build-worker` has its own dormant `CI_RUNNER_DOCKER` seam                                        |
+| `security`'s `trivy-fs`, `trivy-config`, `sbom`                                                     | third-party scanner actions whose Docker dependency is not verified, plus SARIF upload                          |
+| `runner-healthcheck`                                                                                | it is the "is Matt's PC reachable?" probe — it cannot run on Matt's PC                                          |
+| releases, mirror syncs, `triage-on-open`                                                            | carry publish credentials and gate nothing; a runner that executes raw PR code should not hold them             |
+| `playwright-e2e`                                                                                    | needs browser binaries and system libs not proven on the runner image                                           |
+
+`migrations-smoke` is the one **required** check that cannot fail over. It
+needs a Postgres service container, and pointing it at the host's real
+Postgres would aim CI at the production database.
+
+**The Docker rule is enforced, not documented-and-hoped:**
+`scripts/ci/ci_runner_seam_lint.py` fails CI if a seam job declares
+`services:`/`container:`, uses a known Docker action, or shells out to
+`docker`. It exists because the mistake shipped twice — `build-worker`
+(#2920, red on every main push) and `benchmarks`, which carried
+`services: postgres` on the seam behind a stale comment and failed its
+nightly run for weeks without anyone noticing.
 
 ## How it fits together
 
@@ -250,8 +279,34 @@ confirm the job has no hosted-image assumptions:
 runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
 ```
 
-Adopters so far are all pytest/stdlib-shaped: `unit-tests`, `benchmarks`,
-`rerank-import-guard`, `console-contract-drift`.
+Then run the guard locally before pushing:
+
+```bash
+python scripts/ci/ci_runner_seam_lint.py
+```
+
+It fails if the job declares `services:`/`container:`, uses a known
+Docker-based action, or shells out to `docker` — the three ways a job stops
+being seam-eligible. CI runs it too (security.yml's `action-pins` job), so a
+violation cannot merge.
+
+Two things to check that the lint cannot:
+
+- **Actions must be native.** Everything currently on the seam uses only
+  `actions/checkout`, `actions/setup-python`, `actions/setup-node`,
+  `actions/upload-artifact` and `actions/create-github-app-token`, all proven
+  on the fleet. A third-party action may be a Docker container action; if you
+  cannot confirm it is native, leave the job hosted.
+- **No PyYAML, no preinstalled toolchain.** The runner image is minimal —
+  `python3 -c "import yaml"` fails there. A step that relies on a
+  hosted-image convenience will break only once `CI_RUNNER` is set, which is
+  exactly when nobody is watching.
+- **`python` does not exist — only `python3`.** GitHub's hosted images ship a
+  `python` shim; the runner image does not, so a bare `python foo.py` step
+  dies with `python: command not found` (exit 127). `actions/setup-python`
+  installs the shim, so jobs that use it are safe either way. The lint fires
+  on the unguarded case. This is not hypothetical — it is exactly how
+  `action-pins` failed the first time it ran on the fleet.
 
 **Jobs that need the Docker daemon are NOT eligible for this seam.** The
 runner containers mount no `/var/run/docker.sock`, so any `docker …` step or

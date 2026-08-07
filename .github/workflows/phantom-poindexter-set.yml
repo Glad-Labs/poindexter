@@ -33,7 +33,11 @@ permissions:
 
 jobs:
   phantom-poindexter-set:
-    runs-on: ubuntu-latest
+    # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
+    # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
+    # variable is unset on the public mirror and on forks, so this is hosted
+    # there by construction. Seam-safe: no services:/container:/docker.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:

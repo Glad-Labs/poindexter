@@ -6,9 +6,10 @@
 # Needs a live Postgres: the benchmark conftest imports the FastAPI app which
 # triggers the lifespan DB connection. Without a reachable DB the conftest
 # skips everything gracefully (pytest exits 0). A pgvector/pgvector service
-# container provides the isolated DB on both GitHub-hosted and the self-hosted
-# runner (the self-hosted runner is a host process on Matt's PC with Docker
-# access, so services: works without DinD).
+# container provides the isolated DB — which is why this job runs HOSTED and
+# not on the `vars.CI_RUNNER` seam: the self-hosted runners are containers
+# with no /var/run/docker.sock, so GitHub cannot start a service container
+# there (it fails at "Initialize containers"). See the runs-on comment below.
 #
 # Not a per-PR gate — benchmark latencies vary by runner load and a hard
 # threshold would cause spurious failures. The JSON artifact is the signal:
@@ -39,10 +40,15 @@ jobs:
     # glad-labs-stack→poindexter in every file, so '!= stack' would be
     # inverted on the mirror — '== poindexter' is inversion-proof.
     if: github.repository != 'Glad-Labs/poindexter'
-    # CI_RUNNER seam — same pattern as unit-tests.yml. When the repo variable
-    # is set (private source only), runs on the self-hosted PC runner for $0
-    # cloud minutes; falls back to ubuntu-latest on forks / the public mirror.
-    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    # HOSTED, not the CI_RUNNER seam — this job needs `services: postgres`
+    # below, and the self-hosted runners mount no /var/run/docker.sock, so a
+    # service container cannot start there. It WAS on the seam, behind a
+    # comment claiming the runner was "a host process on Matt's PC with
+    # Docker access"; that stopped being true when the runners became
+    # containers, and this job then failed at "Initialize containers" on
+    # every nightly run for weeks — invisible because it gates nothing.
+    # `scripts/ci/ci_runner_seam_lint.py` now blocks the combination.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     services:
