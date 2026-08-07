@@ -1796,6 +1796,27 @@ DEFAULTS: dict[str, str] = {
     'podcast_cover_url': '',
     'podcast_tts_engine': '',
     'podcast_tts_enabled': 'false',
+    # Intro/outro sting mix (poindexter#690 finish): when
+    # generate_media_scripts synthesized a sting, podcast.render wraps the
+    # narration in it — sting solo, fade under the first words, mirrored
+    # outro after the last. Edges-only by design; no continuous bed.
+    'podcast_sting_mix_enabled': 'true',
+    'podcast_sting_solo_seconds': '2.5',
+    'podcast_sting_fade_seconds': '3.0',
+    'podcast_sting_outro_seconds': '6.0',
+    'podcast_sting_gain_db': '-7',
+    'podcast_sting_mix_timeout_seconds': '120',
+    # Curated show theme: when set (path readable by the worker), this
+    # file IS the sting — one sonic identity across episodes, generation
+    # skipped. Empty = generate per-episode via the template below.
+    'podcast_sting_file_path': '',
+    'audio_gen_intro_prompt_template': (
+        'Podcast intro theme: warm analog synth ident, clean electric piano '
+        'arpeggio rising into a soft pad chord, confident and modern, 100 BPM, '
+        'studio quality, tight clean ending. No vocals, no sound effects, no '
+        'foley, no noise.'
+    ),
+    'audio_gen_intro_duration_s': '9',
     'podcast_tts_base_url': 'http://speaches:8000/v1',
     'podcast_tts_voice': 'bf_emma',
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
@@ -3863,6 +3884,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'podcast_script_model': {'owner': 'podcast_service', 'value_type': 'model'},
     'podcast_tts_base_url': {'owner': 'tts_service', 'value_type': 'url'},
     'podcast_tts_enabled': {'value_type': 'boolean'},
+    'podcast_sting_mix_enabled': {'value_type': 'boolean'},
+    'podcast_sting_solo_seconds': {'value_type': 'number'},
+    'podcast_sting_fade_seconds': {'value_type': 'number'},
+    'podcast_sting_outro_seconds': {'value_type': 'number'},
+    'podcast_sting_gain_db': {'value_type': 'number'},
+    'podcast_sting_mix_timeout_seconds': {'value_type': 'number'},
+    'podcast_sting_file_path': {'value_type': 'string'},
+    'audio_gen_intro_prompt_template': {'value_type': 'string'},
+    'audio_gen_intro_duration_s': {'value_type': 'number'},
     'podcast_tts_engine': {'owner': 'podcast_service'},
     'podcast_tts_format': {'value_type': 'string'},
     'podcast_tts_loudnorm_ar': {'value_type': 'integer'},

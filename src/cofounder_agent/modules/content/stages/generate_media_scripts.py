@@ -22,6 +22,7 @@ Two separate LLM calls for reliability (legacy trade-off).
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Any
 
@@ -32,6 +33,13 @@ from services.gpu_admission import GpuBusyError
 from services.gpu_scheduler import media_wait_budget_s
 from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from utils.findings import emit_finding
+
+_INTRO_PROMPT_FALLBACK = (
+    "Podcast intro theme: warm analog synth ident, clean electric piano "
+    "arpeggio rising into a soft pad chord, confident and modern, 100 BPM, "
+    "studio quality, tight clean ending. No vocals, no sound effects, no "
+    "foley, no noise."
+)
 
 _AMBIENT_PROMPT_FALLBACK = (
     "Lo-fi chillhop instrumental background music for a technology explainer "
@@ -186,7 +194,6 @@ class GenerateMediaScriptsStage:
             # Enable with app_settings: podcast_tts_enabled=true.
             if podcast_script and is_tts_enabled(sc):
                 try:
-                    import os
                     import tempfile
                     suffix = resolve_tts_format(sc)
                     with tempfile.NamedTemporaryFile(
@@ -212,12 +219,48 @@ class GenerateMediaScriptsStage:
             # Audio gen — podcast intro sting via StableAudioOpen.
             # Non-critical, default-off (audio_gen_engine='' by default).
             # Activate: set audio_gen_engine=stable-audio-open-1.0 in app_settings.
-            if podcast_script and is_audio_gen_enabled(sc):
+            #
+            # CURATED-FIRST (operator feedback 2026-08-07): a real show has
+            # ONE theme, not per-episode generated music. When the operator
+            # pins ``podcast_sting_file_path`` the pipeline uses that file
+            # verbatim and skips generation entirely (no GPU spend). The
+            # generated path is the bootstrap/fallback — its prompt is now
+            # MUSIC-directed via ``audio_gen_intro_prompt_template`` (the
+            # old prompt fed the ARTICLE TITLE to the music model, which
+            # dutifully tried to sound like "VRAM Poisoning"), and its
+            # duration covers the mixer's intro/outro windows (the 5s
+            # default left the 6s outro trimming past end-of-file).
+            curated_sting = str(
+                (sc.get("podcast_sting_file_path", "") if sc is not None else "")
+                or ""
+            ).strip()
+            if curated_sting and os.path.exists(curated_sting):
+                podcast_intro_audio_path = curated_sting
+                logger.info(
+                    "[MEDIA] Podcast sting: curated file %s (generation skipped)",
+                    curated_sting,
+                )
+            elif podcast_script and is_audio_gen_enabled(sc):
                 try:
+                    prompt_template = str(
+                        sc.get(
+                            "audio_gen_intro_prompt_template",
+                            _INTRO_PROMPT_FALLBACK,
+                        )
+                        if sc is not None else _INTRO_PROMPT_FALLBACK
+                    )
+                    try:
+                        sting_duration = float(
+                            sc.get("audio_gen_intro_duration_s", "9")
+                            if sc is not None else 9
+                        )
+                    except (TypeError, ValueError):
+                        sting_duration = 9.0
                     intro_result = await generate_audio(
-                        f"podcast intro sting for: {title}",
+                        prompt_template,
                         "intro",
                         site_config=sc,
+                        duration_s=sting_duration,
                     )
                     if intro_result is not None:
                         path = intro_result.file_path or ""

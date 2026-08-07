@@ -32,7 +32,16 @@ async def _fake_lock(*_a: Any, **_kw: Any):
 
 def _ctx() -> dict[str, Any]:
     sc = MagicMock()
-    sc.get.return_value = "llama3:latest"
+    # Key-aware get with real SiteConfig default semantics: model pins
+    # resolve, every other key falls through to the caller's default (a
+    # blanket return_value leaked "llama3:latest" into the sting prompt
+    # template and the curated-file path).
+    _cfg = {
+        "video_scene_model": "llama3:latest",
+        "default_ollama_model": "llama3:latest",
+    }
+    sc.get.side_effect = lambda key, default=None: _cfg.get(key, default)
+    sc._cfg = _cfg
     # A real SiteConfig.get_int returns the passed default for an unset key; the
     # bare MagicMock would return a MagicMock and break the numeric short-cap
     # comparison (#867). Mirror the real semantics for every get_int key.
@@ -288,7 +297,11 @@ async def test_audio_gen_intro_called_when_enabled():
     assert result.ok
     intro_calls = [c for c in audio_calls if c["kind"] == "intro"]
     assert len(intro_calls) == 1
-    assert "podcast intro sting" in intro_calls[0]["prompt"]
+    # Music-directed template, NOT the article title (operator feedback
+    # 2026-08-07: the old prompt fed the title to the music model, which
+    # dutifully tried to sound like "VRAM Poisoning").
+    assert "Podcast intro theme" in intro_calls[0]["prompt"]
+    assert ctx["title"] not in intro_calls[0]["prompt"]
 
 
 @pytest.mark.asyncio
@@ -994,3 +1007,45 @@ class TestAmbientMoodCues:
         assert "music" in p
         assert "No vocals" in p and "no sound effects" in p
         assert "calm focus" in p
+
+
+@pytest.mark.asyncio
+async def test_curated_sting_file_skips_generation(tmp_path):
+    """A pinned podcast_sting_file_path IS the show theme: used verbatim,
+    generation skipped entirely (one sonic identity + zero GPU spend)."""
+    from types import SimpleNamespace
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    audio_calls = []
+
+    async def mock_generate_audio(prompt, kind, *, site_config, **kw):
+        audio_calls.append(kind)
+        return None
+
+    theme = tmp_path / "theme.wav"
+    theme.write_bytes(b"RIFFfake")
+    ctx = _ctx()
+    ctx["site_config"]._cfg["podcast_sting_file_path"] = str(theme)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="C" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             return_value=True,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.generate_audio",
+             new=mock_generate_audio,
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             return_value=False,
+         ):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    assert "intro" not in audio_calls
+    assert result.context_updates["podcast_intro_audio_path"] == str(theme)
