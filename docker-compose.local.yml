@@ -1900,6 +1900,13 @@ services:
       - /dev:/dev
     device_cgroup_rules:
       - "c 89:* rmw"
+    # The image runs as a non-root user (uid 1001 "exporter") and the host's
+    # /dev/i2c-* nodes are root:i2c 0660, so the cgroup grant alone still
+    # EACCESes at the file mode. Join the HOST's i2c group — its gid varies
+    # by distro, so start-stack exports HOST_I2C_GID from `getent group i2c`.
+    # Fallback 65534 (nogroup) is a clean no-op on hosts without one.
+    group_add:
+      - "${HOST_I2C_GID:-65534}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Healthcheck (issue #319): catches the silent-hang failure mode where the

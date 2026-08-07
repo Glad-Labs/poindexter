@@ -53,6 +53,14 @@ while IFS= read -r line; do
     fi
 done < "$BOOTSTRAP"
 
+# Host i2c group id → the gpu-exporter's group_add (per-pin GPU-connector
+# telemetry opens /dev/i2c-*; those nodes are root:i2c 0660 and the exporter
+# container runs non-root, so it must join the HOST's i2c group — whose gid
+# varies by distro). 65534 (nogroup) keeps it a clean no-op on hosts with no
+# i2c group at all.
+HOST_I2C_GID="$(getent group i2c | cut -d: -f3 || true)"
+export HOST_I2C_GID="${HOST_I2C_GID:-65534}"
+
 # CI-runner GitHub App private key — the multiline PEM can't live in
 # bootstrap.toml (the parser above is single-line, and a PEM spans many lines),
 # so source it from a file at launch time, the same shape as the grafana /
