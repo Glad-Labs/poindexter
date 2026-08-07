@@ -425,6 +425,7 @@ def _build_soundtrack_mix_cmd(
     hwaccel: str,
     normalize: bool = True,
     video_pad_s: float = 0.0,
+    loop_soundtrack: bool = False,
 ) -> list[str]:
     """Mix ``soundtrack_path`` under the existing audio at the requested
     dBFS, re-muxing into a fresh MP4.
@@ -451,12 +452,17 @@ def _build_soundtrack_mix_cmd(
     if hwaccel:
         cmd.extend(["-hwaccel", hwaccel])
 
-    # First input: composed video; second: soundtrack. The soundtrack input
-    # loops (2026-08-06): Stable Audio Open clips cap at ~47s, so an ambient
-    # bed under a multi-minute video would otherwise go silent partway
-    # through. duration=first (or the narration length on the pad path)
-    # still bounds the mix, so the loop can never extend the video.
-    cmd.extend(["-i", video_in, "-stream_loop", "-1", "-i", soundtrack_path])
+    # First input: composed video; second: soundtrack. loop_soundtrack
+    # repeats the second input (2026-08-06): Stable Audio Open clips cap at
+    # ~47s, so an ambient bed under a multi-minute video would otherwise go
+    # silent partway through; duration=first still bounds the mix, so the
+    # loop can never extend the video. It must stay OFF for the narration
+    # overlay call — looping the voiceover replays the first line into the
+    # trailing hold and gets cut at video end (caught by ear, 2026-08-06).
+    cmd.extend(["-i", video_in])
+    if loop_soundtrack:
+        cmd.extend(["-stream_loop", "-1"])
+    cmd.extend(["-i", soundtrack_path])
 
     # ``volume`` in dB is exactly what the operator wants, then amix blends.
     # ``normalize=0`` sums (keeps the primary track at full volume);
@@ -898,6 +904,7 @@ class FFmpegLocalCompositor:
                         video_in=stage_in,
                         soundtrack_path=request.soundtrack_path,
                         soundtrack_dbfs=request.soundtrack_dbfs,
+                        loop_soundtrack=True,  # ~47s bed under a longer video
                         encoder=encoder,
                         preset=preset,
                         crf=crf,

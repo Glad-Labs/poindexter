@@ -1250,3 +1250,37 @@ class TestKenBurnsRateZoom:
 
     def test_tiny_shot_floors_at_four_percent(self):
         assert "1+(0.0400/" in self._vf(1.0)  # 1.2% uncapped → 4% floor
+
+
+class TestSoundtrackLoopScoping:
+    """-stream_loop applies ONLY to the ambient-bed mix, never the narration
+    overlay — a looped narration replays the first line into the trailing
+    hold and gets cut at video end (caught by ear on the 2026-08-06 sample)."""
+
+    def _cmd(self, **kwargs):
+        from services.media_compositors.ffmpeg_local import _build_soundtrack_mix_cmd
+
+        return _build_soundtrack_mix_cmd(
+            binary="ffmpeg",
+            video_in="/tmp/v.mp4",
+            soundtrack_path="/tmp/a.wav",
+            soundtrack_dbfs=-18.0,
+            encoder="libx264",
+            preset="medium",
+            crf=20,
+            audio_bitrate="192k",
+            loglevel="error",
+            hwaccel="",
+            **kwargs,
+        )
+
+    def test_default_does_not_loop(self) -> None:
+        cmd = self._cmd()
+        assert "-stream_loop" not in cmd
+
+    def test_ambient_optin_loops_second_input_only(self) -> None:
+        cmd = self._cmd(loop_soundtrack=True)
+        li = cmd.index("-stream_loop")
+        assert cmd[li + 1] == "-1"
+        # flag must precede the SOUNDTRACK input, after the video input
+        assert cmd.index("/tmp/v.mp4") < li < cmd.index("/tmp/a.wav")
