@@ -50,6 +50,8 @@ import asyncio
 import json
 import logging
 import math
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -160,6 +162,40 @@ def ollama_base_urls(site_config: Any) -> list[str]:
             urls.append(url)
     return urls
 
+def _is_permanently_pinned(entry: Any, horizon_days: float) -> bool:
+    """True when this loaded model was started with ``OLLAMA_KEEP_ALIVE=-1``.
+
+    Ollama expresses a never-unload pin by parking ``expires_at`` absurdly far
+    out (observed: ``2318-11-17T22:26:46.3314071-05:00``), where an ordinary
+    keep-alive lands minutes away. So the instance's own response already
+    carries the operator's declared intent — no extra config, and a
+    single-instance deployment (whose models all carry normal TTLs) is
+    unaffected.
+
+    Why honour it (poindexter#997): the operator box runs a second Ollama
+    (:11435) pinned by UUID to GPU 1 with ``KEEP_ALIVE=-1`` specifically so
+    vision QA is never evicted. The render-GPU reclaim swept it anyway, which
+    **frees nothing on GPU 0** — measured: loading that model put 22730 MiB on
+    GPU 1 and moved GPU 0 not at all — while defeating the pin and forcing an
+    ~18-20 GB reload across a **x4** slot before the next vision call.
+
+    Fails toward unloading: an unparseable or absent ``expires_at`` returns
+    False, preserving the pre-#997 sweep exactly.
+    """
+    raw = str((entry or {}).get("expires_at") or "").strip()
+    if not raw:
+        return False
+    # Ollama emits up to 9 fractional digits; datetime accepts at most 6.
+    normalised = re.sub(r"(\.\d{6})\d+", r"\1", raw)
+    try:
+        expires = datetime.fromisoformat(normalised)
+    except ValueError:
+        return False
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires > datetime.now(timezone.utc) + timedelta(days=horizon_days)
+
+
 async def unload_loaded_ollama_models(
     *,
     site_config: Any,
@@ -240,9 +276,36 @@ async def unload_loaded_ollama_models(
                 )
                 return unloaded
 
+            respect_pin = True
+            horizon_days = 365.0
+            if site_config is not None:
+                try:
+                    respect_pin = site_config.get_bool(
+                        "ollama_unload_respect_keep_alive_pin", True,
+                    )
+                    horizon_days = float(
+                        site_config.get("ollama_unload_pin_horizon_days", "365")
+                        or "365"
+                    )
+                except Exception:  # noqa: BLE001  # silent-ok: a settings read
+                    # must never break the reclaim; the defaults above are the
+                    # documented behaviour and both are logged when they fire.
+                    pass
+
             for entry in models:
                 name = (entry or {}).get("name")
                 if not name:
+                    continue
+                if respect_pin and _is_permanently_pinned(entry, horizon_days):
+                    # The operator pinned this instance never-unload. Evicting
+                    # it costs an ~18-20 GB reload and, when the pin is on a
+                    # non-render card, frees nothing where the reclaim needs
+                    # room (poindexter#997).
+                    logger.info(
+                        "[OLLAMA_UNLOAD] skipping %s at %s — pinned "
+                        "never-unload (keep_alive=-1, expires_at=%s)",
+                        name, base_url, (entry or {}).get("expires_at"),
+                    )
                     continue
                 try:
                     await client.post(

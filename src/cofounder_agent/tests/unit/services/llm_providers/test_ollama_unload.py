@@ -45,11 +45,14 @@ def _site_config(
     confirm_timeout: int = 15,
     poll_interval: float = 0.5,
     base_url: str = "http://host.docker.internal:11434",
+    respect_keep_alive_pin: bool = True,
+    pin_horizon_days: str = "365",
 ) -> Any:
     """Minimal SiteConfig stand-in matching the DI seam used in stages."""
     return SimpleNamespace(
         get=lambda key, default="": {
             "ollama_base_url": base_url,
+            "ollama_unload_pin_horizon_days": pin_horizon_days,
         }.get(key, default),
         get_int=lambda key, default=0: {
             "pipeline_writer_unload_grace_seconds": grace_seconds,
@@ -58,6 +61,7 @@ def _site_config(
         get_bool=lambda key, default=False: {
             "pipeline_writer_unload_before_image_gen": unload_enabled,
             "pipeline_writer_unload_confirm_enabled": confirm_enabled,
+            "ollama_unload_respect_keep_alive_pin": respect_keep_alive_pin,
         }.get(key, default),
         get_float=lambda key, default=0.0: {
             "pipeline_writer_unload_poll_interval_seconds": poll_interval,
@@ -576,3 +580,81 @@ async def test_maybe_unload_threads_confirm_settings_from_site_config():
     assert client.get.await_count == 2  # enumerate + confirm poll
     # confirm path supersedes the blind grace sleep, so grace=9 is never slept.
     sleep_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Never-unload pins survive the sweep (poindexter#997)
+# ---------------------------------------------------------------------------
+
+_PINNED_EXPIRES = "2318-11-17T22:26:46.3314071-05:00"
+
+
+def _ps_with_pin() -> Any:
+    """One ordinary model and one pinned never-unload, on the same host."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json = MagicMock(return_value={"models": [
+        {"name": "gemma-4-31B-it-qat:latest", "expires_at": "2026-08-07T20:05:00Z"},
+        {"name": "qwen3-vl:30b", "expires_at": _PINNED_EXPIRES},
+    ]})
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_pinned_model_is_skipped_by_the_sweep():
+    """The whole point: a KEEP_ALIVE=-1 instance is pinned to a non-render card
+    precisely so it is never evicted. Sweeping it frees nothing where the
+    reclaim needs room and costs an ~18-20 GB reload over a x4 slot."""
+    client = _mock_http_client(ps_response=_ps_with_pin())
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+    ):
+        unloaded = await unload_loaded_ollama_models(site_config=_site_config())
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    posted = [c.kwargs["json"]["model"] for c in client.post.await_args_list]
+    assert "qwen3-vl:30b" not in posted
+    # The un-pinned model on the SAME host still gets swept — this narrows the
+    # sweep, it does not disable it.
+    assert posted == ["gemma-4-31B-it-qat:latest"]
+
+
+@pytest.mark.asyncio
+async def test_pin_respect_can_be_turned_off():
+    """DB-tunable escape hatch — false restores the sweep-everything behaviour
+    for an operator whose pin IS on the render card."""
+    client = _mock_http_client(ps_response=_ps_with_pin())
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+    ):
+        unloaded = await unload_loaded_ollama_models(
+            site_config=_site_config(respect_keep_alive_pin=False),
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest", "qwen3-vl:30b"]
+
+
+@pytest.mark.asyncio
+async def test_models_without_expires_at_are_still_swept():
+    """Back-compat: an older Ollama (or any response missing the field) must
+    behave exactly as it did before #997 — a reclaim that silently stops
+    working is worse than one that evicts a model it needn't have."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json = MagicMock(return_value={"models": [{"name": "phi4:14b"}]})
+    client = _mock_http_client(ps_response=resp)
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+    ):
+        unloaded = await unload_loaded_ollama_models(site_config=_site_config())
+
+    assert unloaded == ["phi4:14b"]

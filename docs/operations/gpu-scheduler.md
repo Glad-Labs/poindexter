@@ -91,6 +91,48 @@ docker compose -f docker-compose.local.yml up -d --build gpu-exporter
 Until the rebuilt exporter serves the metric, the credit reads 0.0 and
 admission simply never grants on eviction — conservative, not broken.
 
+## Multi-instance Ollama and never-unload pins (poindexter#997)
+
+The VRAM reclaim sweeps **every** Ollama host it can reach, not just
+`ollama_base_url` — per-model routing hides a second instance behind the
+LiteLLM plugin's `model_api_base_overrides` (poindexter#992). That is correct
+for any host that can place models on the render GPU, and wrong for one that
+cannot.
+
+The operator box runs `ollama-vision.service` on `:11435`, pinned **by UUID to
+GPU 1** with `OLLAMA_KEEP_ALIVE=-1` so vision QA is never evicted:
+
+```bash
+uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader -i 1 ...)"
+export CUDA_VISIBLE_DEVICES="$uuid"
+export OLLAMA_KEEP_ALIVE=-1        # never unload — the whole point
+```
+
+Sweeping that instance frees **nothing** on the render card. Measured
+2026-08-07: loading the model through `:11435` put **22730 MiB on GPU 1** and
+moved GPU 0 by −64 MiB (desktop noise). What it does cost is the pin plus an
+~18-20 GB reload across a **x4** slot before the next vision call — consistent
+with the `vision_scorer_unavailable` "empty vision response" findings.
+
+So the sweep now honours a declared pin. Ollama advertises `keep_alive=-1` as
+an absurdly far-future `expires_at` (`2318-11-17T22:26:46.3314071-05:00`),
+where an ordinary keep-alive lands minutes away — the operator's intent is
+already in the response, so this needs no extra configuration and a
+single-instance deployment is unaffected.
+
+| Key                                    | Default | Meaning                                                                                       |
+| -------------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `ollama_unload_respect_keep_alive_pin` | `true`  | Skip models pinned never-unload. `false` restores the sweep-everything behaviour.             |
+| `ollama_unload_pin_horizon_days`       | `365`   | How far out `expires_at` must sit to count as a pin. Not a knife edge — minutes vs centuries. |
+
+Fails toward unloading: a missing or unparseable `expires_at` is swept exactly
+as before, because a reclaim that silently stops working is worse than one
+that evicts a model it needn't have.
+
+> **If your pin is on the render GPU**, set `ollama_unload_respect_keep_alive_pin=false`
+> — a never-unload model on the card the renderer needs cannot coexist with
+> renders, and the reclaim has to win.
+
 ## Soak checklist (before P2 caller migration)
 
 - `gpu_lease_stats` p90s look sane against known render durations.

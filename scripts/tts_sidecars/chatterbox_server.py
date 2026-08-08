@@ -105,8 +105,17 @@ def _unload_model() -> bool:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            # RESERVED, not allocated. Dropping the model reference sets
+            # allocated to ~0 by construction, so the old log printed "VRAM
+            # still allocated: 0 MB" no matter how much the process was
+            # actually holding — the precise blind spot that let stable-audio
+            # squat ~11 GB unnoticed for weeks (poindexter#999). The reserved
+            # pool is what survives empty_cache and only a process exit
+            # returns, so it is the number worth printing.
             logger.info(
-                "Chatterbox model unloaded; VRAM still allocated: %d MB",
+                "Chatterbox model unloaded; VRAM still reserved: %d MB "
+                "(allocated: %d MB)",
+                torch.cuda.memory_reserved(0) // 1024 // 1024,
                 torch.cuda.memory_allocated(0) // 1024 // 1024,
             )
             return True

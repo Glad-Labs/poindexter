@@ -1756,6 +1756,22 @@ DEFAULTS: dict[str, str] = {
     # instead of consuming an attempt. media_reconciliation requires a
     # healthy probe before its bounded cap reset (below). The canary host
     # defaults to the storage_public_url host when unset.
+    # A second Ollama instance can be pinned to a non-render GPU with
+    # OLLAMA_KEEP_ALIVE=-1 (the operator box does this for qwen3-vl on :11435,
+    # UUID-pinned to GPU 1) so vision QA is never evicted. The render-GPU
+    # reclaim used to sweep it anyway, which frees nothing where the reclaim
+    # needs room — measured: loading that model puts 22.7 GB on GPU 1 and moves
+    # GPU 0 not at all — while defeating the pin and forcing an ~18-20 GB reload
+    # across a x4 slot before the next vision call (poindexter#997). Ollama
+    # advertises such a pin as an absurdly far-future expires_at, so the sweep
+    # honours the operator's declared intent with no extra config. Set false to
+    # restore the old sweep-everything behaviour.
+    'ollama_unload_respect_keep_alive_pin': 'true',
+    # How far out expires_at must sit to count as a permanent pin. Ordinary
+    # keep-alives land minutes away and a -1 pin lands centuries away, so this
+    # is nowhere near a knife edge — it exists so the heuristic is tunable
+    # rather than baked.
+    'ollama_unload_pin_horizon_days': '365',
     'media_infra_healthcheck_enabled': 'true',
     'media_infra_health_timeout_seconds': '5',
     'media_infra_dns_canary_host': '',
@@ -3849,6 +3865,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_feed_reconciliation_enabled': {'owner': 'media_feed_reconciliation', 'value_type': 'boolean'},
     'media_pipeline_max_per_cycle': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'media_pipeline_redispatch_max': {'owner': 'media_reconciliation', 'value_type': 'integer'},
+    'ollama_unload_respect_keep_alive_pin': {'owner': 'ollama_unload', 'value_type': 'boolean'},
+    'ollama_unload_pin_horizon_days': {'owner': 'ollama_unload', 'value_type': 'number'},
     'media_qa_frame_detection_enabled': {'owner': 'media_qa', 'value_type': 'boolean'},
     'media_render_min_free_vram_gb': {'owner': 'media_infra_health', 'value_type': 'integer'},
     'media_render_reclaim_cooldown_minutes': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},

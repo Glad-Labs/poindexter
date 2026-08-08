@@ -68,3 +68,59 @@ def test_malformed_plugin_config_falls_back_to_primary():
     """A config read must never break the reclaim path."""
     urls = ollama_base_urls(_sc(**{"plugin.llm_provider.litellm": "{not json"}))
     assert urls == ["http://host.docker.internal:11434"]
+
+
+# ---------------------------------------------------------------------------
+# Never-unload pins are honoured (poindexter#997)
+#
+# The multi-host sweep (#992) was right that per-model routing hides a second
+# instance — and wrong to evict it unconditionally. The operator box pins
+# qwen3-vl to :11435 by UUID on GPU 1 with OLLAMA_KEEP_ALIVE=-1 precisely so
+# vision QA is never evicted. Sweeping it frees NOTHING on the render GPU
+# (measured: loading it puts 22730 MiB on GPU 1 and moves GPU 0 not at all)
+# while costing an ~18-20 GB reload across a x4 slot.
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone
+
+from services.llm_providers.ollama_unload import _is_permanently_pinned
+
+
+def _iso(dt):
+    return dt.isoformat()
+
+
+@pytest.mark.unit
+class TestPermanentPinDetection:
+
+    def test_ollama_keep_alive_minus_one_shape_is_a_pin(self):
+        """The literal shape Ollama emits for keep_alive=-1, nanoseconds and
+        all (datetime accepts at most 6 fractional digits, Ollama sends 7-9)."""
+        entry = {"name": "qwen3-vl:30b",
+                 "expires_at": "2318-11-17T22:26:46.3314071-05:00"}
+        assert _is_permanently_pinned(entry, 365.0) is True
+
+    def test_ordinary_keep_alive_is_not_a_pin(self):
+        soon = datetime.now(timezone.utc) + timedelta(minutes=5)
+        assert _is_permanently_pinned({"expires_at": _iso(soon)}, 365.0) is False
+
+    def test_just_inside_the_horizon_is_not_a_pin(self):
+        near = datetime.now(timezone.utc) + timedelta(days=364)
+        assert _is_permanently_pinned({"expires_at": _iso(near)}, 365.0) is False
+
+    def test_just_past_the_horizon_is_a_pin(self):
+        far = datetime.now(timezone.utc) + timedelta(days=366)
+        assert _is_permanently_pinned({"expires_at": _iso(far)}, 365.0) is True
+
+    def test_naive_timestamp_is_treated_as_utc_not_crashed_on(self):
+        far = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=400)
+        assert _is_permanently_pinned({"expires_at": _iso(far)}, 365.0) is True
+
+    @pytest.mark.parametrize("entry", [
+        {}, {"expires_at": ""}, {"expires_at": "not-a-date"},
+        {"expires_at": None}, None,
+    ])
+    def test_unparseable_fails_toward_unloading(self, entry):
+        """Preserves the pre-#997 sweep exactly. A reclaim that silently stops
+        working is far worse than one that evicts a model it needn't have."""
+        assert _is_permanently_pinned(entry, 365.0) is False
