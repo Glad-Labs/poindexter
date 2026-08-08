@@ -28,7 +28,7 @@ writer places  [SCREENSHOT: qa-rails]
       ↓ services.preview_screenshot      ← the headless chromium the vision QA rail already drives
       ↓ R2UploadService                  ← PNG → WebP@80, ≤1920×1920
    ImageResult(url=…, source="screenshot")
-      ↓ content.inject_images            ← no special case; it's an ordinary result
+      ↓ content.inject_images            ← `screenshot` branch; truthful width/height
    <img src="…" width="1600" height="1150" loading="lazy" />
 ```
 
@@ -44,7 +44,17 @@ wrong slot.
 (the operator console renders 1600×1800 as a viewport, 1600×4320 full-page).
 Those numbers become the `<img width height>` attributes, so echoing the
 request instead of measuring the result means layout shift on the published
-page.
+page. They ride on the `image_results` entry through to
+`content.inject_images`, which uses them instead of the image-gen branch's
+1024×1024 square.
+
+**Every stage that branches on `source` needs a `screenshot` arm.** Both
+`content.inject_images` (`image_gen` / `pexels` / else-strip) and
+`content.image_rebuild_gate` (`source != "image_gen"` ⇒ stock fallback)
+defaulted to treating an unrecognised source as failure. The first silently
+stripped a successfully captured image from the body; the second aborted any
+rebuild of a draft containing a screenshot marker. Adding a fourth source
+later means auditing those branches — grep for `"image_gen"`.
 
 ## Targets are an allowlist, never a URL from the model
 

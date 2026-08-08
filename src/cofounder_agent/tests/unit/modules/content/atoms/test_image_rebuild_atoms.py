@@ -293,3 +293,50 @@ async def test_persist_fails_loud_on_missing_inputs():
         await content_persist_draft_images.run(
             {"content": "x", "database_service": FakeDb(FakePool())}
         )
+
+
+# --- screenshot slots are an intended source, not a stock downgrade --------
+#
+# poindexter#1002. The gate used to test `source != "image_gen"`, which
+# classified a [SCREENSHOT: target] slot as a Pexels fallback and aborted the
+# whole rebuild — so any draft containing a screenshot marker could never be
+# rebuilt at all.
+
+
+@pytest.mark.asyncio
+async def test_gate_passes_screenshot_slot_without_allow_stock():
+    out = await content_image_rebuild_gate.run(
+        {"image_results": _results("image_gen", "screenshot"),
+         "featured_image_url": "https://r2/h.webp", "featured_source": "image_gen"}
+    )
+    assert out == {}
+
+
+@pytest.mark.asyncio
+async def test_gate_passes_screenshot_featured_without_allow_stock():
+    out = await content_image_rebuild_gate.run(
+        {"image_results": _results("screenshot"),
+         "featured_image_url": "https://r2/h.webp", "featured_source": "screenshot"}
+    )
+    assert out == {}
+
+
+@pytest.mark.asyncio
+async def test_gate_still_fails_pexels_slot_without_allow_stock():
+    """The fix must not widen into "accept anything that isn't empty"."""
+    with pytest.raises(RuntimeError, match="inline:2"):
+        await content_image_rebuild_gate.run(
+            {"image_results": _results("image_gen", "pexels"),
+             "featured_image_url": "https://r2/h.webp", "featured_source": "image_gen"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_gate_still_fails_empty_screenshot_slot():
+    """A screenshot that captured nothing is empty, not intended."""
+    with pytest.raises(RuntimeError, match="produced nothing.*inline:2"):
+        await content_image_rebuild_gate.run(
+            {"image_results": _results("image_gen", None),
+             "featured_image_url": "https://r2/h.webp", "featured_source": "image_gen",
+             "allow_stock": True}
+        )

@@ -79,6 +79,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             )
             replaced_count += 1
             logger.info("  [IMAGE-%s] image_gen injected", num)
+        elif source == "screenshot":
+            # Real per-capture dimensions, not the 1024x1024 image-gen square:
+            # a dashboard capture is wide and often very tall (1600x4320 for a
+            # full-page console), and a wrong aspect ratio here is layout shift
+            # on the published page. poindexter#1002.
+            content_text = inject_html_image(
+                content_text, num, img_url, alt_text,
+                width=int(result.get("width") or 1600),
+                height=int(result.get("height") or 1000),
+            )
+            replaced_count += 1
+            logger.info("  [IMAGE-%s] screenshot injected", num)
         elif source == "pexels":
             photographer = alt_text.replace("Photo by ", "").strip()
             pexels_html = (

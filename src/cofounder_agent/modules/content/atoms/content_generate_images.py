@@ -294,6 +294,11 @@ async def _capture_screenshot(
         "url": shot.url,
         "alt_text": shot.alt_text,
         "source": "screenshot",
+        # Carried so content.inject_images can set truthful <img> dimensions —
+        # captures vary wildly in aspect ratio and the image-gen branch's
+        # 1024x1024 square would be wrong for every one of them.
+        "width": shot.width,
+        "height": shot.height,
     }
 
 

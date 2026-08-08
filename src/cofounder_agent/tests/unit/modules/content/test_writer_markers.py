@@ -117,3 +117,57 @@ async def test_plan_image_markers_surfaces_screenshot_target():
     # to image-gen.
     assert "screenshot_target" not in plans["2"]
     assert plans["2"]["desc"] == "a rack"
+
+
+# --- end-to-end: marker → image_results → <img> ----------------------------
+#
+# poindexter#1002 follow-up. The original slice wired plan_image_markers and
+# generate_images but NOT inject_images, whose source branch is
+# image_gen / pexels / else-strip. A screenshot slot fell into else-strip, so
+# the capture uploaded, recorded a media_assets row, and was then silently
+# discarded from the body. Only a test that spans plan → inject catches that;
+# testing the atoms individually never would.
+
+
+@pytest.mark.asyncio
+async def test_screenshot_marker_survives_plan_through_inject():
+    from modules.content.atoms import content_inject_images, content_plan_image_markers
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
+    planned = await content_plan_image_markers.run({
+        "content": "# Draft\n\nText.\n[SCREENSHOT: qa-rails]\nMore.",
+        "topic": "quality gates",
+        "site_config": sc,
+    })
+    plan = planned["image_plans"][0]
+    assert plan["screenshot_target"] == "qa-rails"
+
+    # What _capture_screenshot returns for a successful capture.
+    injected = await content_inject_images.run({
+        "content": planned["content"],
+        "image_results": [{
+            "num": plan["num"], "url": "https://cdn/shot.webp",
+            "alt_text": "The QA Rails dashboard", "source": "screenshot",
+            "width": 1600, "height": 1150,
+        }],
+    })
+    body = injected["content"]
+    assert "https://cdn/shot.webp" in body, "screenshot was stripped from the body"
+    assert "[IMAGE-" not in body, "placeholder left unreplaced"
+    # Truthful dimensions, not the image_gen 1024x1024 square.
+    assert 'width="1600"' in body and 'height="1150"' in body
+
+
+@pytest.mark.asyncio
+async def test_screenshot_slot_with_no_url_strips_placeholder():
+    """A failed capture must leave no orphan marker in the published body."""
+    from modules.content.atoms import content_inject_images
+
+    injected = await content_inject_images.run({
+        "content": "Text.\n\n[IMAGE-1: screenshot:qa-rails]\n\nMore.",
+        "image_results": [{
+            "num": "1", "url": None, "alt_text": "", "source": "none",
+        }],
+    })
+    assert "[IMAGE-1" not in injected["content"]
