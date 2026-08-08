@@ -15,7 +15,7 @@ class TestScrubRagText:
         assert "[REDACTED" in out
 
     def test_rewrites_private_repo_mention(self):
-        out = rag_scrub.scrub_rag_text("see Glad-Labs/glad-labs-stack for details")
+        out = rag_scrub.scrub_rag_text("see Glad-Labs/poindexter for details")
         assert "glad-labs-stack" not in out
         assert "Glad-Labs/poindexter" in out
 
