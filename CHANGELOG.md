@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+## [0.119.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.118.0...v0.119.0) (2026-08-08)
+
+
+### Features
+
+* **images:** capture real screens for posts about Poindexter (poindexter[#1002](https://github.com/Glad-Labs/glad-labs-stack/issues/1002)) ([#3115](https://github.com/Glad-Labs/glad-labs-stack/issues/3115)) ([09772e0](https://github.com/Glad-Labs/glad-labs-stack/commit/09772e08249ddace8134af748c201c000c0bb388))
+* **media:** 832x480 hero default + aggregate hero-fallback watchdog ([#3106](https://github.com/Glad-Labs/glad-labs-stack/issues/3106)) ([afed99a](https://github.com/Glad-Labs/glad-labs-stack/commit/afed99a447aacfa32c7b8a8db6e296b1f8a0f609))
+* **media:** size the hero i2v plate to free VRAM instead of OOMing into a still ([#3125](https://github.com/Glad-Labs/glad-labs-stack/issues/3125)) ([9a87e39](https://github.com/Glad-Labs/glad-labs-stack/commit/9a87e39b5d682096f5eaa0a1f1eacf927ab66ec0))
+* **ops:** Hardware & Power provenance + HX1500i PSU-internals alerting ([#3103](https://github.com/Glad-Labs/glad-labs-stack/issues/3103)) ([f886fb6](https://github.com/Glad-Labs/glad-labs-stack/commit/f886fb605cd5eebac8d20388ad05c3f8a2589353))
+* **ops:** per-pin 12V-2x6 current monitoring for ASUS Astral GPUs ([#3107](https://github.com/Glad-Labs/glad-labs-stack/issues/3107)) ([715a9dc](https://github.com/Glad-Labs/glad-labs-stack/commit/715a9dcfd527cf710a99e6f89f8d78dee81b240e))
+* **podcast:** curated show theme + music-directed sting generation ([#3101](https://github.com/Glad-Labs/glad-labs-stack/issues/3101)) ([9c93f1f](https://github.com/Glad-Labs/glad-labs-stack/commit/9c93f1f999994ca64713e0e88711f2b527fe9073))
+* **podcast:** intro/outro sting mix — finish the orphaned half of [#690](https://github.com/Glad-Labs/glad-labs-stack/issues/690) ([#3096](https://github.com/Glad-Labs/glad-labs-stack/issues/3096)) ([9080e53](https://github.com/Glad-Labs/glad-labs-stack/commit/9080e5373594a93263c59bdab045780f0da1ee81))
+* **social:** schedule promos from Poindexter instead of the Postiz UI ([#3120](https://github.com/Glad-Labs/glad-labs-stack/issues/3120)) ([8d2ed69](https://github.com/Glad-Labs/glad-labs-stack/commit/8d2ed6956b871d106496403fc5c89154f5a07f96))
+* **taps:** enforce per-tap intervals so declared cadences are real (poindexter[#998](https://github.com/Glad-Labs/glad-labs-stack/issues/998)) ([#3111](https://github.com/Glad-Labs/glad-labs-stack/issues/3111)) ([6bd39f9](https://github.com/Glad-Labs/glad-labs-stack/commit/6bd39f99f528832bd2fc99eba046ddf814d91eda))
+
+
+### Bug Fixes
+
+* **console:** make the Schedule button actually schedule, with a slot picker ([#3121](https://github.com/Glad-Labs/glad-labs-stack/issues/3121)) ([153efd5](https://github.com/Glad-Labs/glad-labs-stack/commit/153efd522c8027a3b0c95005ce60851c0d9def14))
+* **deploy:** defer while a media render is claimed, not just on flow/GPU signals ([#3122](https://github.com/Glad-Labs/glad-labs-stack/issues/3122)) ([5226815](https://github.com/Glad-Labs/glad-labs-stack/commit/52268150a4fd13a78b76b1fc526662584c1c0a53))
+* **deps:** bump nanoid to 3.3.18 in web/starter — CVE-2026-67213 (HIGH) ([#3117](https://github.com/Glad-Labs/glad-labs-stack/issues/3117)) ([61a6af7](https://github.com/Glad-Labs/glad-labs-stack/commit/61a6af7b80f305e07bc6c5129d83637f6763a124))
+* **gpu:** reclaim stable-audio's squatted VRAM — the ghost the ladder never saw ([#3113](https://github.com/Glad-Labs/glad-labs-stack/issues/3113)) ([d0319dd](https://github.com/Glad-Labs/glad-labs-stack/commit/d0319dd4d391370b19666280cac61a2bb5517905))
+* **gpu:** VRAM reclaim honours never-unload Ollama pins ([#3116](https://github.com/Glad-Labs/glad-labs-stack/issues/3116)) ([a3eda04](https://github.com/Glad-Labs/glad-labs-stack/commit/a3eda044b9db830dd1045ae45d7a7d6b1ca03561))
+* **gpu:** VRAM reclaim sweeps every configured Ollama host, not just the primary ([#3097](https://github.com/Glad-Labs/glad-labs-stack/issues/3097)) ([c60c97f](https://github.com/Glad-Labs/glad-labs-stack/commit/c60c97fa08a769aa748d0a4b91bb76bb96291bd1))
+* **grafana:** repoint operator links at MagicDNS after the tailnet re-addressed ([#3114](https://github.com/Glad-Labs/glad-labs-stack/issues/3114)) ([1867040](https://github.com/Glad-Labs/glad-labs-stack/commit/1867040fd7d5b298de9edbb8290abd83266142e4))
+* **images:** make the screenshot path actually work end-to-end (poindexter[#1002](https://github.com/Glad-Labs/glad-labs-stack/issues/1002) follow-up) ([#3119](https://github.com/Glad-Labs/glad-labs-stack/issues/3119)) ([be45485](https://github.com/Glad-Labs/glad-labs-stack/commit/be45485eb22ab03b17e65736bcea31d1c9906737))
+* **media:** bound the Stage-2 outage un-claim so a self-failing render stops looping ([#3099](https://github.com/Glad-Labs/glad-labs-stack/issues/3099)) ([2d498a4](https://github.com/Glad-Labs/glad-labs-stack/commit/2d498a49a8308e20ebbd53a5d401915c08f3fa42))
+* **media:** evict Ollama before a hero render — the second co-resident ([#3095](https://github.com/Glad-Labs/glad-labs-stack/issues/3095)) ([99b9f48](https://github.com/Glad-Labs/glad-labs-stack/commit/99b9f483ce2c13f80a9850886368b7b8890f8f8e))
+* **media:** wait for image-gen readiness before the still phase ([#3102](https://github.com/Glad-Labs/glad-labs-stack/issues/3102)) ([fa6d1a9](https://github.com/Glad-Labs/glad-labs-stack/commit/fa6d1a9b214ac78e280ad928c98556303be0fc4b))
+* **ops:** admit gpu_12vhpwr_* through the nvidia-smi scrape keep-list ([#3110](https://github.com/Glad-Labs/glad-labs-stack/issues/3110)) ([a041d67](https://github.com/Glad-Labs/glad-labs-stack/commit/a041d67ca2b83fe089d7bead3380c17a9130f66e))
+* **ops:** gpu-exporter needs the host i2c group for per-pin GPU telemetry ([#3108](https://github.com/Glad-Labs/glad-labs-stack/issues/3108)) ([d39fb12](https://github.com/Glad-Labs/glad-labs-stack/commit/d39fb1260c619565afd7e00b20b6fa3f19d57896))
+* **ops:** recognise Gemma 4's &lt;|turn&gt; delimiter — kill a boot false positive ([#3098](https://github.com/Glad-Labs/glad-labs-stack/issues/3098)) ([a637b10](https://github.com/Glad-Labs/glad-labs-stack/commit/a637b10d3c63da03075ec4e500df16a1762cc52a))
+* **qa:** stop writer_self_review shipping its deliberation as the draft (poindexter[#1000](https://github.com/Glad-Labs/glad-labs-stack/issues/1000)) ([#3118](https://github.com/Glad-Labs/glad-labs-stack/issues/3118)) ([549372a](https://github.com/Glad-Labs/glad-labs-stack/commit/549372a14549883bc5f19cc5950a3564da03b921))
+* **taps:** show "not-due" in the sidecar summary, not a bare "ok" ([#3112](https://github.com/Glad-Labs/glad-labs-stack/issues/3112)) ([dd0bcba](https://github.com/Glad-Labs/glad-labs-stack/commit/dd0bcba6950ae46dfc182fef699a60f97940e3a6))
+* **voice:** unpin voice_agent_llm_model — the pinned quant is gone ([#3105](https://github.com/Glad-Labs/glad-labs-stack/issues/3105)) ([40b3b31](https://github.com/Glad-Labs/glad-labs-stack/commit/40b3b313f81c791d8afca1923e0d6e64a8d172bc))
+* **wan:** /unload refuses while a generation is in flight ([#3094](https://github.com/Glad-Labs/glad-labs-stack/issues/3094)) ([8f006cb](https://github.com/Glad-Labs/glad-labs-stack/commit/8f006cbc15f8750bcf1d903a21114e8338c0dcd7))
+* **wan:** carry the server's real error into hero_render_fallback ([#3100](https://github.com/Glad-Labs/glad-labs-stack/issues/3100)) ([690073f](https://github.com/Glad-Labs/glad-labs-stack/commit/690073fcdab587ef989ff86d003da8b440422c34))
+* **wan:** idle unloader hard-exited mid-request, discarding every hero clip ([#3092](https://github.com/Glad-Labs/glad-labs-stack/issues/3092)) ([c81b343](https://github.com/Glad-Labs/glad-labs-stack/commit/c81b3432f496aeeaa43041a11eb93080b8be15a7))
+
 ## [0.118.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.117.0...v0.118.0) (2026-08-07)
 
 
