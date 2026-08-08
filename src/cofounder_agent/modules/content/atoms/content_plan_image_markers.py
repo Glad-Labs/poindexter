@@ -37,7 +37,14 @@ ATOM_META = AtomMeta(
     ),
     outputs=(
         FieldSpec(name="content", type="str", description="draft with [IMAGE-N] markers injected"),
-        FieldSpec(name="image_plans", type="list", description="[{num, desc}, ...] — one entry per placeholder"),
+        FieldSpec(
+            name="image_plans", type="list",
+            description=(
+                "[{num, desc, screenshot_target?}, ...] — one entry per placeholder. "
+                "screenshot_target is present only for [SCREENSHOT: key] markers "
+                "and routes that slot to the ScreenshotProvider."
+            ),
+        ),
     ),
     requires=("content",),
     produces=("content", "image_plans", "featured_image_subject"),
@@ -111,9 +118,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     else:
         result_extra = {}
 
-    image_plans = [
-        {"num": num, "desc": desc.strip()} for num, desc in placeholders
-    ]
+    # Split the `screenshot:` prefix back out of the description (see
+    # _writer_markers). Plans carrying a screenshot_target are routed to the
+    # ScreenshotProvider by content.generate_images instead of image-gen.
+    from modules.content.atoms._writer_markers import split_screenshot_target
+
+    image_plans = []
+    for num, desc in placeholders:
+        plan_desc, screenshot_target = split_screenshot_target(desc)
+        plan: dict[str, Any] = {"num": num, "desc": plan_desc}
+        if screenshot_target:
+            plan["screenshot_target"] = screenshot_target
+        image_plans.append(plan)
 
     result: dict[str, Any] = {
         "content": content_text,

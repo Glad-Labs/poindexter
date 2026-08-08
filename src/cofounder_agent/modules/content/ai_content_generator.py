@@ -54,6 +54,38 @@ from services.prompt_manager import get_prompt_manager
 logger = get_logger(__name__)
 
 
+def _describe_screenshot_targets(site_config: Any) -> str:
+    """Render the ``[SCREENSHOT: …]`` allowlist for the writer prompt.
+
+    The writer can only name a target the operator has configured, so the
+    prompt has to enumerate them — otherwise the model invents plausible keys
+    and every one resolves to an empty slot plus a finding. An install with no
+    configured targets gets an explicit "none", which the prompt reads as
+    "don't place screenshot markers".
+    """
+    from services.image_providers.screenshot import parse_targets
+
+    if site_config is None:
+        return "none configured — do not use [SCREENSHOT: …] markers"
+    try:
+        targets = parse_targets(
+            site_config.get("plugin.image_provider.screenshot.targets", ""),
+        )
+    except Exception as e:
+        # A malformed allowlist must not take the whole draft down with a
+        # KeyError-shaped prompt failure; the provider logs the parse error
+        # loudly on its own when a marker actually tries to resolve.
+        logger.warning("[screenshot_targets] allowlist unreadable: %s", e)
+        return "none configured — do not use [SCREENSHOT: …] markers"
+
+    if not targets:
+        return "none configured — do not use [SCREENSHOT: …] markers"
+    return "\n".join(
+        f"- {key}: {spec.get('alt') or spec.get('description') or key}"
+        for key, spec in sorted(targets.items())
+    )
+
+
 class ContentValidationResult:
     """Result of content validation check"""
 
@@ -456,6 +488,7 @@ class AIContentGenerator:
                 primary_keyword=tags[0] if tags else "",
                 research_context=research_context,
                 internal_link_titles=internal_links_str,
+                screenshot_targets=_describe_screenshot_targets(self._site_config),
                 target_length=target_length,
                 word_count=target_length,  # legacy alias for premium override
                 style=style,

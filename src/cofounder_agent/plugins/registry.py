@@ -1004,6 +1004,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # image-gen Lightning. Apache-2.0 licensed (the non-commercial flux_dev
         # variant is intentionally NOT registered). GH#123.
         ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
+        # Screenshot capture — kind="screenshot", the third ImageProvider
+        # style. Renders an ALLOW-LISTED operator surface with the same
+        # headless chromium the vision QA rail drives, for posts about
+        # Poindexter itself. Diffusion cannot draw a real dashboard, so a
+        # [SCREENSHOT: target] marker routes here instead. poindexter#1002.
+        ("image_providers", "services.image_providers.screenshot", "ScreenshotProvider"),
         # Core VideoProviders. Imperative load until the packaging issue
         # (entry_points discovery in Docker) is resolved — same pattern
         # as the image_providers above.

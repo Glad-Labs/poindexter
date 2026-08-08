@@ -26,10 +26,15 @@ ATOM_META = AtomMeta(
     version="1.0.0",
     description=(
         "Generate one image per image_plan entry: image-gen primary, Pexels fallback. "
-        "Records media_assets rows. Returns image_results list."
+        "Plans carrying a screenshot_target bypass generation and capture an "
+        "allow-listed operator surface instead. Records media_assets rows. "
+        "Returns image_results list."
     ),
     inputs=(
-        FieldSpec(name="image_plans", type="list", description="[{num, desc}, ...]"),
+        FieldSpec(
+            name="image_plans", type="list",
+            description="[{num, desc, screenshot_target?}, ...]",
+        ),
         FieldSpec(name="topic", type="str", description="article topic"),
         FieldSpec(name="task_id", type="str", description="pipeline task id"),
         FieldSpec(name="site_config", type="object", description="SiteConfig DI instance", required=False),
@@ -74,26 +79,53 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # the ordinary canonical_blog path, where the global setting governs.
     allow_stock = bool(state.get("allow_stock", False))
 
+    # Screenshot slots never reach the diffusion batch: they resolve against
+    # an allow-listed URL, cost no GPU, and a diffusion "impression of a
+    # dashboard" is exactly the output the marker exists to avoid.
+    gen_plans = [p for p in image_plans if not p.get("screenshot_target")]
+
     # poindexter#733 / poindexter#841 — one Ollama lock + one image-gen lock
     # for ALL plans in this call, instead of 2N per-plan lock acquisitions.
     placeholders = [
         (str(plan.get("num", "")), (plan.get("desc") or "").strip())
-        for plan in image_plans
+        for plan in gen_plans
     ]
-    image_gen_urls = await batch_generate_inline_image_urls(
-        placeholders,
-        site_config=site_config, task_id=task_id, platform=platform,
+    image_gen_urls = (
+        await batch_generate_inline_image_urls(
+            placeholders,
+            site_config=site_config, task_id=task_id, platform=platform,
+        )
+        if placeholders
+        else []
     )
+    # Keyed by placeholder number because the batch list is now shorter than
+    # image_plans whenever a screenshot slot is present — a positional zip
+    # would silently pair plan N with plan N+1's image.
+    gen_url_by_num = {
+        num: url
+        for (num, _desc), url in zip(placeholders, image_gen_urls, strict=True)
+    }
 
     used_image_ids: set[str] = set()
     image_results: list[dict[str, Any]] = []
 
-    for plan, image_gen_url in zip(image_plans, image_gen_urls, strict=True):
+    for plan in image_plans:
         num = str(plan.get("num", ""))
         desc = (plan.get("desc") or "").strip()
         search_query = desc if desc else topic
         alt_text = _build_alt_text(desc, topic, site_config)
 
+        screenshot_target = str(plan.get("screenshot_target") or "").strip()
+        if screenshot_target:
+            shot = await _capture_screenshot(
+                screenshot_target,
+                site_config=site_config, task_id=task_id, post_id=post_id,
+                num=num,
+            )
+            image_results.append(shot)
+            continue
+
+        image_gen_url = gen_url_by_num.get(num)
         img_url: str | None = None
         source = "none"
 
@@ -193,6 +225,105 @@ def _emit_downgrade_finding(
         severity="warn",
         dedup_key=f"image-gen-downgrade:{task_id}:{num}",
         extra={"task_id": str(task_id or ""), "placeholder_num": num, "source": source},
+    )
+
+
+async def _capture_screenshot(
+    target: str,
+    *,
+    site_config: Any,
+    task_id: Any,
+    post_id: Any,
+    num: str,
+) -> dict[str, Any]:
+    """Resolve one ``[SCREENSHOT: target]`` slot via the screenshot provider.
+
+    Returns an ``image_results`` entry either way. On failure the entry carries
+    ``url=None`` and ``source="none"``, which ``content.inject_images`` handles
+    by stripping the placeholder — the post simply ships without that image
+    rather than substituting a diffusion render that would misrepresent a real
+    dashboard.
+    """
+    from modules.content.atoms._image_helpers import record_inline_image_asset
+    from services.image_providers.screenshot import ScreenshotProvider
+
+    config: dict[str, Any] = {"_site_config": site_config}
+    if site_config is not None:
+        config["targets"] = site_config.get(
+            "plugin.image_provider.screenshot.targets", "",
+        )
+        config["upload_to"] = site_config.get(
+            "plugin.image_provider.screenshot.upload_to", "r2",
+        )
+        config["timeout_ms"] = site_config.get_int(
+            "plugin.image_provider.screenshot.timeout_ms", 60000,
+        )
+
+    try:
+        results = await ScreenshotProvider().fetch(target, config)
+    except Exception as e:
+        logger.warning(
+            "[content.generate_images] screenshot target %r raised: %s",
+            target, e,
+        )
+        results = []
+
+    if not results:
+        _emit_screenshot_finding(target=target, task_id=task_id, num=num)
+        return {"num": num, "url": None, "alt_text": "", "source": "none"}
+
+    shot = results[0]
+    await record_inline_image_asset(
+        site_config=site_config,
+        post_id=post_id,
+        public_url=shot.url,
+        provider_plugin="image.screenshot",
+        # R2UploadService converts PNG→WebP at upload time (#732).
+        width=int(shot.width or 0), height=int(shot.height or 0),
+        mime_type="image/webp",
+        metadata={
+            "placeholder_num": num,
+            "alt_text": shot.alt_text,
+            "task_id": str(task_id or ""),
+            "screenshot_target": target,
+            "captured_url": shot.metadata.get("captured_url", ""),
+        },
+    )
+    return {
+        "num": num,
+        "url": shot.url,
+        "alt_text": shot.alt_text,
+        "source": "screenshot",
+    }
+
+
+def _emit_screenshot_finding(*, target: str, task_id: Any, num: str) -> None:
+    """Page the operator when a screenshot slot could not be filled.
+
+    Distinct from ``image_gen_downgrade``: nothing was downgraded, the slot is
+    simply empty. The usual cause is a target missing from the allowlist or a
+    surface that was down when the pipeline ran.
+    """
+    from utils.findings import emit_finding
+
+    emit_finding(
+        source="content.generate_images",
+        kind="screenshot_capture_failed",
+        title=f"Screenshot target '{target}' produced no image",
+        body=(
+            f"Placeholder [IMAGE-{num}] asked for screenshot target "
+            f"'{target}' and the provider returned nothing. Either the target "
+            "is absent from plugin.image_provider.screenshot.targets, or the "
+            "surface was unreachable when the pipeline ran. The placeholder "
+            "was dropped and the post shipped without that image."
+        ),
+        severity="warn",
+        dedup_key=f"screenshot-capture-failed:{task_id}:{num}",
+        extra={
+            "task_id": str(task_id or ""),
+            "placeholder_num": num,
+            "screenshot_target": target,
+        },
     )
 
 

@@ -101,6 +101,10 @@ class TestGetPrompt:
             tone="informative",
             target_length=1500,
             research_context="Recent advances in transformers",
+            # The [SCREENSHOT: …] allowlist (poindexter#1002). str.format raises
+            # KeyError on an unmatched placeholder, so every var in the template
+            # must be supplied here — that is what this test is for.
+            screenshot_targets="none configured",
         )
         assert "Machine Learning" in result
         assert "1500" in result

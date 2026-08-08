@@ -994,6 +994,13 @@ DEFAULTS: dict[str, str] = {
     'plugin.audio_gen_provider.stable-audio-open-1.0.sample_rate': '',
     'plugin.audio_gen_provider.stable-audio-open-1.0.server_url': '',
     'plugin.image_provider.flux_schnell.server_url': '',
+    # Screenshot capture allowlist (JSON; shape in image_providers/screenshot.py).
+    # Ships EMPTY on purpose — the URLs are per-install, and an empty allowlist
+    # means a [SCREENSHOT:] marker resolves to nothing rather than to somebody
+    # else's dashboard.
+    'plugin.image_provider.screenshot.targets': '',
+    'plugin.image_provider.screenshot.timeout_ms': '60000',
+    'plugin.image_provider.screenshot.upload_to': 'r2',
     'plugin.llm_provider.gemini.enabled': 'false',
     # Refuse paid base_url targets unless explicitly opted in. The default
     # base_url is host.docker.internal:11434/v1 (Ollama) so most installs
@@ -3918,6 +3925,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'pipeline_writer_unload_grace_seconds': {'owner': 'ollama_unload', 'value_type': 'integer'},
     'pipeline_writer_unload_poll_interval_seconds': {'value_type': 'float'},
     'plugin.image_provider.flux_schnell.server_url': {'owner': 'flux_schnell'},
+    'plugin.image_provider.screenshot.targets': {'owner': 'screenshot'},
+    'plugin.image_provider.screenshot.timeout_ms': {'owner': 'screenshot', 'value_type': 'integer'},
+    'plugin.image_provider.screenshot.upload_to': {'owner': 'screenshot'},
     'plugin.job.sync_affiliate_clicks.enabled': {'value_type': 'boolean'},
     'plugin.job.sync_affiliate_clicks.interval_seconds': {'value_type': 'integer'},
     'plugin.llm_provider.gemini.enabled': {'owner': 'gemini', 'value_type': 'boolean'},

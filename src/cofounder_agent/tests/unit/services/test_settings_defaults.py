@@ -551,8 +551,12 @@ class TestGroupingMakesSense:
         # tolerated interleave. Bumped 355→364 for the rescue-yield watchdog
         # keys (poindexter#986): qa_rescue_yield_* with their comment sit
         # directly beside qa_rewrite_max_attempts — the setting they extend —
-        # inside the same cluster.
-        assert span < 364, (
+        # inside the same cluster. Bumped 364→371 for the screenshot provider
+        # (poindexter#1002): three plugin.image_provider.screenshot.* keys with
+        # their comment sit beside plugin.image_provider.flux_schnell.server_url
+        # — the same plugin.* interleave this span already tolerates for the
+        # plugin.llm_provider.litellm.* flags noted above.
+        assert span < 371, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

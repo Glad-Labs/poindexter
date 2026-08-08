@@ -437,6 +437,7 @@ gsc_query_gap = "cofounder_agent.services.topic_sources.gsc_query_gap:GscQueryGa
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
 image_gen = "cofounder_agent.services.image_providers.image_gen:ImageGenProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
+screenshot = "cofounder_agent.services.image_providers.screenshot:ScreenshotProvider"
 
 # Stages moved from services/stages/ to modules/content/stages/ in the
 # Module v1 Phase 3 migration (2026-06-04); targets repointed to match
