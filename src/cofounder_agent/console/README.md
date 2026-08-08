@@ -132,6 +132,8 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | findings          | `GET /api/findings` (probe-routing triage, #461)                                                                                                     |
 | media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                                                                |
 | schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                                                                   |
+| ↳ Schedule action | `POST /api/tasks/{id}/approve` with `publish_at` (approve + slot in one call; response `scheduled_for` is the committed slot)                        |
+| ↳ slot cadence    | `GET /api/settings?search=publish_spacing_hours` (drives the picker's "After queue" preset)                                                          |
 | seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                                                                 |
 | social            | `GET /api/social/drafts` (per-post per-platform) · `POST /api/social/drafts/{id}/{approve\|reject}`                                                  |
 | newsletter        | `GET /api/newsletter/stats` (subscriber count + 30d delivery summary + recent campaigns)                                                             |

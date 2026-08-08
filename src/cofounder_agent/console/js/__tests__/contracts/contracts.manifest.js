@@ -197,6 +197,23 @@ module.exports = [
     },
   },
   {
+    // Approve carrying a slot — the drawer's Schedule action. auto_publish
+    // MUST stay false alongside publish_at: the route 400s on the pair,
+    // because "ship now" and "ship Thursday" can't both be true.
+    name: 'approve (scheduled)',
+    invoke: (api) =>
+      api.approve('task_1', { publish_at: '2026-08-09T13:00:00.000Z' }),
+    request: {
+      method: 'POST',
+      path: '/api/tasks/task_1/approve',
+      body: {
+        approved: true,
+        auto_publish: false,
+        publish_at: '2026-08-09T13:00:00.000Z',
+      },
+    },
+  },
+  {
     name: 'reject',
     invoke: (api) => api.reject('task_1', 'needs sources'),
     // Regression anchor: reject must send RejectionRequest {reason, feedback,
@@ -338,6 +355,18 @@ module.exports = [
       assert.equal(typeof out.count, 'number', 'count is a number');
     },
     openapi: { path: '/api/scheduling', method: 'get' },
+  },
+  {
+    // Cadence knob behind the drawer slot picker's "After queue" preset.
+    // Reads the same app_settings key the server-side pacing rail uses, so
+    // the console can't drift from the house cadence.
+    name: 'publishSpacingHours',
+    invoke: (api) => api.publishSpacingHours(),
+    request: {
+      method: 'GET',
+      path: '/api/settings',
+      query: { search: 'publish_spacing_hours', limit: 10 },
+    },
   },
   {
     name: 'memoryStats',

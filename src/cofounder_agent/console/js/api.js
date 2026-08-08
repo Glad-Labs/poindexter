@@ -814,7 +814,10 @@
       );
     },
     approve(id, opts = {}) {
-      // Stage only — never auto-publish from the approve action.
+      // Stage only — never auto-publish from the approve action. `opts` also
+      // carries `publish_at` for the drawer's Schedule action (approve + slot
+      // in one call); the route 400s if that arrives alongside auto_publish,
+      // so the hardcoded false above is load-bearing, not decorative.
       return pick(
         () =>
           http('POST', `/api/tasks/${id}/approve`, {
@@ -822,7 +825,20 @@
             auto_publish: false,
             ...opts,
           }),
-        () => ({ ok: true })
+        // Offline mock mirrors the live contract: a scheduled approve echoes
+        // back the committed slot as `scheduled_for` + a post_id, because the
+        // console branches on exactly those to decide between the "Scheduled"
+        // and "approved but NOT scheduled" toasts. Returning a bare {ok:true}
+        // here would make mock mode permanently render the failure path.
+        () =>
+          opts.publish_at
+            ? {
+                ok: true,
+                post_id: `mock-post-${id}`,
+                post_slug: `mock-slug-${id}`,
+                scheduled_for: opts.publish_at,
+              }
+            : { ok: true }
       );
     },
     // `opts.final` picks WHICH terminal state the reject lands in — the same
@@ -1265,6 +1281,30 @@
           return { rows, count: r && r.count != null ? r.count : rows.length };
         },
         () => mock().schedule
+      );
+    },
+
+    // app_settings.publish_spacing_hours — the same cadence the server-side
+    // pacing rail uses (publish_service._calculate_scheduled_publish_time).
+    // The drawer's slot picker reads it so its "next free slot" suggestion
+    // matches the house cadence instead of hardcoding one in the UI
+    // (feedback_db_first_config). Returns null rather than a guessed
+    // interval when the setting is missing or non-numeric, so the caller
+    // can drop the suggestion instead of offering a made-up slot.
+    publishSpacingHours() {
+      return pick(
+        async () => {
+          const r = await http(
+            'GET',
+            '/api/settings?search=publish_spacing_hours&limit=10'
+          );
+          const hit = ((r && r.items) || []).find(
+            (s) => s.key === 'publish_spacing_hours'
+          );
+          const v = hit && Number(hit.value);
+          return v && isFinite(v) && v > 0 ? v : null;
+        },
+        () => 4
       );
     },
 

@@ -244,6 +244,16 @@ function App() {
   );
   const schedule = scheduleR.data || PX.schedule;
 
+  // app_settings.publish_spacing_hours, for the drawer slot picker's "After
+  // queue" preset. Polled hourly rather than per-render — it's a cadence
+  // knob, not telemetry. Null when unreadable, which drops the preset
+  // instead of offering a slot computed from a guessed interval.
+  const spacingR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.publishSpacingHours() : Promise.resolve(4)),
+    { intervalMs: 60 * 60 * 1000, key: 'publish-spacing' }
+  );
+  const spacingHours = spacingR.data;
+
   const topicsR = window.PXR.usePolledResource(
     () => {
       if (!PX.api.isLive()) return Promise.resolve(PX.topics);
@@ -877,10 +887,91 @@ function App() {
         pushToast(`Reject failed — ${err.message}`, 'red', '✕');
       }
     },
-    schedule: (e) => {
+    // Schedule = approve + a publish slot, in one call. The server stages
+    // the post and hands it to scheduling_service.assign_slot, which owns
+    // the (posts.status='scheduled', published_at) pair that
+    // scheduled_publisher polls — that pair is the ONLY thing that makes a
+    // post publish later, so this is the only write that counts.
+    //
+    // Until 2026-08-08 this was a three-line stub: it dropped the row from
+    // the local inbox and toasted "Scheduled for 09:00 tomorrow" without
+    // calling anything. Nothing was ever scheduled, and the row silently
+    // came back on the next poll. Two rules fell out of that and both are
+    // load-bearing here: never toast success ahead of the response, and
+    // report the slot the SERVER committed (`scheduled_for`), never the one
+    // we asked for.
+    schedule: async (e, when) => {
+      if (!(when instanceof Date) || !isFinite(when.getTime())) {
+        pushToast('Pick a publish time first', 'amber', '⚠');
+        return;
+      }
+      const prev = inbox;
       removeInbox(e.id);
       closeDrawer();
-      pushToast('Scheduled for 09:00 tomorrow', 'cyan', '✓');
+      try {
+        const res = await PX.api.approve(e.id, {
+          publish_at: when.toISOString(),
+        });
+        // A staging or slot failure still returns 200 (the approve itself
+        // committed), so an absent `scheduled_for` is the signal that the
+        // post is approved but NOT queued. Surfacing it as amber keeps the
+        // operator from believing a slot exists that doesn't.
+        if (res && res.scheduled_for) {
+          const at = new Date(res.scheduled_for);
+          pushToast(
+            `Scheduled — “${trunc(e.title)}” publishes ${at.toLocaleString([], {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}`,
+            'cyan',
+            '✓'
+          );
+          pushFeed(
+            ['cyan', 'SCHEDULE'],
+            `operator scheduled <b>${trunc(e.title)}</b> → ${at.toISOString()}`
+          );
+          // Show it in the queue panel now instead of up to 60s later.
+          // This mirrors state the server already confirmed (not an
+          // optimistic guess), and the next poll reconciles regardless.
+          scheduleR.mutate((s) => {
+            const base = s || {};
+            const rows = [
+              ...(base.rows || []).filter((r) => r.post_id !== res.post_id),
+              {
+                post_id: res.post_id,
+                slug: res.post_slug,
+                title: e.title,
+                published_at: res.scheduled_for,
+                status: 'scheduled',
+              },
+            ];
+            return { ...base, rows, count: rows.length };
+          });
+        } else {
+          // `message` is already a complete sentence from the route
+          // ("Approved, but NOT scheduled — <reason>") so it renders
+          // verbatim; prefixing it here double-printed the lede.
+          pushToast(
+            (res && res.message) ||
+              'Approved, but the slot did not take — check the queue',
+            'amber',
+            '⚠'
+          );
+          // It IS approved, so it belongs in the ready-to-publish list even
+          // though the slot failed — otherwise it vanishes from every
+          // surface until the next poll.
+          setApproved((a) => [
+            { id: e.id, title: e.title, quality: e.detail?.quality },
+            ...a.filter((t) => t.id !== e.id),
+          ]);
+        }
+      } catch (err) {
+        setInbox(prev);
+        pushToast(`Schedule failed — ${err.message}`, 'red', '✕');
+      }
     },
     // Real task actions (mock-safe: PX.api.* return mock {ok:true} offline).
     // retry → PUT /api/tasks/{id}/status {status:'pending'} (the flow re-claims
@@ -2035,7 +2126,13 @@ function App() {
         onClose={() => setPaletteOpen(false)}
       />
 
-      <Drawer entity={entity} onClose={closeDrawer} actions={A} />
+      <Drawer
+        entity={entity}
+        onClose={closeDrawer}
+        actions={A}
+        schedule={schedule}
+        spacingHours={spacingHours}
+      />
       {toastNode}
     </div>
   );

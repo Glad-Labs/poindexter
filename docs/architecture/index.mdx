@@ -72,6 +72,10 @@ topic you need.
   <Card title="Static export pipeline" icon="cloud-arrow-up" href="/docs/architecture/static-export-pipeline">
     Push-only JSON export to any S3-compatible storage (R2, S3, B2, MinIO).
   </Card>
+  <Card title="Publish scheduling" icon="calendar-days" href="/docs/architecture/publish-scheduling">
+    Where a publish slot lives (`posts.status='scheduled'` + `published_at`),
+    how approve stages into it, and why the task row never holds one.
+  </Card>
   <Card title="Worker container filesystem" icon="folder-tree" href="/docs/architecture/worker-container-filesystem">
     Layout inside the worker container — bind mounts, generated assets,
     secret hygiene.

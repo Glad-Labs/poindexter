@@ -367,8 +367,10 @@ async def unapprove_task_route(
     stages a task (see ``feedback_approve_does_not_mean_publish``), so this
     is always safe. Reverts to 'awaiting_approval' by default (back in the
     review queue, content unchanged), or straight to 'rejected_retry' /
-    'rejected_final' via ``to``. Also un-stages any linked draft ``posts``
-    row and clears any ``scheduled_at`` slot the approval created.
+    'rejected_final' via ``to``. Also un-stages the linked ``posts`` row,
+    whether the approval left it at 'approved' or promoted it to
+    'scheduled' via ``publish_at`` — retracting the approval retracts the
+    publish slot with it.
     """
     try:
         operator = get_operator_identity()

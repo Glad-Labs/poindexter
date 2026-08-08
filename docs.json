@@ -44,6 +44,7 @@
               "docs/architecture/cost-tier-routing",
               "docs/architecture/prompt-management",
               "docs/architecture/static-export-pipeline",
+              "docs/architecture/publish-scheduling",
               "docs/architecture/url-scraper-ssrf-guard",
               "docs/architecture/worker-container-filesystem"
             ]

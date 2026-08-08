@@ -1309,3 +1309,259 @@ class TestGenerateTaskImage:
         assert resp.status_code == 200, (
             "get_secret() should find the pexels key even when get() returns empty"
         )
+
+
+# ===========================================================================
+# Scheduled approve — POST /{task_id}/approve with publish_at
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestApproveTaskScheduled:
+    """The console's Schedule action: approve + a publish slot in one call.
+
+    Regression context — until 2026-08-08 this branch wrote
+    ``pipeline_tasks.scheduled_at`` (a column nothing read) and *skipped*
+    the ``stage_only`` staging call entirely, so a scheduled approve
+    created no ``posts`` row at all and the post never published. The
+    publish queue is keyed on ``posts (status='scheduled', published_at)``
+    — what ``scheduled_publisher`` polls — so these tests pin that the
+    slot lands there and nowhere else.
+    """
+
+    def _approve(self, client, task_id=VALID_TASK_ID, **body):
+        return client.post(f"/{task_id}/approve", json=body)
+
+    def _staged(self, post_id="post-1", slug="a-slug"):
+        """A successful stage_only PublishResult double."""
+        r = MagicMock()
+        r.success = True
+        r.post_id = post_id
+        r.post_slug = slug
+        r.error = None
+        return r
+
+    def _slot_ok(self):
+        r = MagicMock()
+        r.ok = True
+        r.detail = "scheduled"
+        return r
+
+    def test_publish_at_stages_then_assigns_the_slot(self):
+        """The slot goes through assign_slot — posts, not pipeline_tasks."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        stage = AsyncMock(return_value=self._staged())
+        assign = AsyncMock(return_value=self._slot_ok())
+        app = _build_app(mock_db)
+
+        with (
+            patch("services.publish_service.publish_post_from_task", stage),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(
+                TestClient(app),
+                approved=True,
+                auto_publish=False,
+                publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        assert resp.status_code == 200
+        # Staged first — a scheduled approve must still create the posts row.
+        assert stage.await_count == 1, "publish_at must not skip staging"
+        assert stage.await_args.kwargs["stage_only"] is True
+        # Then promoted to the queue via assign_slot.
+        assert assign.await_count == 1
+        assert assign.await_args.args[0] == "post-1"
+        assert assign.await_args.args[1].isoformat() == "2026-09-01T09:00:00+00:00"
+
+    def test_publish_at_reports_the_committed_slot(self):
+        """`scheduled_for` echoes what the server committed — the console
+        renders it straight into the confirmation toast."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        app = _build_app(mock_db)
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=self._staged()),
+            ),
+            patch(
+                "services.scheduling_service.assign_slot",
+                AsyncMock(return_value=self._slot_ok()),
+            ),
+        ):
+            resp = self._approve(
+                TestClient(app),
+                approved=True,
+                publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        assert resp.json()["scheduled_for"] == "2026-09-01T09:00:00+00:00"
+
+    def test_slot_failure_leaves_scheduled_for_null_and_explains(self):
+        """A refused slot must NOT read as success.
+
+        The approve itself already committed, so this stays 200 — but
+        ``scheduled_for`` is null and ``message`` carries the reason, which
+        is what flips the console's toast from cyan to amber.
+        """
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        refused = MagicMock()
+        refused.ok = False
+        refused.detail = "Post post-1 already scheduled for 2026-09-02T09:00:00+00:00"
+
+        app = _build_app(mock_db)
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=self._staged()),
+            ),
+            patch(
+                "services.scheduling_service.assign_slot",
+                AsyncMock(return_value=refused),
+            ),
+        ):
+            resp = self._approve(
+                TestClient(app),
+                approved=True,
+                publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scheduled_for"] is None
+        assert "NOT scheduled" in data["message"]
+        assert "already scheduled" in data["message"]
+
+    def test_staging_failure_skips_assign_slot(self):
+        """No posts row means nothing to schedule — don't call assign_slot
+        with a null post_id and manufacture a confusing second error."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        failed = MagicMock()
+        failed.success = False
+        failed.post_id = None
+        failed.post_slug = None
+        failed.error = "slug collision"
+
+        assign = AsyncMock()
+        app = _build_app(mock_db)
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=failed),
+            ),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(
+                TestClient(app),
+                approved=True,
+                publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        assert resp.status_code == 200
+        assert assign.await_count == 0
+        assert resp.json()["scheduled_for"] is None
+        assert "slug collision" in resp.json()["message"]
+
+    def test_unparseable_publish_at_400s_before_any_state_change(self):
+        """A typo'd timestamp used to fall through to an immediate publish.
+
+        It now 400s while the task is still untouched — no status flip, no
+        staging call (feedback_no_silent_defaults).
+        """
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        stage = AsyncMock()
+        app = _build_app(mock_db)
+        with patch("services.publish_service.publish_post_from_task", stage):
+            resp = self._approve(
+                TestClient(app), approved=True, publish_at="next tuseday"
+            )
+
+        assert resp.status_code == 400
+        assert mock_db.update_task_status.await_count == 0, "task must be untouched"
+        assert stage.await_count == 0
+
+    def test_relative_publish_at_is_accepted(self):
+        """parse_when is shared with the CLI, so operator shorthand works."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        assign = AsyncMock(return_value=self._slot_ok())
+        app = _build_app(mock_db)
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=self._staged()),
+            ),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(
+                TestClient(app), approved=True, publish_at="tomorrow 9am"
+            )
+
+        assert resp.status_code == 200
+        assert assign.await_count == 1
+        assert assign.await_args.args[1].hour == 9
+
+    def test_auto_publish_with_publish_at_is_rejected(self):
+        """"Ship now" and "ship Thursday" can't both be true.
+
+        The old code silently resolved this by clearing auto_publish. A
+        contradictory request is an operator error, so it 400s instead.
+        """
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+
+        app = _build_app(mock_db)
+        resp = self._approve(
+            TestClient(app),
+            approved=True,
+            auto_publish=True,
+            publish_at="2026-09-01T09:00:00+00:00",
+        )
+
+        assert resp.status_code == 400
+        assert "mutually exclusive" in resp.json()["detail"]
+        assert mock_db.update_task_status.await_count == 0
+
+    def test_plain_approve_still_stages_without_a_slot(self):
+        """The no-publish_at path is unchanged: stage, never assign_slot."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        stage = AsyncMock(return_value=self._staged())
+        assign = AsyncMock()
+        app = _build_app(mock_db)
+        with (
+            patch("services.publish_service.publish_post_from_task", stage),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(TestClient(app), approved=True, auto_publish=False)
+
+        assert resp.status_code == 200
+        assert stage.await_count == 1
+        assert assign.await_count == 0
+        assert resp.json()["scheduled_for"] is None

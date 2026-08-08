@@ -16,6 +16,16 @@ function DL({ rows }) {
   );
 }
 
+/* Publish-slot picker logic lives in schedule-helpers.js (window.PXSchedule)
+   so the node:test + vm suite can exercise it without a DOM — same split as
+   chat-helpers.js / kpis.js. Only the rendering stays here. */
+const {
+  toLocalInput,
+  slotPresets,
+  slotState: computeSlotState,
+  leadLabel,
+} = window.PXSchedule;
+
 // Gate-2 asset preview — the operator's only way to see/hear a pending
 // medium before deciding (the file lives only on local disk until approved,
 // so there's no plain <a href> or <video src> that could reach it without
@@ -74,12 +84,17 @@ function MediaPreviewPlayer({ postId, medium }) {
   );
 }
 
-function Drawer({ entity, onClose, actions }) {
+function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
   const open = !!entity;
   // Reject-with-feedback sub-state for the approve drawer. Two-gate model:
   // Approve STAGES the post; Reject sends it back to edit with operator notes.
   const [rejectOpen, setRejectOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
+  // Slot-picker sub-state, same shape as rejectOpen: an inline panel that
+  // takes over the body extension + footer rather than a nested modal.
+  // `slot` is a datetime-local string (local wall clock, no zone).
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [slot, setSlot] = useState('');
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -94,7 +109,15 @@ function Drawer({ entity, onClose, actions }) {
   useEffect(() => {
     setRejectOpen(!!(entity && entity.openReject));
     setFeedback('');
+    setScheduleOpen(false);
+    setSlot('');
   }, [entity]);
+
+  // Derived slot state, shared by the picker body and its footer so the
+  // hint text and the Schedule button can never disagree about whether the
+  // chosen time is usable.
+  const slotState = computeSlotState(slot);
+  const queueDepth = (schedule && schedule.rows && schedule.rows.length) || 0;
 
   let title = '',
     eyebrow = '',
@@ -247,6 +270,77 @@ function Drawer({ entity, onClose, actions }) {
                   </p>
                 </div>
               ) : null}
+              {scheduleOpen ? (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label>Publish slot</label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      flexWrap: 'wrap',
+                      marginBottom: 8,
+                    }}
+                  >
+                    {slotPresets(schedule, spacingHours).map(([label, d]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="mbtn mbtn--ghost"
+                        style={{ padding: '5px 9px', fontSize: 11 }}
+                        onClick={() => setSlot(toLocalInput(d))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    autoFocus
+                    type="datetime-local"
+                    value={slot}
+                    min={toLocalInput(new Date())}
+                    onChange={(ev) => setSlot(ev.target.value)}
+                  />
+                  <p
+                    className="c-dim"
+                    style={{ fontSize: 11, margin: '6px 0 0', lineHeight: 1.5 }}
+                  >
+                    {slotState.valid ? (
+                      <>
+                        Publishes{' '}
+                        <b>
+                          {slotState.date.toLocaleString([], {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </b>{' '}
+                        — in {leadLabel(slotState.lead)}, your local time.
+                        {queueDepth > 0 ? (
+                          <>
+                            {' '}
+                            {queueDepth} post{queueDepth === 1 ? '' : 's'}{' '}
+                            already queued.
+                          </>
+                        ) : null}
+                      </>
+                    ) : slotState.reason === 'past' ? (
+                      <span className="c-amber">
+                        That slot is in the past — the publisher sweeps every
+                        60s, so it would ship almost immediately. Pick a future
+                        time.
+                      </span>
+                    ) : (
+                      <>
+                        Approving stages the post; the slot promotes it to the
+                        publish queue. Nothing goes live until the time you
+                        pick.
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : null}
             </>
           );
           // Two explicit reject buttons, no implicit default — the CLI learned
@@ -290,6 +384,33 @@ function Drawer({ entity, onClose, actions }) {
                 Cancel
               </button>
             </>
+          ) : scheduleOpen ? (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                disabled={!slotState.valid}
+                title={
+                  slotState.valid
+                    ? 'Approve + queue for publish at the chosen time'
+                    : 'Pick a future time first'
+                }
+                onClick={() => actions.schedule(e, slotState.date)}
+              >
+                <Icon name="check" size={13} />
+                Schedule
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => {
+                  setScheduleOpen(false);
+                  setSlot('');
+                }}
+              >
+                Cancel
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -304,7 +425,15 @@ function Drawer({ entity, onClose, actions }) {
               <button
                 className="mbtn"
                 style={{ padding: '10px 14px' }}
-                onClick={() => actions.schedule(e)}
+                title="Approve + pick a publish slot"
+                onClick={() => {
+                  // Seed the input with the first preset so the picker
+                  // opens on a valid, confirmable slot rather than an
+                  // empty box with a disabled button.
+                  const first = slotPresets(schedule, spacingHours)[0];
+                  setSlot(toLocalInput(first[1]));
+                  setScheduleOpen(true);
+                }}
               >
                 Schedule
               </button>

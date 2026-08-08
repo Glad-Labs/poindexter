@@ -246,6 +246,36 @@ async def approve_task(
         auto_publish = body.auto_publish
         publish_at = body.publish_at
 
+    # Resolve the requested slot BEFORE any state change. An unparseable
+    # timestamp is an operator error, so it 400s while the task is still
+    # untouched — the previous behaviour logged a warning and fell through
+    # to an immediate publish, turning a typo into a live post
+    # (feedback_no_silent_defaults). ``parse_when`` is the same parser the
+    # `poindexter schedule` CLI uses, so "tomorrow 9am" and "next monday
+    # 14:00" work here too, not just ISO 8601.
+    publish_at_dt = None
+    if publish_at:
+        if auto_publish:
+            # "Ship now" and "ship at 09:00 Thursday" cannot both be true.
+            # The old code resolved this silently by clearing auto_publish;
+            # a contradictory request is an operator error, not something to
+            # guess at, so say so instead of picking a winner.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "auto_publish and publish_at are mutually exclusive — "
+                    "pass publish_at alone to schedule, or auto_publish "
+                    "alone to ship immediately."
+                ),
+            )
+
+        from services.scheduling_service import parse_when
+
+        try:
+            publish_at_dt = parse_when(publish_at)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
     try:
         # Accept a full UUID, a legacy numeric id, or an 8-char prefix pasted
         # from the dashboards / `poindexter tasks list`. get_task resolves an
@@ -466,34 +496,31 @@ async def approve_task(
             )
 
         # NOTE: the legacy staging_mode setting (draft + wait for a second
-        # publish step) was retired as a zero-reader orphan (2026-07-11) —
-        # approval goes live immediately. A future scheduling / release-time-
-        # optimization feature that honors pacing and scheduled slots will
-        # define its own key rather than resurrect this one.
+        # publish step) was retired as a zero-reader orphan (2026-07-11).
+        # The scheduling feature it anticipated arrived 2026-08-08 and, as
+        # predicted, did NOT resurrect that key: a slot lives on the posts
+        # row (status='scheduled' + published_at), assigned below via
+        # scheduling_service. See docs/architecture/publish-scheduling.md.
 
-        # Scheduled publish: write publish_at to scheduled_at, skip immediate publish
-        if approved and publish_at:
-            try:
-                from datetime import datetime as _dt
-                _pa = _dt.fromisoformat(publish_at.replace("Z", "+00:00"))
-                await db_service.pool.execute(
-                    "UPDATE pipeline_tasks SET scheduled_at = $1 WHERE task_id = $2::uuid OR id = $3",
-                    _pa, task_id if len(task_id) > 10 else None, int(task_id) if task_id.isdigit() else 0,
-                )
-                logger.info("Scheduled task %s for publish at %s", task_id, _pa.isoformat())
-                auto_publish = False
-            except Exception as e:
-                logger.warning("Failed to parse publish_at '%s': %s — publishing immediately", publish_at, e)
-
-        # When the operator approves without an auto_publish flag AND
-        # without an explicit publish_at slot, stage the post into the
-        # posts table at status='approved' so it becomes eligible for
-        # `poindexter schedule batch` (which queries posts, not
+        # When the operator approves without an auto_publish flag, stage the
+        # post into the posts table at status='approved' so it becomes
+        # eligible for `poindexter schedule batch` (which queries posts, not
         # pipeline_tasks). Without this the approve handler left a
         # pipeline_tasks.status='approved' row with no corresponding
         # posts row, and schedule batch reported "No eligible posts"
         # — Matt's 2026-05-26 paper cut. See feedback_approve_does_not_mean_publish.
-        if approved and not auto_publish and not publish_at:
+        #
+        # A ``publish_at`` slot rides the SAME staging call and then promotes
+        # the row to status='scheduled' below. It used to take a separate
+        # branch that wrote ``pipeline_tasks.scheduled_at`` and skipped
+        # staging entirely — but nothing has ever read that column, and
+        # ``scheduled_publisher`` polls ``posts`` for
+        # (status='scheduled', published_at <= NOW()). So a scheduled approve
+        # produced no posts row, no queue entry, and no publish, while
+        # reporting success. The column is dropped in the same change.
+        scheduled_for: str | None = None
+        schedule_error: str | None = None
+        if approved and not auto_publish:
             logger.info(
                 "Staging approved task %s (approve → posts.status='approved')",
                 task_id,
@@ -516,6 +543,7 @@ async def approve_task(
                     merged_result["post_slug"] = stage_result.post_slug
                     merged_result["staged"] = True
                 else:
+                    schedule_error = stage_result.error or "post staging failed"
                     logger.warning(
                         "[approve_task] stage_only post creation failed for "
                         "task %s: %s — posts.status='approved' bridge is broken, "
@@ -523,11 +551,50 @@ async def approve_task(
                         task_id, stage_result.error,
                     )
             except Exception as e:
+                schedule_error = f"{type(e).__name__}: {e}"
                 logger.warning(
                     "[approve_task] stage_only path raised for task %s: %s — "
                     "posts row was NOT created, schedule batch will not see this",
                     task_id, e,
                 )
+
+            # Promote the freshly-staged row from 'approved' to 'scheduled'.
+            # assign_slot owns the (status, published_at) pair that
+            # scheduled_publisher polls, so this is the ONLY write that
+            # actually puts a post in the queue. force=True because the row
+            # was created moments ago by the call above — there is no
+            # operator-set slot here that we could be clobbering.
+            if publish_at_dt and merged_result.get("post_id"):
+                from services.scheduling_service import assign_slot
+
+                try:
+                    slot_result = await assign_slot(
+                        merged_result["post_id"],
+                        publish_at_dt,
+                        pool=db_service.pool,
+                        site_config=site_config_dep,
+                        force=True,
+                    )
+                    if slot_result.ok:
+                        scheduled_for = publish_at_dt.isoformat()
+                        merged_result["scheduled_for"] = scheduled_for
+                        logger.info(
+                            "Scheduled task %s (post %s) for publish at %s",
+                            task_id, merged_result["post_id"], scheduled_for,
+                        )
+                    else:
+                        schedule_error = slot_result.detail
+                        logger.warning(
+                            "[approve_task] assign_slot refused task %s: %s",
+                            task_id, slot_result.detail,
+                        )
+                except Exception as e:
+                    schedule_error = f"{type(e).__name__}: {e}"
+                    logger.warning(
+                        "[approve_task] assign_slot raised for task %s: %s — "
+                        "task is approved but NOT scheduled",
+                        task_id, e, exc_info=True,
+                    )
 
         if approved and auto_publish:
             logger.info("Publishing approved task %s (approve → go-live)", task_id)
@@ -616,6 +683,19 @@ async def approve_task(
             response_data["post_id"] = post_id
         if post_slug:
             response_data["post_slug"] = post_slug
+
+        # Report the slot the server actually committed, not the one the
+        # caller asked for — the console renders this straight into its
+        # confirmation toast, so a schedule that silently didn't take must
+        # not read as success (feedback_no_dummy_data). When a slot was
+        # requested but could not be applied, ``scheduled_for`` stays null
+        # and ``message`` carries the reason.
+        if scheduled_for:
+            response_data["scheduled_for"] = scheduled_for
+        elif publish_at and schedule_error:
+            response_data["message"] = (
+                f"Approved, but NOT scheduled — {schedule_error}"
+            )
 
         return UnifiedTaskResponse(**response_data)
 

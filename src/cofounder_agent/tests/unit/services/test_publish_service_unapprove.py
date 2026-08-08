@@ -3,9 +3,9 @@ operator approval that hasn't been published yet.
 
 Reverses ``approve_task``'s stage_only side effect: flips
 ``pipeline_tasks.status`` from ``approved`` back to ``awaiting_approval``
-(or ``rejected_retry`` / ``rejected_final``), clears ``scheduled_at``, and
-deletes any staged ``posts`` row the approve step created (never published,
-so nothing external to retire — the inverse of ``publish_post_from_task``'s
+(or ``rejected_retry`` / ``rejected_final``) and deletes any staged
+``posts`` row the approve step created (never published, so nothing
+external to retire — the inverse of ``publish_post_from_task``'s
 ``stage_only=True`` branch).
 """
 
@@ -134,3 +134,55 @@ class TestUnapproveTask:
 
         assert result["ok"] is True
         assert result["new_status"] == "awaiting_approval"
+
+
+@pytest.mark.unit
+class TestUnapproveTaskScheduledPost:
+    """Unapprove must retract a SCHEDULED staged post, not just an approved one.
+
+    An approve carrying ``publish_at`` promotes the staged row straight to
+    ``posts.status='scheduled'``. If the delete only matched 'approved',
+    unapproving would flip the task back to awaiting_approval while leaving
+    the post sitting in the publish queue — and ``scheduled_publisher``
+    would ship it on schedule, unapproved. The delete predicate is the only
+    thing standing between those two states.
+    """
+
+    @pytest.mark.asyncio
+    async def test_delete_predicate_covers_scheduled_rows(self):
+        from services.publish_service import unapprove_task
+
+        pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 1")
+        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        ):
+            mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
+            result = await unapprove_task(pool, "task-1")
+
+        assert result["ok"] is True
+        assert result["posts_row_removed"] is True
+        delete_sql = conn.execute.await_args_list[1].args[0]
+        assert "DELETE FROM posts" in delete_sql
+        # Both staged states must be in scope. A scheduled row left behind
+        # publishes itself later — the failure mode this pins.
+        assert "'scheduled'" in delete_sql, (
+            "unapprove must delete a scheduled staged post, or an unapproved "
+            "post stays in the publish queue and goes live on schedule"
+        )
+        assert "'approved'" in delete_sql
+
+    @pytest.mark.asyncio
+    async def test_no_longer_writes_the_dropped_scheduled_at_column(self):
+        """``pipeline_tasks.scheduled_at`` was dropped as an orphan — the
+        UPDATE must not reference it or every unapprove errors post-migration."""
+        from services.publish_service import unapprove_task
+
+        pool, conn = _make_pool(update_result="UPDATE 1", delete_result="DELETE 0")
+        with patch("services.pipeline_db.PipelineDB") as mock_pdb_cls, patch(
+            "services.router_outcome_feedback.record_task_outcome", new=AsyncMock()
+        ):
+            mock_pdb_cls.return_value.clear_qa_approved_snapshot = AsyncMock()
+            await unapprove_task(pool, "task-1")
+
+        update_sql = conn.execute.await_args_list[0].args[0]
+        assert "scheduled_at" not in update_sql

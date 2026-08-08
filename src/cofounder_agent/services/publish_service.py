@@ -2375,11 +2375,17 @@ async def unapprove_task(
 
     Reverses ``approve_task``'s ``stage_only`` side effect: flips
     ``pipeline_tasks.status`` from ``approved`` to ``target_status``
-    (``awaiting_approval`` | ``rejected_retry`` | ``rejected_final``),
-    clears any ``scheduled_at`` slot, and deletes the staged ``posts`` row
-    (created at ``status='approved'``, never published — nothing external
-    to retire, unlike ``unpublish_post``). Idempotent no-op
+    (``awaiting_approval`` | ``rejected_retry`` | ``rejected_final``)
+    and deletes the staged ``posts`` row (never published — nothing
+    external to retire, unlike ``unpublish_post``). Idempotent no-op
     (``ok=False``) if the task isn't currently 'approved'.
+
+    The staged row is deleted at ``status='approved'`` **or**
+    ``'scheduled'``: an approve that carried ``publish_at`` promotes the
+    row straight to 'scheduled', and matching only 'approved' would leave
+    an unapproved post sitting in the publish queue for
+    ``scheduled_publisher`` to ship on schedule. Retracting the approval
+    has to retract the slot with it.
 
     The primary status/posts revert is one transaction (must not partially
     apply); the audit-trail writes below are best-effort, individually
@@ -2391,7 +2397,7 @@ async def unapprove_task(
             update_result = await conn.execute(
                 """
                 UPDATE pipeline_tasks
-                   SET status = $2, scheduled_at = NULL, updated_at = NOW()
+                   SET status = $2, updated_at = NOW()
                  WHERE task_id = $1 AND status = 'approved'
                 """,
                 task_id, target_status,
@@ -2412,7 +2418,7 @@ async def unapprove_task(
                 """
                 DELETE FROM posts
                  WHERE metadata ->> 'pipeline_task_id' = $1
-                   AND status = 'approved'
+                   AND status IN ('approved', 'scheduled')
                 """,
                 task_id,
             )

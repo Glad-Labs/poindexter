@@ -229,6 +229,17 @@ class UnifiedTaskResponse(BaseModel):
         None, description="Post ID in CMS (when published to posts table)"
     )
     post_slug: str | None = Field(None, description="Post slug for URL generation")
+    scheduled_for: str | None = Field(
+        None,
+        description=(
+            "ISO 8601 publish slot the server committed, set when an approve "
+            "carried publish_at and posts.status reached 'scheduled'. Null "
+            "when no slot was requested OR when the slot could not be "
+            "applied — in the latter case `message` carries the reason, so "
+            "callers must check this field rather than assume the requested "
+            "publish_at took effect."
+        ),
+    )
 
     # ========================================================================
     # BACKEND METADATA (For debugging)
