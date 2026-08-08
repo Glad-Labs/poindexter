@@ -26,8 +26,18 @@ MACRO_DOCS: dict[str, str] = {
     "$__timeFilter(col)": "col BETWEEN NOW() - INTERVAL '1 hour' AND NOW()",
     "$__timeGroupAlias(col, '1m')": "date_trunc('minute', col) AS time",
     "$__timeGroup(col, '1m')": "date_trunc('minute', col)",
-    "$__timeFrom()": "(EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)::bigint",
-    "$__timeTo()": "(EXTRACT(EPOCH FROM NOW()) * 1000)::bigint",
+    # Grafana's Postgres datasource renders these as quoted TIMESTAMP
+    # literals ('2026-08-07T10:00:00Z'), not epoch numbers. Expanding them
+    # as bigint-ms made correct SQL like `$__timeTo()::timestamp` look
+    # broken (42846 "cannot cast type bigint to timestamp") — a false
+    # positive that survived until the 2026-08-07 audit ran the same query
+    # through Grafana's own /api/ds/query and got a clean result.
+    "$__timeFrom()": "(NOW() - INTERVAL '1 hour')",
+    "$__timeTo()": "NOW()",
+    # The epoch-second twins — these genuinely ARE numeric, which is what
+    # makes them the honest choice for window-width arithmetic.
+    "$__unixEpochFrom()": "EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour')::bigint",
+    "$__unixEpochTo()": "EXTRACT(EPOCH FROM NOW())::bigint",
     "$__interval": "'1 minute'",
     "$__rate_interval": "5m",
 }
@@ -74,14 +84,19 @@ def substitute(sql: str) -> str:
         args = out[start + len("$__timeGroup(") : end]
         col = args.split(",", 1)[0].strip()
         out = out[:start] + f"date_trunc('minute', {col})" + out[end + 1 :]
+    # Epoch twins first: they share no prefix with $__timeFrom/$__timeTo,
+    # but keeping the numeric pair adjacent makes the timestamp-vs-epoch
+    # distinction obvious to the next reader.
     out = out.replace(
-        "$__timeFrom()",
-        "(EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)::bigint",
+        "$__unixEpochFrom()",
+        "EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour')::bigint",
     )
     out = out.replace(
-        "$__timeTo()",
-        "(EXTRACT(EPOCH FROM NOW()) * 1000)::bigint",
+        "$__unixEpochTo()",
+        "EXTRACT(EPOCH FROM NOW())::bigint",
     )
+    out = out.replace("$__timeFrom()", "(NOW() - INTERVAL '1 hour')")
+    out = out.replace("$__timeTo()", "NOW()")
     # Prometheus-only rate window macro. Must be substituted BEFORE the
     # generic $__ guard below; unlike $__interval (a SQL duration), this
     # resolves to a bare PromQL duration literal so rate()/histogram_quantile

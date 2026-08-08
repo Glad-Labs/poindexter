@@ -17,7 +17,7 @@
       "title": "Prefect UI",
       "tooltip": "Open Prefect 3 flow-runs UI (tailscale workstation IP, port 4200)",
       "type": "link",
-      "url": "http://localhost:4200"
+      "url": "http://nightrider-1.taild4f626.ts.net:4200"
     },
     {
       "asDropdown": false,
@@ -29,7 +29,7 @@
       "title": "Langfuse UI",
       "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (tailscale workstation IP, port 3010)",
       "type": "link",
-      "url": "http://localhost:3010"
+      "url": "http://nightrider-1.taild4f626.ts.net:3010"
     },
     {
       "asDropdown": false,
@@ -41,7 +41,7 @@
       "title": "Pyroscope UI",
       "tooltip": "Continuous profiling — CPU + memory flamegraphs (tailscale workstation IP, port 4040)",
       "type": "link",
-      "url": "http://localhost:4040"
+      "url": "http://nightrider-1.taild4f626.ts.net:4040"
     },
     {
       "asDropdown": false,
@@ -53,7 +53,7 @@
       "title": "GlitchTip UI",
       "tooltip": "Error tracking + Sentry-compatible event viewer (tailscale workstation IP, port 8080)",
       "type": "link",
-      "url": "http://localhost:8080"
+      "url": "http://nightrider-1.taild4f626.ts.net:8080"
     },
     {
       "asDropdown": false,
@@ -65,7 +65,7 @@
       "title": "Alertmanager",
       "tooltip": "Prometheus alert routing + silencing (tailscale workstation IP, port 9093)",
       "type": "link",
-      "url": "http://localhost:9093"
+      "url": "http://nightrider-1.taild4f626.ts.net:9093"
     },
     {
       "asDropdown": false,
@@ -77,7 +77,7 @@
       "title": "Uptime Kuma",
       "tooltip": "External-service uptime monitor (tailscale workstation IP, port 3002)",
       "type": "link",
-      "url": "http://localhost:3002"
+      "url": "http://nightrider-1.taild4f626.ts.net:3002"
     },
     {
       "asDropdown": false,
@@ -89,7 +89,7 @@
       "title": "Prometheus",
       "tooltip": "Raw PromQL UI (Grafana usually wraps this) (tailscale workstation IP, port 9091)",
       "type": "link",
-      "url": "http://localhost:9091"
+      "url": "http://nightrider-1.taild4f626.ts.net:9091"
     },
     {
       "asDropdown": false,
@@ -125,7 +125,7 @@
       "title": "pgAdmin",
       "tooltip": "Postgres admin UI (databases, queries, schema) (tailscale workstation IP, port 18443)",
       "type": "link",
-      "url": "http://localhost:18443"
+      "url": "http://nightrider-1.taild4f626.ts.net:18443"
     },
     {
       "asDropdown": false,
@@ -137,7 +137,7 @@
       "title": "Worker API",
       "tooltip": "FastAPI backend health + status endpoints (tailscale workstation IP, port 8002)",
       "type": "link",
-      "url": "http://localhost:8002"
+      "url": "http://nightrider-1.taild4f626.ts.net:8002"
     },
     {
       "asDropdown": false,
@@ -149,7 +149,7 @@
       "title": "✏ Talk to Poindexter (LiveKit)",
       "tooltip": "Self-hosted LiveKit web client (poindexter#389). Same-origin wss via Tailscale Funnel — no mixed-content. 7-day token minted server-side; tap Connect, allow mic. Multi-party-capable: voice-agent-livekit + you in the same ‘poindexter’ room.",
       "type": "link",
-      "url": "https://nightrider.taild4f626.ts.net/voice/join"
+      "url": "https://nightrider-1.taild4f626.ts.net/voice/join"
     }
   ],
   "panels": [
@@ -823,7 +823,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### GlitchTip\n\n**Unresolved issues:** open the UI for live counts.\n\n- [Open GlitchTip](http://localhost:8080) → your org → project issues\n- Org: your GlitchTip org (mirrors `app_settings.glitchtip_triage_org_slug`) · Project: your project\n\n_Live stat panel pending: Grafana Infinity plugin (or a glitchtip-postgres datasource provision) — neither is installed yet._"
+        "content": "### GlitchTip\n\n**Unresolved issues:** open the UI for live counts.\n\n- [Open GlitchTip](http://nightrider-1.taild4f626.ts.net:8080) → your org → project issues\n- Org: your GlitchTip org (mirrors `app_settings.glitchtip_triage_org_slug`) · Project: your project\n\n_Live stat panel pending: Grafana Infinity plugin (or a glitchtip-postgres datasource provision) — neither is installed yet._"
       }
     },
     {
@@ -839,7 +839,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Langfuse\n\n**Traces + judge cost:** open the UI for live data.\n\n- [Open Langfuse dashboard](http://localhost:3010/)\n- Traces, prompts, datasets, experiment scores\n\n_Live stat panels pending: Grafana Infinity plugin (or a langfuse-postgres datasource provision) — neither is installed yet._"
+        "content": "### Langfuse\n\n**Traces + judge cost:** open the UI for live data.\n\n- [Open Langfuse dashboard](http://nightrider-1.taild4f626.ts.net:3010/)\n- Traces, prompts, datasets, experiment scores\n\n_Live stat panels pending: Grafana Infinity plugin (or a langfuse-postgres datasource provision) — neither is installed yet._"
       }
     }
   ],

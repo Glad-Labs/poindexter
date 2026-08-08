@@ -52,7 +52,7 @@
       "title": "GlitchTip",
       "tooltip": "Self-hosted error tracker \u2014 reviewer exceptions land here",
       "type": "link",
-      "url": "http://localhost:8050/glad-labs/poindexter/issues/"
+      "url": "http://localhost:8080/glad-labs/poindexter/issues/"
     }
   ],
   "tags": ["qa", "lane-d", "issue-329"],

@@ -488,7 +488,7 @@ services:
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
       LIVEKIT_ROOM: "${LIVEKIT_ROOM:-poindexter}"
       LIVEKIT_DEFAULT_IDENTITY: "${LIVEKIT_DEFAULT_IDENTITY:-matt}"
-      LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider.taild4f626.ts.net/livekit-signal/}"
+      LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider-1.taild4f626.ts.net/livekit-signal/}"
       # GH_TOKEN — GitHub PAT with `repo` scope. Read by the `gh` CLI when
       # findings_alert_router._dispatch_github_issue files issues. Empty default:
       # without a token the delivery falls back to the page channel (Discord/Telegram)
@@ -788,13 +788,18 @@ services:
       PREFECT_SERVER_API_HOST: 0.0.0.0
       # The UI's bundled JS calls this URL from the BROWSER, so it has
       # to be an address the browser can reach — not a service-network
-      # name. Workstation's tailscale IP works from both the host's own
-      # browser and from any phone on the tailnet (verified via
-      # `tailscale status`: nightrider = 100.81.93.12). Plain
-      # `localhost:4200/api` breaks the moment the operator opens the
-      # UI from their phone — the browser resolves "localhost" against
-      # the phone, not against the server.
-      PREFECT_SERVER_UI_API_URL: "http://100.81.93.12:4200/api"
+      # name. Plain `localhost:4200/api` breaks the moment the operator
+      # opens the UI from their phone — the browser resolves "localhost"
+      # against the phone, not against the server.
+      #
+      # Use the MagicDNS *name*, not the tailnet IP. A raw IP silently
+      # rots: the Pop!_OS migration moved the tailnet node from
+      # 100.81.93.12 (Windows `nightrider`) to a new address, and this
+      # value kept pointing at the dead host — the UI shell loaded but
+      # every API call failed, from every device. The MagicDNS name
+      # resolves on any tailnet device (including this host) and follows
+      # the node across re-addressing.
+      PREFECT_SERVER_UI_API_URL: "http://nightrider-1.taild4f626.ts.net:4200/api"
       PREFECT_API_URL: "http://prefect-server:4200/api"
       PREFECT_MESSAGING_BROKER: prefect_redis.messaging
       PREFECT_MESSAGING_CACHE: prefect_redis.messaging
@@ -2395,7 +2400,11 @@ services:
       - "--bind"
       - "0.0.0.0"
       - "--node-ip"
-      - "${LIVEKIT_NODE_IP:-100.81.93.12}"
+      # WebRTC ICE candidates must be a literal IP, so this one cannot use
+      # the MagicDNS name — re-check it after any tailnet re-addressing
+      # (`tailscale ip -4`). Moved off 100.81.93.12 (dead Windows node) in
+      # the Pop!_OS migration.
+      - "${LIVEKIT_NODE_IP:-100.111.15.72}"
     ports:
       - "7880:7880"        # HTTP/WebSocket signalling
       - "7881:7881"        # TCP RTC fallback

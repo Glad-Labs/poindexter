@@ -64,8 +64,21 @@ class TestSubstitute:
         out = substitute(
             "SELECT * FROM t WHERE ts > $__timeFrom() AND ts < $__timeTo()"
         )
-        assert "EXTRACT(EPOCH FROM NOW()" in out
+        assert "NOW()" in out
         assert "$__" not in out
+
+    def test_timefrom_timeto_are_timestamps_not_epochs(self) -> None:
+        """Grafana renders these as quoted timestamp literals, so casting
+        one to ::timestamp is valid SQL. Expanding them as bigint-ms made
+        that correct pattern fail with 42846 — guard the regression."""
+        out = substitute("SELECT $__timeTo()::timestamp - $__timeFrom()::timestamp")
+        assert "::bigint" not in out
+        assert "* 1000" not in out
+
+    def test_unix_epoch_macros_are_numeric(self) -> None:
+        out = substitute("SELECT ($__unixEpochTo() - $__unixEpochFrom()) / 86400")
+        assert "$__" not in out
+        assert out.count("::bigint") == 2
 
     def test_dashboard_variable_replaced(self) -> None:
         # $service / $container etc. resolve to a literal at render time;

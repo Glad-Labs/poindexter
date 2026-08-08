@@ -382,7 +382,22 @@ class LeakPattern:
 
 _LEAK_PATTERNS = (
     LeakPattern(
-        re.compile(r"100\.81\.93\.12"),
+        # EVERY operator tailnet address, past and present — this is an
+        # identity list, deliberately NOT the whole 100.64.0.0/10 CGNAT
+        # range. Broadening it to the range was tried on 2026-08-07 and
+        # reverted: tests/unit/services/test_url_scraper_ssrf.py uses CGNAT
+        # literals as fixtures to prove the scraper BLOCKS that range, and
+        # those are legitimate public code. With no line-level exemption
+        # (by design — see "Strip operator mirror-tooling instead of
+        # allowlisting it" in the module docstring), a range match can only
+        # be resolved by weakening a security test. Don't re-broaden it.
+        #
+        # WHEN THE TAILNET RE-ADDRESSES: add the new IP to this alternation.
+        # 100.81.93.12  — Windows `nightrider`, retired in the Pop!_OS migration
+        # 100.111.15.72 — Pop!_OS `nightrider-1`, current
+        # The hostname patterns below need no such upkeep; they match the
+        # MagicDNS name, which survives re-addressing.
+        re.compile(r"\b100\.(?:81\.93\.12|111\.15\.72)\b"),
         "operator Tailnet IP",
         "Replace with localhost or <your-tailnet-ip> placeholder.",
     ),

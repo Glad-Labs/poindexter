@@ -40,6 +40,23 @@ class TestOperatorScrubPatterns:
         assert "100.81.93.12" not in _scrub("ssh 100.81.93.12")
         assert "mattg-stack" not in _scrub("commit by mattg-stack")
 
+    def test_current_tailnet_ip_scrubs_not_just_the_retired_one(self):
+        """The pattern held only the Windows node's IP until the Pop!_OS
+        migration re-addressed the tailnet, leaving the LIVE address
+        unscrubbed. Both must redact."""
+        for ip in ("100.81.93.12", "100.111.15.72"):
+            assert ip not in _scrub(f"reach it at {ip}:3000"), ip
+
+    def test_generic_cgnat_addresses_are_left_alone(self):
+        """Deliberate boundary: this is an operator-identity list, not a
+        100.64.0.0/10 range match. Public SSRF tests reference CGNAT
+        literals legitimately, and the mirror guard has no line-level
+        exemption — so a range match could only be resolved by weakening
+        a security test. Pins the decision against a well-meaning
+        re-broadening."""
+        for ip in ("100.64.0.1", "100.127.255.254"):
+            assert ip in _scrub(f"blocked upstream {ip}"), ip
+
     def test_negative_generic_prose_untouched(self):
         text = "The image of a lone GPU and a matte black case."
         assert _scrub(text) == text

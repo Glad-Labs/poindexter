@@ -111,7 +111,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric / GREATEST(EXTRACT(EPOCH FROM ($__timeTo()::timestamp - $__timeFrom()::timestamp)) / 86400, 1), 4) AS avg_daily FROM cost_logs WHERE $__timeFilter(created_at)",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric / GREATEST(($__unixEpochTo() - $__unixEpochFrom())::numeric / 86400, 1), 4) AS avg_daily FROM cost_logs WHERE $__timeFilter(created_at)",
           "refId": "A"
         }
       ],

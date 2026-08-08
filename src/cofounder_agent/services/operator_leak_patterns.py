@@ -12,7 +12,10 @@ from __future__ import annotations
 import re
 
 OPERATOR_SCRUB_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"100\.81\.93\.12"), "[operator-host]"),
+    # Every operator tailnet address, past and present — NOT the whole CGNAT
+    # range; see the rationale on the matching pattern in
+    # check_public_mirror_safety.py. Add the new IP here on re-addressing.
+    (re.compile(r"\b100\.(?:81\.93\.12|111\.15\.72)\b"), "[operator-host]"),
     (re.compile(r"taild4f626\.ts\.net"), "[operator-host]"),
     (re.compile(r"\bnightrider\b"), "[operator-host]"),
     (re.compile(r"C:[\\/]+Users[\\/]+mattm"), "[operator-path]"),
