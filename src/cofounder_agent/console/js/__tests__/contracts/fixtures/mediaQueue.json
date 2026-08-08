@@ -1,15 +1,6 @@
 {
-  "items": [
-    {
-      "post_id": "78f8a6cc-f18d-4ba8-b57e-8a09f0f85d8c",
-      "medium": "podcast",
-      "title": "VRAM Poisoning and the P4 Architect",
-      "slug": "vram-poisoning-and-the-p4-architect-01d22d93",
-      "quality_score": 100,
-      "created_at": "2026-08-07T05:25:36.800260Z"
-    }
-  ],
-  "total": 1,
+  "items": [],
+  "total": 0,
   "limit": 50,
   "offset": 0
 }

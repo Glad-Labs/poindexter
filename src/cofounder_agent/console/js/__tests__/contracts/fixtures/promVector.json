@@ -10,18 +10,7 @@
           "job": "poindexter-worker"
         },
         "value": [
-          1786092704.579,
-          "1"
-        ]
-      },
-      {
-        "metric": {
-          "__name__": "up",
-          "instance": "pyroscope:4040",
-          "job": "pyroscope"
-        },
-        "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -32,7 +21,7 @@
           "job": "prometheus"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -43,40 +32,7 @@
           "job": "alertmanager"
         },
         "value": [
-          1786092704.579,
-          "1"
-        ]
-      },
-      {
-        "metric": {
-          "__name__": "up",
-          "instance": "postgres-exporter:9187",
-          "job": "postgres-exporter"
-        },
-        "value": [
-          1786092704.579,
-          "1"
-        ]
-      },
-      {
-        "metric": {
-          "__name__": "up",
-          "instance": "tempo:3200",
-          "job": "tempo"
-        },
-        "value": [
-          1786092704.579,
-          "1"
-        ]
-      },
-      {
-        "metric": {
-          "__name__": "up",
-          "instance": "promtail:9080",
-          "job": "promtail"
-        },
-        "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -87,7 +43,7 @@
           "job": "cadvisor"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -98,7 +54,7 @@
           "job": "uptime-kuma"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -109,7 +65,7 @@
           "job": "node"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -120,7 +76,7 @@
           "job": "nvidia-smi"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
           "1"
         ]
       },
@@ -132,7 +88,51 @@
           "ups": "cyberpower"
         },
         "value": [
-          1786092704.579,
+          1786177979.776,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "promtail:9080",
+          "job": "promtail"
+        },
+        "value": [
+          1786177979.776,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "pyroscope:4040",
+          "job": "pyroscope"
+        },
+        "value": [
+          1786177979.776,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "tempo:3200",
+          "job": "tempo"
+        },
+        "value": [
+          1786177979.776,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "postgres-exporter:9187",
+          "job": "postgres-exporter"
+        },
+        "value": [
+          1786177979.776,
           "1"
         ]
       }
