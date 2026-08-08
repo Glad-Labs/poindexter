@@ -146,14 +146,37 @@ gpu_work_running() {
   [ "${n:-0}" -gt 0 ]
 }
 
-stack_busy() { flow_running || gpu_work_running; }
+# A media render spends most of its wall-clock in phases that hold NEITHER
+# signal above: TTS narration, ASR transcription, caption alignment and the
+# ffmpeg composite are CPU work inside the worker's scheduler job, so there is
+# no Prefect flow and no GPU advisory lock to see. A deploy landing in that
+# window restarted the worker and killed a 35-minute render on 2026-08-08
+# 04:32, right after #3079 was meant to have closed exactly this. The
+# render's own claim is the reliable marker: dispatched, no video asset yet.
+# Bounded by SYNC_MEDIA_CLAIM_MAX_MIN so a wedged claim cannot block deploys
+# forever (media_reconciliation reaps those separately).
+MEDIA_CLAIM_MAX_MIN="${SYNC_MEDIA_CLAIM_MAX_MIN:-90}"
+
+media_render_running() {
+  local n
+  n="$(docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA \
+        -c "SELECT count(*) FROM pipeline_tasks pt
+             WHERE pt.media_pipeline_dispatched_at > NOW() - INTERVAL '${MEDIA_CLAIM_MAX_MIN} minutes'
+               AND NOT EXISTS (
+                     SELECT 1 FROM media_assets ma
+                      WHERE ma.task_id = pt.task_id AND ma.type = 'video')" 2>/dev/null \
+      | tr -d '[:space:]')" || return 1
+  [ "${n:-0}" -gt 0 ]
+}
+
+stack_busy() { flow_running || gpu_work_running || media_render_running; }
 
 reset_at_epoch=""
 if [ "$need_reset" = "1" ]; then
   if [ "$NO_FLOW_CHECK" = "0" ]; then
     waited=0
     while [ "$waited" -lt "$MAX_WAIT_SEC" ] && stack_busy; do
-      log "Active flow run or GPU job; waiting for a gap before reset (${waited}/${MAX_WAIT_SEC}s)..."
+      log "Active flow run, GPU job, or media render; waiting for a gap before reset (${waited}/${MAX_WAIT_SEC}s)..."
       sleep 5; waited=$((waited + 5))
     done
     if [ "$waited" -ge "$MAX_WAIT_SEC" ] && stack_busy; then
