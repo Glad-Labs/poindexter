@@ -1382,6 +1382,15 @@ DEFAULTS: dict[str, str] = {
     'content_router_contradiction_review_max_tokens': '1500',
     'content_router_contradiction_revise_max_tokens': '8000',
     'content_router_contradiction_timeout_seconds': '120',
+    # writer_self_review minimal-edit contract (poindexter#1000). A
+    # contradiction fix edits sentences; it never restructures or multiplies
+    # the article. The guard was floor-only, so a 3x deliberation dump
+    # (13,567 chars out of a ~4,400-char draft) passed and rode to
+    # awaiting_approval at quality 94. Out-of-band ratios — and any revision
+    # that reads as a planning/deliberation dump — are discarded in favour of
+    # the original draft, with a self_review_revision_rejected finding.
+    'writer_self_review_min_length_ratio': '0.7',
+    'writer_self_review_max_length_ratio': '1.3',
     # Output-token cap for the qa.rewrite full-article revision call. Raised
     # 8000 → 16384 when the key was re-wired to the atom (poindexter#984): the
     # key had gone zero-reader with the deleted chunked content_router path,
@@ -3591,6 +3600,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_router_contradiction_review_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
     'content_router_contradiction_revise_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
     'content_router_contradiction_timeout_seconds': {'owner': 'self_review', 'value_type': 'integer'},
+    'writer_self_review_min_length_ratio': {'owner': 'self_review', 'value_type': 'float'},
+    'writer_self_review_max_length_ratio': {'owner': 'self_review', 'value_type': 'float'},
     'content_router_qa_rewrite_max_tokens': {'owner': 'qa_rewrite', 'value_type': 'integer'},
     'content_router_qa_rewrite_timeout_seconds': {'owner': 'qa_rewrite', 'value_type': 'integer'},
     'content_gen_token_mult_standard': {'owner': 'ai_content_generator', 'value_type': 'float'},

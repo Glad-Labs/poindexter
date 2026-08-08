@@ -64,6 +64,13 @@ from modules.content import content_validator  # noqa: F401 — whole-module ali
 from modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
 
 # ---------------------------------------------------------------------------
+# atoms._scaffold_helpers — producer-side strip, paired with the detector above
+# ---------------------------------------------------------------------------
+from modules.content.atoms._scaffold_helpers import (
+    strip_leaked_planning_scaffold as strip_leaked_planning_scaffold,
+)
+
+# ---------------------------------------------------------------------------
 # atoms.social_generate_drafts
 # ---------------------------------------------------------------------------
 from modules.content.atoms.social_generate_drafts import (
@@ -97,6 +104,9 @@ from modules.content.content_validator import (
 )
 from modules.content.content_validator import (
     ValidationResult as ValidationResult,
+)
+from modules.content.content_validator import (
+    has_planning_dump as has_planning_dump,
 )
 from modules.content.content_validator import (
     validate_content as validate_content,
@@ -190,6 +200,9 @@ __all__ = [
     "validate_content",
     "ValidationResult",
     "ValidationIssue",
+    "has_planning_dump",
+    # atoms._scaffold_helpers
+    "strip_leaked_planning_scaffold",
     # internal_link_coherence
     "InternalLinkCoherenceFilter",
     "LinkCandidate",

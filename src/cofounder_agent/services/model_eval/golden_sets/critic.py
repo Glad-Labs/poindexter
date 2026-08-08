@@ -9,6 +9,12 @@ class the judge is contractually required to catch:
   shape (poindexter#984).
 - ``scaffold``: a planning-dump preamble prepended — the leaked-outline
   failure shape (the 2026-07-01 incident dialect).
+- ``deliberation``: a reviewer-role brief plus first-person reasoning
+  prepended, with the article fused onto the last bullet — the
+  writer_self_review dump shape (poindexter#1000). Added because the
+  2026-08-06 calibration scored a judge 0.91 that then approved exactly
+  this shape at 95/100: a golden set only measures the failure modes it
+  actually contains, so every escaped shape earns a case here.
 
 Corrupting real posts (instead of trusting historical reject labels) gives
 trustworthy ground truth: historical labels were produced by the very judges
@@ -39,6 +45,28 @@ _SCAFFOLD_PREAMBLE = (
     "*   Length: Approximately 800 words.\n"
     "*   I should provide a clear intro and vary sentence length.\n"
     "*   Check word count before finishing.\n\n"
+)
+
+# Verbatim reviewer-role deliberation dialect from prod task 1bdf0360
+# (2026-08-07, poindexter#1000). Note the final line deliberately fuses the
+# narration onto the article with no blank line — that is how the real leak
+# arrived, and a judge that tolerates it is the judge that let it publish.
+_DELIBERATION_PREAMBLE = (
+    "*   Role: Reviewer checking for internal contradictions.\n"
+    '    *   Input: A draft titled "{title}".\n'
+    "    *   Task: Fix specific contradictions and *nothing else*.\n"
+    "    *   Output Format: Revised draft only. Keep structure, length, "
+    "tone identical. Preserve image markers.\n"
+    "    *   Constraint 1: Fix *only* the identified contradictions.\n"
+    "    *   Constraint 2: Output only the revised draft.\n\n"
+    "    Wait, let me re-read carefully. The prompt says to fix "
+    "contradictions, but the analysis concludes with PASS.\n"
+    "    Let's double-check the sections one more time.\n"
+    "    If the user's own analysis says PASS, then there is nothing to "
+    "fix here.\n"
+    "    Is there any other possible interpretation? I don't think so.\n"
+    "    One last look at the text before I answer.\n"
+    "    I'll provide the original text."
 )
 
 # Characters that read as a finished ending — stripped from the truncation
@@ -128,6 +156,19 @@ async def build_critic_golden_set(*, pool: Any, site_config: Any) -> GoldenSet:
                 "content": _SCAFFOLD_PREAMBLE.format(title=title) + content,
                 "expected": "veto",
                 "kind": "scaffold",
+                "post_id": post["id"],
+            },
+        ))
+        cases.append(GoldenCase(
+            query=title,
+            candidates=[],
+            payload={
+                "title": title,
+                "topic": title,
+                # Fused with no separator — the 1bdf0360 shape exactly.
+                "content": _DELIBERATION_PREAMBLE.format(title=title) + content,
+                "expected": "veto",
+                "kind": "deliberation",
                 "post_id": post["id"],
             },
         ))

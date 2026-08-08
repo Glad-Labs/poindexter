@@ -49,13 +49,17 @@ def _sc(good_n: int = 2) -> SiteConfig:
 
 @pytest.mark.unit
 class TestCriticGoldenSet:
-    async def test_three_cases_per_post_with_expected_labels(self):
+    async def test_four_cases_per_post_with_expected_labels(self):
+        """One known-good + one corruption per rubric reject class the judge
+        must catch: truncation (#984), planning scaffold, and the
+        reviewer-role deliberation dump (#1000)."""
         golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
-        assert len(golden.cases) == 6
+        assert len(golden.cases) == 8
         kinds = [c.payload["kind"] for c in golden.cases]
         assert kinds.count("good") == 2
         assert kinds.count("truncated") == 2
         assert kinds.count("scaffold") == 2
+        assert kinds.count("deliberation") == 2
         for c in golden.cases:
             expected = c.payload["expected"]
             assert expected == ("approve" if c.payload["kind"] == "good" else "veto")
@@ -95,3 +99,35 @@ class TestCriticGoldenSet:
     async def test_too_few_posts_fails_loud(self):
         with pytest.raises(RuntimeError, match="critic golden set"):
             await build_critic_golden_set(pool=_FakePool(_posts(1)), site_config=_sc(3))
+
+
+@pytest.mark.unit
+class TestDeliberationCorruption:
+    """The #1000 escape shape must be a real corruption by the pipeline's own
+    detector — otherwise the golden set would grade judges on a case the
+    validator itself considers clean."""
+
+    async def test_deliberation_case_trips_the_planning_dump_detector(self):
+        from modules.content.content_validator import (
+            _strip_code_spans,
+            detect_planning_dump_preamble,
+        )
+
+        golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
+        for c in golden.cases:
+            evidence = detect_planning_dump_preamble(
+                _strip_code_spans(c.payload["content"])
+            )
+            if c.payload["kind"] == "deliberation":
+                assert evidence, "deliberation corruption must trip the detector"
+            elif c.payload["kind"] == "good":
+                assert evidence == [], "good case must read as finished prose"
+
+    async def test_deliberation_case_fuses_article_onto_narration(self):
+        golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
+        case = next(c for c in golden.cases if c.payload["kind"] == "deliberation")
+        content = case.payload["content"]
+        assert content.startswith("*   Role: Reviewer")
+        # No blank line between the narration and the article — the exact
+        # 1bdf0360 shape.
+        assert "I'll provide the original text.Sentence about" in content

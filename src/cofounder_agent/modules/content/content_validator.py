@@ -850,6 +850,45 @@ _FIRST_HEADING_RE_FOR_VALIDATOR = re.compile(
 # Vocabulary FAMILIES that mark an opening bullet block as writer planning.
 # Each family counts once; the detector needs >=2 distinct families so a
 # single incidental phrase can never fire the rule on its own.
+# Deliberation-voice tells for planning-dump Path B (poindexter#1000) — the
+# model narrating its own reasoning ABOUT the assignment. Finished article
+# prose never discusses the prompt that produced it, so these are safe when
+# required in combination (>=3 distinct tells + >=1 vocab family + a
+# substantial pre-heading opening).
+_DELIBERATION_VOICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("prompt-referent", re.compile(
+        r"\bthe\s+prompt\s+(?:says|asks|is|provides|said|explicitly)\b",
+        re.IGNORECASE,
+    )),
+    ("re-read-narration", re.compile(
+        r"\b(?:let'?s|let\s+me|i'?ll)\s+(?:re-?read|re-?check|double-?check"
+        r"|look\s+at|look\s+again|check)\b",
+        re.IGNORECASE,
+    )),
+    ("wait-correction", re.compile(
+        r"^[ \t>*\-]*wait[,\s]|\bactually,\s+(?:looking|let|the)\b",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    ("self-questioning", re.compile(
+        r"\bam\s+I\s+(?:overstepping|violating|missing|supposed)\b"
+        r"|\bif\s+I\s+change\b|\bshould\s+I\s+(?:fix|change|remove)\b",
+        re.IGNORECASE,
+    )),
+    ("user-referent", re.compile(
+        r"\bthe\s+user'?s?\s+(?:own\s+)?(?:analysis|wants|says|asked"
+        r"|provided|thinks|concludes|has)\b",
+        re.IGNORECASE,
+    )),
+    ("output-narration", re.compile(
+        r"\bI'?ll\s+(?:provide|output|return|keep|leave)\s+the\b"
+        r"|\boutput\s+the\s+original\s+(?:text|draft)\b",
+        re.IGNORECASE,
+    )),
+)
+_DELIBERATION_MIN_TELLS = 3
+_DELIBERATION_MIN_OPENING_LINES = 12
+
+
 _PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
     # "*   Topic: ..." / "* Outline:" — planning bullet labels. "Key
     # concept:" joined 2026-07-02 (bare-prompt gemma-4-31B capture: concept
@@ -913,6 +952,47 @@ _PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("source-triage", re.compile(
         r"\bdiscard\s+irrelevant\b"
         r"|\birrelevant\s+(?:sources?|data|snippets?|material)\b",
+        re.IGNORECASE,
+    )),
+    # Revision-brief receipt — the model restating a REVISE assignment as
+    # role/task bullets ("*   Role: Reviewer checking for internal
+    # contradictions.", "*   Task: Fix specific contradictions in a draft.",
+    # "*   Goal: Apply specific fixes to a provided draft.", "*   Output
+    # Format: Revised draft only."). Distinct from ``assignment-spec`` (which
+    # is the WRITE brief: format/length/requirements) because the revise
+    # paths — writer_self_review's contradiction pass and qa.rewrite — echo a
+    # different label set. Added 2026-08-08 (poindexter#1000) after a
+    # writer_self_review deliberation dump reached awaiting_approval at
+    # quality 94: structure fired loudly (41/50 opening bullets) but zero
+    # vocabulary families matched, so the gate stayed silent 6 times running.
+    ("revision-brief-label", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*{0,2}(?:role|task|goal|input"
+        r"|output\s+format|fixes(?:\s+required)?)\b[ \t]*:",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # Constraint enumeration — the model counting off its own instruction
+    # constraints as bullets ("*   Constraint 1: Fix *only* the identified
+    # contradictions.", "*   Constraints:"). A separate family from
+    # revision-brief-label on the assignment-spec precedent: the two
+    # co-occurring is what crosses the >=2-family bar, while a technical
+    # article that legitimately bullets "Input:"/"Output Format:" (API docs)
+    # hits the label family alone and stays silent.
+    ("constraint-enumeration", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*{0,2}constraints?[ \t]*\d*[ \t]*:",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # QA-directive vocabulary — pipeline-internal repair language the model
+    # echoes back from its revise brief ("Preserve all image markers
+    # exactly", "Remove unlinked citation/hallucinated reference", "Output
+    # only the revised draft"). Prose ABOUT the pipeline (dev_diary) can use
+    # these words, but only after a heading — this scan is confined to the
+    # pre-heading opening AND requires the >=6-bullet wall, so a dev diary
+    # discussing image markers in body prose never reaches it.
+    ("qa-directive-vocab", re.compile(
+        r"\bimage\s+markers?\b|\bunlinked\s+citations?\b"
+        r"|\bhallucinated\s+references?\b|\bfabricated\s+quotes?\b"
+        r"|\brevised\s+draft\s+only\b|\breview\s+flags?\b"
+        r"|\bbracketed\s+placeholders?\b",
         re.IGNORECASE,
     )),
     # Task-receipt narration — the model restating its assignment as bullets
@@ -996,16 +1076,38 @@ def detect_planning_dump_preamble(text: str) -> list[str]:
         return []
     lines = lines[:_PLANNING_DUMP_MAX_OPENING_LINES]
     bullets = sum(1 for ln in lines if _PLANNING_BULLET_LINE_RE.match(ln))
-    if bullets < _PLANNING_DUMP_MIN_BULLETS:
-        return []
-    if bullets / len(lines) < _PLANNING_DUMP_MIN_BULLET_SHARE:
-        return []
     vocab = [name for name, rx in _PLANNING_DUMP_VOCAB if rx.search(opening)]
-    if len(vocab) < _PLANNING_DUMP_MIN_VOCAB:
-        return []
-    return [f"opening_bullets:{bullets}/{len(lines)}"] + [
-        f"vocab:{name}" for name in vocab
-    ]
+
+    # Path A — the outline/bullet WALL (the original shape): >=6 bullets
+    # dominating the opening, plus >=2 vocabulary families.
+    if (
+        bullets >= _PLANNING_DUMP_MIN_BULLETS
+        and bullets / len(lines) >= _PLANNING_DUMP_MIN_BULLET_SHARE
+        and len(vocab) >= _PLANNING_DUMP_MIN_VOCAB
+    ):
+        return [f"opening_bullets:{bullets}/{len(lines)}"] + [
+            f"vocab:{name}" for name in vocab
+        ]
+
+    # Path B — the DELIBERATION STREAM (poindexter#1000): the model's
+    # chain-of-thought leaked as indented PROSE rather than bullets, so the
+    # bullet share collapses (task f7df9674: 11/50 = 0.22) even though every
+    # vocabulary family matches. The tell is first-person reasoning voice —
+    # "Wait, the prompt says…", "Let's re-read carefully:", "am I
+    # overstepping?", "I'll provide the original text." — which finished
+    # article prose does not contain about ITS OWN production. Requires a
+    # substantial opening plus >=3 distinct deliberation tells AND >=1
+    # vocabulary family, so a single rhetorical "Wait," in a real intro can
+    # never reach the bar.
+    if len(lines) >= _DELIBERATION_MIN_OPENING_LINES and vocab:
+        tells = [name for name, rx in _DELIBERATION_VOICE_PATTERNS if rx.search(opening)]
+        if len(tells) >= _DELIBERATION_MIN_TELLS:
+            return (
+                [f"deliberation_lines:{len(lines)}"]
+                + [f"tell:{name}" for name in tells]
+                + [f"vocab:{name}" for name in vocab]
+            )
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1084,6 +1186,19 @@ def detect_truncated_content(content: str) -> list[str]:
             f"final line ends without terminal punctuation: {last[-60:]!r}"
         )
     return reasons
+
+
+def has_planning_dump(content: str) -> list[str]:
+    """Code-span-safe planning-dump check — the public one-call form.
+
+    :func:`detect_planning_dump_preamble` requires pairing with
+    ``_strip_code_spans`` at every call site (so a post that QUOTES a dump
+    inside a fence is not flagged); this bundles the two so a caller cannot
+    forget the strip, and gives substrate a public entry point via
+    ``modules.content.api`` instead of reaching for the private helper
+    (Glad-Labs/poindexter#1000).
+    """
+    return detect_planning_dump_preamble(_strip_code_spans(content or ""))
 
 
 def _check_patterns(

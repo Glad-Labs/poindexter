@@ -76,6 +76,12 @@ KERNEL_PURITY_BASELINE: dict[str, int] = {
     # public seam, so a calibration run measures exactly what the pipeline
     # will do with a candidate judge (poindexter#985).
     "services/model_eval/scorers/critic.py::modules.content.api": 1,
+    # self_review's revise pass strips + rejects leaked planning scaffold via
+    # the modules/content/api public seam (2 lazy imports:
+    # strip_leaked_planning_scaffold, has_planning_dump). The graph runs
+    # normalize_draft BEFORE writer_self_review, so this stage is the only
+    # place its output can be scrubbed (poindexter#1000).
+    "services/self_review.py::modules.content.api": 2,
     # pipeline_templates' dev_diary factory imports the narrate_bundle atom
     # lazily; dev_diary is the one remaining non-graph_def template path.
     "services/pipeline_templates/__init__.py::modules.content.api": 1,

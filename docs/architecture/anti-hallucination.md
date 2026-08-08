@@ -853,6 +853,28 @@ review legitimately opening with a spec-sheet list (`*   Length:
 304 mm`) hits `assignment-spec` alone and stays silent. Posts replay
 re-run at introduction: 0 fires across all 301 `posts` bodies.
 
+2026-08-08 dialect addition #3 (poindexter#1000, from prod task
+`1bdf0360` reaching awaiting_approval at quality 94): the
+`revision-brief-label` family (`*   Role: Reviewer…`, `*   Task: Fix
+specific contradictions…`, `*   Goal:`, `*   Output Format: Revised draft
+only.`) + `constraint-enumeration` (`*   Constraint 1:`) +
+`qa-directive-vocab` (`image markers`, `unlinked citation`, `revised draft
+only`). These catch the REVISE brief, which uses a different label set from
+the WRITE brief `assignment-spec` already covered — six leaks between
+2026-07-04 and 2026-08-07 matched zero families while the bullet structure
+screamed (41/50 opening lines on the escape). **Path B — deliberation
+stream:** the same producer sometimes leaks its reasoning as indented
+PROSE rather than bullets (task `f7df9674`: 11/50 = 0.22 bullet share,
+below the 0.6 bar, with all four vocabulary families matching), so
+`detect_planning_dump_preamble` grew a second structural path keyed on
+first-person deliberation voice — "Wait, the prompt says…", "Let's re-read
+carefully:", "am I overstepping?", "I'll provide the original text." —
+requiring ≥3 distinct tells + ≥1 vocab family + a ≥12-line opening.
+Finished prose never discusses the prompt that produced it. Corpus replay
+at introduction: **7/7 known leaks caught (was 3/7), 0 fires across all 172
+published `posts` bodies**; the other recent `pipeline_versions` fires are
+the documented historical incidents already caught by untouched families.
+
 2026-07-02 dialect addition #2 (from the June 2026 `pipeline_versions`
 **title**-leak captures, 2026-06-13..06-20): the `draft-meta-commentary`
 family — the writer reviewing its own draft as label-colon lines

@@ -411,3 +411,80 @@ class TestBuildReviewExcerpt:
         paragraphs = [f"Paragraph {i} with several words in it." for i in range(200)]
         text, _ = build_review_excerpt("\n\n".join(paragraphs), 2000)
         assert detect_truncated_content(text) == []
+
+
+# ---------------------------------------------------------------------------
+# Critic/writer model collision (Glad-Labs/poindexter#1000)
+# ---------------------------------------------------------------------------
+
+
+class TestCriticModelCollision:
+    """`_resolve_critic_model` guarded only against ``pipeline_writer_model``,
+    leaving the SATELLITE writer pins uncovered. On 2026-08-07 the critic and
+    ``writer_self_review_model`` were both gemma-4-31B, so the judge graded
+    text its own model had just produced — and approved a self-review
+    deliberation dump at 95/100 that a different judge scored 25 on."""
+
+    def _qa(self, **settings):
+        from modules.content.multi_model_qa import MultiModelQA
+        from services.site_config import SiteConfig
+
+        return MultiModelQA(
+            site_config=SiteConfig(initial_config=dict(settings)),
+            platform=None,
+        )
+
+    def _reset(self):
+        import modules.content.multi_model_qa as mq
+        mq._CRITIC_COLLISIONS_SEEN.clear()
+
+    def test_collision_with_self_review_pin_emits_finding(self, monkeypatch):
+        self._reset()
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        qa = self._qa(
+            pipeline_writer_model="anthropic/claude-sonnet-5",
+            writer_self_review_model="ollama/gemma-4-31B-it-qat:latest",
+        )
+        qa._warn_on_critic_collision("ollama/gemma-4-31B-it-qat:latest", site="critic")
+
+        assert [f["kind"] for f in findings] == ["critic_model_collision"]
+        assert findings[0]["extra"]["collides_with"] == "writer_self_review_model"
+
+    def test_prefix_and_case_differences_still_collide(self, monkeypatch):
+        """``ollama/`` prefix and case must not hide a real collision."""
+        self._reset()
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        qa = self._qa(writer_self_review_model="Gemma-4-31B-IT-QAT:latest")
+        qa._warn_on_critic_collision("ollama/gemma-4-31b-it-qat:latest", site="critic")
+        assert len(findings) == 1
+
+    def test_distinct_models_stay_silent(self, monkeypatch):
+        self._reset()
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        qa = self._qa(
+            pipeline_writer_model="anthropic/claude-sonnet-5",
+            writer_self_review_model="ollama/qwen3-vl:30b",
+        )
+        qa._warn_on_critic_collision("ollama/gemma-4-31B-it-qat:latest", site="critic")
+        assert findings == []
+
+    def test_finding_dedups_per_pair(self, monkeypatch):
+        """One page per (critic, pin) pair — not one per review."""
+        self._reset()
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        qa = self._qa(writer_self_review_model="ollama/gemma-4-31B-it-qat:latest")
+        for _ in range(5):
+            qa._warn_on_critic_collision("gemma-4-31B-it-qat:latest", site="critic")
+        assert len(findings) == 1

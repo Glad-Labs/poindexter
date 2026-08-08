@@ -76,6 +76,9 @@ def _sc(writer_self_review_model: str) -> MagicMock:
 
     sc.get.side_effect = _get
     sc.get_int.return_value = 1500  # timeouts + max_tokens; value is irrelevant here
+    # Minimal-edit bounds (poindexter#1000) — real floats, not a MagicMock, or
+    # the ratio comparison raises and the stage degrades to "keep original".
+    sc.get_float.side_effect = lambda key, default=0.0: default
     return sc
 
 

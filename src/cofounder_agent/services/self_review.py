@@ -106,6 +106,42 @@ async def _resolve_self_review_model(
     )
 
 
+def _emit_rejected_finding(model: str, reason: str) -> None:
+    """Best-effort visibility when a self-review revision is discarded.
+
+    Silence here is what let the same producer bug recur six times between
+    2026-07-04 and 2026-08-07 before anyone looked (poindexter#1000) — the
+    stage degraded to a no-op on some runs and corrupted the draft on
+    others, and neither outcome surfaced anywhere.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.self_review",
+            kind="self_review_revision_rejected",
+            title=f"writer_self_review revision from {model!r} was discarded",
+            body=(
+                f"The contradiction-revise pass returned output that failed "
+                f"the minimal-edit contract ({reason}), so the ORIGINAL draft "
+                f"was kept. A revise pass is supposed to edit sentences, not "
+                f"restructure the article or narrate its own reasoning — this "
+                f"usually means the reviser model leaked its brief/"
+                f"deliberation instead of emitting the revised draft "
+                f"(Glad-Labs/poindexter#1000). Recurrence means "
+                f"`writer_self_review_model` ({model!r}) is a poor fit for "
+                f"this instruction-following task; consider repointing it or "
+                f"disabling `enable_writer_self_review`."
+            ),
+            severity="warn",
+            dedup_key=f"self_review_revision_rejected:{model}",
+            extra={"model": model, "reason": reason},
+        )
+    except Exception:  # noqa: BLE001 — observability must never break the stage
+        # silent-ok: the finding is best-effort; the draft is already safe
+        pass
+
+
 async def self_review_and_revise(
     draft: str, title: str, topic: str, *, pool: Any = None,
     site_config: SiteConfig,
@@ -267,9 +303,56 @@ async def self_review_and_revise(
         )
         revised_text = (revised.text or "").strip()
 
-        # Guard: revision must be a reasonable length — thinking-model fallthroughs
-        # can return near-empty strings even on long input.
-        if len(revised_text) >= int(0.7 * len(draft)):
+        # Scrub reasoning/scaffold the reviser may have prepended before the
+        # article. This path NEVER re-enters content.normalize_draft (the
+        # graph runs normalize_draft BEFORE writer_self_review), so the strip
+        # has to happen here — the same reason qa.rewrite carries its own
+        # (poindexter#897). poindexter#1000: without it, a gemma-4-31B revise
+        # pass shipped 87 lines of "Role: Reviewer…/Wait, let me re-read…"
+        # with the article fused onto the last bullet, and it rode all the
+        # way to awaiting_approval at quality 94.
+        if revised_text:
+            # Substrate reaches content through the api adapter, never a deep
+            # import (the modules/content/api.py boundary).
+            from modules.content.api import strip_leaked_planning_scaffold
+            from services.llm_providers.thinking_models import (
+                strip_reasoning_artifacts,
+            )
+
+            cleaned = strip_leaked_planning_scaffold(
+                strip_reasoning_artifacts(revised_text)
+            ).strip()
+            if len(cleaned) != len(revised_text):
+                logger.info(
+                    "[SELF_REVIEW] stripped %d chars of leaked reasoning/"
+                    "scaffold from the revision",
+                    len(revised_text) - len(cleaned),
+                )
+                revised_text = cleaned
+
+        # Minimal-edit contract (poindexter#1000). A contradiction fix edits
+        # sentences; it does not restructure or triple the article. Bound the
+        # revision on BOTH sides — the old guard had only a floor, so a 3x
+        # deliberation dump (13,567 chars from a ~4,400-char draft) sailed
+        # through — and reject outright when the result reads as a planning /
+        # deliberation dump. Rejecting keeps the ORIGINAL draft, which is the
+        # correct outcome regardless of what the reviser returned.
+        min_ratio = _sc.get_float("writer_self_review_min_length_ratio", 0.7)
+        max_ratio = _sc.get_float("writer_self_review_max_length_ratio", 1.3)
+        ratio = (len(revised_text) / len(draft)) if draft else 0.0
+        reject_reason: str | None = None
+        if ratio < min_ratio:
+            reject_reason = f"too short (ratio {ratio:.2f} < {min_ratio})"
+        elif ratio > max_ratio:
+            reject_reason = f"too long (ratio {ratio:.2f} > {max_ratio})"
+        else:
+            from modules.content.api import has_planning_dump
+
+            dump = has_planning_dump(revised_text)
+            if dump:
+                reject_reason = "scaffold/deliberation dump (" + ", ".join(dump[:3]) + ")"
+
+        if reject_reason is None:
             stats["revised"] = True
             logger.info(
                 "[SELF_REVIEW] Revised draft: %d contradictions found, %d chars in/%d out",
@@ -277,10 +360,13 @@ async def self_review_and_revise(
             )
             return revised_text, stats
 
+        stats["rejected_reason"] = reject_reason
         logger.warning(
-            "[SELF_REVIEW] Revision too short (%d chars), keeping original (%d chars)",
-            len(revised_text), len(draft),
+            "[SELF_REVIEW] Revision REJECTED — %s; keeping original (%d chars, "
+            "model=%s)",
+            reject_reason, len(draft), review_model,
         )
+        _emit_rejected_finding(review_model, reject_reason)
     except Exception as e:
         logger.warning("[SELF_REVIEW] Self-review failed (non-fatal): %s", e)
 

@@ -335,6 +335,25 @@ def build_review_excerpt(content: str, max_chars: int) -> tuple[str, bool]:
     return excerpt + "\n\n" + REVIEW_EXCERPT_MARKER, True
 
 
+# Writer-family pins the critic must stay DISTINCT from. `_resolve_critic_model`
+# historically guarded only against ``pipeline_writer_model``, which left the
+# SATELLITE writer paths uncovered: on 2026-08-07 ``pipeline_critic_model`` and
+# ``writer_self_review_model`` were both ``gemma-4-31B-it-qat``, so the judge
+# graded text its own model had just produced — and approved a self-review
+# deliberation dump at 95/100 that a different judge had scored 25 on the same
+# shape a week earlier (Glad-Labs/poindexter#1000).
+_WRITER_FAMILY_PINS: tuple[str, ...] = (
+    "pipeline_writer_model",
+    "pipeline_local_writer_model",
+    "writer_self_review_model",
+    "qa_rewrite_model",
+)
+
+# Process-local dedup so the collision finding fires once per
+# (critic, colliding-pin) pair rather than once per review.
+_CRITIC_COLLISIONS_SEEN: set[tuple[str, str]] = set()
+
+
 class MultiModelQA:
     """Multi-model quality assurance for content pipeline.
 
@@ -524,6 +543,53 @@ class MultiModelQA:
             )
         return review
 
+    def _warn_on_critic_collision(self, critic_model: str, *, site: str) -> None:
+        """Emit a ``critic_model_collision`` finding when the resolved critic
+        equals any writer-family pin — adversarial QA has degenerated into
+        self-review on that path and the operator should hear about it
+        (Glad-Labs/poindexter#1000, ``feedback_flag_quality_downgrades``)."""
+        try:
+            cfg = self._site_config
+            if cfg is None:
+                return
+            norm = critic_model.strip().removeprefix("ollama/").lower()
+            for key in _WRITER_FAMILY_PINS:
+                pin = (cfg.get(key, "") or "").strip().removeprefix("ollama/").lower()
+                if not pin or pin != norm:
+                    continue
+                if (norm, key) in _CRITIC_COLLISIONS_SEEN:
+                    continue
+                _CRITIC_COLLISIONS_SEEN.add((norm, key))
+                from utils.findings import emit_finding
+
+                emit_finding(
+                    source="modules.content.multi_model_qa",
+                    kind="critic_model_collision",
+                    title=(
+                        f"QA critic and {key} are the same model "
+                        f"({critic_model!r}) — adversarial QA is now self-review"
+                    ),
+                    body=(
+                        f"`pipeline_critic_model` resolved to {critic_model!r}, "
+                        f"which is also `{key}`. The critic pin exists so the "
+                        f"judge never grades its own model's output; when they "
+                        f"match, the reviewer is measurably blind to that "
+                        f"producer's failure modes (poindexter#1000: a "
+                        f"self-review deliberation dump scored 95/100 from the "
+                        f"colliding judge and 25/100 from a different one). "
+                        f"Repoint one of the two, then re-run `poindexter "
+                        f"model-eval run --slot critic` to confirm the judge "
+                        f"still discriminates."
+                    ),
+                    severity="warn",
+                    dedup_key=f"critic_model_collision:{norm}:{key}",
+                    extra={"critic_model": critic_model, "collides_with": key,
+                           "site": site},
+                )
+        except Exception:  # noqa: BLE001 — observability never breaks QA
+            # silent-ok: the collision warning is advisory
+            pass
+
     async def _resolve_critic_model(
         self,
         *,
@@ -565,6 +631,7 @@ class MultiModelQA:
         except Exception:  # noqa: BLE001 — settings hiccup → fall through
             dedicated = None
         if dedicated:
+            self._warn_on_critic_collision(dedicated, site=site)
             return dedicated
         # 1. Per-call-site fallback (e.g. qa_fallback_critic_model).
         fallback: str | None = None
