@@ -2,7 +2,7 @@
 # (continuous profiling), langfuse-worker (LLM trace processing),
 # glitchtip-worker (error ingest).
 #
-# Closes the monitoring blind spot in Glad-Labs/glad-labs-stack#1154: these
+# Closes the monitoring blind spot in Glad-Labs/poindexter#1154: these
 # async sidecars had no liveness signal, so a silent crash went unnoticed
 # until someone happened to read the logs. The three operational axes
 # (logs / LLM traces / runtime errors) are `severity: critical` (issue
