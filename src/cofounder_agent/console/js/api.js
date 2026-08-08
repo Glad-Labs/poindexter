@@ -1343,13 +1343,15 @@
     // status_counts:{status→n}} — filterable by post_id/task_id/status and
     // paged by limit (default 50, max 500) / offset. Each draft returns id,
     // pipeline_task_id, post_id, platform, content, platform_config, status,
-    // postiz_post_id, error, retry_count, title, resolved_post_id, and three
-    // timestamps (created_at / approved_at / posted_at). Per-post +
-    // per-platform granularity the aggregate Prometheus counters can't
-    // provide. `drafts` is a capped window, so read status_counts/total for
-    // any count — they span the whole table. Pending/failed rows sort ahead
-    // of created_at DESC, so the cap only ever drops posted/rejected
-    // tombstones. Mock returns honest-empty (no fabricated draft rows).
+    // postiz_post_id, error, retry_count, title, resolved_post_id, and four
+    // timestamps (created_at / approved_at / posted_at / scheduled_at).
+    // Per-post + per-platform granularity the aggregate Prometheus counters
+    // can't provide. `drafts` is a capped window, so read status_counts/total
+    // for any count — they span the whole table. Live rows
+    // (pending/scheduled/failed) sort ahead of created_at DESC, so the cap
+    // only ever drops posted/rejected tombstones. Status 'scheduled' means
+    // queued to fire at scheduled_at (UTC), not awaiting review.
+    // Mock returns honest-empty (no fabricated draft rows).
     socialDrafts(params = '') {
       return pick(
         () => http('GET', '/api/social/drafts' + params),
@@ -1357,15 +1359,19 @@
       );
     },
 
-    // POST /api/social/drafts/{id}/approve — enqueues the draft for Postiz
-    //   /api/social/drafts/{id}/reject  — marks rejected (won't retry)
-    // action is literally 'approve' or 'reject'.
-    socialDraftAction(draftId, action) {
+    // POST /api/social/drafts/{id}/approve    — posts via Postiz now
+    //   /api/social/drafts/{id}/reject      — marks rejected (won't retry)
+    //   /api/social/drafts/{id}/unschedule  — pulls it back to pending
+    // action is 'approve', 'reject', or 'unschedule'. `body` carries the
+    // payload for actions that take one (schedule's {when, force}); the
+    // bodyless actions pass undefined, matching the previous signature.
+    socialDraftAction(draftId, action, body) {
       return pick(
         () =>
           http(
             'POST',
-            `/api/social/drafts/${encodeURIComponent(draftId)}/${action}`
+            `/api/social/drafts/${encodeURIComponent(draftId)}/${action}`,
+            body
           ),
         () => ({ ok: true })
       );

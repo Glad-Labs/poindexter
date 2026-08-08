@@ -8,9 +8,10 @@ exercised without a live database.
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -692,3 +693,64 @@ class TestClear:
         cfg = SiteConfig(initial_config={})
         result = await clear(post_ids=["x"], pool=pool, site_config=cfg)
         assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# parse_when — operator-timezone awareness.
+#
+# Clock words are the operator's: "tomorrow 9am" means 9am where they are.
+# The tz argument defaults to UTC so the blog-post callers that predate it
+# keep their exact previous behaviour.
+# ---------------------------------------------------------------------------
+
+def test_parse_when_defaults_to_utc_for_existing_callers():
+    """Backcompat: no tz argument == the pre-existing UTC interpretation."""
+    got = parse_when(
+        "tomorrow 9am", now=datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
+    )
+    assert got == datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc)
+
+
+def test_parse_when_reads_clock_words_in_the_given_zone():
+    ny = ZoneInfo("America/New_York")
+    got = parse_when(
+        "tomorrow 9am",
+        now=datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc),
+        tz=ny,
+    )
+    # 9am EDT (UTC-4 in August) == 13:00Z. Stored UTC, meant local.
+    assert got == datetime(2026, 8, 8, 13, 0, tzinfo=timezone.utc)
+    assert got.astimezone(ny).hour == 9
+
+
+def test_parse_when_anchors_relative_dates_to_the_local_calendar_day():
+    """The trap this closes: at 21:00 in New York it is ALREADY tomorrow in
+    UTC, so a UTC-anchored "tomorrow" silently lands a day early."""
+    ny = ZoneInfo("America/New_York")
+    # 2026-08-08 01:00Z == 2026-08-07 21:00 EDT — still the 7th locally.
+    now = datetime(2026, 8, 8, 1, 0, tzinfo=timezone.utc)
+    got = parse_when("tomorrow 9am", now=now, tz=ny)
+    assert got.astimezone(ny).date() == date(2026, 8, 8)
+
+
+def test_parse_when_reads_naive_iso_as_local_to_the_zone():
+    """Someone typing '2026-08-09 09:00' with no offset means their own 9am."""
+    ny = ZoneInfo("America/New_York")
+    got = parse_when("2026-08-09 09:00", tz=ny)
+    assert got.astimezone(ny).hour == 9
+    assert got == datetime(2026, 8, 9, 13, 0, tzinfo=timezone.utc)
+
+
+def test_parse_when_lets_an_explicit_offset_win_over_tz():
+    got = parse_when("2026-08-09T09:00+02:00", tz=ZoneInfo("America/New_York"))
+    assert got == datetime(2026, 8, 9, 7, 0, tzinfo=timezone.utc)
+
+
+def test_parse_when_next_weekday_uses_the_local_week():
+    ny = ZoneInfo("America/New_York")
+    # Friday 2026-08-07 21:00 EDT (Saturday 01:00Z) — "next monday" is the 10th.
+    now = datetime(2026, 8, 8, 1, 0, tzinfo=timezone.utc)
+    got = parse_when("next monday 14:00", now=now, tz=ny)
+    local = got.astimezone(ny)
+    assert local.date() == date(2026, 8, 10)
+    assert local.hour == 14

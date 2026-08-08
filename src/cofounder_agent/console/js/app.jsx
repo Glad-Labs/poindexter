@@ -1325,6 +1325,82 @@ function App() {
         pushToast(`Social reject failed — ${err.message}`, 'red', '✕');
       }
     },
+
+    // ── Social draft schedule / unschedule ─────────────────
+    // The time is typed, not picked: the backend accepts 'tomorrow 9am' /
+    // 'next monday 14:00' / ISO, so a prompt beats shipping a date-picker
+    // widget that can express less than the string parser already does.
+    // No optimistic removal here — unlike approve/reject, the row STAYS in
+    // the table (status pending → scheduled), so it just gets refetched.
+    socialScheduleDraft: async (itemOrDraft) => {
+      const draft =
+        (itemOrDraft.detail && itemOrDraft.detail.draft) || itemOrDraft;
+      const when = window.prompt(
+        `When should the ${draft.platform} promo go out?\n` +
+          `e.g. "tomorrow 9am", "next monday 14:00", "2026-08-09 09:00"`,
+        draft.scheduled_at || 'tomorrow 9am'
+      );
+      if (!when) return;
+      try {
+        // The server resolves the spec, so the authoritative slot comes back
+        // in the response rather than being guessed here.
+        const res = await PX.api.socialDraftAction(draft.id, 'schedule', {
+          when,
+        });
+        setSocial((s) => ({
+          ...s,
+          drafts: (s.drafts || []).map((x) =>
+            x.id === draft.id
+              ? {
+                  ...x,
+                  status: 'scheduled',
+                  scheduled_at: (res && res.scheduled_at) || null,
+                }
+              : x
+          ),
+        }));
+        // It's decided — it no longer belongs in the "act on this now" list.
+        setInbox((prev) => prev.filter((i) => i.id !== draft.id));
+        closeDrawer();
+        pushToast(`${draft.platform} draft scheduled`, 'cyan', '⏱');
+        pushFeed(
+          ['cyan', 'SOCIAL'],
+          `operator scheduled <b>${escHtml(draft.platform)}</b> draft · ` +
+            `${escHtml(when)}`
+        );
+      } catch (err) {
+        // 409 carries the reason (past time, unparseable, wrong status).
+        pushToast(`Schedule failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    socialUnscheduleDraft: async (itemOrDraft) => {
+      const draft =
+        (itemOrDraft.detail && itemOrDraft.detail.draft) || itemOrDraft;
+      const prevSocial = social;
+      setSocial((s) => ({
+        ...s,
+        drafts: (s.drafts || []).map((x) =>
+          x.id === draft.id
+            ? { ...x, status: 'pending', scheduled_at: null }
+            : x
+        ),
+      }));
+      try {
+        await PX.api.socialDraftAction(draft.id, 'unschedule');
+        pushToast(
+          `${draft.platform} draft unscheduled — back to pending`,
+          'amber',
+          '⚠'
+        );
+        pushFeed(
+          ['amber', 'SOCIAL'],
+          `operator unscheduled <b>${escHtml(draft.platform)}</b> draft`
+        );
+      } catch (err) {
+        setSocial(prevSocial);
+        pushToast(`Unschedule failed — ${err.message}`, 'red', '✕');
+      }
+    },
   };
 
   const open = (type, data, extra) => setEntity({ type, data, ...extra });
@@ -1727,6 +1803,8 @@ function App() {
                   social={social}
                   onApprove={A.socialApproveDraft}
                   onReject={A.socialRejectDraft}
+                  onSchedule={A.socialScheduleDraft}
+                  onUnschedule={A.socialUnscheduleDraft}
                 />
               </div>
               <div id="sec-newsletter">

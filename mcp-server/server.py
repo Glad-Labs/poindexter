@@ -1473,10 +1473,13 @@ async def list_social_drafts(
 
     Returns a capped page (limit 1-500, default 50) plus `total` and
     `status_counts` spanning the whole table — count from those, not from the
-    returned `drafts` array, which is only the window. Drafts awaiting a
-    decision (pending/failed) always sort first, so the cap only ever hides
+    returned `drafts` array, which is only the window. Live drafts
+    (pending/scheduled/failed) always sort first, so the cap only ever hides
     posted/rejected history; page through it with `offset` when `total`
     exceeds what came back.
+
+    Status `scheduled` means the draft is queued to post at its
+    `scheduled_at` (UTC) — decided, awaiting its slot, not awaiting review.
     """
     params: list[str] = []
     if post_id:
@@ -1511,6 +1514,41 @@ async def reject_social_draft(draft_id: str) -> str:
 async def edit_social_draft(draft_id: str, content: str) -> str:
     """Edit the copy of a social post draft before approving it."""
     result = await _api("PATCH", f"/api/social/drafts/{draft_id}", {"content": content})
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def schedule_social_draft(
+    draft_id: str, when: str, force: bool = False
+) -> str:
+    """Queue a social draft to post at a given time instead of immediately.
+
+    `when` accepts 'tomorrow 9am', 'next monday 14:00', or ISO 8601
+    ('2026-08-09 09:00'), interpreted in the operator's timezone.
+
+    The promoted blog post does not need to be published yet — the publish
+    gate is re-checked when the slot arrives, so a post that still isn't live
+    holds its place rather than promoting a link that 404s.
+
+    Refuses a time in the past unless `force=True` (which queues it for the
+    next sweep, i.e. within a minute).
+    """
+    result = await _api(
+        "POST",
+        f"/api/social/drafts/{draft_id}/schedule",
+        {"when": when, "force": force},
+    )
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def unschedule_social_draft(draft_id: str) -> str:
+    """Pull a scheduled social draft out of the queue, back to pending.
+
+    "Not at that time" rather than "not at all" — use reject_social_draft to
+    discard it outright.
+    """
+    result = await _api("POST", f"/api/social/drafts/{draft_id}/unschedule")
     return json.dumps(result)
 
 

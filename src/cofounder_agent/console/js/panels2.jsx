@@ -15,6 +15,9 @@
 const SOCIAL_STATUS_TAG = {
   pending: 'amber',
   approved: 'cyan',
+  // Decided and waiting on its slot — not amber, because it is not asking
+  // the operator for anything.
+  scheduled: 'cyan',
   posted: 'mint',
   failed: 'red',
   rejected: 'red',
@@ -34,12 +37,32 @@ const SOCIAL_PLAT_TAG = {
 const SOCIAL_FILTERS = [
   ['all', 'All'],
   ['pending', 'Pending'],
+  ['scheduled', 'Scheduled'],
   ['approved', 'Approved'],
   ['posted', 'Posted'],
   ['failed', 'Failed'],
   ['rejected', 'Rejected'],
 ];
-function SocialPanel({ social, onApprove, onReject }) {
+// Render a fire time in the viewer's locale. Stored UTC, shown local — the
+// same store-UTC/present-local split the backend uses.
+function formatSlot(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+function SocialPanel({
+  social,
+  onApprove,
+  onReject,
+  onSchedule,
+  onUnschedule,
+}) {
   const PX = window.PX;
   const [filter, setFilter] = React.useState('all');
   const drafts = (social && social.drafts) || [];
@@ -51,8 +74,9 @@ function SocialPanel({ social, onApprove, onReject }) {
   //     control, so its number must predict what clicking it shows, and the
   //     filter applies client-side to the page.
   // They agree until the page is truncated, and truncation can only ever drop
-  // posted/rejected tombstones (the server sorts pending/failed first), so the
-  // numbers an operator acts on never diverge. `withheld` reconciles the two.
+  // posted/rejected tombstones (the server sorts live rows —
+  // pending/scheduled/failed — first), so the numbers an operator acts on
+  // never diverge. `withheld` reconciles the two.
   const counts =
     (social && social.status_counts) ||
     drafts.reduce((a, d) => ((a[d.status] = (a[d.status] || 0) + 1), a), {});
@@ -63,6 +87,7 @@ function SocialPanel({ social, onApprove, onReject }) {
     {}
   );
   const pending = counts.pending || 0;
+  const scheduled = counts.scheduled || 0;
   const posted = counts.posted || 0;
   const failed = counts.failed || 0;
   const withheld = Math.max(0, total - drafts.length);
@@ -72,7 +97,7 @@ function SocialPanel({ social, onApprove, onReject }) {
     <Panel
       icon="pulse"
       title="SOCIAL DISTRIBUTION"
-      meta={`${pending} PENDING · ${posted} POSTED · ${failed} FAILED`}
+      meta={`${pending} PENDING · ${scheduled} QUEUED · ${posted} POSTED · ${failed} FAILED`}
       flush
     >
       <div
@@ -93,6 +118,14 @@ function SocialPanel({ social, onApprove, onReject }) {
           </span>
           <div className="mono c-dim" style={{ fontSize: 10 }}>
             pending approval
+          </div>
+        </div>
+        <div>
+          <span className="kpi__value is-cyan" style={{ fontSize: 26 }}>
+            {scheduled}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            queued
           </div>
         </div>
         <div>
@@ -152,8 +185,9 @@ function SocialPanel({ social, onApprove, onReject }) {
               style={{ fontSize: 10, marginLeft: 'auto', alignSelf: 'center' }}
               title={
                 'Older posted/rejected drafts beyond the fetch limit. ' +
-                'Pending and failed drafts always sort first, so nothing ' +
-                'awaiting a decision is hidden here.'
+                'Pending, scheduled and failed drafts always sort first, ' +
+                'so nothing awaiting a decision — or awaiting its slot — ' +
+                'is hidden here.'
               }
             >
               +{withheld} older not shown
@@ -186,6 +220,7 @@ function SocialPanel({ social, onApprove, onReject }) {
                   'Platform',
                   'Status',
                   'Article',
+                  'Scheduled',
                   'Error',
                   'Retries',
                   'Postiz ID',
@@ -228,6 +263,13 @@ function SocialPanel({ social, onApprove, onReject }) {
                     </div>
                   </td>
                   <td
+                    className="mono c-dim"
+                    style={{ fontSize: 10, whiteSpace: 'nowrap' }}
+                    title={d.scheduled_at || ''}
+                  >
+                    {formatSlot(d.scheduled_at)}
+                  </td>
+                  <td
                     className="truncate"
                     style={{
                       maxWidth: 180,
@@ -267,8 +309,45 @@ function SocialPanel({ social, onApprove, onReject }) {
                         <button
                           className="mbtn mbtn--ghost"
                           style={{ padding: '2px 6px', fontSize: 10 }}
+                          onClick={() => onSchedule && onSchedule(d)}
+                          title="Schedule for later"
+                        >
+                          <Icon name="clock" size={10} />
+                        </button>
+                        <button
+                          className="mbtn mbtn--ghost"
+                          style={{ padding: '2px 6px', fontSize: 10 }}
                           onClick={() => onReject && onReject(d)}
                           title="Reject"
+                        >
+                          <Icon name="x" size={10} />
+                        </button>
+                      </div>
+                    )}
+                    {d.status === 'scheduled' && (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          className="mbtn mbtn--ghost"
+                          style={{ padding: '2px 8px', fontSize: 10 }}
+                          onClick={() => onApprove && onApprove(d)}
+                          title="Skip the wait and post now"
+                        >
+                          <Icon name="check" size={10} />
+                          Now
+                        </button>
+                        <button
+                          className="mbtn mbtn--ghost"
+                          style={{ padding: '2px 6px', fontSize: 10 }}
+                          onClick={() => onSchedule && onSchedule(d)}
+                          title="Change the time"
+                        >
+                          <Icon name="clock" size={10} />
+                        </button>
+                        <button
+                          className="mbtn mbtn--ghost"
+                          style={{ padding: '2px 6px', fontSize: 10 }}
+                          onClick={() => onUnschedule && onUnschedule(d)}
+                          title="Cancel the schedule (back to pending)"
                         >
                           <Icon name="x" size={10} />
                         </button>

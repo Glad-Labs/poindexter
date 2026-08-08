@@ -3229,6 +3229,42 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'social_x_handle': '',
     'social_x_url': '',
 
+    # --- Social scheduling (the local queue that replaces the Postiz UI) ---
+    # A draft carries a fire time in social_post_drafts.scheduled_at;
+    # ScheduleSocialDraftsJob approves it when that time arrives, re-running
+    # approve_draft's publish gate at the moment of posting.
+    #
+    # Auto-drip: when enabled, a draft whose blog post has gone live is
+    # assigned a slot automatically instead of waiting on a per-draft
+    # decision. OFF by default, and deliberately so — enabling it means
+    # LLM-written social copy ships on the strength of the POST's approval
+    # rather than its own. Operators who want to read every promo first
+    # leave this false and schedule by hand.
+    'social_schedule_enabled': 'false',
+    # Per-platform delay from the post going live, as
+    # `platform=duration` pairs (durations in the 30m/2h/1d form
+    # services.scheduling_service.parse_duration accepts). A platform absent
+    # from this map is never auto-slotted — that is the opt-in seam, so the
+    # default of empty auto-slots nothing even when the switch above is on.
+    # Staggering matters: the same link on five platforms in the same minute
+    # reads as a bot to both humans and the platforms' own spam heuristics.
+    # Example: 'twitter=0m,bluesky=15m,linkedin=3h,reddit=1d'
+    'social_schedule_offsets': '',
+    # Quiet window (HH:MM-HH:MM, operator-local) in which no promo fires; a
+    # slot landing inside it moves to the window's end. Empty = no
+    # restriction. Separate from publish_quiet_hours because the blog and
+    # the social feeds have different good hours.
+    'social_schedule_quiet_hours': '',
+    # Grace period for a due draft whose worker was down at fire time. Within
+    # it the promo still goes out (late); past it the draft is left scheduled
+    # and surfaced as overdue rather than firing a post about something that
+    # is no longer news. Empty-string would be ambiguous here, so this is a
+    # plain integer.
+    'social_schedule_max_lateness_minutes': '180',
+    # Max drafts one due-sweep fires. Bounds the Postiz call burst when a
+    # backlog drains (e.g. after the worker was down through several slots).
+    'social_schedule_fire_batch_size': '10',
+
 }
 
 
@@ -4149,6 +4185,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'social_draft_platforms': {'owner': 'social_generate_drafts'},
     'social_drafts_enabled': {'value_type': 'boolean'},
     'social_reddit_subreddits': {'owner': 'social_generate_drafts'},
+    'social_schedule_enabled': {'owner': 'schedule_social_drafts', 'value_type': 'boolean'},
+    'social_schedule_fire_batch_size': {'owner': 'schedule_social_drafts', 'value_type': 'integer'},
+    'social_schedule_max_lateness_minutes': {'owner': 'schedule_social_drafts', 'value_type': 'integer'},
+    'social_schedule_offsets': {'owner': 'schedule_social_drafts'},
+    'social_schedule_quiet_hours': {'owner': 'schedule_social_drafts'},
     'social_x_made_with_ai': {'owner': 'social_drafts', 'value_type': 'boolean'},
     'stable_audio_open_server_url': {'owner': 'stable_audio_open'},
     'storage_image_custom_domain': {'owner': 'r2_upload_service'},

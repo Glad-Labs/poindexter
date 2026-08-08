@@ -6,13 +6,17 @@ policy is deliberately scoped to ``status = 'rejected'`` and must stay that way.
 
 The hazard is subtle enough to be worth a test rather than a comment.
 ``create_draft``'s dedup guard and ``existing_draft_keys`` both treat
-``pending``/``failed``/**``posted``** as *live* keys — that is what stops a
-finalize re-run (preview_gate regen, checkpoint restore, task retry) from
-regenerating a promo that already went out (poindexter#833, where the same
-promo posted three times). Prune a ``posted`` row and its key looks fresh
-again, so the promo can be regenerated and **re-posted to a live audience**.
-``approve_draft``'s publish-gate is no help: the post is genuinely published,
-so the duplicate sails through.
+``social_drafts._KEY_HELD_STATUSES`` — pending/scheduled/failed/**posted** —
+as *live* keys; that is what stops a finalize re-run (preview_gate regen,
+checkpoint restore, task retry) from regenerating a promo that already went
+out (poindexter#833, where the same promo posted three times). Prune a
+``posted`` row and its key looks fresh again, so the promo can be regenerated
+and **re-posted to a live audience**. ``approve_draft``'s publish-gate is no
+help: the post is genuinely published, so the duplicate sails through.
+
+The prune-safety test reads ``_KEY_HELD_STATUSES`` directly rather than
+grepping for a SQL literal, so a status added to the live set is covered here
+the moment it is added — which is how ``scheduled`` got covered.
 
 ``rejected`` carries no such coupling — it is already excluded from both
 guards, so pruning it is provably inert. Verified empirically against prod
@@ -41,8 +45,10 @@ _SERVICE = (
 )
 
 # Statuses that are NEVER safe to prune, because a surviving row of this status
-# is what suppresses regeneration of its (task, platform, subreddit) key.
-_KEY_HOLDING_STATUSES = ("pending", "failed", "posted")
+# is what suppresses regeneration of its (task, platform, subreddit) key. Read
+# from the service so the two can't drift: a status added to the live-key set
+# is automatically covered by the prune-safety test below.
+from services.social_drafts import _KEY_HELD_STATUSES as _KEY_HOLDING_STATUSES
 
 
 def _policy_line() -> str:
@@ -98,16 +104,40 @@ def test_dedup_guard_still_treats_posted_as_live():
     premise changes and the retention filter should be revisited — better to
     fail here than to silently drift apart.
     """
+    assert "posted" in _KEY_HOLDING_STATUSES, (
+        "posted left the live-key set — pruning a posted row would now free "
+        "its key, so re-check the retention filter"
+    )
+
+
+def test_both_guards_read_the_shared_live_key_set():
+    """create_draft and existing_draft_keys must not re-inline the statuses.
+
+    They previously carried the literal ``'pending', 'failed', 'posted'``
+    twice; a status added to one and not the other is precisely the drift
+    that re-opens poindexter#833.
+    """
     source = _SERVICE.read_text(encoding="utf-8")
-    assert source.count("'pending', 'failed', 'posted'") >= 2, (
-        "create_draft / existing_draft_keys no longer share the "
-        "pending/failed/posted live-key set — re-check the retention filter"
+    assert source.count("_KEY_HELD_STATUSES") >= 3, (
+        "create_draft / existing_draft_keys should both bind "
+        "_KEY_HELD_STATUSES rather than inlining a status list"
     )
 
 
 def test_rejected_is_excluded_from_the_dedup_guard():
     """Why pruning rejected is inert: the guard never looks at those rows."""
-    source = _SERVICE.read_text(encoding="utf-8")
-    assert "'pending', 'failed', 'posted', 'rejected'" not in source, (
+    assert "rejected" not in _KEY_HOLDING_STATUSES, (
         "rejected joined the live-key set — pruning it would now free keys"
+    )
+
+
+def test_scheduled_is_a_live_key():
+    """A queued promo holds its key just as firmly as a pending one.
+
+    Without this, a finalize re-run sees the key as free, inserts a second
+    draft, and both eventually post — poindexter#833 with extra steps.
+    """
+    assert "scheduled" in _KEY_HOLDING_STATUSES, (
+        "scheduled must hold its (task, platform, subreddit) key — a draft "
+        "with a fire time on it is a live commitment"
     )

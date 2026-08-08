@@ -30,6 +30,11 @@ class EditDraftRequest(BaseModel):
     platform_config: dict[str, Any] | None = None
 
 
+class ScheduleDraftRequest(BaseModel):
+    when: str
+    force: bool = False
+
+
 @router.get("/drafts")
 async def list_drafts(
     post_id: str | None = Query(None),
@@ -82,6 +87,41 @@ async def approve_draft(
     return result
 
 
+@router.post("/drafts/{draft_id}/schedule")
+async def schedule_draft(
+    draft_id: str,
+    body: ScheduleDraftRequest,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Queue a draft to post at a given time instead of immediately.
+
+    ``when`` accepts what ``scheduling_service.parse_when`` does — "tomorrow
+    9am", "next monday 14:00", ISO 8601 — read in the operator's timezone.
+    """
+    result = await _svc.schedule_draft(
+        draft_id, body.when, db_service.pool, site_config, force=body.force
+    )
+    if not result.get("success"):
+        # Same contract as approve: the console only inspects the status code,
+        # so a refusal (past time, wrong status, unparseable spec) has to be
+        # non-2xx or it reads as a silent success.
+        raise HTTPException(status_code=409, detail=result.get("error"))
+    return result
+
+
+@router.post("/drafts/{draft_id}/unschedule")
+async def unschedule_draft(
+    draft_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+) -> dict[str, Any]:
+    """Pull a draft out of the queue, returning it to ``pending``."""
+    result = await _svc.unschedule_draft(draft_id, db_service.pool)
+    if not result.get("success"):
+        raise HTTPException(status_code=409, detail=result.get("error"))
+    return result
+
+
 @router.post("/drafts/{draft_id}/reject")
 async def reject_draft(
     draft_id: str,
@@ -117,6 +157,7 @@ def _serialize(d: SocialDraftRow) -> dict[str, Any]:
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "approved_at": d.approved_at.isoformat() if d.approved_at else None,
         "posted_at": d.posted_at.isoformat() if d.posted_at else None,
+        "scheduled_at": d.scheduled_at.isoformat() if d.scheduled_at else None,
         "title": d.title,
         "resolved_post_id": d.resolved_post_id,
     }

@@ -52,7 +52,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone, tzinfo
 from typing import Any
 
 from services.audit_log import audit_log_bg
@@ -179,6 +179,7 @@ def parse_when(
     value: str | datetime,
     *,
     now: datetime | None = None,
+    tz: tzinfo | None = None,
 ) -> datetime:
     """Parse an absolute or relative time spec into a tz-aware datetime.
 
@@ -192,25 +193,41 @@ def parse_when(
 
     The optional ``now`` argument lets tests inject a deterministic
     reference. Always returns a UTC-aware datetime.
+
+    ``tz`` is the zone the operator's *clock words* are read in — "tomorrow
+    9am" means 9am where they are, not 9am UTC. It also anchors "tomorrow"
+    and "next monday" to the local calendar day, which is a different date
+    than the UTC one for part of every day. Defaults to UTC, so existing
+    callers (blog-post scheduling) keep their exact previous behaviour;
+    pass ``site_config.timezone`` / ``get_operator_tz(pool)`` for anything
+    an operator typed. A naive ISO string is likewise read as local-to-``tz``
+    — someone writing ``2026-04-28 09:00`` with no offset means their own
+    9am. An ISO string carrying an explicit offset always wins over ``tz``.
     """
+    zone: tzinfo = tz or timezone.utc
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=zone)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Empty/invalid time spec: {value!r}")
 
     raw = value.strip()
-    ref = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    # Resolve relative specs against the LOCAL calendar — at 20:00 in
+    # America/New_York it is already tomorrow in UTC, so anchoring to the UTC
+    # date would silently schedule "tomorrow 9am" a day early.
+    ref = (now or datetime.now(timezone.utc)).astimezone(zone)
 
     # "now"
     if _REL_NOW.match(raw):
-        return ref
+        return ref.astimezone(timezone.utc)
 
     # "tomorrow [time]"
     m = _REL_TOMORROW.match(raw)
     if m:
         clock = _parse_time_of_day(m.group(1))
         target_date = (ref + timedelta(days=1)).date()
-        return datetime.combine(target_date, clock, tzinfo=timezone.utc)
+        return datetime.combine(target_date, clock, tzinfo=zone).astimezone(
+            timezone.utc
+        )
 
     # "next <weekday> [time]"
     m = _REL_NEXT_WEEKDAY.match(raw)
@@ -222,7 +239,9 @@ def parse_when(
         if days_ahead == 0:
             days_ahead = 7
         target_date = (ref + timedelta(days=days_ahead)).date()
-        return datetime.combine(target_date, clock, tzinfo=timezone.utc)
+        return datetime.combine(target_date, clock, tzinfo=zone).astimezone(
+            timezone.utc
+        )
 
     # ISO 8601 with optional space separator.
     iso_candidate = raw.replace(" ", "T", 1)
@@ -234,7 +253,9 @@ def parse_when(
             f"('2026-04-28 09:00'), 'now', 'tomorrow 9am', "
             f"or 'next monday 14:00'."
         ) from e
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    if dt.tzinfo:
+        return dt.astimezone(timezone.utc)
+    return dt.replace(tzinfo=zone).astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +332,23 @@ def _next_allowed(
     if t >= start:
         return same_day_end + timedelta(days=1)
     return same_day_end
+
+
+def next_allowed_time(
+    moment: datetime,
+    window: tuple[time, time] | None,
+) -> datetime:
+    """Public form of :func:`_next_allowed` — push *moment* past *window*.
+
+    ``generate_slots`` covers the evenly-spaced case; callers that compute
+    slots some other way (social scheduling staggers each platform by its
+    own offset, not a uniform interval) still need the quiet-hours skip.
+    Exposed so they don't reach into the private helper.
+
+    NOTE: the window is compared against ``moment``'s own clock reading, so
+    pass a datetime already in the zone the window is written in.
+    """
+    return _next_allowed(moment, window)
 
 
 # ---------------------------------------------------------------------------

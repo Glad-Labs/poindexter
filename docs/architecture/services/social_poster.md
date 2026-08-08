@@ -128,6 +128,9 @@ All from `app_settings` via the injected `SiteConfig`:
 
 - `services.social_drafts` / `services.integrations.postiz_client` — the
   distribution path (drafts → approve → Postiz).
+- [`docs/architecture/social-post-scheduling.md`](../social-post-scheduling.md)
+  — the local schedule queue that times those drafts (manual + auto-drip),
+  and why it isn't Postiz's queue.
 - `docs/architecture/services/publish_service.md` — the publish flow that
   precedes social-draft generation.
 - `services.ollama_client` — local LLM client used on the fallback path.

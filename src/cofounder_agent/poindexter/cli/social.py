@@ -100,6 +100,96 @@ def approve_draft(draft_id: str) -> None:
         sys.exit(1)
 
 
+@social_group.command("schedule")
+@click.argument("draft_id")
+@click.argument("when")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Allow a time in the past (fires on the next sweep)",
+)
+def schedule_draft(draft_id: str, when: str, force: bool) -> None:
+    """Queue a draft to post at WHEN instead of immediately.
+
+    WHEN accepts 'tomorrow 9am', 'next monday 14:00', or ISO 8601
+    ('2026-08-09 09:00'), read in your operator_timezone.
+
+    The promoted post does not have to be live yet — the publish gate is
+    re-checked when the slot arrives, so a post that hasn't gone out by then
+    just holds its place instead of promoting a dead link.
+    """
+    try:
+        async def _impl(pool: Any) -> dict:
+            sc = await _with_site_config(pool)
+            return await _svc.schedule_draft(
+                draft_id, when, pool, sc, force=force
+            )
+
+        result = run_service(_impl)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    if not result.get("success"):
+        click.echo(f"Failed: {result.get('error')}", err=True)
+        sys.exit(1)
+    click.echo(
+        f"Draft {draft_id[:8]} scheduled for {result['scheduled_at']} (UTC)."
+    )
+
+
+@social_group.command("unschedule")
+@click.argument("draft_id")
+def unschedule_draft(draft_id: str) -> None:
+    """Pull a draft back out of the queue (returns it to pending)."""
+    try:
+        result = run_service(lambda p: _svc.unschedule_draft(draft_id, p))
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    if not result.get("success"):
+        click.echo(f"Failed: {result.get('error')}", err=True)
+        sys.exit(1)
+    click.echo(f"Draft {draft_id[:8]} unscheduled — back to pending.")
+
+
+@social_group.command("queue")
+@click.option(
+    "--limit", default=50, show_default=True, type=int, help="Max drafts to show"
+)
+def show_queue(limit: int) -> None:
+    """Show the upcoming social post queue, soonest first."""
+    try:
+        async def _impl(pool: Any) -> tuple:
+            sc = await _with_site_config(pool)
+            page = await _svc.list_drafts(
+                None, None, "scheduled", pool,
+                limit=limit, order_by_schedule=True,
+            )
+            return page, sc.timezone
+
+        page, tz = run_service(_impl)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    if not page.rows:
+        click.echo("Queue is empty — nothing scheduled.")
+        return
+    for d in page.rows:
+        subreddit = d.platform_config.get("subreddit", "")
+        label = f"{d.platform}:{subreddit}" if subreddit else d.platform
+        when = (
+            d.scheduled_at.astimezone(tz).strftime("%Y-%m-%d %H:%M %Z")
+            if d.scheduled_at
+            else "unscheduled"
+        )
+        # A queued promo whose post isn't published yet will hold at its slot
+        # rather than post, so flag it here instead of at fire time.
+        flag = "" if d.post_status == "published" else f"  [post={d.post_status}]"
+        click.echo(f"{when}  {d.id[:8]}  {label:28}  {d.title or ''}{flag}")
+    if page.total > len(page.rows):
+        click.echo(f"\nShowing {len(page.rows)} of {page.total} scheduled.")
+
+
 @social_group.command("reject")
 @click.argument("draft_id")
 def reject_draft(draft_id: str) -> None:
@@ -207,5 +297,17 @@ def setup() -> None:
         " r/LocalLLaMA,r/ArtificialIntelligence,r/selfhosted,r/homelab,r/Python,"
         "r/opensource\n\n"
         "  9. Enable social drafts:\n"
-        "       poindexter settings set social_drafts_enabled true\n"
+        "       poindexter settings set social_drafts_enabled true\n\n"
+        "Scheduling (optional — drafts post immediately on approve otherwise):\n"
+        "  Time a single promo without touching the Postiz UI:\n"
+        "       poindexter social schedule <draft-id> 'tomorrow 9am'\n"
+        "       poindexter social queue\n\n"
+        "  Or drip every promo automatically once its post goes live. Both\n"
+        "  gates must be set — a platform with no offset is never auto-slotted:\n"
+        "       poindexter settings set social_schedule_enabled true\n"
+        "       poindexter settings set social_schedule_offsets"
+        " twitter=0m,bluesky=15m,linkedin=3h,reddit=1d\n"
+        "       poindexter settings set social_schedule_quiet_hours 22:00-07:00\n\n"
+        "  Auto-drip posts LLM-written copy without per-draft review (the\n"
+        "  post's own approval is the gate). Leave it off to read each one.\n"
     )

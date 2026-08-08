@@ -32,6 +32,9 @@ const ICON_PATHS = {
   cpu: 'M5 5h14v14H5zM9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3',
   doc: 'M6 2h8l4 4v16H6zM14 2v4h4',
   pulse: 'M3 12h4l2-7 4 14 2-7h6',
+  // Circle + hands. Used by the social schedule action; without it, Icon's
+  // unknown-name fallback would quietly render the `overview` grid.
+  clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.5 2',
 };
 
 function Icon({ name, size = 18, style, className = '' }) {

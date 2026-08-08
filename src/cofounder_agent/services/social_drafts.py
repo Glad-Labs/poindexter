@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -87,6 +87,28 @@ _TERMINAL_REJECT_TASK_STATUSES: tuple[str, ...] = (
     "dismissed",
 )
 
+# Statuses where the (task, platform, subreddit) key is SPOKEN FOR — a promo
+# for it exists or has gone out, so generating another would duplicate it.
+# ``scheduled`` belongs here for the same reason ``pending`` does: the draft
+# is a live commitment, just with a fire time attached. Leaving it out let a
+# finalize re-run insert a second draft for a key that already had one, and
+# both would post (poindexter#833). Mirrored by the partial unique index
+# ``ux_social_post_drafts_active_key``, so change the two together.
+#
+# ``rejected`` is deliberately absent: rejection is per-copy, and a regen
+# loop after a reject should offer fresh copy to review.
+_KEY_HELD_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed", "posted")
+
+# Statuses an operator decision can still move. ``approve_draft`` accepts all
+# three: ``scheduled`` is here so the due-sweep can fire a slot through the
+# same gate, and so a manual approve means "skip the wait, post it now".
+_APPROVABLE_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed")
+
+# Statuses that still need or await action, as opposed to tombstones. Drives
+# the live-rows-first sort in ``list_drafts`` so the page cap can only ever
+# hide history.
+_LIVE_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed")
+
 
 @dataclass
 class SocialDraftRow:
@@ -107,6 +129,7 @@ class SocialDraftRow:
     post_status: str | None
     title: str | None = None
     resolved_post_id: str | None = None
+    scheduled_at: datetime | None = None
 
 
 @dataclass
@@ -139,12 +162,13 @@ class SocialDraftsService:
         Finalize re-runs (preview_gate regen loops, checkpoint restore, task
         retry) call this again for keys that already have a draft; a bare
         INSERT stacked duplicates and the same promo got posted three times
-        (poindexter#833). The guarded insert skips when the key already has an
-        active (``pending``/``failed``) or ``posted`` draft — returning the
-        existing row's id — with the ``ux_social_post_drafts_active_key``
-        partial unique index as the ON CONFLICT race backstop. A ``rejected``-
-        only key inserts fresh: an operator reject followed by a regen loop
-        legitimately produces new copy to review.
+        (poindexter#833). The guarded insert skips when the key is already
+        held (``_KEY_HELD_STATUSES`` — pending/scheduled/failed/posted),
+        returning the existing row's id, with the
+        ``ux_social_post_drafts_active_key`` partial unique index as the ON
+        CONFLICT race backstop. A ``rejected``-only key inserts fresh: an
+        operator reject followed by a regen loop legitimately produces new
+        copy to review.
 
         Returns the new draft UUID, or the existing draft's UUID when deduped.
         """
@@ -160,12 +184,12 @@ class SocialDraftsService:
                     WHERE pipeline_task_id = $1
                       AND platform = $2
                       AND COALESCE(platform_config->>'subreddit', '') = $5
-                      AND status IN ('pending', 'failed', 'posted')
+                      AND status = ANY($6::text[])
                 )
                 ON CONFLICT (
                     pipeline_task_id, platform,
                     (COALESCE(platform_config->>'subreddit', ''))
-                ) WHERE status IN ('pending', 'failed')
+                ) WHERE status IN ('pending', 'scheduled', 'failed')
                 DO NOTHING
                 RETURNING id::text
                 """,
@@ -174,6 +198,7 @@ class SocialDraftsService:
                 content,
                 json.dumps(platform_config),
                 subreddit_key,
+                list(_KEY_HELD_STATUSES),
             )
             if new_id is None:
                 existing_id: str | None = await conn.fetchval(
@@ -182,13 +207,14 @@ class SocialDraftsService:
                     WHERE pipeline_task_id = $1
                       AND platform = $2
                       AND COALESCE(platform_config->>'subreddit', '') = $3
-                      AND status IN ('pending', 'failed', 'posted')
+                      AND status = ANY($4::text[])
                     ORDER BY created_at DESC
                     LIMIT 1
                     """,
                     pipeline_task_id,
                     platform,
                     subreddit_key,
+                    list(_KEY_HELD_STATUSES),
                 )
                 logger.info(
                     "[social_drafts] draft for task %s platform=%s%s already "
@@ -207,10 +233,10 @@ class SocialDraftsService:
     ) -> set[tuple[str, str]]:
         """(platform, subreddit-or-'') keys that already carry a draft.
 
-        The generate atom consults this before spending LLM calls: keys with
-        an active (``pending``/``failed``) or ``posted`` draft are skipped on
-        re-runs. ``rejected`` drafts don't count — rejection is per-copy, and
-        a regen loop after a reject should offer fresh copy.
+        The generate atom consults this before spending LLM calls: keys held
+        by ``_KEY_HELD_STATUSES`` are skipped on re-runs. ``rejected`` drafts
+        don't count — rejection is per-copy, and a regen loop after a reject
+        should offer fresh copy.
         """
         async with pool.acquire() as conn:
             rows = await conn.fetch(
@@ -219,9 +245,10 @@ class SocialDraftsService:
                        COALESCE(platform_config->>'subreddit', '') AS subreddit
                 FROM social_post_drafts
                 WHERE pipeline_task_id = $1
-                  AND status IN ('pending', 'failed', 'posted')
+                  AND status = ANY($2::text[])
                 """,
                 pipeline_task_id,
+                list(_KEY_HELD_STATUSES),
             )
         return {(r["platform"], r["subreddit"]) for r in rows}
 
@@ -231,15 +258,23 @@ class SocialDraftsService:
         pool: Any,
         site_config: SiteConfig,
     ) -> dict[str, Any]:
-        """Approve a pending or failed draft: call Postiz immediately.
+        """Approve a pending, scheduled, or failed draft: call Postiz now.
 
         Post-link gate (social-drafts linking bug): approving pushes to the
         platform NOW, so the blog post being promoted must already be live
         (``posts.status='published'``) and the URL in the copy is verified /
         repaired against the live posts row first. A blocked approve leaves
-        the draft ``pending`` — it is not a failure, so it neither consumes
-        ``RetryFailedSocialDraftsJob`` retries nor needs a reset; approve
-        again once the post is live.
+        the draft's status untouched — it is not a failure, so it neither
+        consumes ``RetryFailedSocialDraftsJob`` retries nor needs a reset;
+        approve again once the post is live.
+
+        This is also the fire path for the local schedule queue: a
+        ``scheduled`` draft whose slot arrives is approved through here by
+        ``fire_due_drafts``, so the gate is re-checked at the moment of
+        posting rather than when the operator picked the time. That is the
+        whole reason the queue lives here instead of inside Postiz — a post
+        whose publish slipped between scheduling and firing must not send a
+        promo to a URL that 404s.
         """
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -250,7 +285,7 @@ class SocialDraftsService:
             )
         if row is None:
             return {"success": False, "error": f"draft {draft_id} not found"}
-        if row["status"] not in ("pending", "failed"):
+        if row["status"] not in _APPROVABLE_STATUSES:
             return {
                 "success": False,
                 "error": f"draft status={row['status']} cannot be approved",
@@ -352,10 +387,319 @@ class SocialDraftsService:
         )
         return {"success": False, "error": result.get("error")}
 
+    async def schedule_draft(
+        self,
+        draft_id: str,
+        when: str | datetime,
+        pool: Any,
+        site_config: SiteConfig,
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Queue a draft to post at *when* instead of immediately.
+
+        *when* accepts anything ``scheduling_service.parse_when`` does —
+        ``"tomorrow 9am"``, ``"next monday 14:00"``, ISO 8601 — read in the
+        operator's timezone, because an operator typing "9am" means 9am where
+        they are. The stored value is UTC, per store-UTC/present-local.
+
+        Does NOT check that the promoted post is live: scheduling ahead of
+        publication is the normal case. ``fire_due_drafts`` re-checks the
+        publish gate when the slot arrives.
+
+        Refuses a slot in the past unless ``force`` (which fires on the next
+        sweep) — a past slot is nearly always a typo'd year or a forgotten
+        am/pm, and silently posting immediately is the wrong recovery.
+        """
+        from services.scheduling_service import parse_when
+
+        tz = site_config.timezone
+        try:
+            target = parse_when(when, tz=tz)
+        except ValueError as exc:
+            return {"success": False, "error": str(exc)}
+
+        now = datetime.now(timezone.utc)
+        if target <= now and not force:
+            return {
+                "success": False,
+                "error": (
+                    f"{target.astimezone(tz).isoformat()} is in the past "
+                    f"(now {now.astimezone(tz).isoformat()}) — pass force to "
+                    f"queue it for the next sweep anyway, or give a future time"
+                ),
+            }
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT status FROM social_post_drafts WHERE id = $1", draft_id
+            )
+            if row is None:
+                return {"success": False, "error": f"draft {draft_id} not found"}
+            if row["status"] not in _APPROVABLE_STATUSES:
+                return {
+                    "success": False,
+                    "error": (
+                        f"draft status={row['status']} cannot be scheduled "
+                        f"(only {'/'.join(_APPROVABLE_STATUSES)})"
+                    ),
+                }
+            await conn.execute(
+                """
+                UPDATE social_post_drafts
+                SET status = 'scheduled', scheduled_at = $2
+                WHERE id = $1
+                """,
+                draft_id,
+                target,
+            )
+        logger.info(
+            "[social_drafts] draft %s scheduled for %s",
+            draft_id[:8], target.astimezone(tz).isoformat(),
+        )
+        return {
+            "success": True,
+            "scheduled_at": target.isoformat(),
+            "previous_status": row["status"],
+        }
+
+    async def unschedule_draft(self, draft_id: str, pool: Any) -> dict[str, Any]:
+        """Pull a draft back out of the queue, returning it to ``pending``.
+
+        The draft goes back to needing an operator decision rather than being
+        rejected — "not at that time" is not "not at all".
+        """
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE social_post_drafts
+                SET status = 'pending', scheduled_at = NULL
+                WHERE id = $1 AND status = 'scheduled'
+                RETURNING id::text
+                """,
+                draft_id,
+            )
+        if row is None:
+            return {
+                "success": False,
+                "error": f"draft {draft_id} is not scheduled",
+            }
+        return {"success": True}
+
+    async def fire_due_drafts(
+        self,
+        pool: Any,
+        site_config: SiteConfig,
+        *,
+        limit: int | None = None,
+        max_lateness_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        """Post every scheduled draft whose slot has arrived.
+
+        Each due draft goes through ``approve_draft``, so the publish gate
+        and URL repair run at fire time — the point of holding the queue here
+        rather than in Postiz.
+
+        A draft more than ``max_lateness_minutes`` past its slot is NOT
+        fired. It stays ``scheduled`` and raises a finding for the operator
+        to reschedule or approve by hand. The alternative — firing whenever
+        the worker happens to come back — means an outage silently turns a
+        timed promo into an untimed one, hours off the slot that was chosen
+        for a reason. Fail loud beats quietly-wrong.
+        """
+        batch = (
+            limit
+            if limit is not None
+            else int(site_config.get("social_schedule_fire_batch_size", "10"))
+        )
+        lateness = (
+            max_lateness_minutes
+            if max_lateness_minutes is not None
+            else int(site_config.get("social_schedule_max_lateness_minutes", "180"))
+        )
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id::text AS id, platform, scheduled_at
+                FROM social_post_drafts
+                WHERE status = 'scheduled'
+                  AND scheduled_at IS NOT NULL
+                  AND scheduled_at <= now()
+                ORDER BY scheduled_at ASC
+                LIMIT $1
+                """,
+                batch,
+            )
+
+        now = datetime.now(timezone.utc)
+        posted = 0
+        failed = 0
+        blocked = 0
+        overdue = 0
+        for row in rows:
+            draft_id = row["id"]
+            late_minutes = (now - row["scheduled_at"]).total_seconds() / 60.0
+            if late_minutes > lateness:
+                overdue += 1
+                _emit_overdue_finding(
+                    draft_id, row["platform"], row["scheduled_at"], late_minutes
+                )
+                continue
+            try:
+                result = await self.approve_draft(draft_id, pool, site_config)
+            except Exception as exc:
+                failed += 1
+                logger.error(
+                    "[social_drafts] firing draft %s raised: %s", draft_id[:8], exc
+                )
+                continue
+            if result.get("success"):
+                posted += 1
+                logger.info(
+                    "[social_drafts] fired scheduled draft %s (%s)",
+                    draft_id[:8], row["platform"],
+                )
+            elif await self._still_scheduled(draft_id, pool):
+                # approve_draft's publish gate refused (post not live yet) and
+                # left the status alone. The draft keeps its slot and is
+                # retried on the next sweep, until it goes overdue.
+                blocked += 1
+                logger.info(
+                    "[social_drafts] scheduled draft %s not fired yet: %s",
+                    draft_id[:8], result.get("error"),
+                )
+            else:
+                failed += 1
+
+        return {
+            "due": len(rows),
+            "posted": posted,
+            "blocked": blocked,
+            "failed": failed,
+            "overdue": overdue,
+        }
+
+    async def _still_scheduled(self, draft_id: str, pool: Any) -> bool:
+        """True when the draft kept its ``scheduled`` status (gate-blocked).
+
+        Distinguishes "the publish gate said not yet" (status untouched, try
+        again next sweep) from "Postiz rejected it" (``_mark_failed`` moved
+        it to ``failed``, which is the retry job's problem now).
+        """
+        async with pool.acquire() as conn:
+            status = await conn.fetchval(
+                "SELECT status FROM social_post_drafts WHERE id = $1", draft_id
+            )
+        return status == "scheduled"
+
+    async def auto_schedule_ready_drafts(
+        self, pool: Any, site_config: SiteConfig
+    ) -> dict[str, Any]:
+        """Assign drip slots to pending drafts whose post has gone live.
+
+        The auto half of scheduling. For each ``pending`` draft belonging to
+        a published post, the slot is the post's publish time plus that
+        platform's configured offset (``social_schedule_offsets``), pushed
+        past ``social_schedule_quiet_hours`` if it lands inside.
+
+        Two deliberate gates, both defaulting closed:
+        ``social_schedule_enabled`` must be on, AND the platform must appear
+        in the offsets map. A platform with no offset is never auto-slotted,
+        so turning the switch on without writing offsets changes nothing.
+        Enabling this means promo copy ships on the strength of the POST's
+        approval rather than its own per-draft review.
+
+        Backfill behaviour: for a post published longer ago than its offsets,
+        slots would all be in the past and fire in one burst. The anchor
+        moves to ``now`` in that case, so the platform stagger is preserved
+        instead of collapsing.
+        """
+        if not _is_true(site_config.get("social_schedule_enabled", "false")):
+            return {"scheduled": 0, "detail": "social_schedule_enabled=false"}
+
+        offsets = parse_offsets(site_config.get("social_schedule_offsets", ""))
+        if not offsets:
+            return {"scheduled": 0, "detail": "social_schedule_offsets empty"}
+
+        from services.scheduling_service import (
+            next_allowed_time,
+            parse_quiet_hours,
+        )
+
+        tz = site_config.timezone
+        quiet_spec = site_config.get("social_schedule_quiet_hours", "")
+        try:
+            quiet = parse_quiet_hours(quiet_spec) if quiet_spec else None
+        except ValueError as exc:
+            # A malformed window must not silently mean "no quiet hours" —
+            # that posts inside exactly the window the operator carved out.
+            logger.error(
+                "[social_drafts] social_schedule_quiet_hours=%r invalid (%s) "
+                "— auto-scheduling paused until it parses",
+                quiet_spec, exc,
+            )
+            return {"scheduled": 0, "detail": f"invalid quiet hours: {exc}"}
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT d.id::text AS id, d.platform, p.published_at
+                FROM social_post_drafts d
+                JOIN posts p
+                  ON (d.post_id IS NOT NULL AND p.id = d.post_id)
+                  OR (d.post_id IS NULL
+                      AND p.metadata->>'pipeline_task_id' = d.pipeline_task_id)
+                WHERE d.status = 'pending'
+                  AND d.scheduled_at IS NULL
+                  AND p.status = 'published'
+                  AND p.published_at IS NOT NULL
+                  AND d.platform = ANY($1::text[])
+                """,
+                list(offsets.keys()),
+            )
+
+        now = datetime.now(timezone.utc)
+        scheduled = 0
+        for row in rows:
+            offset = offsets[row["platform"]]
+            published_at = row["published_at"]
+            # Anchor forward for posts published long enough ago that their
+            # whole drip would already be due.
+            anchor = published_at if published_at + offset > now else now
+            slot = next_allowed_time((anchor + offset).astimezone(tz), quiet)
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE social_post_drafts
+                    SET status = 'scheduled', scheduled_at = $2
+                    WHERE id = $1 AND status = 'pending'
+                    """,
+                    row["id"],
+                    slot.astimezone(timezone.utc),
+                )
+            scheduled += 1
+            logger.info(
+                "[social_drafts] auto-scheduled draft %s (%s) for %s",
+                row["id"][:8], row["platform"], slot.isoformat(),
+            )
+
+        return {
+            "scheduled": scheduled,
+            "detail": f"auto-scheduled {scheduled} draft(s)",
+        }
+
     async def reject_draft(self, draft_id: str, pool: Any) -> None:
+        """Reject a draft (terminal). Also clears any queued slot.
+
+        Rejecting a *scheduled* draft has to drop ``scheduled_at`` as well —
+        a rejected row that keeps a fire time reads as still-queued to the
+        console and to anything summarising the upcoming queue.
+        """
         async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE social_post_drafts SET status = 'rejected' WHERE id = $1",
+                "UPDATE social_post_drafts "
+                "SET status = 'rejected', scheduled_at = NULL WHERE id = $1",
                 draft_id,
             )
 
@@ -384,6 +728,7 @@ class SocialDraftsService:
         *,
         limit: int | None = None,
         offset: int = 0,
+        order_by_schedule: bool = False,
     ) -> SocialDraftPage:
         """List drafts, each carrying its resolved post_status, title, and id.
 
@@ -405,13 +750,18 @@ class SocialDraftsService:
         when this cap landed), so a plain recency cap would eventually push an
         old *pending* draft out of the window — silently stranding an approval
         that the console's action inbox derives from exactly this list. Live
-        here means ``pending``/``failed``: the two statuses ``approve_draft``
-        still accepts, so they are the rows that can still need a decision.
-        Sorting them to the front means the cap can only ever hide tombstones.
+        here means ``_LIVE_STATUSES`` (pending/scheduled/failed): the statuses
+        ``approve_draft`` still accepts, so they are the rows that can still
+        need — or are awaiting — action. Sorting them to the front means the
+        cap can only ever hide tombstones.
 
         ``limit=None`` emits no LIMIT clause. The HTTP surface always passes
         one (``routes/social_routes.py``); the unbounded form is for callers
         that genuinely need the full set.
+
+        ``order_by_schedule`` swaps the within-group tiebreak from recency to
+        fire time — what the upcoming-queue view (``poindexter social
+        queue``) wants, and only that view.
         """
         scope: list[str] = []
         args: list[Any] = []
@@ -439,6 +789,18 @@ class SocialDraftsService:
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
         page_args = list(args)
+        page_args.append(list(_LIVE_STATUSES))
+        live_sort = f"(d.status = ANY(${len(page_args)}::text[])) DESC"
+        # Recency is the right default for a review list, but wrong for the
+        # upcoming-queue view, which wants fire order. Kept an explicit flag
+        # rather than always tie-breaking on scheduled_at: a `posted` row
+        # retains the scheduled_at it fired from, so a blanket sort on it
+        # would scramble the tombstone half out of recency order.
+        secondary_sort = (
+            "d.scheduled_at ASC NULLS LAST, d.created_at DESC"
+            if order_by_schedule
+            else "d.created_at DESC"
+        )
         pagination = ""
         if limit is not None:
             page_args.append(limit)
@@ -462,9 +824,9 @@ class SocialDraftsService:
                 LIMIT 1
             ) rp ON true
             {where}
-            ORDER BY (d.status IN ('pending', 'failed')) DESC, d.created_at DESC
+            ORDER BY {live_sort}, {secondary_sort}
             {pagination}
-        """  # nosec B608 - conditions entries are hardcoded column literals with computed placeholder indices; values are bind params
+        """  # nosec B608 - conditions/live_sort/secondary_sort entries are hardcoded column literals with computed placeholder indices; values are bind params
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, *page_args)
             count_rows = await conn.fetch(counts_sql, *args[: len(scope)])
@@ -622,19 +984,26 @@ class SocialDraftsService:
         historical orphans on first run. Already-``posted`` drafts are left
         untouched — retracting a live social post is a separate concern.
 
+        ``scheduled`` drafts are reaped alongside ``pending``/``failed`` ones,
+        and matter MORE than either: a pending orphan just sits in the inbox,
+        but a scheduled orphan has a timer on it and would fire a promo for a
+        post that was rejected. ``scheduled_at`` is cleared so the row can't
+        be read as still-queued.
+
         Returns the number of drafts cancelled (``status`` → ``rejected``).
         """
         async with pool.acquire() as conn:
             command_tag = await conn.execute(
                 """
                 UPDATE social_post_drafts d
-                SET status = 'rejected'
+                SET status = 'rejected', scheduled_at = NULL
                 FROM pipeline_tasks t
                 WHERE d.pipeline_task_id = t.task_id
-                  AND d.status IN ('pending', 'failed')
+                  AND d.status = ANY($2::text[])
                   AND t.status = ANY($1::text[])
                 """,
                 list(_TERMINAL_REJECT_TASK_STATUSES),
+                list(_LIVE_STATUSES),
             )
         return _pg_command_rowcount(command_tag)
 
@@ -650,6 +1019,88 @@ class _PoolAdapter:
 
     def __init__(self, pool: Any) -> None:
         self.pool = pool
+
+
+def _is_true(value: Any) -> bool:
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
+def parse_offsets(spec: str) -> dict[str, timedelta]:
+    """Parse ``'twitter=0m,linkedin=3h'`` into ``{platform: timedelta}``.
+
+    Durations use the same ``30m`` / ``2h`` / ``1d`` grammar as the rest of
+    scheduling (``scheduling_service.parse_duration``). Unknown platform
+    names and unparseable durations are logged and dropped rather than
+    raising: one typo in a five-platform map should cost that platform its
+    drip, not stop the other four from ever being scheduled.
+
+    Empty/blank spec returns ``{}`` — the documented "auto-slot nothing".
+    """
+    from services.scheduling_service import parse_duration
+
+    out: dict[str, timedelta] = {}
+    if not spec or not spec.strip():
+        return out
+    for chunk in spec.split(","):
+        piece = chunk.strip()
+        if not piece:
+            continue
+        platform, sep, raw_duration = piece.partition("=")
+        platform = platform.strip().lower()
+        if not sep or not platform:
+            logger.warning(
+                "[social_drafts] social_schedule_offsets: skipping %r "
+                "(expected platform=duration, e.g. linkedin=3h)", piece,
+            )
+            continue
+        if platform not in _PLATFORM_TYPE:
+            logger.warning(
+                "[social_drafts] social_schedule_offsets: unknown platform "
+                "%r — known: %s", platform, ", ".join(sorted(_PLATFORM_TYPE)),
+            )
+            continue
+        try:
+            out[platform] = parse_duration(raw_duration.strip())
+        except ValueError as exc:
+            logger.warning(
+                "[social_drafts] social_schedule_offsets: bad duration for "
+                "%s (%s) — skipping", platform, exc,
+            )
+    return out
+
+
+def _emit_overdue_finding(
+    draft_id: str, platform: str, slot: datetime, late_minutes: float
+) -> None:
+    """Surface a draft that missed its window by more than the grace period.
+
+    Deduped on the draft id, so a permanently-overdue row raises once rather
+    than every sweep.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.social_drafts",
+            kind="social_draft_overdue",
+            title=f"Scheduled {platform} promo missed its slot",
+            body=(
+                f"Draft {draft_id[:8]} was due {slot.isoformat()} "
+                f"({int(late_minutes)} min ago), past the "
+                f"social_schedule_max_lateness_minutes grace period. It was "
+                f"NOT posted. Reschedule it (`poindexter social schedule "
+                f"{draft_id} <when>`), post it now (`poindexter social "
+                f"approve {draft_id}`), or drop it (`poindexter social "
+                f"reject {draft_id}`)."
+            ),
+            severity="warn",
+            dedup_key=f"social-draft-overdue:{draft_id}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Reporting the miss must never take down the sweep — the remaining
+        # due drafts still deserve their shot. Warn (visible in Loki) rather
+        # than swallow (scripts/ci/lint_silent_excepts.py).
+        logger.warning("[social_drafts] overdue finding emit failed: %s", exc)
 
 
 async def _resolve_post(draft_row: Any, pool: Any) -> Any:
@@ -768,4 +1219,18 @@ def _row_to_dataclass(row: Any) -> SocialDraftRow:
         resolved_post_id=(
             str(row["resolved_post_id"]) if row["resolved_post_id"] else None
         ),
+        scheduled_at=_optional_column(row, "scheduled_at"),
     )
+
+
+def _optional_column(row: Any, name: str) -> Any:
+    """Read *name* off *row*, or None when the row doesn't carry it.
+
+    ``list_drafts`` selects ``d.*`` so the column is always present there,
+    but tests and other callers hand in trimmed row mappings. Tolerating the
+    absence keeps a new column from breaking them.
+    """
+    try:
+        return row[name]
+    except (KeyError, IndexError):
+        return None

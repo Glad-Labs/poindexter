@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.social_drafts import SocialDraftsService
+from services.social_drafts import (
+    _KEY_HELD_STATUSES,
+    _LIVE_STATUSES,
+    SocialDraftsService,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -173,9 +177,9 @@ async def test_create_draft_increments_metric_only_on_real_insert():
 
 @pytest.mark.asyncio
 async def test_create_draft_sql_dedups_on_task_platform_subreddit():
-    """The INSERT carries the dedup guard: NOT EXISTS over
-    pending/failed/posted rows for the natural key, with the partial-index
-    ON CONFLICT backstop, and the subreddit key as its own parameter."""
+    """The INSERT carries the dedup guard: NOT EXISTS over the live-key
+    statuses for the natural key, with the partial-index ON CONFLICT
+    backstop, and the subreddit key as its own parameter."""
     pool, conn = _make_pool(fetchval="id-1")
     svc = SocialDraftsService()
     await svc.create_draft(
@@ -187,11 +191,18 @@ async def test_create_draft_sql_dedups_on_task_platform_subreddit():
     )
     sql = conn.fetchval.call_args[0][0].lower()
     assert "not exists" in sql
-    assert "'pending'" in sql and "'failed'" in sql and "'posted'" in sql
     assert "on conflict" in sql and "do nothing" in sql
     assert "coalesce(platform_config->>'subreddit', '')" in sql
     # Subreddit key rides as the 5th parameter ($5); '' for non-reddit drafts.
     assert conn.fetchval.call_args[0][5] == "r/LocalLLaMA"
+    # The live-key statuses ride as $6 rather than inline literals, so the
+    # guard and existing_draft_keys can't drift apart.
+    assert conn.fetchval.call_args[0][6] == list(_KEY_HELD_STATUSES)
+    assert "rejected" not in _KEY_HELD_STATUSES
+    # ON CONFLICT must name the partial index's own predicate, which covers
+    # the live statuses MINUS posted (a posted row is caught by NOT EXISTS,
+    # but is not in the unique index — it's no longer mutually exclusive).
+    assert "('pending', 'scheduled', 'failed')" in sql
 
 
 @pytest.mark.asyncio
@@ -222,11 +233,13 @@ async def test_existing_draft_keys_returns_platform_subreddit_tuples():
     svc = SocialDraftsService()
     keys = await svc.existing_draft_keys("task-1", pool)
     assert keys == {("twitter", ""), ("reddit", "r/LocalLLaMA")}
-    sql = conn.fetch.call_args[0][0].lower()
-    # Active + posted drafts block re-creation; rejected ones do not (an
+    # Live-key + posted drafts block re-creation; rejected ones do not (an
     # operator reject followed by a regen loop legitimately gets fresh copy).
-    assert "'pending'" in sql and "'failed'" in sql and "'posted'" in sql
-    assert "'rejected'" not in sql
+    # Bound as a parameter, shared with create_draft's guard.
+    assert conn.fetch.call_args[0][1] == "task-1"
+    assert conn.fetch.call_args[0][2] == list(_KEY_HELD_STATUSES)
+    assert "posted" in _KEY_HELD_STATUSES
+    assert "rejected" not in _KEY_HELD_STATUSES
 
 
 # ---------------------------------------------------------------------------
@@ -335,9 +348,12 @@ async def test_list_drafts_applies_limit_and_offset():
     svc = SocialDraftsService()
     await svc.list_drafts(None, None, None, pool, limit=50, offset=100)
     sql = _page_sql(conn)
-    assert "limit $1" in sql
-    assert "offset $2" in sql
-    assert conn.fetch.call_args_list[0][0][1:] == (50, 100)
+    # $1 is the live-status array bound for the ordering; limit/offset follow.
+    assert "limit $2" in sql
+    assert "offset $3" in sql
+    assert conn.fetch.call_args_list[0][0][1:] == (
+        list(_LIVE_STATUSES), 50, 100,
+    )
 
 
 @pytest.mark.asyncio
@@ -353,14 +369,36 @@ async def test_list_drafts_unbounded_when_limit_none():
 @pytest.mark.asyncio
 async def test_list_drafts_sorts_live_rows_ahead_of_recency():
     """The whole point of the ordering: a cap may drop posted/rejected
-    tombstones, never a pending/failed row awaiting a decision. Without this,
-    an old pending draft ages out of the window and its approval is stranded
-    with no UI trace."""
+    tombstones, never a pending/scheduled/failed row awaiting action. Without
+    this, an old pending draft ages out of the window and its approval is
+    stranded with no UI trace."""
     pool, conn = _make_list_pool()
     svc = SocialDraftsService()
     await svc.list_drafts(None, None, None, pool, limit=50)
     sql = _page_sql(conn)
-    assert "order by (d.status in ('pending', 'failed')) desc, d.created_at desc" in sql
+    assert "order by (d.status = any($1::text[])) desc, d.created_at desc" in sql
+    assert conn.fetch.call_args_list[0][0][1] == list(_LIVE_STATUSES)
+    # A scheduled draft is awaiting its slot, not a tombstone — it must never
+    # be the row a page cap drops.
+    assert "scheduled" in _LIVE_STATUSES
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_orders_by_fire_time_only_when_asked():
+    """The queue view wants fire order; the review list wants recency.
+
+    Sorting on scheduled_at unconditionally would scramble the tombstone
+    half out of recency order, because a posted row keeps the scheduled_at
+    it fired from.
+    """
+    pool, conn = _make_list_pool()
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, "scheduled", pool, order_by_schedule=True)
+    assert "d.scheduled_at asc nulls last" in _page_sql(conn)
+
+    pool2, conn2 = _make_list_pool()
+    await svc.list_drafts(None, None, None, pool2)
+    assert "scheduled_at asc" not in _page_sql(conn2)
 
 
 @pytest.mark.asyncio
@@ -374,10 +412,11 @@ async def test_list_drafts_placeholders_shift_past_filters():
     assert "d.post_id = $1" in sql
     assert "d.pipeline_task_id = $2" in sql
     assert "d.status = $3" in sql
-    assert "limit $4" in sql
-    assert "offset $5" in sql
+    # $4 is the live-status array bound for the ordering; limit/offset follow.
+    assert "limit $5" in sql
+    assert "offset $6" in sql
     assert conn.fetch.call_args_list[0][0][1:] == (
-        "post-1", "task-1", "pending", 25, 5,
+        "post-1", "task-1", "pending", list(_LIVE_STATUSES), 25, 5,
     )
 
 
@@ -444,24 +483,40 @@ async def test_cancel_orphaned_zero_on_empty_tag():
 
 
 @pytest.mark.asyncio
-async def test_cancel_orphaned_targets_pending_failed_and_terminal_only():
-    # The reaper must only touch pending/failed drafts of terminally-rejected
-    # tasks — never 'posted' drafts (Case-2 live posts) and never valid
-    # 'approved'/'awaiting_approval' content awaiting publish.
+async def test_cancel_orphaned_targets_live_drafts_and_terminal_tasks_only():
+    # The reaper must only touch live (pending/scheduled/failed) drafts of
+    # terminally-rejected tasks — never 'posted' drafts (Case-2 live posts)
+    # and never valid 'approved'/'awaiting_approval' content awaiting publish.
     pool, _conn = _make_pool(execute="UPDATE 0")
     svc = SocialDraftsService()
     await svc.cancel_orphaned_for_rejected_tasks(pool)
     _conn.execute.assert_called_once()
     sql = _conn.execute.call_args[0][0].lower()
-    statuses = _conn.execute.call_args[0][1]
+    task_statuses = _conn.execute.call_args[0][1]
+    draft_statuses = _conn.execute.call_args[0][2]
     assert "set status = 'rejected'" in sql
-    assert "d.status in ('pending', 'failed')" in sql
-    assert "posted" not in sql  # posted drafts are never cancelled
+    assert draft_statuses == list(_LIVE_STATUSES)
+    assert "posted" not in draft_statuses  # posted drafts are never cancelled
     # terminal-reject task statuses passed as the bound array; excludes
     # rejected_retry (re-runs) and approved/awaiting_approval (awaiting publish).
-    assert set(statuses) == {"rejected_final", "rejected", "dismissed"}
-    assert "rejected_retry" not in statuses
-    assert "approved" not in statuses
+    assert set(task_statuses) == {"rejected_final", "rejected", "dismissed"}
+    assert "rejected_retry" not in task_statuses
+    assert "approved" not in task_statuses
+
+
+@pytest.mark.asyncio
+async def test_cancel_orphaned_clears_the_fire_time():
+    """A scheduled orphan is the dangerous one — it has a timer on it.
+
+    Cancelling must drop scheduled_at too, or the row still reads as queued
+    to the console and to anything summarising upcoming promos.
+    """
+    pool, _conn = _make_pool(execute="UPDATE 0")
+    svc = SocialDraftsService()
+    await svc.cancel_orphaned_for_rejected_tasks(pool)
+    sql = _conn.execute.call_args[0][0].lower()
+    assert "scheduled_at = null" in sql
+    assert "scheduled" in _LIVE_STATUSES
 
 
 # ---------------------------------------------------------------------------
@@ -943,3 +998,285 @@ async def test_approve_draft_stamps_post_id_and_approved_at():
     sqls = [c[0][0].lower() for c in conn.execute.call_args_list]
     assert any("post_id" in s for s in sqls)
     assert any("approved_at" in s and "posted" in s for s in sqls)
+
+
+# ---------------------------------------------------------------------------
+# Scheduling — the local queue that replaces the Postiz UI.
+#
+# The load-bearing property throughout: the queue lives HERE, so approve's
+# publish gate is re-checked at fire time. A Postiz-side schedule would run
+# that check when the operator picked the time, and a post whose publish
+# slipped would still promote itself at a URL that 404s.
+# ---------------------------------------------------------------------------
+
+def _sched_site_config(**overrides) -> MagicMock:
+    settings = {"operator_timezone": "America/New_York"}
+    settings.update(overrides)
+    sc = _make_site_config(settings)
+    from services.clock import resolve_operator_tz
+
+    sc.timezone = resolve_operator_tz(settings["operator_timezone"])
+    return sc
+
+
+@pytest.mark.asyncio
+async def test_schedule_draft_reads_clock_words_in_operator_timezone():
+    """'tomorrow 9am' means 9am where the operator is, not 9am UTC.
+
+    Storage stays UTC (store-UTC/present-local), so the stored instant is
+    9am New York expressed as 13:00/14:00Z depending on DST.
+    """
+    pool, conn = _make_pool(fetchrow={"status": "pending"})
+    sc = _sched_site_config()
+    svc = SocialDraftsService()
+
+    result = await svc.schedule_draft("d-1", "tomorrow 9am", pool, sc)
+
+    assert result["success"] is True
+    stored = conn.execute.call_args[0][2]
+    local = stored.astimezone(sc.timezone)
+    assert (local.hour, local.minute) == (9, 0)
+    assert stored.utcoffset().total_seconds() == 0  # persisted as UTC
+    assert "status = 'scheduled'" in conn.execute.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_schedule_draft_refuses_a_past_time_unless_forced():
+    """A past slot is nearly always a typo'd year or a missed am/pm.
+
+    Silently posting immediately is the wrong recovery from a typo, so it
+    refuses — but --force is there for "yes, send it on the next sweep".
+    """
+    pool, _conn = _make_pool(fetchrow={"status": "pending"})
+    sc = _sched_site_config()
+    svc = SocialDraftsService()
+
+    refused = await svc.schedule_draft("d-1", "2020-01-01 09:00", pool, sc)
+    assert refused["success"] is False
+    assert "in the past" in refused["error"]
+
+    forced = await svc.schedule_draft(
+        "d-1", "2020-01-01 09:00", pool, sc, force=True
+    )
+    assert forced["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_schedule_draft_rejects_unparseable_and_terminal_rows():
+    pool, _conn = _make_pool(fetchrow={"status": "posted"})
+    sc = _sched_site_config()
+    svc = SocialDraftsService()
+
+    bad_spec = await svc.schedule_draft("d-1", "whenever-ish", pool, sc)
+    assert bad_spec["success"] is False
+    assert "could not parse" in bad_spec["error"].lower()
+
+    # An already-posted promo can't be un-sent by scheduling it.
+    terminal = await svc.schedule_draft("d-1", "tomorrow 9am", pool, sc)
+    assert terminal["success"] is False
+    assert "posted" in terminal["error"]
+
+
+@pytest.mark.asyncio
+async def test_unschedule_returns_to_pending_not_rejected():
+    """"Not at that time" is not "not at all" — it goes back for a decision."""
+    pool, conn = _make_pool(fetchrow={"id": "d-1"})
+    svc = SocialDraftsService()
+
+    result = await svc.unschedule_draft("d-1", pool)
+
+    assert result["success"] is True
+    sql = conn.fetchrow.call_args[0][0].lower()
+    assert "status = 'pending'" in sql
+    assert "scheduled_at = null" in sql
+    assert "rejected" not in sql
+
+
+@pytest.mark.asyncio
+async def test_fire_due_drafts_approves_through_the_publish_gate():
+    """Firing goes through approve_draft — that IS the gate re-check."""
+    import datetime as _dt
+
+    due = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=5)
+    pool, _conn = _make_pool(
+        fetch=[{"id": "d-1", "platform": "twitter", "scheduled_at": due}]
+    )
+    sc = _sched_site_config()
+    svc = SocialDraftsService()
+    svc.approve_draft = AsyncMock(return_value={"success": True})
+
+    result = await svc.fire_due_drafts(pool, sc)
+
+    svc.approve_draft.assert_awaited_once()
+    assert svc.approve_draft.await_args[0][0] == "d-1"
+    assert result == {
+        "due": 1, "posted": 1, "blocked": 0, "failed": 0, "overdue": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fire_due_drafts_holds_a_gate_blocked_draft_at_its_slot():
+    """Post not live yet → keep the slot and retry next sweep, don't fail it.
+
+    A gate refusal isn't a failure: it must not burn RetryFailedSocialDrafts
+    retries or move the row out of the queue.
+    """
+    import datetime as _dt
+
+    due = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=1)
+    pool, conn = _make_pool(
+        fetch=[{"id": "d-1", "platform": "twitter", "scheduled_at": due}]
+    )
+    conn.fetchval.return_value = "scheduled"  # _still_scheduled → gate-blocked
+    sc = _sched_site_config()
+    svc = SocialDraftsService()
+    svc.approve_draft = AsyncMock(
+        return_value={"success": False, "error": "post is status='approved'"}
+    )
+
+    result = await svc.fire_due_drafts(pool, sc)
+
+    assert result["blocked"] == 1
+    assert result["failed"] == 0
+    assert result["posted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_fire_due_drafts_skips_and_reports_an_overdue_draft():
+    """An outage must not silently turn a timed promo into an untimed one.
+
+    Past the grace period the draft stays queued and raises a finding, so a
+    human decides whether hours-late news is still worth posting.
+    """
+    import datetime as _dt
+
+    stale = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=9)
+    pool, _conn = _make_pool(
+        fetch=[{"id": "d-1", "platform": "twitter", "scheduled_at": stale}]
+    )
+    sc = _sched_site_config(social_schedule_max_lateness_minutes="180")
+    svc = SocialDraftsService()
+    svc.approve_draft = AsyncMock()
+
+    with patch("utils.findings.emit_finding") as emit:
+        result = await svc.fire_due_drafts(pool, sc)
+
+    svc.approve_draft.assert_not_awaited()
+    assert result["overdue"] == 1 and result["posted"] == 0
+    assert emit.call_count == 1
+    assert emit.call_args.kwargs["dedup_key"] == "social-draft-overdue:d-1"
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_is_double_gated_and_defaults_off():
+    """Both gates default closed: the switch AND a per-platform offset.
+
+    Turning the switch on without writing offsets must change nothing —
+    that's what makes enabling auto-drip a deliberate two-step.
+    """
+    pool, _conn = _make_pool(fetch=[])
+    svc = SocialDraftsService()
+
+    off = await svc.auto_schedule_ready_drafts(
+        pool, _sched_site_config(social_schedule_offsets="twitter=1h")
+    )
+    assert off["scheduled"] == 0 and "enabled=false" in off["detail"]
+
+    no_offsets = await svc.auto_schedule_ready_drafts(
+        pool, _sched_site_config(social_schedule_enabled="true")
+    )
+    assert no_offsets["scheduled"] == 0 and "offsets empty" in no_offsets["detail"]
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_staggers_from_publish_time():
+    import datetime as _dt
+
+    published = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=1)
+    pool, conn = _make_pool(
+        fetch=[{"id": "d-1", "platform": "linkedin", "published_at": published}]
+    )
+    sc = _sched_site_config(
+        social_schedule_enabled="true", social_schedule_offsets="linkedin=3h"
+    )
+    svc = SocialDraftsService()
+
+    result = await svc.auto_schedule_ready_drafts(pool, sc)
+
+    assert result["scheduled"] == 1
+    slot = conn.execute.call_args[0][2]
+    assert slot == published + _dt.timedelta(hours=3)
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_reanchors_a_backlogged_post_to_now():
+    """Backfilling an old post must not collapse the platform stagger.
+
+    Anchoring on a long-past published_at would put every slot in the past,
+    firing the whole drip in one burst on the next sweep.
+    """
+    import datetime as _dt
+
+    old = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=30)
+    pool, conn = _make_pool(
+        fetch=[{"id": "d-1", "platform": "linkedin", "published_at": old}]
+    )
+    sc = _sched_site_config(
+        social_schedule_enabled="true", social_schedule_offsets="linkedin=3h"
+    )
+    svc = SocialDraftsService()
+
+    await svc.auto_schedule_ready_drafts(pool, sc)
+
+    slot = conn.execute.call_args[0][2]
+    now = _dt.datetime.now(_dt.timezone.utc)
+    assert slot > now, "a re-anchored slot must be in the future"
+    assert slot - now < _dt.timedelta(hours=4), "offset should survive re-anchoring"
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_pauses_on_malformed_quiet_hours():
+    """A bad window must not silently degrade to "no quiet hours".
+
+    That would post inside exactly the window the operator carved out.
+    """
+    pool, _conn = _make_pool(fetch=[])
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_offsets="linkedin=3h",
+        social_schedule_quiet_hours="10pm til 7",
+    )
+    svc = SocialDraftsService()
+
+    result = await svc.auto_schedule_ready_drafts(pool, sc)
+
+    assert result["scheduled"] == 0
+    assert "invalid quiet hours" in result["detail"]
+
+
+# ---------------------------------------------------------------------------
+# parse_offsets — one typo must not cost the other platforms their drip
+# ---------------------------------------------------------------------------
+
+def test_parse_offsets_keeps_good_pairs_and_drops_bad_ones():
+    import datetime as _dt
+
+    from services.social_drafts import parse_offsets
+
+    parsed = parse_offsets(
+        "twitter=0m, linkedin=3h, nosuchplatform=1h, reddit=notaduration, "
+        "malformed, bluesky=1d"
+    )
+
+    assert parsed == {
+        "twitter": _dt.timedelta(0),
+        "linkedin": _dt.timedelta(hours=3),
+        "bluesky": _dt.timedelta(days=1),
+    }
+
+
+def test_parse_offsets_empty_means_auto_slot_nothing():
+    from services.social_drafts import parse_offsets
+
+    assert parse_offsets("") == {}
+    assert parse_offsets("   ") == {}
