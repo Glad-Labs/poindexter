@@ -244,3 +244,96 @@ async def test_image_gen_ready_wait_skips_when_url_missing():
     from services.video_renderers import shot_list_renderer as slr
 
     assert await slr._wait_image_gen_ready("", None, budget_s=5) is False
+
+
+# ---------------------------------------------------------------------------
+# Adaptive hero plate (2026-08-08)
+#
+# The dispatcher pre-gates on media_render_min_free_vram_gb, but the DESKTOP
+# keeps allocating after that check: Chrome + Electron apps + the COSMIC shell
+# held ~3GB on GPU0 while wan wanted 26.7GB of a 32.6GB card, and the hero
+# OOM'd on its last 320 MiB. The same code went 4-for-4 hours earlier on a
+# quieter desktop — the operator should not have to close their browser.
+# ---------------------------------------------------------------------------
+
+
+def _registry(free_gb):
+    reg = MagicMock()
+    reg.free_gb = AsyncMock(return_value=free_gb)
+    return reg
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_plate_steps_down_when_vram_is_tight():
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(20.0)):
+        w, h = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert (w, h) == (640, 384)  # first rung that fits 20GB
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_plate_is_unchanged_when_vram_is_ample():
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)):
+        w, h = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert (w, h) == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_portrait_orientation_is_preserved():
+    """The 9:16 lane must stay vertical after a step-down."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(20.0)):
+        w, h = await slr._fit_hero_dims_to_free_vram(480, 832, _sc())
+
+    assert (w, h) == (384, 640)
+    assert h > w
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_never_steps_up_past_operator_config():
+    """An operator who pinned a small plate keeps it even on an empty card."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(31.0)):
+        w, h = await slr._fit_hero_dims_to_free_vram(512, 320, _sc())
+
+    assert (w, h) == (512, 320)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unreadable_probe_keeps_requested_dims():
+    """An unreadable probe must never shrink a render that would have worked."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(None)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+    def _boom(**kw):
+        raise RuntimeError("prometheus down")
+
+    with patch("services.gpu_registry.GPURegistry", _boom):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_operator_can_disable_adaptation():
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(5.0)):
+        w, h = await slr._fit_hero_dims_to_free_vram(
+            832, 480, _sc(video_hero_adaptive_plate_enabled="false"),
+        )
+
+    assert (w, h) == (832, 480)

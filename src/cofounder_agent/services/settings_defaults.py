@@ -575,6 +575,13 @@ DEFAULTS: dict[str, str] = {
     # reclaim rung) were the dominant cause of 44 still-fallbacks in one week.
     # 0 disables; timeout proceeds into the normal still-fallback.
     'video_hero_wan_ready_wait_s': '90',
+    # Step the hero i2v plate down the _HERO_PLATE_LADDER when the card is
+    # short on free VRAM. The dispatcher's pre-flight gate can't see the
+    # DESKTOP allocating afterwards — Chrome + the COSMIC shell held ~3GB
+    # while wan wanted 26.7GB of 32.6GB and the hero OOM'd on its last
+    # 320 MiB. A smaller clip upscaled still reads as motion; an OOM reads
+    # as a still. false = always use video_hero_width/height.
+    'video_hero_adaptive_plate_enabled': 'true',
     # ProbeHeroFallbackJob — the aggregate watchdog over the per-shot
     # hero_render_fallback findings. Those are info-level by design (a still
     # beats a hole), which made a four-day total hero outage invisible until
@@ -3344,6 +3351,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_min_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
+    'video_hero_adaptive_plate_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'hero_fallback_probe_enabled': {'owner': 'probe_hero_fallback', 'value_type': 'boolean'},
     'hero_fallback_window_hours': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
     'hero_fallback_min_count': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},

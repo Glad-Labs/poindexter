@@ -451,13 +451,86 @@ async def _render_pexels_video(
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
 
+# Free-VRAM ladder for the hero plate, widest first. i2v activation memory
+# scales ~quadratically with the plate, so a step down buys real headroom.
+# The gap this closes (2026-08-08): the dispatcher pre-gates on
+# media_render_min_free_vram_gb, but the DESKTOP keeps allocating after that
+# check — Chrome, the Electron apps and the COSMIC shell held ~3 GB on GPU0
+# while wan wanted 26.7 GB of a 32.6 GB card, and the hero OOM'd on its last
+# 320 MiB. Same code went 4-for-4 hours earlier on a quieter desktop; the
+# operator should not have to close their browser to get motion.
+_HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
+    (832, 480, 27.0),   # validated default — needs ~26.7GB peak
+    (704, 400, 22.0),
+    (640, 384, 19.0),
+    (512, 320, 15.0),
+)
+
+
+async def _fit_hero_dims_to_free_vram(
+    width: int, height: int, site_config: Any,
+) -> tuple[int, int]:
+    """Step the hero plate down to what the card can actually spare right now.
+
+    Returns the requested dims unchanged when free VRAM is unknown or ample —
+    an unreadable probe must never shrink a render that would have succeeded.
+    Only steps DOWN, and never below the ladder's floor: a smaller hero clip
+    upscaled by the compositor still reads as motion, while an OOM reads as a
+    still.
+    """
+    try:
+        if site_config is not None and not site_config.get_bool(
+            "video_hero_adaptive_plate_enabled", True,
+        ):
+            return width, height
+    except Exception:  # noqa: BLE001
+        # silent-ok: a settings read must not decide the geometry; the
+        # documented default (adaptive on) applies.
+        pass
+    try:
+        from services.gpu_registry import GPURegistry
+
+        free_gb = await GPURegistry(site_config=site_config).free_gb(0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[SHOT_LIST] free-VRAM probe failed (%s) — keeping %dx%d",
+            exc, width, height,
+        )
+        return width, height
+    if free_gb is None:
+        return width, height
+
+    landscape = width >= height
+    for lw, lh, needs_gb in _HERO_PLATE_LADDER:
+        if free_gb >= needs_gb:
+            new_w, new_h = (lw, lh) if landscape else (lh, lw)
+            # Never step UP past what the operator configured.
+            if new_w * new_h >= width * height:
+                return width, height
+            logger.info(
+                "[SHOT_LIST] hero plate %dx%d -> %dx%d (%.1fGB free, needs "
+                "%.0fGB) — stepping down rather than OOMing into a still",
+                width, height, new_w, new_h, free_gb, needs_gb,
+            )
+            return new_w, new_h
+
+    floor_w, floor_h, _ = _HERO_PLATE_LADDER[-1]
+    new_w, new_h = (floor_w, floor_h) if landscape else (floor_h, floor_w)
+    if new_w * new_h >= width * height:
+        return width, height
+    logger.warning(
+        "[SHOT_LIST] only %.1fGB free — hero plate at ladder floor %dx%d; "
+        "expect a still fallback if even that OOMs", free_gb, new_w, new_h,
+    )
+    return new_w, new_h
+
 def _hero_render_dims(
     orientation: str, site_config: Any,
 ) -> tuple[int, int, int]:
     """Resolve the hero (i2v) render geometry as ``(width, height, fps)``.
 
     Reads ``video_hero_width`` / ``video_hero_height`` / ``video_hero_fps``
-    (defaults = Wan 2.2 TI2V-5B's documented 720P@24fps working range) and
+    (defaults = Wan 2.2 TI2V-5B's documented 480P@24fps working range) and
     swaps width/height for the portrait (9:16) lane — the settings are
     authored landscape-first. Before this, portrait shorts got landscape
     832×480 hero clips letterboxed into a 1080×1920 canvas.
@@ -1409,6 +1482,13 @@ async def _animate_hero(
     (spec §3.3).
     """
     hero_w, hero_h, hero_fps = _hero_render_dims(orientation, site_config)
+    # Right-size the plate to what the card can spare RIGHT NOW — the
+    # dispatcher's pre-flight VRAM gate can't see the desktop allocating
+    # afterwards (2026-08-08: wan OOM'd on its last 320 MiB against Chrome
+    # and the COSMIC shell).
+    hero_w, hero_h = await _fit_hero_dims_to_free_vram(
+        hero_w, hero_h, site_config,
+    )
     clip_path = str(Path(still_path).with_suffix(".mp4"))
     clip_ok, clip_error = await _render_generative_clip(
         prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
