@@ -35,6 +35,28 @@ cloud model are kept **disabled** pending a metered-API decision.
 The deterministic five make **zero model calls**. The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.
 
+### What `test-health` will and won't fix
+
+It rewrites **one failing test file** and keeps the result only if that test
+then passes. Two guards bound it, and the second is the load-bearing one:
+
+1. It never edits anything outside `tests/` — production code is off limits.
+2. **A failure that passes when run alone is skipped, untouched.** Those are
+   _order-dependent_: some other test leaked state (a module global, a patched
+   `sys.modules` entry, a stray env var) and the victim file is not where the
+   bug lives. This check runs BEFORE the model is called.
+
+Guard 2 exists because the post-patch re-run gate re-runs a single test id, so
+for a polluted test it passes **whatever the model wrote** — including a
+rewrite that deletes the assertions. Every failure the session met on
+2026-08-07 was that shape, so without the pre-flight each one would have become
+a confidently-green, entirely bogus PR.
+
+A run reporting `order_dependent=N` is therefore telling you something a
+`failures=N fixed=0` line cannot: nothing here was this session's to fix, and
+the real bug is in whatever leaked the state. Find it by narrowing the suite
+with `-p no:randomly` and bisecting, not by looking at the file that failed.
+
 > **`codebase-audit` lost its bandit half on 2026-07-17.** It used to file one
 > GitHub issue per bandit finding. That produced 91 issues — every one examined
 > was a false positive (#2594-#2623, all closed by #2644) — which buried the 18
@@ -210,6 +232,16 @@ Host-side env knobs read by [`scripts/ops_sessions/_common.py`](../../scripts/op
 | `OPS_CLAUDE_MD_MAX_ATTEMPTS`       | `3`                      | `claude-md-sync` regenerate-on-conflict retries |
 | `OPS_CLAUDE_MD_MERGE_WAIT_SECONDS` | `3600`                   | how long it waits for its own PR to merge       |
 | `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                     | PR-state poll interval within that budget       |
+
+**The default models must actually be pulled.** These are plain code defaults,
+not app_settings, and nothing verifies them at install time — `ollama list`
+must show every model in the table above. A missing one 404s at the moment of
+first use, which is not the moment the session starts: `test-health` only calls
+its model when the suite has failures, so `qwen2.5-coder:7b` being absent sat
+latent for weeks and surfaced only on 2026-08-07 when a test first went red.
+The session now reports that as `test-health: Ollama unusable` with the exact
+`ollama pull` command, instead of dying on an uncaught `HTTPStatusError` with
+nobody notified — which is how it stayed broken for three days.
 
 The merge wait defaults to an hour because what it survives is GitHub Actions
 cron drift, not a race in seconds — see [the adjacent-bullet

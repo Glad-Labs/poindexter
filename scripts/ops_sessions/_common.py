@@ -27,7 +27,19 @@ _LOG_DIR = Path.home() / ".poindexter" / "logs" / "claude-sessions"
 
 
 class OllamaUnavailable(RuntimeError):
-    """Raised when the local Ollama endpoint cannot be reached."""
+    """Raised when the local Ollama endpoint cannot be USED.
+
+    Covers both "nothing is listening" (connect/timeout) and "the daemon
+    answered, but not usefully" — most importantly a 404 for a model that was
+    never pulled. Callers treat this as "the LLM half of this session cannot
+    run", notify the operator, and exit non-zero.
+
+    The distinction matters because sessions only catch THIS type. A raw
+    ``httpx.HTTPStatusError`` escaping to the top killed test-health with an
+    uncaught traceback on 2026-08-07/08/09 — silently, because the session's
+    own ``notify_fail`` path never ran. The exception nobody catches is the
+    one that pages nobody.
+    """
 
 
 def bootstrap_value(key: str) -> str:
@@ -84,6 +96,25 @@ def ollama_chat(
         resp.raise_for_status()
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
         raise OllamaUnavailable(f"{OPS_OLLAMA_URL}: {exc}") from exc
+    except httpx.HTTPStatusError as exc:
+        # A reachable daemon that refuses the request is still "unusable" from
+        # the caller's point of view, and MUST surface as OllamaUnavailable —
+        # that is the only exception sessions catch, and catching it is what
+        # triggers notify_fail. Letting HTTPStatusError through is what made
+        # the test-health failure silent for three days.
+        #
+        # 404 is overwhelmingly "model was never pulled" (Ollama returns it for
+        # an unknown model on /api/chat), so name the remedy instead of echoing
+        # a bare status line — the operator's next action is `ollama pull`.
+        detail = f"HTTP {exc.response.status_code}"
+        if exc.response.status_code == 404:
+            detail = (
+                f"model {model!r} is not present on {OPS_OLLAMA_URL} "
+                f"(Ollama 404s an unknown model). Pull it with "
+                f"`ollama pull {model}`, or point the session at a model you "
+                f"already have via the matching OPS_OLLAMA_MODEL_* env var."
+            )
+        raise OllamaUnavailable(f"{OPS_OLLAMA_URL}: {detail}") from exc
     return parse_ollama_content(resp.json())
 
 
