@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+from datetime import timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -1169,10 +1171,11 @@ async def test_fire_due_drafts_skips_and_reports_an_overdue_draft():
 
 @pytest.mark.asyncio
 async def test_auto_schedule_is_double_gated_and_defaults_off():
-    """Both gates default closed: the switch AND a per-platform offset.
+    """Both gates default closed: the switch AND a per-platform entry.
 
-    Turning the switch on without writing offsets must change nothing —
-    that's what makes enabling auto-drip a deliberate two-step.
+    Turning the switch on without naming any platform (in either offsets or
+    prime times) must change nothing — that's what makes enabling auto-drip
+    a deliberate two-step.
     """
     pool, _conn = _make_pool(fetch=[])
     svc = SocialDraftsService()
@@ -1182,10 +1185,11 @@ async def test_auto_schedule_is_double_gated_and_defaults_off():
     )
     assert off["scheduled"] == 0 and "enabled=false" in off["detail"]
 
-    no_offsets = await svc.auto_schedule_ready_drafts(
+    no_platforms = await svc.auto_schedule_ready_drafts(
         pool, _sched_site_config(social_schedule_enabled="true")
     )
-    assert no_offsets["scheduled"] == 0 and "offsets empty" in no_offsets["detail"]
+    assert no_platforms["scheduled"] == 0
+    assert "empty" in no_platforms["detail"]
 
 
 @pytest.mark.asyncio
@@ -1193,9 +1197,12 @@ async def test_auto_schedule_staggers_from_publish_time():
     import datetime as _dt
 
     published = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=1)
-    pool, conn = _make_pool(
-        fetch=[{"id": "d-1", "platform": "linkedin", "published_at": published}]
-    )
+    pool, conn = _make_pool()
+    # Two fetches: the eligible drafts, then the already-claimed slots.
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "linkedin", "published_at": published}],
+        [],
+    ]
     sc = _sched_site_config(
         social_schedule_enabled="true", social_schedule_offsets="linkedin=3h"
     )
@@ -1218,9 +1225,11 @@ async def test_auto_schedule_reanchors_a_backlogged_post_to_now():
     import datetime as _dt
 
     old = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=30)
-    pool, conn = _make_pool(
-        fetch=[{"id": "d-1", "platform": "linkedin", "published_at": old}]
-    )
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "linkedin", "published_at": old}],
+        [],
+    ]
     sc = _sched_site_config(
         social_schedule_enabled="true", social_schedule_offsets="linkedin=3h"
     )
@@ -1280,3 +1289,264 @@ def test_parse_offsets_empty_means_auto_slot_nothing():
 
     assert parse_offsets("") == {}
     assert parse_offsets("   ") == {}
+
+
+# ---------------------------------------------------------------------------
+# Prime-time slots — "post at 9am", not "at least 3h after publish".
+#
+# The problem these fix: offsets are relative to publish, so a post that goes
+# live at 11pm promotes at 11pm. Quiet hours was the only lever and it made
+# things worse — it clamps every displaced promo to the window's edge, so four
+# platforms landed on the same 07:00 minute and the stagger collapsed.
+# ---------------------------------------------------------------------------
+
+def test_parse_prime_times_keeps_good_entries_and_drops_bad_ones():
+    import datetime as _dt
+
+    from services.social_drafts import parse_prime_times
+
+    parsed = parse_prime_times(
+        "twitter=09:00,12:30; nosuchplatform=09:00; reddit=25:00; "
+        "linkedin=08:00; malformed; bluesky=10:00,bogus,16:00"
+    )
+
+    assert parsed == {
+        "twitter": [_dt.time(9, 0), _dt.time(12, 30)],
+        "linkedin": [_dt.time(8, 0)],
+        # 'bogus' dropped, the two valid times survive
+        "bluesky": [_dt.time(10, 0), _dt.time(16, 0)],
+    }
+    # reddit's only time was out of range, so it gets no entry at all and
+    # falls back to its offset rather than silently posting at midnight.
+    assert "reddit" not in parsed
+
+
+def test_parse_prime_times_sorts_and_dedups():
+    import datetime as _dt
+
+    from services.social_drafts import parse_prime_times
+
+    assert parse_prime_times("twitter=17:00,09:00,12:30,09:00") == {
+        "twitter": [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)]
+    }
+
+
+def test_next_prime_slot_rolls_a_night_publish_to_the_morning():
+    """The headline case: publish at 11pm, promote at 9am."""
+    import datetime as _dt
+
+    from services.social_drafts import next_prime_slot
+
+    ny = ZoneInfo("America/New_York")
+    floor = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    slot = next_prime_slot(
+        floor, [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)], set()
+    )
+    assert slot == _dt.datetime(2026, 8, 10, 9, 0, tzinfo=ny)
+
+
+def test_next_prime_slot_takes_the_same_day_when_one_is_still_ahead():
+    """A 10am publish shouldn't wait until tomorrow for a 12:30 slot."""
+    import datetime as _dt
+
+    from services.social_drafts import next_prime_slot
+
+    ny = ZoneInfo("America/New_York")
+    floor = _dt.datetime(2026, 8, 11, 10, 0, tzinfo=ny)
+    slot = next_prime_slot(
+        floor, [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)], set()
+    )
+    assert slot == _dt.datetime(2026, 8, 11, 12, 30, tzinfo=ny)
+
+
+def test_next_prime_slot_spreads_collisions_across_the_listed_hours():
+    """Three posts published overnight must not all fire at 09:00.
+
+    That burst is the exact "same link everywhere at once" pattern the
+    stagger exists to prevent.
+    """
+    import datetime as _dt
+
+    from services.social_drafts import next_prime_slot
+
+    ny = ZoneInfo("America/New_York")
+    times = [_dt.time(9, 0), _dt.time(12, 30), _dt.time(17, 0)]
+    taken: set = set()
+    slots = []
+    for minute in (0, 30, 45):
+        floor = _dt.datetime(2026, 8, 9, 23, minute, tzinfo=ny)
+        slot = next_prime_slot(floor, times, taken)
+        taken.add(slot)
+        slots.append(slot)
+
+    assert slots == [
+        _dt.datetime(2026, 8, 10, 9, 0, tzinfo=ny),
+        _dt.datetime(2026, 8, 10, 12, 30, tzinfo=ny),
+        _dt.datetime(2026, 8, 10, 17, 0, tzinfo=ny),
+    ]
+    assert len(set(slots)) == 3, "collisions must produce distinct slots"
+
+
+def test_next_prime_slot_rolls_to_the_next_day_when_a_day_fills_up():
+    import datetime as _dt
+
+    from services.social_drafts import next_prime_slot
+
+    ny = ZoneInfo("America/New_York")
+    times = [_dt.time(9, 0)]
+    first = _dt.datetime(2026, 8, 10, 9, 0, tzinfo=ny)
+    slot = next_prime_slot(
+        _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny), times, {first}
+    )
+    assert slot == _dt.datetime(2026, 8, 11, 9, 0, tzinfo=ny)
+
+
+def test_next_prime_slot_returns_none_with_no_times():
+    """Caller falls back to the offset slot rather than dropping the draft."""
+    import datetime as _dt
+
+    from services.social_drafts import next_prime_slot
+
+    assert next_prime_slot(
+        _dt.datetime(2026, 8, 9, 23, 0, tzinfo=timezone.utc), [], set()
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_uses_prime_time_over_quiet_hours():
+    """Prime times win: naming the good hours beats naming the bad ones.
+
+    With only quiet hours, an 11pm publish clamps to the window edge (07:00)
+    along with every other platform. With prime times it lands on the hour
+    the operator actually chose.
+    """
+    import datetime as _dt
+
+    ny = ZoneInfo("America/New_York")
+    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "twitter", "published_at": published}],
+        [],  # no already-claimed slots
+    ]
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_offsets="twitter=0m",
+        social_schedule_prime_times="twitter=09:00,12:30",
+        social_schedule_quiet_hours="22:00-07:00",
+    )
+    svc = SocialDraftsService()
+
+    result = await svc.auto_schedule_ready_drafts(pool, sc)
+
+    assert result["scheduled"] == 1
+    slot = conn.execute.call_args[0][2].astimezone(ny)
+    assert (slot.hour, slot.minute) == (9, 0), "should be prime time, not 07:00"
+    assert slot.date() == _dt.date(2026, 8, 10)
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_opts_in_via_prime_times_alone():
+    """A platform needs only ONE of the two maps to be auto-slotted."""
+    import datetime as _dt
+
+    ny = ZoneInfo("America/New_York")
+    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "linkedin", "published_at": published}],
+        [],
+    ]
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_offsets="",  # no offset at all
+        social_schedule_prime_times="linkedin=08:00",
+    )
+    svc = SocialDraftsService()
+
+    result = await svc.auto_schedule_ready_drafts(pool, sc)
+
+    assert result["scheduled"] == 1
+    slot = conn.execute.call_args[0][2].astimezone(ny)
+    assert (slot.hour, slot.minute) == (8, 0)
+    # The eligibility query must have been asked for linkedin.
+    assert "linkedin" in conn.fetch.call_args_list[0][0][1]
+
+
+@pytest.mark.asyncio
+async def test_auto_schedule_avoids_slots_already_claimed_in_the_db():
+    """A slot another draft already holds is skipped, across sweeps."""
+    import datetime as _dt
+
+    ny = ZoneInfo("America/New_York")
+    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-2", "platform": "twitter", "published_at": published}],
+        [{
+            "platform": "twitter",
+            "scheduled_at": _dt.datetime(2026, 8, 10, 9, 0, tzinfo=ny),
+        }],
+    ]
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_prime_times="twitter=09:00,12:30",
+    )
+    svc = SocialDraftsService()
+
+    await svc.auto_schedule_ready_drafts(pool, sc)
+
+    slot = conn.execute.call_args[0][2].astimezone(ny)
+    assert (slot.hour, slot.minute) == (12, 30), "09:00 was already taken"
+
+
+@pytest.mark.asyncio
+async def test_offset_still_acts_as_a_floor_under_prime_times():
+    """`linkedin=3h` + `08:00` means "at least 3h later, then the next 08:00"."""
+    import datetime as _dt
+
+    ny = ZoneInfo("America/New_York")
+    # 07:00 publish; a bare 08:00 prime time would fire the same morning, but
+    # the 3h offset pushes the floor to 10:00, so it rolls to tomorrow's 08:00.
+    published = _dt.datetime(2026, 8, 10, 7, 0, tzinfo=ny)
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "linkedin", "published_at": published}],
+        [],
+    ]
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_offsets="linkedin=3h",
+        social_schedule_prime_times="linkedin=08:00",
+    )
+    svc = SocialDraftsService()
+
+    await svc.auto_schedule_ready_drafts(pool, sc)
+
+    slot = conn.execute.call_args[0][2].astimezone(ny)
+    assert slot == _dt.datetime(2026, 8, 11, 8, 0, tzinfo=ny)
+
+
+@pytest.mark.asyncio
+async def test_platform_without_prime_times_keeps_offset_behaviour():
+    """Mixed config: one platform on prime times, another on a plain offset."""
+    import datetime as _dt
+
+    ny = ZoneInfo("America/New_York")
+    published = _dt.datetime(2026, 8, 11, 10, 0, tzinfo=ny)
+    pool, conn = _make_pool()
+    conn.fetch.side_effect = [
+        [{"id": "d-1", "platform": "bluesky", "published_at": published}],
+        [],
+    ]
+    sc = _sched_site_config(
+        social_schedule_enabled="true",
+        social_schedule_offsets="bluesky=2h",
+        social_schedule_prime_times="twitter=09:00",  # bluesky absent
+    )
+    svc = SocialDraftsService()
+
+    await svc.auto_schedule_ready_drafts(pool, sc)
+
+    slot = conn.execute.call_args[0][2]
+    assert slot == published + _dt.timedelta(hours=2)

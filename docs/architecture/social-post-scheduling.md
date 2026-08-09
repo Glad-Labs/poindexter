@@ -7,8 +7,10 @@ when that time arrives.
 Two ways in, both optional:
 
 - **Manual** — `poindexter social schedule <draft> "tomorrow 9am"`.
-- **Auto-drip** — a per-platform offset from the post going live, so the same
-  link doesn't hit five platforms in the same minute. Off by default.
+- **Auto-drip** — per-platform prime-time hours (`twitter=09:00,12:30`) and/or
+  an offset from the post going live, so a post published at 11pm still
+  promotes at 9am and the same link doesn't hit five platforms in the same
+  minute. Off by default.
 
 ## Why the queue is ours, not Postiz's
 
@@ -76,8 +78,8 @@ it with no offset means their own 9am. An explicit offset always wins.
 resolution) runs two passes, auto-slot first so a `publish+0m` draft fires on
 the same sweep:
 
-1. `auto_schedule_ready_drafts` — pending drafts whose post is published get
-   `published_at + offset[platform]`, pushed past quiet hours.
+1. `auto_schedule_ready_drafts` — pending drafts whose post is published get a
+   slot (see _Picking the slot_ below).
 2. `fire_due_drafts` — due drafts go through `approve_draft`.
 
 Only pass 1 is gated on `social_schedule_enabled`. A hand-scheduled draft
@@ -108,23 +110,73 @@ Auto-slotting a post published longer ago than its offsets would put every
 slot in the past and fire the whole drip in one burst. When the computed slot
 is already due, the anchor moves to `now`, preserving the platform stagger.
 
+## Picking the slot
+
+Two ways to say when a promo fires. A platform opts in through **either**.
+
+**Prime times** (`social_schedule_prime_times`) name the hours a channel is
+worth posting to: `twitter=09:00,12:30,17:00`. The slot is the next listed
+time at or after the floor. This is what a night publish needs — a post going
+live at 11pm promotes at 09:00, not at midnight.
+
+**Offsets** (`social_schedule_offsets`) are a delay from publish:
+`linkedin=3h`. Alone, the offset _is_ the slot. Combined with prime times it
+becomes the **floor** the scan starts from — "at least 3h after publish, then
+the next good hour."
+
+### Prime times beat quiet hours
+
+For any platform declaring prime times, the quiet window is not applied. A
+quiet window only says where _not_ to post, so it clamps every displaced promo
+onto the window's edge. Measured, with `22:00-07:00` and an 11pm publish:
+
+| Platform | Offset | Quiet hours only | With prime times |
+| -------- | ------ | ---------------- | ---------------- |
+| twitter  | 0m     | Mon 07:00        | Mon 09:00        |
+| bluesky  | 15m    | Mon 07:00        | Mon 10:00        |
+| linkedin | 3h     | Mon 07:00        | Mon 08:00        |
+| reddit   | 1d     | Tue 07:00        | Tue 09:00        |
+
+Three of four platforms collapsed onto the same minute — the exact
+"same link everywhere at once" burst the stagger exists to prevent. Naming the
+good hours is strictly better than naming the bad ones.
+
+Note the side effect: prime times override relative ordering. LinkedIn above
+fires at 08:00, _before_ twitter's 09:00, despite the longer offset. Each
+channel independently hits its own best hour, so offsets stop controlling
+sequencing once prime times exist.
+
+### Collisions
+
+Slots are de-duplicated per platform, against both drafts queued in earlier
+sweeps and ones assigned in the current pass. Three posts published overnight
+spread across `09:00 / 12:30 / 17:00` rather than firing together. When a day's
+listed hours are all taken, the scan rolls to the next day (bounded by
+`_PRIME_TIME_SCAN_DAYS`, 14).
+
+Eligible drafts are ordered by `published_at`, so the assignment is stable —
+the oldest post keeps the earliest slot across re-runs.
+
 ## Settings
 
-| Key                                    | Default | What it does                                                                   |
-| -------------------------------------- | ------- | ------------------------------------------------------------------------------ |
-| `social_schedule_enabled`              | `false` | Auto-drip master switch                                                        |
-| `social_schedule_offsets`              | `''`    | `platform=duration` pairs, e.g. `twitter=0m,bluesky=15m,linkedin=3h,reddit=1d` |
-| `social_schedule_quiet_hours`          | `''`    | `HH:MM-HH:MM` operator-local; a slot inside moves to the end                   |
-| `social_schedule_max_lateness_minutes` | `180`   | Grace period before a due draft is left overdue                                |
-| `social_schedule_fire_batch_size`      | `10`    | Max promos one sweep sends                                                     |
+| Key                                    | Default | What it does                                                                                            |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `social_schedule_enabled`              | `false` | Auto-drip master switch                                                                                 |
+| `social_schedule_prime_times`          | `''`    | `platform=HH:MM,HH:MM` groups split by `;` — **the setting for time-of-day posting**                    |
+| `social_schedule_offsets`              | `''`    | `platform=duration` pairs. A floor when prime times are also set                                        |
+| `social_schedule_quiet_hours`          | `''`    | `HH:MM-HH:MM` operator-local. Ignored for platforms with prime times; still applies to offset-only ones |
+| `social_schedule_max_lateness_minutes` | `180`   | Grace period before a due draft is left overdue                                                         |
+| `social_schedule_fire_batch_size`      | `10`    | Max promos one sweep sends                                                                              |
 
-Both auto-drip gates default closed: the switch AND a per-platform offset. A
-platform absent from the offsets map is never auto-slotted, so flipping the
-switch without writing offsets changes nothing — enabling auto-drip is a
-deliberate two-step.
+Both auto-drip gates default closed: the switch AND a per-platform entry in
+`social_schedule_prime_times` or `social_schedule_offsets`. A platform named in
+neither is never auto-slotted, so flipping the switch alone changes nothing —
+enabling auto-drip is a deliberate two-step.
 
-One malformed pair in `social_schedule_offsets` costs that platform its drip
-and is logged; the rest still parse. A malformed `social_schedule_quiet_hours`
+One malformed pair in `social_schedule_offsets` or
+`social_schedule_prime_times` costs that platform its drip and is logged; the
+rest still parse. A platform whose prime times all fail to parse falls back to
+its offset rather than silently posting at midnight. A malformed `social_schedule_quiet_hours`
 pauses auto-scheduling entirely instead — degrading to "no quiet hours" would
 post inside exactly the window the operator carved out.
 

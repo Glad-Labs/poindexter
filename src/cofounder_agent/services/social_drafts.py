@@ -9,7 +9,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -598,17 +598,35 @@ class SocialDraftsService:
     ) -> dict[str, Any]:
         """Assign drip slots to pending drafts whose post has gone live.
 
-        The auto half of scheduling. For each ``pending`` draft belonging to
-        a published post, the slot is the post's publish time plus that
-        platform's configured offset (``social_schedule_offsets``), pushed
-        past ``social_schedule_quiet_hours`` if it lands inside.
+        The auto half of scheduling. Two ways to express when a promo fires,
+        and a platform opts in through either:
+
+        * ``social_schedule_prime_times`` — the hours that channel is worth
+          posting to (``twitter=09:00,12:30,17:00``). The slot is the next
+          listed time at or after the floor. **This is what a post published
+          at 11pm needs**: the promo lands at 09:00, not at midnight.
+        * ``social_schedule_offsets`` — a delay from publish
+          (``linkedin=3h``). On its own it IS the slot; alongside prime
+          times it is the floor the scan starts from, so "at least 3h after
+          publish, then the next good hour".
+
+        Prime times take precedence over ``social_schedule_quiet_hours`` for
+        platforms that declare them. A quiet window only says where NOT to
+        post, so it clamps every displaced promo onto the window's edge —
+        publishing at 11pm with a 22:00-07:00 window put four platforms on
+        the same 07:00 minute, destroying the stagger. Naming the good hours
+        is strictly better than naming the bad ones.
+
+        Slots are de-duplicated per platform against drafts already queued,
+        so several posts published overnight spread across that platform's
+        listed hours instead of firing as one burst.
 
         Two deliberate gates, both defaulting closed:
         ``social_schedule_enabled`` must be on, AND the platform must appear
-        in the offsets map. A platform with no offset is never auto-slotted,
-        so turning the switch on without writing offsets changes nothing.
-        Enabling this means promo copy ships on the strength of the POST's
-        approval rather than its own per-draft review.
+        in one of the two maps. A platform in neither is never auto-slotted,
+        so turning the switch on alone changes nothing. Enabling this means
+        promo copy ships on the strength of the POST's approval rather than
+        its own per-draft review.
 
         Backfill behaviour: for a post published longer ago than its offsets,
         slots would all be in the past and fire in one burst. The anchor
@@ -619,8 +637,19 @@ class SocialDraftsService:
             return {"scheduled": 0, "detail": "social_schedule_enabled=false"}
 
         offsets = parse_offsets(site_config.get("social_schedule_offsets", ""))
-        if not offsets:
-            return {"scheduled": 0, "detail": "social_schedule_offsets empty"}
+        prime_times = parse_prime_times(
+            site_config.get("social_schedule_prime_times", "")
+        )
+        # A platform opts in through EITHER setting. Prime times alone is the
+        # common case ("X posts at 9am"); an offset alone keeps the original
+        # relative-drip behaviour; both together means the offset is a floor
+        # the prime-time scan starts from.
+        eligible = sorted(set(offsets) | set(prime_times))
+        if not eligible:
+            return {
+                "scheduled": 0,
+                "detail": "social_schedule_offsets/prime_times empty",
+            }
 
         from services.scheduling_service import (
             next_allowed_time,
@@ -655,19 +684,50 @@ class SocialDraftsService:
                   AND p.status = 'published'
                   AND p.published_at IS NOT NULL
                   AND d.platform = ANY($1::text[])
+                ORDER BY p.published_at ASC, d.platform ASC
                 """,
-                list(offsets.keys()),
+                eligible,
+            )
+            # Slots already claimed on each platform, so a second post doesn't
+            # land on top of the first one's 09:00. Ordered scheduling above
+            # (oldest post first) keeps the assignment stable across sweeps.
+            claimed = await conn.fetch(
+                """
+                SELECT platform, scheduled_at
+                FROM social_post_drafts
+                WHERE status = 'scheduled' AND scheduled_at IS NOT NULL
+                  AND scheduled_at > now()
+                """
+            )
+
+        taken: dict[str, set[datetime]] = {}
+        for row in claimed:
+            taken.setdefault(row["platform"], set()).add(
+                row["scheduled_at"].astimezone(tz)
             )
 
         now = datetime.now(timezone.utc)
         scheduled = 0
         for row in rows:
-            offset = offsets[row["platform"]]
+            platform = row["platform"]
+            offset = offsets.get(platform, timedelta(0))
             published_at = row["published_at"]
             # Anchor forward for posts published long enough ago that their
             # whole drip would already be due.
             anchor = published_at if published_at + offset > now else now
-            slot = next_allowed_time((anchor + offset).astimezone(tz), quiet)
+            earliest = (anchor + offset).astimezone(tz)
+
+            times = prime_times.get(platform)
+            slot = None
+            if times:
+                # Prime times are a positive statement of when this channel is
+                # worth posting to, so they win over the quiet window — which
+                # only says where NOT to post and would otherwise pile every
+                # displaced promo onto the window's edge.
+                slot = next_prime_slot(earliest, times, taken.get(platform, set()))
+            if slot is None:
+                slot = next_allowed_time(earliest, quiet)
+
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -678,10 +738,12 @@ class SocialDraftsService:
                     row["id"],
                     slot.astimezone(timezone.utc),
                 )
+            taken.setdefault(platform, set()).add(slot)
             scheduled += 1
             logger.info(
-                "[social_drafts] auto-scheduled draft %s (%s) for %s",
-                row["id"][:8], row["platform"], slot.isoformat(),
+                "[social_drafts] auto-scheduled draft %s (%s) for %s%s",
+                row["id"][:8], platform, slot.isoformat(),
+                " (prime time)" if times else "",
             )
 
         return {
@@ -1067,6 +1129,115 @@ def parse_offsets(spec: str) -> dict[str, timedelta]:
                 "%s (%s) — skipping", platform, exc,
             )
     return out
+
+
+def parse_prime_times(spec: str) -> dict[str, list[time]]:
+    """Parse ``'twitter=09:00,12:30; linkedin=08:00'`` → ``{platform: [time]}``.
+
+    Each platform's times are the hours that channel is worth posting in,
+    operator-local. Times are sorted and de-duplicated so the "next slot at
+    or after X" scan can walk them in order.
+
+    Same lenient-per-entry contract as :func:`parse_offsets`: an unknown
+    platform or an unparseable clock time is logged and dropped rather than
+    raising, so one typo costs that platform its prime times instead of
+    stopping the other four from being scheduled at all.
+    """
+    out: dict[str, list[time]] = {}
+    if not spec or not spec.strip():
+        return out
+    for chunk in spec.split(";"):
+        piece = chunk.strip()
+        if not piece:
+            continue
+        platform, sep, raw_times = piece.partition("=")
+        platform = platform.strip().lower()
+        if not sep or not platform:
+            logger.warning(
+                "[social_drafts] social_schedule_prime_times: skipping %r "
+                "(expected platform=HH:MM,HH:MM)", piece,
+            )
+            continue
+        if platform not in _PLATFORM_TYPE:
+            logger.warning(
+                "[social_drafts] social_schedule_prime_times: unknown platform "
+                "%r — known: %s", platform, ", ".join(sorted(_PLATFORM_TYPE)),
+            )
+            continue
+        times: list[time] = []
+        for raw in raw_times.split(","):
+            token = raw.strip()
+            if not token:
+                continue
+            parsed = _parse_clock(token)
+            if parsed is None:
+                logger.warning(
+                    "[social_drafts] social_schedule_prime_times: bad time %r "
+                    "for %s — skipping", token, platform,
+                )
+                continue
+            times.append(parsed)
+        if times:
+            out[platform] = sorted(set(times))
+        else:
+            logger.warning(
+                "[social_drafts] social_schedule_prime_times: %s had no usable "
+                "times — it will fall back to its offset", platform,
+            )
+    return out
+
+
+def _parse_clock(token: str) -> time | None:
+    """``'09:00'`` / ``'9:00'`` / ``'17:30'`` → ``time``. None if unparseable."""
+    parts = token.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        hh, mm = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hh < 24 and 0 <= mm < 60):
+        return None
+    return time(hh, mm)
+
+
+# How far forward the prime-time scan will look before giving up. Only
+# reachable if a platform's time list is somehow empty (parse_prime_times
+# drops those) — a guard against an unbounded loop, not an expected path.
+_PRIME_TIME_SCAN_DAYS = 14
+
+
+def next_prime_slot(
+    earliest: datetime,
+    times: list[time],
+    taken: set[datetime],
+) -> datetime | None:
+    """First prime time at or after *earliest* that isn't already *taken*.
+
+    *earliest* is the floor — publish time plus the platform's offset — so a
+    post that goes live at 10am takes that day's 12:30 slot rather than
+    waiting for tomorrow's 09:00. A post published at 11pm rolls to the next
+    morning's first slot, which is the whole point: the promo lands in prime
+    time instead of at whatever hour the post happened to finish.
+
+    *taken* holds slots already claimed by other drafts on the same platform.
+    Without it, three posts published overnight would all grab 09:00 and fire
+    as a burst — the exact "same link everywhere at once" pattern the stagger
+    exists to avoid. Each collision advances to the platform's next slot.
+
+    Returns None if nothing is free within ``_PRIME_TIME_SCAN_DAYS``; the
+    caller falls back to the plain offset slot rather than dropping the draft.
+    """
+    if not times:
+        return None
+    day = earliest.date()
+    for _ in range(_PRIME_TIME_SCAN_DAYS):
+        for clock in times:
+            candidate = datetime.combine(day, clock, tzinfo=earliest.tzinfo)
+            if candidate >= earliest and candidate not in taken:
+                return candidate
+        day = day + timedelta(days=1)
+    return None
 
 
 def _emit_overdue_finding(

@@ -3282,6 +3282,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # reads as a bot to both humans and the platforms' own spam heuristics.
     # Example: 'twitter=0m,bluesky=15m,linkedin=3h,reddit=1d'
     'social_schedule_offsets': '',
+    # The hours each channel is actually worth posting to, operator-local, as
+    # `platform=HH:MM,HH:MM` groups separated by `;`. A promo fires at the
+    # next listed time at or after its floor (publish time + any offset), so
+    # a post that goes live at 11pm promotes at 09:00 rather than at midnight
+    # — which is the whole reason this exists. Several posts published
+    # overnight spread across the listed hours instead of stacking on one.
+    #
+    # Prefer this over social_schedule_quiet_hours for auto-drip: a quiet
+    # window only says where NOT to post, so it clamps every displaced promo
+    # onto the window's edge and collapses the per-platform stagger.
+    # Example: 'twitter=09:00,12:30,17:00; linkedin=08:00,12:00; reddit=09:00'
+    'social_schedule_prime_times': '',
     # Quiet window (HH:MM-HH:MM, operator-local) in which no promo fires; a
     # slot landing inside it moves to the window's end. Empty = no
     # restriction. Separate from publish_quiet_hours because the blog and
@@ -4224,6 +4236,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'social_schedule_fire_batch_size': {'owner': 'schedule_social_drafts', 'value_type': 'integer'},
     'social_schedule_max_lateness_minutes': {'owner': 'schedule_social_drafts', 'value_type': 'integer'},
     'social_schedule_offsets': {'owner': 'schedule_social_drafts'},
+    'social_schedule_prime_times': {'owner': 'schedule_social_drafts'},
     'social_schedule_quiet_hours': {'owner': 'schedule_social_drafts'},
     'social_x_made_with_ai': {'owner': 'social_drafts', 'value_type': 'boolean'},
     'stable_audio_open_server_url': {'owner': 'stable_audio_open'},
