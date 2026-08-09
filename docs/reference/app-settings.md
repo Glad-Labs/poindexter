@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-08-08.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 682 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 679 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -261,9 +261,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `gate_auto_expire_batch_size` | `50` |  | Cap per-cycle expiry to this many gates to avoid huge batches. Excess rolls over to the next cycle. |
-| `gate_auto_expire_enabled` | `true` |  | Master switch for the brain gate auto-expire probe (#338). When false, the probe short-circuits without scanning gates. |
-| `gate_auto_expire_notify_threshold` | `1` |  | Only ping the operator (Telegram coalesced) when batch size >= this. Default 1 = always notify on any expiry. |
 
 ## general
 

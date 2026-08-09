@@ -24,7 +24,7 @@ through the existing operator-alert path:
    higher-signal page.
 
 Routing: like every other brain probe (``brain/prefect_stuck_flow_probe.py``,
-``brain/gate_pending_summary_probe.py``) the page goes through
+``brain/pr_staleness_probe.py``) the page goes through
 ``notify_operator`` (Telegram for critical, Discord for warning) and leaves
 an ``audit_log`` row for the findings dashboard / daily roll-up. The probe is
 registered on the worker-side ``BrainProbeRegistry`` via

@@ -3054,17 +3054,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # active profiles to restore crash-detection for their services.
     'compose_drift_active_profiles': '',
 
-    # ----- Scheduled-tasks probe (brain/health_probes.py::probe_scheduled_tasks) -----
-    # The containerised brain can't enumerate the host Windows Task Scheduler, so
-    # it asks the host Recovery Agent (GET /tasks — shares mcp_http_probe_recovery_url
-    # + _token, same agent) for the status of the host Scheduled Tasks named here
-    # (CSV), then pages when one is DISABLED, missing, or its last run failed.
-    # Empty default = advisory no-op (fail-open) so an operator without the agent —
-    # or on a non-Windows host — never pages. Set it to the host's self-heal task
-    # names to enable, e.g.
-    # "Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync".
-    'scheduled_tasks_probe_watch_tasks': '',
-
     # ----- Docker port-forward adaptive recovery (brain/docker_port_forward_probe.py) -----
     # The probe detects a stuck Docker Desktop / WSL2 NAT host-port forward
     # (internal-OK + external-FAIL) and recovers it. A `docker restart` fixes a
@@ -4217,7 +4206,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'research_web_content_chars_per_source': {'owner': 'research_service', 'value_type': 'integer'},
     'router_feedback_alpha': {'owner': 'router_outcome_feedback', 'value_type': 'float'},
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},
-    'scheduled_tasks_probe_watch_tasks': {'owner': 'health_probes'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_circular_job_page_threshold': {'owner': 'scheduler', 'value_type': 'integer'},
     'scheduler_job_metrics_capture_enabled': {'owner': 'scheduler', 'value_type': 'boolean'},

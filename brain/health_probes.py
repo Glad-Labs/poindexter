@@ -19,7 +19,6 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from datetime import UTC
 from typing import Any
 
@@ -179,7 +178,6 @@ PROBE_SCHEDULES = {
     "image_search": 3600,      # 1 hour
     "grafana_datasources": 300,  # 5 min
     "public_site": 300,          # 5 min
-    "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
     "gpu_temperature": 300,      # 5 min — temp can spike fast under image-gen + LLM
     # P0 — pipeline health
@@ -694,172 +692,11 @@ async def probe_public_site(_pool) -> dict:
         return {"ok": False, "detail": f"Public site check failed: {str(e)[:100]}"}
 
 
-# ---------------------------------------------------------------------------
-# Scheduled-tasks probe — host self-heal task liveness via the Recovery Agent.
-#
-# The brain runs in a Linux container and can't enumerate the host's Windows
-# Task Scheduler (the long-standing "needs migration" gap, #704). Instead it
-# asks the host Recovery Agent (GET /tasks — see scripts/recovery-agent.py) for
-# the status of an operator-configured watch list, then pages when a watched
-# self-heal task is disabled, missing, or its last run failed. The watch list +
-# agent URL/token live in app_settings (config-in-DB), so the agent stays a
-# generic reflector with no operator task names baked into the mirrored script.
-# ---------------------------------------------------------------------------
-
-# Shared with mcp_http_probe + compose_drift_probe — same physical agent.
+# The host Recovery Agent URL + token — SHARED with mcp_http_probe and
+# compose_drift_probe (same physical agent). Read here by
+# ``_call_agent_recovery`` for host-side service restarts.
 RECOVERY_URL_KEY = "mcp_http_probe_recovery_url"
 RECOVERY_TOKEN_KEY = "mcp_http_probe_recovery_token"  # noqa: S105 — setting key, not a secret
-SCHED_TASKS_WATCH_KEY = "scheduled_tasks_probe_watch_tasks"
-
-# Windows "Last Result" codes that are NOT failures: 0 = success, 1 =
-# running/queued, 267009 = SCHED_S_TASK_RUNNING, 267011 = SCHED_S_TASK_HAS_NOT_RUN
-# (the same set the legacy direct-schtasks probe treated as healthy).
-_OK_LAST_RESULT_CODES: frozenset[int] = frozenset({0, 1, 267009, 267011})
-
-
-def _derive_tasks_url(recovery_url: str) -> str:
-    """Turn the agent's ``/recover`` URL into its ``/tasks`` sibling.
-
-    ``mcp_http_probe_recovery_url`` points at the agent's POST ``/recover``
-    endpoint; the read-only status endpoint lives at ``/tasks`` on the same
-    host:port. Swaps the final path segment.
-    """
-    base = recovery_url.rstrip("/").rsplit("/", 1)[0]
-    return base + "/tasks"
-
-
-def _task_problem(task: dict) -> str | None:
-    """Return a one-line problem for an unhealthy task, or None when healthy.
-
-    Single source of truth for the page decision: a task is unhealthy if it's
-    missing on the host, disabled (``Settings.Enabled=False`` or
-    ``State=Disabled`` — the state ``Set-ScheduledTask -Action`` silently leaves
-    it in), or its last run returned a non-OK result code.
-    """
-    name = str(task.get("name", "?"))
-    if not task.get("exists", True):
-        return f"{name}: not found on host"
-    state = task.get("state")
-    if task.get("enabled") is False or (
-        isinstance(state, str) and state.lower() == "disabled"
-    ):
-        return f"{name}: DISABLED"
-    lrr = task.get("last_run_result")
-    if lrr is not None:
-        try:
-            code: int | None = int(lrr)
-        except (TypeError, ValueError):
-            code = None  # unparseable → don't page on it
-        if code is not None and code not in _OK_LAST_RESULT_CODES:
-            return f"{name}: last run failed (exit {code})"
-    return None
-
-
-def _evaluate_scheduled_task_health(tasks: list[dict]) -> tuple[bool, str]:
-    """Reduce a list of task-status dicts to an ``(ok, detail)`` page decision."""
-    problems = [p for t in tasks if (p := _task_problem(t)) is not None]
-    if problems:
-        return False, (
-            f"{len(problems)} watched task(s) unhealthy: " + "; ".join(problems[:5])
-        )
-    return True, f"all {len(tasks)} watched scheduled task(s) healthy"
-
-
-async def probe_scheduled_tasks(
-    pool,
-    *,
-    http_client_factory: Callable[..., Any] | None = None,
-) -> dict:
-    """Probe: verify host self-heal Scheduled Tasks are enabled + last-run-ok.
-
-    The brain can't see the host Windows Task Scheduler from inside its Linux
-    container, so it asks the host Recovery Agent's ``GET /tasks`` endpoint for
-    the status of the tasks named in ``scheduled_tasks_probe_watch_tasks``, then
-    pages when one is disabled, missing, or last-run-failed.
-
-    Fail-open (advisory ``ok=True``) when the agent URL/token are unset or the
-    watch list is empty — an un-configured operator (e.g. a non-Windows OSS
-    install with no agent) never pages, mirroring the host-recover fall-through
-    in compose_drift_probe. Debounce + escalation is the framework's job
-    (``run_health_probes`` pages after ``ALERT_AFTER_FAILURES`` consecutive
-    fails), so this probe only reports a single-cycle ``ok``/``detail``.
-    """
-    watch_csv = await _read_app_setting(pool, SCHED_TASKS_WATCH_KEY, "")
-    watch = [t.strip() for t in watch_csv.split(",") if t.strip()]
-    recovery_url = (await _read_app_setting(pool, RECOVERY_URL_KEY, "")).strip()
-    recovery_token = (await _read_app_setting(pool, RECOVERY_TOKEN_KEY, "")).strip()
-
-    if not recovery_url or not recovery_token:
-        return {
-            "ok": True,
-            "detail": (
-                "recovery agent URL/token unset — host scheduled-task liveness "
-                "not checked (advisory; set mcp_http_probe_recovery_url + "
-                "mcp_http_probe_recovery_token to enable)"
-            ),
-        }
-    if not watch:
-        return {
-            "ok": True,
-            "detail": (
-                "no watched tasks configured — set scheduled_tasks_probe_watch_tasks "
-                "to a CSV of host Scheduled Task names (advisory)"
-            ),
-        }
-
-    if httpx is None and http_client_factory is None:
-        return {
-            "ok": True,
-            "detail": (
-                "httpx unavailable in brain image — scheduled-task liveness "
-                "not checked (advisory)"
-            ),
-        }
-
-    tasks_url = _derive_tasks_url(recovery_url)
-    _httpx: Any = httpx
-    factory = http_client_factory or (lambda: _httpx.AsyncClient(timeout=10))
-
-    try:
-        async with factory() as client:
-            response = await client.get(
-                tasks_url,
-                params={"name": watch},
-                headers={"Authorization": f"Bearer {recovery_token}"},
-            )
-            status_code = response.status_code
-            if not (200 <= status_code < 300):
-                return {
-                    "ok": False,
-                    "detail": (
-                        f"recovery agent GET {tasks_url} returned HTTP {status_code} "
-                        f"— can't verify host scheduled-task health"
-                    ),
-                }
-            body = response.json()
-    except Exception as exc:  # noqa: BLE001 — any transport error is a real signal
-        return {
-            "ok": False,
-            "detail": (
-                f"recovery agent unreachable at {tasks_url}: {type(exc).__name__}: "
-                f"{exc} — the Recovery Agent task itself may be down"
-            ),
-        }
-
-    if not isinstance(body, dict) or not body.get("ok", False):
-        return {
-            "ok": False,
-            "detail": f"recovery agent /tasks returned an error: {str(body)[:200]}",
-        }
-
-    tasks = body.get("tasks") or []
-    ok, detail = _evaluate_scheduled_task_health(tasks)
-    result: dict = {"ok": ok, "detail": detail}
-    if not ok:
-        result["failed"] = [
-            str(t.get("name")) for t in tasks if _task_problem(t) is not None
-        ][:5]
-    return result
 
 
 async def probe_gpu_temperature(pool) -> dict:
@@ -1708,7 +1545,6 @@ PROBES = {
     "content_gen": probe_content_gen,
     "grafana_datasources": probe_grafana_datasources,
     "public_site": probe_public_site,
-    "scheduled_tasks": probe_scheduled_tasks,
     "disk_space": probe_disk_space,
     "gpu_temperature": probe_gpu_temperature,
     "r2_connectivity": probe_r2_connectivity,

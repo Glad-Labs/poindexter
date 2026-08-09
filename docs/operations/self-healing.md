@@ -319,10 +319,9 @@ host-level recovery. It runs on the host (started windowless at logon by the
 - **`GET /healthz`** → `200` liveness.
 - **`POST /recover`** with `{"service": "<name>"}` → runs the action registered
   for that service.
-- **`GET /tasks?name=<TaskName>&name=…`** (authenticated) → read-only status of
-  the named host Scheduled Tasks: `{name, exists, enabled, state,
-last_run_result}` per task. Lets the containerised brain see the host Task
-  Scheduler it otherwise can't — see [Scheduled-tasks liveness](#scheduled-tasks-liveness).
+  (`GET /tasks`, which reflected host Windows Scheduled Task status back to the
+  brain, was removed 2026-08-08 with its only consumer — see
+  [Scheduled-tasks liveness](#scheduled-tasks-liveness--retired-2026-08-08).)
 
 ### Action kinds
 
@@ -391,12 +390,11 @@ The brain runs these every 5-minute cycle. Two patterns:
 
 **HTTP/inspect probes** — actively check a surface, recover, cap, page:
 
-| Probe                                        | Watches                                                                                       | Detect                                                                                                                                                                                                                                                                                                     | Recover                                                                                                                                         | Escalate            |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                                                                                                                                                                                                                   | launcher (host process) or host-recover (`mcp-http`)                                                                                            | page after cap      |
-| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                                                                                                                                                                                                                   | host-recover (`compose-reapply`) — see below                                                                                                    | page after cap      |
-| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                                                                                                                                                                                                             | — (detect-only) — see below                                                                                                                     | page after 3 cycles |
-| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries. Postgres entries ALSO get a real-auth tier (one `asyncpg.connect()`) once SSLRequest reports healthy, to catch SCRAM-corrupted proxies the SSLRequest round trip can't see — see below | HTTP entry: `docker restart` → re-probe. DB entry, restart proven ineffective, or scram-corrupted auth: **alert-only** (no restart) — see below | page after cap      |
+| Probe                                | Watches                                                                                       | Detect                                                                                                                                                                                                                                                                                                     | Recover                                                                                                                                         | Escalate       |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `brain/mcp_http_probe.py`            | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                                                                                                                                                                                                                   | launcher (host process) or host-recover (`mcp-http`)                                                                                            | page after cap |
+| `brain/compose_drift_probe.py`       | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                                                                                                                                                                                                                   | host-recover (`compose-reapply`) — see below                                                                                                    | page after cap |
+| `brain/docker_port_forward_probe.py` | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries. Postgres entries ALSO get a real-auth tier (one `asyncpg.connect()`) once SSLRequest reports healthy, to catch SCRAM-corrupted proxies the SSLRequest round trip can't see — see below | HTTP entry: `docker restart` → re-probe. DB entry, restart proven ineffective, or scram-corrupted auth: **alert-only** (no restart) — see below | page after cap |
 
 **Heartbeat/freshness probes** — read the newest success row a service stamps in
 `audit_log`; if it's too old, the service is wedged:
@@ -651,37 +649,27 @@ This is separate from `compose_drift_auto_recover_enabled` — the brain's _own_
 `docker compose up` — which **stays off** on a Windows host because it mangles
 the `C:\` binds (see the detector/actor split above).
 
-## Scheduled-tasks liveness
+## Scheduled-tasks liveness — RETIRED 2026-08-08
 
-The brain can't enumerate the host's Windows Task Scheduler from inside its
-Linux container, so the host self-heal tasks themselves — the Recovery Agent,
-the MCP HTTP launcher, the deploy-checkout sync, the Docker Engine watchdog —
-were historically unwatched (the probe used to hard-fail with "needs
-migration"). The `scheduled_tasks` probe (`brain/health_probes.py`) closes that
-gap by asking the host Recovery Agent, which **can** see the scheduler:
+A `scheduled_tasks` probe (`brain/health_probes.py`) used to watch the host's
+**Windows** Task Scheduler entries — the Recovery Agent, the MCP HTTP launcher,
+the deploy-checkout sync, the Docker Engine watchdog — by asking the host
+Recovery Agent's `GET /tasks` endpoint, which could see the scheduler the
+containerised brain could not.
 
-1. Read the watch list from `scheduled_tasks_probe_watch_tasks` (CSV of host
-   Scheduled Task names) plus the shared agent URL/token.
-2. `GET /tasks?name=…` on the agent → per-task `{exists, enabled, state,
-last_run_result}`.
-3. Page (warning) when any watched task is **disabled** (`Settings.Enabled=False`
-   or `State=Disabled` — the state `Set-ScheduledTask -Action` silently leaves a
-   task in, taking the agent down with no alert), **missing**, or its **last run
-   failed** (a result code outside the success set `{0, 1, 267009, 267011}`).
-4. **Fail-open:** when the agent URL/token are unset _or_ the watch list is
-   empty, the probe is advisory (`ok=true`) and never pages — an operator
-   without the agent, or on a non-Windows host, sees no false alarms (mirrors
-   compose-drift's host-recover fall-through).
+It was retired when the host moved to Pop!_OS: **systemd timers replaced Task
+Scheduler**, so the probe, its `scheduled_tasks_probe_watch_tasks` setting, and
+the agent's Windows-only `/tasks` endpoint were all aimed at a surface that no
+longer exists. It never fired falsely — the fail-open branch kept it advisory
+once `mcp_http_probe_recovery_url` went empty — but a probe that cannot fail is
+not coverage, and leaving it in place implied the host's scheduled work was
+being watched when it was not.
 
-Detection-only by design: the agent stays a dumb reflector (returns raw status;
-the brain owns the page/no-page policy), and escalation is the brain's standard
-probe debounce — page once after `ALERT_AFTER_FAILURES` consecutive failures,
-then sit visibly-degraded. A human re-enables the task. (Auto-re-enable via a
-new agent action is a possible future step — the agent already restarts tasks
-for `mcp-http`.)
-
-Example watch list:
-`Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync,Docker Engine Watchdog`.
+**The gap is real and currently open.** Nothing watches the systemd side today:
+the `poindexter-session@*` timers, and any other host unit, are unmonitored.
+Closing it means a Linux-native check (`systemctl list-timers` /
+`systemd_exporter`), not a port of the old probe — see the scheduled-agents
+runbook for what the fleet now looks like.
 
 ## Prefect flow-run zombie reclaim (concurrency-slot wedge)
 
@@ -743,7 +731,6 @@ full incident write-up.
 | `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
 | `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
 | `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
-| `scheduled_tasks_probe_watch_tasks`                           | (empty)                                    | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
 | `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                   |
 | `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                 |
 | `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
@@ -772,12 +759,7 @@ The agent is host-local. After changing `scripts/recovery-agent.py` / `.cmd`:
 2. Restart the Task; confirm `GET http://localhost:9841/healthz` → `200`.
 3. Set `mcp_http_probe_recovery_url` +
    `mcp_http_probe_recovery_token` in `app_settings` if not already.
-4. To enable host scheduled-task liveness checks, set
-   `scheduled_tasks_probe_watch_tasks` to a CSV of the task names to watch (e.g.
-   `Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync,Docker Engine Watchdog`).
-   Confirm with an authenticated `GET http://localhost:9841/tasks?name=Poindexter+MCP+HTTP`
-   → per-task JSON status.
-5. One-time: install the [own-liveness watchdog](#own-liveness-watchdog) —
+4. One-time: install the [own-liveness watchdog](#own-liveness-watchdog) —
    `.\scripts\recovery-agent-watchdog.ps1 -Install` from an elevated
    PowerShell prompt — so a crashed or wedged agent recovers within one 5-min
    cycle instead of waiting for next logon/reboot.

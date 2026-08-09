@@ -205,24 +205,6 @@ class TestRestartContainer:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestScheduledTasksProbe:
-    async def test_fail_open_advisory_when_agent_unconfigured(self):
-        # The "needs migration" hard-fail is gone (#704): the probe now asks the
-        # host Recovery Agent (GET /tasks) which CAN see the host Task Scheduler.
-        # When the agent URL/token aren't configured (or the pool can't be read),
-        # the probe is advisory (ok:True) rather than fake-healthy OR chronically
-        # failing — mirrors compose_drift's host-recover fall-through. Full
-        # behavior lives in tests/unit/brain/test_scheduled_tasks_probe.py.
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value=None)  # no settings rows
-        r = await hp.probe_scheduled_tasks(pool)
-        assert r.get("ok") is True
-        assert "advisory" in r.get("detail", "")
-        assert "needs migration" not in r.get("detail", "")
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
 class TestRunHealthProbes:
     async def test_skips_undue_probes(self):
         now = time.time()

@@ -139,7 +139,8 @@ def _reset_state() -> None:
 
 
 # ---------------------------------------------------------------------------
-# app_settings reads — direct asyncpg, mirrors brain/gate_pending_summary_probe.
+# app_settings reads — direct asyncpg (the brain has no SiteConfig), the same
+# shape every sibling brain probe uses.
 # ---------------------------------------------------------------------------
 
 
