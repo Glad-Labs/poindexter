@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## [0.120.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.119.0...v0.120.0) (2026-08-09)
+
+
+### Features
+
+* **mcp:** add schedule_post — approve + publish slot in one call ([#3134](https://github.com/Glad-Labs/glad-labs-stack/issues/3134)) ([4c1778f](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1778fabb4149537e359c22fd55355c86c8ae87))
+* **social:** prime-time slots so a night publish promotes in the morning ([#3139](https://github.com/Glad-Labs/glad-labs-stack/issues/3139)) ([9dbba5b](https://github.com/Glad-Labs/glad-labs-stack/commit/9dbba5b75983d1c92397f40981c7d7e1f2f401fa))
+
+
+### Bug Fixes
+
+* **ci:** report the weekly security baseline instead of failing in silence ([#3135](https://github.com/Glad-Labs/glad-labs-stack/issues/3135)) ([69bfc49](https://github.com/Glad-Labs/glad-labs-stack/commit/69bfc497856d0d6f33fee97f51718c1dc21652f7))
+* **glitchtip:** stop capturing expected control flow + fragmenting one outage into 164 issues ([#3133](https://github.com/Glad-Labs/glad-labs-stack/issues/3133)) ([3a620c0](https://github.com/Glad-Labs/glad-labs-stack/commit/3a620c0da1b421868c822d1e3f1c67ca72daad1f))
+* **image-gen:** make the OCR text-leakage gate actually block ([#3131](https://github.com/Glad-Labs/glad-labs-stack/issues/3131)) ([579db46](https://github.com/Glad-Labs/glad-labs-stack/commit/579db46c0dbdd467b8178a4a68d2765cb5666fb7))
+* **images:** operator image renders take the GPU lock instead of racing it ([#3136](https://github.com/Glad-Labs/glad-labs-stack/issues/3136)) ([7e9ea64](https://github.com/Glad-Labs/glad-labs-stack/commit/7e9ea6479963d13ce6c5766cba3759e2e8e83c53))
+* **media:** stop stranding pieces without a shot list, and recover the 27 ([#3138](https://github.com/Glad-Labs/glad-labs-stack/issues/3138)) ([7e16393](https://github.com/Glad-Labs/glad-labs-stack/commit/7e16393705799e2001531a0c5b51c3b9ae723b92))
+* **media:** thread the short script into the shot-list backfill ([#3141](https://github.com/Glad-Labs/glad-labs-stack/issues/3141)) ([d1ddbd4](https://github.com/Glad-Labs/glad-labs-stack/commit/d1ddbd4c4bbd51c28b8b52f70810538e15bbab1e))
+* **ops:** claude-md-sync resolves its own conflicts and merges itself ([#3132](https://github.com/Glad-Labs/glad-labs-stack/issues/3132)) ([f3cb1d2](https://github.com/Glad-Labs/glad-labs-stack/commit/f3cb1d2956d10eb58b84ab498e74c0146f7298f2))
+
 ## [0.119.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.118.0...v0.119.0) (2026-08-08)
 
 
