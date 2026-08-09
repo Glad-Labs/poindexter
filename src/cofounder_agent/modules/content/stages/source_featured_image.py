@@ -805,6 +805,15 @@ async def _try_image_gen_featured(
                         "Featured image rendered on attempt %d/%d", attempt, attempts,
                     )
                 break
+            if isinstance(server_meta, dict) and server_meta.get("ocr_gate_rejected"):
+                # Verdict, not window — see _render_image_gen. Retrying spends
+                # another full server-side re-roll budget to be told the same
+                # thing, so fall through to the no-image-gen-image path now.
+                logger.warning(
+                    "Featured image blocked by the OCR text-leakage gate "
+                    "(attempt %d/%d) — not retrying", attempt, attempts,
+                )
+                break
             logger.warning(
                 "Featured image render returned nothing (attempt %d/%d)",
                 attempt, attempts,
@@ -1203,6 +1212,19 @@ async def _render_image_gen(
             )
 
     if resp.status_code != 200:
+        from services.image_ocr_gate import (
+            describe_ocr_gate_rejection,
+            is_ocr_gate_rejection,
+            safe_json,
+        )
+        body = safe_json(resp)
+        if is_ocr_gate_rejection(resp.status_code, body):
+            # Flagged in the meta so the caller's retry loop can stop: the
+            # server already re-rolled the seed image_ocr_gate_max_attempts
+            # times, so this is a verdict on the prompt, not a transient
+            # window like a cold start or a GPU-lock timeout.
+            logger.warning("[IMAGE] Featured %s", describe_ocr_gate_rejection(body))
+            return None, {"ocr_gate_rejected": True}
         return None, {}
 
     return await _resolve_gen_featured_response(resp, image_gen_url=image_gen_url)

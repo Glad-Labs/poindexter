@@ -1714,6 +1714,31 @@ DEFAULTS: dict[str, str] = {
     'image_ocr_gate_max_chars': '6',
     'image_ocr_gate_max_attempts': '3',
     'image_ocr_gate_min_confidence': '0.3',
+    # Whether a failing verdict BLOCKS the render (HTTP 422) or merely
+    # annotates it. Default on, because "annotates it" is what shipped: from
+    # 2026-07-13 to 2026-08-08, 67 of 693 renders (9.7%) failed the gate and
+    # were returned anyway — up to 704 legible characters — since no caller
+    # ever read the `ocr_gate_passed` field the server was setting. One of
+    # them put "Poindexter Philosophy" across the top of a published-bound
+    # hero image, which both the blog-generation SKILL.md and the operator
+    # image policy forbid outright.
+    #
+    # Expect ~10% of renders to be rejected at max_chars=6. A rejection takes
+    # the SAME path a failed render already takes: Pexels when
+    # image_stock_fallback_enabled is on, otherwise no image plus a warn
+    # `image_gen_downgrade` finding. That is the intended trade — a missing
+    # hero is an operator ping, a text-branded hero is a policy breach on a
+    # public page. Turn this off to go back to annotate-only.
+    'image_ocr_gate_enforce': 'true',
+    # Whether "OCR could not scan this image" also blocks. Default OFF, and
+    # deliberately separate from `enforce`: a missing/broken easyocr would
+    # otherwise convert into a total image-generation outage. Off is still
+    # honest rather than fail-open — the response reports
+    # ocr_gate_status='unavailable' with ocr_gate_passed=false and
+    # ocr_text_chars=null, the audit row lands at warning severity, and the
+    # server logs at ERROR. Turn it on when no image at all is preferable to
+    # an unverified one.
+    'image_ocr_gate_fail_closed_when_unavailable': 'false',
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
@@ -3867,6 +3892,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_model': {'value_type': 'model'},
     'image_negative_prompt': {'value_type': 'string'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
+    'image_ocr_gate_enforce': {'value_type': 'boolean'},
+    'image_ocr_gate_fail_closed_when_unavailable': {'value_type': 'boolean'},
     'image_ocr_gate_max_attempts': {'value_type': 'integer'},
     'image_ocr_gate_max_chars': {'value_type': 'integer'},
     'image_ocr_gate_min_confidence': {'value_type': 'float'},

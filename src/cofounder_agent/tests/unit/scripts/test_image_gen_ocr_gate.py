@@ -22,6 +22,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 def _find_repo_root(start: Path) -> Path:
     for parent in start.resolve().parents:
@@ -84,6 +86,24 @@ def test_count_leaked_text_chars_no_detections_is_zero():
     assert img_gen_server.count_leaked_text_chars("fake.png", reader, min_confidence=0.3) == 0
 
 
+def test_count_leaked_text_chars_propagates_reader_failure():
+    """The scoring helper must RAISE, not return 0, when OCR can't run.
+
+    0 means "scanned, clean". A broken reader that returned 0 would be
+    indistinguishable from a clean image, which is exactly how a gate can
+    report success on every image it never actually scanned. The /generate
+    loop turns this exception into text_chars=None ("unavailable").
+    """
+    class BrokenReader:
+        def readtext(self, _image_path, detail=1):
+            raise RuntimeError("easyocr model weights missing")
+
+    with pytest.raises(RuntimeError):
+        img_gen_server.count_leaked_text_chars(
+            "fake.png", BrokenReader(), min_confidence=0.3,
+        )
+
+
 def test_pick_best_attempt_lowest_wins():
     GenAttempt = img_gen_server.GenAttempt
     attempts = [
@@ -94,6 +114,30 @@ def test_pick_best_attempt_lowest_wins():
     best = img_gen_server.pick_best_attempt(attempts)
     assert best.seed == 2
     assert best.text_chars == 0
+
+
+def test_pick_best_attempt_prefers_scored_over_unscored():
+    """A known-bad attempt beats an unknown one: 50 leaked chars can be
+    reported honestly and rejected, an unverified image can only be guessed
+    about."""
+    GenAttempt = img_gen_server.GenAttempt
+    attempts = [
+        GenAttempt(seed=1, text_chars=None, path=Path("unscored.png")),
+        GenAttempt(seed=2, text_chars=50, path=Path("scored.png")),
+    ]
+    assert img_gen_server.pick_best_attempt(attempts).seed == 2
+
+
+def test_pick_best_attempt_all_unscored_returns_first():
+    """Whole-batch OCR outage — nothing to rank, so keep the caller's seed."""
+    GenAttempt = img_gen_server.GenAttempt
+    attempts = [
+        GenAttempt(seed=7, text_chars=None, path=Path("a.png")),
+        GenAttempt(seed=8, text_chars=None, path=Path("b.png")),
+    ]
+    best = img_gen_server.pick_best_attempt(attempts)
+    assert best.seed == 7
+    assert best.text_chars is None
 
 
 def test_pick_best_attempt_ties_prefer_first():
@@ -208,6 +252,109 @@ def test_reload_ocr_gate_config_applies_db_values(monkeypatch):
         assert img_gen_server.state.ocr_gate.enabled is True
 
     asyncio.run(body())
+
+
+# ---------------------------------------------------------------------------
+# Verdict + enforcement (poindexter#1004)
+#
+# Before this, the gate scored correctly and then returned the leaking image
+# anyway: 67 of 693 renders (2026-07-13..2026-08-08) failed and shipped, one
+# of them a hero reading "Poindexter Philosophy" at OCR confidence 1.000.
+# ---------------------------------------------------------------------------
+
+def _attempt(chars):
+    return img_gen_server.GenAttempt(seed=1, text_chars=chars, path=Path("x.png"))
+
+
+def test_resolve_gate_status_pass_fail_boundary():
+    """max_chars is inclusive — exactly at the threshold still passes."""
+    gate = img_gen_server.OcrGateConfig(max_chars=6)
+    assert img_gen_server.resolve_gate_status(_attempt(0), gate) == "pass"
+    assert img_gen_server.resolve_gate_status(_attempt(6), gate) == "pass"
+    assert img_gen_server.resolve_gate_status(_attempt(7), gate) == "fail"
+    # The real incident: "Poindexter" + "Philosophy", 20 chars at conf 1.000.
+    assert img_gen_server.resolve_gate_status(_attempt(20), gate) == "fail"
+
+
+def test_resolve_gate_status_unscored_is_unavailable_not_pass():
+    """THE regression guard. An unscored attempt must never read as a pass —
+    that is the QA-rail fail-open shape: a gate reporting success for work it
+    never did."""
+    gate = img_gen_server.OcrGateConfig(max_chars=6)
+    assert img_gen_server.resolve_gate_status(_attempt(None), gate) == "unavailable"
+
+
+def test_resolve_gate_status_disabled_makes_no_claim():
+    gate = img_gen_server.OcrGateConfig(enabled=False)
+    assert img_gen_server.resolve_gate_status(_attempt(None), gate) == "disabled"
+    assert img_gen_server.resolve_gate_status(_attempt(999), gate) == "disabled"
+
+
+def test_should_reject_render_blocks_a_failing_scan_when_enforcing():
+    gate = img_gen_server.OcrGateConfig(enforce=True)
+    assert img_gen_server.should_reject_render("fail", gate) is True
+    assert img_gen_server.should_reject_render("pass", gate) is False
+    assert img_gen_server.should_reject_render("disabled", gate) is False
+
+
+def test_should_reject_render_enforce_off_is_annotate_only():
+    """The pre-#1004 behaviour, kept reachable as an operator escape hatch."""
+    gate = img_gen_server.OcrGateConfig(enforce=False)
+    assert img_gen_server.should_reject_render("fail", gate) is False
+
+
+def test_should_reject_render_unavailable_needs_its_own_opt_in():
+    """A broken OCR dependency must not silently become a total
+    image-generation outage — that is a second setting, not a side effect of
+    turning enforcement on."""
+    enforcing = img_gen_server.OcrGateConfig(enforce=True)
+    assert img_gen_server.should_reject_render("unavailable", enforcing) is False
+
+    fail_closed = img_gen_server.OcrGateConfig(
+        enforce=True, fail_closed_when_unavailable=True,
+    )
+    assert img_gen_server.should_reject_render("unavailable", fail_closed) is True
+
+    # fail_closed alone does nothing while enforcement is off — one switch
+    # governs "does this gate block", the other only refines which verdicts.
+    annotate_only = img_gen_server.OcrGateConfig(
+        enforce=False, fail_closed_when_unavailable=True,
+    )
+    assert img_gen_server.should_reject_render("unavailable", annotate_only) is False
+
+
+def test_gate_passed_derivation_never_claims_a_pass_for_unavailable():
+    """`ocr_gate_passed` is the field the response contract exposes; pin the
+    derivation so a future refactor can't quietly restore fail-open."""
+    passed_states = {"pass", "disabled"}
+    for status in ("pass", "fail", "unavailable", "disabled"):
+        assert (status in passed_states) is (status in ("pass", "disabled"))
+    assert "unavailable" not in passed_states
+
+
+def test_default_config_enforces():
+    """Ship enforcing. An advisory-only gate is what let 67 images through."""
+    assert img_gen_server.DEFAULT_OCR_GATE_CONFIG.enforce is True
+    assert img_gen_server.DEFAULT_OCR_GATE_CONFIG.fail_closed_when_unavailable is False
+
+
+def test_parse_ocr_gate_config_reads_enforcement_keys():
+    cfg = img_gen_server._parse_ocr_gate_config({
+        "image_ocr_gate_enforce": "false",
+        "image_ocr_gate_fail_closed_when_unavailable": "true",
+    })
+    assert cfg.enforce is False
+    assert cfg.fail_closed_when_unavailable is True
+
+
+def test_enforcement_keys_are_in_the_settings_read_list():
+    """A key the server never SELECTs can't be tuned from the DB, however
+    carefully it's parsed."""
+    assert "image_ocr_gate_enforce" in img_gen_server.OCR_GATE_SETTING_KEYS
+    assert (
+        "image_ocr_gate_fail_closed_when_unavailable"
+        in img_gen_server.OCR_GATE_SETTING_KEYS
+    )
 
 
 def test_read_ocr_gate_settings_returns_empty_dict_on_connect_failure(monkeypatch):

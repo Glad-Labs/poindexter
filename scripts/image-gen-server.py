@@ -23,6 +23,23 @@ seed (bounded, keep-best) when leaked text exceeds a threshold — deterministic
 check-and-retry, not a model swap. Tunable via app_settings (image_ocr_gate_*);
 see settings_defaults.py.
 
+The gate ENFORCES its verdict (2026-08-08, poindexter#1004). It did not
+originally: retries exhausted, it returned the best leaking attempt anyway and
+reported ``ocr_gate_passed=false`` in a field no caller read. 67 of 693 renders
+(9.7%) between 2026-07-13 and 2026-08-08 failed the gate and shipped regardless
+— up to 704 legible characters — including a published-bound hero with
+"Poindexter Philosophy" across the top. Two rules now hold:
+
+  * A verdict is honest. ``ocr_text_chars`` is ``None`` (not 0) when OCR could
+    not run, and ``ocr_gate_status`` says which of pass / fail / unavailable /
+    disabled happened. Scoring failure previously collapsed to 0 chars, which
+    is indistinguishable from a clean image — a missing easyocr would have
+    disabled the gate silently while every response claimed success.
+  * A failing verdict blocks the image (``image_ocr_gate_enforce``, default on)
+    with HTTP 422 rather than returning it. Callers already treat a non-200 as
+    "no image-gen image" and fall back / emit a downgrade finding, so the
+    rejection lands on a path that is already wired to be seen.
+
 Endpoints:
     GET  /health              — status, model, degradation reason, gate config
     POST /generate            — generate image from prompt (OCR-gated, see above)
@@ -204,6 +221,8 @@ class OcrGateConfig:
     max_chars: int = 6
     max_attempts: int = 3
     min_confidence: float = 0.3
+    enforce: bool = True
+    fail_closed_when_unavailable: bool = False
 
 
 DEFAULT_OCR_GATE_CONFIG = OcrGateConfig()
@@ -213,24 +232,45 @@ OCR_GATE_SETTING_KEYS = (
     "image_ocr_gate_max_chars",
     "image_ocr_gate_max_attempts",
     "image_ocr_gate_min_confidence",
+    "image_ocr_gate_enforce",
+    "image_ocr_gate_fail_closed_when_unavailable",
 )
+
+# Verdict vocabulary. Kept as module constants (not a bare string literal at
+# each site) because both the response contract and the audit_log row carry
+# them, and the console + Grafana read those rows back.
+OCR_STATUS_DISABLED = "disabled"      # gate off — no claim made about this image
+OCR_STATUS_PASS = "pass"              # scanned, at or under max_chars
+OCR_STATUS_FAIL = "fail"              # scanned, over max_chars after every retry
+OCR_STATUS_UNAVAILABLE = "unavailable"  # could not scan (OCR engine missing/erroring)
 
 
 @dataclass
 class GenAttempt:
     seed: int
-    text_chars: int
+    #: Leaked-text characters, or ``None`` when OCR could not score this
+    #: attempt. ``None`` is deliberately NOT 0 — see ``count_leaked_text_chars``.
+    text_chars: int | None
     path: Path
 
 
 def pick_best_attempt(attempts: list[GenAttempt]) -> GenAttempt:
     """Lowest leaked-text-char count wins; earliest attempt breaks ties.
 
+    A *scored* attempt always beats an unscored (``text_chars is None``) one,
+    even a badly-scored one: a known 50-char leak can be reported honestly and
+    rejected, whereas an unknown cannot be reasoned about at all. Unscored
+    attempts only win when nothing in the batch was scorable, which is the
+    whole-batch "OCR unavailable" case.
+
     ``min()`` is stable — the first element with the minimum key wins on a
     tie, so the caller's requested/derived seed (attempt 1) is preferred
     over a later re-roll when both score identically (usually both zero).
     """
-    return min(attempts, key=lambda a: a.text_chars)
+    return min(
+        attempts,
+        key=lambda a: (1, 0) if a.text_chars is None else (0, a.text_chars),
+    )
 
 
 def count_leaked_text_chars(image_path: Path | str, reader: Any, *, min_confidence: float) -> int:
@@ -241,9 +281,40 @@ def count_leaked_text_chars(image_path: Path | str, reader: Any, *, min_confiden
     results (chroma1_flash 0.44, z_image_turbo 25.33 avg chars/image).
     Synchronous/CPU-bound — callers must run it off the event loop
     (``asyncio.to_thread``).
+
+    Raises whatever the reader raises. The caller records that as ``None``
+    ("could not verify"), never as 0 ("verified clean") — conflating the two
+    is what let a silently-missing easyocr report a passing gate on every
+    image it never actually scanned.
     """
     detections = reader.readtext(str(image_path), detail=1)
     return sum(len(text) for _box, text, conf in detections if conf >= min_confidence)
+
+
+def resolve_gate_status(best: GenAttempt, gate: OcrGateConfig) -> str:
+    """Classify the kept attempt into the four-state verdict vocabulary."""
+    if not gate.enabled:
+        return OCR_STATUS_DISABLED
+    if best.text_chars is None:
+        return OCR_STATUS_UNAVAILABLE
+    return OCR_STATUS_PASS if best.text_chars <= gate.max_chars else OCR_STATUS_FAIL
+
+
+def should_reject_render(status: str, gate: OcrGateConfig) -> bool:
+    """Whether this verdict must block the image instead of returning it.
+
+    ``fail`` blocks under ``image_ocr_gate_enforce`` — that is the gate doing
+    its job. ``unavailable`` blocks only when the operator additionally opts
+    into ``image_ocr_gate_fail_closed_when_unavailable``, because a broken OCR
+    dependency turning into a total image-generation outage is its own
+    incident; the honest ``unavailable`` status, the warning-severity audit
+    row and the error-level log make the degradation visible either way.
+    """
+    if status == OCR_STATUS_FAIL:
+        return gate.enforce
+    if status == OCR_STATUS_UNAVAILABLE:
+        return gate.enforce and gate.fail_closed_when_unavailable
+    return False
 
 
 def _parse_ocr_gate_config(rows: dict[str, str]) -> OcrGateConfig:
@@ -281,6 +352,11 @@ def _parse_ocr_gate_config(rows: dict[str, str]) -> OcrGateConfig:
             0.0, min(1.0, _float(
                 "image_ocr_gate_min_confidence", DEFAULT_OCR_GATE_CONFIG.min_confidence,
             )),
+        ),
+        enforce=_bool("image_ocr_gate_enforce", DEFAULT_OCR_GATE_CONFIG.enforce),
+        fail_closed_when_unavailable=_bool(
+            "image_ocr_gate_fail_closed_when_unavailable",
+            DEFAULT_OCR_GATE_CONFIG.fail_closed_when_unavailable,
         ),
     )
 
@@ -362,9 +438,11 @@ async def reload_ocr_gate_config() -> None:
     raw = await read_ocr_gate_settings()
     state.ocr_gate = _parse_ocr_gate_config(raw)
     logger.info(
-        "[OCR-GATE] config: enabled=%s max_chars=%d max_attempts=%d min_confidence=%.2f",
+        "[OCR-GATE] config: enabled=%s max_chars=%d max_attempts=%d "
+        "min_confidence=%.2f enforce=%s fail_closed_when_unavailable=%s",
         state.ocr_gate.enabled, state.ocr_gate.max_chars,
         state.ocr_gate.max_attempts, state.ocr_gate.min_confidence,
+        state.ocr_gate.enforce, state.ocr_gate.fail_closed_when_unavailable,
     )
 
 
@@ -398,6 +476,7 @@ async def ensure_ocr_reader() -> Any:
 async def write_ocr_gate_audit_log(
     *, model: str, task_id: str | None, attempts: list[GenAttempt],
     best: GenAttempt, threshold: int, gate_passed: bool,
+    status: str, rejected: bool,
 ) -> None:
     """Best-effort audit_log row per gated generation.
 
@@ -405,6 +484,13 @@ async def write_ocr_gate_audit_log(
     qa_pass_completed rows power the QA Rails board (audit_log WHERE
     event_type=...). Never raises — a telemetry hiccup must not fail the
     image response the pipeline is waiting on.
+
+    ``text_chars`` / ``attempt_scores`` may contain JSON nulls now that an
+    unscorable attempt records ``None`` rather than 0. The existing Pipeline
+    panels aggregate with ``AVG((details->>'text_chars')::numeric)`` and
+    ``COUNT(*) FILTER (WHERE (details->>'passed')::boolean)``, both of which
+    skip SQL NULL — so an unavailable run drops out of the averages instead
+    of dragging them toward a fictitious zero.
     """
     try:
         conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
@@ -422,6 +508,8 @@ async def write_ocr_gate_audit_log(
                     "attempts": len(attempts),
                     "attempt_scores": [a.text_chars for a in attempts],
                     "passed": gate_passed,
+                    "status": status,
+                    "rejected": rejected,
                 }),
                 "info" if gate_passed else "warning",
             )
@@ -679,9 +767,17 @@ class GenerateResponse(BaseModel):
     model: str
     generation_time_ms: int
     seed: int
-    ocr_text_chars: int = 0
+    #: ``None`` means "OCR could not scan this image", NOT "no text found".
+    #: Anything reading this must not coerce it to 0 — that coercion is the
+    #: bug this field exists to make impossible (see the module docstring).
+    ocr_text_chars: int | None = None
     ocr_gate_attempts: int = 1
+    #: True only for a scanned-and-clean image (or a deliberately disabled
+    #: gate). ``unavailable`` reports False: the gate cannot claim a pass for
+    #: an image it never scanned.
     ocr_gate_passed: bool = True
+    #: pass | fail | unavailable | disabled — see OCR_STATUS_* constants.
+    ocr_gate_status: str = OCR_STATUS_DISABLED
 
 
 class UnloadRequest(BaseModel):
@@ -816,6 +912,16 @@ async def health():
         "ocr_gate_enabled": state.ocr_gate.enabled,
         "ocr_gate_max_chars": state.ocr_gate.max_chars,
         "ocr_gate_max_attempts": state.ocr_gate.max_attempts,
+        "ocr_gate_min_confidence": state.ocr_gate.min_confidence,
+        "ocr_gate_enforce": state.ocr_gate.enforce,
+        "ocr_gate_fail_closed_when_unavailable": (
+            state.ocr_gate.fail_closed_when_unavailable
+        ),
+        # Whether the OCR engine has actually loaded in this process. A gate
+        # that is `enabled` but whose reader never loads protects nothing —
+        # exposing both lets a probe tell "configured" from "working" without
+        # having to generate an image to find out.
+        "ocr_reader_loaded": state.ocr_reader is not None,
     }
 
 
@@ -940,7 +1046,8 @@ async def generate(req: GenerateRequest):
             )
             break
 
-        text_chars = 0
+        text_chars: int | None = 0
+        scoring_failed = False
         if gate.enabled:
             try:
                 reader = await ensure_ocr_reader()
@@ -949,16 +1056,28 @@ async def generate(req: GenerateRequest):
                     min_confidence=gate.min_confidence,
                 )
             except Exception as e:
-                # OCR failure must never block the image the pipeline is
-                # waiting on — treat as "can't verify", not "leaked text".
-                logger.warning("[OCR-GATE] scoring failed (attempt %d): %s", attempt_num, e)
-                text_chars = 0
+                # "Can't verify" — recorded as None, never as 0. Scoring 0 here
+                # would be indistinguishable from a clean image, so a missing
+                # or broken easyocr would silently pass every render while the
+                # response claimed the gate held.
+                logger.error(
+                    "[OCR-GATE] scoring UNAVAILABLE (attempt %d): %s — this image "
+                    "is unverified, not verified-clean",
+                    attempt_num, e,
+                )
+                text_chars = None
+                scoring_failed = True
 
         attempts.append(GenAttempt(seed=seed, text_chars=text_chars, path=attempt_path))
         logger.info(
-            "  [OCR-GATE] attempt %d/%d: seed=%d text_chars=%d (threshold=%d)",
-            attempt_num, max_attempts, seed, text_chars, gate.max_chars,
+            "  [OCR-GATE] attempt %d/%d: seed=%d text_chars=%s (threshold=%d)",
+            attempt_num, max_attempts, seed,
+            "unavailable" if text_chars is None else text_chars, gate.max_chars,
         )
+        if scoring_failed:
+            # Re-rolling is only worth GPU time when the re-roll can be
+            # measured against the threshold. It cannot be here, so stop.
+            break
         if not gate.enabled or text_chars <= gate.max_chars:
             break
 
@@ -970,24 +1089,59 @@ async def generate(req: GenerateRequest):
     filename = best.path.name
     output_path = best.path
     seed = best.seed
-    gate_passed = (not gate.enabled) or (best.text_chars <= gate.max_chars)
+    status = resolve_gate_status(best, gate)
+    gate_passed = status in (OCR_STATUS_PASS, OCR_STATUS_DISABLED)
+    rejected = should_reject_render(status, gate)
+    scored = "unavailable" if best.text_chars is None else str(best.text_chars)
 
     elapsed_ms = int((time.time() - start) * 1000)
     logger.info(
-        "Generated: %s (%d ms, %d attempt(s), ocr_text_chars=%d, gate_passed=%s)",
-        filename, elapsed_ms, len(attempts), best.text_chars, gate_passed,
+        "Generated: %s (%d ms, %d attempt(s), ocr_text_chars=%s, status=%s)",
+        filename, elapsed_ms, len(attempts), scored, status,
     )
     if gate.enabled and (len(attempts) > 1 or not gate_passed):
         logger.warning(
-            "[OCR-GATE] %s: best of %d attempt(s) had %d leaked chars (threshold %d) — %s",
-            config.friendly_name, len(attempts), best.text_chars, gate.max_chars,
-            "passed after retry" if gate_passed else "still over threshold, returning best effort",
+            "[OCR-GATE] %s: best of %d attempt(s) scored %s chars (threshold %d, "
+            "status=%s) — %s",
+            config.friendly_name, len(attempts), scored, gate.max_chars, status,
+            "REJECTED (422), no image returned" if rejected
+            else "passed after retry" if gate_passed
+            else "enforcement off — returning best effort anyway",
         )
 
     if gate.enabled:
         await write_ocr_gate_audit_log(
             model=config.friendly_name, task_id=req.task_id, attempts=attempts,
             best=best, threshold=gate.max_chars, gate_passed=gate_passed,
+            status=status, rejected=rejected,
+        )
+
+    if rejected:
+        # Discard rather than serve. Callers already treat a non-200 as "no
+        # image-gen image" and take their fallback path (Pexels when enabled,
+        # otherwise no image plus an `image_gen_downgrade` finding), so the
+        # rejection surfaces on a route that is already built to be noticed.
+        # 422 rather than 5xx: the render succeeded, its CONTENT is
+        # unacceptable, and retrying the same request re-runs a re-roll the
+        # server already performed max_attempts times.
+        with suppress(OSError):
+            output_path.unlink()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "ocr_gate_rejected",
+                "ocr_gate_status": status,
+                "ocr_text_chars": best.text_chars,
+                "ocr_gate_attempts": len(attempts),
+                "threshold": gate.max_chars,
+                "model": config.friendly_name,
+                "message": (
+                    f"image-gen render blocked by the OCR text-leakage gate "
+                    f"(status={status}, chars={scored}, threshold={gate.max_chars}, "
+                    f"attempts={len(attempts)}). Generated images must carry no "
+                    f"legible text."
+                ),
+            },
         )
 
     return GenerateResponse(
@@ -1001,6 +1155,7 @@ async def generate(req: GenerateRequest):
         ocr_text_chars=best.text_chars,
         ocr_gate_attempts=len(attempts),
         ocr_gate_passed=gate_passed,
+        ocr_gate_status=status,
     )
 
 

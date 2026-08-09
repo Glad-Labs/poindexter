@@ -475,7 +475,20 @@ async def _try_image_gen(
                 )
 
         if img_resp.status_code != 200:
-            logger.warning("  [IMAGE-%s] image-gen returned %s", num, img_resp.status_code)
+            from services.image_ocr_gate import (
+                describe_ocr_gate_rejection,
+                is_ocr_gate_rejection,
+                safe_json,
+            )
+            body = safe_json(img_resp)
+            if is_ocr_gate_rejection(img_resp.status_code, body):
+                # A verdict, not a window — the server already re-rolled the
+                # seed up to image_ocr_gate_max_attempts times.
+                logger.warning(
+                    "  [IMAGE-%s] %s", num, describe_ocr_gate_rejection(body),
+                )
+            else:
+                logger.warning("  [IMAGE-%s] image-gen returned %s", num, img_resp.status_code)
             return None
 
         tmp_path = await _resolve_gen_response(img_resp, image_gen_url=image_gen_url)
@@ -550,6 +563,22 @@ async def _render_one_with_retry(
                 timeout=render_timeout,
             )
             if img_resp.status_code != 200:
+                from services.image_ocr_gate import (
+                    describe_ocr_gate_rejection,
+                    is_ocr_gate_rejection,
+                    safe_json,
+                )
+                body = safe_json(img_resp)
+                if is_ocr_gate_rejection(img_resp.status_code, body):
+                    # Terminal, unlike every other non-200 this loop retries:
+                    # the server already spent image_ocr_gate_max_attempts
+                    # re-rolls on this prompt, so another client attempt just
+                    # buys a second full set of them for the same verdict.
+                    logger.warning(
+                        "  [IMAGE-%s] %s — not retrying (batch)",
+                        num, describe_ocr_gate_rejection(body),
+                    )
+                    return None
                 last_err = f"HTTP {img_resp.status_code}"
                 logger.warning(
                     "  [IMAGE-%s] image-gen returned %s (batch, attempt %d/%d)",

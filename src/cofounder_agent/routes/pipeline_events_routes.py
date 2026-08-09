@@ -411,8 +411,12 @@ function renderEvent(ev) {
     headline = "image style picked";
     body = esc(d.style || "?");
   } else if (t === "image_ocr_gate_result") {
-    headline = `image OCR gate — ${d.passed ? "PASS" : "FAIL"}`;
-    body = `attempts: ${esc(d.attempts ?? "?")} / text chars: ${esc(d.text_chars ?? "?")} (limit ${esc(d.threshold ?? "?")})`;
+    // `status` distinguishes a scanned-and-clean pass from an UNAVAILABLE
+    // scan; pre-2026-08 rows have no status, so fall back to the bool.
+    const st = d.status || (d.passed ? "pass" : "fail");
+    headline = `image OCR gate — ${esc(st.toUpperCase())}${d.rejected ? " (image blocked)" : ""}`;
+    const chars = d.text_chars === null || d.text_chars === undefined ? "unavailable" : d.text_chars;
+    body = `attempts: ${esc(d.attempts ?? "?")} / text chars: ${esc(chars)} (limit ${esc(d.threshold ?? "?")})`;
   } else if (t === "video_shot_rendered") {
     headline = `video shot ${esc(d.shot_idx ?? "?")} — ${d.success === false ? "FAILED" : esc(d.qa_outcome || "rendered")}`;
     body = `${esc(d.source || "?")} (${esc(d.rung || "?")}) / ${esc(d.duration_s ?? "?")}s / qa ${esc(d.qa_score ?? "?")}`;
