@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-08-08.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 679 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 679 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -41,7 +41,6 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (4 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
-- [gates](#gates) (3 keys)
 - [general](#general) (307 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
@@ -256,11 +255,6 @@ The worker re-reads on every poll; no restart needed.
 | `ops_triage_model_class` | `ops_triage` |  | model_router tier the firefighter_service uses for triage (#347). Defaults to a dedicated 'ops_triage' class which ma... |
 | `ops_triage_retry_backoff_seconds` | `[10, 30, 90]` |  | JSON list of per-attempt sleep durations (seconds) the brain uses between retries when worker /api/triage is unreacha... |
 | `ops_triage_retry_max` | `3` |  | Maximum retry attempts when the brain can't reach the worker /api/triage endpoint. Retries are scheduled with the bac... |
-
-## gates
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
 
 ## general
 
