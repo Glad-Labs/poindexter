@@ -448,11 +448,19 @@ async def assign_slot(
     the post up at the right time. Refuses to overwrite an existing
     schedule unless ``force=True``.
 
+    A string ``when`` is read in the operator's timezone — "tomorrow 9am"
+    means 9am where the operator is, per store-UTC/present-local. A
+    ``datetime`` is taken as given (naive is assumed UTC, as before): by
+    the time a caller has built one it has already chosen an instant, and
+    re-interpreting it here would move a slot the caller thought it fixed.
+
     Returns a ScheduleResult; ``ok=False`` when the post does not exist
     or already has a schedule and ``force`` is not set.
     """
     pid = _normalise_post_id(post_id)
-    target = parse_when(when) if isinstance(when, str) else when
+    target = (
+        parse_when(when, tz=site_config.timezone) if isinstance(when, str) else when
+    )
     if target.tzinfo is None:
         target = target.replace(tzinfo=timezone.utc)
 
@@ -572,14 +580,30 @@ async def assign_batch(
     the available posts are scheduled and ``detail`` reports the gap.
     When zero posts are eligible the result is ``ok=False`` with an
     informative ``detail`` (Matt's "fail loud" rule).
+
+    A string ``start`` is read in the operator's timezone (see
+    ``assign_slot``), and the slot calendar is walked in that same zone so
+    ``publish_quiet_hours`` means what an operator typed it to mean.
     """
     if count <= 0:
         return ScheduleResult(ok=False, detail=f"count must be > 0 (got {count})")
 
     interval_td = parse_duration(interval) if isinstance(interval, str) else interval
-    start_dt = parse_when(start) if isinstance(start, str) else start
+    start_dt = (
+        parse_when(start, tz=site_config.timezone) if isinstance(start, str) else start
+    )
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+    # Walk the calendar in the operator's wall clock. `_is_in_quiet_window`
+    # compares a moment's clock-time in whatever zone the moment carries, so a
+    # UTC-zoned walk read `publish_quiet_hours="22:00-07:00"` as 22:00-07:00
+    # *UTC* — 18:00-03:00 in America/New_York, i.e. it silenced the evening and
+    # opened the small hours, the exact inverse of the intent. Storage is
+    # unaffected (asyncpg normalises the aware datetime for the timestamptz
+    # column); only the window's meaning changes. Default is '' (no window), so
+    # this is inert until an operator sets one.
+    start_dt = start_dt.astimezone(site_config.timezone)
 
     quiet_spec = quiet_hours
     if quiet_spec is None:

@@ -478,14 +478,14 @@ async def schedule_post(task_id: str, publish_at: str) -> str:
     ~60s of the slot arriving. A slot in the past therefore publishes on
     the next tick rather than erroring.
 
-    ``publish_at`` takes ISO 8601 (``2026-08-09T09:00:00+00:00``,
+    ``publish_at`` takes ISO 8601 (``2026-08-09T09:00:00-04:00``,
     ``2026-08-09 09:00``), ``"now"``, ``"tomorrow 9am"``, or
     ``"next monday 14:00"`` — the same parser ``poindexter schedule at``
-    uses. **Clock words resolve in UTC**, not the operator's local zone
-    (the route calls ``parse_when`` without a timezone), so pass ISO 8601
-    with an explicit offset whenever the exact local hour matters. An
-    unparseable value is rejected before any state change, so the task is
-    left untouched.
+    uses. Clock words resolve in the operator's timezone
+    (``app_settings.operator_timezone``), so "tomorrow 9am" is 9am where
+    the operator is; an ISO string carrying an explicit offset overrides
+    that. An unparseable value is rejected before any state change, so the
+    task is left untouched.
 
     Reports the slot the server COMMITTED, never the one requested. The
     approve itself commits before staging and slot assignment, so a

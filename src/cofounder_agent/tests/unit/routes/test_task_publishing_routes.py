@@ -1554,6 +1554,79 @@ class TestApproveTaskScheduled:
         assert assign.await_count == 1
         assert assign.await_args.args[1].hour == 9
 
+    def test_clock_words_resolve_in_the_operator_timezone(self):
+        """"tomorrow 9am" is 9am where the operator is, not 09:00Z.
+
+        This route read clock words as UTC until 2026-08-09 while social
+        drafts already read them locally, so the same words meant different
+        instants depending on which queue you typed them at. The console
+        never saw it (its picker sends an absolute ISO instant) — the API,
+        the CLI and the MCP `schedule_post` tool did.
+        """
+        from zoneinfo import ZoneInfo
+
+        from services.site_config import SiteConfig
+        from utils.route_utils import get_site_config_dependency
+
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        assign = AsyncMock(return_value=self._slot_ok())
+        app = _build_app(mock_db)
+        ny = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+        app.dependency_overrides[get_site_config_dependency] = lambda: ny
+
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=self._staged()),
+            ),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(
+                TestClient(app), approved=True, publish_at="2026-09-01 09:00"
+            )
+
+        assert resp.status_code == 200
+        committed = assign.await_args.args[1]
+        # 09:00 in New York on 2026-09-01 (EDT, UTC-4) is 13:00Z.
+        assert committed.astimezone(ZoneInfo("America/New_York")).hour == 9
+        assert committed.utctimetuple().tm_hour == 13
+
+    def test_explicit_offset_overrides_the_operator_timezone(self):
+        """An absolute instant is honoured as sent — the console's path."""
+        from services.site_config import SiteConfig
+        from utils.route_utils import get_site_config_dependency
+
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        assign = AsyncMock(return_value=self._slot_ok())
+        app = _build_app(mock_db)
+        app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig(
+            initial_config={"operator_timezone": "America/New_York"}
+        )
+
+        with (
+            patch(
+                "services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=self._staged()),
+            ),
+            patch("services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(
+                TestClient(app),
+                approved=True,
+                publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        assert resp.status_code == 200
+        assert assign.await_args.args[1].isoformat() == "2026-09-01T09:00:00+00:00"
+
     def test_auto_publish_with_publish_at_is_rejected(self):
         """"Ship now" and "ship Thursday" can't both be true.
 

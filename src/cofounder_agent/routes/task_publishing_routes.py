@@ -253,6 +253,14 @@ async def approve_task(
     # (feedback_no_silent_defaults). ``parse_when`` is the same parser the
     # `poindexter schedule` CLI uses, so "tomorrow 9am" and "next monday
     # 14:00" work here too, not just ISO 8601.
+    #
+    # Clock words resolve in `operator_timezone`: "tomorrow 9am" means 9am
+    # where the operator is. This route read them as UTC until 2026-08-09,
+    # which the console never noticed (its picker sends an absolute ISO
+    # instant) but which shifted every typed time by the UTC offset — 9am
+    # asked for from a phone in America/New_York committed 05:00 local. An
+    # ISO string carrying an explicit offset still wins over the zone, so
+    # absolute callers are unaffected.
     publish_at_dt = None
     if publish_at:
         if auto_publish:
@@ -272,7 +280,7 @@ async def approve_task(
         from services.scheduling_service import parse_when
 
         try:
-            publish_at_dt = parse_when(publish_at)
+            publish_at_dt = parse_when(publish_at, tz=site_config_dep.timezone)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 

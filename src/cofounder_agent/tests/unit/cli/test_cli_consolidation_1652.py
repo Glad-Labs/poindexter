@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
+from services.site_config import SiteConfig
+
 
 @pytest.fixture
 def runner():
@@ -214,7 +216,10 @@ class TestScheduleGroupConsolidation:
             "poindexter.cli.schedule._with_pool", new=_fake_with_pool,
         ), patch(
             "poindexter.cli.schedule._load_site_config",
-            new=AsyncMock(return_value=MagicMock()),
+            # A real SiteConfig, not a bare MagicMock: `schedule at` reads
+            # cfg.timezone to parse TIME_SPEC in the operator's zone, and a
+            # mock attribute lands in parse_when as the tzinfo.
+            new=AsyncMock(return_value=SiteConfig(initial_config={})),
         ), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),
@@ -277,7 +282,10 @@ class TestScheduleFlatAliases:
             "poindexter.cli.schedule._with_pool", new=_fake_with_pool,
         ), patch(
             "poindexter.cli.schedule._load_site_config",
-            new=AsyncMock(return_value=MagicMock()),
+            # A real SiteConfig, not a bare MagicMock: `schedule at` reads
+            # cfg.timezone to parse TIME_SPEC in the operator's zone, and a
+            # mock attribute lands in parse_when as the tzinfo.
+            new=AsyncMock(return_value=SiteConfig(initial_config={})),
         ), patch(
             "poindexter.cli.schedule.resolve_uuid_prefix",
             new=AsyncMock(return_value=FULL),

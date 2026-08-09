@@ -200,11 +200,12 @@ def schedule_group() -> None:
 )
 @click.option(
     "--start", type=str, required=True,
-    help="First slot — ISO 8601, 'now', 'tomorrow 9am', 'next monday 14:00'.",
+    help="First slot — ISO 8601, 'now', 'tomorrow 9am', 'next monday 14:00'. "
+         "Clock times read in app_settings.operator_timezone.",
 )
 @click.option(
     "--quiet-hours", "quiet_hours", type=str, default=None,
-    help="Skip slots inside HH:MM-HH:MM (e.g. 22:00-07:00). "
+    help="Skip slots inside HH:MM-HH:MM (e.g. 22:00-07:00), operator-local. "
          "Falls back to publish_quiet_hours app_setting when omitted.",
 )
 @click.option(
@@ -459,7 +460,9 @@ def schedule_clear(
         "TIME accepts ISO 8601 ('2026-04-28 09:00'), 'now', "
         "'tomorrow 9am', or 'next monday 14:00'. "
         "Pass --in DUR instead of TIME for relative scheduling "
-        "(e.g. --in 2h)."
+        "(e.g. --in 2h).\n\n"
+        "Clock times are read in app_settings.operator_timezone; an ISO "
+        "string with an explicit offset overrides it."
     ),
 )
 @click.argument("post_id")
@@ -493,18 +496,16 @@ def publish_at_command(
         )
         sys.exit(2)
 
-    try:
-        if in_delta is not None:
-            target = datetime.now(timezone.utc) + parse_duration(in_delta)
-        else:
-            target = parse_when(time_spec)  # type: ignore[arg-type]
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(2)
-
+    # TIME_SPEC is parsed inside the pool block, not here: "tomorrow 9am" means
+    # 9am in `operator_timezone`, and that setting lives in the DB. --in DUR is
+    # a pure offset from now, so it needs no zone and stays out here.
     async def _impl():
         async def _run_with_pool(pool):
             cfg = await _load_site_config(pool)
+            if in_delta is not None:
+                target = datetime.now(timezone.utc) + parse_duration(in_delta)
+            else:
+                target = parse_when(time_spec, tz=cfg.timezone)  # type: ignore[arg-type]
             effective = await _resolve_single_post_id(pool, post_id)
             return await assign_slot(
                 effective, target, pool=pool, site_config=cfg, force=force,
@@ -515,6 +516,12 @@ def publish_at_command(
     try:
         result = _run(_impl())
     except AmbiguousPrefixError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(2)
+    except ValueError as e:
+        # An unparseable TIME_SPEC / --in DUR is operator error, not a crash —
+        # keep the exit-2 usage code it had when parsing happened before the
+        # pool was opened.
         click.echo(f"Error: {e}", err=True)
         sys.exit(2)
     except Exception as e:

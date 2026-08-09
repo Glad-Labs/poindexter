@@ -46,10 +46,21 @@ def _patch_with_pool():
     return patch("poindexter.cli.schedule._with_pool", new=_fake_with_pool)
 
 
-def _patch_site_config():
+def _patch_site_config(tz_name: str = "UTC"):
+    """Stand in for the DB-backed settings load.
+
+    Must be a real ``SiteConfig``, not a bare ``MagicMock``: ``publish-at``
+    reads ``cfg.timezone`` to parse the operator's TIME_SPEC, and a mock
+    attribute would sail into ``parse_when`` as the tzinfo and blow up
+    somewhere far from the cause.
+    """
+    from services.site_config import SiteConfig
+
     return patch(
         "poindexter.cli.schedule._load_site_config",
-        new=AsyncMock(return_value=MagicMock()),
+        new=AsyncMock(
+            return_value=SiteConfig(initial_config={"operator_timezone": tz_name}),
+        ),
     )
 
 

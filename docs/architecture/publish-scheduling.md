@@ -76,15 +76,21 @@ CLI uses. It is validated **before** any state change, so a typo 400s
 with the task untouched rather than falling through to an immediate
 publish.
 
-One asymmetry to know about: this route calls `parse_when` **without a
-timezone**, so clock words resolve in UTC — `"tomorrow 9am"` is 09:00Z,
-not 9am where the operator is. The console is unaffected (its picker
-sends an absolute ISO instant), but anything that forwards typed words —
-the MCP `schedule_post` tool, a raw API call — inherits UTC. Pass ISO
-8601 with an explicit offset when the exact local hour matters. (The
-`tz` kwarg exists for this; wiring it to `operator_timezone` here would
-change the committed slot for existing callers, so it is a deliberate
-open question rather than an oversight.)
+Clock words resolve in `app_settings.operator_timezone` — `"tomorrow
+9am"` is 9am where the operator is, not 09:00Z. An ISO string carrying an
+explicit offset always overrides the zone, so absolute callers (the
+console picker sends `toISOString()`) are unaffected.
+
+This was UTC everywhere on the blog side until 2026-08-09, while social
+drafts had already moved to operator-local — so the same words meant
+different instants depending on which queue you typed them at. The blog
+paths now match: `approve` + `publish_at`, `assign_slot`, `assign_batch`,
+and `poindexter schedule at` all pass `site_config.timezone` into
+`parse_when`. `assign_batch` additionally walks its slot calendar in that
+zone, because `publish_quiet_hours` is a wall-clock window and a
+UTC-zoned walk read `22:00-07:00` as 18:00–03:00 in `America/New_York` —
+the inverse of the intent. (Quiet hours defaults to `''`, so that half
+only ever affected operators who set one.)
 
 `auto_publish` and `publish_at` are mutually exclusive (400). "Ship now"
 and "ship Thursday" cannot both be true, and silently picking a winner is

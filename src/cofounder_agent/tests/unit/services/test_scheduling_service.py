@@ -754,3 +754,161 @@ def test_parse_when_next_weekday_uses_the_local_week():
     local = got.astimezone(ny)
     assert local.date() == date(2026, 8, 10)
     assert local.hour == 14
+
+
+# ---------------------------------------------------------------------------
+# Operator-timezone resolution (blog scheduling)
+#
+# `parse_when` grew a `tz` kwarg for operator-typed times, but the blog
+# scheduling paths kept the UTC default while social drafts moved to
+# operator-local — so "tomorrow 9am" meant different instants depending on
+# which queue you typed it at. These pin the blog side to operator-local.
+# ---------------------------------------------------------------------------
+
+NY = ZoneInfo("America/New_York")
+
+
+def _approved_post_row(pid: str = "abc") -> dict[str, Any]:
+    return {
+        "id": pid,
+        "slug": "example",
+        "title": "Example",
+        "status": "approved",
+        "published_at": None,
+    }
+
+
+def _recorded_update_times(conn: Any) -> list[datetime]:
+    return [args[1] for sql, args in conn.queries if "UPDATE posts" in sql]
+
+
+@pytest.mark.asyncio
+class TestOperatorTimezoneResolution:
+    async def test_assign_slot_reads_clock_words_in_operator_zone(self):
+        """'tomorrow 9am' is 9am where the operator is, not 09:00Z."""
+        conn = _FakeConn()
+        conn.queue_fetchrow(_approved_post_row())
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+
+        result = await assign_slot(
+            "abc", "2026-04-30 09:00", pool=pool, site_config=cfg,
+        )
+
+        assert result.ok is True
+        stored = _recorded_update_times(conn)[0]
+        # Stored UTC is 13:00Z; the operator asked for 09:00 local.
+        assert stored == datetime(2026, 4, 30, 13, 0, tzinfo=timezone.utc)
+        assert stored.astimezone(NY).hour == 9
+
+    async def test_assign_slot_lets_an_explicit_offset_win(self):
+        """An absolute instant is honoured as given — the console path."""
+        conn = _FakeConn()
+        conn.queue_fetchrow(_approved_post_row())
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+
+        result = await assign_slot(
+            "abc", "2026-04-30T09:00:00+00:00", pool=pool, site_config=cfg,
+        )
+
+        assert result.ok is True
+        assert _recorded_update_times(conn)[0] == datetime(
+            2026, 4, 30, 9, 0, tzinfo=timezone.utc
+        )
+
+    async def test_assign_slot_does_not_reinterpret_a_datetime(self):
+        """A caller that already built a datetime has chosen its instant."""
+        conn = _FakeConn()
+        conn.queue_fetchrow(_approved_post_row())
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+
+        when = datetime(2026, 4, 30, 9, 0, tzinfo=timezone.utc)
+        result = await assign_slot("abc", when, pool=pool, site_config=cfg)
+
+        assert result.ok is True
+        assert _recorded_update_times(conn)[0] == when
+
+    async def test_assign_batch_start_is_operator_local(self):
+        conn = _FakeConn()
+        conn.queue_fetch([
+            {
+                "id": f"p{i}",
+                "slug": f"p{i}",
+                "title": f"Post {i}",
+                "status": "approved",
+                "published_at": None,
+                "created_at": datetime(2026, 4, 27, tzinfo=timezone.utc),
+            }
+            for i in range(2)
+        ])
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+
+        result = await assign_batch(
+            count=2,
+            interval="1h",
+            start="2026-04-28 09:00",
+            pool=pool,
+            site_config=cfg,
+        )
+
+        assert result.ok is True
+        times = _recorded_update_times(conn)
+        assert [t.astimezone(NY).hour for t in times] == [9, 10]
+        assert times[0] == datetime(2026, 4, 28, 13, 0, tzinfo=timezone.utc)
+
+    async def test_assign_batch_quiet_hours_are_operator_local(self):
+        """`publish_quiet_hours` is a wall-clock window in the operator's zone.
+
+        Walked in UTC, "22:00-07:00" silenced 18:00-03:00 in New York — it
+        blocked the evening and opened the small hours, the inverse of intent.
+        """
+        conn = _FakeConn()
+        conn.queue_fetch([
+            {
+                "id": f"p{i}",
+                "slug": f"p{i}",
+                "title": f"Post {i}",
+                "status": "approved",
+                "published_at": None,
+                "created_at": datetime(2026, 4, 27, tzinfo=timezone.utc),
+            }
+            for i in range(3)
+        ])
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={"operator_timezone": "America/New_York"})
+
+        result = await assign_batch(
+            count=3,
+            interval="1h",
+            start="2026-04-28 21:00",
+            quiet_hours="22:00-07:00",
+            pool=pool,
+            site_config=cfg,
+        )
+
+        assert result.ok is True
+        local = [t.astimezone(NY) for t in _recorded_update_times(conn)]
+        # 21:00 local is outside the window; 22:00 is inside and lands on the
+        # window's local exit (07:00 next day), then steps hourly from there.
+        assert [d.hour for d in local] == [21, 7, 8]
+        assert local[0].date() == date(2026, 4, 28)
+        assert local[1].date() == date(2026, 4, 29)
+
+    async def test_default_config_still_means_utc(self):
+        """No `operator_timezone` set (OSS default) keeps the old behaviour."""
+        conn = _FakeConn()
+        conn.queue_fetchrow(_approved_post_row())
+        pool = _FakePool(conn)
+        cfg = SiteConfig(initial_config={})
+
+        result = await assign_slot(
+            "abc", "2026-04-30 09:00", pool=pool, site_config=cfg,
+        )
+
+        assert result.ok is True
+        assert _recorded_update_times(conn)[0] == datetime(
+            2026, 4, 30, 9, 0, tzinfo=timezone.utc
+        )
