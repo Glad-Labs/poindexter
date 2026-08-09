@@ -27,6 +27,7 @@ from modules.content.api import EditResult, PostEditService, enqueue_image_rebui
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
+from services.image_markers import strip_unresolved_image_markers
 from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -119,8 +120,12 @@ def clean_generated_content(content: str, title: str = "") -> str:
     content = re.sub(r"^\s*Introduction:\s*\n?", "", content, flags=re.MULTILINE)
     content = re.sub(r"^\s*Conclusion:\s*\n?", "", content, flags=re.MULTILINE)
 
-    # Remove leftover [IMAGE-N] placeholders that weren't replaced with actual images
-    content = re.sub(r"\[IMAGE-\d+\]", "", content)
+    # Remove leftover image markers that were never replaced with real
+    # images. Covers [IMAGE:], [IMAGE-N], [IMAGE-N: desc], [HERO-IMAGE:]
+    # and [SCREENSHOT:] — the previous \[IMAGE-\d+\] matched only the
+    # bare numbered form, so the described form the pipeline actually
+    # emits reached the live site.
+    content = strip_unresolved_image_markers(content)
 
     # Strip AI-generated "Recommended External Resources" sections (and variants)
     # These are generic "go read the docs" links that signal AI generation

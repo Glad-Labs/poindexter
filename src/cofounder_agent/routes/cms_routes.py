@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 from modules.content.api import PostsService
+from services.image_markers import strip_unresolved_image_markers
 from services.logger_config import get_logger
 from utils.content_formatting import convert_markdown_to_html  # still used by preview_post
 from utils.error_handler import handle_route_error
@@ -284,7 +285,11 @@ async def preview_post_html(
     # Remove leaked image-gen prompts after images
     content = _clean_re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content)
     # Remove unresolved placeholders
-    content = _clean_re.sub(r'\[IMAGE-\d+[^\]]*\]', '', content)
+    # Every writer marker form, not just [IMAGE-N] — a dev_diary draft
+    # (no plan_image_markers in its graph) reaches here with raw
+    # [IMAGE:] / [SCREENSHOT:] markers the operator would otherwise
+    # read as literal text in the preview.
+    content = strip_unresolved_image_markers(content)
     # Remove dead link references (title with colon but no URL following)
     content = _clean_re.sub(r'^\s*[-*]\s+\[[^\]]+\]\s*$', '', content, flags=_clean_re.MULTILINE)
     # Strip photo attribution lines

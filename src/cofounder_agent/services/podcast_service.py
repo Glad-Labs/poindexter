@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from services.image_markers import strip_unresolved_image_markers
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -531,7 +532,9 @@ def _strip_markdown(text: str) -> str:
     # Remove reference-style links
     text = re.sub(r"^\[[^\]]+\]:\s+.*$", "", text, flags=re.MULTILINE)
     # Remove [IMAGE-N] placeholders
-    text = re.sub(r"\[IMAGE-\d+\]", "", text)
+    # Narration must never speak a marker aloud — all forms, not just
+    # the bare numbered one.
+    text = strip_unresolved_image_markers(text)
     # Remove any remaining bare URLs
     text = re.sub(r"https?://\S+", "", text)
     # Remove empty parentheses left after URL removal
