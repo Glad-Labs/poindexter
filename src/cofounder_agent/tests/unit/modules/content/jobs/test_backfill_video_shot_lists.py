@@ -68,6 +68,7 @@ def _row(task="11111111-2222-3333-4444-555555555555"):
         "content": "body text",
         "podcast_script": "narration",
         "video_long_script": "long narration",
+        "short_summary_script": "short narration",
     }
 
 
@@ -214,6 +215,31 @@ class TestBackfillVideoShotLists:
             _P([]), _cfg(backfill_video_shot_lists_batch="5"),
         )
         assert seen == [5]
+
+    async def test_short_script_is_threaded_so_both_lanes_recover(self, monkeypatch):
+        """The 9:16 lane is planned from its own script. Omitting it produced
+        long-only recoveries that read as complete: the first live run
+        recovered 2 pieces with "11 long shot(s) + 0 short", leaving both
+        shorts un-renderable.
+        """
+        monkeypatch.setattr(
+            "modules.content.jobs.backfill_video_shot_lists.emit_finding",
+            lambda **kw: None,
+        )
+        stage = _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={
+                    "video_shot_list": _SHOT_LIST,
+                    "short_shot_list": _SHOT_LIST,
+                },
+                detail="both lanes",
+            ),
+        )
+        await BackfillVideoShotListsJob().run(_FakePool([_row()]), _cfg())
+
+        context = stage.execute.await_args[0][0]
+        assert context["short_summary_script"] == "short narration"
 
     async def test_no_pool_fails_loud(self):
         assert (await BackfillVideoShotListsJob().run(None, _cfg())).ok is False

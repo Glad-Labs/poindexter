@@ -55,7 +55,12 @@ _STRANDED_SQL = """
            pv.title         AS title,
            pv.content       AS content,
            pv.stage_data -> 'task_metadata' ->> 'podcast_script'    AS podcast_script,
-           pv.stage_data -> 'task_metadata' ->> 'video_long_script' AS video_long_script
+           pv.stage_data -> 'task_metadata' ->> 'video_long_script' AS video_long_script,
+           -- The 9:16 lane is planned from its OWN script; without it the
+           -- director returns a long list only and the short lane silently
+           -- stays un-renderable — half a recovery that reads as a whole one.
+           pv.stage_data -> 'task_metadata' ->> 'short_summary_script'
+               AS short_summary_script
       FROM pipeline_tasks pt
       JOIN LATERAL (
            SELECT id, title, content, stage_data
@@ -195,6 +200,7 @@ class BackfillVideoShotListsJob:
                 "content": row["content"] or "",
                 "podcast_script": row["podcast_script"] or "",
                 "video_long_script": row["video_long_script"] or "",
+                "short_summary_script": row["short_summary_script"] or "",
                 "database_service": _DBShim(pool),
                 "platform": platform,
                 "site_config": site_config,
