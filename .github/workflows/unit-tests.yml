@@ -208,7 +208,12 @@ jobs:
           # `scripts/**` is tested by tests/unit/scripts/ — same gap.
           # `.github/workflows/unit-tests.yml` self-includes so workflow
           # edits get smoke-tested by actually running.
-          if echo "$changed" | grep -qE '^src/cofounder_agent/|^brain/|^scripts/|^\.github/workflows/unit-tests\.yml$'; then
+          # The version-file trio (a uv.lock, its pyproject, and the
+          # release-please config that bumps them) is included so the
+          # uv-lock-version ratchet below actually fires on a lock-only or
+          # config-only change — otherwise the guard would sit dark for
+          # exactly the edits it exists to catch.
+          if echo "$changed" | grep -qE '^src/cofounder_agent/|^brain/|^scripts/|^\.github/workflows/unit-tests\.yml$|^mcp-server[^/]*/(uv\.lock|pyproject\.toml)$|^release-please-config\.json$'; then
             echo "Backend code or this workflow changed — running full suite."
             echo "needs_tests=true" >> "$GITHUB_OUTPUT"
           else
@@ -362,6 +367,18 @@ jobs:
       - name: Bandit ratchet (no new security findings)
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/bandit_lint.py
+
+      # uv.lock version guard: each mcp-server*/uv.lock embeds its own root
+      # package version, and release-please bumps it via extra-files. The
+      # TOML updater only WARNS when its JSONPath matches nothing ("No
+      # entries modified in $.package[...]"), so a renamed package or a
+      # changed lock format would stop the bump silently — the same failure
+      # mode that froze every extra-file for ~100 releases (see the
+      # release-type note in release-please.yml). This turns that silence
+      # into a red check. Stdlib only (tomllib).
+      - name: uv.lock version lint (release-please extra-files guard)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/uv_lock_version_lint.py
 
       # Brain async-safety guard (sync-CLI-in-async fix): brain/ is a
       # single-event-loop asyncio daemon that awaits every probe sequentially,
@@ -665,6 +682,12 @@ jobs:
         run: python scripts/ci/bandit_lint.py
       - name: Brain async-safety lint (no blocking calls on the loop)
         run: python scripts/ci/brain_async_safety_lint.py
+      # Worth having on main specifically: the release PR is what bumps these
+      # files, so a release that failed to bump a uv.lock lands here. This job
+      # files an issue on failure, which is the notification that "the TOML
+      # updater stopped matching" would otherwise never produce.
+      - name: uv.lock version lint (release-please extra-files guard)
+        run: python scripts/ci/uv_lock_version_lint.py
       - name: HTTP detail-leak lint (security #724)
         run: python scripts/ci/lint_http_detail_leak.py
       - name: Secret ciphertext-footgun lint (security #2131)

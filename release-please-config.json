@@ -71,6 +71,21 @@
         },
         {
           "type": "toml",
+          "path": "mcp-server/uv.lock",
+          "jsonpath": "$.package[?(@.name.value == 'poindexter-mcp')].version"
+        },
+        {
+          "type": "toml",
+          "path": "mcp-server-gladlabs/uv.lock",
+          "jsonpath": "$.package[?(@.name.value == 'gladlabs-mcp')].version"
+        },
+        {
+          "type": "toml",
+          "path": "mcp-server-voice/uv.lock",
+          "jsonpath": "$.package[?(@.name.value == 'poindexter-voice-bridge')].version"
+        },
+        {
+          "type": "toml",
           "path": "brain/pyproject.toml",
           "jsonpath": "$.tool.poetry.version"
         },
