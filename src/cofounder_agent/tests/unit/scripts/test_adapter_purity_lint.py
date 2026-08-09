@@ -210,3 +210,40 @@ class TestBaselineRatchet:
             if n > baseline.get(rel, 0)
         }
         assert offenders == {}, f"adapter-purity baseline drift: {offenders}"
+
+
+class TestVirtualenvIsNotScanned:
+    """``mcp-server/`` carries its own uv environment.
+
+    Running that suite (``uv run pytest``) materialises ``mcp-server/.venv``,
+    and before this exclusion the walk descended into it and reported
+    installed third-party source — asyncpg's ``connect_utils.py`` and
+    ``_testbase/__init__.py`` both run literal SQL — as net-new inline SQL in
+    an adapter. CI never saw it (fresh checkout, no venv); a developer who
+    ran the mcp-server tests before the backend ones got two red ratchets
+    pointing into site-packages.
+    """
+
+    def test_mcp_server_spec_excludes_venv(self):
+        spec = next(s for s in LINT.SCAN_SPECS if s[0] == "mcp-server")
+        assert ".venv" in spec[1]
+
+    def test_a_materialised_venv_is_skipped(self, tmp_path, monkeypatch):
+        """End-to-end: SQL inside a .venv must not reach compute_counts()."""
+        root = tmp_path / "mcp-server"
+        (root / ".venv" / "lib" / "site-packages" / "asyncpg").mkdir(parents=True)
+        (root / ".venv" / "lib" / "site-packages" / "asyncpg" / "conn.py").write_text(
+            "async def probe(conn):\n"
+            "    return await conn.fetchval('SELECT pg_catalog.pg_is_in_recovery()')\n",
+            encoding="utf-8",
+        )
+        (root / "server.py").write_text("def tool():\n    return 1\n", encoding="utf-8")
+
+        # Reuse the REAL exclusion tuple — restating it here would make the
+        # test pass even after someone deleted ".venv" from SCAN_SPECS.
+        excluded = next(s for s in LINT.SCAN_SPECS if s[0] == "mcp-server")[1]
+        monkeypatch.setattr(LINT, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(
+            LINT, "SCAN_SPECS", [("mcp-server", excluded, frozenset())]
+        )
+        assert LINT.compute_counts() == {}

@@ -93,7 +93,15 @@ SCAN_SPECS: list[tuple[str, tuple[str, ...], frozenset[str]]] = [
     # The public MCP server — operator phone-facing tools. The private
     # ``mcp-server-gladlabs/`` overlay is intentionally NOT scanned: its paths
     # must never enter this baseline, which ships in the public mirror.
-    ("mcp-server", ("tests",), frozenset()),
+    #
+    # ``.venv`` is excluded because mcp-server has its own uv environment:
+    # running its suite (``uv run pytest``) materialises ``mcp-server/.venv``,
+    # and this walk would then scan asyncpg's installed source and report
+    # ``mcp-server/.venv/lib/python3.12/site-packages/asyncpg/connect_utils.py``
+    # as net-new inline SQL. CI checks out fresh so it never saw this; a
+    # developer who ran the mcp-server tests first got two red ratchets
+    # pointing into a third-party package.
+    ("mcp-server", ("tests", ".venv"), frozenset()),
 ]
 
 # asyncpg / cursor execution methods. A SQL-literal first arg to one of these,

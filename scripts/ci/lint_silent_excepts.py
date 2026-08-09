@@ -83,7 +83,13 @@ SCAN_ROOTS = [
     # exception here means an operator action silently no-ops. The private
     # ``mcp-server-gladlabs/`` overlay is intentionally NOT scanned: its paths
     # must never enter this baseline, which ships in the public mirror.
-    (REPO_ROOT / "mcp-server", ("tests",)),
+    #
+    # ``.venv`` is excluded because mcp-server has its own uv environment:
+    # ``uv run pytest`` materialises ``mcp-server/.venv``, and this walk would
+    # then scan every installed dependency's source for swallowed exceptions.
+    # CI checks out fresh so it never saw this; locally it turned the ratchet
+    # red against third-party code.
+    (REPO_ROOT / "mcp-server", ("tests", ".venv")),
 ]
 
 OVERRIDE_MARKER = "silent-ok"

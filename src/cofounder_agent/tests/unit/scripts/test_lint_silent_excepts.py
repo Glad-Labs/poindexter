@@ -504,3 +504,35 @@ class TestMultiStatementAndControlFlowSilence:
             "        return None\n"
         )
         assert _scan_src(tmp_path, src) == 0
+
+
+class TestVirtualenvIsNotScanned:
+    """``mcp-server/.venv`` (created by ``uv run``) is not our code.
+
+    Without the exclusion the walk scanned every installed dependency for
+    swallowed exceptions, turning the ratchet red against third-party source
+    on any machine that had run the mcp-server suite.
+    """
+
+    def test_mcp_server_root_excludes_venv(self):
+        root, excluded = next(
+            (r, e) for r, e in LINT.SCAN_ROOTS if r.name == "mcp-server"
+        )
+        assert ".venv" in excluded
+
+    def test_a_materialised_venv_is_skipped(self, tmp_path, monkeypatch):
+        root = tmp_path / "mcp-server"
+        pkg = root / ".venv" / "lib" / "site-packages" / "dep"
+        pkg.mkdir(parents=True)
+        (pkg / "quiet.py").write_text(
+            "def f():\n    try:\n        g()\n    except Exception:\n        pass\n",
+            encoding="utf-8",
+        )
+        (root / "server.py").write_text("def tool():\n    return 1\n", encoding="utf-8")
+
+        # Reuse the REAL exclusion tuple — restating it here would make the
+        # test pass even after someone deleted ".venv" from SCAN_ROOTS.
+        excluded = next(e for r, e in LINT.SCAN_ROOTS if r.name == "mcp-server")
+        monkeypatch.setattr(LINT, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(LINT, "SCAN_ROOTS", [(root, excluded)])
+        assert LINT.compute_counts() == {}
