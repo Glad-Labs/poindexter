@@ -2215,6 +2215,24 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'otel_exporter_otlp_endpoint': 'http://tempo:4318/v1/traces',
     'pyroscope_server_url': 'http://pyroscope:4040',
     'sentry_enabled': 'true',
+    # Exception class names dropped in SentryIntegration._before_send —
+    # expected control flow the SDK reports as an unhandled error. Matched
+    # by name across the MRO (no import of the raising package needed,
+    # subclasses covered). GraphInterrupt = LangGraph approval-gate pause;
+    # GpuBusyError = GPU admission skip, already recorded as an info-level
+    # gpu_admission_rejected finding. Empty string restores nothing — set
+    # it to a single bogus name to disable dropping entirely.
+    'sentry_drop_exception_types': 'GraphInterrupt,GpuBusyError',
+    # JSON array of [regex, replacement] pairs applied to an event's
+    # GROUPING FINGERPRINT only (never the message the operator reads).
+    # Volatile tokens otherwise mint a new GlitchTip issue per event: the
+    # 2026-08-08 triage found 206 of 364 open issues were three incidents
+    # fragmented by a temp filename, a UUID and a full-precision float.
+    'sentry_fingerprint_scrub_patterns': (
+        '[["/tmp/tmp[A-Za-z0-9_]+", "/tmp/tmp<TMP>"], '
+        '["[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "<UUID>"], '
+        '["\\\\d+\\\\.\\\\d+s\\\\b", "<DURATION>s"]]'
+    ),
     # GlitchTip org slug the brain triage probe queries — operators set it to
     # the org they created in the GlitchTip first-login setup. Lockstep with
     # the baseline seed; the operator overlay restores the operator's own slug.
@@ -4206,7 +4224,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'self_consistency_enabled': {'value_type': 'boolean'},
     'self_consistency_sample_count': {'owner': 'self_consistency_rail', 'value_type': 'integer'},
     'self_consistency_threshold': {'owner': 'self_consistency_rail', 'value_type': 'float'},
+    'sentry_drop_exception_types': {'owner': 'sentry_integration', 'value_type': 'string'},
     'sentry_enabled': {'owner': 'sentry_integration', 'value_type': 'boolean'},
+    'sentry_fingerprint_scrub_patterns': {'owner': 'sentry_integration', 'value_type': 'string'},
     'seo.harvest.analyzer_enabled': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'boolean'},
     'seo.low_ctr.max_ctr': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'float'},
     'seo.low_ctr.min_impressions': {'owner': 'run_seo_opportunity_analyzer', 'value_type': 'integer'},

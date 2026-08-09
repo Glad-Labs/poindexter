@@ -1,5 +1,6 @@
 """Tests for sentry_integration service."""
 
+import logging
 from importlib.util import find_spec
 from unittest.mock import MagicMock, patch
 
@@ -389,6 +390,238 @@ class TestBeforeSend:
         result = SentryIntegration._before_send(event, {"exc_info": True})
         for h in ["authorization", "cookie", "x-api-key", "x-token"]:
             assert result["request"]["headers"][h] == "[REDACTED]"
+
+
+class TestDropExceptionTypes:
+    """``sentry_drop_exception_types`` — expected control flow, not errors.
+
+    Guards the 2026-08-08 triage finding: ``GpuBusyError`` was 1,320 events
+    (31% of ALL captured events) and every one of them was the GPU admission
+    gate working as designed.
+    """
+
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+
+        # Class-level config/cache is shared state — reset so ordering
+        # between test classes can't leak a stub into this one.
+        SentryIntegration._site_config = None
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+
+    def _hint(self, exc_cls):
+        return {"exc_info": (exc_cls, exc_cls("nope"), None)}
+
+    def test_drops_gpu_busy_error(self):
+        from services.sentry_integration import SentryIntegration
+
+        class GpuBusyError(RuntimeError):  # noqa: N818 — mirrors gpu_admission's name
+            pass
+
+        SentryIntegration._site_config = None
+        event = {"level": "error", "message": "GPU admission rejected: no_fit"}
+        assert SentryIntegration._before_send(event, self._hint(GpuBusyError)) is None
+
+    def test_drop_list_is_db_tunable(self):
+        """An operator can add their own expected-control-flow exception."""
+        from services.sentry_integration import SentryIntegration
+
+        class HouseKeepingSignal(Exception):
+            pass
+
+        SentryIntegration._site_config = _stub_site_config(
+            {"sentry_drop_exception_types": "HouseKeepingSignal"}
+        )
+        try:
+            assert (
+                SentryIntegration._before_send(
+                    {"level": "error"}, self._hint(HouseKeepingSignal)
+                )
+                is None
+            )
+            # ...and the built-in names no longer drop once overridden.
+            class GraphInterrupt(Exception):  # noqa: N818
+                pass
+
+            assert (
+                SentryIntegration._before_send(
+                    {"level": "error"}, self._hint(GraphInterrupt)
+                )
+                is not None
+            )
+        finally:
+            SentryIntegration._site_config = None
+
+    def test_real_errors_survive(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._site_config = None
+        event = {"level": "error", "message": "boom"}
+        assert SentryIntegration._before_send(event, self._hint(ValueError)) == event
+
+
+class TestFingerprintScrubbing:
+    """``sentry_fingerprint_scrub_patterns`` — stop volatile text minting a
+    fresh GlitchTip issue per event.
+
+    Every signature below is copied verbatim from the 2026-08-08 triage,
+    where 206 of 364 open issues were three incidents fragmented this way.
+    """
+
+    def setup_method(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._site_config = None
+        SentryIntegration._scrub_cache_key = None
+        SentryIntegration._scrub_cache = ()
+
+    def _exc_event(self, exc_type, value):
+        return {
+            "level": "error",
+            "exception": {"values": [{"type": exc_type, "value": value}]},
+        }
+
+    def test_collapses_tempfile_names(self):
+        """164 issues, one per tempfile, from a single 2026-07-20 R2 outage."""
+        from services.sentry_integration import SentryIntegration
+
+        a = self._exc_event(
+            "S3UploadFailedError",
+            "Failed to upload /tmp/tmpnjvtpvv5.json to gladlabs-media/static/feed.json",
+        )
+        b = self._exc_event(
+            "S3UploadFailedError",
+            "Failed to upload /tmp/tmpjobgn98z.json to gladlabs-media/static/feed.json",
+        )
+        SentryIntegration._before_send(a, {})
+        SentryIntegration._before_send(b, {})
+        assert a["fingerprint"] == b["fingerprint"]
+        assert "<TMP>" in a["fingerprint"][1]
+
+    def test_collapses_float_durations(self):
+        """31 GpuLockTimeoutError issues, fragmented by full-precision floats."""
+        from services.sentry_integration import SentryIntegration
+
+        a = self._exc_event(
+            "GpuLockTimeoutError",
+            "pg_advisory_lock wait exceeded 44.999968992000504s — another process holds it",
+        )
+        b = self._exc_event(
+            "GpuLockTimeoutError",
+            "pg_advisory_lock wait exceeded 27.92378256400025s — another process holds it",
+        )
+        SentryIntegration._before_send(a, {})
+        SentryIntegration._before_send(b, {})
+        assert a["fingerprint"] == b["fingerprint"]
+
+    def test_collapses_uuids_in_log_events(self):
+        """11 chat/watch issues, fragmented by conversation UUID."""
+        from services.sentry_integration import SentryIntegration
+
+        def ev(uuid):
+            return {
+                "level": "error",
+                "logentry": {
+                    "message": (
+                        f"Request validation middleware error for /api/chat/watch/{uuid}"
+                    )
+                },
+            }
+
+        a = ev("789a4706-3483-47ca-99fa-eccab9f91234")
+        b = ev("37b5968c-e4ce-4cba-83c6-c816a7f89999")
+        SentryIntegration._before_send(a, {})
+        SentryIntegration._before_send(b, {})
+        expected = "Request validation middleware error for /api/chat/watch/<UUID>"
+        assert a["fingerprint"] == b["fingerprint"] == [expected]
+
+    def test_distinct_errors_stay_distinct(self):
+        """Scrubbing must not merge genuinely different failures."""
+        from services.sentry_integration import SentryIntegration
+
+        a = self._exc_event("S3UploadFailedError", "Failed to upload /tmp/tmpaaa.json to a/x.json")
+        b = self._exc_event("S3UploadFailedError", "Failed to upload /tmp/tmpbbb.json to b/y.json")
+        SentryIntegration._before_send(a, {})
+        SentryIntegration._before_send(b, {})
+        assert a["fingerprint"] != b["fingerprint"]
+
+    def test_no_fingerprint_when_nothing_volatile(self):
+        """Untouched messages keep the SDK's default grouping."""
+        from services.sentry_integration import SentryIntegration
+
+        event = self._exc_event("ValueError", "plain old failure")
+        SentryIntegration._before_send(event, {})
+        assert "fingerprint" not in event
+
+    def test_message_is_never_mutated(self):
+        """The operator still reads the real path/uuid/duration."""
+        from services.sentry_integration import SentryIntegration
+
+        original = "Failed to upload /tmp/tmpnjvtpvv5.json to gladlabs-media/static/feed.json"
+        event = self._exc_event("S3UploadFailedError", original)
+        SentryIntegration._before_send(event, {})
+        assert event["exception"]["values"][-1]["value"] == original
+
+    def test_patterns_are_db_tunable(self):
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._site_config = _stub_site_config(
+            {"sentry_fingerprint_scrub_patterns": '[["shard-\\\\d+", "shard-<N>"]]'}
+        )
+        try:
+            a = self._exc_event("RuntimeError", "shard-17 unavailable")
+            b = self._exc_event("RuntimeError", "shard-42 unavailable")
+            SentryIntegration._before_send(a, {})
+            SentryIntegration._before_send(b, {})
+            assert a["fingerprint"] == b["fingerprint"] == ["RuntimeError", "shard-<N> unavailable"]
+        finally:
+            SentryIntegration._site_config = None
+
+    def test_malformed_patterns_fall_back_to_defaults_loudly(self, caplog):
+        """A broken setting must not silently disable scrubbing."""
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._site_config = _stub_site_config(
+            {"sentry_fingerprint_scrub_patterns": "{not json at all"}
+        )
+        try:
+            with caplog.at_level(logging.ERROR):
+                event = self._exc_event(
+                    "S3UploadFailedError", "Failed to upload /tmp/tmpzzz.json to x"
+                )
+                SentryIntegration._before_send(event, {})
+            assert "sentry_fingerprint_scrub_patterns is invalid" in caplog.text
+            # Built-in defaults still applied, so the backlog stays collapsed.
+            assert "<TMP>" in event["fingerprint"][1]
+        finally:
+            SentryIntegration._site_config = None
+
+    def test_bad_replacement_template_is_caught_at_compile_time(self, caplog):
+        """An invalid group reference raises only at sub() time, which would
+        otherwise fail once per event with nothing in the log above debug."""
+        from services.sentry_integration import SentryIntegration
+
+        SentryIntegration._site_config = _stub_site_config(
+            {"sentry_fingerprint_scrub_patterns": '[["(a)(b)", "\\\\9"]]'}
+        )
+        try:
+            with caplog.at_level(logging.ERROR):
+                event = self._exc_event(
+                    "S3UploadFailedError", "Failed to upload /tmp/tmpzzz.json to x"
+                )
+                SentryIntegration._before_send(event, {})
+            assert "sentry_fingerprint_scrub_patterns is invalid" in caplog.text
+            # Fell back to defaults, so scrubbing still works.
+            assert "<TMP>" in event["fingerprint"][1]
+        finally:
+            SentryIntegration._site_config = None
+
+    def test_scrub_failure_never_loses_the_event(self):
+        """A fingerprint is an optimisation, not a reason to drop an error."""
+        from services.sentry_integration import SentryIntegration
+
+        event = {"level": "error", "exception": {"values": "not-a-list"}}
+        assert SentryIntegration._before_send(event, {}) is event
 
 
 class TestSetupSentryConvenience:

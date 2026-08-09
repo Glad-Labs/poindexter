@@ -126,3 +126,61 @@ def test_operator_notifier_self_capture_is_ignored(baseline_seeds_text: str) -> 
         f"pattern {rule['title_pattern']!r} must be start-anchored, not a "
         "substring match"
     )
+
+
+def test_no_resolve_rule_relies_on_the_silent_default(baseline_seeds_text: str) -> None:
+    """EVERY seeded resolve rule needs an explicit ceiling, not just
+    CancelledError.
+
+    The 2026-08-08 triage found the same silent-50 trap had re-armed on 13
+    live rules and 4 seeded ones: once an install's issue count organically
+    passes 50 the rule stops matching *permanently* and the noise it exists
+    to suppress starts paging again. Pinning the whole set stops this
+    recurring one rule at a time.
+    """
+    rules = _rules(baseline_seeds_text)
+    unbounded = [
+        r["title_pattern"]
+        for r in rules
+        if r.get("action") == "resolve" and r.get("max_count") is None
+    ]
+    assert not unbounded, (
+        "these seeded resolve rules omit max_count and so silently bound to "
+        f"50 (the #304 default), which real installs outgrow: {unbounded}"
+    )
+
+
+def test_stale_low_volume_gc_rule_is_present_and_last(baseline_seeds_text: str) -> None:
+    """The catch-all GC rule must exist AND be the final entry.
+
+    ``_match_rule`` returns the FIRST matching rule, so a catch-all placed
+    anywhere but last would shadow every specific rule after it — every
+    issue would be evaluated against the GC gates alone. Ordering is the
+    whole safety property here, hence a test rather than a comment.
+
+    Sizing rationale (2026-08-08 triage): 272 of 364 open issues were
+    one-off transients that no rule covered and nothing ever closed, while
+    ``min_age_days`` — built for exactly this — had never been used once.
+    """
+    rules = _rules(baseline_seeds_text)
+    catch_alls = [
+        (i, r) for i, r in enumerate(rules) if r.get("title_pattern") in (".", ".*", "")
+    ]
+    assert catch_alls, "no catch-all GC rule seeded"
+    assert len(catch_alls) == 1, f"expected exactly one catch-all, got {len(catch_alls)}"
+
+    idx, rule = catch_alls[0]
+    assert idx == len(rules) - 1, (
+        f"the catch-all GC rule is at index {idx} of {len(rules)} — it MUST be "
+        "last, or it shadows every rule declared after it (_match_rule returns "
+        "the first match)."
+    )
+    assert rule.get("action") == "resolve"
+    # Both gates are required: age alone would close fresh bursts, and count
+    # alone would close a long-running issue on its first few events.
+    assert rule.get("min_age_days"), "GC rule must gate on min_age_days"
+    assert rule.get("max_count"), "GC rule must gate on max_count"
+    assert rule["max_count"] <= 10, (
+        f"GC max_count={rule['max_count']} is too permissive for a catch-all — "
+        "it would close genuinely recurring issues."
+    )

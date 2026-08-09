@@ -41,9 +41,24 @@ Sampling and SDK-debug knobs (all read from ``app_settings``):
   CPU profiles.
 * ``sentry_sdk_debug`` (default ``false``) — the SDK's own diagnostic
   logging. Legacy alias ``sentry_debug_logging`` is still honoured.
+
+Noise-control knobs (see ``_before_send``, added from the 2026-08-08
+GlitchTip triage — 364 open issues / 4,252 events, of which 31% were one
+expected-control-flow exception and 206 issues were three incidents
+fragmented by volatile text):
+
+* ``sentry_drop_exception_types`` — CSV of exception class names dropped
+  before send. Matched across the MRO, so subclasses are covered and no
+  import of the raising package is needed.
+* ``sentry_fingerprint_scrub_patterns`` — JSON array of
+  ``[regex, replacement]`` pairs applied to the grouping fingerprint.
+  Volatile tokens (temp filenames, UUIDs, float durations) otherwise mint
+  a brand-new GlitchTip issue per event.
 """
 
+import json
 import logging
+import re
 from typing import Any
 
 from fastapi import FastAPI
@@ -95,6 +110,64 @@ class SentryIntegration:
     _initialized = False
     _sentry_enabled = False
 
+    # SiteConfig stashed at initialize() so the sync ``_before_send`` hook can
+    # read its noise-control settings. ``site_config.get`` is sync and served
+    # from the in-memory cache the 1-minute ``reload_site_config`` job
+    # refreshes, so operator edits land without a redeploy and without doing
+    # DB I/O inside the SDK's event pipeline.
+    _site_config: Any | None = None
+
+    # Expected control flow that the SDK reports as an unhandled error.
+    # Matched by class NAME across the MRO — no import of the raising
+    # package required, and subclasses are covered.
+    #
+    # * ``GraphInterrupt`` — LangGraph ``interrupt()`` suspends a graph for
+    #   operator approval (e.g. the seo_refresh_gate). The runner re-raises
+    #   it correctly, but Sentry's asyncio integration still reports it from
+    #   LangGraph's internal node tasks. A pause is not a failure.
+    #   (2026-07-02 triage: 7 of 73 open issues were this.)
+    # * ``GpuBusyError`` — raised by a budgeted ``gpu.lock()`` wait BEFORE
+    #   any wait so fail-soft callers (QA rails, background jobs) can skip
+    #   honestly this cycle instead of burning their timeout budget. The
+    #   scheduler already records it as an ``info``-severity
+    #   ``gpu_admission_rejected`` finding, so capturing it as an *error*
+    #   double-reports one designed outcome at two different severities.
+    #   (2026-08-08 triage: 1,320 events — 31% of ALL captured events, the
+    #   single largest error source, none of it actionable.)
+    DEFAULT_DROP_EXCEPTION_TYPES = "GraphInterrupt,GpuBusyError"
+
+    # Volatile substrings that make otherwise-identical errors group apart.
+    # Each entry is ``[regex, replacement]``; applied to the fingerprint
+    # only, never to the message the operator reads.
+    #
+    # Sourced from the three worst fragmentation cases in the 2026-08-08
+    # triage:
+    #   164 issues — ``S3UploadFailedError: Failed to upload /tmp/tmpXXXX.json``
+    #    31 issues — ``pg_advisory_lock wait exceeded 44.999968992000504s``
+    #    11 issues — ``.../api/chat/watch/<uuid>``
+    DEFAULT_FINGERPRINT_SCRUB_PATTERNS = json.dumps(
+        [
+            # tempfile.mkstemp names — meaningless outside the failing call
+            [r"/tmp/tmp[A-Za-z0-9_]+", "/tmp/tmp<TMP>"],  # nosec B108 - a regex MATCHING a temp path in an error message; nothing is written here
+            # UUIDs (conversation / task / run ids)
+            [
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+                r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                "<UUID>",
+            ],
+            # Float durations — "exceeded 44.999968992000504s" et al. Bare
+            # ints are left alone: they are usually meaningful (HTTP status,
+            # error number), and full-precision floats are the actual
+            # fragmenter.
+            [r"\d+\.\d+s\b", "<DURATION>s"],
+        ]
+    )
+
+    # Compiled-pattern cache keyed on the raw setting string, so a settings
+    # reload recompiles once rather than per event.
+    _scrub_cache_key: str | None = None
+    _scrub_cache: tuple[tuple[re.Pattern[str], str], ...] = ()
+
     @classmethod
     def initialize(
         cls,
@@ -133,6 +206,11 @@ class SentryIntegration:
             )
             cls._sentry_enabled = False
             return False
+
+        # Hand the instance to the sync _before_send hook (noise-control
+        # settings). Stored before the DSN/enabled early-returns so the
+        # filter stays operator-tunable even on the paths that skip SDK init.
+        cls._site_config = site_config
 
         # Get configuration from the injected site_config instance.
         sentry_dsn = (site_config.get("sentry_dsn", "") or "").strip()  # secret-get-ok: is_secret=false, a DSN identifier not a credential
@@ -257,11 +335,113 @@ class SentryIntegration:
             cls._sentry_enabled = False
             return False
 
-    @staticmethod
-    def _before_send(event: dict, hint: dict) -> dict | None:
+    @classmethod
+    def _setting(cls, key: str, default: str) -> str:
+        """Read a noise-control setting without ever raising.
+
+        ``_before_send`` runs inside the SDK's event pipeline; an exception
+        here would break error reporting itself, so every failure mode
+        (no site_config, a cache miss, a bad type) falls back to the
+        documented default.
+        """
+        sc = cls._site_config
+        if sc is None:
+            return default
+        try:
+            raw = sc.get(key, default)
+        except Exception:  # noqa: BLE001  # silent-ok: raising inside _before_send breaks ALL error reporting; the documented default is the safe fallback
+            return default
+        if raw is None:
+            return default
+        text = str(raw).strip()
+        # '' is the unset sentinel per feedback_app_settings_value_not_null.
+        return text or default
+
+    @classmethod
+    def _drop_exception_types(cls) -> frozenset[str]:
+        """Exception class names dropped before send (``app_settings``-driven)."""
+        raw = cls._setting(
+            "sentry_drop_exception_types", cls.DEFAULT_DROP_EXCEPTION_TYPES
+        )
+        return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+    @classmethod
+    def _scrub_patterns(cls) -> tuple[tuple[re.Pattern[str], str], ...]:
+        """Compiled ``[regex, replacement]`` fingerprint scrubbers, cached.
+
+        A malformed setting logs loud and falls back to the defaults rather
+        than silently disabling scrubbing — an operator who breaks the JSON
+        should hear about it, not quietly get their backlog fragmented again.
+        """
+        raw = cls._setting(
+            "sentry_fingerprint_scrub_patterns",
+            cls.DEFAULT_FINGERPRINT_SCRUB_PATTERNS,
+        )
+        if raw == cls._scrub_cache_key:
+            return cls._scrub_cache
+
+        compiled: list[tuple[re.Pattern[str], str]] = []
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                raise TypeError(f"expected a JSON array, got {type(parsed).__name__}")
+            for entry in parsed:
+                if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                    raise TypeError(f"expected [regex, replacement] pairs, got {entry!r}")
+                pattern, replacement = re.compile(str(entry[0])), str(entry[1])
+                # Exercise the replacement template now: an invalid group
+                # reference (e.g. "\\9" with one group) raises only at sub()
+                # time, which would otherwise fail silently once per event.
+                pattern.sub(replacement, "")
+                compiled.append((pattern, replacement))
+        except (ValueError, TypeError, re.error) as exc:
+            logger.error(
+                "[SENTRY] sentry_fingerprint_scrub_patterns is invalid (%s) — "
+                "falling back to built-in defaults. Fix the setting in app_settings.",
+                exc,
+            )
+            if raw != cls.DEFAULT_FINGERPRINT_SCRUB_PATTERNS:
+                cls._scrub_cache_key = raw
+                cls._scrub_cache = cls._compile_default_scrubbers()
+                return cls._scrub_cache
+            compiled = []
+
+        cls._scrub_cache_key = raw
+        cls._scrub_cache = tuple(compiled)
+        return cls._scrub_cache
+
+    @classmethod
+    def _compile_default_scrubbers(cls) -> tuple[tuple[re.Pattern[str], str], ...]:
+        """Compile the built-in scrubbers. Defaults are ours, so they parse."""
+        return tuple(
+            (re.compile(pat), repl)
+            for pat, repl in json.loads(cls.DEFAULT_FINGERPRINT_SCRUB_PATTERNS)
+        )
+
+    @classmethod
+    def _scrub(cls, text: str) -> str:
+        """Replace volatile tokens so equivalent errors group together.
+
+        Bad replacement templates are caught at compile time by
+        ``_scrub_patterns`` (loudly, once) rather than here, so the per-call
+        guard below is pure defence and not the reporting path for a
+        misconfiguration.
+        """
+        for pattern, replacement in cls._scrub_patterns():
+            try:
+                text = pattern.sub(replacement, text)
+            except Exception:  # noqa: BLE001  # nosec B112 - continue is the point: one bad pattern must not stop the others  # silent-ok: templates are validated loudly at compile time; this runs per-event and must never raise
+                continue
+        return text
+
+    @classmethod
+    def _before_send(cls, event: dict, hint: dict) -> dict | None:
         """
         Filter events before sending to Sentry.
         Remove sensitive data (passwords, tokens, etc.)
+
+        Also drops expected control flow and normalizes the grouping
+        fingerprint — see the noise-control knobs in the module docstring.
 
         Args:
             event: The event dictionary
@@ -270,20 +450,24 @@ class SentryIntegration:
         Returns:
             Modified event dict, or None to drop the event
         """
-        # Drop LangGraph control-flow interrupts. ``interrupt()`` raises
-        # GraphInterrupt to suspend a graph for operator approval (e.g.
-        # the seo_refresh_gate) — the runner re-raises it correctly, but
-        # Sentry's asyncio integration still reports it from LangGraph's
-        # internal node tasks as an unhandled error. It is a pause, not a
-        # failure; one GlitchTip issue per gate pause is pure noise
-        # (GlitchTip triage 2026-07-02: 7 of 73 open issues were this).
+        # Drop expected control flow that the SDK reports as an unhandled
+        # error (GraphInterrupt gate pauses, GpuBusyError admission skips).
+        # Matched by class name across the MRO, so this needs no import of
+        # the raising package and catches subclasses.
+        drop_types = cls._drop_exception_types()
         exc_info = hint.get("exc_info") if hint else None
-        if isinstance(exc_info, (tuple, list)) and exc_info:
+        if drop_types and isinstance(exc_info, (tuple, list)) and exc_info:
             exc_type = exc_info[0]
             if any(
-                t.__name__ == "GraphInterrupt" for t in getattr(exc_type, "__mro__", [])
+                t.__name__ in drop_types for t in getattr(exc_type, "__mro__", [])
             ):
                 return None
+
+        # Collapse volatile text into a stable fingerprint. Only set the
+        # fingerprint when scrubbing actually changed something: overriding
+        # grouping for every event would merge unrelated errors, whereas a
+        # message with no volatile tokens is already grouping correctly.
+        cls._apply_fingerprint(event)
 
         # Check if this is an error event we should capture
         if event.get("level") == "error" or (hint and "exc_info" in hint):
@@ -304,6 +488,50 @@ class SentryIntegration:
                     )
 
         return event
+
+    @classmethod
+    def _apply_fingerprint(cls, event: dict) -> None:
+        """Set a scrubbed grouping fingerprint in place, when it helps.
+
+        GlitchTip derives an issue's identity from the exception value (or
+        log message), so a volatile token in that text mints a fresh issue
+        per event. Scrub the volatile parts and pin the fingerprint to the
+        result; the message the operator reads is left untouched.
+
+        No-ops when scrubbing changes nothing, so events that already group
+        correctly keep the SDK's default grouping. Never raises — a
+        fingerprint is an optimisation, not a reason to lose an error.
+        """
+        try:
+            # Exception events: group on (type, scrubbed value).
+            values = (event.get("exception") or {}).get("values") or []
+            if values and isinstance(values[-1], dict):
+                latest = values[-1]
+                original = str(latest.get("value") or "")
+                if original:
+                    scrubbed = cls._scrub(original)
+                    if scrubbed != original:
+                        exc_type = str(latest.get("type") or "Exception")
+                        event["fingerprint"] = [exc_type, scrubbed]
+                    return
+
+            # Log events (LoggingIntegration): group on the scrubbed message.
+            logentry = event.get("logentry")
+            if isinstance(logentry, dict):
+                original = str(logentry.get("message") or "")
+                if original:
+                    scrubbed = cls._scrub(original)
+                    if scrubbed != original:
+                        event["fingerprint"] = [scrubbed]
+                    return
+
+            message = event.get("message")
+            if isinstance(message, str) and message:
+                scrubbed = cls._scrub(message)
+                if scrubbed != message:
+                    event["fingerprint"] = [scrubbed]
+        except Exception:  # noqa: BLE001  # silent-ok: a fingerprint is a grouping optimisation — losing it must never cost us the error event itself
+            logger.debug("[SENTRY] fingerprint scrub failed", exc_info=True)
 
     @classmethod
     def capture_exception(
