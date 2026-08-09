@@ -1,12 +1,12 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-08-08.**  
+> **Auto-generated from live `app_settings` table on 2026-08-09.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 679 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
-> **To regenerate:** `python scripts/regen-app-settings-doc.py`
+> **To regenerate:** CI does this nightly (`.github/workflows/regen-app-settings-doc.yml`) against a throwaway DB seeded by the baseline migration — that is the only correct source, since this file ships to the public mirror. Running the script against your own install is refused; see the script's error message for the local throwaway-DB procedure.
 
 To change any value:
 

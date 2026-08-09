@@ -35,7 +35,7 @@ import os
 import re
 import sys
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # brain/ lives at the repo root (not under src/cofounder_agent). Prepend the
@@ -46,6 +46,84 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 from brain.bootstrap import resolve_database_url  # noqa: E402
+
+# This file is generated for the PUBLIC OSS mirror, so the ONLY correct source
+# is a throwaway DB seeded by the baseline migration — that is what CI does
+# (.github/workflows/regen-app-settings-doc.yml spins up pgvector/pgvector:pg16,
+# runs migrations_smoke.py, then this script). A fresh baseline has exactly two
+# is_secret rows and both are empty placeholders.
+#
+# Two guards, because the default resolution order actively works against that.
+_ALLOW_OPERATOR_DB_ENV = "REGEN_ALLOW_OPERATOR_DB"
+
+
+def _doc_database_url() -> str | None:
+    """Resolve the DSN with ``DATABASE_URL`` ABOVE ``bootstrap.toml``.
+
+    ``brain.bootstrap.resolve_database_url`` deliberately ranks bootstrap.toml
+    first: for a runtime entry point (worker, brain, CLI) the operator's own
+    install IS the right target, and an env var should not silently redirect
+    production. This script is the opposite case — a doc generator whose output
+    ships publicly — so the precedence is inverted here rather than changed
+    globally, which would move production's footing for every other caller.
+
+    Without this, an operator running the script locally gets prod: bootstrap.toml
+    exists on every real install and wins over an explicitly exported
+    ``DATABASE_URL``, so the command silently reads live settings while appearing
+    to honour the env var you just set. (Observed 2026-08-09: a local run against
+    an explicit throwaway DSN still rendered all 1420 prod rows.)
+    """
+    return resolve_database_url(explicit=(os.getenv("DATABASE_URL") or "").strip() or None)
+
+
+async def _assert_fresh_baseline_db(conn) -> None:
+    """Refuse to render the public doc from a populated operator database.
+
+    The signal is exact, not heuristic: the baseline seeds two ``is_secret``
+    placeholders and both are empty (``0000_baseline.seeds.sql``). A single
+    is_secret row with a non-empty value therefore means real operator
+    credentials are present, so this is somebody's live install.
+
+    Failing loud beats trusting the redaction tiers. Those tiers are
+    defense-in-depth against *known* key-name and value shapes; they cannot
+    know that an operator-only key added last week holds a private hostname.
+    Never generating from prod in the first place is the actual control.
+    """
+    populated_secrets = await conn.fetchval(
+        "SELECT count(*) FROM app_settings "
+        "WHERE is_secret = true AND coalesce(value, '') <> ''"
+    )
+    if not populated_secrets:
+        return
+    if os.getenv(_ALLOW_OPERATOR_DB_ENV, "").strip().lower() in {"1", "true", "yes"}:
+        print(
+            f"WARNING: {populated_secrets} populated secret(s) — this is an "
+            f"operator database. Proceeding only because {_ALLOW_OPERATOR_DB_ENV} "
+            "is set. Do NOT commit the result.",
+            file=sys.stderr,
+        )
+        return
+    raise SystemExit(
+        f"refusing to regenerate the public app-settings doc: the target database "
+        f"holds {populated_secrets} populated secret(s), so it is a live operator "
+        f"install, not a fresh baseline.\n\n"
+        f"This doc ships to the public OSS mirror and must be rendered from a "
+        f"throwaway DB seeded by the baseline migration:\n"
+        f"  docker run -d --rm --name pdx-doc -e POSTGRES_USER=postgres \\\n"
+        f"    -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=poindexter_test \\\n"
+        f"    -p 55433:5432 pgvector/pgvector:pg16\n"
+        f"  export DATABASE_URL=postgres://postgres:postgres@localhost:55433/poindexter_test\n"
+        f"  python scripts/ci/migrations_smoke.py\n"
+        f"  python scripts/regen-app-settings-doc.py\n\n"
+        f"Note that exporting DATABASE_URL is only honoured because this script "
+        f"inverts the usual bootstrap.toml-first precedence; every other tool "
+        f"would still read your operator DB.\n\n"
+        f"To inspect your own settings without writing the doc, query app_settings "
+        f"directly or use `poindexter settings list`. Set "
+        f"{_ALLOW_OPERATOR_DB_ENV}=1 only for a deliberate local render you will "
+        f"not commit."
+    )
+
 
 _SECRET_PATTERNS = [
     re.compile(r"^[a-f0-9]{20,}$"),
@@ -175,7 +253,7 @@ def resolved_stamp(environ: dict[str, str] | None = None) -> str:
     override = env.get(_STAMP_OVERRIDE_ENV)
     if override:
         return override
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def looks_secret(key: str, value: str) -> bool:
@@ -196,8 +274,9 @@ def looks_secret(key: str, value: str) -> bool:
 async def main() -> None:
     import asyncpg
 
-    conn = await asyncpg.connect(resolve_database_url())
+    conn = await asyncpg.connect(_doc_database_url())
     try:
+        await _assert_fresh_baseline_db(conn)
         rows = await conn.fetch(
             """
             SELECT category, key, value, description, is_secret
@@ -235,7 +314,7 @@ async def main() -> None:
         "# App settings reference",
         "",
         f"> **Auto-generated from live `app_settings` table on {stamp}.**  ",
-        f"> Every runtime-configurable knob in the Poindexter pipeline.",
+        "> Every runtime-configurable knob in the Poindexter pipeline.",
         (
             f"> {len(rows)} active rows across {len(groups)} categories. "
             f"{encrypted} stored encrypted via pgcrypto (`is_secret=true`); "
@@ -249,7 +328,14 @@ async def main() -> None:
         "`poindexter settings set <key> <value>` (add `--secret` to store "
         "the value encrypted with `is_secret=true`).",
         "",
-        "> **To regenerate:** `python scripts/regen-app-settings-doc.py`",
+        (
+            "> **To regenerate:** CI does this nightly "
+            "(`.github/workflows/regen-app-settings-doc.yml`) against a "
+            "throwaway DB seeded by the baseline migration — that is the only "
+            "correct source, since this file ships to the public mirror. "
+            "Running the script against your own install is refused; see the "
+            "script's error message for the local throwaway-DB procedure."
+        ),
         "",
         "To change any value:",
         "",
