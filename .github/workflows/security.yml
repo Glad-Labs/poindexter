@@ -40,6 +40,10 @@ jobs:
   # sbom+grype runs on schedule/dispatch ONLY — it is entirely redundant with
   # trivy-fs on per-PR/push runs and is the most expensive job (~3–5 min).
   # CI-minutes sweep 2026-06-10.
+  #
+  # That weekly baseline is the only place main's own backlog surfaces, and it
+  # reports to nobody by default — see the notify-baseline job at the bottom,
+  # which pings Discord when it goes red.
   changes:
     name: classify changed paths
     # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
@@ -353,6 +357,13 @@ jobs:
           sbom: sbom.cdx.json
           fail-build: true
           severity-cutoff: high
+          # Mirror trivy-fs's `ignore-unfixed: true`. Without this the two
+          # gates disagree: trivy stays green on a CVE with no upstream patch
+          # while grype fails the build on it, so the weekly run can sit red
+          # on something nobody can action. A gate that cannot be satisfied
+          # stops being read — which is precisely how this workflow went
+          # unnoticed for seven weeks (see the notify job below).
+          only-fixed: true
           output-format: sarif
 
       - name: Upload grype SARIF
@@ -363,3 +374,100 @@ jobs:
         with:
           sarif_file: ${{ steps.grype-scan.outputs.sarif }}
           category: grype-sbom
+
+  # ------------------------------------------------------------------------
+  # Weekly-baseline visibility.
+  #
+  # The scans above ALREADY run unfiltered on the weekly `schedule` (the
+  # `|| schedule || workflow_dispatch` escapes on each job's `if:`) — the
+  # scheduled sweep was never the missing piece. What was missing is anyone
+  # finding out when it fails. A red PR run is visible to whoever pushed it;
+  # a red *scheduled* run is addressed to nobody, and the run summary is the
+  # only record that it happened at all.
+  #
+  # Measured cost of that gap: the weekly baseline failed SEVEN consecutive
+  # weeks — 2026-06-22 through 2026-08-03 — on `SBOM + grype scan`, and
+  # nobody noticed until someone went looking for an unrelated reason. This
+  # is the same shape as the `benchmarks` regression written up in
+  # scripts/ci/ci_runner_seam_lint.py ("failing its nightly run for weeks —
+  # invisible because it gates nothing"). A scan nobody reads is not a gate,
+  # so the delivery is part of the control, not a nicety.
+  #
+  # Routine ops signal → Discord. Telegram stays reserved for wake-me-up
+  # critical, and a dependency CVE on main is a this-week problem, not a
+  # right-now one.
+  # ------------------------------------------------------------------------
+  notify-baseline:
+    name: Weekly baseline → Discord when red
+    # Plain hosted runner, matching trivy-fs / sbom above. Deliberately NOT on
+    # the vars.CI_RUNNER seam: this step shells out to python3, and the
+    # self-hosted runner image ships no `python` (see the PyYAML note in
+    # scripts/ci/ci_runner_seam_lint.py). It bills one rounded-up minute a
+    # week.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # `always()` is load-bearing — the implicit `success()` gate would skip
+    # this job in exactly the case it exists to report. Restricted to
+    # schedule/dispatch because push and pull_request failures are already
+    # attributable to a person who is watching that run.
+    if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    needs:
+      - gitleaks
+      - trivy-fs
+      - trivy-config
+      - action-pins
+      - shell-line-endings
+      - poetry-lock
+      - sbom
+    steps:
+      - name: Report failed scans to Discord
+        # The `secrets` context is not allowed in a job-level `if:` (GitHub
+        # rejects it at parse time), so the webhook is surfaced as env and
+        # gated here at step level — same idiom as console-contract-drift.yml.
+        # An absent secret is a quiet skip rather than a red job, which is
+        # what the public poindexter mirror gets.
+        if: ${{ env.DISCORD_OPS_WEBHOOK_URL != '' && contains(needs.*.result, 'failure') }}
+        shell: bash
+        env:
+          DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          R_GITLEAKS: ${{ needs.gitleaks.result }}
+          R_TRIVY_FS: ${{ needs.trivy-fs.result }}
+          R_TRIVY_CONFIG: ${{ needs.trivy-config.result }}
+          R_ACTION_PINS: ${{ needs.action-pins.result }}
+          R_SHELL: ${{ needs.shell-line-endings.result }}
+          R_POETRY: ${{ needs.poetry-lock.result }}
+          R_SBOM: ${{ needs.sbom.result }}
+        run: |
+          set -euo pipefail
+
+          # Name the jobs that actually failed — "the security workflow is
+          # red" sends the reader back to the Actions tab to find out which
+          # half, which is the friction that makes an alert skippable.
+          failed=""
+          add() {
+            if [ "$1" = "failure" ]; then
+              failed="${failed}"$'\n'"• $2"
+            fi
+          }
+          add "$R_GITLEAKS"     "gitleaks — secret scan"
+          add "$R_TRIVY_FS"     "Trivy — filesystem vuln scan"
+          add "$R_TRIVY_CONFIG" "Trivy — Dockerfile + IaC config"
+          add "$R_ACTION_PINS"  "Lint third-party Actions for SHA pins"
+          add "$R_SHELL"        "Lint shell + PowerShell scripts"
+          add "$R_POETRY"       "poetry check --lock (src/cofounder_agent)"
+          add "$R_SBOM"         "SBOM + grype scan"
+
+          msg="🔴 Weekly security baseline is RED — ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}"
+          msg="${msg}${failed}"$'\n\n'
+          msg="${msg}These scans are path-gated on PRs and only run unfiltered here, so this is the branch's own accumulated backlog rather than any one PR's fault."$'\n'
+          msg="${msg}${RUN_URL}"
+
+          # Encode with stdlib json so newlines/quotes in the message can
+          # never produce a malformed payload (repo convention: no hand-rolled
+          # JSON in shell).
+          python3 -c 'import json,sys; print(json.dumps({"content": sys.stdin.read()}))' <<<"$msg" > payload.json
+
+          # A delivery failure must never turn a green scan red, nor mask a
+          # red one — the scan result is the signal, this is only transport.
+          curl -fsS -H 'Content-Type: application/json' --data @payload.json "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
