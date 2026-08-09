@@ -65,6 +65,7 @@ sync `pipeline_tasks.status` in the same transaction it publishes.
 | Surface        | Call                                          | Notes                                   |
 | -------------- | --------------------------------------------- | --------------------------------------- |
 | Console drawer | `POST /api/tasks/{id}/approve` + `publish_at` | Slot picker; approve + slot in one call |
+| MCP            | `schedule_post(task_id, publish_at)`          | Same call as the drawer; the phone path |
 | CLI            | `poindexter schedule ...`                     | Operates on already-staged `posts` rows |
 | HTTP           | `POST /api/scheduling/{post_id}`              | Needs a `posts` row to exist first      |
 | HTTP (batch)   | `POST /api/scheduling/batch`                  | Fills the next N approved posts         |
@@ -74,6 +75,16 @@ ISO 8601, `"tomorrow 9am"`, `"next monday 14:00"` — the same parser the
 CLI uses. It is validated **before** any state change, so a typo 400s
 with the task untouched rather than falling through to an immediate
 publish.
+
+One asymmetry to know about: this route calls `parse_when` **without a
+timezone**, so clock words resolve in UTC — `"tomorrow 9am"` is 09:00Z,
+not 9am where the operator is. The console is unaffected (its picker
+sends an absolute ISO instant), but anything that forwards typed words —
+the MCP `schedule_post` tool, a raw API call — inherits UTC. Pass ISO
+8601 with an explicit offset when the exact local hour matters. (The
+`tz` kwarg exists for this; wiring it to `operator_timezone` here would
+change the committed slot for existing callers, so it is a deliberate
+open question rather than an oversight.)
 
 `auto_publish` and `publish_at` are mutually exclusive (400). "Ship now"
 and "ship Thursday" cannot both be true, and silently picking a winner is
@@ -90,7 +101,14 @@ the reason.
 Callers must branch on `scheduled_for`, never assume the requested
 `publish_at` took effect. The console does this: a committed slot gets a
 cyan "Scheduled — publishes <time>" toast, a null one gets an amber
-"Approved but NOT scheduled — <reason>".
+"Approved but NOT scheduled — <reason>". `schedule_post` does the same
+for MCP, relaying `message` verbatim.
+
+Watch the key collision when writing a new caller: on a non-2xx,
+`utils/exception_handlers` returns the failure reason in `message` too.
+Check for the error first, or a 400 ("unparseable time", "auto_publish
+and publish_at are mutually exclusive") reads as a 200 that merely
+didn't get a slot.
 
 ## Retraction
 

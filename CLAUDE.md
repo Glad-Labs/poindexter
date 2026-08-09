@@ -277,7 +277,7 @@ Next.js 16 app router. On-demand tag-based revalidation: cache tags are declared
 
 ### MCP Server (`mcp-server/`)
 
-Custom MCP server for Claude desktop app. 40 tools across content / approval / settings / memory / observability / topics / social surfaces (incl. `findings_list` — probe-findings triage, #461 Phase 4). The sibling `mcp-server-gladlabs/` adds 3 operator-only tools layered on top (private to the Glad Labs operator overlay; not in the public mirror).
+Custom MCP server for Claude desktop app. 41 tools across content / approval / settings / memory / observability / topics / social surfaces (incl. `findings_list` — probe-findings triage, #461 Phase 4, and `schedule_post` — approve + publish slot in one call, the phone-side mirror of the console slot picker). The sibling `mcp-server-gladlabs/` adds 3 operator-only tools layered on top (private to the Glad Labs operator overlay; not in the public mirror).
 
 **Authentication:** OAuth 2.1 Client Credentials Grant only (Phase 3 #249 closed the dual-auth window 2026-05-05). Every consumer mints JWTs through `POST /token` against a registered `oauth_clients` row; the legacy static-Bearer fallback (and the `POINDEXTER_KEY` / `GLADLABS_KEY` / `app_settings.api_token` plumbing) was removed. Provision a client with `poindexter auth migrate-cli` (or `migrate-mcp` / `migrate-brain` / `migrate-scripts` / `migrate-mcp-gladlabs` / `migrate-openclaw` / `mint-grafana-token` per consumer). `poindexter setup` provisions the initial CLI client out-of-the-box on fresh installs.
 

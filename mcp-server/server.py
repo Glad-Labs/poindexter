@@ -457,6 +457,63 @@ async def approve_and_publish_post(task_id: str) -> str:
 
 
 @mcp.tool()
+async def schedule_post(task_id: str, publish_at: str) -> str:
+    """Approve a content task and queue it to publish at a given time.
+
+    The third approval option beside ``approve_post`` (stage, never ship)
+    and ``approve_and_publish_post`` (ship now): this stages the post AND
+    assigns it a publish slot, so ``scheduled_publisher`` ships it within
+    ~60s of the slot arriving. A slot in the past therefore publishes on
+    the next tick rather than erroring.
+
+    ``publish_at`` takes ISO 8601 (``2026-08-09T09:00:00+00:00``,
+    ``2026-08-09 09:00``), ``"now"``, ``"tomorrow 9am"``, or
+    ``"next monday 14:00"`` — the same parser ``poindexter schedule at``
+    uses. **Clock words resolve in UTC**, not the operator's local zone
+    (the route calls ``parse_when`` without a timezone), so pass ISO 8601
+    with an explicit offset whenever the exact local hour matters. An
+    unparseable value is rejected before any state change, so the task is
+    left untouched.
+
+    Reports the slot the server COMMITTED, never the one requested. The
+    approve itself commits before staging and slot assignment, so a
+    staging or slot failure still returns HTTP 200 — with no slot. That
+    case comes back as "Approved, but NOT scheduled — <reason>": the post
+    is approved and sitting unqueued, and must not be read as success.
+    """
+    full_id = await _resolve_task_id(task_id)
+    # No ``auto_publish`` key: the route 400s when it arrives alongside
+    # ``publish_at`` by design ("ship now" and "ship Thursday" can't both be
+    # true), and the request model already defaults it to False.
+    result = await _api(
+        "POST",
+        f"/api/tasks/{full_id}/approve",
+        {"approved": True, "publish_at": publish_at},
+    )
+
+    # Errors FIRST. A non-2xx body from utils/exception_handlers carries the
+    # reason in ``message`` — the same key a 200 uses for "approved but not
+    # scheduled" — so reading ``message`` before ``error`` would report a
+    # rejected request as a partial success.
+    if result.get("error"):
+        detail = result.get("message") or result.get("detail") or ""
+        return f"Error: {result['error']}{f' — {detail}' if detail else ''}"
+
+    scheduled_for = result.get("scheduled_for")
+    if scheduled_for:
+        status = result.get("status", "approved")
+        return f"Scheduled — publishes {scheduled_for} (task status: {status})"
+
+    # 200 with no committed slot. The route's ``message`` is already a
+    # complete sentence, so it renders verbatim — prefixing it here would
+    # double-print the lede.
+    return result.get("message") or (
+        "Approved, but NOT scheduled — the server committed no slot and gave "
+        "no reason. Check `poindexter schedule list` before assuming one exists."
+    )
+
+
+@mcp.tool()
 async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
     """Reject a content task. Provide a reason for feedback to the pipeline."""
     full_id = await _resolve_task_id(task_id)

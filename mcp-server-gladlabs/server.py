@@ -317,9 +317,15 @@ async def operator_status() -> str:
     lines.append("  - discord_status() — gateway configuration + reachability check")
     lines.append("  - operator_status() — this tool")
     lines.append("")
+    # Name only tools that actually exist over there. This string used to
+    # advertise `gates_*` and `schedule_*, publish_at`; the first has never
+    # existed in mcp-server/ and the second didn't until `schedule_post`
+    # shipped (2026-08-08). An operator reading this went looking for tools
+    # that weren't there.
     lines.append(
-        "Pipeline-ops tools (approve/reject, gates_*, topics_*, schedule_*, "
-        "publish_at) live in the public Poindexter MCP server (mcp-server/)."
+        "Pipeline-ops tools (approve_post / schedule_post / publish_post, "
+        "reject_post, topics_*, and the social-draft tools) live in the "
+        "public Poindexter MCP server (mcp-server/)."
     )
     lines.append("")
     lines.append("Future tools (placeholders, not yet implemented):")
