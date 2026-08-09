@@ -23,6 +23,21 @@ required, defaults are Python-side, matching every other TopicSource):
 - ``config.max_topics`` (default 10) -- cap per run; the shared dedup/ranking
   pass downstream (``topic_sources/runner.py``) handles cross-source ranking,
   this cap just bounds one source's contribution.
+- ``config.permutation_min_variants`` (default 5) -- how many reorderings of the
+  same token bag mark a cluster as machine-generated (see below). Two phrasings
+  of one idea are normal; keep this well above 2.
+
+**An impression is only demand if a person made it.** The 2026-08-09 GSC audit
+found that of the impressions Google will name, over half came from ONE cluster
+of 103 reorderings of "cadquery official documentation parametric cad python" --
+3,696 impressions, zero clicks -- and that this source's live output included
+``site:www.gladlabs.io``, which would have become an article titled
+"Site:Www.Gladlabs.Io". Candidates are therefore filtered through
+``_filters.is_junk_search_query`` (search operators, URLs/repo paths, brand
+navigation, letterless fragments) and ``_filters.permutation_clusters`` before
+becoming topics. Note this source does NOT reuse ``is_news_or_junk``: that
+rejects anything under four words, and short queries are the valuable ones
+("5090 local llm" converts at 7.1% CTR, "fast api best practices" at 20%).
 
 Master switch: ``app_settings.seo.query_ingestion.enabled`` (default
 ``false``) -- read directly since it's a cross-cutting SEO-harvest setting,
@@ -37,9 +52,42 @@ from typing import Any
 from urllib.parse import quote_plus
 
 from plugins.topic_source import DiscoveredTopic
-from services.topic_sources._filters import classify_category
+from services.topic_sources._filters import (
+    classify_category,
+    is_junk_search_query,
+    permutation_clusters,
+)
 
 logger = logging.getLogger(__name__)
+
+# Candidates are filtered in Python (junk + permutation clusters), so the SQL
+# has to return more than ``max_topics`` or a single machine-generated cluster
+# could occupy every slot and leave the run empty after filtering.
+_OVERFETCH = 5
+_OVERFETCH_CAP = 200
+
+
+def _brand_tokens(site_config: Any) -> tuple[str, ...]:
+    """Brand phrases/domains whose queries are navigation, not topic demand.
+
+    Full phrases and domains only — a bare token ("labs") would reject real
+    queries. Derived from existing settings rather than a new key: the operator
+    already told us the brand once.
+    """
+    if site_config is None:
+        return ()
+    out: list[str] = []
+    for key in ("site_name", "company_name", "site_domain"):
+        raw = str(getattr(site_config, "get", lambda *_: "")(key, "") or "").strip().lower()
+        if len(raw) < 4:  # too short to match safely
+            continue
+        out.append(raw)
+        # "gladlabs.io" -> also match the bare second-level label.
+        if "." in raw:
+            label = raw.split(".")[0]
+            if len(label) >= 4:
+                out.append(label)
+    return tuple(dict.fromkeys(out))
 
 
 _GAP_QUERY_SQL = """
@@ -86,17 +134,37 @@ class GscQueryGapSource:
         min_position = float(config.get("min_position", 15) or 15)
         window_days = int(config.get("window_days", 28) or 28)
         max_topics = int(config.get("max_topics", 10) or 10)
+        min_variants = int(config.get("permutation_min_variants", 5) or 5)
 
+        fetch_limit = min(max_topics * _OVERFETCH, _OVERFETCH_CAP)
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                _GAP_QUERY_SQL, window_days, min_impressions, min_position, max_topics
+                _GAP_QUERY_SQL, window_days, min_impressions, min_position, fetch_limit
             )
+
+        brand = _brand_tokens(config.get("_site_config"))
+        candidates = [(r["query"] or "").strip() for r in rows]
+        clustered = permutation_clusters(candidates, min_variants=min_variants)
+        dropped_junk = 0
+        dropped_cluster = 0
 
         topics: list[DiscoveredTopic] = []
         for r in rows:
             query = (r["query"] or "").strip()
             if not query:
                 continue
+            # An impression is only demand if a person made it. Operator/tool
+            # queries and machine permutation clusters earn impressions and
+            # never a click, so proposing them writes for nobody — the exact
+            # shape of the zero-click posts the 2026-08-09 GSC audit found.
+            if is_junk_search_query(query, brand_tokens=brand):
+                dropped_junk += 1
+                continue
+            if query in clustered:
+                dropped_cluster += 1
+                continue
+            if len(topics) >= max_topics:
+                break
             impressions = float(r["impressions"] or 0)
             avg_position = float(r["avg_position"] or 0)
             title = query.title()
@@ -119,7 +187,9 @@ class GscQueryGapSource:
             )
 
         logger.info(
-            "GscQueryGapSource: %d query-gap topics (window=%dd, min_impressions=%.0f, min_position=%.0f)",
+            "GscQueryGapSource: %d query-gap topics (window=%dd, min_impressions=%.0f, "
+            "min_position=%.0f); dropped %d junk + %d permutation-cluster of %d candidates",
             len(topics), window_days, min_impressions, min_position,
+            dropped_junk, dropped_cluster, len(rows),
         )
         return topics
