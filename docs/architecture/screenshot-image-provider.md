@@ -146,4 +146,5 @@ when the pipeline ran.
 - [`services/image_providers/screenshot.py`](../../src/cofounder_agent/services/image_providers/screenshot.py) — the provider
 - [`services/preview_screenshot.py`](../../src/cofounder_agent/services/preview_screenshot.py) — the shared capture helper (also drives the `qa.vision` rail)
 - [`modules/content/atoms/_writer_markers.py`](../../src/cofounder_agent/modules/content/atoms/_writer_markers.py) — marker parsing
+- [`brand-hero.md`](brand-hero.md) — the sibling answer for the **featured** image: composed from brand tokens, because diffusion cannot set type
 - [`anti-hallucination.md`](anti-hallucination.md) — why "show the real number" is a house rule

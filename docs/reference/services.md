@@ -59,6 +59,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `bootstrap_defaults.py` | Centralized localhost / fallback URLs used across services/. |
 | `brain_knowledge_read.py` | ``services.brain_knowledge_read`` — read helper for the MCP brain-knowledge tool. |
 | `brain_stats.py` | Brain daemon stats service. |
+| `brand_hero.py` | Compose an on-brand hero image from the brand tokens — no diffusion. |
 | `canonical_blog_spec.py` | The canonical_blog pipeline as a static graph_def spec (atom-cutover #355). |
 | `capability_outcomes.py` | ``capability_outcomes`` — outcome feedback loop writer. |
 | `caption_align.py` | Forced alignment of the known narration script onto ASR segment timings. |

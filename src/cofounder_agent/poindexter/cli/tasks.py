@@ -868,6 +868,32 @@ def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
     )
 
 
+@tasks_group.command("brand-hero")
+@click.argument("task_id")
+@click.option("--tagline", default=None, help="Override the hero tagline.")
+@click.option("--title", default=None, help="Override the wordmark (default: Poindexter).")
+def tasks_brand_hero(task_id: str, tagline: str | None, title: str | None) -> None:
+    """Compose an on-brand hero from the brand tokens and set it as featured.
+
+    The deterministic counterpart to `regen-image` for posts about the system
+    itself. Renders real HTML in headless chromium instead of asking a
+    diffusion model for a logo — type comes out as type, it needs no GPU, and
+    it cannot trip the image-gen OCR text gate.
+
+    Like `replace-image --which featured`, this reaches PUBLISHED posts: it
+    writes posts.featured_image_url and triggers a static-export rebuild. It
+    does NOT bust the Vercel ISR cache, so a live post keeps serving the old
+    image until you revalidate its cache tag separately.
+    """
+    payload: dict[str, Any] = {"tagline": tagline, "title": title}
+    _emit_edit_result(
+        _post_edit(
+            f"/api/tasks/{task_id}/brand-hero", payload,
+            timeout_key="post_edit_image_timeout_s",
+        ),
+    )
+
+
 @tasks_group.command("remove-image")
 @click.argument("task_id")
 @click.option("--which", required=True, help="featured | inline:N (1-based)")

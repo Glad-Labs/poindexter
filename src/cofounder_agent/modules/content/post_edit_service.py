@@ -320,6 +320,51 @@ class PostEditService:
             new_url=url, warnings=res.warnings,
         )
 
+    async def brand_hero(
+        self, task_id: str, *, tagline: str | None = None, title: str | None = None,
+    ) -> EditResult:
+        """Compose an on-brand hero from the brand tokens and set it as featured.
+
+        Deterministic sibling of :meth:`regen_image`: same upload + swap + audit
+        path, but the image is RENDERED from HTML rather than generated. A hero
+        wants the brand mark, a mark means type, and diffusion cannot set type —
+        asked for one it produced mangled letterforms over six-fingered hands.
+        This costs no GPU and cannot trip the OCR text gate, because the text is
+        intentional. See ``services/brand_hero.py``.
+        """
+        import os
+        import tempfile
+
+        from services.brand_hero import HeroSpec, render_hero_png
+
+        overrides: dict[str, str] = {}
+        if tagline:
+            overrides["tagline"] = tagline
+        if title:
+            overrides["title"] = title
+        png = await render_hero_png(HeroSpec(**overrides))
+        if not png:
+            raise RuntimeError("brand hero render produced no output")
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(png)
+            out_path = tmp.name
+        try:
+            url = await self._upload_image(out_path, task_id)
+        finally:
+            with suppress(OSError):
+                os.remove(out_path)
+
+        res = await self.replace_image(task_id, which="featured", url=url)
+        await self._audit(
+            "post_brand_hero", task_id,
+            {"which": res.field, "url": url, "tagline": (tagline or "")[:200]},
+        )
+        return EditResult(
+            task_id, res.field, True, "composed brand hero",
+            new_url=url, warnings=res.warnings,
+        )
+
     # -- helpers ------------------------------------------------------------
 
     async def _generate_and_upload(self, task_id: str, prompt: str) -> str:

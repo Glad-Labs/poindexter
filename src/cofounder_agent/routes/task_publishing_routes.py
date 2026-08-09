@@ -1440,6 +1440,13 @@ class RegenImageRequest(BaseModel):
     prompt: str
 
 
+class BrandHeroRequest(BaseModel):
+    """Optional overrides for the composed hero. All fields default in HeroSpec."""
+
+    tagline: str | None = None
+    title: str | None = None
+
+
 class RemoveImageRequest(BaseModel):
     which: str  # "featured" | "inline:N"
 
@@ -1584,6 +1591,35 @@ async def regen_task_image(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/brand-hero", summary="Compose an on-brand hero")
+async def brand_hero_image(
+    task_id: str,
+    body: BrandHeroRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Render a hero from the brand tokens and set it as the featured image.
+
+    Deterministic counterpart to ``regen-image`` for posts about the system
+    itself: no GPU, no VRAM contention, and type that renders as type. Reaches
+    PUBLISHED posts on the same terms as ``replace-image --which featured``.
+    """
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.brand_hero(full_id, tagline=body.tagline, title=body.title)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return _edit_result_json(res)
 
 
