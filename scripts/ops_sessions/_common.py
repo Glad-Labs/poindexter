@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
+import json
 import logging
 import os
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 
@@ -114,6 +116,76 @@ def current_branch(cwd: str) -> str:
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
+_PR_FIELDS = "number,state,mergeable,mergeStateStatus,url,autoMergeRequest"
+
+
+def pr_status(repo: str, branch: str, *, cwd: str | None = None) -> dict:
+    """Return the PR whose head is ``branch`` as a dict, ``{}`` if there is none.
+
+    Parsed with ``json.loads`` rather than piped through ``jq``: a shape change
+    then surfaces as a Python error instead of an empty string that every
+    caller reads as "no PR".
+    """
+    proc = gh("pr", "view", branch, "--repo", repo, "--json", _PR_FIELDS, cwd=cwd)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return {}
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        data = None
+    if not isinstance(data, dict):
+        # Every caller reads {} as "no such PR", which for a *malformed* reply
+        # is a different and wrong conclusion — say so rather than let a `gh`
+        # output change read as an absent PR.
+        logging.getLogger("ops").error(
+            "unparseable `gh pr view %s` output: %r", branch, proc.stdout[:300],
+        )
+        return {}
+    return data
+
+
+def wait_for_merge(
+    repo: str,
+    branch: str,
+    *,
+    cwd: str,
+    budget_seconds: float,
+    poll_seconds: float,
+    log: logging.Logger,
+) -> str:
+    """Poll ``branch``'s PR until it resolves. Returns its terminal-ish state.
+
+    One of ``MERGED`` / ``CLOSED`` / ``CONFLICTING`` / ``PENDING`` / ``GONE``.
+    ``PENDING`` means the budget ran out with the PR still clean — a success
+    for an auto-merge-armed PR, which lands on its own once CI finishes.
+
+    Only an explicit ``CONFLICTING`` ends the wait early. Right after a push
+    GitHub reports ``mergeable: UNKNOWN`` while it recomputes the merge base,
+    and treating that as either answer would be wrong.
+    """
+    deadline = time.monotonic() + budget_seconds
+    while True:
+        status = pr_status(repo, branch, cwd=cwd)
+        if not status:
+            log.error("no PR found for head %s while waiting to merge", branch)
+            return "GONE"
+        state = str(status.get("state") or "")
+        if state in ("MERGED", "CLOSED"):
+            log.info("PR for %s is %s", branch, state)
+            return state
+        if str(status.get("mergeable") or "") == "CONFLICTING":
+            log.info("PR for %s is CONFLICTING (main moved under it)", branch)
+            return "CONFLICTING"
+        if time.monotonic() + poll_seconds >= deadline:
+            log.info(
+                "merge wait budget exhausted for %s (mergeable=%s, state=%s) — "
+                "leaving it armed",
+                branch, status.get("mergeable"), status.get("mergeStateStatus"),
+            )
+            return "PENDING"
+        time.sleep(poll_seconds)
+
+
 def commit_and_open_pr(
     *,
     cwd: str,
@@ -125,6 +197,8 @@ def commit_and_open_pr(
     log: logging.Logger,
     source: str,
     base: str = "main",
+    auto_merge: bool = False,
+    force_push: bool = False,
 ) -> str | None:
     """Stage → commit → push → open a PR from the worktree at ``cwd``.
 
@@ -132,6 +206,13 @@ def commit_and_open_pr(
     failed. Every step's return code is checked: the sessions that commit run
     unattended at 02:00-05:00, so an unchecked ``rc`` is a change that quietly
     never lands (stack#2408 was the same bug one step earlier in this chain).
+
+    ``auto_merge`` arms GitHub auto-merge (squash) so the PR lands the moment
+    required CI goes green, matching what ``sync-claude-md.yml`` already does
+    for the repo-derived half of CLAUDE.md. ``force_push`` re-pushes an
+    existing session branch with ``--force-with-lease`` — used when a caller
+    regenerates its output on top of a main that moved, in which case
+    ``gh pr create`` finds the PR already open and the existing one is reused.
     """
 
     def _fail(step: str, proc: subprocess.CompletedProcess) -> None:
@@ -157,10 +238,15 @@ def commit_and_open_pr(
         )
         return None
 
+    # --force-with-lease, never bare --force: on a retry we are the only writer
+    # of this branch, so the lease holds; if anything else moved it, failing is
+    # the right outcome.
+    lease = ("--force-with-lease",) if force_push else ()
+    push = ("push", *lease, "-u", "origin", "HEAD")
     for step, args in (
         ("git add", ("add", *paths)),
         ("git commit", ("commit", "--no-verify", "-m", message)),
-        ("git push", ("push", "-u", "origin", "HEAD")),
+        ("git push", push),
     ):
         proc = git(*args, cwd=cwd)
         if proc.returncode != 0:
@@ -173,12 +259,64 @@ def commit_and_open_pr(
         "pr", "create", "--repo", repo, "--base", base, "--head", branch,
         "--title", title, "--body", body, cwd=cwd,
     )
-    if proc.returncode != 0:
-        _fail("gh pr create", proc)
-        return None
-    url = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else f"({branch})"
-    log.info("opened PR %s", url)
+    if proc.returncode == 0:
+        url = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else f"({branch})"
+        log.info("opened PR %s", url)
+    else:
+        # A re-push onto an already-proposed branch is the expected path for
+        # regenerating callers, not a failure — but only when a PR really is
+        # open for this head. Anything else is still a hard fail.
+        existing = pr_status(repo, branch, cwd=cwd)
+        if not existing or str(existing.get("state") or "") != "OPEN":
+            _fail("gh pr create", proc)
+            return None
+        url = str(existing.get("url") or f"({branch})")
+        log.info("PR %s already open for %s — pushed updated commit", url, branch)
+
+    if auto_merge:
+        _arm_auto_merge(repo, branch, url, cwd=cwd, log=log, source=source)
     return url
+
+
+def _arm_auto_merge(
+    repo: str,
+    branch: str,
+    url: str,
+    *,
+    cwd: str,
+    log: logging.Logger,
+    source: str,
+) -> None:
+    """Enable squash auto-merge on ``branch``'s PR; notify if it won't arm.
+
+    A failure here is a degradation, not a lost change: the PR is open and
+    correct, it just now needs a human to press merge. Said out loud rather
+    than swallowed — an unwatched PR waiting forever is exactly the silent
+    stall of stack#2809.
+    """
+    proc = gh("pr", "merge", "--auto", "--squash", branch, "--repo", repo, cwd=cwd)
+    if proc.returncode == 0:
+        log.info("auto-merge (squash) armed on %s", url)
+        return
+    # `gh` also exits non-zero when the PR was already mergeable and merged on
+    # the spot, and when auto-merge was already armed by an earlier attempt.
+    # Re-read the truth instead of pattern-matching stderr.
+    status = pr_status(repo, branch, cwd=cwd)
+    if str(status.get("state") or "") == "MERGED":
+        log.info("PR %s merged immediately (no wait needed)", url)
+        return
+    if status.get("autoMergeRequest"):
+        log.info("auto-merge already armed on %s", url)
+        return
+    detail = (proc.stderr or proc.stdout or "no output captured").strip()[:1500]
+    log.error("gh pr merge --auto failed (rc=%s): %s", proc.returncode, detail)
+    notify_fail(
+        f"{source}: auto-merge not armed — PR needs a manual merge",
+        f"{url} is open and correct, but `gh pr merge --auto --squash` exited "
+        f"{proc.returncode}, so it will sit unmerged until someone presses the "
+        f"button.\n{detail}",
+        source,
+    )
 
 
 def notify_fail(title: str, detail: str, source: str) -> None:

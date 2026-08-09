@@ -20,17 +20,17 @@ the Max subscription. Seven run as plain Python scripts under
 [`scripts/ops_sessions/`](../../scripts/ops_sessions/); two that need a frontier
 cloud model are kept **disabled** pending a metered-API decision.
 
-| Session             | Tier                    | Schedule    | What it does                                  | Output                       |
-| ------------------- | ----------------------- | ----------- | --------------------------------------------- | ---------------------------- |
-| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs         | `gh pr merge`                |
-| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                        | lint PR                      |
-| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references       | PR (or flag)                 |
-| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface       | PR / Discord note            |
-| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels            | label edits + Discord digest |
-| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)   | probe-bug issues             |
-| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate | PR                           |
-| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                     | —                            |
-| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files               | —                            |
+| Session             | Tier                    | Schedule    | What it does                                  | Output                         |
+| ------------------- | ----------------------- | ----------- | --------------------------------------------- | ------------------------------ |
+| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs         | `gh pr merge`                  |
+| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                        | lint PR                        |
+| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references       | PR (or flag)                   |
+| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface       | self-merging PR / Discord note |
+| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels            | label edits + Discord digest   |
+| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)   | probe-bug issues               |
+| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate | PR                             |
+| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                     | —                              |
+| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files               | —                              |
 
 The deterministic five make **zero model calls**. The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.
@@ -117,6 +117,52 @@ with no PR attached. `git ls-remote --heads origin 'refs/heads/auto/*'` lists
 them; anything older than a day with no matching PR means the PR step is broken
 again.
 
+### The adjacent-bullet conflict (PR #3126)
+
+**Two jobs edit CLAUDE.md's "Key Numbers" list, and their bullets sit next to
+each other.** `.github/workflows/sync-claude-md.yml` owns the repo-derived
+stats (file counts, dashboard count, latest migration); this session owns the
+DB-derived ones (posts, `pipeline_tasks`, `app_settings`, `embeddings`). In the
+list, `live posts` sits directly **above** `Python files`, and `app_settings
+keys` directly **below** `test files` — so the two jobs change adjacent lines,
+which a 3-way merge conflicts on every time.
+
+Ordering was supposed to prevent it: the CI job is scheduled 06:17 UTC,
+thirteen minutes _before_ this session's 02:30 EDT timer, so its stats should
+already be on `main` when the worktree forks. GitHub Actions cron drift breaks
+that. On 2026-08-08 the CI job drifted to 07:16 and merged 47 minutes _after_
+this session had pushed, leaving PR #3126 conflicted with **all required checks
+green** and no way forward.
+
+The fix leans on CLAUDE.md's DB counts being _generated_: when `main` moves,
+the session does **not** rebase. It throws the edit away, re-points its branch
+at a freshly fetched `origin/main` (`git checkout -B <branch> --force
+origin/main`), re-runs `scripts/sync_claude_md_db_stats.py`, and force-pushes
+with a lease. The generator is idempotent and prose-anchored, so it re-applies
+the same five claims to whatever `main` now says — that cannot conflict by
+construction. The session then arms GitHub auto-merge (squash) and waits, up to
+`OPS_CLAUDE_MD_MERGE_WAIT_SECONDS`, for one of:
+
+| Outcome         | Meaning                               | Session does             |
+| --------------- | ------------------------------------- | ------------------------ |
+| `MERGED`        | landed                                | exit 0                   |
+| `PENDING`       | budget out, PR clean + armed          | exit 0 — GitHub lands it |
+| `CONFLICTING`   | `main` moved again                    | regenerate, force-push   |
+| `CLOSED`/`GONE` | a human declined it / the PR vanished | notify, exit non-zero    |
+
+`mergeable: UNKNOWN` is **not** read as either answer — GitHub reports it for a
+beat after every push while it recomputes the merge base, so the loop keeps
+polling instead.
+
+A run whose budget expires while conflicting leaves an open PR behind; the next
+run closes it, because its own regeneration restates the same claims with
+fresher numbers. That reaper matches
+`auto/claude-md-sync-<date>-<HHMM>` **including the time group** — the CI sync's
+branch is `auto/claude-md-sync-<date>` with no `-HHMM`, i.e. the same prefix, so
+a loose prefix match would close the other job's PR every night. Pinned by
+`tests/unit/scripts/test_ops_claude_md_sync.py`; if you ever rename either
+branch scheme, that test is the thing that notices.
+
 ## Operating it
 
 ```bash
@@ -156,11 +202,19 @@ manages.
 Host-side env knobs read by [`scripts/ops_sessions/_common.py`](../../scripts/ops_sessions/_common.py)
 (resolved before any DB is reachable, so not `app_settings`):
 
-| Var                        | Default                  | Purpose                          |
-| -------------------------- | ------------------------ | -------------------------------- |
-| `OPS_OLLAMA_URL`           | `http://localhost:11434` | local Ollama endpoint            |
-| `OPS_OLLAMA_MODEL_TRIAGE`  | `llama3.2:3b`            | `alert-triage` classifier model  |
-| `OPS_OLLAMA_MODEL_TESTFIX` | `qwen2.5-coder:7b`       | `test-health` fix-proposer model |
+| Var                                | Default                  | Purpose                                         |
+| ---------------------------------- | ------------------------ | ----------------------------------------------- |
+| `OPS_OLLAMA_URL`                   | `http://localhost:11434` | local Ollama endpoint                           |
+| `OPS_OLLAMA_MODEL_TRIAGE`          | `llama3.2:3b`            | `alert-triage` classifier model                 |
+| `OPS_OLLAMA_MODEL_TESTFIX`         | `qwen2.5-coder:7b`       | `test-health` fix-proposer model                |
+| `OPS_CLAUDE_MD_MAX_ATTEMPTS`       | `3`                      | `claude-md-sync` regenerate-on-conflict retries |
+| `OPS_CLAUDE_MD_MERGE_WAIT_SECONDS` | `3600`                   | how long it waits for its own PR to merge       |
+| `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                     | PR-state poll interval within that budget       |
+
+The merge wait defaults to an hour because what it survives is GitHub Actions
+cron drift, not a race in seconds — see [the adjacent-bullet
+conflict](#the-adjacent-bullet-conflict-pr-3126). The process just sleeps
+between `gh pr view` polls, so a long budget costs nothing at 02:30.
 
 DB URL and the Discord webhook resolve through the existing
 `~/.poindexter/bootstrap.toml` chain — no new secrets on disk.
