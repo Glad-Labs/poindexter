@@ -65,10 +65,25 @@ from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
-# Eligible = approved OR published (auto-publish races the 5-min cron),
-# not yet media-dispatched, and carries a persisted Stage-1 podcast_script
-# (the minimal artifact media.load_scripts needs; shot-lists are optional —
-# the render nodes no-op gracefully when absent, per media_load_scripts._EMPTY).
+# Eligible = approved OR published (auto-publish races the 5-min cron), not
+# yet media-dispatched, and carrying BOTH Stage-1 artifacts the render needs:
+# a podcast_script (media.load_scripts' minimum) AND a shot list with shots.
+#
+# The shot-list requirement is not belt-and-braces — it is the fix for a
+# silent catalog-wide loss (poindexter#1001). Shot lists were treated as
+# optional because "the render nodes no-op gracefully when absent". They do,
+# and that is exactly the problem: a piece with an empty video_shot_list was
+# claimed, paid for TTS narration + transcription + caption alignment, skipped
+# BOTH render lanes, reported `QA'd 0 asset(s)` as success, and kept its
+# media_pipeline_dispatched_at stamp — retiring itself permanently with no
+# video and no alert. 21 of 31 video-less published pieces were in that state
+# on 2026-08-08, every piece created since ~08-01, because a GPU-busy skip in
+# the Stage-1 director leaves video_shot_list = {}.
+#
+# Excluding them here is strictly better: the piece stays UNCLAIMED, so it
+# renders the moment a shot list exists (BackfillVideoShotListsJob), instead
+# of being consumed once and lost. It also stops paying TTS for a render that
+# cannot happen.
 _ELIGIBLE_SQL = """
     SELECT pt.task_id
       FROM pipeline_tasks pt
@@ -80,9 +95,50 @@ _ELIGIBLE_SQL = """
             WHERE pv.task_id = pt.task_id
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
+              AND CASE
+                    WHEN jsonb_typeof(
+                           pv.stage_data -> 'task_metadata'
+                             -> 'video_shot_list' -> 'shots') = 'array'
+                    THEN jsonb_array_length(
+                           pv.stage_data -> 'task_metadata'
+                             -> 'video_shot_list' -> 'shots')
+                    ELSE 0
+                  END > 0
        )
      ORDER BY pt.updated_at ASC
      LIMIT $1
+"""
+
+# The stranded population: publishable, podcast_script present, no video, and
+# no renderable shot list. Deliberately NOT filtered on
+# media_pipeline_dispatched_at — on 2026-08-08 all 27 stranded pieces were
+# ALREADY claimed, so a marker-filtered count reported a comforting zero while
+# the whole catalog sat un-renderable. Reported as a job metric every cycle so
+# the number is on a graph rather than inferred from a drift finding.
+_STRANDED_SQL = """
+    SELECT COUNT(*)
+      FROM pipeline_tasks pt
+     WHERE pt.status IN ('approved', 'published')
+       AND NOT EXISTS (
+           SELECT 1 FROM media_assets ma
+            WHERE ma.task_id = pt.task_id AND ma.type = 'video'
+       )
+       AND EXISTS (
+           SELECT 1
+             FROM pipeline_versions pv
+            WHERE pv.task_id = pt.task_id
+              AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
+              AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
+              AND CASE
+                    WHEN jsonb_typeof(
+                           pv.stage_data -> 'task_metadata'
+                             -> 'video_shot_list' -> 'shots') = 'array'
+                    THEN jsonb_array_length(
+                           pv.stage_data -> 'task_metadata'
+                             -> 'video_shot_list' -> 'shots')
+                    ELSE 0
+                  END = 0
+       )
 """
 
 # Conditional claim — only one worker wins. Affects 0 rows if already claimed.
@@ -318,6 +374,23 @@ class DispatchMediaPipelineJob:
             logger.warning("[DISPATCH_MEDIA] eligible-task query failed: %s", exc)
             return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
 
+        # Publishable pieces that CANNOT render for want of a shot list. Kept
+        # on every cycle's metrics (poindexter#1001) so the number lands on a
+        # graph — this population sat at 27 while every surface reported
+        # success. A non-zero value means BackfillVideoShotListsJob has work.
+        stranded = 0
+        try:
+            stranded = int(await pool.fetchval(_STRANDED_SQL) or 0)
+            if stranded:
+                logger.info(
+                    "[DISPATCH_MEDIA] %d publishable piece(s) have no renderable "
+                    "shot list — held back, awaiting shot-list backfill "
+                    "(poindexter#1001)", stranded,
+                )
+        except Exception as exc:  # noqa: BLE001
+            # silent-ok: an observability count must never break dispatch.
+            logger.debug("[DISPATCH_MEDIA] stranded-count query failed: %s", exc)
+
         # Health-gate the cycle (2026-07-03): a dispatch fired into a
         # wan/image-gen/DNS outage fast-fails, and the failure path burns one of
         # the task's bounded media_reconciliation re-dispatch attempts — six
@@ -525,7 +598,14 @@ class DispatchMediaPipelineJob:
             detail = f"dispatched {dispatched}"
         else:
             detail = "no eligible pieces"
-        return JobResult(ok=True, detail=detail, changes_made=dispatched)
+        if stranded:
+            detail += f"; {stranded} held back (no shot list)"
+        return JobResult(
+            ok=True,
+            detail=detail,
+            changes_made=dispatched,
+            metrics={"dispatched": dispatched, "stranded_no_shot_list": stranded},
+        )
 
 
 __all__ = ["DispatchMediaPipelineJob"]

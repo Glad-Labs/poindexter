@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -319,3 +320,68 @@ def test_budget_default_is_seeded():
     from services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["gpu_sched_media_max_wait_s"] == "120"
+
+
+class TestTerminalGpuBusySkip:
+    """A director skip is not the same class of event as a review skip
+    (poindexter#1001).
+
+    Both were reported at info as routine. But the director's skip leaves
+    video_shot_list = {}, and the piece then publishes, gets claimed, pays for
+    TTS + transcription + captions, skips both render lanes, and reports
+    `QA'd 0 asset(s)` as success — retiring itself with no video. 27 pieces
+    sat that way, each announced as a routine skip.
+    """
+
+    def _emit_capture(self, monkeypatch):
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: captured.append(kw),
+        )
+        return captured
+
+    def test_default_skip_stays_advisory(self, monkeypatch):
+        from modules.content.stages._media_gpu_skip import (
+            surface_media_gpu_busy_skip,
+        )
+
+        captured = self._emit_capture(monkeypatch)
+        surface_media_gpu_busy_skip(
+            "video_review", SimpleNamespace(reason="busy", eta_seconds=12.0),
+            task_id="t1",
+        )
+
+        assert captured[0]["severity"] == "info"
+        assert "publish is not blocked" in captured[0]["body"]
+        assert captured[0]["extra"]["terminal"] is False
+
+    def test_terminal_skip_warns_and_names_the_loss(self, monkeypatch):
+        from modules.content.stages._media_gpu_skip import (
+            surface_media_gpu_busy_skip,
+        )
+
+        captured = self._emit_capture(monkeypatch)
+        surface_media_gpu_busy_skip(
+            "video_director", SimpleNamespace(reason="busy", eta_seconds=30.0),
+            task_id="t2", terminal=True,
+        )
+
+        f = captured[0]
+        assert f["severity"] == "warn"
+        assert f["extra"]["terminal"] is True
+        assert "cannot render video" in f["body"]
+        # names the recovery path so the page is actionable
+        assert "BackfillVideoShotListsJob" in f["body"]
+
+    def test_the_director_call_site_passes_terminal(self):
+        """Guard: the flag is worthless if the one caller that needs it
+        forgets to pass it."""
+        import inspect
+
+        from modules.content.stages import generate_video_shot_list as mod
+
+        src = inspect.getsource(mod)
+        assert 'surface_media_gpu_busy_skip(\n' in src
+        assert '"video_director"' in src
+        director_call = src[src.index('"video_director", busy'):]
+        assert "terminal=True" in director_call[:200]

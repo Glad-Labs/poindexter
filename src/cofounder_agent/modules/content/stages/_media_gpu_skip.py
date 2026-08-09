@@ -26,14 +26,24 @@ logger = get_logger(__name__)
 
 
 def surface_media_gpu_busy_skip(
-    stage: str, busy: Any, *, task_id: str | None,
+    stage: str, busy: Any, *, task_id: str | None, terminal: bool = False,
 ) -> None:
     """Report a media stage that skipped because admission refused the wait.
 
-    ``info`` severity and ``log_only`` delivery: a bounded skip under load is
-    the system working as designed. Persistent skips are the signal worth
-    acting on — either ``gpu_sched_media_max_wait_s`` is too tight, or media
-    is being scheduled straight into render contention.
+    ``info`` severity by default: a bounded skip under load is the system
+    working as designed, and the post publishes either way. Persistent skips
+    are the signal worth acting on — either ``gpu_sched_media_max_wait_s`` is
+    too tight, or media is being scheduled straight into render contention.
+
+    ``terminal=True`` is for a skip the piece cannot recover from on its own.
+    The video director is the case that earned the flag (poindexter#1001): its
+    skip leaves ``video_shot_list = {}``, and the piece then publishes, gets
+    claimed by the media dispatcher, pays for TTS + transcription + captions,
+    skips BOTH render lanes, and reports ``QA'd 0 asset(s)`` as success —
+    keeping its dispatch marker and retiring itself with no video. 27 pieces
+    sat in that state before anyone noticed, every one of them reported at
+    ``info`` as a routine skip. Terminal skips page at ``warn`` and say what
+    was actually lost.
     """
     try:
         from utils.findings import emit_finding
@@ -41,16 +51,29 @@ def surface_media_gpu_busy_skip(
         eta_raw = getattr(busy, "eta_seconds", None)
         eta = f"{eta_raw:.0f}s" if eta_raw is not None else "unknown"
         reason = getattr(busy, "reason", "unknown")
+        consequence = (
+            (
+                " This piece now has NO shot list, so it cannot render video "
+                "at all — the media pipeline will skip both lanes and report "
+                "success. BackfillVideoShotListsJob regenerates it on its next "
+                "pass (every 6h); until then the piece is publishable but "
+                "video-less (poindexter#1001)."
+            )
+            if terminal
+            else " The post continues without this media artefact — publish is not blocked."
+        )
         emit_finding(
             source=f"stages.{stage}",
             kind="media_gpu_busy_skip",
-            severity="info",
-            title=f"{stage} skipped — GPU busy beyond its wait budget",
+            severity="warn" if terminal else "info",
+            title=(
+                f"{stage} skipped — GPU busy beyond its wait budget"
+                + (" (piece left un-renderable)" if terminal else "")
+            ),
             body=(
                 f"GPU admission refused the wait ({reason}; holder ETA ~{eta}), "
                 f"so {stage} skipped rather than queueing behind a long render "
-                "up to the lock ceiling. The post continues without this "
-                "media artefact — publish is not blocked. Persistent skips "
+                f"up to the lock ceiling.{consequence} Persistent skips "
                 "mean render pressure is crowding out media: raise "
                 "gpu_sched_media_max_wait_s, or stop scheduling media against "
                 "renders."
@@ -61,6 +84,7 @@ def surface_media_gpu_busy_skip(
                 "reason": reason,
                 "eta_seconds": eta_raw,
                 "task_id": task_id,
+                "terminal": terminal,
             },
         )
     except Exception:  # noqa: BLE001  # silent-ok: emit_finding never raises by

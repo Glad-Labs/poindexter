@@ -165,12 +165,34 @@ def test_eligible_sql_includes_published_status():
     assert "IN ('approved', 'published')" in dmp._ELIGIBLE_SQL
 
 
-def test_eligible_sql_gates_on_podcast_script_not_shot_list():
-    """Guard: gate must require podcast_script (minimum Stage-1 artifact), not
-    video_shot_list.  Shot lists are optional — render nodes no-op when absent.
-    Gating on the shot list would permanently block pre-shot-list tasks."""
+def test_eligible_sql_requires_both_podcast_script_and_a_shot_list():
+    """The gate requires BOTH Stage-1 artifacts (poindexter#1001).
+
+    This reverses a deliberate earlier choice — shot lists were optional
+    because "render nodes no-op when absent" and gating on one "would
+    permanently block pre-shot-list tasks". The block was the lesser evil and
+    we were getting the greater one: a shot-list-less piece was CLAIMED, paid
+    for TTS + transcription + captions, skipped both lanes, reported
+    `QA'd 0 asset(s)` as success, and kept its dispatch marker — retiring
+    itself with no video and no alert. 27 pieces sat in that state.
+
+    Held back, a piece stays claimable and renders as soon as
+    BackfillVideoShotListsJob gives it a shot list. Consumed, it is gone.
+    """
     assert "podcast_script" in dmp._ELIGIBLE_SQL
-    assert "video_shot_list" not in dmp._ELIGIBLE_SQL
+    assert "video_shot_list" in dmp._ELIGIBLE_SQL
+    assert "jsonb_array_length" in dmp._ELIGIBLE_SQL
+
+
+def test_stranded_count_is_not_filtered_by_the_dispatch_marker():
+    """The stranded metric must count pieces regardless of their marker.
+
+    On 2026-08-08 all 27 stranded pieces were ALREADY claimed, so a
+    marker-filtered count would have reported a comforting zero while the
+    entire catalog sat un-renderable.
+    """
+    assert "media_pipeline_dispatched_at" not in dmp._STRANDED_SQL
+    assert "media_assets" in dmp._STRANDED_SQL  # excludes pieces that DID render
 
 
 def test_job_protocol_shape():

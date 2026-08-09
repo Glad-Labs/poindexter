@@ -586,6 +586,12 @@ DEFAULTS: dict[str, str] = {
     # hero_render_fallback findings. Those are info-level by design (a still
     # beats a hole), which made a four-day total hero outage invisible until
     # a human noticed the missing motion (poindexter#992).
+    # BackfillVideoShotListsJob — regenerates shot lists for pieces the
+    # Stage-1 director skipped on a busy GPU (poindexter#1001). Small batch:
+    # the director is a real LLM call on the shared GPU, and a big sweep
+    # would starve the live pipeline — the condition that caused the backlog.
+    'backfill_video_shot_lists_enabled': 'true',
+    'backfill_video_shot_lists_batch': '2',
     'hero_fallback_probe_enabled': 'true',
     'hero_fallback_window_hours': '24',
     'hero_fallback_min_count': '3',
@@ -3389,6 +3395,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_fit_trailing_hold_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_wan_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_adaptive_plate_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'backfill_video_shot_lists_enabled': {'owner': 'backfill_video_shot_lists', 'value_type': 'boolean'},
+    'backfill_video_shot_lists_batch': {'owner': 'backfill_video_shot_lists', 'value_type': 'integer'},
     'hero_fallback_probe_enabled': {'owner': 'probe_hero_fallback', 'value_type': 'boolean'},
     'hero_fallback_window_hours': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
     'hero_fallback_min_count': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},

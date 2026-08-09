@@ -832,6 +832,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the operator, not the system, noticed the missing motion
         # (poindexter#992). Pages once per window on a fallback cluster.
         ("jobs", "services.jobs.probe_hero_fallback", "ProbeHeroFallbackJob"),
+        # BackfillVideoShotListsJob — recovery for pieces whose Stage-1
+        # director was skipped on a busy GPU, leaving video_shot_list = {}.
+        # Those pieces were dispatched once, produced nothing, and kept their
+        # marker — permanently un-renderable. 27 of them on 2026-08-08
+        # (poindexter#1001). Small batches: the director is real GPU work.
+        # Lives in the MODULE, not services/jobs/: it drives the Stage-1
+        # director, so a kernel home would need a Seam 2 exemption.
+        ("jobs", "modules.content.jobs.backfill_video_shot_lists", "BackfillVideoShotListsJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live

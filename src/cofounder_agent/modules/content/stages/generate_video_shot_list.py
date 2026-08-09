@@ -650,7 +650,9 @@ class GenerateVideoShotListStage:
                     },
                     severity="info",
                 )
-                surface_media_gpu_busy_skip("video_director", busy, task_id=task_id)
+                surface_media_gpu_busy_skip(
+                    "video_director", busy, task_id=task_id, terminal=True,
+                )
                 return None
             except Exception as exc:
                 logger.warning(
