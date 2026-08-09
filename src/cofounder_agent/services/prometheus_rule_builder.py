@@ -208,6 +208,18 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # while there is still runtime to act in — NUT's LB/forced-shutdown line
     # is the point of no return, not a useful warning.
     "ups_battery_charge_critical_percent": "50",
+    # Host systemd timer staleness (replaces the retired Windows
+    # probe_scheduled_tasks — see PoindexterSystemdTimerStale below). This is
+    # deliberately a "the timer is DEAD" backstop, not a per-cadence SLO: the
+    # poindexter-* timers range from every-10-minutes (deploy-sync) to weekly
+    # (triage-sweep, Mon 07:00), and node_exporter exposes only
+    # last_trigger_seconds — there is no next-elapse series to compare against.
+    # One threshold must therefore clear the SLOWEST declared cadence, so 10
+    # days sits just above the weekly ones with room for a DST/vacation skew.
+    # Consequence worth knowing: a DAILY timer silently stopping is not caught
+    # here for 10 days. PoindexterSystemdUnitFailed covers the common failure
+    # (the unit errored); this covers "the timer was disabled or never fired".
+    "systemd_timer_stale_seconds": "864000",  # 10 days
 }
 
 
@@ -867,6 +879,81 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "nut-driver@<name>`, and the USB data cable to the UPS — a "
             "power-strip-only connection powers the load fine while "
             "reporting nothing."
+        ),
+    },
+    # Host systemd units (Glad-Labs/poindexter — replaces probe_scheduled_tasks).
+    #
+    # The retired probe asked the host Recovery Agent to enumerate WINDOWS Task
+    # Scheduler entries; the host has run Pop!_OS since the July migration and
+    # systemd timers replaced Task Scheduler, so it watched a surface that no
+    # longer existed. The replacement is not another probe: node_exporter's
+    # systemd collector is ALREADY enabled and scraping (job="node",
+    # host.docker.internal:9100, ~1240 series), so this is wiring, not new
+    # machinery — the brain never needed to see the host scheduler itself.
+    #
+    # Both rules key on `name=~"poindexter.*"`, which covers the ops-session
+    # fleet (poindexter-session@*), the deploy/watchdog/backup timers, and the
+    # long-running poindexter-mcp-http / poindexter-gpu-scraper services. A host
+    # with none of them has no matching series, so both are naturally inert —
+    # no expected-count threshold needed.
+    "PoindexterSystemdUnitFailed": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "60s",
+        # node_exporter emits one series per (unit, state) with 1 on the state
+        # the unit is currently in, so `{state="failed"} == 1` is an exact read
+        # rather than a threshold. Raw (no last_over_time): a node_exporter
+        # scrape gap blanks the series entirely, which cannot make this fire —
+        # absence is safe here, unlike the count-vs-expected rules.
+        "expr": 'node_systemd_unit_state{name=~"poindexter.*",state="failed"} == 1',
+        # 15m rides out a unit that fails and is restarted by its own
+        # Restart= policy; a genuinely dead oneshot stays failed indefinitely.
+        "for": "15m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Host systemd unit {{ $labels.name }} is in failed state",
+        "description": (
+            "The host systemd unit {{ $labels.name }} has been `failed` for "
+            "15m. For a poindexter-session@* unit this means that scheduled "
+            "agent is not running at all — its work silently stops while the "
+            "timer keeps firing into a unit that immediately fails. Triage on "
+            "the host: `systemctl status {{ $labels.name }}` then "
+            "`journalctl -u {{ $labels.name }} -n 50`; session logs also land "
+            "in ~/.poindexter/logs/claude-sessions/. Warning rather than "
+            "critical because no user-facing surface is down — the content "
+            "pipeline runs in Docker, independent of these host units."
+        ),
+    },
+    "PoindexterSystemdTimerStale": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "60s",
+        # Coarse "this timer is dead" backstop — see the
+        # systemd_timer_stale_seconds threshold comment for why one threshold
+        # cannot express per-cadence freshness with only last_trigger_seconds.
+        # Guarded with `> 0` because node_exporter reports 0 for a timer that
+        # has never fired since boot, which would otherwise read as an epoch
+        # timestamp and fire instantly on every reboot.
+        "expr": (
+            'node_systemd_timer_last_trigger_seconds{name=~"poindexter.*"} > 0'
+            " and (time() - "
+            'node_systemd_timer_last_trigger_seconds{name=~"poindexter.*"})'
+            " > {threshold.systemd_timer_stale_seconds}"
+        ),
+        "for": "30m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Host systemd timer {{ $labels.name }} has not fired in a long time",
+        "description": (
+            "{{ $labels.name }} last triggered more than "
+            "prometheus.threshold.systemd_timer_stale_seconds ago (default 10 "
+            "days). That is past even the weekly timers' cadence, so the timer "
+            "is most likely disabled, masked, or was never re-enabled after a "
+            "reinstall. Check `systemctl list-timers 'poindexter-*'` and "
+            "`systemctl is-enabled {{ $labels.name }}` on the host. NOTE this "
+            "threshold only catches a fully dead timer — a DAILY timer that "
+            "stops is not reported here for 10 days, because node_exporter "
+            "exposes no next-elapse series to derive a per-unit window from."
         ),
     },
     "UpsInputVoltageLow": {

@@ -1069,6 +1069,14 @@ class TestRestartGapBridging:
             # "nvidia-smi") — named in the comment above as one of the
             # exporters that survives a worker deploy.
             "MainsVoltageLow",
+            # node_systemd_timer_last_trigger_seconds comes from node_exporter
+            # on the HOST (job="node", host.docker.internal:9100) — the third
+            # exporter named above. It has no relationship to the worker
+            # container, so a deploy restart cannot blank the series and the
+            # 30m pending clock is safe. Bridging with last_over_time here
+            # would be cargo-cult: it would imply a restart hazard that does
+            # not exist for host-side series.
+            "PoindexterSystemdTimerStale",
         }
         for name, rule in rb.DEFAULT_RULES.items():
             m = re.fullmatch(r"(\d+)([mh])", str(rule["for"]))
@@ -1348,3 +1356,105 @@ class TestThresholdAxisCoherence:
         desc = rb.DEFAULT_RULES["DailySpendOverBudget"]["description"]
         assert "should have stopped itself" not in desc
         assert "cost_throttle_daily_budget_usd" in desc
+
+
+# ---------------------------------------------------------------------------
+# Host systemd units — the probe_scheduled_tasks replacement
+# ---------------------------------------------------------------------------
+
+
+_SYSTEMD_RULES = ("PoindexterSystemdUnitFailed", "PoindexterSystemdTimerStale")
+
+
+class TestSystemdUnitRules:
+    """Alerting on node_exporter's systemd collector (``job="node"``).
+
+    These replace the retired ``probe_scheduled_tasks``, which asked the host
+    Recovery Agent to enumerate WINDOWS Task Scheduler entries — a surface that
+    stopped existing at the Pop!_OS migration. The replacement is deliberately
+    NOT another probe: node_exporter's systemd collector was already enabled and
+    scraping, so the old design's premise (the brain must ask something else to
+    see the host scheduler) was already obsolete.
+    """
+
+    def test_rules_and_threshold_registered(self):
+        for name in _SYSTEMD_RULES:
+            assert name in rb.DEFAULT_RULES, name
+        # 10 days — must clear the SLOWEST declared cadence (triage-sweep is
+        # weekly, Mon 07:00) or the weekly timers page every single week.
+        assert rb.DEFAULT_THRESHOLDS["systemd_timer_stale_seconds"] == "864000"
+        assert int(rb.DEFAULT_THRESHOLDS["systemd_timer_stale_seconds"]) > 7 * 86400
+
+    def test_rules_scope_to_poindexter_units(self):
+        """Both must match `poindexter.*` and nothing wider. An unscoped match
+        would page on every failed unit on the host — a user's own systemd
+        services are not this system's business, and the noise would bury the
+        signal these exist for."""
+        for name in _SYSTEMD_RULES:
+            expr = rb.DEFAULT_RULES[name]["expr"]
+            assert 'name=~"poindexter.*"' in expr, name
+
+    def test_no_expected_count_threshold_needed(self):
+        """A host without these units has no matching series, so both rules are
+        naturally inert — unlike the count-vs-expected rules (GPU, UPS) which
+        need a "0" default to stay quiet. Encoded as: neither expr uses count().
+        """
+        for name in _SYSTEMD_RULES:
+            assert "count(" not in rb.DEFAULT_RULES[name]["expr"], name
+
+    def test_failed_rule_reads_state_exactly(self):
+        """node_exporter emits one series per (unit, state) with 1 on the state
+        the unit is currently in, so this is an exact read, not a threshold."""
+        expr = rb.DEFAULT_RULES["PoindexterSystemdUnitFailed"]["expr"]
+        assert 'state="failed"' in expr
+        assert "== 1" in expr
+        assert "{threshold." not in expr
+
+    def test_timer_rule_guards_against_never_fired(self):
+        """node_exporter reports 0 for a timer that has not fired since boot.
+        Without the `> 0` guard, `time() - 0` is a ~57-year age that fires
+        instantly on every reboot — a self-inflicted page storm."""
+        expr = rb.DEFAULT_RULES["PoindexterSystemdTimerStale"]["expr"]
+        assert "> 0" in expr
+        assert "time() -" in expr
+
+    def test_severity_is_warning_not_critical(self):
+        """No user-facing surface is down when a host unit fails — the content
+        pipeline runs in Docker, independent of these. Paging critical for a
+        failed weekly lint session is how an alert channel gets muted."""
+        for name in _SYSTEMD_RULES:
+            assert rb.DEFAULT_RULES[name]["severity"] == "warning", name
+
+    def test_stale_rule_admits_it_cannot_do_per_cadence(self):
+        """The single threshold cannot express per-cadence freshness — the
+        timers span every-10-minutes to weekly and node_exporter exposes no
+        next-elapse series. The description must SAY a daily timer going quiet
+        is not caught, so nobody reads this as coverage it does not provide."""
+        desc = rb.DEFAULT_RULES["PoindexterSystemdTimerStale"]["description"]
+        assert "DAILY" in desc or "daily" in desc
+        assert "next-elapse" in desc
+
+    def test_descriptions_route_triage_to_the_host(self):
+        """These units live on the host, not in a container — triage commands
+        must be host-side or the operator starts in the wrong place."""
+        failed = rb.DEFAULT_RULES["PoindexterSystemdUnitFailed"]["description"]
+        assert "systemctl status" in failed
+        assert "journalctl" in failed
+        stale = rb.DEFAULT_RULES["PoindexterSystemdTimerStale"]["description"]
+        assert "systemctl list-timers" in stale
+
+    @pytest.mark.asyncio
+    async def test_default_render_substitutes_the_threshold(self):
+        out = await rb.build_current(_FakePool([]))
+        block = out.split("alert: PoindexterSystemdTimerStale")[1].split("alert:", 1)[0]
+        assert "{threshold." not in block
+        assert "864000" in block
+
+    @pytest.mark.asyncio
+    async def test_operator_can_tighten_the_stale_window(self):
+        pool = _FakePool([
+            {"key": "prometheus.threshold.systemd_timer_stale_seconds", "value": "172800"},
+        ])
+        out = await rb.build_current(pool)
+        block = out.split("alert: PoindexterSystemdTimerStale")[1].split("alert:", 1)[0]
+        assert "> 172800" in block

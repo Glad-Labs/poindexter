@@ -2898,6 +2898,366 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 740,
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "title": "Host systemd units — timers & scheduled agents",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 155
+      }
+    },
+    {
+      "id": 741,
+      "type": "stat",
+      "title": "Failed units",
+      "description": "poindexter-* host systemd units currently in `failed` state. Replaces the retired probe_scheduled_tasks, which watched Windows Task Scheduler — a surface that stopped existing at the Pop!_OS migration. Fed by node_exporter's systemd collector (already enabled), not a new probe. Non-zero here means a scheduled agent is not running at all: its timer keeps firing into a unit that immediately fails.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 156
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "instant": true,
+          "expr": "count(node_systemd_unit_state{name=~\"poindexter.*\",state=\"failed\"} == 1) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 742,
+      "type": "stat",
+      "title": "Timers armed",
+      "description": "poindexter-* systemd TIMERS in `active` state (a timer is 'active' while armed and waiting, so this is the arm count, not a run count). Its .service sibling reads active=0 between runs, which is normal for a oneshot — do not read that as broken.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 156
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "instant": true,
+          "expr": "count(node_systemd_unit_state{name=~\"poindexter.*\\\\.timer\",state=\"active\"} == 1) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 743,
+      "type": "stat",
+      "title": "Oldest timer trigger",
+      "description": "Age of the least-recently-fired poindexter-* timer. Expect this to sit near the slowest DECLARED cadence — triage-sweep is weekly (Mon 07:00), so ~7d is healthy, not stale. The PoindexterSystemdTimerStale alert only fires past 10 days, because node_exporter exposes no next-elapse series to derive a per-unit window from; a daily timer going quiet is NOT caught by that alert.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 156
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 864000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "instant": true,
+          "expr": "max(time() - (node_systemd_timer_last_trigger_seconds{name=~\"poindexter.*\"} > 0))"
+        }
+      ]
+    },
+    {
+      "id": 744,
+      "type": "table",
+      "title": "Host systemd units — state + last trigger",
+      "description": "Every poindexter-* host unit node_exporter can see, with its current state and (for timers) how long since it last fired. This is the whole replacement for probe_scheduled_tasks: the brain never needed to enumerate the host scheduler itself — node_exporter already does, from the host side. `Failed` highlights orange; `Last trigger` is blank for .service units, which have no timer series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 160
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "displayMode": "auto",
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failed"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "ok",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "FAILED",
+                        "color": "orange",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last trigger"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 864000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Failed",
+            "desc": true
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "node_systemd_unit_state{name=~\"poindexter.*\",state=\"failed\"}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "time() - (node_systemd_timer_last_trigger_seconds{name=~\"poindexter.*\"} > 0)"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "state": true,
+              "type": true
+            },
+            "renameByName": {
+              "name": "Unit",
+              "Value #A": "Failed",
+              "Value #B": "Last trigger"
+            }
+          }
+        }
+      ]
     }
   ],
   "refresh": "30s",

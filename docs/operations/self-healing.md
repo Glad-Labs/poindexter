@@ -321,7 +321,7 @@ host-level recovery. It runs on the host (started windowless at logon by the
   for that service.
   (`GET /tasks`, which reflected host Windows Scheduled Task status back to the
   brain, was removed 2026-08-08 with its only consumer — see
-  [Scheduled-tasks liveness](#scheduled-tasks-liveness--retired-2026-08-08).)
+  [Host scheduled-work liveness (systemd)](#host-scheduled-work-liveness-systemd).)
 
 ### Action kinds
 
@@ -649,27 +649,53 @@ This is separate from `compose_drift_auto_recover_enabled` — the brain's _own_
 `docker compose up` — which **stays off** on a Windows host because it mangles
 the `C:\` binds (see the detector/actor split above).
 
-## Scheduled-tasks liveness — RETIRED 2026-08-08
+## Host scheduled-work liveness (systemd)
 
-A `scheduled_tasks` probe (`brain/health_probes.py`) used to watch the host's
-**Windows** Task Scheduler entries — the Recovery Agent, the MCP HTTP launcher,
-the deploy-checkout sync, the Docker Engine watchdog — by asking the host
-Recovery Agent's `GET /tasks` endpoint, which could see the scheduler the
-containerised brain could not.
+Two generations here. The first was a `scheduled_tasks` probe
+(`brain/health_probes.py`) that watched the host's **Windows** Task Scheduler
+entries by asking the Recovery Agent's `GET /tasks` endpoint, since the
+containerised brain could not see the host scheduler itself. It was retired
+2026-08-08: the host has run Pop!_OS since the July migration, **systemd timers
+replaced Task Scheduler**, and the probe, its `scheduled_tasks_probe_watch_tasks`
+setting, and the agent's Windows-only `/tasks` endpoint were all pointed at a
+surface that no longer existed. It never fired falsely — the fail-open branch
+kept it advisory once `mcp_http_probe_recovery_url` went empty — but a probe
+that cannot fail is not coverage.
 
-It was retired when the host moved to Pop!_OS: **systemd timers replaced Task
-Scheduler**, so the probe, its `scheduled_tasks_probe_watch_tasks` setting, and
-the agent's Windows-only `/tasks` endpoint were all aimed at a surface that no
-longer exists. It never fired falsely — the fail-open branch kept it advisory
-once `mcp_http_probe_recovery_url` went empty — but a probe that cannot fail is
-not coverage, and leaving it in place implied the host's scheduled work was
-being watched when it was not.
+**The replacement is not another probe.** `node_exporter`'s systemd collector
+was already enabled and scraping the host (`job="node"`,
+`host.docker.internal:9100`, ~1240 series), so the whole premise of the old
+design — the brain must ask something else to see the host scheduler — was
+already obsolete. Closing the gap was wiring, not new machinery:
 
-**The gap is real and currently open.** Nothing watches the systemd side today:
-the `poindexter-session@*` timers, and any other host unit, are unmonitored.
-Closing it means a Linux-native check (`systemctl list-timers` /
-`systemd_exporter`), not a port of the old probe — see the scheduled-agents
-runbook for what the fleet now looks like.
+| Signal                         | Where                                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `PoindexterSystemdUnitFailed`  | `services/prometheus_rule_builder.py` `DEFAULT_RULES` — any `poindexter-*` unit `failed` for 15m, warning                                |
+| `PoindexterSystemdTimerStale`  | same — a `poindexter-*` timer whose last trigger is older than `prometheus.threshold.systemd_timer_stale_seconds` (default 10d), warning |
+| "Host systemd units" panel row | System Health dashboard — failed count, armed-timer count, oldest trigger, and a per-unit state + last-trigger table                     |
+
+Both rules key on `name=~"poindexter.*"`, which covers the ops-session fleet
+(`poindexter-session@*`), the deploy / watchdog / backup timers, and the
+long-running `poindexter-mcp-http` and `poindexter-gpu-scraper` services. A host
+with none of them has no matching series, so both are naturally inert — no
+expected-count threshold to configure.
+
+**Known limitation, stated so nobody over-trusts it.** `PoindexterSystemdTimerStale`
+is a _"this timer is dead"_ backstop, not a per-cadence SLO. The
+`poindexter-*` timers span every-10-minutes (`deploy-sync`) to weekly
+(`triage-sweep`, Mon 07:00), and node_exporter exposes only
+`node_systemd_timer_last_trigger_seconds` — there is no next-elapse series to
+derive a per-unit window from. A single threshold must therefore clear the
+slowest declared cadence, so a **daily** timer that silently stops is not
+reported by that alert for 10 days. `PoindexterSystemdUnitFailed` covers the
+common case (the unit errored); the stale rule covers "disabled, masked, or
+never re-enabled after a reinstall". Per-cadence freshness would need the
+declared schedule from `scripts/linux/install-session-timers.sh` rendered into
+per-unit rules — worth doing if a quiet daily timer ever actually bites.
+
+Note the `.service` sibling of a timer reads `active=0` between runs. That is
+normal for a `oneshot`, not a fault — the panel descriptions say so, because it
+is the obvious thing to misread on this row.
 
 ## Prefect flow-run zombie reclaim (concurrency-slot wedge)
 
