@@ -273,6 +273,22 @@ _MIGRATED_CALLERS = {
         "fail-soft director — no shot list + audit + finding",
     "modules/content/stages/review_video_shot_list.py":
         "fail-soft review — unreviewed shot list ships + finding",
+    # P2 group 3 (poindexter#1005) — operator single-image renders behind
+    # `poindexter tasks regen-image` / `add-image` and POST
+    # /api/tasks/{id}/generate-image. NOT fail-soft in itself: a human is
+    # holding an open HTTP request, so nothing is silently skipped — a reject
+    # becomes an immediate 503 naming the holder ETA, which the operator
+    # retries. What makes the budget safe is that the CLIENT is already
+    # bounded (post_edit_regen_image_timeout_s 300s) and the render alone can
+    # take most of image_render_timeout_seconds (300s), so a wait past
+    # gpu_sched_operator_image_max_wait_s (150s) cannot finish anyway — it
+    # only converts an actionable error into a bare client timeout with the
+    # render thrown away. 150s sits above ordinary LLM holds the operator
+    # should wait behind (generate_content p90 105.3s) and below every render
+    # hold (featured_image 228.7s, inline_image_batch 240.0s, media_render
+    # 383.5s).
+    "services/image_service.py":
+        "operator render — honest 503 with holder ETA, never a silent skip",
 }
 
 

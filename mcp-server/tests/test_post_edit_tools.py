@@ -170,3 +170,39 @@ async def test_tool_surfaces_api_error():
         out = await server.replace_post_image("abc1", "featured", "x")
     assert "Error" in out
     assert "find string not present" in out
+
+
+@pytest.mark.asyncio
+async def test_tool_surfaces_the_detail_sibling_key_not_just_the_status():
+    """poindexter#1005 — ``_api`` flattens a failed response to
+    ``{"error": "HTTP <code>", **body}``, so FastAPI's ``detail`` arrives as a
+    SIBLING key. Printing only ``error`` collapsed a render failure the server
+    had diagnosed precisely into a bare "HTTP 503"."""
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={
+                "error": "HTTP 503",
+                "detail": (
+                    "image generation failed (server_error): image-gen server "
+                    "returned HTTP 503: CUDA out of memory."
+                ),
+            }),
+        ),
+    ):
+        out = await server.regen_post_image("abc1", "featured", "a teal robot")
+    assert "CUDA out of memory" in out
+    assert "HTTP 503" in out
+
+
+@pytest.mark.asyncio
+async def test_tool_error_without_a_detail_still_reads_cleanly():
+    """No ``detail`` (non-JSON body, transport failure) must not print a
+    dangling separator or the literal None."""
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(server, "_api", AsyncMock(return_value={"error": "HTTP 502"})),
+    ):
+        out = await server.regen_post_image("abc1", "featured", "x")
+    assert out == "Error: HTTP 502"

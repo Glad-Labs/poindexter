@@ -1235,7 +1235,22 @@ async def generate_task_image(
                 ) from e
 
         elif source == "image_gen":
-            # Use image-gen server to generate an image
+            # Use image-gen server to generate an image.
+            #
+            # What the client is told on failure is decided HERE, up front, and
+            # is only ever renderer-authored text (ImageGenOutcome.message —
+            # a fixed reason vocabulary plus the image-gen server's own error
+            # body). The caught exception is never interpolated into the
+            # response: this block also raises OSError from makedirs on a path
+            # under the server's home directory, and echoing that back is the
+            # information disclosure scripts/ci/lint_http_detail_leak.py exists
+            # to stop. The exception still reaches the operator via the log.
+            #
+            # 500 unless the renderer says the GPU was merely busy, in which
+            # case 503 — "retry shortly" and "the server is broken" are
+            # different instructions and the operator acts on them differently.
+            failure_status = 500
+            failure_detail = "Image generation failed."
             try:
                 from pathlib import Path
 
@@ -1262,8 +1277,10 @@ async def generate_task_image(
 
                 logger.info("Generating image to: %s", output_path)
 
-                # Generate image
-                success = await image_service.generate_image(
+                # Generate image. Runs under gpu.lock("image_gen") inside
+                # ImageService (poindexter#1005), so the resident writer LLM is
+                # evicted first instead of this racing it into a CUDA OOM.
+                outcome = await image_service.generate_image_result(
                     prompt=generation_prompt,
                     output_path=output_path,
                     num_inference_steps=50,  # Good quality/speed balance
@@ -1271,12 +1288,19 @@ async def generate_task_image(
                     task_id=task_id,
                 )
 
-                if success and os.path.exists(output_path):
+                if outcome.ok and os.path.exists(output_path):
                     logger.info("Image generated: %s", output_path)
                     image_url = output_path
                     logger.info("   Generated image saved locally for preview")
+                elif outcome.ok:
+                    raise RuntimeError(
+                        "image generation reported success but wrote no file"
+                    )
                 else:
-                    raise RuntimeError("Image generation failed or file not created")
+                    if outcome.reason == "gpu_busy":
+                        failure_status = 503
+                    failure_detail = outcome.message
+                    raise RuntimeError(outcome.message)
 
             except asyncio.TimeoutError as exc:
                 logger.warning("Image generation timeout for task %s", task_id, exc_info=True)
@@ -1288,9 +1312,13 @@ async def generate_task_image(
                 logger.error(
                     "Image generation error - %s: %s", type(e).__name__, e, exc_info=True
                 )
+                # Surface the renderer's own diagnosis (CUDA OOM, degraded
+                # server, GPU busy) — the fixed "Ensure GPU available" string
+                # gave the operator nothing to act on, and was wrong as often
+                # as not. The pexels hint stays: it is the real workaround.
                 raise HTTPException(
-                    status_code=500,
-                    detail="Image generation failed. Ensure GPU available or use 'pexels' source.",
+                    status_code=failure_status,
+                    detail=f"{failure_detail} Or retry with the 'pexels' source.",
                 ) from e
             except Exception as e:
                 logger.critical(

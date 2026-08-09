@@ -319,6 +319,37 @@ class TestDraftEditingRoutes:
         r = client.post(f"/{VALID_TASK_ID}/edit-body", json={"new_content": "x"})
         assert r.status_code == 404
 
+    def test_regen_image_runtime_error_reaches_the_operator_verbatim(self, monkeypatch):
+        """poindexter#1005 — the 503 body IS the operator's diagnosis. A CUDA
+        OOM used to arrive as "image generation produced no output", which
+        described an output step the render never reached."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+
+        class FailSvc:
+            def __init__(self, **kw):
+                pass
+
+            async def regen_image(self, task_id, **kw):
+                raise RuntimeError(
+                    "image generation failed (server_error): image-gen server "
+                    "returned HTTP 503: CUDA out of memory. Tried to allocate "
+                    "76.00 MiB."
+                )
+
+        monkeypatch.setattr(_pub_mod, "PostEditService", FailSvc)
+        monkeypatch.setattr(
+            "services.image_service.get_image_service",
+            lambda site_config=None: object(),
+        )
+        client = TestClient(_build_app(mock_db))
+        r = client.post(
+            f"/{VALID_TASK_ID}/regen-image",
+            json={"which": "featured", "prompt": "x"},
+        )
+        assert r.status_code == 503
+        assert "CUDA out of memory" in r.json()["detail"]
+
     def test_edit_body_value_error_maps_to_400(self, monkeypatch):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_make_task())

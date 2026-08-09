@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services import image_service as image_service_mod
-from services.image_service import ImageService
+from services.image_service import ImageGenOutcome, ImageService
 from services.site_config import SiteConfig
 
 pytestmark = pytest.mark.asyncio
@@ -43,7 +43,7 @@ async def test_generate_image_opens_media_row_and_finishes_ok():
         return _fake_ctx(seen)
 
     with patch.object(image_service_mod.live_activity, "track", fake_track), patch.object(
-        ImageService, "_generate_image_impl", AsyncMock(return_value=True)
+        ImageService, "_generate_image_impl", AsyncMock(return_value=ImageGenOutcome(True))
     ):
         ok = await svc.generate_image("a cat", "/tmp/x.png", task_id="t9")
     assert ok is True
@@ -57,7 +57,7 @@ async def test_generate_image_marks_fail_when_impl_returns_false():
     svc = _svc()
     seen = {}
     with patch.object(image_service_mod.live_activity, "track", lambda pool, **kw: _fake_ctx(seen)), patch.object(
-        ImageService, "_generate_image_impl", AsyncMock(return_value=False)
+        ImageService, "_generate_image_impl", AsyncMock(return_value=ImageGenOutcome(False, "server_error", "boom"))
     ):
         ok = await svc.generate_image("a cat", "/tmp/x.png")
     assert ok is False
@@ -69,7 +69,7 @@ async def test_generate_image_best_effort_when_ledger_cannot_open():
     bracket is a silent no-op — the render still runs and returns its own bool.
     The ledger is never load-bearing."""
     svc = _svc()  # pool-less SiteConfig → real begin() swallows → None id
-    with patch.object(ImageService, "_generate_image_impl", AsyncMock(return_value=True)) as impl:
+    with patch.object(ImageService, "_generate_image_impl", AsyncMock(return_value=ImageGenOutcome(True))) as impl:
         ok = await svc.generate_image("a cat", "/tmp/x.png", task_id="t9")
     assert ok is True
     impl.assert_awaited_once()

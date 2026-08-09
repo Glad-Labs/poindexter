@@ -348,6 +348,22 @@ async def _api(
         return {"error": f"non-JSON response: {resp.text[:200]}"}
 
 
+def _api_error(result: dict) -> str:
+    """One operator-facing error line from an ``_api`` failure result.
+
+    ``_api`` flattens a failed response to ``{"error": "HTTP <code>", **body}``,
+    so FastAPI's ``detail`` — where every route puts the actionable part —
+    arrives as a SIBLING key. Printing only ``error`` reduces the whole thing
+    to "HTTP 503" and throws the diagnosis away: "inline image #3 not found in
+    draft body" (400), the near-duplicate remediation (409), and the render
+    failure reason (503 — CUDA OOM, degraded server, GPU busy with a holder
+    ETA; poindexter#1005) all live in ``detail``.
+    """
+    error = result.get("error", "request failed")
+    detail = result.get("detail")
+    return f"{error} — {detail}" if detail else str(error)
+
+
 # ============================================================================
 # CONTENT PIPELINE TOOLS
 # ============================================================================
@@ -375,13 +391,9 @@ async def create_post(topic: str, category: str = "technology", target_audience:
         payload["niche_slug"] = niche
     result = await _api("POST", "/api/tasks", payload)
     if "error" in result:
-        # A near-duplicate refusal (HTTP 409) carries a remediation message in
-        # ``detail`` — surface it so the operator sees the colliding post and
-        # the force=true override, not just "HTTP 409".
-        detail = result.get("detail")
-        if detail:
-            return f"Failed: {result['error']} — {detail}"
-        return f"Failed: {result['error']}"
+        # e.g. a near-duplicate refusal (HTTP 409) whose ``detail`` names the
+        # colliding post and the force=true override — see _api_error.
+        return f"Failed: {_api_error(result)}"
     return f"Task created: {result.get('task_id', '?')} — status: {result.get('status', '?')}"
 
 
@@ -579,7 +591,7 @@ async def edit_post_body(
     )
     result = await _api("POST", f"/api/tasks/{full_id}/edit-body", payload)
     if result.get("error"):
-        return f"Error: {result['error']}"
+        return f"Error: {_api_error(result)}"
     warnings = result.get("warnings") or []
     suffix = f" (warnings: {'; '.join(warnings)})" if warnings else ""
     return f"{result.get('detail', 'edited')}{suffix}"
@@ -607,7 +619,7 @@ async def replace_post_image(task_id: str, which: str, url: str) -> str:
         "POST", f"/api/tasks/{full_id}/replace-image", {"which": which, "url": url},
     )
     if result.get("error"):
-        return f"Error: {result['error']}"
+        return f"Error: {_api_error(result)}"
     return f"{result.get('detail', 'replaced')} → {result.get('new_url')}"
 
 
@@ -630,7 +642,7 @@ async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
         "POST", f"/api/tasks/{full_id}/regen-image", {"which": which, "prompt": prompt},
     )
     if result.get("error"):
-        return f"Error: {result['error']}"
+        return f"Error: {_api_error(result)}"
     return f"{result.get('detail', 'regenerated')} → {result.get('new_url')}"
 
 
@@ -651,7 +663,7 @@ async def remove_post_image(task_id: str, which: str) -> str:
     full_id = await _resolve_task_id(task_id)
     result = await _api("POST", f"/api/tasks/{full_id}/remove-image", {"which": which})
     if result.get("error"):
-        return f"Error: {result['error']}"
+        return f"Error: {_api_error(result)}"
     return result.get("detail", "removed")
 
 
@@ -679,7 +691,7 @@ async def add_post_image(
         {"after": after or None, "section": section or None, "prompt": prompt or None},
     )
     if result.get("error"):
-        return f"Error: {result['error']}"
+        return f"Error: {_api_error(result)}"
     return f"{result.get('detail', 'added')} → {result.get('new_url')}"
 
 

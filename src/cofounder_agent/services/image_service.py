@@ -26,6 +26,7 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +78,38 @@ def _write_image_bytes(path: str, content: bytes) -> None:
     """
     with open(path, "wb") as f:
         f.write(content)
+
+
+def _server_error_detail(resp: Any) -> str:
+    """Best line of explanation available from an image-gen error response.
+
+    FastAPI puts the real cause in ``{"detail": "..."}`` — that is where
+    ``scripts/image-gen-server.py`` writes "CUDA out of memory. Tried to
+    allocate 76.00 MiB…", "image-gen server degraded: <reason>" and "GPU OOM".
+    Falls back to the raw body when it isn't JSON-shaped, and truncates
+    because a torch OOM message carries a multi-line allocator dump the
+    operator does not need in an HTTP error body.
+    """
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail") or payload.get("error")
+            if detail:
+                return str(detail)[:400].strip()
+    except Exception:  # noqa: BLE001  # silent-ok: a non-JSON error body is an
+        # ORDINARY case, not a fault — uvicorn's own 502/504 pages are HTML.
+        # The raw-text branch below is the handler; logging here would fire on
+        # every plain-text error and say nothing the caller doesn't already get.
+        pass
+    try:
+        return (resp.text or "").strip()[:400] or "no response body"
+    except Exception:  # noqa: BLE001  # silent-ok: this function exists to
+        # DESCRIBE a failure the caller is already reporting. Raising or
+        # logging here would replace a diagnosis with a second, less useful
+        # error; the sentinel keeps the status code (which we still have)
+        # reaching the operator.
+        return "unreadable response body"
+
 
 try:
     import httpx
@@ -134,6 +167,48 @@ logger = get_logger(__name__)
 # to sdxl_lightning" — returning the WRONG model (verified in Loki 2026-07-11).
 # Consolidating onto the canonical registry resolves the value. See the scope
 # note in tests/unit/services/test_inline_defaults_match_seed.py.
+
+
+@dataclass(frozen=True)
+class ImageGenOutcome:
+    """Why a generate attempt ended the way it did (poindexter#1005).
+
+    ``generate_image`` returns a bare ``bool``, so every reason a render
+    failed was flattened to ``False`` and only ever reached the worker log.
+    The operator surfaces then reported the *symptom* — "image generation
+    produced no output" as a 503 — for a failure the image-gen server had
+    already diagnosed precisely in its own 503 body ("CUDA out of memory.
+    Tried to allocate 76.00 MiB…"), which is the difference between an
+    operator who knows to retry and one who has nothing to act on.
+
+    ``reason`` is a stable machine token for branching / findings;
+    ``detail`` is the human string to surface (already truncated). Tokens:
+
+    * ``gpu_busy`` — admission refused, or the lock wait timed out.
+    * ``server_error`` — image-gen answered non-2xx (OOM lives here).
+    * ``bad_response`` — 2xx with an unusable body (no filename, fetch failed).
+    * ``unavailable`` — no image-gen server AND no local diffusers fallback.
+    * ``render_failed`` — the local diffusers path raised.
+    """
+
+    ok: bool
+    reason: str | None = None
+    detail: str | None = None
+
+    # Deliberately NOT given a __bool__. Making a failed outcome falsy reads
+    # nicely at a call site (`if outcome:`) and is a trap everywhere else — it
+    # silently breaks `found_error or fallback`, which is exactly how the
+    # image-gen diagnosis is carried across the diffusers fallback below.
+    # Callers test ``.ok``.
+
+    @property
+    def message(self) -> str:
+        """One operator-facing line, safe to put in an HTTP error body."""
+        if self.ok:
+            return "image generated"
+        if self.detail:
+            return f"image generation failed ({self.reason}): {self.detail}"
+        return f"image generation failed ({self.reason or 'unknown'})"
 
 
 class FeaturedImageMetadata:
@@ -830,16 +905,78 @@ class ImageService:
         task_id: str | None = None,
         model: ImageModel | None = None,
     ) -> bool:
-        """Generate an image, bracketed by a best-effort ``kind='media'``
-        live_activity row so the Z-Image ``:9836`` render (a ~5-70s GPU burn,
-        cold model load included) shows in the console SYSTEM PULSE instead of
-        being invisible. Liveness-only — a single blocking render exposes no
-        mid-progress, so we never fabricate a pct (``feedback_no_dummy_data``).
-        Delegates the real work to ``_generate_image_impl`` unchanged; the
-        ledger never alters its bool result.
+        """Generate an image. ``True`` on success — the long-standing contract.
+
+        Thin wrapper over :meth:`generate_image_result`; call that instead when
+        you need to tell the operator WHY a render failed.
         """
+        outcome = await self.generate_image_result(
+            prompt,
+            output_path,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            task_id=task_id,
+            model=model,
+        )
+        return outcome.ok
+
+    async def generate_image_result(
+        self,
+        prompt: str,
+        output_path: str,
+        negative_prompt: str | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        task_id: str | None = None,
+        model: ImageModel | None = None,
+    ) -> ImageGenOutcome:
+        """Generate an image under the GPU lock, reporting why on failure.
+
+        **VRAM guard (poindexter#1005).** This method is the only render path
+        that operator surfaces reach — ``poindexter tasks regen-image`` /
+        ``add-image`` and ``POST /api/tasks/{id}/generate-image`` — and until
+        now it POSTed straight at the image-gen server with no GPU
+        coordination at all, so it raced whatever happened to be resident.
+        The pipeline never had that problem: ``content.plan_image_markers``
+        evicts the writer via ``maybe_unload_writer_before_image_gen`` and
+        every pipeline render then runs inside ``gpu.lock("image_gen")``,
+        whose acquire path evicts Ollama on EVERY configured host and
+        *confirms* the release before yielding. An operator regen issued while
+        the ~19 GB writer sat warm therefore OOM'd on a card with 31 GB free
+        on paper — observed as three attempts for one featured image, the
+        third landing only because the GPU happened to be quiet.
+
+        Taking the same lock fixes it at the root and is strictly better than
+        calling the unload helper directly here: it evicts (all hosts,
+        confirmed), it serialises against concurrent pipeline renders rather
+        than merely dodging Ollama, and it feeds ``gpu_task_sessions`` /
+        ``gpu_lease_stats`` like every other GPU consumer. When the caller
+        already holds the lock the acquire is a reentrant no-op, so the
+        ImageGenProvider plugin path is unaffected.
+
+        ``priority="operator"`` and :func:`operator_image_wait_budget_s` place
+        this between pipeline work and background jobs (poindexter#914 P2
+        group 3): a human is holding an HTTP request open, so it outranks
+        background work but must never displace the pipeline, and a wait it
+        cannot survive is refused up front — see that helper for the sizing.
+
+        Bracketed by a best-effort ``kind='media'`` live_activity row so the
+        render (a ~5-70s GPU burn, cold model load included) shows in the
+        console SYSTEM PULSE instead of being invisible. Liveness-only — a
+        single blocking render exposes no mid-progress, so we never fabricate
+        a pct (``feedback_no_dummy_data``).
+        """
+        from services.gpu_admission import GpuBusyError
+        from services.gpu_scheduler import (
+            GpuLockTimeoutError,
+            gpu,
+            operator_image_wait_budget_s,
+        )
+
         pool = getattr(self._site_config, "_pool", None)
         _prompt = (prompt or "").strip()
+        gpu_label = self._site_config.get("image_generation_model", "image_gen")
         async with live_activity.track(
             pool,
             kind="media",
@@ -848,19 +985,42 @@ class ImageService:
             detail={"medium": "image", "provider": "image_gen"},
             heartbeat_seconds=live_activity.resolve_heartbeat_seconds(self._site_config),
         ) as act:
-            await act.update(step="generating")
-            ok = await self._generate_image_impl(
-                prompt,
-                output_path,
-                negative_prompt=negative_prompt,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-                task_id=task_id,
-                model=model,
-            )
-            if not ok:
+            try:
+                # Reported honestly: on a contended GPU this is where the wall
+                # time goes, and "generating" during a 2-minute queue wait
+                # would be a lie the SYSTEM PULSE panel repeats to the operator.
+                await act.update(step="waiting for gpu")
+                async with gpu.lock(
+                    "image_gen",
+                    model=gpu_label,
+                    task_id=task_id,
+                    phase="operator_image",
+                    max_wait_s=operator_image_wait_budget_s(),
+                    priority="operator",
+                ):
+                    await act.update(step="generating")
+                    outcome = await self._generate_image_impl(
+                        prompt,
+                        output_path,
+                        negative_prompt=negative_prompt,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,
+                        task_id=task_id,
+                        model=model,
+                    )
+            except (GpuBusyError, GpuLockTimeoutError) as exc:
+                # Capacity, not breakage. Returned rather than raised so the
+                # bool contract of generate_image() is preserved, and named so
+                # the operator surface can say "retry in ~4 min" instead of
+                # blaming the renderer for a queue it never reached.
+                logger.warning(
+                    "image generation skipped — GPU unavailable within budget: %s", exc,
+                )
                 act.fail()
-            return ok
+                return ImageGenOutcome(False, "gpu_busy", str(exc))
+            if not outcome.ok:
+                act.fail()
+            return outcome
 
     async def _generate_image_impl(
         self,
@@ -871,9 +1031,12 @@ class ImageService:
         guidance_scale: float | None = None,
         task_id: str | None = None,
         model: ImageModel | None = None,
-    ) -> bool:
+    ) -> ImageGenOutcome:
         """
         Generate an image using the configured (or specified) model.
+
+        Caller holds ``gpu.lock("image_gen")`` — see
+        :meth:`generate_image_result`. This method does the rendering only.
 
         Args:
             prompt: Image generation prompt
@@ -885,7 +1048,9 @@ class ImageService:
             model: Which model to use (defaults to IMAGE_MODEL env or sdxl_lightning)
 
         Returns:
-            True if successful, False otherwise
+            An :class:`ImageGenOutcome` — ``ok`` plus, on failure, the reason
+            token and the underlying detail (the image-gen server's own error
+            body, where it gave one).
         """
         # Strategy 1: Try the image-gen server (GPU-resident container on the
         # shared compose network — addressed by its service DNS name so the
@@ -898,6 +1063,11 @@ class ImageService:
             "image_render_timeout_seconds",
             default_int("image_render_timeout_seconds"),
         )
+        # Holds Strategy 1's diagnosis across the Strategy 2 fallback. When
+        # diffusers isn't installed — the norm, since torch left the worker
+        # image — this is the ONLY real explanation available, so reporting a
+        # generic "no backend" instead would discard the OOM we just read.
+        server_error: ImageGenOutcome | None = None
         try:
             import httpx
 
@@ -947,7 +1117,10 @@ class ImageService:
                         logger.warning(
                             "image-gen server response missing filename: %s", body,
                         )
-                        return False
+                        return ImageGenOutcome(
+                            False, "bad_response",
+                            "image-gen server returned 200 with no filename",
+                        )
                     img_resp = await client.get(
                         f"{image_gen_server_url}/images/{filename}",
                         timeout=render_timeout,
@@ -957,7 +1130,11 @@ class ImageService:
                             "image-gen /images/%s returned %s",
                             filename, img_resp.status_code,
                         )
-                        return False
+                        return ImageGenOutcome(
+                            False, "bad_response",
+                            f"fetching the rendered image returned HTTP "
+                            f"{img_resp.status_code}",
+                        )
                     await asyncio.to_thread(
                         _write_image_bytes, output_path, img_resp.content,
                     )
@@ -965,7 +1142,7 @@ class ImageService:
                         "image-gen image generated via host server in %sms: %s",
                         body.get("generation_time_ms", "?"), output_path,
                     )
-                    return True
+                    return ImageGenOutcome(True)
                 # Legacy path — sidecar streamed image bytes directly.
                 # Kept for back-compat in case a future sidecar version
                 # reverts to the pre-JSON response shape.
@@ -973,10 +1150,31 @@ class ImageService:
                     await asyncio.to_thread(_write_image_bytes, output_path, resp.content)
                     elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
                     logger.info("image-gen image generated via host server in %ss: %s", elapsed, output_path)
-                    return True
+                    return ImageGenOutcome(True)
                 logger.warning("image-gen server returned %s: %s", resp.status_code, resp.text[:200])
+                # Carry the server's OWN diagnosis forward. Its 503 body is the
+                # only place the real cause is stated in words — "CUDA out of
+                # memory. Tried to allocate 76.00 MiB", "image-gen server
+                # degraded: <reason>" — and dropping it here is what left the
+                # operator with an unactionable "produced no output".
+                server_error = ImageGenOutcome(
+                    False, "server_error",
+                    f"image-gen server returned HTTP {resp.status_code}: "
+                    f"{_server_error_detail(resp)}",
+                )
         except Exception as e:
             logger.warning("image-gen host server unavailable (%s), trying local diffusers...", e)
+            # Exception TYPE only, never str(e). `detail` is destined for an
+            # HTTP response body, and an httpx ConnectError embeds the resolved
+            # address of the host it failed to reach — the disclosure
+            # scripts/ci/lint_http_detail_leak.py exists to prevent. The type
+            # is the part the operator acts on (ConnectError = container down,
+            # ReadTimeout = alive but wedged); the full error is in the log
+            # line directly above.
+            server_error = ImageGenOutcome(
+                False, "server_error",
+                f"image-gen server unreachable ({type(e).__name__})",
+            )
 
         # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
@@ -988,12 +1186,21 @@ class ImageService:
 
         if not self.gen_available:
             logger.warning("Image generation model not available - generation skipped")
-            return False
+            if server_error is not None:
+                return server_error
+            return ImageGenOutcome(
+                False, "unavailable",
+                "no image-gen server reached and local diffusers is not installed",
+            )
 
         # Resolve defaults from the active model config
         if self._active_model is None:
             logger.warning("Image generation requested before a model was activated - skipping")
-            return False
+            if server_error is not None:
+                return server_error
+            return ImageGenOutcome(
+                False, "unavailable", "no image model is active",
+            )
         config = IMAGE_MODEL_REGISTRY[self._active_model]
         if num_inference_steps is None:
             num_inference_steps = config.default_steps
@@ -1029,7 +1236,7 @@ class ImageService:
                 progress_service = get_progress_service()
                 progress_service.mark_complete(task_id, "Image generation complete")
 
-            return True
+            return ImageGenOutcome(True)
 
         except Exception as e:
             logger.error("Error generating image: %s", e, exc_info=True)
@@ -1041,7 +1248,9 @@ class ImageService:
                 progress_service = get_progress_service()
                 progress_service.mark_failed(task_id, str(e))
 
-            return False
+            return ImageGenOutcome(
+                False, "render_failed", f"{type(e).__name__}: {e}",
+            )
 
     def _generate_image_sync(
         self,

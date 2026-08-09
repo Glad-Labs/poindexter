@@ -112,6 +112,30 @@ reports a 503.
 The swap itself delegates to `replace-image`, so the same scope split applies:
 `--which featured` reaches published posts, `--which inline:N` does not.
 
+#### When a render fails
+
+The render runs under the GPU lock, so the resident writer LLM (~19 GB) is
+evicted before the image model loads — the same guard the pipeline uses.
+Before poindexter#1005 this path had none, and a regen issued while the
+writer was warm lost the VRAM race and OOM'd; it took as many attempts as it
+took to catch the GPU quiet.
+
+A 503 now names the cause instead of the symptom:
+
+| Message contains               | What happened                                                                   | What to do                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `gpu_busy` (with a holder ETA) | A pipeline render holds the GPU longer than the operator wait budget            | Retry after roughly the quoted ETA                                     |
+| `CUDA out of memory`           | Something outside the lock is holding VRAM (a desktop app, a non-stack process) | Check `nvidia-smi`, then retry                                         |
+| `image-gen server degraded`    | The sidecar failed a model load and is self-healing                             | Wait for its watchdog, or `docker restart poindexter-image-gen-server` |
+| `unreachable`                  | The image-gen container is down                                                 | `docker compose up -d image-gen-server`                                |
+
+Tune how long a render is willing to queue with
+`gpu_sched_operator_image_max_wait_s` (default 150s, `0` = wait as long as
+the lock allows) — see [gpu-scheduler.md](gpu-scheduler.md). Waiting much
+past the default cannot help: the CLI itself gives up at
+`post_edit_regen_image_timeout_s` (300s), and the render still needs its own
+time inside that.
+
 ### `tasks remove-image`
 
 ```bash
@@ -150,7 +174,8 @@ operate on a slot that already exists.
   neither a prompt nor a derivable heading exists, the command asks for
   `--prompt` explicitly rather than generating off a blank prompt.
 - Requires the image service to be reachable; otherwise the command
-  reports a 503.
+  reports a 503. Renders under the same GPU lock as `regen-image` — see
+  [When a render fails](#when-a-render-fails) for reading the 503.
 
 ### `tasks rebuild-images`
 

@@ -6,11 +6,12 @@ latest-``pipeline_versions``-row from ``fetchrow``.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from modules.content.post_edit_service import EditResult, PostEditService
+from services.image_service import ImageGenOutcome
 
 
 class _FakeAuditCap:
@@ -208,9 +209,79 @@ async def test_regen_image_requires_image_service():
 
 
 async def test_regen_image_raises_when_generation_fails():
+    """Legacy bool-only image services keep the original message (duck-typed
+    fallback — the detailed API is preferred when the service exposes it)."""
     svc = PostEditService(pool=FakePool(), image_service=_FakeImageSvc(ok=False))
     with pytest.raises(RuntimeError, match="produced no output"):
         await svc.regen_image("t1", which="featured", prompt="x")
+
+
+class _DetailedImageSvc:
+    """Image service exposing generate_image_result (the real ImageService API)."""
+
+    def __init__(self, outcome):
+        self._outcome = outcome
+        self.calls = 0
+
+    async def generate_image_result(self, *, prompt, output_path, negative_prompt=""):
+        self.calls += 1
+        if self._outcome.ok:
+            with open(output_path, "wb") as f:
+                f.write(b"PNGDATA")
+        return self._outcome
+
+
+async def test_regen_image_surfaces_the_real_failure_reason():
+    """poindexter#1005 — the reported bug. A CUDA OOM used to reach the operator
+    as a flat "image generation produced no output", describing an output step
+    the render never reached. The route maps this RuntimeError onto the 503
+    body, so this message IS what the operator reads."""
+    outcome = ImageGenOutcome(
+        False, "server_error",
+        "image-gen server returned HTTP 503: pipeline load failed: "
+        "CUDA out of memory. Tried to allocate 76.00 MiB.",
+    )
+    svc = PostEditService(pool=FakePool(), image_service=_DetailedImageSvc(outcome))
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        await svc.regen_image("t1", which="featured", prompt="x")
+
+
+async def test_regen_image_surfaces_gpu_busy_as_its_own_reason():
+    """Contention reads differently from breakage: the operator should retry,
+    not go looking for a broken renderer."""
+    outcome = ImageGenOutcome(
+        False, "gpu_busy", "GPU admission rejected: eta_exceeds_budget (holder ETA ~412s)",
+    )
+    svc = PostEditService(pool=FakePool(), image_service=_DetailedImageSvc(outcome))
+    with pytest.raises(RuntimeError, match="gpu_busy.*412"):
+        await svc.regen_image("t1", which="featured", prompt="x")
+
+
+async def test_regen_image_prefers_the_detailed_api_when_available():
+    pool = FakePool(content="body", version=1)
+
+    async def fake_upload(self, path, task_id):
+        return "https://cdn/generated/new.webp"
+
+    img = _DetailedImageSvc(ImageGenOutcome(True))
+    with patch.object(PostEditService, "_upload_image", fake_upload):
+        svc = PostEditService(pool=pool, image_service=img)
+        result = await svc.regen_image("t1", which="featured", prompt="a teal robot")
+
+    assert result.ok
+    assert img.calls == 1, "the bool API must not be used when the detailed one exists"
+
+
+async def test_add_image_shares_the_same_generate_path():
+    """regen_image and add_image had drifted into two copies of the same
+    temp-file dance; both now report failures identically."""
+    outcome = ImageGenOutcome(False, "server_error", "CUDA out of memory")
+    svc = PostEditService(
+        pool=FakePool(content="## Intro\n\ntext\n\n", version=1),
+        image_service=_DetailedImageSvc(outcome),
+    )
+    with pytest.raises(RuntimeError, match="CUDA out of memory"):
+        await svc.add_image("t1", section="Intro")
 
 
 # ---------------------------------------------------------------------------

@@ -281,25 +281,7 @@ class PostEditService:
                 "derive one from — pass --prompt explicitly"
             )
 
-        import os
-        import tempfile
-
-        negative = ""
-        if self._site_config is not None:
-            negative = self._site_config.get("image_negative_prompt", "") or ""
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            out_path = tmp.name
-        try:
-            ok = await self._image_service.generate_image(
-                prompt=final_prompt, output_path=out_path, negative_prompt=negative,
-            )
-            if not ok or not os.path.exists(out_path):
-                raise RuntimeError("image generation produced no output")
-            url = await self._upload_image(out_path, task_id)
-        finally:
-            with suppress(OSError):
-                os.remove(out_path)
+        url = await self._generate_and_upload(task_id, final_prompt)
 
         tag = (
             f'\n\n<img src="{url}" alt="{final_prompt[:200]}" '
@@ -325,25 +307,8 @@ class PostEditService:
         """
         if self._image_service is None:
             raise RuntimeError("image service not available for regen")
-        import os
-        import tempfile
 
-        negative = ""
-        if self._site_config is not None:
-            negative = self._site_config.get("image_negative_prompt", "") or ""
-
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            out_path = tmp.name
-        try:
-            ok = await self._image_service.generate_image(
-                prompt=prompt, output_path=out_path, negative_prompt=negative,
-            )
-            if not ok or not os.path.exists(out_path):
-                raise RuntimeError("image generation produced no output")
-            url = await self._upload_image(out_path, task_id)
-        finally:
-            with suppress(OSError):
-                os.remove(out_path)
+        url = await self._generate_and_upload(task_id, prompt)
 
         res = await self.replace_image(task_id, which=which, url=url)
         await self._audit(
@@ -356,6 +321,60 @@ class PostEditService:
         )
 
     # -- helpers ------------------------------------------------------------
+
+    async def _generate_and_upload(self, task_id: str, prompt: str) -> str:
+        """Render one image and return its uploaded URL. Raises on failure.
+
+        The single generate path for both ``regen_image`` and ``add_image``,
+        which had drifted into two copies of the same temp-file dance.
+
+        Failure carries the reason. ``ImageService`` renders under
+        ``gpu.lock("image_gen")`` and reports WHY it failed via
+        ``generate_image_result`` (poindexter#1005) — a CUDA OOM, a degraded
+        server, a GPU busy beyond the operator wait budget. The route maps the
+        RuntimeError raised here onto a 503, so whatever we put in the message
+        is what the operator reads; the old fixed "produced no output" told
+        them nothing and, for the OOM case, actively misdirected — the render
+        never started, so there was no output to produce.
+
+        Falls back to the bool ``generate_image`` when the injected service
+        predates the detailed API (duck-typed seam — tests inject fakes).
+        """
+        import os
+        import tempfile
+
+        negative = ""
+        if self._site_config is not None:
+            negative = self._site_config.get("image_negative_prompt", "") or ""
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            out_path = tmp.name
+        try:
+            detailed = getattr(self._image_service, "generate_image_result", None)
+            if detailed is not None:
+                outcome = await detailed(
+                    prompt=prompt, output_path=out_path, negative_prompt=negative,
+                )
+                ok, why = bool(outcome.ok), outcome.message
+            else:
+                ok = await self._image_service.generate_image(
+                    prompt=prompt, output_path=out_path, negative_prompt=negative,
+                )
+                why = "image generation produced no output"
+            if not ok:
+                raise RuntimeError(why)
+            if not os.path.exists(out_path):
+                # Backend claimed success but wrote nothing — a real defect
+                # rather than a capacity problem, so say that plainly instead
+                # of reusing the generic message and hiding it among OOMs.
+                raise RuntimeError(
+                    "image generation reported success but wrote no file "
+                    f"to {out_path}"
+                )
+            return await self._upload_image(out_path, task_id)
+        finally:
+            with suppress(OSError):
+                os.remove(out_path)
 
     async def _latest(self, task_id: str) -> tuple[str, int]:
         """Return (content, version) for the highest-version draft row."""

@@ -240,6 +240,34 @@ def media_wait_budget_s() -> float | None:
     return budget if budget > 0 else None
 
 
+def operator_image_wait_budget_s() -> float | None:
+    """Wait budget (s) for operator single-image renders, or ``None`` for legacy.
+
+    poindexter#914 P2 caller migration, group 3 — the ``ImageService``
+    generate path behind ``poindexter tasks regen-image`` / ``add-image`` /
+    ``generate-image``. Unlike groups 1-2 this caller is NOT fail-soft in
+    itself: a human asked for an image and is holding an open HTTP request
+    for it. What bounds it is the client, not the work — the CLI/API budget
+    is ``post_edit_regen_image_timeout_s`` (300s) and the render alone can
+    take most of ``image_render_timeout_seconds`` (300s). So a wait longer
+    than this is not patience, it is a guaranteed client-side timeout with
+    the GPU work thrown away at the end of it.
+
+    Sized from the same soak (``gpu_lease_stats``, 07-26..30) as the media
+    budget, one notch up: ABOVE the ordinary LLM traffic an operator should
+    simply wait behind (``generate_content`` p90 105.3s) and BELOW every long
+    holder where waiting cannot finish inside the client budget anyway
+    (``qa_rewrite`` 210.5s, ``featured_image`` 228.7s, ``inline_image_batch``
+    240.0s, ``media_render`` 383.5s). Behind one of those the operator gets
+    an immediate, honest "GPU busy, holder ETA ~230s" they can act on instead
+    of a 300s hang ending in a bare timeout.
+
+    ``0`` restores the unbounded legacy contract.
+    """
+    budget = _cfg_float("gpu_sched_operator_image_max_wait_s", 150.0)
+    return budget if budget > 0 else None
+
+
 def _cfg_bool(key: str, default: bool) -> bool:
     """Read a bool from site_config (DB) with fallback.
 

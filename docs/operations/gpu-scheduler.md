@@ -24,7 +24,7 @@ The stats feed the admission ETA below — the p90 for a phase is "how long
 does this kind of hold usually run", so a waiter can be told honestly
 whether the current holder will be done inside its budget.
 
-## Queue admission (P1 — ships inert)
+## Queue admission (P1 — opt-in per caller)
 
 `gpu.lock()` accepts two contract kwargs:
 
@@ -54,25 +54,54 @@ after eviction; anything larger rejects `no_fit`. **Every missing
 telemetry input fails OPEN** — a Prometheus blip or unknown model size
 degrades to "grant", never to a false reject.
 
-### Double inertness at ship
+### Double inertness
 
 1. `gpu_sched_enabled` defaults `false`.
-2. No production call site passes `max_wait_s` yet (grep-proofed by
-   `tests/unit/services/test_gpu_admission_wiring.py`).
+2. A call site opts in only by passing `max_wait_s`, and the set that does
+   is an **allowlist** in `tests/unit/services/test_gpu_admission_wiring.py`
+   — a drive-by budget kwarg fails CI, because a budget is a behaviour
+   change (work can now be skipped or refused).
 
-Flipping the flag on a stock install therefore changes nothing; caller
-migration is P2 — one caller group per PR, starting with the fail-soft
-QA rails, informed by the soak numbers.
+So on a stock install nothing changes until both are true for a given
+caller. Migration is P2 — one group per PR, sized off the soak numbers.
+
+### P2 caller migration
+
+| Group               | Callers                                                                                                           | Budget key (default)                         | What a refusal costs                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 1 — QA rails        | `ragas_eval`, `deepeval_rails`                                                                                    | `gpu_sched_qa_rail_max_wait_s` (45s)         | Sentinel scores + a `qa_rail_gpu_busy_skip` finding. Never blocks publish, never fabricates a pass. |
+| 2 — media stages    | `generate_media_scripts`, `generate_video_shot_list`, `review_video_shot_list`                                    | `gpu_sched_media_max_wait_s` (120s)          | The post ships without that artefact + a `media_gpu_busy_skip` finding.                             |
+| 3 — operator images | `services/image_service.py` (`poindexter tasks regen-image` / `add-image`, `POST /api/tasks/{id}/generate-image`) | `gpu_sched_operator_image_max_wait_s` (150s) | **Nothing is skipped** — a human gets an immediate 503 naming the holder ETA, and retries.          |
+
+Group 3 is the odd one out and worth understanding before touching it.
+Groups 1-2 are fail-soft callers whose work is genuinely optional, so a
+budget converts a doomed wait into a cheap skip. Group 3 is a person
+holding an open HTTP request: nothing is dropped, and the budget exists
+because the **client** is already bounded
+(`post_edit_regen_image_timeout_s` 300s) while the render alone can take
+most of `image_render_timeout_seconds` (300s). Past ~150s of waiting the
+request cannot complete regardless, so the budget only chooses between an
+actionable error and a bare client timeout that throws the render away.
+
+Each budget's default sits in the measured gap (`gpu_lease_stats`,
+07-26..30): above the ordinary LLM holds the caller should simply wait
+behind (`generate_content` p90 105.3s) and below the render holds it
+cannot outlast (`qa_rewrite` 210.5s, `featured_image` 228.7s,
+`inline_image_batch` 240.0s, `media_render` 383.5s). Setting one to `0`
+restores that caller's unbounded legacy contract.
 
 ## Settings
 
-| Key                              | Default  | Meaning                                                                                      |
-| -------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `gpu_sched_enabled`              | `false`  | Master switch for admission + wait-cap.                                                      |
-| `gpu_sched_eta_fallback_seconds` | `120`    | Assumed holder ETA when a key has no stats yet.                                              |
-| `gpu_sched_aging_seconds`        | `300`    | Priority-class promotion window (0 = no aging).                                              |
-| `gpu0_headroom_gb`               | `6`      | VRAM held back for mid-hold invisible claims (desktop transients + idle-unloaded residents). |
-| `gpu_evictable_process_pattern`  | `ollama` | Substring matching the primary Ollama runner in the per-process VRAM series.                 |
+| Key                                   | Default  | Meaning                                                                                      |
+| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `gpu_sched_enabled`                   | `false`  | Master switch for admission + wait-cap.                                                      |
+| `gpu_sched_eta_fallback_seconds`      | `120`    | Assumed holder ETA when a key has no stats yet.                                              |
+| `gpu_sched_aging_seconds`             | `300`    | Priority-class promotion window (0 = no aging).                                              |
+| `gpu_sched_qa_rail_max_wait_s`        | `45`     | Wait budget for the fail-soft QA rails (P2 group 1). `0` = unbounded.                        |
+| `gpu_sched_media_max_wait_s`          | `120`    | Wait budget for the media stages (P2 group 2). `0` = unbounded.                              |
+| `gpu_sched_operator_image_max_wait_s` | `150`    | Wait budget for operator single-image renders (P2 group 3). `0` = unbounded.                 |
+| `gpu0_headroom_gb`                    | `6`      | VRAM held back for mid-hold invisible claims (desktop transients + idle-unloaded residents). |
+| `gpu_evictable_process_pattern`       | `ollama` | Substring matching the primary Ollama runner in the per-process VRAM series.                 |
 
 Pre-existing lock tunables (`gpu_lock_acquire_timeout_seconds`,
 `gpu_lock_release_timeout_seconds`, `gpu_serialize_llm_dispatch`, the

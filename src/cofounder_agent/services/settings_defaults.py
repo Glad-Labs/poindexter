@@ -821,6 +821,25 @@ DEFAULTS: dict[str, str] = {
     # 210.5s, featured_image 228.7s, inline_image_batch 240.0s, media_render
     # 383.5s). 0 restores the unbounded legacy contract.
     'gpu_sched_media_max_wait_s': '120',
+    # Wait budget (seconds) for operator single-image renders — poindexter#914
+    # P2 group 3 (services/image_service.py, behind `poindexter tasks
+    # regen-image` / `add-image` and POST /api/tasks/{id}/generate-image).
+    #
+    # Unlike groups 1-2 this caller is not fail-soft in itself: a human asked
+    # for the image and is holding an open HTTP request. What bounds it is the
+    # CLIENT — post_edit_regen_image_timeout_s is 300s and the render alone can
+    # take most of image_render_timeout_seconds (300s), so any wait past ~150s
+    # is not patience, it is a guaranteed client timeout that throws the render
+    # away at the end. On reject the operator gets an immediate 503 naming the
+    # holder ETA (retryable, actionable) instead of a 300s hang.
+    #
+    # 150s sits one notch above the media budget in the same measured gap
+    # (gpu_lease_stats, 07-26..30): above ordinary LLM traffic an operator
+    # should just wait behind (generate_content p90 105.3s), below every long
+    # holder where waiting cannot finish in the client budget anyway
+    # (qa_rewrite 210.5s, featured_image 228.7s, inline_image_batch 240.0s,
+    # media_render 383.5s). 0 restores the unbounded legacy contract.
+    'gpu_sched_operator_image_max_wait_s': '150',
     # VRAM (GB) the admission fit-check holds back on the pipeline GPU for
     # mid-hold invisible claims Prometheus can't see at decision time: desktop
     # compositor transients plus an idle-unloaded resident (e.g. whisper ~3GB)
@@ -3901,6 +3920,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'gpu_sched_enabled': {'owner': 'gpu_scheduler', 'value_type': 'boolean'},
     'gpu_sched_eta_fallback_seconds': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_sched_media_max_wait_s': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
+    'gpu_sched_operator_image_max_wait_s': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_sched_qa_rail_max_wait_s': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_serialize_llm_dispatch': {'owner': 'dispatcher', 'value_type': 'boolean'},
     'idle_wsl_reset_cooldown_hours': {'value_type': 'integer'},
