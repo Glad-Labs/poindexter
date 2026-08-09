@@ -40,8 +40,13 @@ class TestMetadata:
         assert RunDevDiaryPostJob.name == "run_dev_diary_post"
 
     def test_schedule_is_9am_operator_local(self):
-        # 0 9 * * * evaluated in operator_timezone (services/clock.py) = 9am local
-        assert RunDevDiaryPostJob.schedule == "0 9 * * *"
+        # Evaluated in operator_timezone (services/clock.py), so "0 9" = 9am
+        # local. Fire time only — the cadence (day-of-week) is owned by
+        # tests/unit/services/jobs/test_dev_diary_cadence.py, which also pins it
+        # against hours_lookback; asserting the full expression in two places
+        # made them disagree when the job went weekly on 2026-08-09.
+        minute, hour, dom, month, _dow = RunDevDiaryPostJob.schedule.split()
+        assert (minute, hour, dom, month) == ("0", "9", "*", "*")
 
     def test_idempotent_flag_set(self):
         assert RunDevDiaryPostJob.idempotent is True

@@ -248,9 +248,9 @@ class SubstancePolicy:
 
 @dataclass
 class DevDiaryContext:
-    """Rich daily-activity bundle. Serialised to dict for the writer."""
+    """Rich activity bundle over ``lookback_hours``. Serialised for the writer."""
 
-    date: str  # YYYY-MM-DD (UTC) — the day the diary covers
+    date: str  # YYYY-MM-DD (UTC) — the day the window ENDS on
     merged_prs: list[dict[str, Any]]
     notable_commits: list[dict[str, Any]]
     brain_decisions: list[dict[str, Any]]
@@ -263,6 +263,12 @@ class DevDiaryContext:
     # authentic personality the post draws from. Empty string when
     # the operator didn't submit a note today.
     operator_notes: list[dict[str, Any]] = field(default_factory=list)
+    # Width of the window this bundle was gathered over. Drives the topic's
+    # period word ("Daily"/"Weekly"/"N-day") so the headline can't claim a
+    # cadence the data doesn't cover — the job went weekly 2026-08-09 and a
+    # hardcoded "Daily" would have mislabelled every post from then on.
+    # Defaults to 24 so existing callers that don't pass it are unchanged.
+    lookback_hours: int = 24
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -422,9 +428,28 @@ class DevDiaryContext:
         if not parts and self.recent_posts:
             n = len(self.recent_posts)
             parts.append(f"{n} post{'s' if n != 1 else ''}")
+        period = self.period_label()
         if parts:
-            return f"Daily dev diary — {date} ({', '.join(parts)})"
-        return f"Daily dev diary — {date}"
+            return f"{period} dev diary — {date} ({', '.join(parts)})"
+        return f"{period} dev diary — {date}"
+
+    def period_label(self) -> str:
+        """Human period word for :meth:`headline`, from ``lookback_hours``.
+
+        The window is the only honest source for this: the job's cron and its
+        lookback are configured separately, so labelling off the cron would
+        claim a coverage the bundle may not have. Thresholds are generous
+        because an operator may nudge the window (a 26h daily run is still
+        "Daily"); anything that isn't close to a day or a week says how many
+        days it actually covers rather than rounding to a lie.
+        """
+        hours = int(self.lookback_hours or 24)
+        if hours <= 36:
+            return "Daily"
+        if 144 <= hours <= 192:  # 6-8 days
+            return "Weekly"
+        days = max(1, round(hours / 24))
+        return f"{days}-day"
 
 
 # ---------------------------------------------------------------------------
@@ -1045,6 +1070,7 @@ class DevDiarySource:
             recent_posts=posts,
             cost_summary=cost,
             operator_notes=notes,
+            lookback_hours=hours_lookback,
         )
         logger.info(
             "DevDiarySource: gathered context (date=%s repo=%s prs=%d commits=%d "

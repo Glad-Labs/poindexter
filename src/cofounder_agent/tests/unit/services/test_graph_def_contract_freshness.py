@@ -37,6 +37,7 @@ import services.pipeline_architect as pa
 from plugins.atom import AtomMeta, FieldSpec
 from services.atom_registry import discover
 from services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+from services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
 from services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
 from services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
 from services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
@@ -50,15 +51,23 @@ _SNAPSHOT_PATH = Path(__file__).with_name("graph_def_contract_fingerprints.json"
 def _active_specs() -> dict:
     """The in-tree static graph_def specs seeded ``active=true`` into
     ``pipeline_templates``: ``canonical_blog`` (live content pipeline),
-    ``media_pipeline`` / ``podcast_pipeline`` (Stage-2/3 media graphs),
-    ``seo_refresh`` (the gated meta-refresh loop, #763), and ``image_rebuild``
-    (the queued rebuild-images path). ``dev_diary`` is excluded — it has no
-    graph_def row (it runs off the legacy ``TEMPLATES`` factory). Add any NEW
-    active graph_def spec here so the gate covers it."""
+    ``dev_diary`` (build-in-public narrative), ``media_pipeline`` /
+    ``podcast_pipeline`` (Stage-2/3 media graphs), ``seo_refresh`` (the gated
+    meta-refresh loop, #763), and ``image_rebuild`` (the queued rebuild-images
+    path). Add any NEW active graph_def spec here so the gate covers it.
+
+    ``dev_diary`` used to be excluded from this list on the belief that it "has
+    no graph_def row (it runs off the legacy ``TEMPLATES`` factory)". That was
+    false — it has had an active row since v1, and the factory was the dead
+    path. The exclusion meant nothing here watched the graph that was actually
+    running the dev blog, which is part of how it published for three months
+    without a meta description (see ``test_dev_diary_seo``). The factory is now
+    deleted and ``TEMPLATES`` is empty, so no spec has that excuse."""
     return {
         spec["name"]: spec
         for spec in (
             CANONICAL_BLOG_GRAPH_DEF,
+            DEV_DIARY_GRAPH_DEF,
             IMAGE_REBUILD_GRAPH_DEF,
             MEDIA_PIPELINE_GRAPH_DEF,
             PODCAST_PIPELINE_GRAPH_DEF,

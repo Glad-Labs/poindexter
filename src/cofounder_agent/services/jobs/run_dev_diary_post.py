@@ -44,9 +44,10 @@ Config (``plugin.job.run_dev_diary_post``)
 ------------------------------------------
 
 - ``enabled`` (default true)
-- ``cron_expression`` (default ``"0 13 * * *"`` — 9am ET, ~13:00 UTC)
+- ``config.schedule`` (default ``"0 9 * * 1"`` — Mondays 09:00 operator-local)
 - ``config.gates`` (default ``"draft,final"``)
-- ``config.hours_lookback`` (default 24)
+- ``config.hours_lookback`` (default 168 = 7d; MUST match the schedule interval
+  — see the cadence note above ``RunDevDiaryPostJob``)
 - ``config.confidence_floor`` (default 0.7)
 - ``config.notify_on_draft`` (default true)
 
@@ -75,11 +76,24 @@ _LAST_RUN_KEY = "dev_diary_last_run_date"
 _NICHE_SLUG = "dev_diary"
 _DEFAULT_GATES = "draft,final"
 
+# Cadence. These two MUST stay consistent: the lookback has to cover the whole
+# gap between fires, or the diary silently omits every day it never looked at.
+# Going weekly on the cron alone would have bundled 24h of activity and dropped
+# six days of it — the post would still publish, just quietly incomplete, which
+# is the worst failure shape. Pinned by
+# tests/unit/services/jobs/test_dev_diary_cadence.py.
+#
+# Weekly since 2026-08-09. Daily output was 80 of 173 published posts (46% of
+# everything the pipeline produced) drawing ~1.0 human view per post; the same
+# capacity is worth more on the researched-article cluster that actually ranks.
+_DEFAULT_SCHEDULE = "0 9 * * 1"  # Mondays 09:00 operator-local (services/clock.py)
+_DEFAULT_LOOKBACK_HOURS = 168  # 7d — must equal the cron interval above
+
 
 class RunDevDiaryPostJob:
     name = "run_dev_diary_post"
-    description = "Generate the daily Glad Labs dev-diary post (gated for operator approval)"
-    schedule = "0 9 * * *"  # 09:00 operator-local (services/clock.py) — was 0 13 UTC pre-tz-aware scheduler
+    description = "Generate the weekly Glad Labs dev-diary post (gated for operator approval)"
+    schedule = _DEFAULT_SCHEDULE
     idempotent = True  # The internal date marker handles double-fire
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
@@ -110,7 +124,10 @@ class RunDevDiaryPostJob:
             SubstancePolicy,
         )
 
-        hours = int(config.get("hours_lookback", 24) or 24)
+        hours = int(
+            config.get("hours_lookback", _DEFAULT_LOOKBACK_HOURS)
+            or _DEFAULT_LOOKBACK_HOURS
+        )
         confidence = float(config.get("confidence_floor", 0.7) or 0.7)
 
         # Substance bar (app_settings-tunable). The scheduler seeds

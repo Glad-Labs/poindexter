@@ -82,9 +82,12 @@ KERNEL_PURITY_BASELINE: dict[str, int] = {
     # normalize_draft BEFORE writer_self_review, so this stage is the only
     # place its output can be scrubbed (poindexter#1000).
     "services/self_review.py::modules.content.api": 2,
-    # pipeline_templates' dev_diary factory imports the narrate_bundle atom
-    # lazily; dev_diary is the one remaining non-graph_def template path.
-    "services/pipeline_templates/__init__.py::modules.content.api": 1,
+    # (removed 2026-08-09) pipeline_templates' dev_diary factory used to import
+    # the narrate_bundle atom lazily. The factory is deleted — dev_diary is a
+    # graph_def row like everything else, and atoms are resolved through the
+    # registry by name — so the kernel no longer reaches into modules.content
+    # from here at all. Do not re-add: a hand-coded factory in the kernel is
+    # what made this entry necessary.
     # post_pipeline_actions reaches modules.content.api (the module's public
     # surface) lazily from three sites: the auto-publish gate evaluation, the
     # auto-publish task itself, and MultiModelQA.
