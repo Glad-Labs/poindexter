@@ -365,7 +365,7 @@ mypy = ">=2.3.0,<3"
 bandit = "^1.7"
 
 # Pre-commit
-pre-commit = ">=3,<5"
+pre-commit = ">=4.6.1,<5"
 
 # Development Tools
 ipython = "^9.15"
