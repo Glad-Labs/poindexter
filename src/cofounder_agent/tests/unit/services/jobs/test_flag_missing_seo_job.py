@@ -112,3 +112,27 @@ class TestRun:
         result = await job.run(pool, {})
         assert result.ok is False
         assert "db unreachable" in result.detail
+
+
+@pytest.mark.asyncio
+class TestDevDiaryIsNotExcluded:
+    """This job going quiet is what hid the problem: it last emitted a
+    ``missing_seo`` finding on 2026-06-05, not because the backlog cleared but
+    because every remaining offender was a dev_diary post it could not see.
+    Judge a sweeper by the backlog it should drain, never by its own counter.
+    """
+
+    async def _excluded_arg(self, config: dict) -> list[str]:
+        pool, conn = _make_pool([])
+        await FlagMissingSeoJob().run(pool, {"file_gitea_issue": False, **config})
+        args = conn.fetch.await_args.args
+        return list(args[2])
+
+    async def test_default_excludes_nothing(self):
+        assert await self._excluded_arg({}) == []
+
+    async def test_dev_diary_is_not_excluded_by_default(self):
+        assert "dev_diary" not in await self._excluded_arg({})
+
+    async def test_operators_can_still_exclude_explicitly(self):
+        assert await self._excluded_arg({"excluded_templates": ["scratch"]}) == ["scratch"]

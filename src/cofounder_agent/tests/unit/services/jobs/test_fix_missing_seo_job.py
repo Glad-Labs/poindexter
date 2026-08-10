@@ -137,3 +137,31 @@ class TestRun:
 
         assert result.ok is False
         assert "pool closed" in result.detail
+
+
+@pytest.mark.asyncio
+class TestDevDiaryIsNotExcluded:
+    """The default used to be ``excluded_templates=["dev_diary"]``, which meant
+    the one job that backfills missing SEO metadata skipped the ONLY posts
+    missing it — all 39 offenders were dev_diary. Its sibling flag job carried
+    the same exclusion, so nothing reported the backlog either (last
+    ``missing_seo`` finding: 2026-06-05, while the backlog grew to 39).
+    """
+
+    async def _excluded_arg(self, config: dict) -> list[str]:
+        pool, conn = _make_pool([])
+        await FixMissingSeoJob().run(pool, {"file_gitea_issue": False, **config})
+        # run() passes (sql, limit, excluded_templates)
+        args = conn.fetch.await_args.args
+        return list(args[2])
+
+    async def test_default_excludes_nothing(self):
+        assert await self._excluded_arg({}) == []
+
+    async def test_dev_diary_is_not_excluded_by_default(self):
+        assert "dev_diary" not in await self._excluded_arg({})
+
+    async def test_operators_can_still_exclude_explicitly(self):
+        assert await self._excluded_arg(
+            {"excluded_templates": ["dev_diary", "scratch"]},
+        ) == ["dev_diary", "scratch"]

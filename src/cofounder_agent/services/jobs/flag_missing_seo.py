@@ -10,6 +10,21 @@ Gitea issue listing them, and returns the count in JobResult.
 Config (``plugin.job.flag_missing_seo``):
 - ``config.limit`` (default 10) — max posts to report per run
 - ``config.file_gitea_issue`` (default true)
+- ``config.excluded_templates`` (default ``[]``) — template slugs to ignore.
+
+**``dev_diary`` was removed from that default 2026-08-09, and the exclusion is
+why this job went silent while the problem grew.** It last emitted a
+``missing_seo`` finding on 2026-06-05. Not because the backlog cleared — because
+by then every remaining offender WAS a dev_diary post, and both this job and
+``fix_missing_seo`` were blind to them. Missing descriptions accumulated 5 (May)
+→ 13 (Jun) → 15 (Jul) → 6 (Aug) = 39, all dev_diary, while the finding stream
+read as "solved". Classic sweeper-vs-backlog trap: judge a sweeper by the
+backlog it is supposed to drain, never by its own counter.
+
+The original rationale — build-in-public posts don't need SEO — was already
+falsified: they are indexed and in the sitemap (2026-06-02 audit), and as of
+poindexter#3156 the pipeline generates their metadata like any other post. The
+exclusion was the only thing keeping those 39 broken.
 """
 
 from __future__ import annotations
@@ -32,9 +47,10 @@ class FlagMissingSeoJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         limit = int(config.get("limit", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
-        excluded_templates: list[str] = list(
-            config.get("excluded_templates", ["dev_diary"])
-        )
+        # Default empty on purpose — see the module docstring. Excluding a
+        # template here makes this job blind to it AND silences the finding that
+        # would have reported the growing backlog.
+        excluded_templates: list[str] = list(config.get("excluded_templates", []))
 
         try:
             async with pool.acquire() as conn:

@@ -7,6 +7,19 @@ SEO assets from the title/content, and updates the post row.
 Config (``plugin.job.fix_missing_seo``):
 - ``config.limit`` (default 10) — max posts to examine per run
 - ``config.file_gitea_issue`` (default true)
+- ``config.excluded_templates`` (default ``[]``) — template slugs to skip.
+
+**``dev_diary`` was removed from that default 2026-08-09.** It meant the one job
+that backfills missing SEO metadata explicitly skipped the only posts that were
+missing it: all 39 offenders were dev_diary. Its sibling ``flag_missing_seo``
+carried the same exclusion, so nothing reported the backlog either — that
+finding last fired 2026-06-05.
+
+The original rationale (build-in-public posts don't need SEO) was already
+falsified: they are indexed and in the sitemap (2026-06-02 audit), and as of
+poindexter#3156 the pipeline generates their metadata like any other post. With
+``limit`` at 10/run and a 24h schedule the backlog drains in ~4 days; raise
+``limit`` to go faster.
 """
 
 from __future__ import annotations
@@ -31,9 +44,9 @@ class FixMissingSeoJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         limit = int(config.get("limit", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
-        excluded_templates: list[str] = list(
-            config.get("excluded_templates", ["dev_diary"])
-        )
+        # Default empty on purpose — see the module docstring. A template
+        # excluded here is one this job can never repair.
+        excluded_templates: list[str] = list(config.get("excluded_templates", []))
 
         site_config = config.get("_site_config") or SiteConfig()
         metadata_generator = ContentMetadataGenerator(site_config=site_config)
