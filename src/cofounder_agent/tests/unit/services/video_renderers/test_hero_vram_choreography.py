@@ -406,3 +406,64 @@ async def test_genuinely_full_card_still_declines():
     with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(8.0)), \
          patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
+
+
+# ---------------------------------------------------------------------------
+# Probe ordering + Prometheus scrape lag (2026-08-09)
+#
+# Two compounding mistakes, both mine:
+#   1. The plate probe ran BEFORE the co-resident reclaim (which lives inside
+#      _render_generative_clip), so it measured the card with image-gen still
+#      holding ~25GB and skipped every hero: "only 3.1GB free" while the
+#      reclaim was about to free 25GB.
+#   2. The worker is GPU-less, so free VRAM comes from Prometheus on a ~10s
+#      scrape. A single sample taken 3s after the reclaim still reports the
+#      pre-reclaim figure.
+# Net effect: the quality floor silently disabled the feature it protects.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stale_first_sample_does_not_decide():
+    """A low sample followed by the post-reclaim truth must use the truth."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    reg = MagicMock()
+    reg.free_gb = AsyncMock(side_effect=[3.1, 3.1, 28.0])  # scrape catches up
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert out == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_ample_first_sample_short_circuits():
+    """No reason to wait out a scrape interval when the card is already free."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    reg = MagicMock()
+    reg.free_gb = AsyncMock(return_value=30.0)
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert out == (832, 480)
+    assert reg.free_gb.await_count == 1
+
+
+@pytest.mark.unit
+def test_reclaim_precedes_the_plate_probe_in_animate_hero():
+    """Guard the ORDER — the whole defect was probing before reclaiming."""
+    import inspect
+
+    from services.video_renderers import shot_list_renderer as slr
+
+    src = inspect.getsource(slr._animate_hero)
+    assert src.index("_clear_image_gen_for_hero") < src.index(
+        "_fit_hero_dims_to_free_vram",
+    )

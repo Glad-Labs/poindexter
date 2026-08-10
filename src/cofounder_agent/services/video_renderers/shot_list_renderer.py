@@ -469,6 +469,12 @@ async def _render_pexels_video(
 # 1080p, which made it worse. The operator's words: "total slop". A clean
 # Ken Burns still is FAR better than degraded generative video, so below the
 # quality floor this function declines to animate rather than shipping mush.
+# Prometheus scrapes GPU memory every ~10s and the worker has no nvidia-smi,
+# so one sample right after a reclaim reports the pre-reclaim figure. Sample
+# across a scrape interval and keep the max.
+_FREE_VRAM_SAMPLES = 4
+_FREE_VRAM_SAMPLE_GAP_S = 4.0
+
 _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
     (832, 480, 27.0),   # validated: 4-for-4, good output
     (704, 400, 22.0),   # quality floor — modest step, still coherent
@@ -522,10 +528,24 @@ async def _fit_hero_dims_to_free_vram(
         # silent-ok: a settings read must not decide the geometry; the
         # documented default (adaptive on) applies.
         pass
+    # The worker container is GPU-less, so free VRAM comes from Prometheus —
+    # scraped every ~10s. The caller reclaims immediately before this, and a
+    # single sample taken 3s later still reports the PRE-reclaim figure. Take
+    # the max of a few samples across one scrape interval so a stale low
+    # reading cannot decide against a card that was just freed.
     try:
         from services.gpu_registry import GPURegistry
 
-        free_gb = await GPURegistry(site_config=site_config).free_gb(0)
+        registry = GPURegistry(site_config=site_config)
+        free_gb = None
+        for attempt in range(_FREE_VRAM_SAMPLES):
+            sample = await registry.free_gb(0)
+            if sample is not None:
+                free_gb = sample if free_gb is None else max(free_gb, sample)
+            if free_gb is not None and free_gb >= _HERO_PLATE_LADDER[0][2]:
+                break  # already ample; no need to wait out the scrape
+            if attempt < _FREE_VRAM_SAMPLES - 1:
+                await asyncio.sleep(_FREE_VRAM_SAMPLE_GAP_S)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_LIST] free-VRAM probe failed (%s) — keeping %dx%d",
@@ -1531,6 +1551,13 @@ async def _animate_hero(
     # dispatcher's pre-flight VRAM gate can't see the desktop allocating
     # afterwards (2026-08-08: wan OOM'd on its last 320 MiB against Chrome
     # and the COSMIC shell).
+    # Reclaim BEFORE measuring. _render_generative_clip does this too, but it
+    # runs after this point — so probing first measured the card with image-gen
+    # still holding ~25GB and skipped every hero ("only 3.1GB free" while the
+    # clear was about to free 25GB). The second call inside
+    # _render_generative_clip is then a cheap no-op (it declines when nothing
+    # is reserved), and other call paths keep their own reclaim.
+    await _clear_image_gen_for_hero(site_config)
     plate = await _fit_hero_dims_to_free_vram(hero_w, hero_h, site_config)
     if plate is None:
         # Not enough VRAM for a plate that renders watchable motion. Ship the
