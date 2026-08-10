@@ -265,13 +265,36 @@ def _registry(free_gb):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_plate_steps_down_when_vram_is_tight():
+async def test_plate_steps_down_to_the_quality_floor():
     from services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(20.0)):
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
         w, h = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 
-    assert (w, h) == (640, 384)  # first rung that fits 20GB
+    assert (w, h) == (704, 400)  # the floor rung, not below it
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_below_the_floor_declines_to_animate():
+    """The 2026-08-08 ladder went to 512x320 on the theory that a small clip
+    upscaled still reads as motion. It does not — every hero rendered there
+    came back as neon morphing garbage. Below the floor we ship the still.
+    """
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(16.0)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
+
+
+@pytest.mark.unit
+def test_no_ladder_rung_below_the_quality_floor():
+    """Guard the floor itself: a future 'just one more rung' re-creates the
+    slop. 704x400 is the smallest plate that renders coherently."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    assert min(w for w, _h, _g in slr._HERO_PLATE_LADDER) >= 704
+    assert min(h for _w, h, _g in slr._HERO_PLATE_LADDER) >= 400
 
 
 @pytest.mark.unit
@@ -291,10 +314,10 @@ async def test_portrait_orientation_is_preserved():
     """The 9:16 lane must stay vertical after a step-down."""
     from services.video_renderers import shot_list_renderer as slr
 
-    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(20.0)):
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(23.0)):
         w, h = await slr._fit_hero_dims_to_free_vram(480, 832, _sc())
 
-    assert (w, h) == (384, 640)
+    assert (w, h) == (400, 704)
     assert h > w
 
 
@@ -305,9 +328,9 @@ async def test_never_steps_up_past_operator_config():
     from services.video_renderers import shot_list_renderer as slr
 
     with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(31.0)):
-        w, h = await slr._fit_hero_dims_to_free_vram(512, 320, _sc())
+        out = await slr._fit_hero_dims_to_free_vram(512, 320, _sc())
 
-    assert (w, h) == (512, 320)
+    assert out == (512, 320)
 
 
 @pytest.mark.unit
@@ -332,8 +355,8 @@ async def test_operator_can_disable_adaptation():
     from services.video_renderers import shot_list_renderer as slr
 
     with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(5.0)):
-        w, h = await slr._fit_hero_dims_to_free_vram(
+        out = await slr._fit_hero_dims_to_free_vram(
             832, 480, _sc(video_hero_adaptive_plate_enabled="false"),
         )
 
-    assert (w, h) == (832, 480)
+    assert out == (832, 480)  # opted out: no step-down AND no skip

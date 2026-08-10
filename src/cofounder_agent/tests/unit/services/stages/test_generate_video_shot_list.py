@@ -609,7 +609,9 @@ async def test_short_shot_list_produced_when_short_script_present() -> None:
         "title": "Test Post",
         "content": "Some content " * 50,
         "podcast_script": "script " * 40,
-        "short_summary_script": "short narration " * 10,
+        # 30 words — must clear video_short_min_words (25), the floor that
+        # keeps a junk script (e.g. the literal "---") from planning a short.
+        "short_summary_script": "short narration " * 15,
         "task_id": "task-1",
         "database_service": db_service,
         "platform": platform,
@@ -1304,3 +1306,45 @@ async def test_director_dispatch_exception_does_not_retry() -> None:
     assert result.ok
     assert result.metrics.get("failed") is True
     assert platform.dispatch.complete.call_count == 1  # fail fast, no retry
+
+
+@pytest.mark.asyncio
+async def test_short_skipped_when_the_script_is_junk() -> None:
+    """A non-empty but unusable short script must not plan a short lane.
+
+    a5594ce1's frozen short script was the literal string "---" (a markdown
+    rule). Truthiness let it through: the director planned a 6-shot short, the
+    renderer produced a 12s video, and the TTS narrated it as "Null" followed
+    by the outro. Held to video_short_min_words, the lane is skipped instead —
+    a missing short is invisible, a nonsense short ships (2026-08-09).
+    """
+    db_service = _make_db_service()
+    platform = _platform_with_dispatch(model="director-model-x")
+    platform.dispatch.complete = AsyncMock(side_effect=[
+        MagicMock(text=_make_valid_director_output()),
+    ])
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "short_summary_script": "---",
+        "task_id": "task-junk",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        stage = GenerateVideoShotListStage()
+        result = await stage.execute(context, {})
+
+    assert result.ok
+    # long lane only — the short director was never dispatched
+    assert platform.dispatch.complete.call_count == 1
+    assert "video_shot_list" in result.context_updates
+    assert "short_shot_list" not in result.context_updates

@@ -897,6 +897,22 @@ class GenerateVideoShotListStage:
         # short script is present AND the helper returns a validated dict.
         short_summary_script = context.get("short_summary_script", "")
         short_shot_list = None
+        # Truthiness is not usability: a5594ce1's frozen short script was the
+        # literal string "---" (a markdown rule). It planned a 6-shot short,
+        # rendered a 12s video, and the TTS narrated it as "Null" followed by
+        # the outro. Hold the short lane to the same word floor the writer
+        # does (video_short_min_words) so a junk script yields NO short rather
+        # than a broken one — a missing short is invisible, a nonsense short
+        # ships (2026-08-09).
+        min_short_words = cfg.get_int("video_short_min_words", 25)
+        short_words = len((short_summary_script or "").split())
+        if short_summary_script and short_words < min_short_words:
+            logger.warning(
+                "[VIDEO_DIRECTOR] short script is %d word(s) (< %d) — skipping "
+                "the 9:16 lane rather than planning a short from junk: %r",
+                short_words, min_short_words, short_summary_script[:40],
+            )
+            short_summary_script = ""
         if short_summary_script:
             short_shot_list = await self._produce_shot_list(
                 platform=platform,

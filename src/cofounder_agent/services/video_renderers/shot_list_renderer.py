@@ -459,24 +459,35 @@ async def _render_pexels_video(
 # while wan wanted 26.7 GB of a 32.6 GB card, and the hero OOM'd on its last
 # 320 MiB. Same code went 4-for-4 hours earlier on a quieter desktop; the
 # operator should not have to close their browser to get motion.
+# Plates wan can render at ACCEPTABLE QUALITY, widest first, with the free
+# VRAM each needs. There is no rung below 704x400 on purpose.
+#
+# The 2026-08-08 version of this ladder went down to 512x320 on the theory
+# that "a smaller clip upscaled still reads as motion". It does not. Every
+# hero rendered at the 512x320 floor came back as neon morphing garbage —
+# nonsensical colours and shapes — and the compositor then upscaled that to
+# 1080p, which made it worse. The operator's words: "total slop". A clean
+# Ken Burns still is FAR better than degraded generative video, so below the
+# quality floor this function declines to animate rather than shipping mush.
 _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
-    (832, 480, 27.0),   # validated default — needs ~26.7GB peak
-    (704, 400, 22.0),
-    (640, 384, 19.0),
-    (512, 320, 15.0),
+    (832, 480, 27.0),   # validated: 4-for-4, good output
+    (704, 400, 22.0),   # quality floor — modest step, still coherent
 )
 
 
 async def _fit_hero_dims_to_free_vram(
     width: int, height: int, site_config: Any,
-) -> tuple[int, int]:
-    """Step the hero plate down to what the card can actually spare right now.
+) -> tuple[int, int] | None:
+    """Pick a hero plate the card can spare, or ``None`` to skip animating.
 
     Returns the requested dims unchanged when free VRAM is unknown or ample —
     an unreadable probe must never shrink a render that would have succeeded.
-    Only steps DOWN, and never below the ladder's floor: a smaller hero clip
-    upscaled by the compositor still reads as motion, while an OOM reads as a
-    still.
+    Steps DOWN only as far as the ladder's quality floor.
+
+    ``None`` means "do not animate this shot": there is not enough VRAM for a
+    plate that produces watchable output. The caller falls back to the shot's
+    Ken Burns still, which looks intentional, instead of a low-plate render
+    that looks broken (see the ladder comment above).
     """
     try:
         if site_config is not None and not site_config.get_bool(
@@ -514,15 +525,15 @@ async def _fit_hero_dims_to_free_vram(
             )
             return new_w, new_h
 
-    floor_w, floor_h, _ = _HERO_PLATE_LADDER[-1]
-    new_w, new_h = (floor_w, floor_h) if landscape else (floor_h, floor_w)
-    if new_w * new_h >= width * height:
-        return width, height
+    _, _, floor_gb = _HERO_PLATE_LADDER[-1]
     logger.warning(
-        "[SHOT_LIST] only %.1fGB free — hero plate at ladder floor %dx%d; "
-        "expect a still fallback if even that OOMs", free_gb, new_w, new_h,
+        "[SHOT_LIST] only %.1fGB free (quality floor needs %.0fGB) — NOT "
+        "animating this hero; using its Ken Burns still. A sub-floor plate "
+        "renders unwatchable morphing, which is worse than a clean still.",
+        free_gb, floor_gb,
     )
-    return new_w, new_h
+    return None
+
 
 def _hero_render_dims(
     orientation: str, site_config: Any,
@@ -1486,9 +1497,27 @@ async def _animate_hero(
     # dispatcher's pre-flight VRAM gate can't see the desktop allocating
     # afterwards (2026-08-08: wan OOM'd on its last 320 MiB against Chrome
     # and the COSMIC shell).
-    hero_w, hero_h = await _fit_hero_dims_to_free_vram(
-        hero_w, hero_h, site_config,
-    )
+    plate = await _fit_hero_dims_to_free_vram(hero_w, hero_h, site_config)
+    if plate is None:
+        # Not enough VRAM for a plate that renders watchable motion. Ship the
+        # still rather than neon morphing garbage (2026-08-09: every hero
+        # rendered at the old 512x320 ladder floor came back as slop).
+        _emit_hero_fallback_finding(
+            shot=shot, post_id=post_id,
+            reason=(
+                "insufficient free VRAM for a quality hero plate — used the "
+                "still rather than rendering a sub-floor clip, which produces "
+                "unwatchable morphing"
+            ),
+        )
+        return ShotRenderResult(
+            idx=shot.idx,
+            source=shot.source,
+            success=True,
+            clip_path=still_path,
+            duration_s=shot.duration_s,
+        )
+    hero_w, hero_h = plate
     clip_path = str(Path(still_path).with_suffix(".mp4"))
     clip_ok, clip_error = await _render_generative_clip(
         prompt=_compose_hero_wan_prompt(shot.prompt, shot.motion, site_config),
