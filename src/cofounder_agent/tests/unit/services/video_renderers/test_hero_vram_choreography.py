@@ -360,3 +360,49 @@ async def test_operator_can_disable_adaptation():
         )
 
     assert out == (832, 480)  # opted out: no step-down AND no skip
+
+
+# ---------------------------------------------------------------------------
+# wan's own resident pool counts as available TO WAN (2026-08-09)
+#
+# The plate gate ran with wan already loaded from the previous hero, so raw
+# free VRAM read ~1GB and it concluded there was no room for the model that
+# was already resident — skipping every hero after the first. Logged "only
+# 1.0GB free (quality floor needs 22GB)" while nvidia-smi showed 19GB free
+# and wan held 23GB. The gate must ask "free + what wan already holds".
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_wan_resident_pool_is_counted_as_available():
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(1.0)), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=26.0)):
+        # 1GB raw free + 26GB wan already holds = 27GB → full plate
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unreadable_wan_health_falls_back_to_raw_free():
+    """Under-counting only makes the check more conservative — never wrong in
+    the direction that ships slop."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_genuinely_full_card_still_declines():
+    """The skip must survive the refinement: a card full of OTHER tenants
+    (wan not loaded) still declines rather than rendering sub-floor."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(8.0)), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None

@@ -475,6 +475,30 @@ _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
 )
 
 
+async def _wan_resident_gb(site_config: Any) -> float:
+    """VRAM wan currently holds, in GB — 0.0 when unknown or unloaded.
+
+    Read from the wan server's own ``/health`` (``vram_used_mb``) rather than
+    inferred, and fail-soft to 0.0: under-counting only makes the plate check
+    more conservative, never less.
+    """
+    try:
+        import httpx
+
+        from services.video_providers.wan2_1 import _resolve_server_url
+
+        url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return 0.0
+        return float(resp.json().get("vram_used_mb") or 0.0) / 1024.0
+    except Exception:  # noqa: BLE001
+        # silent-ok: this is a refinement of a best-effort probe. Failing to
+        # read it just means the stricter (raw-free) comparison applies.
+        return 0.0
+
+
 async def _fit_hero_dims_to_free_vram(
     width: int, height: int, site_config: Any,
 ) -> tuple[int, int] | None:
@@ -510,6 +534,16 @@ async def _fit_hero_dims_to_free_vram(
         return width, height
     if free_gb is None:
         return width, height
+
+    # Add back wan's OWN resident pool. The ladder's needs_gb figures are
+    # whole-model footprints, but this probe usually runs with wan already
+    # loaded from the previous hero — so raw free VRAM reads ~1GB and the
+    # gate concluded there was no room for the model that is already there,
+    # skipping every hero after the first (observed 2026-08-09: "only 1.0GB
+    # free" while nvidia-smi showed 19GB free and wan held 23GB). wan reuses
+    # its own allocation, so the honest question is "free + what wan already
+    # holds".
+    free_gb += await _wan_resident_gb(site_config)
 
     landscape = width >= height
     for lw, lh, needs_gb in _HERO_PLATE_LADDER:
