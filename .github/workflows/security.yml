@@ -215,7 +215,7 @@ jobs:
         # 2026-05-12 (poindexter#404) — added the repo guard to silence
         # the dead-end upload on private.
         if: always() && github.repository == 'Glad-Labs/poindexter'
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v3.35.4 as of 2026-05-12
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3  # v3.35.4 as of 2026-05-12
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -370,7 +370,7 @@ jobs:
         # Same GHAS gating as trivy-fs above — private repo can't accept
         # SARIF; public mirror can.
         if: always() && steps.grype-scan.outputs.sarif != '' && github.repository == 'Glad-Labs/poindexter'
-        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v3.35.4 as of 2026-05-12
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3  # v3.35.4 as of 2026-05-12
         with:
           sarif_file: ${{ steps.grype-scan.outputs.sarif }}
           category: grype-sbom
