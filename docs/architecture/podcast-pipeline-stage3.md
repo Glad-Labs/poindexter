@@ -256,6 +256,35 @@ delegate to the shared `_narration_render.render_narration(script, cta_key, …)
 helper, so the CTA-append + TTS + fail-soft contract lives in one place.
 ML-tunable later.
 
+## 6b. What the Stage-1 snapshot may NOT decide (2026-08-10)
+
+Stage 1 persists `podcast_script` + `podcast_intro_audio_path` into
+`pipeline_versions.task_metadata`, and Stage 3 replays them **days later**. That
+gap makes the snapshot a poor place to freeze anything that can change or expire
+in between — two live bugs proved it on the same episode:
+
+- **The sting went missing.** Task `69c3fb56` was scripted 2026-08-06, the
+  operator pinned `podcast_sting_file_path` on 08-07, and the episode rendered
+  08-10 — replaying the empty 08-06 snapshot and shipping dry while the curated
+  theme sat readable on disk. Generated stings fail the same way from the other
+  end: they snapshot a `/tmp/tmpXXXX.wav` that no longer exists at render.
+  **Fix:** `podcast_sting_mixer.resolve_sting_path` treats the snapshot as the
+  _first choice only_ and falls back to the curated `podcast_sting_file_path` at
+  render time, where it is a durable show-wide constant. The old code also
+  skipped the mix **silently** when the path was empty; an unusable-but-expected
+  sting now raises a `podcast_sting_missing` finding.
+- **The episode name was said twice.** `_build_intro` announces
+  "Welcome to {show}. Today's episode: {title}.", and the script model — handed
+  `ARTICLE TITLE:` — opened with its own greeting or a bare title echo on 3 of
+  the 4 episodes rendered 08-06..08. **Fix:** a prompt rule in
+  `skills/content/podcast/SKILL.md` (soft) plus `dedupe_episode_title` (the
+  guarantee), applied both where the intro is prepended and again in
+  `podcast.render`, so the already-persisted backlog self-heals on re-render
+  instead of stuttering forever behind a generator-only fix.
+
+The general rule: **anything Stage 3 can resolve for itself, Stage 3 should
+resolve** — a Stage-1 snapshot is for content, not for configuration or paths.
+
 ## 7. Reject → recreate
 
 Clearing a medium's dispatch marker re-runs that medium's graph **fresh** (new render).

@@ -168,3 +168,144 @@ async def test_no_sting_no_mix(monkeypatch) -> None:
         "task_id": "t", "podcast_script": "hi", "site_config": sc,
     })
     assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
+
+
+# ── Curated-theme fallback + silent-downgrade findings ───────────────────
+
+
+def _patch_narration(monkeypatch, path="/tmp/dry.mp3"):
+    async def fake_narration(**kwargs):
+        return path
+
+    import modules.content.atoms._narration_render as nr
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+
+
+@pytest.mark.asyncio
+async def test_empty_snapshot_falls_back_to_curated_theme(tmp_path, monkeypatch) -> None:
+    """The reported bug: the episode was scripted before the operator pinned a
+    theme, so ``podcast_intro_audio_path`` was empty forever and the render
+    skipped the mix in silence — while the curated theme sat readable on disk.
+    """
+    curated = tmp_path / "theme.wav"
+    curated.write_bytes(b"RIFFfake")
+    used: dict[str, Any] = {}
+
+    async def fake_mix(narration, sting, *, site_config=None, task_id=None):
+        used["sting"] = sting
+        return "/tmp/mixed.mp3"
+
+    import services.podcast_sting_mixer as mixer
+    _patch_narration(monkeypatch)
+    monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
+
+    out = await podcast_render.run({
+        "task_id": "t-empty-sting",
+        "podcast_script": "Hello world, this is the show.",
+        "podcast_intro_audio_path": "",
+        "site_config": SiteConfig(initial_config={
+            "podcast_sting_file_path": str(curated), "media.cta.podcast": "",
+        }),
+    })
+    assert out == {"podcast_audio_path": "/tmp/mixed.mp3"}
+    assert used["sting"] == str(curated)
+
+
+@pytest.mark.asyncio
+async def test_dangling_temp_snapshot_falls_back_to_curated_theme(
+    tmp_path, monkeypatch,
+) -> None:
+    curated = tmp_path / "theme.wav"
+    curated.write_bytes(b"RIFFfake")
+    used: dict[str, Any] = {}
+
+    async def fake_mix(narration, sting, *, site_config=None, task_id=None):
+        used["sting"] = sting
+        return "/tmp/mixed.mp3"
+
+    import services.podcast_sting_mixer as mixer
+    _patch_narration(monkeypatch)
+    monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
+
+    out = await podcast_render.run({
+        "task_id": "t-stale-sting",
+        "podcast_script": "Hello world, this is the show.",
+        # A generated sting writes to a temp path that no longer exists by the
+        # time Stage-3 renders, potentially in another process entirely.
+        "podcast_intro_audio_path": str(tmp_path / "gone.wav"),
+        "site_config": SiteConfig(initial_config={
+            "podcast_sting_file_path": str(curated), "media.cta.podcast": "",
+        }),
+    })
+    assert out == {"podcast_audio_path": "/tmp/mixed.mp3"}
+    assert used["sting"] == str(curated)
+
+
+@pytest.mark.asyncio
+async def test_unusable_sting_flags_the_dry_cut(tmp_path, monkeypatch) -> None:
+    """A configured-but-missing theme used to skip the mix without a word."""
+    findings: list[dict[str, Any]] = []
+    _patch_narration(monkeypatch)
+    monkeypatch.setattr(podcast_render, "emit_finding",
+                        lambda **kw: findings.append(kw))
+
+    out = await podcast_render.run({
+        "task_id": "t-missing-sting",
+        "podcast_script": "Hello world, this is the show.",
+        "podcast_intro_audio_path": "",
+        "site_config": SiteConfig(initial_config={
+            "podcast_sting_file_path": str(tmp_path / "typo.wav"),
+            "media.cta.podcast": "",
+        }),
+    })
+    assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
+    assert findings and findings[0]["kind"] == "podcast_sting_missing"
+    assert "typo.wav" in findings[0]["body"]
+
+
+@pytest.mark.asyncio
+async def test_no_theme_configured_does_not_flag(monkeypatch) -> None:
+    """OSS default — no sting generated, none pinned. Silence is correct, so
+    this must not page an operator who never asked for music."""
+    findings: list[dict[str, Any]] = []
+    _patch_narration(monkeypatch)
+    monkeypatch.setattr(podcast_render, "emit_finding",
+                        lambda **kw: findings.append(kw))
+
+    out = await podcast_render.run({
+        "task_id": "t-no-sting",
+        "podcast_script": "Hello world, this is the show.",
+        "site_config": SiteConfig(initial_config={"media.cta.podcast": ""}),
+    })
+    assert out == {"podcast_audio_path": "/tmp/dry.mp3"}
+    assert findings == []
+
+
+@pytest.mark.asyncio
+async def test_render_dedupes_a_persisted_duplicate_title(monkeypatch) -> None:
+    """Stage-1 scripts persist for days before Stage-3 renders them, so the
+    backlog written before the generator fix must self-heal at render time."""
+    captured: dict[str, Any] = {}
+
+    async def fake_narration(*, script, **kwargs):
+        captured["script"] = script
+        return "/tmp/dry.mp3"
+
+    import modules.content.atoms._narration_render as nr
+    monkeypatch.setattr(nr, "render_narration", fake_narration)
+
+    await podcast_render.run({
+        "task_id": "t-dup",
+        "podcast_script": (
+            "Welcome to Glad Labs Podcast. Today's episode: The tell in the "
+            "pipeline.\n\nWelcome to today's episode, titled The Tell in the "
+            "Pipeline.\n\nIt started during a prompt tuning session."
+        ),
+        "site_config": SiteConfig(initial_config={
+            "podcast_name": "Glad Labs Podcast", "media.cta.podcast": "",
+        }),
+    })
+    assert captured["script"] == (
+        "Welcome to Glad Labs Podcast. Today's episode: The tell in the "
+        "pipeline.\n\nIt started during a prompt tuning session."
+    )

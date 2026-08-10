@@ -868,6 +868,161 @@ def _append_podcast_cta(
     return f"{script.rstrip()}\n\n{cta}"
 
 
+# ---------------------------------------------------------------------------
+# Duplicate-title guard — the show intro announces the episode exactly ONCE
+# ---------------------------------------------------------------------------
+
+# ``_build_intro`` already says "Welcome to {show}. Today's episode: {title}.",
+# but the script model is handed ``ARTICLE TITLE:`` and routinely opens with its
+# own greeting ("Welcome to today's episode, titled X.") or a bare title echo
+# ("X.") — so prepending the canonical intro named the episode twice in a row.
+# 3 of the 4 episodes rendered 2026-08-06..08 opened that way, so the prompt
+# rule added alongside this is the soft half of the fix and THIS is the
+# guarantee: a deterministic strip, applied where the intro is prepended AND
+# again at the render boundary (Stage-1 scripts persist for days before Stage-3
+# renders them, so a generator-only fix would leave the backlog stuttering).
+# Idempotent by construction — running it on an already-clean script is a no-op.
+
+_TITLE_ECHO_MAX_CHARS = 240        # an echo is a line, never a paragraph
+_TITLE_ECHO_MAX_STRIPS = 2         # greeting line + bare title line, at most
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?:])\s+")
+_INTRO_GREETING_FALLBACK = (
+    "welcome to,today's episode,in this episode,in today's episode,"
+    "hello and welcome,you're listening to,this episode,on this episode"
+)
+
+
+def _echo_key(text: str) -> str:
+    """Comparison key for title matching — case/punctuation/space-insensitive.
+
+    "The Tell in the Pipeline." and "the tell in the pipeline" collapse to the
+    same key, so a model that re-cases or re-punctuates the title is still
+    caught.
+    """
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+def _get_intro_greetings(*, site_config: "SiteConfig | None" = None) -> tuple[str, ...]:
+    """Greeting openers that mark a line as the model's own episode intro.
+
+    DB-configurable (``podcast_intro_echo_phrases``) because the phrasing is
+    show/locale flavour, not logic — a Spanish-language show needs its own list.
+    """
+    _sc = _resolve_site_config(site_config)
+    raw = _sc.get("podcast_intro_echo_phrases", _INTRO_GREETING_FALLBACK) or ""
+    return tuple(k for k in (_echo_key(p) for p in raw.split(",")) if k)
+
+
+def _strip_one_title_echo(
+    body: str, title_key: str, greetings: tuple[str, ...]
+) -> str | None:
+    """Drop ONE leading title-echo sentence from ``body``; ``None`` if absent.
+
+    Only the first line is considered, and only its first sentence — so a
+    paragraph that merely happens to mention the title survives untouched. Two
+    shapes are stripped: the bare echo ("The Gap Nobody Names.") and a greeting
+    that names the episode ("Welcome to today's episode, titled X.").
+    """
+    leading = body.lstrip("\n")
+    line, _, rest = leading.partition("\n")
+    line = line.strip()
+    if not line or len(line) > _TITLE_ECHO_MAX_CHARS:
+        return None
+
+    parts = _SENTENCE_SPLIT_RE.split(line, maxsplit=1)
+    head = parts[0].strip()
+    tail = parts[1].strip() if len(parts) > 1 else ""
+    head_key = _echo_key(head)
+    if not head_key:
+        return None
+
+    is_bare_echo = head_key == title_key
+    is_greeting = title_key in head_key and any(g in head_key for g in greetings)
+    if not (is_bare_echo or is_greeting):
+        return None
+
+    if tail:
+        # The echo shared a line with real narration — keep the remainder in
+        # place, including whatever followed the line break.
+        return f"{tail}\n{rest}" if rest else tail
+    return rest.lstrip("\n")
+
+
+def _split_canonical_intro(
+    script: str, *, site_config: "SiteConfig | None" = None
+) -> tuple[str, str, str]:
+    """Split an already-wrapped script into (prefix, title, body).
+
+    A Stage-1 artifact arrives at render time with ``_build_intro`` already
+    prepended, so the title it announced is recoverable from the line itself —
+    which is what lets the render boundary dedupe without being told the title.
+    Returns ``("", "", script)`` when no canonical intro leads the script.
+    """
+    _sc = _resolve_site_config(site_config)
+    head = f"Welcome to {_sc.get('podcast_name', 'the podcast')}. Today's episode: "
+    if not script.startswith(head):
+        return "", "", script
+
+    idx = script.find("\n")
+    if idx == -1:
+        return "", "", script
+    end = idx
+    while end < len(script) and script[end] == "\n":
+        end += 1
+    intro_line = script[:idx]
+    return script[:end], intro_line[len(head):].strip().rstrip("."), script[end:]
+
+
+def dedupe_episode_title(
+    script: str,
+    *,
+    spoken_title: str | None = None,
+    site_config: "SiteConfig | None" = None,
+) -> str:
+    """Remove a redundant episode-title announcement from the script opening.
+
+    Accepts either shape:
+
+    * a body with no intro yet (generation time) — pass ``spoken_title``;
+    * an already-wrapped script (render time) — the title is recovered from the
+      canonical intro line, so persisted Stage-1 scripts self-heal on re-render.
+
+    Returns ``script`` unchanged when nothing matches, when the title can't be
+    determined, or when stripping would empty the script.
+    """
+    if not (script or "").strip():
+        return script
+    if site_config is None:
+        # Deliberately NOT the fail-loud ``_resolve_site_config`` path: this is
+        # a cosmetic pass on the way to the TTS boundary, and its only caller
+        # without a SiteConfig is the fail-soft ``podcast.render`` atom, which
+        # is already returning an empty audio path for that same reason. Raising
+        # here would convert "no episode" into "graph crash" and hide nothing —
+        # the missing config is surfaced by the render no-op itself.
+        return script
+
+    prefix, recovered, body = _split_canonical_intro(script, site_config=site_config)
+    title_key = _echo_key(spoken_title if spoken_title is not None else recovered)
+    if not title_key:
+        return script
+
+    greetings = _get_intro_greetings(site_config=site_config)
+    cleaned = body
+    for _ in range(_TITLE_ECHO_MAX_STRIPS):
+        candidate = _strip_one_title_echo(cleaned, title_key, greetings)
+        if candidate is None or not candidate.strip():
+            break
+        cleaned = candidate
+
+    if cleaned == body:
+        return script
+    logger.info(
+        "[PODCAST] stripped duplicate episode-title opening (%d chars)",
+        len(body) - len(cleaned),
+    )
+    return prefix + cleaned
+
+
 def _wrap_with_intro_outro(
     script_body: str, spoken_title: str, *, site_config: "SiteConfig | None" = None
 ) -> str:
@@ -884,6 +1039,11 @@ def _wrap_with_intro_outro(
     """
     _sc = _resolve_site_config(site_config)
     if _sc.get("podcast_include_intro", "true").lower() == "true":
+        # Strip the model's own greeting / title echo FIRST — otherwise the
+        # canonical intro below announces the episode name a second time.
+        script_body = dedupe_episode_title(
+            script_body, spoken_title=spoken_title, site_config=_sc,
+        )
         intro = _build_intro(spoken_title, site_config=_sc)
         script_body = f"{intro}\n\n{script_body}"
 
@@ -1103,6 +1263,11 @@ class PodcastService:
             script = await _build_script_with_llm(
                 title, content, site_config=self._site_config
             )
+
+        # Render boundary: a script persisted before the duplicate-title guard
+        # (or handed in by an operator) can still open by naming the episode
+        # twice. No-op on a clean script.
+        script = dedupe_episode_title(script, site_config=self._site_config)
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")

@@ -47,6 +47,7 @@ RULES:
 - NEVER use first person ("I", "my", "I think", "what I call") — the narrator is presenting facts, not opinions
 - Use "we" sparingly and only when the original article does — prefer impersonal phrasing ("the industry is seeing", "developers are finding")
 - Do NOT add any meta-commentary like "Here's the script:" — just output the script text directly
+- The show intro is added automatically AFTER your script and already greets the listener and announces the episode title, so begin with the first real sentence of the story — no greeting, no show name, and no restating the title
 - Output ONLY the spoken narration. Do NOT restate these rules, and do NOT include an outline, a section-by-section plan, bullet points, or a self-check/QA checklist — your response must BEGIN with the first spoken sentence
 
 ARTICLE TITLE: {title}

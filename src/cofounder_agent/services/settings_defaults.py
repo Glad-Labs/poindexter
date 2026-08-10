@@ -1909,6 +1909,14 @@ DEFAULTS: dict[str, str] = {
     # file IS the sting — one sonic identity across episodes, generation
     # skipped. Empty = generate per-episode via the template below.
     'podcast_sting_file_path': '',
+    # Duplicate-title guard: greeting openers that mark a leading line as the
+    # script model's OWN episode intro, which the canonical "Today's episode:"
+    # line then repeated. Comma-separated; matched case/punctuation-insensitively
+    # and only against the opening sentence.
+    'podcast_intro_echo_phrases': (
+        "welcome to,today's episode,in this episode,in today's episode,"
+        "hello and welcome,you're listening to,this episode,on this episode"
+    ),
     'audio_gen_intro_prompt_template': (
         'Podcast intro theme: warm analog synth ident, clean electric piano '
         'arpeggio rising into a soft pad chord, confident and modern, 100 BPM, '
@@ -4113,6 +4121,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'podcast_sting_gain_db': {'value_type': 'number'},
     'podcast_sting_mix_timeout_seconds': {'value_type': 'number'},
     'podcast_sting_file_path': {'value_type': 'string'},
+    'podcast_intro_echo_phrases': {'owner': 'podcast_service', 'value_type': 'string'},
     'audio_gen_intro_prompt_template': {'value_type': 'string'},
     'audio_gen_intro_duration_s': {'value_type': 'number'},
     'podcast_tts_engine': {'owner': 'podcast_service'},

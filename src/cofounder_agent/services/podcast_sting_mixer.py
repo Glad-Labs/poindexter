@@ -70,6 +70,58 @@ def resolve_config(site_config: Any) -> StingMixConfig:
     )
 
 
+@dataclass(frozen=True)
+class StingResolution:
+    """Which sting file to mix, and why there isn't one."""
+
+    path: str        # "" when nothing usable was found
+    source: str      # "state" | "curated" | ""
+    expected: bool   # a sting WAS carried/configured — a dry cut is a downgrade
+    detail: str      # operator-readable reason when ``path`` is empty
+
+
+def resolve_sting_path(state_path: Any, site_config: Any = None) -> StingResolution:
+    """Resolve the sting to mix, falling back to the curated show theme.
+
+    The per-episode path is a SNAPSHOT: ``generate_media_scripts`` writes it
+    into ``task_metadata`` at Stage-1 and ``podcast.load_script`` replays it at
+    Stage-3, days later. That snapshot goes stale two ways — a task scripted
+    before the operator pinned ``podcast_sting_file_path`` carries an empty
+    path forever, and a generated sting points at a ``/tmp`` file that no longer
+    exists in the rendering process. Both shipped dry episodes while a perfectly
+    good curated theme sat on disk, so the curated file is resolved HERE, at
+    render time, where it is a durable show-wide constant rather than a
+    per-episode guess.
+    """
+    candidate = str(state_path or "").strip()
+    if candidate and os.path.exists(candidate):
+        return StingResolution(candidate, "state", True, "")
+
+    curated = ""
+    if site_config is not None:
+        curated = str(site_config.get("podcast_sting_file_path", "") or "").strip()
+    if curated and os.path.exists(curated):
+        return StingResolution(curated, "curated", True, "")
+
+    if candidate:
+        return StingResolution(
+            "", "", True,
+            f"per-episode sting '{candidate}' no longer exists and "
+            + (
+                f"the curated podcast_sting_file_path '{curated}' does not either"
+                if curated else "podcast_sting_file_path is unset"
+            ),
+        )
+    if curated:
+        return StingResolution(
+            "", "", True,
+            f"podcast_sting_file_path '{curated}' does not exist "
+            "(is it readable inside the worker container?)",
+        )
+    # No theme configured and none generated — the OSS default. Not a downgrade.
+    return StingResolution("", "", False, "no sting configured for this show")
+
+
 def build_mix_filtergraph(*, narration_s: float, cfg: StingMixConfig) -> str:
     """The ffmpeg ``filter_complex`` for intro + outro around the voice.
 
@@ -187,7 +239,9 @@ async def mix_intro_outro(
 
 __all__ = [
     "StingMixConfig",
+    "StingResolution",
     "build_mix_filtergraph",
     "mix_intro_outro",
     "resolve_config",
+    "resolve_sting_path",
 ]
