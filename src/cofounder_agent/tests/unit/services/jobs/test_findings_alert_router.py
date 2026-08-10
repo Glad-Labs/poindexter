@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import services.jobs.findings_alert_router as router_mod
@@ -47,19 +48,29 @@ class _FakePoolCtx:
         return False
 
 
-def _pool_with(*, fetchrow=None, fetch=None, execute=None, policy_rows=None):
+def _pool_with(
+    *, fetchrow=None, fetch=None, execute=None, policy_rows=None, last_routed_rows=None
+):
     """Build a MagicMock asyncpg-style pool. ``fetchrow`` is for watermark
     read; ``fetch`` returns findings for the audit_log select and the
     per-kind policy rows for the app_settings select. ``policy_rows`` are
-    {"key": "findings.<kind>.<field>", "value": "..."} dicts."""
+    {"key": "findings.<kind>.<field>", "value": "..."} dicts.
+
+    ``last_routed_rows`` feeds the per-kind cooldown lookup (#551) —
+    {"kind": ..., "last_routed": datetime} dicts. Defaults to ``[]`` = nothing
+    routed recently = no cooldown, which is why every pre-cooldown test in
+    this module keeps its original behaviour untouched."""
     conn = MagicMock()
     conn.fetchrow = AsyncMock(return_value=fetchrow)
     findings_rows = fetch or []
     pol_rows = policy_rows or []
+    routed_rows = last_routed_rows or []
 
     async def _fetch(sql, *args):
         if "app_settings" in sql:  # the _load_policies query
             return pol_rows
+        if "alert_events" in sql:  # the _load_last_routed cooldown query
+            return routed_rows
         return findings_rows  # the audit_log unrouted-findings select
 
     conn.fetch = AsyncMock(side_effect=_fetch)
@@ -826,3 +837,214 @@ async def test_deliver_fallback_log_only_still_suppresses_warn():
     routed = await router_mod._deliver_fallback(pool, finding, "k", "log_only")
     assert routed is False
     assert conn.execute.await_count == 0  # nothing inserted
+
+
+# ---- Per-kind cooldown (Glad-Labs/poindexter#551) ---------------------------
+#
+# The gap these pin: dispatcher dedup is fingerprint-keyed, so a kind whose
+# subject changes every fire (stale_task_reclaimed -> a new task_id each time)
+# mints a new fingerprint and is never collapsed. Measured 2026-08-09:
+# gpu_lock_timeout fired 183x/30d with cooldown_minutes=60 seeded and unread.
+
+
+def _cd(**kw):
+    """_is_cooling with the boring args defaulted."""
+    base = {"severity": "warn", "cooldown_minutes": 60, "last_routed": None}
+    base.update(kw)
+    return router_mod._is_cooling(**base)
+
+
+def test_cooldown_minutes_unset_is_zero():
+    """No policy, or no cooldown field, means no cooldown — a kind nobody
+    opted in for behaves exactly as it did before this feature."""
+    assert router_mod._cooldown_minutes_for("k", {}) == 0
+    assert router_mod._cooldown_minutes_for("k", {"k": {"delivery": "route"}}) == 0
+    assert router_mod._cooldown_minutes_for("k", {"k": {"cooldown_minutes": ""}}) == 0
+
+
+def test_cooldown_minutes_parses_and_floors_at_zero():
+    assert router_mod._cooldown_minutes_for("k", {"k": {"cooldown_minutes": "60"}}) == 60
+    assert router_mod._cooldown_minutes_for("k", {"k": {"cooldown_minutes": " 15 "}}) == 15
+    # Negative is nonsense; floor at 0 rather than inverting the comparison.
+    assert router_mod._cooldown_minutes_for("k", {"k": {"cooldown_minutes": "-5"}}) == 0
+
+
+def test_cooldown_minutes_unparseable_routes_rather_than_mutes(caplog):
+    """A typo'd cooldown must never become an accidental mute. Resolve to 0
+    (no cooldown) and say so loudly — feedback_no_silent_defaults."""
+    with caplog.at_level("WARNING"):
+        got = router_mod._cooldown_minutes_for("k", {"k": {"cooldown_minutes": "sixty"}})
+    assert got == 0
+    assert "unparseable" in caplog.text
+
+
+def test_critical_is_never_cooled():
+    """THE load-bearing invariant. A cooldown that can swallow a critical page
+    is the silent-drop this whole subsystem exists to prevent — same floor as
+    _delivery_for and _deliver_fallback already hold for log_only."""
+    just_paged = datetime.now(timezone.utc)
+    assert _cd(severity="critical", last_routed=just_paged) is False
+    # ...and the warn case with identical inputs IS cooled, proving the
+    # severity is what made the difference and not some other arg.
+    assert _cd(severity="warn", last_routed=just_paged) is True
+
+
+def test_cooling_true_inside_window_false_outside():
+    now = datetime.now(timezone.utc)
+    assert _cd(cooldown_minutes=60, last_routed=now - timedelta(minutes=59)) is True
+    assert _cd(cooldown_minutes=60, last_routed=now - timedelta(minutes=61)) is False
+
+
+def test_never_routed_kind_is_not_cooled():
+    """First fire always pages — cooldown throttles repeats, never the first."""
+    assert _cd(last_routed=None) is False
+
+
+def test_zero_cooldown_never_cools():
+    assert _cd(cooldown_minutes=0, last_routed=datetime.now(timezone.utc)) is False
+
+
+def test_naive_timestamp_is_read_as_utc_not_local():
+    """asyncpg returns tz-aware, but a naive value must not crash the router
+    with "can't compare offset-naive and offset-aware datetimes".
+
+    The coercion treats naive as **UTC**, which is the right reading for a
+    value that came out of a timestamptz column. Using naive *local* time
+    here instead would be out of contract — and would silently shift the
+    window by the UTC offset, which is how this test was wrong the first
+    time it was written (it passed a local `datetime.now()` and expected a
+    recent timestamp; on EDT that lands 4 hours in the past)."""
+    naive_utc_recent = datetime.now(timezone.utc).replace(tzinfo=None)
+    assert _cd(last_routed=naive_utc_recent) is True
+
+    naive_utc_old = naive_utc_recent - timedelta(minutes=61)
+    assert _cd(cooldown_minutes=60, last_routed=naive_utc_old) is False
+
+
+def test_non_datetime_last_routed_routes(caplog):
+    """An unreadable timestamp resolves toward routing, not silence."""
+    with caplog.at_level("WARNING"):
+        assert _cd(last_routed="2026-08-09") is False
+
+
+async def test_run_cools_repeat_and_advances_watermark():
+    """End-to-end: a kind paged 5 minutes ago with a 60-minute cooldown is
+    counted as cooled, inserts nothing, and STILL advances the watermark —
+    a cooled finding is handled, not deferred forever."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "100"},
+        fetch=[{"id": 101, "source": "gpu_scheduler", "severity": "warn",
+                "details": json.dumps({"kind": "gpu_lock_timeout", "title": "lock"})}],
+        policy_rows=[{"key": "findings.gpu_lock_timeout.cooldown_minutes",
+                      "value": "60"}],
+        last_routed_rows=[{"kind": "gpu_lock_timeout",
+                           "last_routed": datetime.now(timezone.utc)
+                           - timedelta(minutes=5)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.ok is True
+    assert result.metrics["cooled"] == 1
+    assert result.metrics["routed"] == 0
+    inserts = [c for c in conn.execute.await_args_list
+               if "INSERT INTO alert_events" in c.args[0]]
+    assert inserts == []
+    # Watermark advanced past the cooled row.
+    watermark_writes = [c for c in conn.execute.await_args_list
+                        if "app_settings" in c.args[0]]
+    assert watermark_writes and watermark_writes[-1].args[2] == "101"
+
+
+async def test_run_routes_first_then_cools_rest_of_batch():
+    """The stampede guard. A backlog of one kind must page ONCE, not N times.
+
+    Before the in-memory stamp, every row in the batch read the same
+    pre-batch timestamp, so all N passed the gate and all N paged — which is
+    exactly the 183-fires-in-30-days shape this issue is about."""
+    rows = [
+        {"id": 200 + i, "source": "sweep_stale_tasks", "severity": "warn",
+         "details": json.dumps({"kind": "stale_task_reclaimed",
+                                "title": f"task {i}",
+                                # A DIFFERENT dedup_key each fire — this is why
+                                # fingerprint dedup can't collapse these.
+                                "dedup_key": f"task-{i}"})}
+        for i in range(5)
+    ]
+    pool, conn = _pool_with(
+        fetchrow={"value": "199"},
+        fetch=rows,
+        policy_rows=[{"key": "findings.stale_task_reclaimed.cooldown_minutes",
+                      "value": "60"}],
+        last_routed_rows=[],  # never routed before -> first one pages
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 1
+    assert result.metrics["cooled"] == 4
+    inserts = [c for c in conn.execute.await_args_list
+               if "INSERT INTO alert_events" in c.args[0]]
+    assert len(inserts) == 1
+
+
+async def test_run_without_cooldown_policy_is_unchanged():
+    """Regression guard for every kind that doesn't opt in: no cooldown key
+    means all 3 findings route, exactly as before #551."""
+    rows = [
+        {"id": 300 + i, "source": "s", "severity": "warn",
+         "details": json.dumps({"kind": "uncooled", "title": f"t{i}"})}
+        for i in range(3)
+    ]
+    pool, conn = _pool_with(fetchrow={"value": "299"}, fetch=rows, policy_rows=[])
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 3
+    assert result.metrics["cooled"] == 0
+
+
+async def test_run_skips_cooldown_query_when_nothing_configured():
+    """Cost guard: a batch with no configured cooldowns must not pay for the
+    alert_events scan at all."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "399"},
+        fetch=[{"id": 400, "source": "s", "severity": "warn",
+                "details": json.dumps({"kind": "quiet", "title": "t"})}],
+        policy_rows=[],
+    )
+    await FindingsAlertRouterJob().run(pool, {})
+    alert_event_selects = [c for c in conn.fetch.await_args_list
+                           if "alert_events" in c.args[0]]
+    assert alert_event_selects == []
+
+
+async def test_run_never_cools_a_critical_end_to_end():
+    """The invariant again, through the full job: a critical finding pages
+    even when its kind is deep inside a cooldown window."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "500"},
+        fetch=[{"id": 501, "source": "gpu_scheduler", "severity": "critical",
+                "details": json.dumps({"kind": "gpu_lock_timeout", "title": "wedged"})}],
+        policy_rows=[{"key": "findings.gpu_lock_timeout.cooldown_minutes",
+                      "value": "1440"}],
+        last_routed_rows=[{"kind": "gpu_lock_timeout",
+                           "last_routed": datetime.now(timezone.utc)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["cooled"] == 0
+    assert result.metrics["routed"] == 1
+    inserts = [c for c in conn.execute.await_args_list
+               if "INSERT INTO alert_events" in c.args[0]]
+    assert len(inserts) == 1 and inserts[0].args[2] == "critical"
+
+
+async def test_default_cooldown_is_not_folded_in():
+    """findings.default.cooldown_minutes stays inert, for the same reason
+    _load_policies skips every findings.default.* key: a default must never
+    silently quiet a kind nobody opted in for."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "600"},
+        fetch=[{"id": 601, "source": "s", "severity": "warn",
+                "details": json.dumps({"kind": "unlisted", "title": "t"})}],
+        policy_rows=[{"key": "findings.default.cooldown_minutes", "value": "1440"}],
+        last_routed_rows=[{"kind": "unlisted",
+                           "last_routed": datetime.now(timezone.utc)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 1
+    assert result.metrics["cooled"] == 0

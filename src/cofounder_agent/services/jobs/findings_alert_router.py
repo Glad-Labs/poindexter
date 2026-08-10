@@ -32,6 +32,46 @@ of the same fingerprint into one operator page + suppressed counter,
 so a chronic finding (e.g. ``media_drift`` every 15 min) doesn't spam
 the operator. See ``brain/alert_dispatcher.py``.
 
+Per-kind cooldown (Glad-Labs/poindexter#551)
+--------------------------------------------
+Dispatcher dedup is keyed by **fingerprint**, and this router derives the
+fingerprint from the finding's ``dedup_key``. That collapses a *repeating
+identical* finding — but a kind whose subject changes on every fire mints a
+new fingerprint each time, so fingerprint dedup cannot touch it:
+
+    stale_task_reclaimed  -> a different task_id every fire
+    gpu_lock_timeout      -> a different holder/waiter every fire
+
+Those are exactly the kinds that spam. Measured 2026-08-09 over 30 days:
+``gpu_lock_timeout`` 183 fires, ``hero_render_fallback`` 90,
+``stale_task_reclaimed`` 78 — while ``findings.gpu_lock_timeout.cooldown_minutes``
+sat seeded at 60 and *unread*, along with 36 sibling keys (``last_read_at``
+NULL on every one). The volume then fed the ``alert-triage`` ops session,
+which turned it into GitHub issues; half the private repo's open backlog was
+that noise, and consolidating it by hand collapsed ~18 issues into ~5 causes.
+
+So the cooldown here is deliberately keyed on **kind**, not fingerprint — it
+is the throttle for subject-varying kinds that dedup structurally cannot help.
+
+Three invariants, each mirroring one this module already holds:
+
+1. **``critical`` is never cooled.** Same floor as ``_delivery_for`` and
+   ``_deliver_fallback``: a cooldown that can swallow a critical page is the
+   silent-drop this subsystem exists to prevent.
+2. **Unset / 0 means no cooldown.** An unlisted kind stays as loud as it is
+   today; ``findings.default.cooldown_minutes`` is deliberately NOT folded in,
+   for the same reason ``_load_policies`` skips every ``findings.default.*``
+   key — a default must never silently quiet a kind nobody opted in for.
+3. **Only the primary paging decision is cooled**, never a fallback. A
+   fallback firing means the primary channel (auto_fix / github_issue) could
+   not act, which is an exceptional condition worth seeing every time.
+
+"Last routed" state needs no new table: this router is the only writer of
+``alert_events`` rows with ``category='finding'``, so the last routed time
+for a kind is just a ``max(received_at)`` over that category. One grouped
+query per cycle, bounded by the largest configured cooldown. It is also
+self-healing — prune ``alert_events`` and cooldowns simply reset.
+
 Severity normalization: ``warn`` -> ``warning`` so the dispatcher's
 severity matrix matches its existing routing tables (the codebase has
 both shapes — Prometheus convention is ``warning``).
@@ -43,6 +83,7 @@ import asyncio
 import json
 import logging
 import shutil
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
@@ -96,6 +137,57 @@ async def _load_policies(pool: Any) -> dict[str, dict[str, str]]:
             continue  # empty/default keys are not per-kind policies
         policies.setdefault(kind, {})[field] = r["value"]
     return policies
+
+
+def _cooldown_minutes_for(kind: str, policies: dict[str, dict[str, str]]) -> int:
+    """Per-kind paging cooldown from ``findings.<kind>.cooldown_minutes``.
+
+    Returns 0 when unset, empty, zero, negative, or unparseable — 0 means
+    "no cooldown", i.e. behave exactly as before this feature existed.
+
+    Every failure mode resolves toward **routing**, never toward silence: a
+    typo'd cooldown must not become an accidental mute. Unparseable values log
+    a warning (loud, per feedback_no_silent_defaults) and then route."""
+    raw = (policies.get(kind) or {}).get("cooldown_minutes", "")
+    if not raw or not str(raw).strip():
+        return 0
+    try:
+        minutes = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning(
+            "[findings_alert_router] kind=%s has unparseable "
+            "cooldown_minutes=%r; treating as 0 (no cooldown)", kind, raw,
+        )
+        return 0
+    return max(0, minutes)
+
+
+async def _load_last_routed(pool: Any, lookback_minutes: int) -> dict[str, Any]:
+    """Map ``kind -> most recent time this router paged for it``.
+
+    Sourced from ``alert_events`` rather than a dedicated table: this router is
+    the only writer of ``category='finding'`` rows, so that category IS the
+    routing history. No new schema, and pruning alert_events just resets
+    cooldowns (the safe direction).
+
+    ``lookback_minutes`` bounds the scan to the largest configured cooldown —
+    anything older cannot suppress anything, so it need not be read. Returns
+    ``{}`` when no cooldowns are configured, skipping the query entirely."""
+    if lookback_minutes <= 0:
+        return {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT labels->>'kind' AS kind, MAX(received_at) AS last_routed
+            FROM alert_events
+            WHERE category = 'finding'
+              AND received_at > NOW() - make_interval(mins => $1)
+              AND labels->>'kind' IS NOT NULL
+            GROUP BY 1
+            """,
+            lookback_minutes,
+        )
+    return {r["kind"]: r["last_routed"] for r in rows if r["kind"]}
 
 
 def _issue_labels_for(kind: str, policies: dict[str, dict[str, str]]) -> list[str]:
@@ -318,6 +410,38 @@ async def _deliver_fallback(
     return True
 
 
+def _is_cooling(
+    *,
+    severity: str,
+    cooldown_minutes: int,
+    last_routed: Any,
+    now: datetime | None = None,
+) -> bool:
+    """True when this kind paged recently enough to skip paging again.
+
+    ``critical`` always returns False — the cooldown floor mirrors the
+    log_only floors in ``_delivery_for`` / ``_deliver_fallback``. A finding
+    the operator must see is never withheld to keep a channel quiet.
+
+    Also False when no cooldown is configured (0), when the kind has never
+    been routed (``last_routed`` is None), or when ``last_routed`` is not a
+    datetime — an unreadable timestamp resolves toward routing."""
+    if _normalize_severity(severity) == "critical":
+        return False
+    if cooldown_minutes <= 0 or last_routed is None:
+        return False
+    if not isinstance(last_routed, datetime):
+        logger.warning(
+            "[findings_alert_router] non-datetime last_routed %r; routing",
+            last_routed,
+        )
+        return False
+    ref = now or datetime.now(timezone.utc)
+    if last_routed.tzinfo is None:  # defensive: a naive ts would raise on compare
+        last_routed = last_routed.replace(tzinfo=timezone.utc)
+    return last_routed > ref - timedelta(minutes=cooldown_minutes)
+
+
 def _normalize_severity(raw: str) -> str:
     """Map emit_finding severities to the Prometheus convention used by
     alert_events. ``warn`` -> ``warning`` so the dispatcher's severity
@@ -503,14 +627,36 @@ class FindingsAlertRouterJob:
 
         policies = await _load_policies(pool)
         routed = autofixed = filed = suppressed = errors = 0
+        cooled = 0
         max_id = watermark
         first_failed_id: int | None = None
+
+        # Only the kinds actually in this batch can be cooled, so bound the
+        # lookback by the largest cooldown among them — not across all
+        # policies. A batch of quiet kinds skips the query entirely.
+        batch_kinds = {_finding_kind(r) for r in rows}
+        max_cooldown = max(
+            (_cooldown_minutes_for(k, policies) for k in batch_kinds), default=0
+        )
+        last_routed = await _load_last_routed(pool, max_cooldown)
 
         for r in rows:
             kind = _finding_kind(r)
             severity = r.get("severity") or "info"
             delivery = _delivery_for(kind, severity, policies)
             fallback = (policies.get(kind) or {}).get("fallback", "route")
+
+            # Cooldown gates the PRIMARY paging decision only. auto_fix and
+            # github_issue are not pages (and carry their own dedup), and a
+            # fallback means the primary channel broke — all stay uncooled.
+            if delivery in ("route", "telegram", "discord") and _is_cooling(
+                severity=severity,
+                cooldown_minutes=_cooldown_minutes_for(kind, policies),
+                last_routed=last_routed.get(kind),
+            ):
+                cooled += 1
+                max_id = max(max_id, int(r["id"]))
+                continue
 
             try:
                 if delivery == "log_only":
@@ -520,6 +666,7 @@ class FindingsAlertRouterJob:
                         autofixed += 1
                     elif await _deliver_fallback(pool, r, kind, fallback):
                         routed += 1
+                        last_routed[kind] = datetime.now(timezone.utc)
                     else:
                         suppressed += 1
                 elif delivery == "github_issue":
@@ -528,6 +675,7 @@ class FindingsAlertRouterJob:
                         filed += 1
                     elif await _deliver_fallback(pool, r, kind, fallback):
                         routed += 1
+                        last_routed[kind] = datetime.now(timezone.utc)
                     else:
                         suppressed += 1
                 else:  # 'route' / 'telegram' / 'discord'
@@ -539,6 +687,12 @@ class FindingsAlertRouterJob:
                     )
                     await _insert_alert_event(pool, r, force_channel=force_channel)
                     routed += 1
+                    # Stamp in-memory so the REST of this batch is cooled too.
+                    # Without this a 50-finding backlog of one kind stampedes:
+                    # every row reads the same pre-batch timestamp and pages.
+                    # Mirrors what the next cycle will read back from
+                    # alert_events, so in-memory and persisted state agree.
+                    last_routed[kind] = datetime.now(timezone.utc)
             except Exception as exc:
                 errors += 1
                 if first_failed_id is None:
@@ -565,8 +719,21 @@ class FindingsAlertRouterJob:
             ok=errors == 0,
             detail=(
                 f"routed {routed}, auto-fixed {autofixed}, filed {filed}, "
-                f"suppressed {suppressed}, {errors} error(s); "
+                f"suppressed {suppressed}, cooled {cooled}, {errors} error(s); "
                 f"watermark {watermark} -> {max_id}"
             ),
             changes_made=routed + autofixed + filed,
+            # Surfaced via the scheduler's job_run audit rows (see
+            # docs/architecture/job-run-metrics.md) so "how much noise did the
+            # cooldown actually absorb" is a panel, not a log grep. Without a
+            # number here the feature is unfalsifiable — the operator cannot
+            # tell a working throttle from a kind that simply went quiet.
+            metrics={
+                "routed": routed,
+                "autofixed": autofixed,
+                "filed": filed,
+                "suppressed": suppressed,
+                "cooled": cooled,
+                "errors": errors,
+            },
         )
