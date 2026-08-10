@@ -90,6 +90,38 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # error, no gap, just one fewer series. An RTX 3090 was missing from
     # monitoring for 7+ days that way (2026-07-26) while still burning ~42W.
     "expected_gpu_count": "0",
+    # CPU package temperature via node_exporter's hwmon collector. Two rules,
+    # because peak temperature and BASELINE temperature answer different
+    # questions and only one of them is a fault signal.
+    #
+    # Measured on the operator rig (Ryzen 9 9950X3D, 245h of 1-min samples,
+    # 2026-08-09): median 62.4C, p95 74.8, p99 80.6, p99.9 92.1, max 95.8.
+    # Time >=90C was 0.19% (~2.7 min/day) in brief spikes at the leading edge
+    # of a CI burst. That is a modern CPU behaving CORRECTLY — it boosts until
+    # it reaches a limit, clamps there, and backs off. The flat ceiling in the
+    # data (nothing above 95.8 across 13 days) IS the chip regulating itself.
+    # So a peak-triggered alert on this hardware would page constantly while
+    # telling you nothing.
+    #
+    # cpu_temperature_celsius (88) is therefore paired with a LONG `for:` — it
+    # is an acute-failure detector (pump dead, fan dead, heatsink unseated),
+    # not a boost-spike detector. On the measured distribution above, no
+    # 10-minute window comes anywhere near sustaining 88C, so this ships armed
+    # without false-firing. CALIBRATION CAVEAT: 88 suits AMD desktop parts
+    # (Tjmax ~95). Intel desktop CPUs run to a ~100C Tjmax and can legitimately
+    # sit near 90 under sustained all-core load with a stock cooler — an Intel
+    # operator should raise this to ~95 rather than inherit an AMD number.
+    "cpu_temperature_celsius": "88",
+    # cpu_temperature_baseline_celsius (72) watches the 24h MEDIAN, which is
+    # the actual cooling-degradation signal: dust, pump failure, or dried paste
+    # raise the floor long before they change the (already-clamped) ceiling.
+    # 24h median on the operator rig is ~56C, so 72 is ~16C of headroom — loose
+    # enough that workload mix and summer ambient don't trip it, tight enough
+    # that a genuinely degrading cooler surfaces while peaks still look normal.
+    # Tighten toward 65 if you want an earlier signal and can tolerate seasonal
+    # noise. Both keys are inert on a host whose hwmon exposes no package
+    # sensor (no series -> no match), same natural gating as the UPS rules.
+    "cpu_temperature_baseline_celsius": "72",
     # Host disk space. Absolute GB thresholds (not percentage) because what
     # hurts is absolute headroom — Docker images, Postgres growth, model files.
     # min_total_gb filters out USB drives / EFI partitions that always hover
@@ -519,6 +551,91 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "wan model load may OOM. Unload idle models (the gpu_scheduler "
             "should), or reduce concurrent model residency. Tune via "
             "prometheus.threshold.gpu_vram_utilization_percent."
+        ),
+    },
+    # --- CPU hardware ---
+    # Counterpart to the GPU pair above: until now GPU temperature paged but
+    # CPU temperature had NO alert path at all, on either source (static
+    # infrastructure/prometheus/alerts/*.yml or these DB-rendered defaults).
+    # A dead pump or a dust-blocked tower was therefore a silent failure —
+    # discoverable only by hearing the fans or finding a wedged box.
+    #
+    # Sensor selection is by LABEL, never by chip: node_exporter's `chip` label
+    # is an enumeration path that can rotate across boots (the corsair-psu
+    # precedent — see docs/operations/wall-power-metering.md), so a literal
+    # `chip="pci0000:00_0000:00:18_3"` is a reboot away from silently matching
+    # nothing. Joining `node_hwmon_sensor_label` on (chip,sensor) and filtering
+    # on the LABEL survives re-enumeration. "Tctl" is AMD (k10temp), "Package
+    # id 0" is Intel (coretemp); matching both means one rule covers either
+    # host, and a host with neither yields no series and stays naturally inert.
+    # max() collapses a multi-socket box to a single alert.
+    #
+    # node_exporter is an independent exporter that does NOT restart with
+    # worker deploys, so per the restart-gap policy above these raw instant
+    # reads need no last_over_time() bridge.
+    "CpuTemperatureHigh": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "30s",
+        "expr": (
+            "max(node_hwmon_temp_celsius * on(chip,sensor) group_left(label) "
+            'node_hwmon_sensor_label{label=~"Tctl|Package id 0"}) > '
+            "{threshold.cpu_temperature_celsius}"
+        ),
+        # 10m, deliberately long. Brief excursions to Tjmax are how boost
+        # works; only a SUSTAINED hold indicates the cooler stopped removing
+        # heat. Short `for:` here would page on every CI burst.
+        "for": "10m",
+        "severity": "critical",
+        "category": "infra",
+        "summary": "CPU package temperature sustained near thermal limit",
+        "description": (
+            "CPU package temp held above "
+            "prometheus.threshold.cpu_temperature_celsius for 10m "
+            "({{ $value | humanize }}C). Brief boost spikes are normal and do "
+            "NOT trigger this — a sustained hold means heat is not being "
+            "removed. Check: pump running (listen/feel the loop or check "
+            "OpenLinkHub), case + tower fans spinning, heatsink seated, "
+            "intake not dust-clogged. Shed load meanwhile — the CI runners are "
+            "the biggest tunable draw (`ci_runner_cpus` in "
+            "~/.poindexter/bootstrap.toml), and `CI_RUNNER_MODE=off` pins CI "
+            "back to GitHub-hosted entirely."
+        ),
+    },
+    "CpuTemperatureBaselineDrift": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        # 5m: this reads a 24h-windowed statistic that moves slowly, so
+        # evaluating it every 30s would be pure waste.
+        "interval": "5m",
+        # Subquery at 5m resolution = 288 points per evaluation, cheap for a
+        # single series. quantile_over_time(0.5, ...) is the median — the
+        # FLOOR of the temperature distribution, which is what tracks cooling
+        # health. The ceiling is clamped by the CPU itself and so carries
+        # almost no information about cooler condition.
+        "expr": (
+            "max(quantile_over_time(0.5, (node_hwmon_temp_celsius "
+            "* on(chip,sensor) group_left(label) "
+            'node_hwmon_sensor_label{label=~"Tctl|Package id 0"})[24h:5m])) > '
+            "{threshold.cpu_temperature_baseline_celsius}"
+        ),
+        # 1h on top of a 24h window: the statistic cannot flap, so this only
+        # guards against a single anomalous evaluation.
+        "for": "1h",
+        "severity": "warning",
+        "category": "infra",
+        "summary": "CPU baseline temperature drifting up — cooling degrading",
+        "description": (
+            "24h MEDIAN CPU package temp is above "
+            "prometheus.threshold.cpu_temperature_baseline_celsius "
+            "({{ $value | humanize }}C). This is the slow-failure signal: "
+            "dust, a failing pump, or dried thermal paste raise the resting "
+            "floor months before they change peak temperature (peaks are "
+            "clamped by the CPU regardless). Not urgent — compare against the "
+            "Hardware & Power board's history, and if the floor really has "
+            "climbed at similar load, clean the intake and inspect the cooler. "
+            "A genuine sustained increase in workload also moves this; rule it "
+            "out before opening the case."
         ),
     },
     # --- Mains supply quality (Glad-Labs/poindexter#924) ---

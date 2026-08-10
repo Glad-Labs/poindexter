@@ -1458,3 +1458,109 @@ class TestSystemdUnitRules:
         out = await rb.build_current(pool)
         block = out.split("alert: PoindexterSystemdTimerStale")[1].split("alert:", 1)[0]
         assert "> 172800" in block
+
+
+class TestCpuTemperatureRules:
+    """CPU package thermal alerting (node_exporter hwmon).
+
+    Until these landed, GPU temperature paged but CPU temperature had no
+    alert path on EITHER source — a dead pump or a dust-blocked tower was a
+    silent failure. The pair is deliberately split by what each can detect:
+    ``CpuTemperatureHigh`` is acute (cooling stopped working *now*),
+    ``CpuTemperatureBaselineDrift`` is chronic (cooling is degrading).
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        for name in ("CpuTemperatureHigh", "CpuTemperatureBaselineDrift"):
+            assert name in rb.DEFAULT_RULES
+        assert rb.DEFAULT_THRESHOLDS["cpu_temperature_celsius"] == "88"
+        assert rb.DEFAULT_THRESHOLDS["cpu_temperature_baseline_celsius"] == "72"
+
+    def test_baseline_threshold_sits_below_the_acute_one(self):
+        """The drift rule is an EARLY signal — a baseline at or above the
+        acute line would mean the chronic alert never fires first, defeating
+        the point of having two."""
+        acute = float(rb.DEFAULT_THRESHOLDS["cpu_temperature_celsius"])
+        baseline = float(rb.DEFAULT_THRESHOLDS["cpu_temperature_baseline_celsius"])
+        assert baseline < acute
+
+    @pytest.mark.parametrize(
+        "name", ["CpuTemperatureHigh", "CpuTemperatureBaselineDrift"]
+    )
+    def test_sensor_selected_by_label_never_by_chip(self, name):
+        """THE load-bearing invariant. node_exporter's ``chip`` label is an
+        enumeration path that can rotate across boots (the corsair-psu
+        precedent), so pinning a literal chip is a reboot away from silently
+        matching nothing — a monitoring rule that cannot fire. Selection must
+        go through node_hwmon_sensor_label and filter on the LABEL.
+        """
+        expr = rb.DEFAULT_RULES[name]["expr"]
+        assert "node_hwmon_sensor_label" in expr
+        assert "on(chip,sensor) group_left(label)" in expr
+        assert 'label=~"Tctl|Package id 0"' in expr
+        # No hardcoded chip path (the enumerated form always contains "0000:").
+        assert 'chip="' not in expr
+
+    @pytest.mark.parametrize(
+        "name", ["CpuTemperatureHigh", "CpuTemperatureBaselineDrift"]
+    )
+    def test_covers_amd_and_intel_package_sensors(self, name):
+        """Tctl is k10temp (AMD), "Package id 0" is coretemp (Intel). One rule
+        covers either host; a host with neither yields no series and the rule
+        is naturally inert rather than firing on no-data."""
+        expr = rb.DEFAULT_RULES[name]["expr"]
+        assert "Tctl" in expr
+        assert "Package id 0" in expr
+
+    def test_acute_rule_rides_out_boost_spikes(self):
+        """Brief excursions to Tjmax are how modern boost works — measured at
+        0.19% of the time (~2.7 min/day) on the operator rig. A short `for:`
+        would page on every CI burst, so the long window IS the signal."""
+        rule = rb.DEFAULT_RULES["CpuTemperatureHigh"]
+        assert rule["for"] == "10m"
+        assert rule["severity"] == "critical"
+
+    def test_drift_rule_watches_the_median_not_the_peak(self):
+        """Peaks are clamped by the CPU itself and carry almost no information
+        about cooler health; the FLOOR is what rises as cooling degrades. Using
+        max_over_time/avg_over_time here would silently measure the wrong thing.
+        """
+        expr = rb.DEFAULT_RULES["CpuTemperatureBaselineDrift"]["expr"]
+        assert "quantile_over_time(0.5," in expr
+        assert "[24h:5m]" in expr
+        assert "max_over_time" not in expr
+        assert "avg_over_time" not in expr
+
+    def test_severities_route_acute_to_telegram_chronic_to_discord(self):
+        assert rb.DEFAULT_RULES["CpuTemperatureHigh"]["severity"] == "critical"
+        assert (
+            rb.DEFAULT_RULES["CpuTemperatureBaselineDrift"]["severity"] == "warning"
+        )
+
+    def test_drift_rule_is_evaluated_slowly(self):
+        """A 24h-windowed statistic cannot move meaningfully in 30s; evaluating
+        the subquery that often is pure waste."""
+        assert rb.DEFAULT_RULES["CpuTemperatureBaselineDrift"]["interval"] == "5m"
+
+    @pytest.mark.asyncio
+    async def test_default_render_is_armed_and_fully_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        for name, expected in (
+            ("CpuTemperatureHigh", "> 88"),
+            ("CpuTemperatureBaselineDrift", "> 72"),
+        ):
+            section = out.split(f"alert: {name}")[1].split("alert:", 1)[0]
+            assert "{threshold." not in section
+            assert expected in section
+
+    @pytest.mark.asyncio
+    async def test_intel_operator_can_raise_the_acute_line(self):
+        """Intel desktop parts run to a ~100C Tjmax and can legitimately sit
+        near 90 under sustained all-core load, so 88 must be tunable rather
+        than baked in."""
+        pool = _FakePool([
+            {"key": "prometheus.threshold.cpu_temperature_celsius", "value": "95"},
+        ])
+        out = await rb.build_current(pool)
+        block = out.split("alert: CpuTemperatureHigh")[1].split("alert:", 1)[0]
+        assert "> 95" in block
