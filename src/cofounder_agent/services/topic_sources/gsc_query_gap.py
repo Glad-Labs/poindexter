@@ -53,6 +53,7 @@ from urllib.parse import quote_plus
 
 from plugins.topic_source import DiscoveredTopic
 from services.topic_sources._filters import (
+    brand_tokens_from_config,
     classify_category,
     is_junk_search_query,
     permutation_clusters,
@@ -65,30 +66,6 @@ logger = logging.getLogger(__name__)
 # could occupy every slot and leave the run empty after filtering.
 _OVERFETCH = 5
 _OVERFETCH_CAP = 200
-
-
-def _brand_tokens(site_config: Any) -> tuple[str, ...]:
-    """Brand phrases/domains whose queries are navigation, not topic demand.
-
-    Full phrases and domains only — a bare token ("labs") would reject real
-    queries. Derived from existing settings rather than a new key: the operator
-    already told us the brand once.
-    """
-    if site_config is None:
-        return ()
-    out: list[str] = []
-    for key in ("site_name", "company_name", "site_domain"):
-        raw = str(getattr(site_config, "get", lambda *_: "")(key, "") or "").strip().lower()
-        if len(raw) < 4:  # too short to match safely
-            continue
-        out.append(raw)
-        # "gladlabs.io" -> also match the bare second-level label.
-        if "." in raw:
-            label = raw.split(".")[0]
-            if len(label) >= 4:
-                out.append(label)
-    return tuple(dict.fromkeys(out))
-
 
 _GAP_QUERY_SQL = """
 SELECT
@@ -142,7 +119,7 @@ class GscQueryGapSource:
                 _GAP_QUERY_SQL, window_days, min_impressions, min_position, fetch_limit
             )
 
-        brand = _brand_tokens(config.get("_site_config"))
+        brand = brand_tokens_from_config(config.get("_site_config"))
         candidates = [(r["query"] or "").strip() for r in rows]
         clustered = permutation_clusters(candidates, min_variants=min_variants)
         dropped_junk = 0

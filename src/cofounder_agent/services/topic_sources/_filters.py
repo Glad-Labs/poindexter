@@ -9,6 +9,7 @@ can depend on a narrow helper module rather than the full dispatcher.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 # Category-specific search queries for DuckDuckGo. This is the home now
 # (the planned end-state noted when the re-export shim was added); the
@@ -151,6 +152,33 @@ def is_junk_search_query(query: str, *, brand_tokens: tuple[str, ...] = ()) -> b
         return True
     lowered = q.lower()
     return any(t and t in lowered for t in brand_tokens)
+
+
+def brand_tokens_from_config(site_config: Any) -> tuple[str, ...]:
+    """Brand phrases/domains whose queries are navigation, not topic demand.
+
+    Shared by every query-mining source: two copies of this would drift, and a
+    drifted duplicate is what let dev_diary publish for three months without a
+    meta description. Derived from settings the operator already set rather than
+    a new key.
+
+    Full phrases and domains only. A bare token ("labs") as a substring match
+    would reject legitimate queries, so anything under 4 chars is skipped.
+    """
+    getter = getattr(site_config, "get", None)
+    if getter is None:
+        return ()
+    out: list[str] = []
+    for key in ("site_name", "company_name", "site_domain"):
+        raw = str(getter(key, "") or "").strip().lower()
+        if len(raw) < 4:
+            continue
+        out.append(raw)
+        if "." in raw:  # "gladlabs.io" -> also match the bare second-level label
+            label = raw.split(".")[0]
+            if len(label) >= 4:
+                out.append(label)
+    return tuple(dict.fromkeys(out))
 
 
 def permutation_clusters(queries: list[str], *, min_variants: int) -> set[str]:

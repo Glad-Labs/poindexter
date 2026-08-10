@@ -1004,6 +1004,17 @@ def get_core_samples() -> dict[str, list[Any]]:
         # queries as new topic candidates (poindexter#764). Ships inert:
         # gated on app_settings.seo.query_ingestion.enabled (default false).
         ("topic_sources", "services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
+        # SearchAutocompleteSource — the only source that measures search DEMAND
+        # rather than what's being published/discussed. gsc_query_gap is
+        # demand-driven but circular (it only sees queries the site already
+        # ranks for); autocomplete can discover uncovered need. Ships inert:
+        # plugin.topic_source.search_autocomplete.enabled defaults false because
+        # it calls a third-party endpoint unauthenticated.
+        (
+            "topic_sources",
+            "services.topic_sources.search_autocomplete",
+            "SearchAutocompleteSource",
+        ),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # image-gen generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),

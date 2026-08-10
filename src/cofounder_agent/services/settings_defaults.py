@@ -3200,6 +3200,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'seo.refresh.auto_publish_after_clean_runs': '5',
     # Phase-2 / Task-8 forward-decls (seeded for completeness):
     'seo.query_ingestion.enabled': 'false',
+    # SearchAutocompleteSource — the only topic source that measures search
+    # DEMAND rather than what's being published or discussed. Seeded here with
+    # enabled=false because that is the ONLY way to ship a topic source inert:
+    # topic_sources/runner.py defaults a MISSING plugin row to enabled=True, so
+    # a Python-side default would silently switch it on. It calls a third-party
+    # autocomplete endpoint unauthenticated, so an install should opt in.
+    # `seeds` is intentionally empty — guessing an operator's niche would be
+    # worse than doing nothing, and seed_from_gsc_clicks grows the list from
+    # queries that already earn clicks once the GSC tap has data.
+    'plugin.topic_source.search_autocomplete': (
+        '{"enabled": false, "config": {"seeds": [], "seed_from_gsc_clicks": true}}'
+    ),
     'seo.refresh.outcome_measure_after_days': '14',
     # Phase 2b (#763) — cap on refresh tasks auto-enqueued per run. Conservative:
     # each refresh still needs operator sign-off at seo_refresh_gate. The job
