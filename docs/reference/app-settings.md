@@ -865,7 +865,7 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
 | `plugin.job.rollup_post_performance` | `{"enabled": true, "interval_seconds":...` |  | Config for job rollup_post_performance — tune cadence via config.schedule |
-| `plugin.job.run_dev_diary_post` | `{"config": {"schedule": "0 9 * * *"},...` |  | Config for job run_dev_diary_post — tune cadence via config.schedule |
+| `plugin.job.run_dev_diary_post` | `{"config": {"schedule": "0 9 * * 1", ...` |  | Config for job run_dev_diary_post — weekly (Mon 09:00 operator-local). hours_lookback MUST match the schedule interva... |
 | `plugin.job.run_niche_topic_sweep` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_niche_topic_sweep — tune cadence via config.schedule |
 | `plugin.job.run_retention` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_retention — tune cadence via config.schedule |
 | `plugin.job.run_taps` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_taps — tune cadence via config.schedule |
