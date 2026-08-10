@@ -481,6 +481,42 @@ _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
 )
 
 
+async def _live_free_vram_gb(site_config: Any) -> float | None:
+    """Device-level free VRAM (GB) read LIVE from the wan server, or None.
+
+    The Prometheus path (``GPURegistry.free_gb``) is authoritative for slow
+    signals but lags ~40s worst case — 10s exporter refresh plus a 30s scrape
+    — and this decision happens milliseconds after a reclaim frees ~25GB.
+    Measured 2026-08-09: Prometheus reported 29342 MiB used while nvidia-smi
+    showed 16955, so the plate gate skipped every hero as "no room" on a card
+    that had just been cleared for it.
+
+    wan runs ON the card and answers from ``torch.cuda.mem_get_info``, so its
+    ``/health`` is exact and instant. None means "ask Prometheus instead".
+    """
+    try:
+        import httpx
+
+        from services.video_providers.wan2_1 import _resolve_server_url
+
+        url = _resolve_server_url({}, site_config).rstrip("/") + "/health"
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        payload = resp.json()
+        free_mb = payload.get("device_free_mb")
+        if free_mb is None:
+            return None  # older wan build — fall back to Prometheus
+        # wan's own pool is reusable BY wan, so add it back.
+        own_mb = float(payload.get("vram_used_mb") or 0.0)
+        return (float(free_mb) + own_mb) / 1024.0
+    except Exception:  # noqa: BLE001
+        # silent-ok: this is the preferred source, not the only one; the
+        # Prometheus fallback below still applies.
+        return None
+
+
 async def _wan_resident_gb(site_config: Any) -> float:
     """VRAM wan currently holds, in GB — 0.0 when unknown or unloaded.
 
@@ -533,6 +569,28 @@ async def _fit_hero_dims_to_free_vram(
     # single sample taken 3s later still reports the PRE-reclaim figure. Take
     # the max of a few samples across one scrape interval so a stale low
     # reading cannot decide against a card that was just freed.
+    # Prefer the live device reading; Prometheus is the fallback.
+    live = await _live_free_vram_gb(site_config)
+    if live is not None:
+        free_gb = live
+        landscape = width >= height
+        for lw, lh, needs_gb in _HERO_PLATE_LADDER:
+            if free_gb >= needs_gb:
+                new_w, new_h = (lw, lh) if landscape else (lh, lw)
+                if new_w * new_h >= width * height:
+                    return width, height
+                logger.info(
+                    "[SHOT_LIST] hero plate %dx%d -> %dx%d (%.1fGB free live, "
+                    "needs %.0fGB)", width, height, new_w, new_h,
+                    free_gb, needs_gb,
+                )
+                return new_w, new_h
+        logger.warning(
+            "[SHOT_LIST] only %.1fGB free (live) — NOT animating this hero; "
+            "using its Ken Burns still.", free_gb,
+        )
+        return None
+
     try:
         from services.gpu_registry import GPURegistry
 

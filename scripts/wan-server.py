@@ -558,6 +558,15 @@ async def health() -> dict[str, Any]:
             torch.cuda.memory_allocated(0) // 1024 // 1024
             if gpu_ok else 0
         ),
+        # DEVICE-level free VRAM, straight from the driver — not this
+        # process's view. The renderer sizes its hero plate from this because
+        # the Prometheus path it used before lags ~40s worst case (10s
+        # exporter + 30s scrape): it reported 29342 MiB used on a card
+        # nvidia-smi showed at 16955, so every hero was skipped as "no room"
+        # right after a reclaim had freed 25GB (poindexter#992 tail).
+        "device_free_mb": (
+            torch.cuda.mem_get_info(0)[0] // 1024 // 1024 if gpu_ok else 0
+        ),
         "gpu_available": gpu_ok,
         "idle_timeout_s": IDLE_TIMEOUT_S,
     }

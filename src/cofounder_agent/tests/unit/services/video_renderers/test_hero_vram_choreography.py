@@ -467,3 +467,56 @@ def test_reclaim_precedes_the_plate_probe_in_animate_hero():
     assert src.index("_clear_image_gen_for_hero") < src.index(
         "_fit_hero_dims_to_free_vram",
     )
+
+
+# ---------------------------------------------------------------------------
+# Live device VRAM beats a lagging scrape (2026-08-09)
+#
+# Prometheus lags ~40s worst case (10s exporter + 30s scrape). This decision
+# happens milliseconds after a reclaim frees ~25GB, so the scrape reported
+# 29342 MiB used on a card nvidia-smi showed at 16955 — and every hero was
+# skipped as "no room" on a card that had just been cleared for it. wan runs
+# ON the card and answers from torch.cuda.mem_get_info.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_live_reading_is_preferred_over_stale_prometheus():
+    from services.video_renderers import shot_list_renderer as slr
+
+    reg = MagicMock()
+    reg.free_gb = AsyncMock(return_value=1.0)  # stale scrape says "no room"
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+         patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=28.0)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+    reg.free_gb.assert_not_awaited()  # never consulted when live works
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_falls_back_to_prometheus_when_live_is_unavailable():
+    """An older wan build (no device_free_mb) or an unreachable server must
+    not disable the gate — the scrape path still applies."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    reg = MagicMock()
+    reg.free_gb = AsyncMock(return_value=30.0)
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: reg), \
+         patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=None)), \
+         patch.object(slr, "_wan_resident_gb", AsyncMock(return_value=0.0)), \
+         patch.object(slr.asyncio, "sleep", AsyncMock()):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) == (832, 480)
+
+    reg.free_gb.assert_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_live_reading_still_declines_a_genuinely_full_card():
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: MagicMock()), \
+         patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=9.0)):
+        assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
