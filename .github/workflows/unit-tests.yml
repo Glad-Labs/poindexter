@@ -7,7 +7,10 @@
 #
 # Splits unit tests by directory (matches the Gitea split) so cross-directory
 # singleton pollution (ServiceContainer, site_config, etc.) doesn't make
-# tests flaky. Services dir uses --forked for the same reason.
+# tests flaky. The services dir additionally runs under xdist
+# (`-n 4 --dist loadfile`) — it replaced the old per-test `--forked` isolation
+# in #1509; see the long rationale on that step for why the worker count is
+# fixed at 4 and what now covers what `--forked` did.
 #
 # The job ALWAYS triggers (branch protection requires this status check —
 # a `paths:` filter that prevents the workflow from running would block

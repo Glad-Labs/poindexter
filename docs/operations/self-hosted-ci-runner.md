@@ -220,17 +220,57 @@ workflow that keeps a required check unblocked is worse noise than the ghosts.
 
 ## Tuning
 
-All in `docker-compose.local.yml` / `.env`. The budget is the **host** —
-60 GB RAM / 32 threads, with the full Docker stack resident. (Pre-Pop!_OS this
-section warned that the real cap was a 24 GB WSL2 VM pinned by `.wslconfig`;
-that VM is gone, so size against the host directly.)
+Knobs are declared in `docker-compose.local.yml`; you **set** them in
+`~/.poindexter/bootstrap.toml`, not a `.env` — the operator stack has no `.env`
+at all (`start-stack.sh`: "launch the Poindexter Docker stack without .env
+files"). Same mechanism as the App ID in step 2 above: the script matches
+`^\s*([a-z_]+)\s*=` and exports each key UPPER-CASED, so a lowercase
+`ci_runner_cpus` becomes `CI_RUNNER_CPUS` for compose to substitute. A key set
+only in the shell survives until the next reconcile and no further.
+
+```bash
+# Halve each runner's CPU cap, durably:
+cat >> ~/.poindexter/bootstrap.toml <<'TOML'
+ci_runner_cpus = "4"
+TOML
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/start-stack.sh \
+  up -d --force-recreate --no-deps github-runner-1 github-runner-2
+```
+
+Invoke `start-stack.sh` by absolute path from anywhere — it `cd`s to its own
+`PROJECT_DIR` and `compose_project_name` is pinned, so there is no parallel-stack
+fork. It must be the **deploy** checkout (`~/.poindexter/deploy/glad-labs-stack`),
+not your dev tree or a worktree. Two costs to expect: a recreate **cancels any
+in-flight self-hosted job** (a red check that is pure infra — re-run it with
+`gh run rerun <id> --failed`), and each recreate leaves an `offline glads-pc-*`
+registration behind, which the healthcheck prunes.
+
+The budget is the **host** — 60 GB RAM / 32 threads, with the full Docker stack
+resident. (Pre-Pop!_OS this section warned that the real cap was a 24 GB WSL2 VM
+pinned by `.wslconfig`; that VM is gone, so size against the host directly.)
 
 - **Resource caps:** `CI_RUNNER_CPUS` (default 8) and `CI_RUNNER_MEM` (default
-  **8g**), applied to **each** runner. `unit-tests` is serial (`pytest --forked`
-  runs one subprocess at a time, no xdist), so real peak is only a few GB; 8g is
-  generous. Two runners is ~16 GB worst case against ~33 GB free, which leaves
-  headroom for an image-gen/Wan spike. Lower `CI_RUNNER_MEM` if CI and a render
-  ever pressure the host together.
+  **8g**), applied to **each** runner. Memory: the services step runs xdist
+  (`-n 4 --dist loadfile`), so peak is ~4 worker processes each importing the
+  heavy tree (llama-index / langgraph / litellm), not the single subprocess the
+  retired `--forked` mode used — 8g is sized for that and is why the worker
+  count is fixed at 4 rather than `-n auto`. Raise `CI_RUNNER_MEM` and
+  `-n` together or neither; workers get OOM-reaped otherwise
+  (`node down: Not properly terminated` → pytest INTERNALERROR).
+- **CPU, and why the default may be too high for you:** the cap is per runner,
+  so two runners at the default commit **16 of 32 threads** whenever both are
+  busy — on a box that is also running the production stack, Ollama and the
+  image/video servers. The operator rig runs `ci_runner_cpus = "4"` for exactly
+  that reason (2026-08-09): at 8 the pair pinned sustained all-core boost and
+  pushed peak CPU package temp to ~96°C. Halving is close to free but not
+  actually free — measured across real `unit-tests` runs (excluding the
+  path-filtered sub-minute skips), the median went **3.3 min → 4.1 min** and the
+  max **8.8 → 7.8**, against a `timeout-minutes: 25` budget. Roughly a quarter
+  slower on the median, with ~6x headroom left; the step asks for 4 cores at
+  `-n 4`, so it never wanted all 8. (Post-change sample is small, n=6.) Check
+  your own headroom against that timeout before going lower.
+  `CpuTemperatureHigh` / `CpuTemperatureBaselineDrift` (DB-rendered Prometheus
+  rules) alert if cooling ever stops keeping up.
 - **Concurrency / a third runner:** two cover a PR push plus the `main` push it
   triggers. If you routinely see jobs queue behind both, copy the
   `github-runner-2` block — new `container_name`, a new `ci-runner-N-cache`
