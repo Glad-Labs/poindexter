@@ -25,6 +25,20 @@ from unittest.mock import MagicMock
 import pytest
 from click.testing import CliRunner
 
+import poindexter.cli.app as _app_mod
+import poindexter.cli.integrations as _integrations_mod
+
+# Pristine state, captured at IMPORT time — collection, before any test in any
+# file has run. ``TestModuleIsNeverLeftReloaded`` asserts against these.
+# Capturing inside a test would be worthless: by then a reload may already have
+# replaced them, and the guard would compare a leaked object to itself.
+_ORIGINAL_NAMESPACE = dict(_integrations_mod.__dict__)
+_ORIGINAL_GROUP = _integrations_mod.integrations_group
+# ``poindexter/cli/app.py`` does ``from .integrations import integrations_group``
+# at import time and registers THAT object as the ``integrations`` subcommand.
+# It is the live consumer this module's identity has to keep agreeing with.
+_ORIGINAL_APP_REGISTERED = _app_mod.main.commands["integrations"]
+
 # ---------------------------------------------------------------------------
 # fixtures
 # ---------------------------------------------------------------------------
@@ -35,14 +49,41 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _restore_integrations_module():
+    """Keep any module mutation from escaping this file.
+
+    Nothing here reloads today (see ``integrations_module``), so on a normal run
+    this fixture restores a namespace nobody touched. It earns its place by
+    closing the gap the guard class cannot: the guards run at a fixed point in
+    the file, so a mutation introduced in a test defined *after* them — or one
+    made without ``monkeypatch`` — would otherwise sail straight out.
+
+    The restoration has to be a hard swap. ``importlib.reload`` re-executes the
+    module in its EXISTING ``__dict__``, so re-reloading to "clean up" mints a
+    third set of objects, equal to neither. Only putting the originals back
+    works. Same pattern as ``test_litellm_provider_sdk_guard.py`` (stack#3155)
+    and ``test_oauth_helper.py`` (stack#3164).
+    """
+    snapshot = dict(_integrations_mod.__dict__)
+    try:
+        yield
+    finally:
+        _integrations_mod.__dict__.clear()
+        _integrations_mod.__dict__.update(snapshot)
+
+
 @pytest.fixture
 def integrations_module():
-    """Import the CLI module fresh per test to dodge mock leakage."""
-    import importlib
+    """The CLI module under test.
 
-    import poindexter.cli.integrations as _mod
-
-    return importlib.reload(_mod)
+    This used to ``importlib.reload`` the module on every test "to dodge mock
+    leakage". It never needed to: every mock in this file goes through
+    ``monkeypatch.setattr``, which restores at teardown on its own. The reload
+    bought no isolation and cost real damage — see
+    ``TestModuleIsNeverLeftReloaded`` for what it broke.
+    """
+    return _integrations_mod
 
 
 @pytest.fixture
@@ -628,3 +669,92 @@ class TestForceEscapeHatch:
         ready, error, _ = await adapter._check_gating()
         assert ready is False
         assert "disabled" in (error or "")
+
+
+# ---------------------------------------------------------------------------
+# the module must never be left reloaded (stack#3155 / stack#3164 hazard class)
+# ---------------------------------------------------------------------------
+
+
+class TestModuleIsNeverLeftReloaded:
+    """Regression guard for the per-test ``importlib.reload`` this file used to do.
+
+    ``importlib.reload`` re-executes a module in its EXISTING ``__dict__``, so
+    every class and function it defines is replaced by a new object with the
+    same name. Anything that bound one of those names earlier keeps the old
+    object, and the two are no longer interchangeable — ``isinstance`` is False
+    across them, and so is ``is``.
+
+    Here that had a live consumer, not just a theoretical one: ``cli/app.py``
+    does ``from .integrations import integrations_group`` at import time and
+    registers that object as the ``integrations`` subcommand. Reloading left the
+    CLI operators actually run holding a *different* group object than
+    ``poindexter.cli.integrations`` exposed — verified by probe before the fix.
+
+    The guarantee is *between* tests, not within one, so these assert against
+    ``_ORIGINAL_*`` captured at this file's import time (collection, before any
+    test in any file has run).
+
+    **Order matters here — do not sort these methods.** ``test_a_reload_...``
+    deliberately damages the module and runs FIRST; the pristine checks that
+    follow are therefore verifying that the autouse fixture actually put it
+    back, rather than passing over a namespace nobody touched. Delete the
+    fixture and the three checks below fail. Definition order is what pytest
+    runs, and CI's ``--dist loadfile`` keeps a whole file on one xdist worker,
+    so this holds in CI too.
+    """
+
+    def test_a_reload_would_break_identity(self):
+        """Proves the guards below are not theatre, and documents the damage.
+
+        The only deliberate reload left in this file. It shows exactly what the
+        removed fixture was doing on every single test — including splitting the
+        CLI from its own module.
+        """
+        import importlib
+
+        reloaded = importlib.reload(_integrations_mod)
+
+        assert reloaded.integrations_group is not _ORIGINAL_GROUP
+        assert reloaded._load_client_config is not _ORIGINAL_NAMESPACE["_load_client_config"]
+        # The damage that actually reaches an operator surface.
+        assert _app_mod.main.commands["integrations"] is not reloaded.integrations_group
+
+    def test_group_identity_is_pristine_at_test_start(self):
+        assert _integrations_mod.integrations_group is _ORIGINAL_GROUP, (
+            "integrations_group is not the object it was at import time — "
+            "something reloaded poindexter.cli.integrations without restoring "
+            "it. If a reload is genuinely needed, snapshot mod.__dict__ and "
+            "hard-restore it; see test_oauth_helper.py (stack#3164)."
+        )
+
+    def test_app_registration_still_matches_the_module(self):
+        """The operator-facing CLI and the module must not drift apart.
+
+        This is the assertion with teeth: it fails the moment a reload leaves
+        ``poindexter.cli.app`` wired to a group object the module no longer
+        exposes.
+        """
+        assert _app_mod.main.commands["integrations"] is _integrations_mod.integrations_group, (
+            "poindexter.cli.app has a different integrations group object than "
+            "poindexter.cli.integrations now exposes — a leaked reload split "
+            "the CLI from its own module."
+        )
+        assert _ORIGINAL_APP_REGISTERED is _ORIGINAL_GROUP
+
+    def test_whole_namespace_is_pristine_at_test_start(self):
+        """Catch-all, so symbols added later inherit the guard for free."""
+        current = _integrations_mod.__dict__
+        assert set(current) == set(_ORIGINAL_NAMESPACE), (
+            "module namespace gained/lost keys since import: "
+            f"added={sorted(set(current) - set(_ORIGINAL_NAMESPACE))} "
+            f"removed={sorted(set(_ORIGINAL_NAMESPACE) - set(current))}"
+        )
+        rebound = sorted(
+            name for name, obj in _ORIGINAL_NAMESPACE.items()
+            if current[name] is not obj
+        )
+        assert not rebound, (
+            f"module attributes were rebound since import: {rebound}. A test "
+            "mutated or reloaded poindexter.cli.integrations without restoring it."
+        )
