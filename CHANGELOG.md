@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+## [0.121.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.120.0...v0.121.0) (2026-08-12)
+
+
+### Features
+
+* **alerts:** CPU temperature had no alert path — add acute + drift rules ([#3170](https://github.com/Glad-Labs/glad-labs-stack/issues/3170)) ([dc37e75](https://github.com/Glad-Labs/glad-labs-stack/commit/dc37e755316becf10ed5f517060cb9c52eb3cfab))
+* **alerts:** watch host systemd units, closing the probe_scheduled_tasks gap ([#3150](https://github.com/Glad-Labs/glad-labs-stack/issues/3150)) ([d1c3d1b](https://github.com/Glad-Labs/glad-labs-stack/commit/d1c3d1bbc188317b966efcdfbceec5d909dd919f))
+* **findings:** honor per-kind cooldown_minutes — 37 seeded keys, zero readers ([#3169](https://github.com/Glad-Labs/glad-labs-stack/issues/3169)) ([4ffd076](https://github.com/Glad-Labs/glad-labs-stack/commit/4ffd076a448e9cf45e99be0fd3869e0efb66e32c))
+* **images:** compose on-brand heroes from the brand tokens, not diffusion ([#3151](https://github.com/Glad-Labs/glad-labs-stack/issues/3151)) ([4001566](https://github.com/Glad-Labs/glad-labs-stack/commit/40015668ebd404a1f00a329cc452be390ccc81e1))
+* **ops:** game mode — park the GPU for the operator, and make it stick ([#3190](https://github.com/Glad-Labs/glad-labs-stack/issues/3190)) ([9c1b254](https://github.com/Glad-Labs/glad-labs-stack/commit/9c1b2546cbcab973b59751be85372f952102dc8c))
+* **qa:** surface what the advisory rails said and the gate ignored ([#3189](https://github.com/Glad-Labs/glad-labs-stack/issues/3189)) ([6d97d34](https://github.com/Glad-Labs/glad-labs-stack/commit/6d97d34d743476d2d4d6a90304b17c7b50c83afe))
+* **seo:** a topic source that measures search demand, not chatter ([#3159](https://github.com/Glad-Labs/glad-labs-stack/issues/3159)) ([49d3e67](https://github.com/Glad-Labs/glad-labs-stack/commit/49d3e6701d01ed295b7fee4c89a851bd7a3e98d6))
+
+
+### Bug Fixes
+
+* **ci-runner:** default CI_RUNNER_CPUS to 4 — the cap is per runner, and there are two ([#3195](https://github.com/Glad-Labs/glad-labs-stack/issues/3195)) ([4ee768b](https://github.com/Glad-Labs/glad-labs-stack/commit/4ee768bb2b64bf24f06a5e116a356291fa8c5274))
+* **ci:** stop the ratchet lints scanning mcp-server/.venv ([#3153](https://github.com/Glad-Labs/glad-labs-stack/issues/3153)) ([4b5b209](https://github.com/Glad-Labs/glad-labs-stack/commit/4b5b2094504cee12394745b140d2f3e54c04ce77))
+* **content:** strip every unresolved image marker, not just the bare form ([#3149](https://github.com/Glad-Labs/glad-labs-stack/issues/3149)) ([5b5c15b](https://github.com/Glad-Labs/glad-labs-stack/commit/5b5c15bbd0f3cbb566febfdd5ce556720c7edffd))
+* **docs:** refuse to render the public app-settings doc from an operator DB ([#3147](https://github.com/Glad-Labs/glad-labs-stack/issues/3147)) ([de26e65](https://github.com/Glad-Labs/glad-labs-stack/commit/de26e655d1e67e3cd651a0acb7eec6a8ccefd243))
+* **game-mode:** host CLI could not reach Ollama, and reported it as success ([#3198](https://github.com/Glad-Labs/glad-labs-stack/issues/3198)) ([3c99c3b](https://github.com/Glad-Labs/glad-labs-stack/commit/3c99c3bbf26a6246a76b0f3370db4e3ae299a829))
+* **media:** count wan's own resident pool when sizing the hero plate ([#3181](https://github.com/Glad-Labs/glad-labs-stack/issues/3181)) ([8c4176c](https://github.com/Glad-Labs/glad-labs-stack/commit/8c4176c254d061d476b8d8b047bb2316f5ea20d1))
+* **media:** quality floor for hero plates, and no short lane from a junk script ([#3165](https://github.com/Glad-Labs/glad-labs-stack/issues/3165)) ([37ef733](https://github.com/Glad-Labs/glad-labs-stack/commit/37ef7331d04e2156fa12a1ed6b4220b104632625))
+* **media:** reclaim before measuring, and ride out the Prometheus scrape ([#3182](https://github.com/Glad-Labs/glad-labs-stack/issues/3182)) ([24df0ba](https://github.com/Glad-Labs/glad-labs-stack/commit/24df0ba698deab894e31cf57c9e44272543c1119))
+* **media:** size the hero plate from LIVE device VRAM, not a lagging scrape ([#3183](https://github.com/Glad-Labs/glad-labs-stack/issues/3183)) ([5a745bc](https://github.com/Glad-Labs/glad-labs-stack/commit/5a745bcfe1925049a21a2195df1f01e2f7692884))
+* **ops:** stop test-health dying silently, and stop it from "fixing" pollution ([#3154](https://github.com/Glad-Labs/glad-labs-stack/issues/3154)) ([d370ff8](https://github.com/Glad-Labs/glad-labs-stack/commit/d370ff866e8c455db52b90329cfd740c9b768f44))
+* **pipeline:** dev_diary composes canonical's atoms; cadence to weekly ([#3156](https://github.com/Glad-Labs/glad-labs-stack/issues/3156)) ([af81c69](https://github.com/Glad-Labs/glad-labs-stack/commit/af81c69a0984b217af8593b133fb50297bc70cc5))
+* **podcast:** the dead air between sentences was the chunk seam, not the script ([#3199](https://github.com/Glad-Labs/glad-labs-stack/issues/3199)) ([ed68aef](https://github.com/Glad-Labs/glad-labs-stack/commit/ed68aefa56d4d43a922e6021723170009537276c))
+* **podcast:** the intro sting the snapshot forgot, and the title said twice ([#3171](https://github.com/Glad-Labs/glad-labs-stack/issues/3171)) ([057a64a](https://github.com/Glad-Labs/glad-labs-stack/commit/057a64ab666d222d9b4262a4443077d4199735dc))
+* **podcast:** the regenerate button was shipping episodes without music ([#3192](https://github.com/Glad-Labs/glad-labs-stack/issues/3192)) ([47ad49b](https://github.com/Glad-Labs/glad-labs-stack/commit/47ad49beee65e4f0599e7f6539cdf11c54832c95))
+* **release:** bump mcp-server uv.lock versions with their pyproject ([#3152](https://github.com/Glad-Labs/glad-labs-stack/issues/3152)) ([0918404](https://github.com/Glad-Labs/glad-labs-stack/commit/0918404628282a11eda9852f9602202fbd0f0704))
+* **scheduling:** read operator-typed publish times in operator_timezone ([#3148](https://github.com/Glad-Labs/glad-labs-stack/issues/3148)) ([a0cb15a](https://github.com/Glad-Labs/glad-labs-stack/commit/a0cb15a42c67503344c88a2810554fbb0fc9a477))
+* **seo:** stop the topic source mining scraper queries as reader demand ([#3157](https://github.com/Glad-Labs/glad-labs-stack/issues/3157)) ([60fc1d3](https://github.com/Glad-Labs/glad-labs-stack/commit/60fc1d34f0a718bc3b4f71f54c7cdb2c21b7e0ae))
+* **seo:** the missing-SEO sweepers skipped the only posts that needed them ([#3162](https://github.com/Glad-Labs/glad-labs-stack/issues/3162)) ([89f1d5e](https://github.com/Glad-Labs/glad-labs-stack/commit/89f1d5e752bc3950fe791163c5eb7d63c224068d))
+* **tests:** restore the provider module after reload — suite is green again ([#3155](https://github.com/Glad-Labs/glad-labs-stack/issues/3155)) ([19a4a7f](https://github.com/Glad-Labs/glad-labs-stack/commit/19a4a7f029fd7502743b0774874b5bb24847e2fb))
+* **tests:** unpin expired date fixtures and stop unit tests reading the live GPU ([#3193](https://github.com/Glad-Labs/glad-labs-stack/issues/3193)) ([5d76979](https://github.com/Glad-Labs/glad-labs-stack/commit/5d7697909f378bff9b37c8b1e4a34db4626d3b87))
+
 ## [0.120.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.119.0...v0.120.0) (2026-08-09)
 
 
