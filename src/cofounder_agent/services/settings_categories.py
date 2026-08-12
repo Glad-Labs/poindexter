@@ -302,6 +302,9 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("infrastructure", "infrastructure"),
     ("system", "infrastructure"),
     ("gpu", "infrastructure"),
+    # Game mode parks containers and gates GPU admission — same family as the
+    # gpu/docker/compose keys above (services/game_mode.py).
+    ("game_mode", "infrastructure"),
     ("docker", "infrastructure"),
     ("compose", "infrastructure"),
     ("restore", "infrastructure"),

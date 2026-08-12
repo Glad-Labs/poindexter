@@ -20,6 +20,7 @@ from .dev_diary import dev_diary_group
 from .doctor import doctor_group
 from .experiments import experiments_group
 from .firefighter import firefighter_group
+from .game import game_group
 from .integrations import integrations_group
 from .logs import logs_command
 from .media import media_group
@@ -120,6 +121,7 @@ main.add_command(integrations_group, name="integrations")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(affiliate_group, name="affiliate")
+main.add_command(game_group, name="game")
 main.add_command(community_group, name="community")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")

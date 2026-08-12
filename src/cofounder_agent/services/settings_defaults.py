@@ -736,6 +736,26 @@ DEFAULTS: dict[str, str] = {
     # sharing this GPU with a non-stack app (e.g. a game on the same box). Read
     # via _cfg_bool in services/gpu_scheduler.py::_wait_for_gaming_clear.
     'gpu_external_workload_wait_enabled': 'false',
+    # Game mode (services/game_mode.py) — the operator claims the GPU for a
+    # bounded window so the box can be used for something other than
+    # inference. Deliberately INDEPENDENT of the flag above: game mode is an
+    # explicit signal, so it needs no utilization heuristic and re-introduces
+    # none of that flag's false positives.
+    #
+    # `game_mode_until` is an absolute ISO-8601 UTC timestamp, '' = off. A TTL
+    # rather than a boolean so a forgotten game mode expires on its own instead
+    # of silently starving the pipeline for days. Written by the CLI/MCP
+    # adapters; read by gpu_scheduler (admission), the Prefect flow (claim
+    # guard) and brain/compose_drift_probe (keeps parked services down).
+    'game_mode_until': '',
+    # Compose SERVICE names (the vocabulary compose_drift_probe speaks), not
+    # container names — the docker prefix is applied separately below.
+    'game_mode_parked_services': 'speaches,chatterbox,stable-audio,image-gen-server,wan-server',
+    'game_mode_default_hours': '4',
+    # Evict resident Ollama models on enable so the parked VRAM is actually
+    # freed rather than merely idle.
+    'game_mode_evict_ollama': 'true',
+    'game_mode_container_prefix': 'poindexter-',
     # GPU power/util are read from Prometheus (which scrapes + caches the
     # nvidia-smi exporter), NOT from the exporter directly. Prometheus serves
     # the last scrape instantly and never blocks on a slow nvidia-smi under

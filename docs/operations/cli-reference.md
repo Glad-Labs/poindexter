@@ -28,6 +28,7 @@ consolidated reference.
 | `topics`      | Topic-decision approval queue (list/show/approve/reject/propose)                                                       |
 | `gates`       | HITL pipeline gates — approve/reject/pending/show + list/set toggles                                                   |
 | `migrate`     | Schema migration runner (status / up / down)                                                                           |
+| `game`        | Claim the GPU for a bounded window — parks GPU services, pauses pipeline GPU work ([game-mode.md](game-mode.md))       |
 
 Run `poindexter --help` for the top-level list and
 `poindexter <group> --help` for subcommands.

@@ -626,3 +626,78 @@ async def test_host_recover_notify_state_resets_when_drift_clears(monkeypatch):
     assert result["status"] == "no_drift"
     assert cd._host_recover_last_notified == frozenset()
     assert cd._host_recover_last_notified_at == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Game mode (services/game_mode.py) — parked services fold into on-demand.
+#
+# This is the enforcement point for `poindexter game on`. Without it the drift
+# probe runs `docker compose up -d` on the parked containers within one cycle
+# and silently undoes the whole feature — which is the exact bug game mode
+# exists to fix. The probe deliberately re-implements the timestamp parse
+# rather than importing services.game_mode (the brain must run on Python +
+# asyncpg alone), so these tests guard a CONTRACT DUPLICATE: if the shared
+# app_settings semantics change, both sides must move together.
+# ---------------------------------------------------------------------------
+
+
+def _iso_in(hours: float) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_active_parks_services_into_on_demand():
+    pool = _make_pool(setting_values={
+        "game_mode_until": _iso_in(3),
+        "game_mode_parked_services": "speaches,wan-server",
+    })
+    assert await cd._read_on_demand_services(pool) >= {"speaches", "wan-server"}
+
+
+@pytest.mark.asyncio
+async def test_expired_game_mode_parks_nothing():
+    """A stale window must not keep services suppressed forever."""
+    pool = _make_pool(setting_values={
+        "game_mode_until": _iso_in(-1),
+        "game_mode_parked_services": "speaches,wan-server",
+    })
+    assert await cd._read_game_mode_parked(pool) == set()
+
+
+@pytest.mark.asyncio
+async def test_game_mode_off_leaves_on_demand_defaults_untouched():
+    """Regression guard: the feature must be inert when unused."""
+    pool = _make_pool(setting_values={"game_mode_until": ""})
+    assert await cd._read_on_demand_services(pool) == {
+        "wan-server",
+        "image-gen-server",
+    }
+
+
+@pytest.mark.asyncio
+async def test_corrupt_game_mode_timestamp_fails_closed():
+    """Garbage must park NOTHING.
+
+    Failing open here is worse than a restarted container: suppressed services
+    are neither recovered nor paged, so a real outage would go unnoticed for as
+    long as the bad value sits there.
+    """
+    pool = _make_pool(setting_values={
+        "game_mode_until": "yesterday-ish",
+        "game_mode_parked_services": "speaches",
+    })
+    assert await cd._read_game_mode_parked(pool) == set()
+
+
+@pytest.mark.asyncio
+async def test_naive_game_mode_timestamp_treated_as_utc():
+    from datetime import UTC, datetime, timedelta
+
+    naive = (datetime.now(UTC) + timedelta(hours=2)).replace(tzinfo=None).isoformat()
+    pool = _make_pool(setting_values={
+        "game_mode_until": naive,
+        "game_mode_parked_services": "speaches",
+    })
+    assert await cd._read_game_mode_parked(pool) == {"speaches"}

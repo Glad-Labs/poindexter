@@ -484,6 +484,47 @@ async def _run_content_generation_flow(
     # claimed row stored one; stays None for direct task_id invocations.
     _parent_ctx: Any = None
     if task_id is None and topic is None:
+        # Game mode (services/game_mode.py): the operator has claimed the GPU
+        # for a bounded window. Defer claiming NEW work — same shape as the
+        # spend throttle below, and for the same reason: in-flight tasks finish
+        # untouched, operator-triggered runs (explicit task_id/topic) bypass.
+        #
+        # This gate is what stops a retry cascade. Without it the flow claims a
+        # task, hits the game-mode reject in gpu_scheduler, fails, and burns a
+        # retry — repeatedly for the whole window, eventually driving healthy
+        # tasks to terminal `failed`. Leaving them `pending` means they run
+        # untouched after expiry.
+        #
+        # Reads the DB rather than SiteConfig on purpose: this subprocess's
+        # settings cache can predate the operator's toggle by up to the reload
+        # interval, and claiming an hour of work off a stale read is exactly
+        # the mistake to avoid. Fails OFF on a bad value (see game_mode docs) —
+        # same direction as the throttle's fail-open.
+        # ``_pool`` is None when the caller injected a database_service without
+        # one (see the "no .pool" warning above). No pool means no settings
+        # read is possible, and claim_pending_task will itself return None a
+        # few lines down — so skip the gate rather than crash the flow.
+        from services import game_mode
+
+        _gm = (
+            await game_mode.status(_pool)
+            if _pool is not None
+            else game_mode.GameModeStatus(active=False, until=None)
+        )
+        if _gm.active:
+            logger.info(
+                "[CONTENT_FLOW] game mode active until %s (%ds left) — "
+                "deferring new work this run; pending tasks stay pending",
+                _gm.until.isoformat() if _gm.until else "?",
+                _gm.seconds_remaining,
+            )
+            return {
+                "claimed": False,
+                "task_id": None,
+                "game_mode": True,
+                "until": _gm.until.isoformat() if _gm.until else None,
+            }
+
         # Spend throttle (P3, cost-attribution design §6): before claiming NEW
         # work off the queue, check whether total spend (paid API + measured
         # electricity, via cost_ledger) has crossed a soft budget ceiling. Over

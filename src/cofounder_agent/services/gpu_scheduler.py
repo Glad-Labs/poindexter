@@ -1329,6 +1329,20 @@ class GPUScheduler:
         a queued task would see the running task's Ollama inference as "gaming"
         and stall for confirm_checks + clear_checks intervals (poindexter#579).
         """
+        # Game mode (explicit operator signal) outranks every heuristic below,
+        # and outranks the _current_owner guard too: the operator has claimed
+        # the GPU for a known window, so a NEW acquire must be refused rather
+        # than queued. Reentrant acquires never reach here — lock() returns on
+        # _gpu_session_active before calling us — so this only rejects genuinely
+        # new GPU work. Raising (instead of waiting out a multi-hour window)
+        # lets fail-soft callers skip honestly this cycle; the eta is exact
+        # rather than estimated, because game mode has a real expiry.
+        from services import game_mode, gpu_admission
+
+        gm = game_mode.status_from_config(_sc())
+        if gm.active:
+            raise gpu_admission.GpuBusyError("game_mode", float(gm.seconds_remaining))
+
         if self._current_owner is not None:
             return
 

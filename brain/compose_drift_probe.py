@@ -65,6 +65,7 @@ import re
 import subprocess
 import time
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 # Compose env-var interpolation: ${VAR}, ${VAR:-default}, $VAR.
@@ -747,7 +748,59 @@ async def _read_on_demand_services(pool) -> set[str]:
         ON_DEMAND_SERVICES_SETTING_KEY,
         default=ON_DEMAND_SERVICES_DEFAULT,
     )
-    return {s.strip() for s in val.split(",") if s.strip()}
+    services = {s.strip() for s in val.split(",") if s.strip()}
+    return services | await _read_game_mode_parked(pool)
+
+
+async def _read_game_mode_parked(pool) -> set[str]:
+    """Services the operator has parked via game mode (empty when inactive).
+
+    Folding these into the on-demand set is the whole enforcement mechanism:
+    on-demand services are the ones this probe already knows may legitimately
+    be down, so a parked service stops being paged AND stops being revived by
+    ``docker compose up -d``. Without this, ``poindexter game on`` would be
+    undone within one brain cycle — which is exactly what happened when the
+    operator stopped the GPU containers by hand.
+
+    Deliberately re-implements the timestamp parse instead of importing
+    ``services.game_mode``: the brain is a standalone daemon that must run on
+    Python + asyncpg alone, so it may not import from ``src/cofounder_agent``.
+    The DB keys are the shared contract, not the code.
+
+    Fails CLOSED (returns empty) on a malformed timestamp: mistakenly treating
+    game mode as ON would let real outages go unrecovered and unpaged, which is
+    a far worse failure than a game session seeing its containers restart.
+    """
+    raw = await _read_setting(pool, "game_mode_until", default="")
+    if not raw or not raw.strip():
+        return set()
+    try:
+        until = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        logger.warning(
+            "[COMPOSE_DRIFT] app_settings.game_mode_until is not ISO-8601 (%r) — "
+            "treating game mode as OFF",
+            raw,
+        )
+        return set()
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=UTC)
+    if datetime.now(UTC) >= until:
+        return set()
+
+    val = await _read_setting(
+        pool,
+        "game_mode_parked_services",
+        default="speaches,chatterbox,stable-audio,image-gen-server,wan-server",
+    )
+    parked = {s.strip() for s in val.split(",") if s.strip()}
+    if parked:
+        logger.info(
+            "[COMPOSE_DRIFT] game mode active until %s — treating %s as on-demand",
+            until.isoformat(),
+            ", ".join(sorted(parked)),
+        )
+    return parked
 
 
 async def _read_active_profiles(pool) -> set[str]:

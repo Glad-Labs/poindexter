@@ -37,11 +37,17 @@ from services.gpu_lease_stats import LeaseStats
 class GpuBusyError(RuntimeError):
     """Admission refused the wait — the GPU won't be usable within budget.
 
-    ``reason`` ∈ {"eta_exceeds_budget", "no_fit"}; ``eta_seconds`` carries the
-    holder-remaining estimate when one was computed (None for pure fit
-    rejects). Raised by ``gpu.lock(..., max_wait_s=...)`` BEFORE any wait, so
-    fail-soft callers (rails, background jobs) can skip honestly this cycle
+    ``reason`` ∈ {"eta_exceeds_budget", "no_fit", "game_mode"}; ``eta_seconds``
+    carries the holder-remaining estimate when one was computed (None for pure
+    fit rejects). Raised by ``gpu.lock(..., max_wait_s=...)`` BEFORE any wait,
+    so fail-soft callers (rails, background jobs) can skip honestly this cycle
     instead of burning their timeout budget behind a long render.
+
+    ``"game_mode"`` is raised by ``gpu_scheduler`` for EVERY new acquire while
+    ``services.game_mode`` is active — including callers that passed no budget
+    — because the operator has claimed the GPU for a known window and waiting
+    it out would hang the caller for hours. Its ``eta_seconds`` is exact (time
+    until expiry), not an estimate. See ``docs/operations/game-mode.md``.
     """
 
     def __init__(self, reason: str, eta_seconds: float | None):

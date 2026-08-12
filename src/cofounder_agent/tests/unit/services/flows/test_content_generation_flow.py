@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-def _make_pool(claim_row=None, settings_rows=None):
+def _make_pool(claim_row=None, settings_rows=None, game_mode_until=None):
     """asyncpg pool double whose claim transaction returns ``claim_row``.
 
     ``settings_rows`` mocks the ``SELECT key, value FROM app_settings ...``
@@ -30,6 +30,11 @@ def _make_pool(claim_row=None, settings_rows=None):
     bootstraps its AppContainer. Defaults to ``[]`` (empty SiteConfig),
     which is fine for these tests — they patch the pipeline call directly
     so they don't actually exercise any settings reads.
+
+    ``game_mode_until`` feeds the pool-level ``fetchval`` that
+    ``services.game_mode.status`` issues from the flow's pre-claim gate.
+    ``None`` (the default) reads as game mode OFF, so every existing test
+    keeps its original behaviour.
     """
     conn = MagicMock()
     conn.fetchrow = AsyncMock(return_value=claim_row)
@@ -56,6 +61,10 @@ def _make_pool(claim_row=None, settings_rows=None):
     # (asyncpg's pool-level convenience), so the pool double also needs
     # an AsyncMock fetch independent of the per-connection one above.
     pool.fetch = AsyncMock(return_value=settings_rows if settings_rows is not None else [])
+    # ``game_mode.status`` likewise reads pool-level ``fetchval`` directly (the
+    # flow's pre-claim gate deliberately bypasses the settings cache, which can
+    # predate an operator toggle).
+    pool.fetchval = AsyncMock(return_value=game_mode_until)
     return pool
 
 
@@ -1195,3 +1204,107 @@ class TestFlowOwnsAndClosesItsPool:
                 )
 
         built.close.assert_awaited_once()
+
+
+class TestGameModeDefersClaim:
+    """Game mode (services/game_mode.py) gates the schedule-driven claim.
+
+    This gate is what prevents a retry cascade: without it the flow claims a
+    task, hits the game-mode reject in gpu_scheduler, fails, and burns a retry
+    — repeatedly for the whole window, eventually driving healthy tasks to
+    terminal `failed`. The behaviour under test is therefore "did NOT claim",
+    not "handled an error".
+    """
+
+    @pytest.mark.asyncio
+    async def test_active_game_mode_defers_without_claiming(self):
+        from datetime import UTC, datetime, timedelta
+
+        from services.flows.content_generation import content_generation_flow
+
+        until = (datetime.now(UTC) + timedelta(hours=3)).isoformat()
+        # A row IS claimable — game mode must stop us taking it.
+        row = {"task_id": "task-should-not-run", "topic": "x", "target_length": 1500}
+        pool = _make_pool(claim_row=row, game_mode_until=until)
+        db = _make_db_service(pool)
+
+        claim_mock = AsyncMock(return_value=row)
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task", new=claim_mock,
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ) as pipeline_mock:
+            result = await content_generation_flow.fn(database_service=db)
+
+        assert result["claimed"] is False
+        assert result["game_mode"] is True
+        assert result["until"] is not None
+        claim_mock.assert_not_called()
+        pipeline_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_expired_game_mode_claims_normally(self):
+        """Regression guard: a stale window must not keep the pipeline parked."""
+        from datetime import UTC, datetime, timedelta
+
+        from services.flows.content_generation import content_generation_flow
+        from services.spend_throttle import ThrottleDecision
+
+        past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+        row = {"task_id": "task-ok", "topic": "y", "target_length": 1500}
+        pool = _make_pool(claim_row=row, game_mode_until=past)
+        db = _make_db_service(pool)
+
+        pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.spend_throttle.should_throttle",
+            new=AsyncMock(return_value=ThrottleDecision(
+                throttled=False, ceiling=None, reason="within budget",
+            )),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=row),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            result = await content_generation_flow.fn(database_service=db)
+
+        assert result.get("game_mode") is None
+        assert result["claimed"] is True
+
+    @pytest.mark.asyncio
+    async def test_game_mode_off_is_transparent(self):
+        """The feature must be inert when unused (fetchval returns None)."""
+        from services.flows.content_generation import content_generation_flow
+        from services.spend_throttle import ThrottleDecision
+
+        row = {"task_id": "task-ok", "topic": "z", "target_length": 1500}
+        pool = _make_pool(claim_row=row)  # game_mode_until defaults to None
+        db = _make_db_service(pool)
+
+        pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.spend_throttle.should_throttle",
+            new=AsyncMock(return_value=ThrottleDecision(
+                throttled=False, ceiling=None, reason="within budget",
+            )),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=row),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            result = await content_generation_flow.fn(database_service=db)
+
+        assert result["claimed"] is True

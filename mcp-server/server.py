@@ -1621,6 +1621,77 @@ async def unschedule_social_draft(draft_id: str) -> str:
     return json.dumps(result)
 
 
+@mcp.tool()
+async def set_game_mode(action: str, hours: float = 0) -> str:
+    """Claim the GPU for gaming for a bounded window, or release it early.
+
+    The operator's PC is both the gaming rig and the inference server. Game
+    mode parks the GPU containers, pauses pipeline GPU admission, and stops
+    the Prefect flow claiming new content tasks — then expires on its own so a
+    forgotten session cannot starve the pipeline indefinitely.
+
+    This is the phone-side mirror of ``poindexter game``. One difference worth
+    knowing: this process has no docker socket, so the parked containers are
+    taken down by the brain's compose-drift cycle (within ~5 minutes) rather
+    than instantly. GPU admission pauses immediately either way, and resident
+    Ollama models are evicted over HTTP from here too.
+
+    Args:
+        action: "on", "off", or "status".
+        hours: Window length for "on". 0 = use app_settings default (4h).
+    """
+    try:
+        from services import game_mode
+
+        pool = await _get_pool()
+        site_config = await _get_site_config()
+        verb = (action or "").strip().lower()
+
+        if verb == "status":
+            status = await game_mode.status(pool, site_config)
+        elif verb == "on":
+            status = await game_mode.enable(
+                pool, site_config, hours=hours if hours > 0 else None
+            )
+        elif verb == "off":
+            status = await game_mode.disable(pool, site_config)
+        else:
+            return f"Unknown action {action!r} — expected 'on', 'off' or 'status'."
+
+        payload = status.as_dict()
+        if verb == "on":
+            # Eviction is HTTP, so it works from here even without docker.
+            from services.llm_providers.ollama_unload import (
+                ollama_base_urls,
+                unload_loaded_ollama_models,
+            )
+
+            freed: list[str] = []
+            for host in ollama_base_urls(site_config) or [""]:
+                try:
+                    freed.extend(
+                        await unload_loaded_ollama_models(
+                            site_config=site_config,
+                            base_url_override=host,
+                            confirm=True,
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+                    payload.setdefault("errors", []).append(
+                        f"ollama {host or 'primary'}: {type(exc).__name__}"
+                    )
+            payload["ollama_evicted"] = freed
+            payload["note"] = (
+                "containers stop on the next brain cycle (~5 min); "
+                "GPU admission is paused already"
+            )
+        return json.dumps(payload, indent=2)
+    except ValueError as e:
+        return f"Invalid game-mode request: {e}"
+    except Exception as e:
+        return _format_tool_error("Game mode", e)
+
+
 def _stdio_main() -> None:
     """Entry point for the stdio transport (existing local clients).
 
