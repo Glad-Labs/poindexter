@@ -105,6 +105,50 @@ everything, so the score can't collapse to a spurious `0`. Pinned by
 > than trusting a prose list:
 > `SELECT name, required_to_pass FROM qa_gates ORDER BY required_to_pass DESC;`
 
+##### Seeing what the gate ignores (glad-labs-stack#2125)
+
+Excluding advisory rails from both gates is correct — it fixed a real throughput
+incident — but it created a blind spot: a rail could object loudly and nothing
+downstream showed it. A post shipped at `Q:94.1` carrying a `content_originality`
+score of **17.6**; three fabrication classes reached `awaiting_approval` at Q:94–95
+(poindexter#1007 / #1008 / #1009). The evidence was in `audit_log` the whole time,
+but no surface aggregated it.
+
+Two numbers now ride every `qa_pass_completed` row:
+
+| field               | what it counts                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `final_score`       | the gating rails only — **this is what decides**                                   |
+| `qa_all_rail_score` | every rail, advisory included — **informational, never compared to the threshold** |
+
+**The gap between them is the signal.** It is the size of what the gate is
+choosing not to hear. `advisory_rail_count` / `gating_rail_count` accompany them
+so a pass's composition is legible without re-deriving it from `reviews[]`.
+
+The **"Advisory Rails — What the Gate Ignores"** row on `/d/qa-rails` reads these:
+
+- **Score gap (window avg)** — gated minus all-rail. A persistent large gap means
+  the gate consistently scores higher than the full evidence supports.
+- **Shipped over an advisory objection** — every advisory rail that scored below
+  the pass's own threshold on a pass that was **approved anyway**, worst first.
+  This is the direct answer to _"what did we ship that a rail objected to?"_
+  Empty is the good state. (Validating this panel against 90 days of history
+  surfaced task `7cb5f455` — the same draft poindexter#1007 had found by hand.)
+- **Per-rail objection rate** — runs, objection %, avg score, and whether the rail
+  can actually reject (joined from `qa_gates`). This is the graduation instrument:
+  a rail objecting constantly while advisory is a candidate for
+  `required_to_pass=true`; a rail that never objects is burning tokens to agree.
+
+Both new fields are **optional** in `audit_event_schemas.QaPassCompletedDetails` —
+rows written before this shipped have neither, and the dev_diary producer
+(`multi_model_qa.py`) computes no all-rail score at all. The panels use NULL-safe
+filters, so the two score-gap panels stay empty until enough new passes accumulate.
+
+> Re-verified 2026-08-10: **4** rails are `required_to_pass=true`, not the 2 the
+> paragraph above records for 2026-07-17 — `citation_verifier` and `topic_delivery`
+> were graduated in between. That drift in three weeks is exactly why the rule is
+> _query `qa_gates`, don't trust prose_. The count here will go stale too.
+
 **Gate-config read failures fail loud, not required-everything (2026-07).**
 The advisory flag comes from a `qa_gates` read at rail-atom time
 (`resolve_gate_states` → `MultiModelQA._load_gate_states`), and

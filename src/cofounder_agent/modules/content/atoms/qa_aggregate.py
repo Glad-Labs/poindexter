@@ -257,6 +257,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # info, not warning: this reject is being rescued, not persisted —
             # the terminal pass carries the loud severity if it stands.
             severity="info",
+            all_rail_score=result.get("qa_all_rail_score"),
         )
         # Defer: route to qa.rewrite. NO persist, NO _halt. Omit qa_reviews —
         # its operator.add reducer would concat stale+fresh on the terminal
@@ -474,6 +475,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         threshold=float(threshold), reviews=reviews,
         terminal=True, rewrite_attempts=attempts,
         severity="info" if approved else "warning",
+        all_rail_score=result.get("qa_all_rail_score"),
     )
 
     return out
@@ -490,6 +492,7 @@ def _emit_qa_pass_event(
     rewrite_attempts: int,
     severity: str,
     extra: dict[str, Any] | None = None,
+    all_rail_score: float | None = None,
 ) -> None:
     """Emit one ``qa_pass_completed`` audit row for a QA pass (terminal
     decision OR a deferred rescue pass). Best-effort — never raises.
@@ -527,6 +530,22 @@ def _emit_qa_pass_event(
                 for r in reviews
             ],
         }
+        # Informational visibility (#2125). ``final_score`` counts only the
+        # rails that can gate; ``qa_all_rail_score`` counts every rail. The GAP
+        # is the operator-facing signal — it is the size of what the gate is
+        # choosing not to hear, and it is why a post can ship at Q:94 carrying
+        # a content_originality of 17.6. #2136 computed this number but left it
+        # in pipeline state, so it never reached audit_log and no dashboard
+        # could read it; persisting it here is what makes the gap visible.
+        # Never compare it to approval_threshold — it does not gate.
+        if all_rail_score is not None:
+            details["qa_all_rail_score"] = round(float(all_rail_score), 2)
+        details["advisory_rail_count"] = sum(
+            1 for r in reviews if r.get("advisory")
+        )
+        details["gating_rail_count"] = sum(
+            1 for r in reviews if not r.get("advisory")
+        )
         if extra:
             details.update(extra)
         _platform.audit.write_bg(

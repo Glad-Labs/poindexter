@@ -1974,6 +1974,377 @@
       ],
       "title": "Rescued decisions (window)",
       "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Advisory Rails \u2014 What the Gate Ignores",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 111
+      },
+      "id": 31
+    },
+    {
+      "type": "stat",
+      "title": "Score gap: gated vs all-rail (window avg)",
+      "id": 32,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 112
+      },
+      "description": "final_score counts only rails that can gate; qa_all_rail_score counts every rail. This is the difference. A large positive gap means the advisory rails are consistently less impressed than the gate \u2014 i.e. the gate is scoring higher than the full evidence supports. Informational: neither number is compared to the threshold. NULL for passes written before #2125 persisted the all-rail score.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG((details->>'final_score')::float - (details->>'qa_all_rail_score')::float)::numeric, 1) AS \"Gap\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\n  AND details->>'qa_all_rail_score' IS NOT NULL\n  AND COALESCE(details->>'terminal', 'true') = 'true'\n  AND $__timeFilter(timestamp)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Shipped over an advisory objection (window)",
+      "id": 33,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 18,
+        "x": 6,
+        "y": 112
+      },
+      "description": "Advisory rails that scored BELOW the pass's own approval threshold on a pass that was APPROVED anyway. This is the concrete answer to 'what did we ship that a rail objected to?' \u2014 each row is a rail that flagged a problem and was overruled by being advisory. Sorted worst-score-first. Empty here is the good state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 40
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rail Score"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Rail Score"
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "WITH expanded AS (\n  SELECT al.timestamp,\n         al.task_id,\n         (al.details->>'final_score')::float      AS gated_score,\n         (al.details->>'approval_threshold')::float AS threshold,\n         r.value->>'reviewer'                     AS reviewer,\n         (r.value->>'score')::float               AS rail_score,\n         (r.value->>'advisory')::boolean          AS advisory,\n         (r.value->>'approved')::boolean          AS rail_approved,\n         r.value->>'feedback_preview'             AS feedback\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND (al.details->>'approved')::boolean IS TRUE\n    AND COALESCE(al.details->>'terminal', 'true') = 'true'\n    AND $__timeFilter(al.timestamp)\n)\nSELECT timestamp AS \"Time\",\n       reviewer  AS \"Advisory Rail\",\n       ROUND(rail_score::numeric, 1) AS \"Rail Score\",\n       ROUND(gated_score::numeric, 1) AS \"Shipped At\",\n       LEFT(COALESCE(feedback, ''), 160) AS \"What it said\",\n       task_id AS \"Task\"\nFROM expanded\nWHERE advisory IS TRUE\n  AND (rail_score < threshold OR rail_approved IS FALSE)\n  AND rail_score > 0\nORDER BY rail_score ASC, timestamp DESC\nLIMIT 100",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Gated score vs all-rail score over time",
+      "id": 34,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 124
+      },
+      "description": "Two lines: what the gate scored, and what every rail together scored. They diverge when advisory rails disagree with the gating subset. Divergence is not itself a bug \u2014 advisory rails are advisory on purpose \u2014 but a widening, persistent gap is the argument for graduating a rail to required_to_pass.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "axisPlacement": "auto"
+          },
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time,\n       AVG((details->>'final_score')::float)        AS \"gated score\",\n       AVG((details->>'qa_all_rail_score')::float)  AS \"all-rail score\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\n  AND details->>'qa_all_rail_score' IS NOT NULL\n  AND COALESCE(details->>'terminal', 'true') = 'true'\n  AND $__timeFilter(timestamp)\nGROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Per-rail objection rate \u2014 graduation candidates",
+      "id": 35,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 124
+      },
+      "description": "Per rail: how often it ran, how often it objected (scored under the pass threshold or returned approved=false), and whether it can actually reject. A rail with a high objection rate that is still advisory is a graduation candidate \u2014 flip qa_gates.<rail>.required_to_pass. A rail that never objects is a candidate for removal: it burns tokens to always agree.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Objection %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Can Reject?"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "false": {
+                        "text": "advisory",
+                        "color": "orange",
+                        "index": 0
+                      },
+                      "true": {
+                        "text": "REJECTS",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Objection %"
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "WITH expanded AS (\n  SELECT r.value->>'reviewer'                       AS reviewer,\n         (r.value->>'score')::float                 AS rail_score,\n         (r.value->>'advisory')::boolean            AS advisory,\n         (r.value->>'approved')::boolean            AS rail_approved,\n         (al.details->>'approval_threshold')::float AS threshold\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND COALESCE(al.details->>'terminal', 'true') = 'true'\n    AND $__timeFilter(al.timestamp)\n)\nSELECT e.reviewer AS \"Rail\",\n       COUNT(*)::int AS \"Runs\",\n       AVG(CASE WHEN (e.rail_score > 0 AND e.rail_score < e.threshold)\n                  OR e.rail_approved IS FALSE THEN 1.0 ELSE 0.0 END)::float\n         AS \"Objection %\",\n       ROUND(AVG(e.rail_score)::numeric, 1) AS \"Avg Score\",\n       COALESCE(bool_or(g.required_to_pass), NOT bool_and(e.advisory)) AS \"Can Reject?\"\nFROM expanded e\nLEFT JOIN qa_gates g ON g.reviewer = e.reviewer\nGROUP BY e.reviewer\nORDER BY \"Objection %\" DESC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "description": "CHARTER: per-reviewer QA behavior \u2014 pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."

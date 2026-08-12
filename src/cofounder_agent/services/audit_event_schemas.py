@@ -59,6 +59,17 @@ class QaPassCompletedDetails(BaseModel):
     terminal: bool | None = None
     qa_rewrite_attempts: int | None = None
     rescued: bool | None = None
+    # Informational only (#2125) — the weighted mean over EVERY rail, advisory
+    # included, whereas ``final_score`` counts only the rails that can gate.
+    # The GAP between them is the operator-facing signal: it is what the gate
+    # is choosing not to hear. Never compare this to ``approval_threshold``.
+    #
+    # Optional because the dev_diary producer (multi_model_qa.py) doesn't
+    # compute it, and because rows written before it was persisted must keep
+    # validating — a dashboard panel reading it uses a NULL-safe filter.
+    qa_all_rail_score: float | None = None
+    advisory_rail_count: int | None = None
+    gating_rail_count: int | None = None
 
 
 class FindingDetails(BaseModel):

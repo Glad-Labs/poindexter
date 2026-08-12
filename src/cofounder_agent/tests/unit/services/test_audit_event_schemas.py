@@ -145,3 +145,40 @@ class TestValidateEventDetails:
         }
         result = validate_event_details("finding", details)
         assert result["some_new_field_not_yet_in_schema"] == "value"
+
+    def test_qa_pass_all_rail_fields_are_optional_for_old_rows(self):
+        """glad-labs-stack#2125 added qa_all_rail_score / advisory_rail_count /
+        gating_rail_count to the qa_pass_completed shape. They MUST stay
+        optional: 478 rows predate them, and the dev_diary producer
+        (multi_model_qa.py) never computes an all-rail score at all. Making
+        them required would log a shape mismatch on every historical replay
+        and on every dev_diary pass."""
+        legacy = {
+            "approved": True,
+            "final_score": 88.0,
+            "approval_threshold": 70.0,
+            "reviewer_count": 1,
+            "reviews": [{"reviewer": "llm_critic", "approved": True, "score": 88.0}],
+        }
+        result = validate_event_details("qa_pass_completed", legacy)
+        assert result["approved"] is True
+        assert "qa_all_rail_score" not in result or result["qa_all_rail_score"] is None
+
+    def test_qa_pass_accepts_the_new_all_rail_fields(self):
+        details = {
+            "approved": True,
+            "final_score": 94.1,
+            "approval_threshold": 70.0,
+            "reviewer_count": 2,
+            "reviews": [
+                {"reviewer": "llm_critic", "approved": True, "score": 94.1, "advisory": False},
+                {"reviewer": "content_originality", "approved": False, "score": 17.6,
+                 "advisory": True},
+            ],
+            "qa_all_rail_score": 62.4,
+            "advisory_rail_count": 1,
+            "gating_rail_count": 1,
+        }
+        result = validate_event_details("qa_pass_completed", details)
+        assert result["qa_all_rail_score"] == 62.4
+        assert result["advisory_rail_count"] == 1

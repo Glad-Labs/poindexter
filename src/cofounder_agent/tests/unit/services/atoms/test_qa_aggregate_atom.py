@@ -1151,3 +1151,84 @@ class TestQaAggregateDurableApproval:
         assert d["terminal"] is True
         assert d["qa_rewrite_attempts"] == 0
         assert d["rescued"] is False
+
+
+@pytest.mark.unit
+class TestQaAggregateAllRailVisibility:
+    """glad-labs-stack#2125 — the advisory-rail visibility half.
+
+    #2136 computed ``qa_all_rail_score`` + the per-rail breakdown but left both
+    in pipeline state, so neither reached ``audit_log`` and the QA Rails
+    dashboard could not read them. These pin the audit-row shape the new
+    'Advisory Rails — What the Gate Ignores' panels query.
+    """
+
+    @staticmethod
+    def _passes(fake: FakePlatform) -> list[dict]:
+        return [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+
+    async def test_audit_row_carries_all_rail_score_and_counts(self):
+        """The gap between final_score (gating rails only) and qa_all_rail_score
+        (every rail) is the whole operator-facing signal. It has to be IN the
+        row — a number computed and dropped is invisible."""
+        fake = FakePlatform()
+        state = {
+            "platform": fake,
+            "task_id": "task-gap",
+            "qa_rail_reviews": [
+                {"reviewer": "llm_critic", "approved": True, "score": 94.0,
+                 "provider": "ollama", "advisory": False, "feedback": "good"},
+                # The advisory rail nobody hears — the content_originality:17.6
+                # shape observed on a real approved pass.
+                {"reviewer": "content_originality", "approved": False, "score": 17.6,
+                 "provider": "ollama", "advisory": True, "feedback": "derivative"},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        d = self._passes(fake)[0]["details"]
+
+        assert "qa_all_rail_score" in d
+        assert d["advisory_rail_count"] == 1
+        assert d["gating_rail_count"] == 1
+        # The all-rail score must be dragged DOWN by the advisory rail, i.e.
+        # strictly below the gated score. If they were equal the panel would
+        # show a permanent zero gap and the feature would be decorative.
+        assert d["qa_all_rail_score"] < d["final_score"]
+        # ...and the gating decision itself is untouched by any of this.
+        assert out["qa_final_verdict"] == "approve"
+
+    async def test_all_rail_score_matches_state_output(self):
+        """The audit row and the pipeline-state channel must not drift — they
+        are two consumers of one number."""
+        fake = FakePlatform()
+        state = {
+            "platform": fake,
+            "task_id": "task-consistent",
+            "qa_rail_reviews": [
+                {"reviewer": "llm_critic", "approved": True, "score": 88.0,
+                 "provider": "ollama", "advisory": False, "feedback": ""},
+                {"reviewer": "ragas_eval", "approved": True, "score": 40.0,
+                 "provider": "ollama", "advisory": True, "feedback": ""},
+            ],
+        }
+        out = await qa_aggregate.run(state)
+        d = self._passes(fake)[0]["details"]
+        assert d["qa_all_rail_score"] == pytest.approx(out["qa_all_rail_score"], abs=0.01)
+
+    async def test_counts_are_present_even_with_no_advisory_rails(self):
+        """A zero must be written as 0, not omitted — an absent key and a
+        genuine zero look identical to a dashboard, and 'no advisory rails ran'
+        is a meaningful state."""
+        fake = FakePlatform()
+        state = {
+            "platform": fake,
+            "task_id": "task-nogating",
+            "qa_rail_reviews": [
+                {"reviewer": "llm_critic", "approved": True, "score": 91.0,
+                 "provider": "ollama", "advisory": False, "feedback": ""},
+            ],
+        }
+        await qa_aggregate.run(state)
+        d = self._passes(fake)[0]["details"]
+        assert d["advisory_rail_count"] == 0
+        assert d["gating_rail_count"] == 1
