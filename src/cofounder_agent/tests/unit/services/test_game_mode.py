@@ -234,3 +234,91 @@ async def test_gpu_scheduler_unaffected_when_game_mode_off(monkeypatch):
     # Returns (does not raise) via the pre-existing _current_owner guard.
     await scheduler._wait_for_gaming_clear()
     assert scheduler._gaming_detected is False
+
+
+# ---------------------------------------------------------------------------
+# CLI adapter — host-vs-container Ollama URL (found on first live `game on`)
+#
+# `app_settings.ollama_base_url` is the CONTAINER-facing
+# `http://host.docker.internal:11434`, which does not resolve in a host-side
+# process. The first real run logged two ConnectErrors and then reported
+# "nothing resident" while 21 GB stayed pinned on the second card — a false
+# success the operator would have acted on.
+# ---------------------------------------------------------------------------
+
+
+class TestHostReachableOllamaUrl:
+    def test_rewrites_container_hostname_to_localhost(self):
+        from poindexter.cli.game import _host_reachable_url
+
+        assert (
+            _host_reachable_url("http://host.docker.internal:11434")
+            == "http://localhost:11434"
+        )
+
+    def test_preserves_the_port_so_the_vision_instance_still_resolves(self):
+        """:11435 is the vision-pinned instance — the one holding the big model.
+        Dropping the port would silently unload only the primary."""
+        from poindexter.cli.game import _host_reachable_url
+
+        assert (
+            _host_reachable_url("http://host.docker.internal:11435")
+            == "http://localhost:11435"
+        )
+
+    def test_leaves_an_already_host_reachable_url_alone(self):
+        from poindexter.cli.game import _host_reachable_url
+
+        for url in ("http://localhost:11434", "http://127.0.0.1:11434",
+                    "http://gpu-host.internal:11434"):
+            assert _host_reachable_url(url) == url
+
+    def test_empty_url_is_passed_through(self):
+        from poindexter.cli.game import _host_reachable_url
+
+        assert _host_reachable_url("") == ""
+
+
+class TestEvictReportsUnreachableHonestly:
+    @pytest.mark.asyncio
+    async def test_unreachable_host_is_not_reported_as_nothing_resident(self):
+        """The bug this pins: an unreachable Ollama must NOT read as success.
+
+        `unload_loaded_ollama_models` swallows transport errors and returns [],
+        which is indistinguishable from "no models loaded" — so the adapter
+        probes first and says so.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from poindexter.cli import game as game_cli
+
+        sc = _sc()
+        with patch.object(game_cli, "_ollama_reachable", AsyncMock(return_value=False)), \
+             patch(
+                 "services.llm_providers.ollama_unload.ollama_base_urls",
+                 lambda _sc: ["http://host.docker.internal:11434"],
+             ):
+            msg = await game_cli._evict_ollama(sc)
+
+        assert "UNREACHABLE" in msg
+        assert "VRAM NOT freed" in msg
+        assert "nothing resident" not in msg
+
+    @pytest.mark.asyncio
+    async def test_reachable_and_empty_still_reads_as_nothing_resident(self):
+        from unittest.mock import AsyncMock, patch
+
+        from poindexter.cli import game as game_cli
+
+        sc = _sc()
+        with patch.object(game_cli, "_ollama_reachable", AsyncMock(return_value=True)), \
+             patch(
+                 "services.llm_providers.ollama_unload.ollama_base_urls",
+                 lambda _sc: ["http://localhost:11434"],
+             ), patch(
+                 "services.llm_providers.ollama_unload.unload_loaded_ollama_models",
+                 AsyncMock(return_value=[]),
+             ):
+            msg = await game_cli._evict_ollama(sc)
+
+        assert msg == "nothing resident"

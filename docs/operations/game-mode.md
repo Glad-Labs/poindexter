@@ -112,6 +112,17 @@ Direct check:
 nvidia-smi --query-gpu=index,utilization.gpu,memory.used,memory.free --format=csv
 ```
 
+## What it deliberately does NOT free
+
+The vision-pinned Ollama instance (`:11435`, `ollama-vision.service`) runs its
+model with `keep_alive=-1`. `unload_loaded_ollama_models` honours that pin and
+skips it, so game mode leaves ~21 GB resident on the second card by design —
+that model is held there as eviction insurance for the pipeline.
+
+This does not affect gaming: the display GPU is card 0, and that is the one
+game mode clears. If you genuinely need the second card too, stop
+`ollama-vision.service` by hand; game mode will not override a deliberate pin.
+
 ## Known gap
 
 When triggered from MCP (no docker socket), the parked containers keep running

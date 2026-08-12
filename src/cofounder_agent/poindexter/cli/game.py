@@ -104,6 +104,47 @@ def _stop_containers(names: tuple[str, ...]) -> tuple[list[str], list[str]]:
     return stopped, failed
 
 
+# Ollama listens on the host; prod stores the CONTAINER-facing URL.
+_CONTAINER_ONLY_HOSTS = ("host.docker.internal", "ollama", "poindexter-ollama")
+
+
+def _host_reachable_url(url: str) -> str:
+    """Rewrite a container-internal Ollama URL to its host equivalent.
+
+    ``app_settings.ollama_base_url`` is ``http://host.docker.internal:11434``
+    because the worker is containerized. That name does not resolve in a
+    host-side process, so this CLI must translate it or every unload silently
+    no-ops (observed on the first live ``game on``: two ConnectErrors, then a
+    cheerful "nothing resident" while 21 GB stayed pinned). Ollama answers on
+    localhost at the same port, so only the host part changes. See the
+    host-CLI URL gotcha in the ops docs.
+    """
+    if not url:
+        return url
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    if parts.hostname not in _CONTAINER_ONLY_HOSTS:
+        return url
+    netloc = "localhost" if parts.port is None else f"localhost:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+async def _ollama_reachable(base_url: str) -> bool:
+    """Cheap liveness probe so 'nothing resident' can't mask 'never asked'."""
+    import httpx
+
+    url = (base_url or "http://localhost:11434").rstrip("/") + "/api/version"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            return (await client.get(url)).status_code == 200
+    except Exception:  # noqa: BLE001
+        # silent-ok: this probe's entire job is to answer "can we reach it?" —
+        # a transport failure IS the answer (False), not an error to escalate.
+        # The caller reports it loudly as "UNREACHABLE (VRAM NOT freed)".
+        return False
+
+
 async def _evict_ollama(site_config) -> str:
     """Evict resident Ollama models across EVERY configured host.
 
@@ -128,13 +169,21 @@ async def _evict_ollama(site_config) -> str:
     )
 
     try:
-        hosts = ollama_base_urls(site_config) or [""]
+        hosts = [_host_reachable_url(u) for u in (ollama_base_urls(site_config) or [""])]
     except Exception:  # noqa: BLE001 - fall back to the primary-only path
         hosts = [""]
 
     freed: list[str] = []
+    unreachable: list[str] = []
     errors: list[str] = []
     for host in hosts:
+        # Probe FIRST. ``unload_loaded_ollama_models`` swallows a transport
+        # failure (logs a warning, returns []), which is indistinguishable from
+        # "no models were loaded" — and reporting "nothing resident" when we
+        # could not even ask is a lie the operator acts on. Ask explicitly.
+        if not await _ollama_reachable(host):
+            unreachable.append(host or "primary")
+            continue
         try:
             freed.extend(
                 await unload_loaded_ollama_models(
@@ -147,10 +196,14 @@ async def _evict_ollama(site_config) -> str:
             errors.append(f"{host or 'primary'}: {type(exc).__name__}")
 
     parts: list[str] = []
-    parts.append(f"evicted {len(freed)} model(s)" if freed else "nothing resident")
+    if freed:
+        parts.append(f"evicted {len(freed)} model(s)")
+    elif not unreachable and not errors:
+        parts.append("nothing resident")
+    if unreachable:
+        # Distinct from "nothing resident" on purpose — VRAM is still held.
+        parts.append(f"UNREACHABLE: {', '.join(unreachable)} (VRAM NOT freed)")
     if errors:
-        # Surfaced loudly: the operator needs to know the VRAM did NOT come
-        # back, rather than discovering it mid-session.
         parts.append(f"FAILED on {'; '.join(errors)}")
     return " — ".join(parts)
 
