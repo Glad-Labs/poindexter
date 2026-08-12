@@ -285,6 +285,34 @@ in between — two live bugs proved it on the same episode:
 The general rule: **anything Stage 3 can resolve for itself, Stage 3 should
 resolve** — a Stage-1 snapshot is for content, not for configuration or paths.
 
+### 6c. Two producers, one contract (2026-08-11)
+
+There are **two** podcast producers, and polish added to one silently skips the
+other. `PodcastService.generate_episode` (manual regenerate — `POST` via
+`routes/podcast_routes.py`, the `generate_podcast_episode` wrapper) is not the
+Stage-3 graph, so every feature added to `podcast.render` has to be mirrored or
+the console button quietly produces a lesser episode. This has now happened
+twice: the per-medium CTA (fixed by `_append_podcast_cta`) and the intro sting
+(fixed by `_maybe_mix_sting`). Both were invisible — the regenerate returned
+success and the file looked fine.
+
+The manual path differs from the graph in one deliberate way: it has no Stage-1
+snapshot, so it asks `resolve_sting_path(None, …)` and always lands on the
+curated show theme. A per-episode _generated_ sting belongs to the pipeline run
+that made it, and its temp path would be long gone by the time an operator hits
+regenerate.
+
+Two ordering constraints there are load-bearing, both marked in the code:
+
+- the mix runs **before** `_record_episode_asset`, which stamps
+  `media_assets.duration_ms` / `file_size_bytes` straight off the returned
+  `EpisodeResult` — mix afterwards and the row describes the dry cut forever;
+- the mixed temp file is installed with `shutil.move`, **not** `os.replace`:
+  the mix lands in a tempdir on a different mount from the podcast volume,
+  where `os.replace` raises `EXDEV`.
+
+When adding the next bit of podcast polish, grep both producers.
+
 ## 7. Reject → recreate
 
 Clearing a medium's dispatch marker re-runs that medium's graph **fresh** (new render).

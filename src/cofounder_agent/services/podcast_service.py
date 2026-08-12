@@ -1302,6 +1302,13 @@ class PodcastService:
             try:
                 result = await self._generate_with_voice(episode_script, voice, output_path)
                 if result.success:
+                    # Intro/outro sting — parity with the Stage-3 podcast.render
+                    # atom. Deliberately BEFORE _record_episode_asset: that stamps
+                    # duration_ms / file_size_bytes straight off `result`, and the
+                    # mixed cut is both longer and larger than the dry one.
+                    result = await self._maybe_mix_sting(
+                        result, post_id=post_id, output_path=output_path,
+                    )
                     logger.info(
                         "[PODCAST] Generated: %s (%d bytes, ~%ds, voice=%s)",
                         post_id,
@@ -1341,6 +1348,114 @@ class PodcastService:
         error_msg = f"All voices failed. Last error: {last_error}"
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
+
+    async def _maybe_mix_sting(
+        self,
+        result: "EpisodeResult",
+        *,
+        post_id: str,
+        output_path: Path,
+    ) -> "EpisodeResult":
+        """Mix the show's intro/outro sting over a freshly rendered episode.
+
+        Parity with the Stage-3 ``podcast.render`` atom (#690): the sting used
+        to be mixed ONLY on the graph path, so regenerating an episode from the
+        console / API silently produced a dry cut — the same parity gap
+        ``_append_podcast_cta`` closed for the per-medium CTA.
+
+        There is no Stage-1 snapshot here, so the resolver is asked for the
+        curated show theme directly: a per-episode generated sting belongs to
+        the pipeline run that made it, and its temp path would be long gone.
+
+        Fail-soft — returns ``result`` untouched on any problem, because losing
+        polish must never lose the episode. On success returns a REFRESHED
+        result: the caller stamps ``media_assets`` from these numbers, and the
+        mixed file is both longer and larger than the dry cut.
+        """
+        sc = self._site_config
+        if str(sc.get("podcast_sting_mix_enabled", "true") or "").lower() != "true":
+            return result
+
+        from services.podcast_sting_mixer import (
+            mix_intro_outro,
+            probe_duration_s,
+            resolve_sting_path,
+        )
+        from utils.findings import emit_finding
+
+        sting = resolve_sting_path(None, sc)
+        if not sting.path:
+            if sting.expected:
+                # Configured but unusable. Never silent: a dry episode where
+                # the operator asked for a theme is a quality downgrade
+                # (feedback_flag_quality_downgrades).
+                emit_finding(
+                    source="podcast_service",
+                    kind="podcast_sting_missing",
+                    title="podcast: no usable sting — regenerated episode has no music",
+                    body=(
+                        f"Regenerating post {post_id} produced a dry cut: "
+                        f"{sting.detail}."
+                    ),
+                    severity="warn",
+                    dedup_key=f"podcast_sting_missing:{post_id}",
+                    extra={"post_id": str(post_id)},
+                )
+            return result
+
+        mixed = await mix_intro_outro(
+            str(output_path), sting.path, site_config=sc, task_id=post_id,
+        )
+        if not mixed:
+            emit_finding(
+                source="podcast_service",
+                kind="podcast_sting_mix_failed",
+                title="podcast: sting mix failed — regenerated episode has no music",
+                body=(
+                    f"A sting ({sting.source}) was available for post {post_id} "
+                    "but the ffmpeg mix failed (see log '[sting_mixer]'); the "
+                    "dry narration was kept."
+                ),
+                severity="warn",
+                dedup_key=f"podcast_sting_mix_failed:{post_id}",
+                extra={"post_id": str(post_id), "sting": sting.path},
+            )
+            return result
+
+        try:
+            # shutil.move, NOT os.replace: the mix lands in a tempdir that is a
+            # different mount from the podcast volume, where os.replace raises
+            # EXDEV. mix_intro_outro never touches the original, so a failure
+            # here leaves the dry episode intact at output_path.
+            import shutil
+
+            shutil.move(mixed, str(output_path))
+        except OSError as exc:
+            logger.warning(
+                "[PODCAST] could not install mixed episode for %s: %s", post_id, exc,
+            )
+            try:
+                os.unlink(mixed)
+            except OSError:  # silent-ok: best-effort temp cleanup on a path
+                # that already failed and is being reported above.
+                pass
+            return result
+
+        duration = await probe_duration_s(str(output_path))
+        logger.info(
+            "[PODCAST] mixed %s sting into episode %s", sting.source, post_id,
+        )
+        return EpisodeResult(
+            success=True,
+            file_path=str(output_path),
+            # Probed, not estimated — the dry-cut estimate is wrong by the
+            # sting's intro + outro windows. Falls back to the old estimate
+            # only if ffprobe can't read the file we just wrote.
+            duration_seconds=(
+                int(duration) if duration else result.duration_seconds
+            ),
+            file_size_bytes=output_path.stat().st_size,
+        )
 
     async def _maybe_generate_narration_sibling(
         self,

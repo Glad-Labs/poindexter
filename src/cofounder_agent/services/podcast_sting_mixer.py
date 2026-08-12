@@ -166,6 +166,17 @@ async def _probe_duration_s(path: str) -> float | None:
         return None
 
 
+async def probe_duration_s(path: str) -> float | None:
+    """Public ffprobe duration probe — ``None`` when the file can't be read.
+
+    Callers that swap a rendered file for a mixed one need the NEW duration
+    (``PodcastService`` stamps ``media_assets.duration_ms`` straight off it).
+    Thin wrapper over the internal helper so the existing tests that
+    monkeypatch ``_probe_duration_s`` keep working unchanged.
+    """
+    return await _probe_duration_s(path)
+
+
 async def mix_intro_outro(
     narration_path: str,
     sting_path: str,
@@ -242,6 +253,7 @@ __all__ = [
     "StingResolution",
     "build_mix_filtergraph",
     "mix_intro_outro",
+    "probe_duration_s",
     "resolve_config",
     "resolve_sting_path",
 ]
