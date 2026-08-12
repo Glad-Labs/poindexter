@@ -79,6 +79,30 @@ def _neutralize_wan_ready_wait():
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_unload_settles():
+    """Skip the post-unload settle waits.
+
+    The reclaim helpers sleep a few seconds after asking image-gen / wan to
+    unload, giving the driver time to actually return the VRAM before the next
+    load starts. That is load-bearing in production and pure wall-clock cost
+    under test: ~6s per render-path test, ~52s across this file, for behaviour
+    no test here asserts (the unload CALLS are already stubbed above, and the
+    tests that assert unload ordering live in test_hero_vram_choreography.py).
+
+    Patching `asyncio.sleep` on the module rather than the helpers keeps the
+    real reclaim code path — ordering, best-effort excepts, settings reads —
+    exercised; only the waiting is removed.
+    """
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    with patch(
+        "services.video_renderers.shot_list_renderer.asyncio.sleep",
+        _AsyncMock(),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _neutralize_wan_unload():
     """Every _render_pass now fires a best-effort wan hard-unload before its
     still phase (`_clear_wan_for_stills`, poindexter#966 between-lanes half).
