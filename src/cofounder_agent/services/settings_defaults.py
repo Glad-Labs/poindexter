@@ -2000,6 +2000,12 @@ DEFAULTS: dict[str, str] = {
     # reference moves output pace only marginally (measured: a -19% reference
     # bought -7% output). Rides the existing loudnorm pass — no extra encode.
     'plugin.tts_provider.chatterbox.atempo': '1.0',
+    # Silence between sentence-chunks. Since the sidecar trims each chunk's own
+    # edge silence before joining, this IS the whole boundary — raise it for a
+    # more measured read, lower it for a tighter one. Empty = sidecar default.
+    # 0.40 (+ the joiner's 2x30ms margins = ~0.46s) matches the measured median
+    # of Chatterbox's own sentence pauses, so a chunk seam is inaudible.
+    'plugin.tts_provider.chatterbox.chunk_gap_seconds': '0.40',
     # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
     # VRAM), where a full paragraph takes minutes — well past the 120s default.
     'plugin.tts_provider.chatterbox.timeout_s': '600',
@@ -4119,6 +4125,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'plugin.job.sync_affiliate_clicks.interval_seconds': {'value_type': 'integer'},
     'plugin.llm_provider.gemini.enabled': {'owner': 'gemini', 'value_type': 'boolean'},
     'plugin.tts_provider.chatterbox.atempo': {'owner': 'podcast_service', 'value_type': 'float'},
+    'plugin.tts_provider.chatterbox.chunk_gap_seconds': {'owner': 'podcast_service', 'value_type': 'float'},
     'plugin.tts_provider.chatterbox.audio_prompt_path': {'owner': 'podcast_service'},
     'plugin.tts_provider.chatterbox.base_url': {'value_type': 'url'},
     'plugin.tts_provider.chatterbox.cfg_weight': {'owner': 'podcast_service', 'value_type': 'float'},

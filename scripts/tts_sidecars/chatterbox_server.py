@@ -29,6 +29,7 @@ import time
 
 import numpy as np
 import soundfile as sf
+from audio_join import join_segments
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from text_chunking import chunk_text
@@ -59,7 +60,16 @@ _model_lock = threading.Lock()
 _last_used = 0.0
 
 # Silence inserted between concatenated sentence chunks, for natural pacing.
-_GAP_SECONDS = 0.25
+# This is now the WHOLE boundary (join_segments trims each chunk's own edge
+# silence first); before that it was only a floor under the model's tails.
+#
+# 0.40 + the joiner's two 30ms keep-margins lands at ~0.46s, the MEASURED median
+# of Chatterbox's own intra-chunk sentence pauses (n=95 on a shipped episode:
+# p25 0.26 / median 0.46 / p75 0.89). Matching it is the point — a chunk seam
+# should be indistinguishable from a sentence break the model made itself. The
+# old 0.25 was never the real boundary (tails swamped it), so keeping 0.25 after
+# trimming would just swap dead air for an unnaturally clipped seam.
+_GAP_SECONDS = float(os.environ.get("CHATTERBOX_GAP_SECONDS", "0.40") or 0.40)
 
 # Optional voice reference. Chatterbox has ONE built-in default voice and clones
 # any other voice zero-shot from a short reference clip (audio_prompt_path). Pin
@@ -159,6 +169,11 @@ class SpeechRequest(BaseModel):
     # Path (inside the container) to a ~7-10s reference clip to clone. Overrides
     # CHATTERBOX_PROMPT_WAV; None/"" => built-in default voice.
     audio_prompt_path: str | None = None
+    # Silence between sentence-chunks. None => CHATTERBOX_GAP_SECONDS/_GAP_SECONDS.
+    # Only meaningful with trim_chunk_silence on, which is what makes the gap
+    # the ACTUAL boundary length rather than a floor under the model's own tails.
+    gap_seconds: float | None = None
+    trim_chunk_silence: bool = True
 
 
 class UnloadRequest(BaseModel):
@@ -269,22 +284,32 @@ def _synthesize(req: SpeechRequest, voice_ref: str | None) -> Response:
     """Render one request. Caller MUST hold ``_model_lock``."""
     model = _get_model()
     sample_rate = int(model.sr)
-    gap = np.zeros(int(sample_rate * _GAP_SECONDS), dtype=np.float32)
 
     # voice_ref was resolved and existence-checked by the caller, before the
     # model load — per-request ref > env default > built-in voice (None).
     segments: list[np.ndarray] = []
     chunks = chunk_text(req.input)
-    for i, chunk in enumerate(chunks):
+    for chunk in chunks:
         # generate(text, audio_prompt_path=, exaggeration=, cfg_weight=) -> torch
         # tensor [1, N] at model.sr. audio_prompt_path=None => default voice.
         wav = model.generate(chunk, audio_prompt_path=voice_ref,
                              exaggeration=req.exaggeration, cfg_weight=req.cfg_weight)
         segments.append(wav.squeeze(0).detach().cpu().numpy().astype(np.float32))
-        if i < len(chunks) - 1:
-            segments.append(gap)
 
-    audio_samples = np.concatenate(segments) if segments else np.zeros(1, dtype=np.float32)
+    # Each generation carries its own unpredictable leading/trailing silence, so
+    # raw-concatenating with a fixed gap produced (tail + gap + head) — measured
+    # up to 3.46s where only 0.25s was ever inserted, on ~40% of boundaries.
+    # join_segments trims the edges first so the boundary is exactly gap_seconds.
+    gap_seconds = _GAP_SECONDS if req.gap_seconds is None else req.gap_seconds
+    audio_samples = join_segments(
+        segments, sample_rate,
+        gap_seconds=gap_seconds, trim=req.trim_chunk_silence,
+    )
+    logger.info(
+        "joined %d chunk(s): gap=%.2fs trim=%s -> %.1fs",
+        len(chunks), gap_seconds, req.trim_chunk_silence,
+        audio_samples.size / max(1, sample_rate),
+    )
     audio = _encode(audio_samples, sample_rate, req.response_format.lower())
     media = {"mp3": "audio/mpeg", "wav": "audio/wav",
              "opus": "audio/opus", "aac": "audio/aac"}.get(

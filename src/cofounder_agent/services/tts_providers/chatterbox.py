@@ -103,6 +103,11 @@ class ChatterboxTTSProvider:
         }
         if audio_prompt_path:
             extra_body["audio_prompt_path"] = audio_prompt_path
+        # Inter-chunk silence. Forwarded only when configured, so an unset key
+        # leaves the sidecar's own default in charge (same contract as the
+        # loudnorm/remux keys below) rather than duplicating the value here.
+        if str(cfg.get("chunk_gap_seconds") or "").strip():
+            extra_body["gap_seconds"] = _as_float(cfg.get("chunk_gap_seconds"), 0.25)
 
         # remux_bitrate / loudnorm_* are forwarded ONLY when the caller
         # (podcast_service._generate_with_chatterbox) actually configured

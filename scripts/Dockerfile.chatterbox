@@ -52,6 +52,7 @@ WORKDIR /app
 # dir there either — /tmp is always world-writable regardless of mounts.
 ENV NUMBA_CACHE_DIR=/tmp/numba_cache
 COPY --chown=appuser tts_sidecars/text_chunking.py /app/text_chunking.py
+COPY --chown=appuser tts_sidecars/audio_join.py /app/audio_join.py
 COPY --chown=appuser tts_sidecars/chatterbox_server.py /app/server.py
 
 EXPOSE 8000
