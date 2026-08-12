@@ -40,7 +40,7 @@
     },
     {
       "key": "affiliate_clicks_last_sync",
-      "value": "2026-08-11T08:44:12.379696+00:00",
+      "value": "2026-08-12T09:04:32.038451+00:00",
       "data_type": "string",
       "category": "cost",
       "environment": "production",
@@ -50,8 +50,8 @@
       "tags": [],
       "id": 941770,
       "created_at": "2026-07-11T23:23:22.616038Z",
-      "updated_at": "2026-08-11T08:44:12.379908Z",
-      "value_preview": "2026-08-11T08:44:12.379696+00:00",
+      "updated_at": "2026-08-12T09:04:32.038677Z",
+      "value_preview": "2026-08-12T09:04:32.038451+00:00",
       "owner": null,
       "value_type": null,
       "deprecated": false,
@@ -1901,7 +1901,7 @@
       "superseded_by": null
     }
   ],
-  "total": 1431,
+  "total": 1437,
   "limit": 100,
   "offset": 0
 }

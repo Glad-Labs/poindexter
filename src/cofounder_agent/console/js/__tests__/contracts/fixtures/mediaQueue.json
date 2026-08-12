@@ -1,23 +1,15 @@
 {
   "items": [
     {
-      "post_id": "36dfbd81-83b4-4509-8d67-a4dc78076e18",
+      "post_id": "ede1791a-6d07-48b5-9573-fb5bdf978d06",
       "medium": "video",
-      "title": "The tell in the pipeline",
-      "slug": "the-tell-in-the-pipeline-69c3fb56",
-      "quality_score": 95,
-      "created_at": "2026-08-10T15:45:14.660630Z"
-    },
-    {
-      "post_id": "36dfbd81-83b4-4509-8d67-a4dc78076e18",
-      "medium": "video_short",
-      "title": "The tell in the pipeline",
-      "slug": "the-tell-in-the-pipeline-69c3fb56",
+      "title": "The Poindexter Philosophy",
+      "slug": "the-poindexter-philosophy-68252b36",
       "quality_score": 100,
-      "created_at": "2026-08-10T15:43:54.442563Z"
+      "created_at": "2026-08-12T05:43:54.525689Z"
     }
   ],
-  "total": 2,
+  "total": 1,
   "limit": 50,
   "offset": 0
 }
