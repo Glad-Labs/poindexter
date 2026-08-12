@@ -1423,7 +1423,21 @@ async def test_auto_schedule_uses_prime_time_over_quiet_hours():
     import datetime as _dt
 
     ny = ZoneInfo("America/New_York")
-    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    # The publish time MUST be in the future relative to the real wall clock.
+    # `auto_schedule_ready_drafts` anchors on `datetime.now()` whenever the
+    # publish time has already passed:
+    #
+    #     anchor = published_at if published_at + offset > now else now
+    #
+    # so a hardcoded past date silently stops testing the publish-time branch
+    # and starts testing "whatever time the suite happens to run". This test
+    # was pinned to 2026-08-09 23:00 asserting a 2026-08-10 09:00 slot, and it
+    # began failing on EVERY run once that instant passed — CI stayed green
+    # only while runs landed before 09:00 Eastern. Deriving the date from the
+    # clock keeps the scenario (a 23:00 publish, inside quiet hours) fixed
+    # while the calendar moves.
+    tomorrow = _dt.datetime.now(ny).date() + _dt.timedelta(days=1)
+    published = _dt.datetime.combine(tomorrow, _dt.time(23, 0), tzinfo=ny)
     pool, conn = _make_pool()
     conn.fetch.side_effect = [
         [{"id": "d-1", "platform": "twitter", "published_at": published}],
@@ -1442,7 +1456,9 @@ async def test_auto_schedule_uses_prime_time_over_quiet_hours():
     assert result["scheduled"] == 1
     slot = conn.execute.call_args[0][2].astimezone(ny)
     assert (slot.hour, slot.minute) == (9, 0), "should be prime time, not 07:00"
-    assert slot.date() == _dt.date(2026, 8, 10)
+    # 23:00 is past both prime times, so the slot rolls to the NEXT day's
+    # first one — relative to the publish date, not to today.
+    assert slot.date() == tomorrow + _dt.timedelta(days=1)
 
 
 @pytest.mark.asyncio
@@ -1451,7 +1467,13 @@ async def test_auto_schedule_opts_in_via_prime_times_alone():
     import datetime as _dt
 
     ny = ZoneInfo("America/New_York")
-    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    # Future-relative like its siblings. This one's assertion (hour == 8) is
+    # satisfied by any 08:00 slot, so a stale literal wouldn't fail it — it
+    # would just quietly stop testing the publish-time anchor branch.
+    published = _dt.datetime.combine(
+        _dt.datetime.now(ny).date() + _dt.timedelta(days=1),
+        _dt.time(23, 0), tzinfo=ny,
+    )
     pool, conn = _make_pool()
     conn.fetch.side_effect = [
         [{"id": "d-1", "platform": "linkedin", "published_at": published}],
@@ -1479,14 +1501,20 @@ async def test_auto_schedule_avoids_slots_already_claimed_in_the_db():
     import datetime as _dt
 
     ny = ZoneInfo("America/New_York")
-    published = _dt.datetime(2026, 8, 9, 23, 0, tzinfo=ny)
+    # Future-relative for the same reason as the prime-time test above: a past
+    # publish time makes the service anchor on `now`, and then the "already
+    # claimed" slot is in the past too — so the collision under test never
+    # happens and the assertion passes or fails on the wall clock instead.
+    tomorrow = _dt.datetime.now(ny).date() + _dt.timedelta(days=1)
+    published = _dt.datetime.combine(tomorrow, _dt.time(23, 0), tzinfo=ny)
+    # The slot this draft would otherwise take — the next day's first prime.
+    contested = _dt.datetime.combine(
+        tomorrow + _dt.timedelta(days=1), _dt.time(9, 0), tzinfo=ny,
+    )
     pool, conn = _make_pool()
     conn.fetch.side_effect = [
         [{"id": "d-2", "platform": "twitter", "published_at": published}],
-        [{
-            "platform": "twitter",
-            "scheduled_at": _dt.datetime(2026, 8, 10, 9, 0, tzinfo=ny),
-        }],
+        [{"platform": "twitter", "scheduled_at": contested}],
     ]
     sc = _sched_site_config(
         social_schedule_enabled="true",
@@ -1498,6 +1526,7 @@ async def test_auto_schedule_avoids_slots_already_claimed_in_the_db():
 
     slot = conn.execute.call_args[0][2].astimezone(ny)
     assert (slot.hour, slot.minute) == (12, 30), "09:00 was already taken"
+    assert slot.date() == contested.date(), "same day, next slot along"
 
 
 @pytest.mark.asyncio
@@ -1507,8 +1536,11 @@ async def test_offset_still_acts_as_a_floor_under_prime_times():
 
     ny = ZoneInfo("America/New_York")
     # 07:00 publish; a bare 08:00 prime time would fire the same morning, but
-    # the 3h offset pushes the floor to 10:00, so it rolls to tomorrow's 08:00.
-    published = _dt.datetime(2026, 8, 10, 7, 0, tzinfo=ny)
+    # the 3h offset pushes the floor to 10:00, so it rolls to the next 08:00.
+    # Dated relative to now so the offset-vs-prime interaction is what's under
+    # test rather than how far the calendar has moved past a literal.
+    pub_day = _dt.datetime.now(ny).date() + _dt.timedelta(days=1)
+    published = _dt.datetime.combine(pub_day, _dt.time(7, 0), tzinfo=ny)
     pool, conn = _make_pool()
     conn.fetch.side_effect = [
         [{"id": "d-1", "platform": "linkedin", "published_at": published}],
@@ -1524,7 +1556,9 @@ async def test_offset_still_acts_as_a_floor_under_prime_times():
     await svc.auto_schedule_ready_drafts(pool, sc)
 
     slot = conn.execute.call_args[0][2].astimezone(ny)
-    assert slot == _dt.datetime(2026, 8, 11, 8, 0, tzinfo=ny)
+    assert slot == _dt.datetime.combine(
+        pub_day + _dt.timedelta(days=1), _dt.time(8, 0), tzinfo=ny,
+    )
 
 
 @pytest.mark.asyncio
@@ -1533,7 +1567,13 @@ async def test_platform_without_prime_times_keeps_offset_behaviour():
     import datetime as _dt
 
     ny = ZoneInfo("America/New_York")
-    published = _dt.datetime(2026, 8, 11, 10, 0, tzinfo=ny)
+    # Future-relative: the assertion is `published + 2h`, which only holds
+    # while the publish time is still ahead of `now`. Pinned to a literal it
+    # silently flips to asserting against `now + 2h` once that date passes.
+    published = _dt.datetime.combine(
+        _dt.datetime.now(ny).date() + _dt.timedelta(days=1),
+        _dt.time(10, 0), tzinfo=ny,
+    )
     pool, conn = _make_pool()
     conn.fetch.side_effect = [
         [{"id": "d-1", "platform": "bluesky", "published_at": published}],

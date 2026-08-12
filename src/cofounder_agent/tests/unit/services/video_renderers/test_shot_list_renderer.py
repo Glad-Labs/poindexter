@@ -37,6 +37,33 @@ def _neutralize_image_gen_ready_wait():
 
 
 @pytest.fixture(autouse=True)
+def _neutralize_live_vram_probe():
+    """Same hermeticity contract as the waits above, for the adaptive hero
+    plate. ``_fit_hero_dims_to_free_vram`` asks the wan server for live free
+    VRAM before sizing the plate, so unpatched these tests read the REAL GPU
+    — and the dimension assertions (``832x480``) then hold only while the card
+    happens to be idle.
+
+    That is not hypothetical: on 2026-08-10 a hero render was in flight, the
+    live read returned ~4.5GB free, the plate correctly stepped down to
+    704x400, and `test_wan21_calls_provider_with_image_path` failed with
+    `assert 704 == 832` — blocking an unrelated PR. The CI runners are
+    containers on the operator box, so they see that same busy card.
+
+    Returning an ample reading keeps the full plate (what these tests assert)
+    without touching the network, and skips the 4-sample fallback loop.
+    Tests about the ladder itself live in test_hero_vram_choreography.py.
+    """
+    from unittest.mock import AsyncMock as _AsyncMock
+
+    with patch(
+        "services.video_renderers.shot_list_renderer._live_free_vram_gb",
+        _AsyncMock(return_value=40.0),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _neutralize_wan_ready_wait():
     """The hero phase now polls wan /health before animating (#899
     reliability half). Unpatched, every hero-phase test would attempt real

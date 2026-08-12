@@ -263,6 +263,39 @@ def _registry(free_gb):
     return reg
 
 
+@pytest.fixture(autouse=True)
+def _no_live_vram_probe(monkeypatch):
+    """Force the GPURegistry fallback so the `_registry(N)` patches below mean
+    something.
+
+    ``_fit_hero_dims_to_free_vram`` asks the **wan server** for live free VRAM
+    FIRST and only falls back to ``GPURegistry`` when that returns None. Every
+    test here patches the fallback, so whenever a wan server is actually
+    reachable — which it is on the operator box, and the CI runners are
+    containers on that same box — the patched value was never consulted and
+    these "unit" tests silently graded themselves against the real GPU.
+
+    They therefore passed or failed on whatever the pipeline happened to be
+    rendering: green at ~20GB free, red at ~4.5GB when a hero render was in
+    flight (2026-08-10, blocking an unrelated PR). Returning None here means
+    "ask Prometheus instead", which is the branch the patches address.
+
+    Tests that want to exercise the live path override this with their own
+    monkeypatch — a later setattr wins.
+
+    Also zeroes the inter-sample gap. The fallback takes ``_FREE_VRAM_SAMPLES``
+    (4) readings ``_FREE_VRAM_SAMPLE_GAP_S`` (4.0s) apart to ride out
+    Prometheus' scrape lag, which is right in production and is 12s of real
+    ``asyncio.sleep`` per call in a unit test — 72s across this file, for
+    nothing. The sampling behaviour (4 reads, keep the max) is unchanged; only
+    the wall-clock wait goes. No test asserts the gap itself.
+    """
+    from services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
+    monkeypatch.setattr(slr, "_FREE_VRAM_SAMPLE_GAP_S", 0.0)
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_plate_steps_down_to_the_quality_floor():
@@ -520,3 +553,43 @@ async def test_live_reading_still_declines_a_genuinely_full_card():
     with patch("services.gpu_registry.GPURegistry", lambda **kw: MagicMock()), \
          patch.object(slr, "_live_free_vram_gb", AsyncMock(return_value=9.0)):
         assert await slr._fit_hero_dims_to_free_vram(832, 480, _sc()) is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_live_wan_reading_wins_over_the_prometheus_fallback(monkeypatch):
+    """The live wan read is preferred, and the registry is not consulted.
+
+    This precedence was never covered: every test patched only the fallback,
+    so nothing pinned that the live path runs FIRST — which is exactly how the
+    fallback patches came to be silently bypassed on any box with a reachable
+    wan server. Overrides the autouse stub deliberately.
+    """
+    from services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=30.0))
+    registry = _registry(16.0)  # would say "no room" and decline to animate
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: registry):
+        out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    # The live 30GB reading wins: full plate, not the fallback's verdict.
+    assert out == (832, 480)
+    registry.free_gb.assert_not_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_falls_back_to_registry_when_live_read_unavailable(monkeypatch):
+    """None from the live probe means 'ask Prometheus instead' — the branch
+    every other test in this file actually exercises."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
+    registry = _registry(23.0)
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: registry):
+        out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert out == (704, 400)
+    registry.free_gb.assert_awaited()
