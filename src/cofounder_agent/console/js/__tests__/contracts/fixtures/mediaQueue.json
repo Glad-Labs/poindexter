@@ -1,15 +1,23 @@
 {
   "items": [
     {
-      "post_id": "60e36c23-7c9f-44a1-a234-b0f2246d87fa",
+      "post_id": "36dfbd81-83b4-4509-8d67-a4dc78076e18",
       "medium": "video",
-      "title": "The Dot's Incident and the Implementation of Topic Sanity Checks",
-      "slug": "the-dots-incident-and-the-implementation-of-topic-9f850778",
+      "title": "The tell in the pipeline",
+      "slug": "the-tell-in-the-pipeline-69c3fb56",
+      "quality_score": 95,
+      "created_at": "2026-08-10T15:45:14.660630Z"
+    },
+    {
+      "post_id": "36dfbd81-83b4-4509-8d67-a4dc78076e18",
+      "medium": "video_short",
+      "title": "The tell in the pipeline",
+      "slug": "the-tell-in-the-pipeline-69c3fb56",
       "quality_score": 100,
-      "created_at": "2026-08-09T03:09:12.278978Z"
+      "created_at": "2026-08-10T15:43:54.442563Z"
     }
   ],
-  "total": 1,
+  "total": 2,
   "limit": 50,
   "offset": 0
 }
