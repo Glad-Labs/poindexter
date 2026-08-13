@@ -356,7 +356,7 @@ pytest-timeout = "^2.0"
 pytest-xdist = "^3.0"
 pytest-forked = "^1.6"
 pytest-benchmark = "^5.2"
-hypothesis = "^6.0"  # property-based tests for the deterministic quality scorers (#337c)
+hypothesis = "^6.165"  # property-based tests for the deterministic quality scorers (#337c)
 
 # Code Quality — ruff is the single linter+formatter (supersedes black + isort
 # + pylint; the `I` rule replaces isort, `ruff format` replaces black).
