@@ -43,7 +43,10 @@ def _base_state(**extra):
     return state
 
 
-def _originality_result(is_original=True, max_similarity=0.1, similar_titles=None):
+def _originality_result(
+    is_original=True, max_similarity=0.1, similar_titles=None,
+    internal_duplicate=False, internal_similarity=0.0, internal_matches=None,
+):
     return {
         "is_original": is_original,
         "similar_titles": similar_titles or [],
@@ -53,6 +56,13 @@ def _originality_result(is_original=True, max_similarity=0.1, similar_titles=Non
         "external_penalty": 0,
         "external_matches": [],
         "external_fail_open": False,
+        "external_duplicate": False,
+        # poindexter#1044 — internal-corpus axis.
+        "internal_duplicate": internal_duplicate,
+        "internal_similarity": internal_similarity,
+        "internal_matches": internal_matches or [],
+        "internal_fail_open": False,
+        "internal_threshold": 0.58,
     }
 
 
@@ -181,7 +191,7 @@ class TestContentGenerateTitle:
 
         checks = iter([orig_fail, orig_pass])
 
-        async def _check(title, *, site_config):
+        async def _check(title, *, site_config, pool=None, exclude_task_id=None):
             return next(checks)
 
         monkeypatch.setattr("services.title_generation.generate_canonical_title", _gen)
@@ -773,3 +783,97 @@ class TestContentRecordPipelineVersionBehavior:
         assert out["stages"]["5_version_recorded"] is True
         assert out["stages"]["2_content_generated"] is True
         assert out["stages"]["3_qa_passed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Internal-duplicate visibility (poindexter#1044)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestTitleInternalDuplicateVisibility:
+    """A near-duplicate that survives regeneration ships — but not silently.
+
+    The gate is deliberately soft: a slightly-repetitive title beats no post.
+    That makes the finding the ONLY signal that the threshold or the avoidance
+    prompt needs attention, so it is the thing worth pinning.
+    """
+
+    def _patch_title_path(self, monkeypatch, originality):
+        monkeypatch.setattr(
+            "services.title_generation.generate_canonical_title",
+            AsyncMock(return_value="A Title"),
+        )
+        monkeypatch.setattr(
+            "services.title_generation.choose_canonical_title",
+            lambda topic, content, llm_title, **kw: llm_title,
+        )
+        monkeypatch.setattr(
+            "services.title_generation.check_title_originality",
+            AsyncMock(return_value=originality),
+        )
+
+    def _db(self):
+        mock_conn = AsyncMock()
+        mock_conn.fetch = AsyncMock(return_value=[])
+        pool = MagicMock()
+        pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        return _make_db(pool=pool)
+
+    async def test_surviving_duplicate_emits_a_finding(self, monkeypatch):
+        from modules.content.atoms import content_generate_title as atom
+
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        # is_original=True so the regen loop does not run — this is the
+        # "regeneration already happened and did not clear it" shape.
+        self._patch_title_path(monkeypatch, _originality_result(
+            is_original=True, internal_duplicate=True,
+            internal_similarity=0.71,
+            internal_matches=["The Shift to a Native UI"],
+        ))
+
+        await atom.run(_base_state(database_service=self._db()))
+
+        assert len(findings) == 1, "a near-duplicate shipped with no signal"
+        assert findings[0]["kind"] == "title_internal_duplicate"
+        assert "The Shift to a Native UI" in findings[0]["body"]
+
+    async def test_clean_title_emits_nothing(self, monkeypatch):
+        from modules.content.atoms import content_generate_title as atom
+
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        self._patch_title_path(monkeypatch, _originality_result(is_original=True))
+
+        await atom.run(_base_state(database_service=self._db()))
+
+        assert findings == [], "a clean title must not page anyone"
+
+    async def test_finding_is_deduped_per_task(self, monkeypatch):
+        """One noisy key per task, not one per pipeline re-run."""
+        from modules.content.atoms import content_generate_title as atom
+
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+        self._patch_title_path(monkeypatch, _originality_result(
+            is_original=True, internal_duplicate=True,
+            internal_similarity=0.71, internal_matches=["Some Existing Title"],
+        ))
+
+        state = _base_state(database_service=self._db())
+        await atom.run(state)
+
+        assert findings[0]["dedup_key"].startswith("title_internal_duplicate:")
+        assert str(state["task_id"]) in findings[0]["dedup_key"]

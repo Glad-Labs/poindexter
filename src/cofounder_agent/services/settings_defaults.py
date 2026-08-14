@@ -1368,6 +1368,22 @@ DEFAULTS: dict[str, str] = {
     # Times a content word must recur in the window to be called out as
     # over-used vocabulary.
     'title_avoidance_lexical_min_count': '3',
+    # --- Internal-corpus duplicate check (poindexter#1044) -------------------
+    # qa_title_similarity_threshold compares against DuckDuckGo results ONLY —
+    # it is an external-plagiarism check. These govern the separate question
+    # "did we already write this?", comparing the candidate against titles we
+    # have published or queued. Kept as distinct keys because conflating them
+    # is exactly what let two of our own 0.755-similar titles both ship.
+    'title_internal_similarity_enabled': 'true',
+    # Calibrated 2026-08-14 on 179 published titles / 9,870 pairs (legacy
+    # "What we shipped on <date>" cluster excluded): mean 0.271, p90 0.368,
+    # p99 0.471, max 0.755. 0.58 admits the 12 genuine near-duplicate pairs
+    # (0.12%) including "Silent Failures and Crying Wolf" vs "Where the Silent
+    # Failures Were Hiding" (0.588); 0.60 would miss those.
+    'title_internal_similarity_threshold': '0.58',
+    # Titles compared against, newest first. Bounded so a corpus in the
+    # thousands can never turn one title call into a visible stall.
+    'title_internal_corpus_limit': '500',
 
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
@@ -4360,6 +4376,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'title_avoidance_mode': {'owner': 'title_avoidance', 'value_type': 'string'},
     'title_avoidance_pattern_threshold': {'owner': 'title_avoidance', 'value_type': 'float'},
     'title_avoidance_recent_count': {'owner': 'title_avoidance', 'value_type': 'integer'},
+    'title_internal_corpus_limit': {'owner': 'title_avoidance', 'value_type': 'integer'},
+    'title_internal_similarity_enabled': {'owner': 'title_avoidance', 'value_type': 'boolean'},
+    'title_internal_similarity_threshold': {'owner': 'title_avoidance', 'value_type': 'float'},
     'title_junk_regen_max_retries': {'owner': 'title_generation', 'value_type': 'integer'},
     'title_max_length': {'owner': 'title_generation', 'value_type': 'integer'},
     'title_originality_cache_ttl_hours': {'owner': 'title_originality_external', 'value_type': 'integer'},

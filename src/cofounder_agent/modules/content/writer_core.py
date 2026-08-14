@@ -93,6 +93,9 @@ class GenerateContentStage:
         from services.title_generation import (
             generate_canonical_title as _generate_canonical_title,
         )
+        from services.title_generation import (
+            originality_rank as _originality_rank,
+        )
         from services.writing_style_context import (
             build_writing_style_context as _build_writing_style_context,
         )
@@ -328,6 +331,7 @@ class GenerateContentStage:
         # regenerated version if it's actually more original.
         originality = await _check_title_originality(
             title, site_config=context.get("site_config"),  # type: ignore[arg-type]
+            pool=pool, exclude_task_id=str(task_id) if task_id else None,
         )
         if not originality["is_original"]:
             logger.warning(
@@ -350,22 +354,20 @@ class GenerateContentStage:
             if title_v2:
                 originality_v2 = await _check_title_originality(
                     title_v2, site_config=context.get("site_config"),  # type: ignore[arg-type]
+                    pool=pool, exclude_task_id=str(task_id) if task_id else None,
                 )
-                # GH-87: prefer the regenerated title if it drops below
-                # either the internal-corpus similarity threshold OR the
-                # external-duplicate flag. Previously we only looked at
-                # max_similarity, which ignored verbatim external matches.
-                v1_ext_dup = bool(originality.get("external_verbatim_match"))
-                v2_ext_dup = bool(originality_v2.get("external_verbatim_match"))
-                more_original = (
-                    originality_v2["max_similarity"] < originality["max_similarity"]
-                    or (v1_ext_dup and not v2_ext_dup)
-                )
-                if more_original:
+                # Rank on BOTH axes (poindexter#1044). The old comparison read
+                # max_similarity — an EXTERNAL-only field — so a v2 that fixed
+                # an internal duplicate but scored the same against the web was
+                # discarded as "not more unique".
+                if _originality_rank(originality_v2) < _originality_rank(originality):
                     logger.info(
-                        "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
+                        "[TITLE] Regenerated title is more original "
+                        "(external %.0f%%→%.0f%%, internal %.0f%%→%.0f%%): %s",
                         originality["max_similarity"] * 100,
                         originality_v2["max_similarity"] * 100,
+                        originality.get("internal_similarity", 0.0) * 100,
+                        originality_v2.get("internal_similarity", 0.0) * 100,
                         title_v2,
                     )
                     title = title_v2

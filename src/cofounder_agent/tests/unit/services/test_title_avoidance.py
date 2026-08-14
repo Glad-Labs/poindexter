@@ -82,6 +82,12 @@ class _StubSiteConfig:
     def get_float(self, key, default=None):
         return float(self._values.get(key, default))
 
+    def get_bool(self, key, default=False):
+        val = self._values.get(key, default)
+        if isinstance(val, bool):
+            return val
+        return str(val).strip().lower() in ("true", "1", "yes", "on")
+
 
 # ---------------------------------------------------------------------------
 # analyze_title_patterns
@@ -438,3 +444,246 @@ class TestFetchRecentTitles:
         assert findings[0]["kind"] == "title_history_lookup_failed"
         assert findings[0]["severity"] == "info"
         assert findings[0]["extra"]["source"] == "test.source"
+
+
+# ---------------------------------------------------------------------------
+# Internal-corpus similarity (poindexter#1044)
+# ---------------------------------------------------------------------------
+
+from services.title_avoidance import (  # noqa: E402
+    DEFAULT_INTERNAL_SIMILARITY_THRESHOLD,
+    InternalSimilarityReport,
+    check_internal_similarity,
+    fetch_taken_titles,
+    normalize_title_for_similarity,
+    score_internal_similarity,
+)
+
+# Pairs measured on the live corpus 2026-08-14. These are the cases the gate
+# exists for — if a change stops catching them, the gate is decorative.
+REAL_NEAR_DUPLICATE_PAIRS = [
+    ("The Shift to Native Telemetry", "The Shift to a Native UI"),
+    (
+        "The 32GB Threshold: How the RTX 5090 Redefines Local LLM Development",
+        "The 70B Threshold: How the RTX 5090 Rewrites the Home Lab",
+    ),
+    ("Hunting Ghosts in the Middleware",
+     "Hunting ghosts in the metrics and tightening the CI ratchet"),
+    ("Silent Failures and Crying Wolf", "Where the Silent Failures Were Hiding"),
+]
+
+# Genuinely distinct posts that must NOT be flagged. Same corpus, p90 is 0.368
+# — these sit in the bulk of the distribution.
+REAL_DISTINCT_PAIRS = [
+    ("The Silence of the Taps", "VRAM Poisoning and the P4 Architect"),
+    ("Bounded Waits and Invisible Failures", "The Trillion Dollar Regex Bug"),
+    ("The Poindexter Philosophy", "Fighting Namespace Blindness and Cardinality Explosions"),
+    ("Closing the silent data-loss gap", "The five days nobody was watching"),
+]
+
+
+class TestNormalizeTitleForSimilarity:
+    def test_casefolds_and_strips_punctuation(self):
+        assert (
+            normalize_title_for_similarity("The Shift to Native Telemetry!")
+            == "the shift to native telemetry"
+        )
+
+    def test_cosmetic_variants_normalize_identically(self):
+        """A reader sees one title; the raw-string compare would see two."""
+        a = normalize_title_for_similarity("The Shift to Native Telemetry")
+        b = normalize_title_for_similarity("the shift to native telemetry...")
+        assert a == b
+
+    def test_collapses_whitespace(self):
+        assert normalize_title_for_similarity("A   B\tC") == "a b c"
+
+    def test_empty_is_safe(self):
+        assert normalize_title_for_similarity("") == ""
+
+
+class TestScoreInternalSimilarity:
+    @pytest.mark.parametrize("candidate,existing", REAL_NEAR_DUPLICATE_PAIRS)
+    def test_catches_real_near_duplicates(self, candidate, existing):
+        report = score_internal_similarity(candidate, [existing])
+        assert report.is_duplicate, (
+            f"{candidate!r} vs {existing!r} scored {report.max_similarity:.3f}, "
+            f"under the {report.threshold} threshold — this is a pair that "
+            f"actually shipped twice"
+        )
+
+    @pytest.mark.parametrize("a,b", REAL_DISTINCT_PAIRS)
+    def test_passes_genuinely_distinct_titles(self, a, b):
+        report = score_internal_similarity(a, [b])
+        assert not report.is_duplicate, (
+            f"{a!r} vs {b!r} scored {report.max_similarity:.3f} — flagging "
+            f"distinct posts burns an LLM call and erodes trust in the gate"
+        )
+
+    def test_exact_match_scores_one(self):
+        report = score_internal_similarity("The Silence of the Taps",
+                                           ["The Silence of the Taps"])
+        assert report.max_similarity == pytest.approx(1.0)
+        assert report.is_duplicate
+
+    def test_matches_ordered_most_similar_first(self):
+        report = score_internal_similarity(
+            "The Shift to Native Telemetry",
+            ["The Shift to a Native UI", "The Shift to Native Telemetry"],
+        )
+        assert report.matches[0] == "The Shift to Native Telemetry"
+
+    def test_threshold_is_honoured(self):
+        pair = REAL_NEAR_DUPLICATE_PAIRS[0]
+        assert not score_internal_similarity(
+            pair[0], [pair[1]], threshold=0.99
+        ).is_duplicate
+
+    def test_empty_corpus_is_not_a_duplicate(self):
+        report = score_internal_similarity("Anything", [])
+        assert not report.is_duplicate
+        assert report.corpus_size == 0
+
+    def test_empty_title_is_not_a_duplicate(self):
+        assert not score_internal_similarity("", ["Something"]).is_duplicate
+
+    def test_blank_corpus_entries_are_skipped(self):
+        report = score_internal_similarity("Real Title", ["", "   ", None])  # type: ignore[list-item]
+        assert not report.is_duplicate
+
+    def test_max_similarity_reported_even_when_under_threshold(self):
+        """The score is the tuning signal — it must survive a passing verdict."""
+        report = score_internal_similarity(
+            "The Silence of the Taps", ["VRAM Poisoning and the P4 Architect"]
+        )
+        assert not report.is_duplicate
+        assert report.max_similarity > 0.0
+
+    def test_default_threshold_matches_calibration(self):
+        assert DEFAULT_INTERNAL_SIMILARITY_THRESHOLD == 0.58
+
+
+class TestFetchTakenTitles:
+    @pytest.mark.asyncio
+    async def test_queries_published_and_in_flight_statuses(self):
+        """An awaiting_approval title is taken — a reader will see it."""
+        captured: dict = {}
+        pool = _FakePool([{"title": "A"}], captured)
+        await fetch_taken_titles(pool)
+        statuses = captured["args"][0]
+        assert "published" in statuses
+        assert "approved" in statuses
+        assert "awaiting_approval" in statuses
+
+    @pytest.mark.asyncio
+    async def test_excludes_the_calling_task(self):
+        """A re-run must not match the title it wrote last time."""
+        captured: dict = {}
+        pool = _FakePool([], captured)
+        await fetch_taken_titles(pool, exclude_task_id="task-42")
+        assert captured["args"][1] == "task-42"
+
+    @pytest.mark.asyncio
+    async def test_no_exclusion_passes_none(self):
+        captured: dict = {}
+        pool = _FakePool([], captured)
+        await fetch_taken_titles(pool)
+        assert captured["args"][1] is None
+
+    @pytest.mark.asyncio
+    async def test_corpus_limit_comes_from_settings(self):
+        captured: dict = {}
+        pool = _FakePool([], captured)
+        sc = _StubSiteConfig({"title_internal_corpus_limit": "42"})
+        await fetch_taken_titles(pool, site_config=sc)
+        assert captured["args"][2] == 42
+
+    @pytest.mark.asyncio
+    async def test_unreadable_corpus_returns_none_not_empty(self):
+        """None and [] mean different things: unread vs read-and-empty.
+
+        Returning [] would make an unreadable corpus indistinguishable from a
+        clean one, which is the fake-pass this contract exists to prevent.
+        """
+        class _BoomPool:
+            def acquire(self):
+                raise RuntimeError("pool unavailable")
+
+        assert await fetch_taken_titles(_BoomPool()) is None
+
+    @pytest.mark.asyncio
+    async def test_unreadable_corpus_emits_a_finding(self, monkeypatch):
+        findings: list[dict] = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+        )
+
+        class _BoomPool:
+            def acquire(self):
+                raise RuntimeError("pool unavailable")
+
+        await fetch_taken_titles(_BoomPool(), source="test.source")
+        assert len(findings) == 1
+        assert findings[0]["kind"] == "title_corpus_lookup_failed"
+
+    @pytest.mark.asyncio
+    async def test_none_pool_returns_none(self):
+        assert await fetch_taken_titles(None) is None
+
+
+class TestCheckInternalSimilarity:
+    @pytest.mark.asyncio
+    async def test_flags_a_duplicate_against_the_corpus(self):
+        captured: dict = {}
+        pool = _FakePool([{"title": "The Shift to a Native UI"}], captured)
+        report = await check_internal_similarity(
+            pool, "The Shift to Native Telemetry"
+        )
+        assert report.is_duplicate
+        assert report.matches == ["The Shift to a Native UI"]
+
+    @pytest.mark.asyncio
+    async def test_master_switch_disables_the_check(self):
+        captured: dict = {}
+        pool = _FakePool([{"title": "The Shift to a Native UI"}], captured)
+        sc = _StubSiteConfig({"title_internal_similarity_enabled": False})
+        report = await check_internal_similarity(
+            pool, "The Shift to Native Telemetry", site_config=sc
+        )
+        assert not report.is_duplicate
+        assert "sql" not in captured, "disabled check must not hit the DB"
+
+    @pytest.mark.asyncio
+    async def test_threshold_comes_from_settings(self):
+        captured: dict = {}
+        pool = _FakePool([{"title": "The Shift to a Native UI"}], captured)
+        sc = _StubSiteConfig({"title_internal_similarity_threshold": "0.99"})
+        report = await check_internal_similarity(
+            pool, "The Shift to Native Telemetry", site_config=sc
+        )
+        assert not report.is_duplicate
+
+    @pytest.mark.asyncio
+    async def test_unreadable_corpus_is_degraded_not_clean(self):
+        """Fail OPEN but say so — never a fabricated pass."""
+        class _BoomPool:
+            def acquire(self):
+                raise RuntimeError("pool unavailable")
+
+        report = await check_internal_similarity(_BoomPool(), "Any Title")
+        assert report.degraded is True
+        assert not report.is_duplicate
+
+    @pytest.mark.asyncio
+    async def test_clean_title_is_not_degraded(self):
+        captured: dict = {}
+        pool = _FakePool([{"title": "Something Entirely Different"}], captured)
+        report = await check_internal_similarity(pool, "Sourdough Starter Notes")
+        assert report.degraded is False
+        assert not report.is_duplicate
+
+
+class TestInternalSimilarityReport:
+    def test_is_duplicate_follows_matches(self):
+        assert not InternalSimilarityReport().is_duplicate
+        assert InternalSimilarityReport(matches=["x"]).is_duplicate

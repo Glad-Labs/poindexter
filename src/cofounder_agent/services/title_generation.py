@@ -812,31 +812,80 @@ async def generate_canonical_title(
         return None
 
 
+def originality_rank(report: dict) -> tuple[int, float]:
+    """Sort key for two originality reports — LOWER is better.
+
+    ``(axes_still_colliding, worst_similarity)``. Both callers regenerate a
+    title once and keep v2 only when it ranks better.
+
+    Why a tuple and not ``max_similarity``: that field is EXTERNAL-only, so
+    comparing it alone silently discards a v2 that fixed an internal
+    duplicate while scoring identically against the web — the exact case
+    poindexter#1044 exists to catch. Clearing a collision axis outranks any
+    similarity delta; the float only breaks ties.
+    """
+    axes = 0
+    if report.get("internal_duplicate"):
+        axes += 1
+    if report.get("external_duplicate") or report.get("external_verbatim_match"):
+        axes += 1
+    worst = max(
+        float(report.get("max_similarity") or 0.0),
+        float(report.get("internal_similarity") or 0.0),
+    )
+    return (axes, worst)
+
+
 async def check_title_originality(
     title: str,
     *,
     site_config: SiteConfig,
+    pool: Any = None,
+    exclude_task_id: str | None = None,
 ) -> dict:
-    """Web-search the title; return similarity summary.
+    """Check the title against the web AND against our own corpus.
 
     Return shape::
 
         {
             "is_original": bool,
             "similar_titles": list[str],
-            "max_similarity": float,  # 0.0..1.0
+            "max_similarity": float,  # 0.0..1.0, EXTERNAL only
             # GH-87 additions:
             "external_verbatim_match": bool,
             "external_near_match": bool,
             "external_penalty": int,     # points to subtract from QA score
             "external_matches": list[dict],  # [{"title": str, "url": str}, ...]
             "external_fail_open": bool,  # true if the external check couldn't run
+            # poindexter#1044 additions (internal corpus):
+            "internal_similarity": float,      # 0.0..1.0 vs our own titles
+            "internal_matches": list[str],     # our titles at/above threshold
+            "internal_duplicate": bool,
+            "internal_fail_open": bool,        # corpus unreadable — NOT "clean"
         }
+
+    Two independent axes, deliberately kept separate:
+
+    - **External** — ``SequenceMatcher`` against DuckDuckGo results, gated by
+      ``qa_title_similarity_threshold`` (default 0.6) on raw strings. Answers
+      "did we restate someone else's headline?"
+    - **Internal** — ``SequenceMatcher`` against titles we have already
+      published or queued, gated by ``title_internal_similarity_threshold``
+      (default 0.58) on NORMALIZED strings. Answers "did we already write
+      this?" Requires ``pool``; skipped without one.
+
+    Until #1044 only the external axis existed, so nothing compared our titles
+    to each other and "The Shift to Native Telemetry" / "The Shift to a Native
+    UI" — 0.755 similar — both shipped. ``is_original`` is now False when
+    EITHER axis trips, which is what routes a collision into the caller's
+    existing regeneration loop.
+
+    ``exclude_task_id`` keeps a re-run from matching its own prior title.
 
     Threshold defaults to 0.6 and comes from
     ``qa_title_similarity_threshold``. Set
-    ``qa_title_originality_enabled=false`` to bypass the check (returns
-    "is_original": True with empty similar_titles).
+    ``qa_title_originality_enabled=false`` to bypass the EXTERNAL check
+    (``title_internal_similarity_enabled=false`` bypasses the internal one).
 
     GH-87: also runs :func:`services.title_originality_external.check_external_title_duplicates`
     which hits the DuckDuckGo HTML endpoint directly for the exact quoted
@@ -861,15 +910,47 @@ async def check_title_originality(
         "external_penalty": 0,
         "external_matches": [],
         "external_fail_open": False,
+        "external_duplicate": False,
+        "internal_similarity": 0.0,
+        "internal_matches": [],
+        "internal_duplicate": False,
+        "internal_fail_open": False,
+        "internal_threshold": 0.0,
     }
+
+    # --- Internal corpus (poindexter#1044) --------------------------------
+    # Runs BEFORE the external gate and is NOT governed by
+    # ``qa_title_originality_enabled``: the two axes answer different
+    # questions and each owns its own switch. Folding it into the external
+    # early-return would have made disabling the web check silently disable
+    # duplicate detection against our own posts.
+    if pool is not None:
+        from services.title_avoidance import check_internal_similarity
+
+        internal = await check_internal_similarity(
+            pool, title, site_config=_sc, exclude_task_id=exclude_task_id,
+            source="title_generation.check_title_originality",
+        )
+        result["internal_similarity"] = internal.max_similarity
+        result["internal_matches"] = list(internal.matches)
+        result["internal_duplicate"] = internal.is_duplicate
+        result["internal_fail_open"] = internal.degraded
+        result["internal_threshold"] = internal.threshold
+        if internal.is_duplicate:
+            # Flip is_original so the caller's existing regeneration loop
+            # fires — the loop was always there, it just had nothing internal
+            # to react to.
+            result["is_original"] = False
+            result["similar_titles"].extend(internal.matches)
 
     try:
         threshold = _sc.get_float("qa_title_similarity_threshold", 0.6)
         enabled = _sc.get_bool("qa_title_originality_enabled", True)
-        if not enabled:
-            return result
     except Exception:
         threshold = 0.6
+        enabled = True
+    if not enabled:
+        return result
 
     try:
         from services.web_research import WebResearcher
@@ -882,6 +963,7 @@ async def check_title_originality(
             search_results = await researcher.search_simple(title, num_results=8)
 
         title_lower = title.lower().strip()
+        external_similar: list[str] = []
         for r in search_results:
             ext_title = (r.get("title") or "").lower().strip()
             if not ext_title:
@@ -890,20 +972,35 @@ async def check_title_originality(
             if sim > result["max_similarity"]:
                 result["max_similarity"] = sim
             if sim >= threshold:
-                result["similar_titles"].append(r.get("title", ""))
+                external_similar.append(r.get("title", ""))
+        # Collected locally first so ``external_duplicate`` means "the WEB
+        # matched", not "``similar_titles`` is non-empty" — the internal block
+        # above already appended to that shared list.
+        result["similar_titles"].extend(external_similar)
+        result["external_duplicate"] = bool(external_similar)
 
-        result["is_original"] = len(result["similar_titles"]) == 0
+        # AND the two axes explicitly. Deriving this from ``similar_titles``
+        # alone would silently depend on the internal block above having
+        # already appended to that same list — true today, and exactly the
+        # kind of accidental coupling that breaks when someone reorders it.
+        result["is_original"] = not (
+            result["external_duplicate"] or result["internal_duplicate"]
+        )
         if not result["is_original"]:
             logger.warning(
-                "[TITLE] Originality check FAILED (%.0f%% similar): '%s' vs '%s'",
+                "[TITLE] Originality check FAILED (external %.0f%% / internal "
+                "%.0f%%): '%s' vs '%s'",
                 result["max_similarity"] * 100,
+                result["internal_similarity"] * 100,
                 title,
                 result["similar_titles"][0] if result["similar_titles"] else "?",
             )
         else:
             logger.info(
-                "[TITLE] Originality check passed (max %.0f%% similarity)",
+                "[TITLE] Originality check passed (external max %.0f%%, "
+                "internal max %.0f%%)",
                 result["max_similarity"] * 100,
+                result["internal_similarity"] * 100,
             )
 
     except Exception as e:

@@ -36,6 +36,7 @@ import re
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -474,16 +475,256 @@ async def build_avoidance_block_for_pool(
     )
 
 
+# ---------------------------------------------------------------------------
+# Internal-corpus similarity (poindexter#1044)
+# ---------------------------------------------------------------------------
+#
+# ``check_title_originality`` reads like an internal-diversity gate and is not:
+# it SequenceMatchers the candidate against DuckDuckGo results only. Nothing
+# compared our own titles to each other, which is how "The Shift to Native
+# Telemetry" and "The Shift to a Native UI" — 0.755 similar — both shipped.
+#
+# Threshold calibrated 2026-08-14 against the live corpus (179 published
+# titles, 9,870 pairs after excluding the ~38 legacy "What we shipped on
+# <date>" dev_diary titles, which form one degenerate 0.96+ cluster):
+#
+#     mean 0.271   p50 0.270   p90 0.368   p99 0.471   max 0.755
+#
+# so the genuine near-duplicates live in a thin tail well clear of the bulk:
+#
+#     0.755  "The Shift to Native Telemetry" / "The Shift to a Native UI"
+#     0.697  "The 32GB Threshold: How the RTX 5090 Redefines Local LLM…"
+#            "The 70B Threshold: How the RTX 5090 Rewrites the Home Lab…"
+#     0.615  "Hunting Ghosts in the Middleware"
+#            "Hunting ghosts in the metrics and tightening the CI ratchet"
+#     0.588  "Silent Failures and Crying Wolf"
+#            "Where the Silent Failures Were Hiding"
+#
+# 0.58 admits all four (12 of 9,870 pairs, 0.12%); 0.60 would drop the last
+# two, which are exactly the confusable kind. A false positive costs one extra
+# LLM call and is discarded unless it scores better, so the asymmetry favours
+# catching more.
+DEFAULT_INTERNAL_SIMILARITY_THRESHOLD: float = 0.58
+
+# Titles to compare against, newest first. Generous — the scan is a few
+# microseconds per pair — but bounded so the corpus growing to thousands can
+# never turn one title call into a visible stall.
+DEFAULT_INTERNAL_CORPUS_LIMIT: int = 500
+
+# A title is "taken" once it is published OR on its way there. An
+# awaiting_approval post has a title a reader will see; excluding it lets two
+# in-flight posts collide with each other and nothing notice until both ship.
+_TAKEN_STATUSES: tuple[str, ...] = ("published", "approved", "awaiting_approval")
+
+_TAKEN_TITLES_SQL = (
+    "SELECT title FROM content_tasks "
+    "WHERE status = ANY($1::text[]) AND title IS NOT NULL "
+    "AND ($2::text IS NULL OR task_id::text <> $2::text) "
+    "ORDER BY created_at DESC LIMIT $3"
+)
+
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def normalize_title_for_similarity(title: str) -> str:
+    """Casefold + strip punctuation so cosmetic differences don't hide a dupe.
+
+    "The Shift to Native Telemetry" and "the shift to native telemetry!"
+    are the same title to a reader; the raw-string comparison the external
+    check performs would score them apart.
+    """
+    return _WHITESPACE_RE.sub(" ", _NON_ALNUM_RE.sub(" ", title.lower())).strip()
+
+
+@dataclass(frozen=True)
+class InternalSimilarityReport:
+    """How close a candidate title sits to titles we have already used."""
+
+    max_similarity: float = 0.0
+    # Corpus titles at or above the threshold, most similar first.
+    matches: list[str] = field(default_factory=list)
+    threshold: float = DEFAULT_INTERNAL_SIMILARITY_THRESHOLD
+    corpus_size: int = 0
+    # True when the check ran but could not read the corpus — distinct from
+    # "ran and found nothing", so a caller can tell a clean title from an
+    # unchecked one (fail-open, never a fake pass).
+    degraded: bool = False
+
+    @property
+    def is_duplicate(self) -> bool:
+        return bool(self.matches)
+
+
+def score_internal_similarity(
+    title: str,
+    corpus: Sequence[str],
+    *,
+    threshold: float = DEFAULT_INTERNAL_SIMILARITY_THRESHOLD,
+) -> InternalSimilarityReport:
+    """Compare one title against our own corpus. Pure — no IO, no LLM.
+
+    Uses ``SequenceMatcher`` on the normalized forms, the same measure the
+    external check uses, so the two thresholds stay conceptually comparable
+    (they remain SEPARATE settings: this one runs on normalized strings, which
+    scores slightly higher, and they answer different questions).
+    """
+    candidate = normalize_title_for_similarity(title or "")
+    if not candidate or not corpus:
+        return InternalSimilarityReport(threshold=threshold, corpus_size=len(corpus))
+
+    scored: list[tuple[float, str]] = []
+    best = 0.0
+    for other in corpus:
+        if not other:
+            continue
+        normalized = normalize_title_for_similarity(other)
+        if not normalized:
+            continue
+        ratio = SequenceMatcher(None, candidate, normalized).ratio()
+        best = max(best, ratio)
+        if ratio >= threshold:
+            scored.append((ratio, other))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return InternalSimilarityReport(
+        max_similarity=best,
+        matches=[t for _r, t in scored],
+        threshold=threshold,
+        corpus_size=len(corpus),
+    )
+
+
+def internal_similarity_enabled(site_config: Any) -> bool:
+    """Master switch — ``title_internal_similarity_enabled``."""
+    value = _resolve_setting(
+        site_config, "get_bool", "title_internal_similarity_enabled", True,
+    )
+    return bool(value)
+
+
+def get_internal_similarity_threshold(site_config: Any) -> float:
+    value = _resolve_setting(
+        site_config, "get_float", "title_internal_similarity_threshold",
+        DEFAULT_INTERNAL_SIMILARITY_THRESHOLD,
+    )
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_INTERNAL_SIMILARITY_THRESHOLD
+
+
+async def fetch_taken_titles(
+    pool: Any,
+    *,
+    site_config: Any = None,
+    exclude_task_id: str | None = None,
+    source: str = "title_avoidance",
+) -> list[str] | None:
+    """Titles already published or on their way. ``None`` when unreadable.
+
+    ``None`` (not ``[]``) on failure: an empty corpus and an unread corpus
+    both produce "no duplicates found", and only one of them is true.
+    """
+    if pool is None:
+        return None
+    limit = _resolve_setting(
+        site_config, "get_int", "title_internal_corpus_limit",
+        DEFAULT_INTERNAL_CORPUS_LIMIT,
+    )
+    try:
+        limit = max(0, int(limit))
+    except (TypeError, ValueError):
+        limit = DEFAULT_INTERNAL_CORPUS_LIMIT
+    if limit == 0:
+        return []
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                _TAKEN_TITLES_SQL,
+                list(_TAKEN_STATUSES),
+                str(exclude_task_id) if exclude_task_id else None,
+                limit,
+            )
+        return [r["title"] for r in rows if r["title"]]
+    except Exception as exc:  # noqa: BLE001 — degraded, never fatal
+        from utils.findings import emit_finding
+
+        logger.warning(
+            "[title_avoidance] taken-title lookup failed (%s: %s) — the "
+            "internal duplicate check is SKIPPED this run",
+            type(exc).__name__, exc,
+        )
+        emit_finding(
+            source=source,
+            kind="title_corpus_lookup_failed",
+            title="Taken-title lookup failed — internal duplicate check skipped",
+            body=(
+                f"Reading already-used titles raised {type(exc).__name__}: "
+                f"{exc}. This post's title was not compared against our own "
+                f"corpus, so a near-duplicate can ship unnoticed."
+            ),
+            severity="info",
+            dedup_key="title_corpus_lookup_failed",
+            extra={"error_type": type(exc).__name__, "source": source},
+        )
+        return None
+
+
+async def check_internal_similarity(
+    pool: Any,
+    title: str,
+    *,
+    site_config: Any = None,
+    exclude_task_id: str | None = None,
+    source: str = "title_avoidance",
+) -> InternalSimilarityReport:
+    """Corpus fetch + scoring. Fails OPEN with ``degraded=True``.
+
+    Never fabricates a clean result: an unreadable corpus reports
+    ``degraded`` rather than "original", per the QA-rail fail-open contract
+    (a degraded check is None-plus-a-finding, never a fake perfect score).
+    """
+    threshold = get_internal_similarity_threshold(site_config)
+    if not internal_similarity_enabled(site_config):
+        return InternalSimilarityReport(threshold=threshold)
+
+    corpus = await fetch_taken_titles(
+        pool, site_config=site_config, exclude_task_id=exclude_task_id,
+        source=source,
+    )
+    if corpus is None:
+        return InternalSimilarityReport(threshold=threshold, degraded=True)
+
+    report = score_internal_similarity(title, corpus, threshold=threshold)
+    if report.is_duplicate:
+        logger.warning(
+            "[title_avoidance] %r is %.0f%% similar to an existing title "
+            "(%r) — threshold %.2f, corpus %d",
+            title, report.max_similarity * 100, report.matches[0],
+            threshold, report.corpus_size,
+        )
+    return report
+
+
 __all__ = [
+    "DEFAULT_INTERNAL_CORPUS_LIMIT",
+    "DEFAULT_INTERNAL_SIMILARITY_THRESHOLD",
     "DEFAULT_LEXICAL_MIN_COUNT",
     "DEFAULT_PATTERN_THRESHOLD",
     "DEFAULT_RECENT_COUNT",
+    "InternalSimilarityReport",
     "TitleCorpusProfile",
     "analyze_title_patterns",
     "build_avoidance_block",
     "build_avoidance_block_for_pool",
+    "check_internal_similarity",
     "fetch_recent_titles",
+    "fetch_taken_titles",
+    "get_internal_similarity_threshold",
     "get_mode",
     "get_recent_count",
-    "render_avoidance_block",
+    "internal_similarity_enabled",
+    "normalize_title_for_similarity",
+    "score_internal_similarity",
 ]

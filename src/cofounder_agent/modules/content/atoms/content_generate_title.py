@@ -65,6 +65,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from services.title_generation import (
         generate_canonical_title as _generate_canonical_title,
     )
+    from services.title_generation import (
+        originality_rank as _originality_rank,
+    )
 
     content_text = (state.get("content") or "").strip()
     if not content_text:
@@ -118,8 +121,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     )
     logger.info("Title generated: %s", title)
 
-    # Title originality check + optional regeneration.
-    originality = await _check_title_originality(title, site_config=site_config)  # type: ignore[arg-type]
+    # Originality: the web AND our own corpus (poindexter#1044). ``pool``
+    # enables the internal check; ``exclude_task_id`` stops a re-run matching
+    # the title it wrote last time.
+    originality = await _check_title_originality(
+        title, site_config=site_config,  # type: ignore[arg-type]
+        pool=pool, exclude_task_id=str(task_id) if task_id else None,
+    )
     if not originality["is_original"]:
         logger.warning("[TITLE] Title too similar to existing content — regenerating")
         # Confirmed collisions DO get named verbatim — those are specific
@@ -137,24 +145,53 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             pool=pool,
         )
         if title_v2:
-            originality_v2 = await _check_title_originality(title_v2, site_config=site_config)  # type: ignore[arg-type]
-            v1_ext_dup = bool(originality.get("external_verbatim_match"))
-            v2_ext_dup = bool(originality_v2.get("external_verbatim_match"))
-            more_original = (
-                originality_v2["max_similarity"] < originality["max_similarity"]
-                or (v1_ext_dup and not v2_ext_dup)
+            originality_v2 = await _check_title_originality(
+                title_v2, site_config=site_config,  # type: ignore[arg-type]
+                pool=pool, exclude_task_id=str(task_id) if task_id else None,
             )
-            if more_original:
+            if _originality_rank(originality_v2) < _originality_rank(originality):
                 logger.info(
-                    "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
+                    "[TITLE] Regenerated title is more original "
+                    "(external %.0f%%→%.0f%%, internal %.0f%%→%.0f%%): %s",
                     originality["max_similarity"] * 100,
                     originality_v2["max_similarity"] * 100,
+                    originality.get("internal_similarity", 0.0) * 100,
+                    originality_v2.get("internal_similarity", 0.0) * 100,
                     title_v2,
                 )
                 title = title_v2
                 originality = originality_v2
             else:
                 logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
+
+    # A duplicate that SURVIVED regeneration ships anyway (a near-duplicate
+    # title beats no post), but it must not ship silently — this is the signal
+    # that the threshold or the avoidance prompt needs attention.
+    if originality.get("internal_duplicate"):
+        from utils.findings import emit_finding
+
+        matches = originality.get("internal_matches") or []
+        emit_finding(
+            source="content.generate_title",
+            kind="title_internal_duplicate",
+            title=f"Title near-duplicates an existing post: {title!r}",
+            body=(
+                f"{title!r} scored {originality.get('internal_similarity', 0.0):.0%} "
+                f"against our own corpus (threshold "
+                f"{originality.get('internal_threshold', '?')}), and regeneration "
+                f"did not clear it. Closest existing title: "
+                f"{matches[0]!r}. The post still ships — review whether the "
+                f"title should be edited before publish."
+            ),
+            severity="info",
+            dedup_key=f"title_internal_duplicate:{task_id}",
+            extra={
+                "task_id": str(task_id) if task_id else None,
+                "title": title,
+                "internal_similarity": originality.get("internal_similarity"),
+                "matches": matches[:3],
+            },
+        )
 
     # Persist title to content_tasks.
     if task_id and database_service is not None:
