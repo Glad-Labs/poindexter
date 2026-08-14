@@ -86,6 +86,9 @@ from modules.content.auto_publish import (
 from modules.content.auto_publish import (
     get_auto_publish_threshold as get_auto_publish_threshold,
 )
+from modules.content.auto_publish import (
+    veto_auto_publish as veto_auto_publish,
+)
 
 # ---------------------------------------------------------------------------
 # auto_publish_gate

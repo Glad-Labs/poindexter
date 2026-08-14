@@ -77,6 +77,11 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
 
             async with pool.acquire() as conn:
                 async with conn.transaction():
+                    # Fire-time publish gate for veto-window auto-scheduled
+                    # posts — runs FIRST so a vetoed row is demoted before
+                    # the promote UPDATE below can see it (same transaction,
+                    # sequential). See _demote_vetoed_auto_posts.
+                    await _demote_vetoed_auto_posts(conn)
                     # #327: pull the slug back too so we can revalidate
                     # the post-specific path. Previously only id/title
                     # were returned and the loop never triggered ISR
@@ -223,6 +228,61 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
             break
         except Exception as e:
             logger.error("[scheduled_publisher] Error: %s", e, exc_info=True)
+
+
+async def _demote_vetoed_auto_posts(conn) -> None:
+    """Fire-time publish gate for veto-window auto-scheduled posts.
+
+    A post the auto-publish gate staged with a veto window
+    (``metadata.auto_publish_veto_window='true'``, set by
+    ``modules.content.auto_publish._stage_with_veto_window``) must re-earn its
+    promotion at fire time: if the source ``pipeline_tasks`` row has left the
+    approved family — the operator vetoed via ``poindexter auto-publish veto``
+    after a partial state, or rejected the task from ANY surface (CLI / MCP /
+    Telegram) — the row is demoted back to ``status='approved'`` +
+    ``published_at=NULL`` instead of publishing. Same pattern as the social
+    scheduler, whose fire path re-runs ``approve_draft``'s publish gate so a
+    slipped post can't promote itself at a 404.
+
+    Scoped STRICTLY to rows carrying the veto-window marker — the operator's
+    hand-picked slots (console slot picker / ``schedule batch``) are never
+    touched, whatever their task status. Also deletes the stage-time
+    ``published_post_edit_metrics`` row (``approver='auto_publish'`` only) so
+    a vetoed run never counts as a clean run in the niche's trailing
+    auto-publish window.
+
+    Runs inside the promote transaction, before the promote UPDATE, on the
+    caller's connection — sequential, so a demoted row is invisible to the
+    promote in the same cycle.
+    """
+    rows = await conn.fetch(
+        """
+        UPDATE posts p
+           SET status = 'approved', published_at = NULL, updated_at = NOW()
+         WHERE p.status = 'scheduled'
+           AND p.published_at <= NOW()
+           AND COALESCE(p.metadata->>'auto_publish_veto_window', '') = 'true'
+           AND EXISTS (
+                 SELECT 1 FROM pipeline_tasks t
+                  WHERE t.task_id::text = p.metadata->>'pipeline_task_id'
+                    AND t.status NOT IN ('approved', 'scheduled', 'published')
+               )
+        RETURNING id, title, metadata->>'pipeline_task_id' AS pipeline_task_id
+        """
+    )
+    for row in rows:
+        logger.warning(
+            "[scheduled_publisher] Demoted veto-window post %s (%r) — source "
+            "task %s is no longer approved; post parked at status='approved', "
+            "not published.",
+            row["id"], row["title"], row["pipeline_task_id"],
+        )
+        if row["pipeline_task_id"]:
+            await conn.execute(
+                "DELETE FROM published_post_edit_metrics "
+                "WHERE task_id = $1 AND approver = 'auto_publish'",
+                row["pipeline_task_id"],
+            )
 
 
 async def _maybe_park_due_posts_at_gate(pool, *, site_config: SiteConfig) -> None:

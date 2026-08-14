@@ -20,7 +20,18 @@ def _make_pool(rows=None):
     """Build a mock asyncpg pool that returns *rows* from conn.fetch()."""
     rows = rows if rows is not None else []
     conn = AsyncMock()
-    conn.fetch = AsyncMock(return_value=rows)
+
+    async def _fetch(sql, *args):
+        # The veto-window demote guard (_demote_vetoed_auto_posts,
+        # 2026-08-14) issues its own UPDATE...RETURNING before the promote
+        # query in the same transaction — key the mock by SQL so each
+        # caller sees its own result set (the demote sees no vetoed rows
+        # by default; tests for it drive their own conn).
+        if "auto_publish_veto_window" in sql:
+            return []
+        return rows
+
+    conn.fetch = AsyncMock(side_effect=_fetch)
     # The promote loop calls conn.execute(...) for the pipeline_tasks
     # status-sync UPDATE (2026-05-28 fix). Default return is a benign
     # "UPDATE N" string — individual tests can override per case.
@@ -82,7 +93,7 @@ class TestScheduledPostDetection:
         await _run_one_iteration(get_pool)
 
         # The UPDATE query was executed
-        conn.fetch.assert_awaited_once()
+        assert conn.fetch.await_count == 2  # demote guard + promote (same txn)
         sql = conn.fetch.call_args[0][0]
         assert "UPDATE posts" in sql
         assert "status = 'published'" in sql
@@ -97,7 +108,7 @@ class TestScheduledPostDetection:
 
         await _run_one_iteration(get_pool)
 
-        conn.fetch.assert_awaited_once()
+        assert conn.fetch.await_count == 2  # demote guard + promote (same txn)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +145,7 @@ class TestPublishingTrigger:
             await task
 
         # fetch was called once before the first sleep(60) attempt
-        conn.fetch.assert_awaited_once()
+        assert conn.fetch.await_count == 2  # demote guard + promote (same txn)
         # sleep(60) was attempted exactly once (after the first iteration)
         assert iteration_count == 1
 
@@ -469,7 +480,7 @@ class TestPipelineTasksStatusSync:
 
         # conn.fetch was the posts UPDATE; conn.execute was the
         # pipeline_tasks sync UPDATE.
-        conn.fetch.assert_awaited_once()
+        assert conn.fetch.await_count == 2  # demote guard + promote (same txn)
         conn.execute.assert_awaited_once()
         sync_sql, sync_arg = conn.execute.call_args[0]
         assert "UPDATE pipeline_tasks" in sync_sql
@@ -724,3 +735,57 @@ class TestPromoteFiresNewsletter:
         await _run_one_iteration(get_pool)
 
         assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Veto-window demote guard (2026-08-14)
+# ---------------------------------------------------------------------------
+
+
+class TestDemoteVetoedAutoPosts:
+    """Fire-time publish gate for veto-window auto-scheduled posts: a due
+    ``scheduled`` row carrying ``metadata.auto_publish_veto_window='true'``
+    whose source task has left the approved family is demoted back to
+    ``approved`` instead of publishing, and its stage-time auto clean-run
+    row is deleted so a vetoed run never counts toward gate trust."""
+
+    def _conn(self, demoted_rows):
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=demoted_rows)
+        conn.execute = AsyncMock(return_value="DELETE 1")
+        return conn
+
+    @pytest.mark.asyncio
+    async def test_demote_sql_scopes_to_marker_and_task_status(self):
+        from services.scheduled_publisher import _demote_vetoed_auto_posts
+
+        conn = self._conn([])
+        await _demote_vetoed_auto_posts(conn)
+
+        sql = conn.fetch.call_args[0][0]
+        # Only veto-window rows — never the operator's hand-picked slots.
+        assert "auto_publish_veto_window" in sql
+        # Only due rows, and only when the source task left approved.
+        assert "published_at <= NOW()" in sql
+        assert "NOT IN ('approved', 'scheduled', 'published')" in sql
+        # Demotes rather than deletes: back to the staged state.
+        assert "SET status = 'approved'" in sql
+        conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_demoted_rows_lose_their_auto_clean_run_row(self):
+        from services.scheduled_publisher import _demote_vetoed_auto_posts
+
+        conn = self._conn([
+            {"id": "p1", "title": "Vetoed", "pipeline_task_id": "t-1"},
+            {"id": "p2", "title": "No seam", "pipeline_task_id": None},
+        ])
+        await _demote_vetoed_auto_posts(conn)
+
+        # Exactly one DELETE — the row with a task seam. approver filter
+        # keeps operator-recorded metrics untouched.
+        assert conn.execute.await_count == 1
+        del_sql = conn.execute.await_args.args[0]
+        assert "DELETE FROM published_post_edit_metrics" in del_sql
+        assert "approver = 'auto_publish'" in del_sql
+        assert conn.execute.await_args.args[1] == "t-1"

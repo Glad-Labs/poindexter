@@ -257,6 +257,42 @@ async def _run_trend(niche: str | None, last_n: int, as_json: bool) -> None:
     )
 
 
+@auto_publish_group.command("veto")
+@click.argument("task_id")
+@click.option(
+    "--json", "as_json", is_flag=True,
+    help="Emit JSON for LLM/script consumers.",
+)
+def cmd_veto(task_id: str, as_json: bool) -> None:
+    """Veto a scheduled auto-publish before its window elapses.
+
+    Unschedules the staged post, parks the task back at awaiting_approval
+    for a normal review pass, and removes the auto clean-run row so the
+    vetoed run never counts toward the niche's trust window. Accepts a
+    task-id prefix (like other task commands). Rejecting the task from any
+    surface has the same effect — the scheduled_publisher re-checks the
+    task at fire time.
+    """
+    asyncio.run(_run_veto(task_id, as_json))
+
+
+async def _run_veto(task_prefix: str, as_json: bool) -> None:
+    pool = await _open_pool()
+    try:
+        # Service-layer delegate per the transport-adapter contract — the
+        # CLI holds no veto logic (prefix resolution included) of its own.
+        from modules.content.api import veto_auto_publish
+
+        payload = await veto_auto_publish(pool, task_prefix)
+    finally:
+        await pool.close()
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(("VETOED — " if payload.get("ok") else "NOT vetoed — ") + str(payload.get("detail", "")))
+
+
 @auto_publish_group.command("decisions")
 @click.option(
     "--last", "last_n", type=int, default=20,

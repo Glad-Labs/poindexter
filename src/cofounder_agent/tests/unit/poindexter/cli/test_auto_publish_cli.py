@@ -21,7 +21,9 @@ def test_group_registered():
 
 
 def test_subcommands():
-    assert {"status", "trend", "decisions"} <= set(auto_publish_group.commands)
+    assert {"status", "trend", "decisions", "veto"} <= set(
+        auto_publish_group.commands
+    )
 
 
 def test_group_by_niche_splits_families():

@@ -405,3 +405,281 @@ class TestAutoPublishBookkeepingVisibility:
         emit_mock.assert_called()
         assert emit_mock.call_args.kwargs["severity"] == "warn"
         assert emit_mock.call_args.kwargs["source"] == "auto_publish"
+
+
+# ---------------------------------------------------------------------------
+# Veto window (2026-08-14) — {niche}_auto_publish_delay_hours
+# ---------------------------------------------------------------------------
+
+
+def _make_keyed_db(*, task, settings: dict[str, str]):
+    """_make_db variant whose get_setting_value is keyed by setting name."""
+    db = _make_db(published_today=0, daily_limit="4", task=task)
+
+    async def _get(key, default=None):
+        return settings.get(key, default)
+
+    db.get_setting_value = AsyncMock(side_effect=_get)
+    return db
+
+
+def _veto_task(task_id="t-veto"):
+    return {
+        "task_id": task_id,
+        "featured_image_url": "https://img/featured.png",
+        "task_metadata": {},
+        "niche_slug": "glad-labs",
+        "topic": "A trusted-niche post",
+    }
+
+
+@pytest.mark.unit
+class TestVetoWindow:
+    """delay_hours > 0 ⇒ the gate's fire stages + schedules instead of
+    publishing immediately: publish_post_from_task(stage_only=True), the
+    veto-window marker lands on posts.metadata, assign_slot gets ~now+delay,
+    the operator is pinged, and the return is True (caller suppresses its
+    own notification)."""
+
+    def _patches(self, pub_mock, slot_mock, notify_mock):
+        from zoneinfo import ZoneInfo
+
+        return (
+            patch("services.publish_service.publish_post_from_task", pub_mock),
+            patch("services.scheduling_service.assign_slot", slot_mock),
+            patch(
+                "services.integrations.operator_notify.notify_operator",
+                notify_mock,
+            ),
+            patch(
+                "services.clock.get_operator_tz",
+                AsyncMock(return_value=ZoneInfo("UTC")),
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_delay_stages_and_schedules(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.content.auto_publish import auto_publish_task
+
+        task = _veto_task()
+        db = _make_keyed_db(
+            task=task,
+            settings={
+                "daily_post_limit": "4",
+                "glad-labs_auto_publish_delay_hours": "24",
+            },
+        )
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        slot_mock = AsyncMock(
+            return_value=SimpleNamespace(ok=True, detail="scheduled")
+        )
+        notify_mock = AsyncMock()
+
+        p1, p2, p3, p4 = self._patches(pub_mock, slot_mock, notify_mock)
+        before = datetime.now(timezone.utc)
+        with p1, p2, p3, p4:
+            result = await auto_publish_task(
+                database_service=db,
+                task_id="t-veto",
+                quality_score=91.0,
+                site_config=_make_site_config(),
+            )
+
+        assert result is True
+        # Staged, not published: stage_only=True on the ONE publish call.
+        pub_mock.assert_awaited_once()
+        assert pub_mock.await_args.kwargs["stage_only"] is True
+        assert pub_mock.await_args.kwargs["publisher"] == "auto_publish"
+        # Slot ≈ now + 24h.
+        slot_mock.assert_awaited_once()
+        when = slot_mock.await_args.args[1]
+        delta_h = (when - before) / timedelta(hours=1)
+        assert 23.9 < delta_h < 24.1
+        # Veto-window marker stamped + gate-history row written.
+        executed_sql = " ".join(
+            str(c.args[0]) for c in db.pool.execute.await_args_list
+        )
+        assert "auto_publish_veto_window" in executed_sql
+        assert "pipeline_gate_history" in executed_sql
+        # Operator pinged (critical → Telegram) with the veto command.
+        notify_mock.assert_awaited_once()
+        msg = notify_mock.await_args.args[0]
+        assert "auto-publish veto" in msg
+        assert notify_mock.await_args.kwargs["critical"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_delay_key_publishes_immediately(self):
+        from modules.content.auto_publish import auto_publish_task
+
+        task = _veto_task("t-nodelay")
+        db = _make_keyed_db(
+            task=task, settings={"daily_post_limit": "4"},
+        )
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        pipeline_db = MagicMock()
+        pipeline_db.add_distribution = AsyncMock(return_value=None)
+        with patch(
+            "services.publish_service.publish_post_from_task", pub_mock,
+        ), patch(
+            "services.pipeline_db.PipelineDB", return_value=pipeline_db,
+        ):
+            result = await auto_publish_task(
+                database_service=db,
+                task_id="t-nodelay",
+                quality_score=91.0,
+                site_config=_make_site_config(),
+            )
+        assert result is True
+        # Immediate path: stage_only not requested.
+        assert not pub_mock.await_args.kwargs.get("stage_only")
+
+    @pytest.mark.asyncio
+    async def test_unparseable_delay_falls_back_to_immediate(self):
+        from modules.content.auto_publish import auto_publish_task
+
+        task = _veto_task("t-baddelay")
+        db = _make_keyed_db(
+            task=task,
+            settings={
+                "daily_post_limit": "4",
+                "glad-labs_auto_publish_delay_hours": "one day",
+            },
+        )
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        pipeline_db = MagicMock()
+        pipeline_db.add_distribution = AsyncMock(return_value=None)
+        with patch(
+            "services.publish_service.publish_post_from_task", pub_mock,
+        ), patch(
+            "services.pipeline_db.PipelineDB", return_value=pipeline_db,
+        ):
+            result = await auto_publish_task(
+                database_service=db,
+                task_id="t-baddelay",
+                quality_score=91.0,
+                site_config=_make_site_config(),
+            )
+        assert result is True
+        assert not pub_mock.await_args.kwargs.get("stage_only")
+
+    @pytest.mark.asyncio
+    async def test_slot_refusal_returns_false_and_leaves_staged(self):
+        from modules.content.auto_publish import auto_publish_task
+
+        task = _veto_task("t-slotfail")
+        db = _make_keyed_db(
+            task=task,
+            settings={
+                "daily_post_limit": "4",
+                "glad-labs_auto_publish_delay_hours": "12",
+            },
+        )
+        pub_mock = AsyncMock(return_value=_publish_result(success=True))
+        slot_mock = AsyncMock(
+            return_value=SimpleNamespace(ok=False, detail="already scheduled")
+        )
+        notify_mock = AsyncMock()
+        finding_mock = MagicMock()
+
+        p1, p2, p3, p4 = self._patches(pub_mock, slot_mock, notify_mock)
+        with p1, p2, p3, p4, patch(
+            "modules.content.auto_publish.emit_finding", finding_mock,
+        ):
+            result = await auto_publish_task(
+                database_service=db,
+                task_id="t-slotfail",
+                quality_score=91.0,
+                site_config=_make_site_config(),
+            )
+
+        assert result is False
+        # No operator ping for a schedule that never landed; a finding
+        # surfaces the stuck-staged post instead.
+        notify_mock.assert_not_awaited()
+        assert any(
+            c.kwargs.get("kind") == "auto_publish_veto_slot_failed"
+            for c in finding_mock.call_args_list
+        )
+
+
+@pytest.mark.unit
+class TestVetoAutoPublish:
+    """veto_auto_publish — one transaction: unschedule the post, park the
+    task at awaiting_approval, delete the auto clean-run row (a veto is
+    evidence AGAINST trust), record the vetoed gate-history row."""
+
+    def _make_veto_pool(self, post_row, matches=None):
+        conn = MagicMock()
+        # First conn.fetch = the service-side prefix resolution (moved out
+        # of the CLI per the transport-adapter contract).
+        conn.fetch = AsyncMock(
+            return_value=(
+                matches if matches is not None else [{"task_id": "t-veto"}]
+            )
+        )
+        conn.fetchrow = AsyncMock(return_value=post_row)
+        conn.execute = AsyncMock(return_value="DELETE 1")
+        txn = MagicMock()
+        txn.__aenter__ = AsyncMock(return_value=conn)
+        txn.__aexit__ = AsyncMock(return_value=False)
+        conn.transaction = MagicMock(return_value=txn)
+        acm = MagicMock()
+        acm.__aenter__ = AsyncMock(return_value=conn)
+        acm.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=acm)
+        return pool, conn
+
+    @pytest.mark.asyncio
+    async def test_veto_unwinds_schedule_and_trust_row(self):
+        from modules.content.auto_publish import veto_auto_publish
+
+        pool, conn = self._make_veto_pool({"id": "post-1", "title": "Held"})
+        result = await veto_auto_publish(pool, "t-veto")
+
+        assert result["ok"] is True
+        assert result["post_id"] == "post-1"
+        # Unschedule targeted only a 'scheduled' row linked via the seam.
+        unsched_sql = conn.fetchrow.await_args.args[0]
+        assert "status = 'scheduled'" in unsched_sql
+        assert "pipeline_task_id" in unsched_sql
+        executed = [str(c.args[0]) for c in conn.execute.await_args_list]
+        assert any("awaiting_approval" in s for s in executed)
+        assert any(
+            "DELETE FROM published_post_edit_metrics" in s
+            and "auto_publish" in s
+            for s in executed
+        )
+        assert any("pipeline_gate_history" in s for s in executed)
+
+    @pytest.mark.asyncio
+    async def test_veto_without_scheduled_post_is_a_clean_miss(self):
+        from modules.content.auto_publish import veto_auto_publish
+
+        pool, conn = self._make_veto_pool(None)
+        result = await veto_auto_publish(pool, "t-gone")
+
+        assert result["ok"] is False
+        assert "No scheduled post" in result["detail"]
+        conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_veto_resolves_prefixes_and_refuses_ambiguity(self):
+        from modules.content.auto_publish import veto_auto_publish
+
+        pool, conn = self._make_veto_pool(None, matches=[])
+        result = await veto_auto_publish(pool, "zzz")
+        assert result["ok"] is False
+        assert "No task matches" in result["detail"]
+        conn.fetchrow.assert_not_awaited()
+
+        pool, conn = self._make_veto_pool(
+            None,
+            matches=[{"task_id": "abc-1"}, {"task_id": "abc-2"}],
+        )
+        result = await veto_auto_publish(pool, "abc")
+        assert result["ok"] is False
+        assert "Ambiguous prefix" in result["detail"]
+        conn.fetchrow.assert_not_awaited()
