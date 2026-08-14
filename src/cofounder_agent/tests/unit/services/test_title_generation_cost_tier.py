@@ -425,7 +425,56 @@ async def test_existing_titles_appended_to_avoidance_prompt():
     assert "BASE PROMPT" in prompt
     assert "AVOID SIMILARITY" in prompt
     assert "Old Title One" in prompt
-    assert "DISTINCTLY DIFFERENT" in prompt
+    assert "distinctly different" in prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_avoidance_block_supersedes_legacy_existing_titles():
+    """``avoidance_block`` is the in-graph path and wins over the raw dump.
+
+    The dump is retained only for external/bootstrap callers. When both are
+    supplied the block must be the one that reaches the model — otherwise the
+    pattern-based guidance silently reverts to the priming behaviour it
+    replaced (poindexter#1043).
+    """
+    captured: dict[str, Any] = {}
+    provider = MagicMock()
+    provider.name = "ollama_native"
+
+    async def _complete(**kwargs):
+        captured["prompt"] = kwargs["messages"][0]["content"]
+        result = MagicMock()
+        result.text = '{"title": "A Distinctly Different Title"}'
+        return result
+
+    provider.complete = AsyncMock(side_effect=_complete)
+
+    fake_sc = MagicMock()
+    fake_sc.get.return_value = "ollama/gemma3:27b"
+    fake_sc.get_int.return_value = 4000
+
+    with patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[provider],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "BASE PROMPT"
+        out = await generate_canonical_title(
+            topic="AI",
+            primary_keyword="AI",
+            content_excerpt="x",
+            existing_titles="- Old Title One\n- Old Title Two",
+            avoidance_block="TITLE VARIETY — habits go here.",
+            site_config=fake_sc,
+        )
+
+    assert out == "A Distinctly Different Title"
+    prompt = captured["prompt"]
+    assert "TITLE VARIETY — habits go here." in prompt
+    assert "Old Title One" not in prompt, (
+        "the legacy raw dump leaked into the prompt alongside the block — "
+        "that re-primes the very pattern the block suppresses"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -295,13 +295,23 @@ class GenerateContentStage:
         content_digest = build_title_grounding_digest(
             content_text, max_chars=excerpt_chars
         )
-        existing_titles = await self._fetch_existing_titles(database_service)
         # Thread the DB pool so generate_canonical_title routes through the
         # dispatcher — a cloud pipeline_writer_model then reaches LiteLLM
         # instead of 404-ing against local Ollama (glad-labs-stack#2194).
         pool = getattr(database_service, "pool", None)
+        # Variety guidance = the recent corpus's HABITS, not its titles. The
+        # atom-path twin lives in content.generate_title; see
+        # services.title_avoidance for why the old dump primed the pattern.
+        from services.title_avoidance import build_avoidance_block_for_pool
+
+        avoidance_block = await build_avoidance_block_for_pool(
+            pool,
+            site_config=context.get("site_config"),
+            source="modules.content.writer_core",
+        )
         llm_title = await _generate_canonical_title(
-            topic, primary_keyword, content_digest, existing_titles=existing_titles,
+            topic, primary_keyword, content_digest,
+            avoidance_block=avoidance_block,
             site_config=context.get("site_config"),  # type: ignore[arg-type]
             pool=pool,
         )
@@ -323,12 +333,17 @@ class GenerateContentStage:
             logger.warning(
                 "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
             )
-            avoid_list = existing_titles
-            for dup_title in originality["similar_titles"][:5]:
-                avoid_list += f"\n- {dup_title}"
+            # Confirmed collisions DO get named verbatim — those are specific
+            # titles to dodge, not a corpus to imitate.
+            retry_block = await build_avoidance_block_for_pool(
+                pool,
+                site_config=context.get("site_config"),
+                near_duplicates=originality["similar_titles"][:5],
+                source="modules.content.writer_core",
+            )
             title_v2 = await _generate_canonical_title(
                 topic, primary_keyword, content_digest,
-                existing_titles=avoid_list,
+                avoidance_block=retry_block,
                 site_config=context.get("site_config"),  # type: ignore[arg-type]
                 pool=pool,
             )
@@ -1107,39 +1122,6 @@ class GenerateContentStage:
                 f"{variant.experiment_key}/{variant.variant_label}"
             )
         return draft, model_used, metrics
-
-    async def _fetch_existing_titles(self, database_service: Any) -> str:
-        """Return newline-separated recent published titles for avoidance prompt."""
-        try:
-            pool = getattr(database_service, "pool", None)
-            if not pool:
-                return ""
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT title FROM content_tasks WHERE status = 'published' "
-                    "ORDER BY created_at DESC LIMIT 20"
-                )
-            return "\n".join(f"- {r['title']}" for r in rows if r["title"])
-        except Exception as exc:
-            # Non-blocking, but "proceed without diversity check" means the
-            # writer can now re-use a title it already published and nothing
-            # says so — the check is skipped, not merely degraded.
-            from utils.findings import emit_finding
-            emit_finding(
-                source="modules.content.writer_core",
-                kind="existing_titles_fetch_failed",
-                title="Existing-title fetch failed — title diversity check skipped",
-                body=(
-                    f"Reading recent published titles raised {type(exc).__name__}: "
-                    f"{exc}. The writer prompt carries no avoid-list, so a "
-                    "duplicate title can ship unnoticed."
-                ),
-                severity="info",
-                dedup_key="existing_titles_fetch_failed",
-                extra={"error_type": type(exc).__name__},
-            )
-            return ""
-
 
 # ---------------------------------------------------------------------------
 # Module-level helpers (lifted out for readability + testability)

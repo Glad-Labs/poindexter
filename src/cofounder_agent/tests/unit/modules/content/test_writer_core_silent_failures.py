@@ -152,21 +152,30 @@ async def test_collect_research_context_emits_finding_when_task_read_fails(
     assert findings[0].get("severity", "info") == "info"
 
 
-# --- _fetch_existing_titles: diversity check skipped ----------------------
+# --- recent-title lookup: diversity check skipped -------------------------
 
 
 @pytest.mark.asyncio
-async def test_fetch_existing_titles_emits_finding_on_db_error(monkeypatch):
+async def test_fetch_recent_titles_emits_finding_on_db_error(monkeypatch):
+    """The writer's ``_fetch_existing_titles`` moved to a shared service.
+
+    poindexter#1043 consolidated the writer copy, the atom copy, and the
+    (previously absent) dev_diary lookup into
+    ``services.title_avoidance.fetch_recent_titles``. The finding contract is
+    unchanged: degraded, never fatal, and never silent.
+    """
+    from services.title_avoidance import fetch_recent_titles
+
     calls = _capture(monkeypatch)
-    stage = GenerateContentStage()
-    db = type("_DB", (), {"pool": _AcquireRaisingPool()})()
 
-    result = await stage._fetch_existing_titles(db)
+    result = await fetch_recent_titles(
+        _AcquireRaisingPool(), source="modules.content.writer_core"
+    )
 
-    # Non-blocking: returns the empty prompt fragment, but the title-diversity
-    # check is now silently skipped — a duplicate title can ship.
-    assert result == ""
+    # Non-blocking: returns the empty window, but the title-diversity check is
+    # now skipped — a duplicate title can ship.
+    assert result == []
     assert len(calls) == 1
-    assert calls[0]["kind"] == "existing_titles_fetch_failed"
-    assert calls[0]["dedup_key"] == "existing_titles_fetch_failed"
+    assert calls[0]["kind"] == "title_history_lookup_failed"
+    assert calls[0]["dedup_key"] == "title_history_lookup_failed"
     assert calls[0].get("severity", "info") == "info"

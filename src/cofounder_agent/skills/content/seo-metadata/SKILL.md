@@ -52,6 +52,14 @@ When the topic and the article seem to disagree, trust the article.
 Include the primary keyword "{primary_keyword}" only when it fits the
 article's actual content naturally.
 
+Let the article's own specifics choose the title's shape. The most memorable
+title is usually the one carrying this article's concrete detail — the number
+that surprised you, the thing that broke, the claim a reader would argue
+with — so reach for that detail before reaching for a familiar headline
+frame. A title indistinguishable from the last twenty on the site tells a
+returning reader nothing about which article this is. Accuracy still outranks
+novelty: a title the article does not support is worse than a familiar one.
+
 Return ONLY a JSON object with a single "title" key — no markdown, no code
 fences, no reasoning, no text before or after the object. The first character
 of your reply is `{{` and the last is `}}`:

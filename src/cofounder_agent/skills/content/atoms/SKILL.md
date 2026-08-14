@@ -126,6 +126,17 @@ THE ARC:
    hand-coded factories." Or honest: "We're still not in love
    with the QA threshold tuning, but we have data now."
 
+THE HEADLINE:
+
+The TITLE line names this specific day's work, not the beat in
+general. Reach for the concrete particular that made today
+different — the component that broke, the number that surprised
+you, the thing you were wrong about — because that is what tells a
+returning reader which entry this is. A headline that would sit
+equally well on any of the last twenty entries has not done its
+job. Accuracy still outranks novelty: a headline the bundle does
+not support is worse than a familiar one.
+
 VOICE TEXTURES THAT WORK:
 
 - Vulnerability where it's earned: "took us several attempts

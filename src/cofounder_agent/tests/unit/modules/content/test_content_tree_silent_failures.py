@@ -270,21 +270,26 @@ class TestAtomSideTwinsOfWriterCoreGaps:
 
     @pytest.mark.asyncio
     async def test_title_history_failure_is_visible(self, monkeypatch):
-        """Losing the avoidance list lets a duplicate title ship unnoticed."""
-        from modules.content.atoms.content_generate_title import (
-            _fetch_existing_titles,
-        )
+        """Losing the avoidance list lets a duplicate title ship unnoticed.
+
+        The atom-local ``_fetch_existing_titles`` copy this used to target was
+        consolidated into ``services.title_avoidance.fetch_recent_titles``
+        (poindexter#1043) — one lookup now serving all three title paths. The
+        de-silencing contract is what matters and it moves with it.
+        """
+        from services.title_avoidance import fetch_recent_titles
 
         findings = _capture(monkeypatch)
 
-        class _Boom:
-            @property
-            def pool(self):
+        class _BoomPool:
+            def acquire(self):
                 raise RuntimeError("pool unavailable")
 
-        result = await _fetch_existing_titles(_Boom())
+        result = await fetch_recent_titles(
+            _BoomPool(), source="content.generate_title"
+        )
 
-        assert result == "", "behaviour preserved: still returns the empty list"
+        assert result == [], "behaviour preserved: still returns the empty list"
         assert findings, (
             "the recent-titles query failed, so the title prompt gets no "
             "avoidance list and the diversity check is skipped entirely — a "

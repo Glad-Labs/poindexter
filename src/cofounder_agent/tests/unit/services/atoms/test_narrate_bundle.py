@@ -915,3 +915,120 @@ class TestResolveSystemPrompt:
         assert error_records, (
             "fallback must log at ERROR so the operator knows the registry is unreachable"
         )
+
+
+# ---------------------------------------------------------------------------
+# Title-variety guidance (poindexter#1043)
+# ---------------------------------------------------------------------------
+
+
+class _FakeConn:
+    def __init__(self, titles):
+        self._titles = titles
+
+    async def fetch(self, _sql, *_args):
+        return [{"title": t} for t in self._titles]
+
+
+class _FakeAcquire:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakePool:
+    def __init__(self, titles):
+        self._conn = _FakeConn(titles)
+
+    def acquire(self):
+        return _FakeAcquire(self._conn)
+
+
+class _DBWithTitles:
+    def __init__(self, titles):
+        self.pool = _FakePool(titles)
+
+
+@pytest.mark.asyncio
+class TestTitleVarietyGuidance:
+    """dev_diary had NO title-avoidance mechanism of any kind.
+
+    It titles the post from a single ``TITLE:`` line and never runs
+    content.generate_title, yet it is the larger half of published output —
+    82 of the last 151 posts, 36% of which joined two ideas with "and".
+    These pin the guidance into the prompt so the gap can't silently reopen.
+    """
+
+    # The habit-forming corpus, verbatim from production.
+    RECENT = [
+        "Chasing Driver Truth and VRAM Ghosts",
+        "Locking the GPU and silencing the noise",
+        "The Gap Between Merged and Working",
+        "The Danger of Lazy Imports and 126-Day Freezes",
+        "The Silence of the Taps",
+        "VRAM Poisoning and the P4 Architect",
+        "Hunting Ghosts in the Middleware",
+        "Bounded Waits and Invisible Failures",
+    ]
+
+    async def _capture_prompt(self, *, db=None):
+        captured: list[str] = []
+
+        async def _capture_chat(prompt, *, model=None, **kwargs):
+            captured.append(prompt)
+            return "TITLE: A Specific Headline\n\nStub narrative prose."
+
+        state = {
+            "task_id": "1043-variety",
+            "context_bundle": _bundle_repro_pr_221(),
+            "site_config": _CaptureSiteConfig(),
+        }
+        if db is not None:
+            state["database_service"] = db
+
+        with patch(
+            "modules.content.atoms.narrate_bundle._ollama_chat_text",
+            _capture_chat,
+        ):
+            await run(state)
+
+        assert len(captured) == 1
+        return captured[0]
+
+    async def test_variety_guidance_reaches_the_prompt(self):
+        prompt = await self._capture_prompt(db=_DBWithTitles(self.RECENT))
+        assert "TITLE VARIETY" in prompt, (
+            "dev_diary got no title-variety guidance — the gap that let 36% of "
+            "titles settle on the same 'X and Y' shape"
+        )
+
+    async def test_guidance_names_the_and_compound_habit(self):
+        prompt = await self._capture_prompt(db=_DBWithTitles(self.RECENT))
+        assert 'join two ideas with "and"' in prompt
+
+    async def test_guidance_does_not_paste_the_recent_titles(self):
+        """Showing the corpus primes the habit — describe it instead."""
+        prompt = await self._capture_prompt(db=_DBWithTitles(self.RECENT))
+        for title in self.RECENT:
+            assert title not in prompt, (
+                f"recent title {title!r} was pasted into the dev_diary prompt"
+            )
+
+    async def test_guidance_sits_next_to_the_title_instruction(self):
+        """Adjacency matters — same reasoning as the #354 grounding contract."""
+        prompt = await self._capture_prompt(db=_DBWithTitles(self.RECENT))
+        title_marker = prompt.rindex("TITLE: [specific headline")
+        variety_marker = prompt.rindex("TITLE VARIETY")
+        narrative_marker = prompt.rindex("Then a blank line")
+        assert title_marker < variety_marker < narrative_marker
+
+    async def test_missing_database_service_still_renders_a_post(self):
+        """No DB (bootstrap/test) degrades to no guidance, never to a crash."""
+        prompt = await self._capture_prompt(db=None)
+        assert "TITLE: [specific headline" in prompt
+        assert "TITLE VARIETY" not in prompt

@@ -98,12 +98,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             excerpt_chars = DEFAULT_TITLE_EXCERPT_CHARS
     content_digest = build_title_grounding_digest(content_text, max_chars=excerpt_chars)
 
-    # Fetch recent titles for avoidance prompt.
-    existing_titles = await _fetch_existing_titles(database_service)
+    # Variety guidance for the title prompt: the recent corpus's structural
+    # and lexical HABITS, not a dump of its titles. See
+    # services.title_avoidance for why the dump made repetition worse.
+    from services.title_avoidance import build_avoidance_block_for_pool
+
+    avoidance_block = await build_avoidance_block_for_pool(
+        pool, site_config=site_config, source="content.generate_title",
+    )
 
     llm_title = await _generate_canonical_title(
         topic, primary_keyword, content_digest,
-        existing_titles=existing_titles,
+        avoidance_block=avoidance_block,
         site_config=site_config,  # type: ignore[arg-type]
         pool=pool,
     )
@@ -116,12 +122,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     originality = await _check_title_originality(title, site_config=site_config)  # type: ignore[arg-type]
     if not originality["is_original"]:
         logger.warning("[TITLE] Title too similar to existing content — regenerating")
-        avoid_list = existing_titles
-        for dup in originality["similar_titles"][:5]:
-            avoid_list += f"\n- {dup}"
+        # Confirmed collisions DO get named verbatim — those are specific
+        # titles to dodge, not a corpus to imitate.
+        retry_block = await build_avoidance_block_for_pool(
+            pool,
+            site_config=site_config,
+            near_duplicates=originality["similar_titles"][:5],
+            source="content.generate_title",
+        )
         title_v2 = await _generate_canonical_title(
             topic, primary_keyword, content_digest,
-            existing_titles=avoid_list,
+            avoidance_block=retry_block,
             site_config=site_config,  # type: ignore[arg-type]
             pool=pool,
         )
@@ -159,45 +170,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "title_originality": originality,
     }
-
-
-async def _fetch_existing_titles(database_service: Any) -> str:
-    """Return newline-separated recent published titles for avoidance prompt."""
-    try:
-        pool = getattr(database_service, "pool", None)
-        if not pool:
-            return ""
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT title FROM content_tasks WHERE status = 'published' "
-                "ORDER BY created_at DESC LIMIT 20"
-            )
-        return "\n".join(f"- {r['title']}" for r in rows if r["title"])
-    except Exception as exc:
-        # Returning "" removes the avoidance list from the title prompt, which
-        # skips the title-diversity check entirely — a near-duplicate title
-        # ships with nothing to explain why. Non-paging info finding; the
-        # title step still proceeds. Same fix as writer_core's
-        # _fetch_existing_titles (OLD-debt batch 1); this is the atom-side twin.
-        from utils.findings import emit_finding
-
-        logger.warning(
-            "[content.generate_title] recent-title lookup failed (%s: %s) — "
-            "the title prompt gets no avoidance list this run",
-            type(exc).__name__, exc,
-        )
-        emit_finding(
-            source="content.generate_title",
-            kind="title_history_lookup_failed",
-            title="generate_title could not load recent published titles",
-            body=(
-                f"The recent-titles query raised {type(exc).__name__}: {exc}. "
-                f"The avoidance list is empty, so this post's title was chosen "
-                f"without the diversity check and may duplicate an existing one."
-            ),
-            dedup_key="generate_title_history_lookup_failed",
-        )
-        return ""
 
 
 __all__ = ["ATOM_META", "run"]

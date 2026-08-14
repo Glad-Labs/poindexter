@@ -238,6 +238,17 @@ THE ARC:
    hand-coded factories." Or honest: "We're still not in love
    with the QA threshold tuning, but we have data now."
 
+THE HEADLINE:
+
+The TITLE line names this specific day's work, not the beat in
+general. Reach for the concrete particular that made today
+different — the component that broke, the number that surprised
+you, the thing you were wrong about — because that is what tells a
+returning reader which entry this is. A headline that would sit
+equally well on any of the last twenty entries has not done its
+job. Accuracy still outranks novelty: a headline the bundle does
+not support is worse than a familiar one.
+
 VOICE TEXTURES THAT WORK:
 
 - Vulnerability where it's earned: "took us several attempts
@@ -603,6 +614,23 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_name=(site_config.get("site_name") if site_config else "") or "",
         site_url=(site_config.get("site_url") if site_config else "") or "",
     )
+    # Title-variety guidance (poindexter#1043). dev_diary titles the post from
+    # the TITLE: line below and never runs content.generate_title, so before
+    # this it had NO avoidance mechanism of any kind — and it is the larger
+    # half of published output. Measured over 120 days: 36% of dev_diary
+    # titles joined two ideas with "and", 17% opened on an "-ing" verb.
+    # Rendered next to the TITLE: instruction, not in the system preamble, for
+    # the same adjacency reason as the grounding contract below (#354).
+    from services.title_avoidance import build_avoidance_block_for_pool
+
+    _db_service = state.get("database_service")
+    avoidance_block = await build_avoidance_block_for_pool(
+        getattr(_db_service, "pool", None) if _db_service is not None else None,
+        site_config=site_config,
+        source="atoms.narrate_bundle",
+    )
+    title_variety = f"\n\n{avoidance_block}" if avoidance_block else ""
+
     # The BUNDLE is the canonical source. Any "topic" string the caller
     # may have stamped on the task row is just a UI label — it can be
     # truncated, semantic-only, or stale relative to the actual PRs in
@@ -618,7 +646,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"string outside this block):\n\n{bundle_text}\n\n"
         f"---\n\n"
         f"Now write the dev_diary post. First line must be:\n"
-        f"TITLE: [specific headline — not a date, not 'Dev diary for ...']\n\n"
+        f"TITLE: [specific headline — not a date, not 'Dev diary for ...']"
+        f"{title_variety}\n\n"
         f"Then a blank line, then the narrative. Open the narrative by "
         f"referencing a specific merged PR from the BUNDLE above by its "
         f"actual title and number — quote the title verbatim or "

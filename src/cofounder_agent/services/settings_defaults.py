@@ -1347,6 +1347,28 @@ DEFAULTS: dict[str, str] = {
     # fresh installs default to never-discard. 'false' restores legacy discard.
     'qa_flag_instead_of_reject': 'true',
 
+    # --- Title variety / avoidance (poindexter#1043) -------------------------
+    # Strategy for steering the title model away from the recent corpus:
+    #   patterns — describe the corpus's structural + lexical HABITS (default)
+    #   titles   — legacy raw dump of the recent titles (pre-2026-08 behaviour)
+    #   both     — habits AND the dump
+    #   off      — no guidance (confirmed near-duplicates still render)
+    # The dump is not the default because it PRIMES the pattern it is trying
+    # to suppress: handing the model 20 titles that are themselves ~50%
+    # "The …" teaches the habit harder than one sentence suppresses it.
+    'title_avoidance_mode': 'patterns',
+    # Size of the recent-published-title window profiled for habits. Was a
+    # hardcoded LIMIT 20 duplicated across three call sites.
+    'title_avoidance_recent_count': '20',
+    # Share of the window (0.0-1.0) a structural pattern must cover before it
+    # is named as a habit. 0.20 is calibrated against the live corpus — it
+    # catches the leading "The", the "and" compound, and the gerund opener
+    # without firing on incidental shapes.
+    'title_avoidance_pattern_threshold': '0.20',
+    # Times a content word must recur in the window to be called out as
+    # over-used vocabulary.
+    'title_avoidance_lexical_min_count': '3',
+
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
     'niche_carry_forward_decay_factor': '0.7',
@@ -4334,6 +4356,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'template_runner_progress_streaming': {'owner': 'template_runner', 'value_type': 'boolean'},
+    'title_avoidance_lexical_min_count': {'owner': 'title_avoidance', 'value_type': 'integer'},
+    'title_avoidance_mode': {'owner': 'title_avoidance', 'value_type': 'string'},
+    'title_avoidance_pattern_threshold': {'owner': 'title_avoidance', 'value_type': 'float'},
+    'title_avoidance_recent_count': {'owner': 'title_avoidance', 'value_type': 'integer'},
     'title_junk_regen_max_retries': {'owner': 'title_generation', 'value_type': 'integer'},
     'title_max_length': {'owner': 'title_generation', 'value_type': 'integer'},
     'title_originality_cache_ttl_hours': {'owner': 'title_originality_external', 'value_type': 'integer'},

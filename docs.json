@@ -43,6 +43,7 @@
               "docs/architecture/niches-and-rag-modes",
               "docs/architecture/cost-tier-routing",
               "docs/architecture/prompt-management",
+              "docs/architecture/title-variety",
               "docs/architecture/static-export-pipeline",
               "docs/architecture/publish-scheduling",
               "docs/architecture/url-scraper-ssrf-guard",

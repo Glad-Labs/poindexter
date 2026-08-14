@@ -4,8 +4,9 @@ Lifted from content_router_service.py during Phase E2. Two functions the
 generate_content stage uses back-to-back:
 
 - :func:`generate_canonical_title` — asks the writer LLM for an SEO-optimized
-  title as a structured ``{"title": "..."}`` JSON object (avoiding a list of
-  recent/existing titles), then reads the ``title`` field via
+  title as a structured ``{"title": "..."}`` JSON object (steered away from
+  the recent corpus's habits by a :mod:`services.title_avoidance` block),
+  then reads the ``title`` field via
   :func:`_extract_json`. Reading the field — instead of scanning free text for
   a "title-like" line — makes the thinking-model deliberation leak impossible
   by construction (#1280/#1821): any rationale the reasoning model emits
@@ -609,11 +610,24 @@ async def generate_canonical_title(
     *,
     site_config: SiteConfig,
     pool: Any = None,
+    avoidance_block: str | None = None,
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles.
 
     Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
     module global + ``set_site_config`` shim was retired.
+
+    Two avoidance inputs, newest first:
+
+    - ``avoidance_block`` — a pre-rendered block from
+      :mod:`services.title_avoidance`, appended verbatim. This is the path
+      every in-graph caller uses: it describes the *habits* of the recent
+      corpus rather than listing its titles, because listing twenty titles
+      that are themselves half ``"The …"`` primes the very pattern the
+      instruction is trying to suppress (poindexter#1043).
+    - ``existing_titles`` — the legacy newline-joined ``"- Title"`` dump,
+      wrapped in the pre-2026-08 framing. Retained so external/bootstrap
+      callers keep working; ignored when ``avoidance_block`` is supplied.
 
     Routing (Sonnet-canary 404 fix; same class as glad-labs-stack#2194): the
     title reuses the writer model via the ``pipeline_writer_model`` pin. When a
@@ -652,10 +666,12 @@ async def generate_canonical_title(
             content=content_excerpt,
             primary_keyword=primary_keyword or topic,
         )
-        if existing_titles:
+        if avoidance_block:
+            prompt += f"\n\n{avoidance_block}"
+        elif existing_titles:
             prompt += (
-                f"\n\n⚠️ AVOID SIMILARITY to these recent titles:\n{existing_titles}\n\n"
-                "Your title must be DISTINCTLY DIFFERENT in structure and wording."
+                f"\n\nAVOID SIMILARITY to these recent titles:\n{existing_titles}\n\n"
+                "Your title must be distinctly different in structure and wording."
             )
 
         # Per-step pin — ``pipeline_title_model`` when set; EMPTY = reuse the

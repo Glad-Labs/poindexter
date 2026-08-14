@@ -283,6 +283,23 @@ def _no_live_vram_probe(monkeypatch):
     Tests that want to exercise the live path override this with their own
     monkeypatch — a later setattr wins.
 
+    ``_wan_resident_gb`` is stubbed for the SAME reason and was the half of
+    this that got missed. It GETs the wan server's ``/health`` over httpx and
+    its result is ADDED to the registry reading
+    (``free_gb += await _wan_resident_gb(...)``), so a reachable wan silently
+    inflates every patched value. With the ladder needing 27GB for 832x480,
+    the 23.0 fixture lands on the 704x400 floor rung only while wan holds
+    nothing; a hero render in flight (wan resident ~4GB+) pushes it to 27 and
+    the plate never steps down. That is exactly how these four tests failed in
+    CI on 2026-08-14 — `(832, 480) != (704, 400)` and `(832, 480) is not None`
+    — while passing on a quiet box. Six tests below already patched it
+    individually; the four that did not were the flaky ones.
+
+    Note the CI runners are containers on the operator box, so "unit" tests
+    here can reach a live wan server. The 2026-08-13 network-egress guard
+    (#3206) baselined 6 socket-opening tests in this file rather than fixing
+    them — stubbing the probe is the actual fix, and drops that count.
+
     Also zeroes the inter-sample gap. The fallback takes ``_FREE_VRAM_SAMPLES``
     (4) readings ``_FREE_VRAM_SAMPLE_GAP_S`` (4.0s) apart to ride out
     Prometheus' scrape lag, which is right in production and is 12s of real
@@ -293,6 +310,7 @@ def _no_live_vram_probe(monkeypatch):
     from services.video_renderers import shot_list_renderer as slr
 
     monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=None))
+    monkeypatch.setattr(slr, "_wan_resident_gb", AsyncMock(return_value=0.0))
     monkeypatch.setattr(slr, "_FREE_VRAM_SAMPLE_GAP_S", 0.0)
 
 
