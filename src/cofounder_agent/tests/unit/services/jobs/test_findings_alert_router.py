@@ -937,7 +937,7 @@ async def test_run_cools_repeat_and_advances_watermark():
                 "details": json.dumps({"kind": "gpu_lock_timeout", "title": "lock"})}],
         policy_rows=[{"key": "findings.gpu_lock_timeout.cooldown_minutes",
                       "value": "60"}],
-        last_routed_rows=[{"kind": "gpu_lock_timeout",
+        last_routed_rows=[{"kind": "gpu_lock_timeout", "source": "gpu_scheduler",
                            "last_routed": datetime.now(timezone.utc)
                            - timedelta(minutes=5)}],
     )
@@ -1022,7 +1022,7 @@ async def test_run_never_cools_a_critical_end_to_end():
                 "details": json.dumps({"kind": "gpu_lock_timeout", "title": "wedged"})}],
         policy_rows=[{"key": "findings.gpu_lock_timeout.cooldown_minutes",
                       "value": "1440"}],
-        last_routed_rows=[{"kind": "gpu_lock_timeout",
+        last_routed_rows=[{"kind": "gpu_lock_timeout", "source": "gpu_scheduler",
                            "last_routed": datetime.now(timezone.utc)}],
     )
     result = await FindingsAlertRouterJob().run(pool, {})
@@ -1042,9 +1042,118 @@ async def test_default_cooldown_is_not_folded_in():
         fetch=[{"id": 601, "source": "s", "severity": "warn",
                 "details": json.dumps({"kind": "unlisted", "title": "t"})}],
         policy_rows=[{"key": "findings.default.cooldown_minutes", "value": "1440"}],
-        last_routed_rows=[{"kind": "unlisted",
+        last_routed_rows=[{"kind": "unlisted", "source": "s",
                            "last_routed": datetime.now(timezone.utc)}],
     )
     result = await FindingsAlertRouterJob().run(pool, {})
     assert result.metrics["routed"] == 1
     assert result.metrics["cooled"] == 0
+
+
+# ---- Per-source cooldown keying (Glad-Labs/poindexter#1010) -----------------
+#
+# The gap these pin: job_failure (307 fires/30d) and qa_rail_degraded (203) are
+# UMBRELLA kinds spanning unrelated producers. Keyed on kind alone, cooling
+# either would let one job's failure mute a DIFFERENT job's failure — silencing
+# a fault nobody ever saw. That is why both were left uncooled by #551, leaving
+# the two loudest kinds in the system unthrottled.
+
+
+def _job_failure(idx: int, source: str) -> dict:
+    return {
+        "id": 900 + idx, "source": source, "severity": "warn",
+        "details": json.dumps({
+            "kind": "job_failure",
+            "title": f"{source} failed",
+            # A different dedup_key per source — fingerprint dedup cannot
+            # collapse these either, which is why cooldown has to be right.
+            "dedup_key": f"{source}:fail",
+        }),
+    }
+
+
+async def test_one_sources_page_does_not_mute_another():
+    """THE bug. Two different jobs failing inside one cooldown window must
+    BOTH page — a cooldown on `job_failure` is not a licence to hide whichever
+    job failed second."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "899"},
+        fetch=[_job_failure(1, "scheduler.run_taps"),
+               _job_failure(2, "scheduler.poll_mercury")],
+        policy_rows=[{"key": "findings.job_failure.cooldown_minutes", "value": "60"}],
+        last_routed_rows=[],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 2, (
+        "a second SOURCE inside the window was muted — cooldown is keyed too "
+        "coarsely (poindexter#1010)"
+    )
+    assert result.metrics["cooled"] == 0
+
+
+async def test_same_source_repeating_is_still_cooled():
+    """The throttle must still work — per-source keying loosens the key, it
+    does not disable the feature."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "899"},
+        fetch=[_job_failure(1, "scheduler.run_taps"),
+               _job_failure(2, "scheduler.run_taps")],
+        policy_rows=[{"key": "findings.job_failure.cooldown_minutes", "value": "60"}],
+        last_routed_rows=[],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 1
+    assert result.metrics["cooled"] == 1
+
+
+async def test_persisted_history_is_matched_per_source():
+    """A recent page from ONE source must not satisfy the cooldown of another.
+
+    This is the DB-facing half: the alert_events lookup groups by
+    (kind, source), so a stale entry for run_taps cannot cool poll_mercury."""
+    pool, conn = _pool_with(
+        fetchrow={"value": "899"},
+        fetch=[_job_failure(1, "scheduler.poll_mercury")],
+        policy_rows=[{"key": "findings.job_failure.cooldown_minutes", "value": "60"}],
+        last_routed_rows=[{"kind": "job_failure", "source": "scheduler.run_taps",
+                           "last_routed": datetime.now(timezone.utc)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 1
+    assert result.metrics["cooled"] == 0
+
+
+async def test_persisted_history_cools_the_same_source():
+    pool, conn = _pool_with(
+        fetchrow={"value": "899"},
+        fetch=[_job_failure(1, "scheduler.run_taps")],
+        policy_rows=[{"key": "findings.job_failure.cooldown_minutes", "value": "60"}],
+        last_routed_rows=[{"kind": "job_failure", "source": "scheduler.run_taps",
+                           "last_routed": datetime.now(timezone.utc)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 0
+    assert result.metrics["cooled"] == 1
+
+
+def test_cooldown_key_defaults_a_missing_source():
+    """A finding with no source still gets a stable key rather than colliding
+    with every other sourceless finding of a different kind."""
+    assert router_mod._cooldown_key("job_failure", "") == ("job_failure", "unknown")
+    assert router_mod._cooldown_key("a", "s") != router_mod._cooldown_key("b", "s")
+    assert router_mod._cooldown_key("a", "s1") != router_mod._cooldown_key("a", "s2")
+
+
+async def test_critical_still_never_cooled_per_source():
+    """The floor survives the key change."""
+    row = _job_failure(1, "scheduler.run_taps")
+    row["severity"] = "critical"
+    pool, conn = _pool_with(
+        fetchrow={"value": "899"}, fetch=[row],
+        policy_rows=[{"key": "findings.job_failure.cooldown_minutes", "value": "1440"}],
+        last_routed_rows=[{"kind": "job_failure", "source": "scheduler.run_taps",
+                           "last_routed": datetime.now(timezone.utc)}],
+    )
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["cooled"] == 0
+    assert result.metrics["routed"] == 1

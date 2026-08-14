@@ -31,7 +31,7 @@ Four `app_settings` keys shape each kind, all optional:
 | `findings.<kind>.delivery`         | `route` / `telegram` / `discord` / `log_only` / `auto_fix` / `github_issue` | `route`       |
 | `findings.<kind>.fallback`         | channel used when `auto_fix` / `github_issue` couldn't act                  | `route`       |
 | `findings.<kind>.min_severity`     | floor below which the kind doesn't page                                     | `warning`     |
-| `findings.<kind>.cooldown_minutes` | minimum gap between pages **for this kind**                                 | `0` (off)     |
+| `findings.<kind>.cooldown_minutes` | minimum gap between pages **per (kind, source)**                            | `0` (off)     |
 
 **`findings.default.*` is deliberately inert.** `_load_policies` skips every `default` key.
 An unlisted kind must stay loud — a default that quiets kinds nobody opted in for is exactly
@@ -51,8 +51,8 @@ finding:{source}:{dedup_key}      # or finding:{source}:{kind} when no dedup_key
 It collapses _the same finding repeating_. Perfect for `media_drift` firing every 15 minutes
 about the same drift.
 
-**Per-kind cooldown** (this router) is keyed by **kind**. It exists because fingerprint dedup
-is structurally blind to a kind whose subject changes on every fire:
+**Per-kind cooldown** (this router) is keyed by **(kind, source)**. It exists because
+fingerprint dedup is structurally blind to a kind whose subject changes on every fire:
 
 ```
 stale_task_reclaimed   -> a different task_id every fire   -> new fingerprint every time
@@ -67,6 +67,30 @@ That volume had a second-order cost. The `alert-triage` ops session reads alert 
 files GitHub issues, so the noise became **18 of 36 open issues** on the private repo —
 which then collapsed to ~5 real causes under manual review. A throttle here is cheaper than
 the triage it prevents.
+
+### Why the key includes `source` (poindexter#1010)
+
+Two kinds are **umbrellas over unrelated producers**, and they are the two loudest in the
+system:
+
+| kind               | fires/30d | spans                                                                         |
+| ------------------ | --------: | ----------------------------------------------------------------------------- |
+| `job_failure`      |       307 | `sync_cloudflare_analytics`, `run_taps`, `poll_mercury`, `chat_task_watch`, … |
+| `qa_rail_degraded` |       203 | `ragas_eval`, `deepeval_g_eval`, `deepeval_faithfulness`, …                   |
+
+Keyed on kind alone, cooling `job_failure` would let `run_taps` failing **mute an unrelated
+`poll_mercury` failure** eleven minutes later — silencing a fault nobody ever saw. That is
+worse than the noise it fixes, so both kinds were deliberately left uncooled when the
+cooldown shipped, which left the loudest kinds in the system unthrottled.
+
+**The policy surface is unchanged.** One `findings.<kind>.cooldown_minutes` still configures
+the kind; it now means _one page per source per window_. There is deliberately no
+`findings.<kind>.<source>.cooldown_minutes` — it would break `_load_policies` (which splits
+on `.` and requires exactly three segments) and sources contain dots anyway
+(`scheduler.run_taps`).
+
+`source` was already on every row — the router writes it into `labels`, and `alertname` is
+literally `f"{source}:{kind}"` — so this is a grouping change, not a data-model one.
 
 ### Cooldown rules
 

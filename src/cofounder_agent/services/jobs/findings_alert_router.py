@@ -50,8 +50,22 @@ NULL on every one). The volume then fed the ``alert-triage`` ops session,
 which turned it into GitHub issues; half the private repo's open backlog was
 that noise, and consolidating it by hand collapsed ~18 issues into ~5 causes.
 
-So the cooldown here is deliberately keyed on **kind**, not fingerprint — it
-is the throttle for subject-varying kinds that dedup structurally cannot help.
+So the cooldown here is deliberately keyed on **(kind, source)**, not on the
+fingerprint — it is the throttle for subject-varying kinds that dedup
+structurally cannot help.
+
+Why the ``source`` half (poindexter#1010): two kinds are umbrellas over
+unrelated producers, and they are the two loudest in the system —
+``job_failure`` (307 fires/30d, spanning sync_cloudflare_analytics / run_taps /
+poll_mercury / …) and ``qa_rail_degraded`` (203, spanning ragas_eval /
+deepeval_g_eval / …). Keyed on kind alone, cooling ``job_failure`` would let
+one job's failure mute a DIFFERENT job's failure minutes later — silencing a
+fault nobody saw. That is worse than the noise, so those two were left uncooled
+when #551 shipped, which left the loudest kinds unthrottled. Per-source keying
+is what lets them take a cooldown at all.
+
+The policy surface is unchanged: one ``findings.<kind>.cooldown_minutes`` still
+configures the kind, and now means "one page per source per window".
 
 Three invariants, each mirroring one this module already holds:
 
@@ -162,13 +176,46 @@ def _cooldown_minutes_for(kind: str, policies: dict[str, dict[str, str]]) -> int
     return max(0, minutes)
 
 
-async def _load_last_routed(pool: Any, lookback_minutes: int) -> dict[str, Any]:
-    """Map ``kind -> most recent time this router paged for it``.
+def _cooldown_key(kind: str, source: str) -> tuple[str, str]:
+    """The identity a cooldown throttles: ``(kind, source)``, not kind alone.
+
+    poindexter#1010. Kind alone is right for a kind that names one thing —
+    ``gpu_lock_timeout`` is always the GPU lock, whichever holder won. It is
+    WRONG for the umbrella kinds, which are the two loudest in the system:
+
+        job_failure       spans sync_cloudflare_analytics, run_taps,
+                          poll_mercury, chat_task_watch, ...   (307 fires/30d)
+        qa_rail_degraded  spans ragas_eval, deepeval_g_eval,
+                          deepeval_faithfulness, ...           (203 fires/30d)
+
+    Keyed on kind, a cooldown on ``job_failure`` would let ``run_taps`` failing
+    mute an unrelated ``poll_mercury`` failure eleven minutes later — silencing
+    a different fault than the one that fired. That is a worse failure than the
+    noise it fixes, which is why those two kinds were left uncooled when #551
+    shipped, leaving the loudest kinds unthrottled.
+
+    Per-source keying needs NO new policy surface: one
+    ``findings.<kind>.cooldown_minutes`` still configures the kind, and it now
+    means "one page per source per window" — which is what an operator means by
+    cooling a kind down. (The obvious alternative,
+    ``findings.<kind>.<source>.cooldown_minutes``, is unusable anyway: it breaks
+    ``_load_policies``, which splits on ``.`` and requires exactly 3 segments,
+    and sources themselves contain dots — ``scheduler.run_taps``.)
+    """
+    return (kind, source or "unknown")
+
+
+async def _load_last_routed(
+    pool: Any, lookback_minutes: int
+) -> dict[tuple[str, str], Any]:
+    """Map ``(kind, source) -> most recent time this router paged for it``.
 
     Sourced from ``alert_events`` rather than a dedicated table: this router is
     the only writer of ``category='finding'`` rows, so that category IS the
     routing history. No new schema, and pruning alert_events just resets
-    cooldowns (the safe direction).
+    cooldowns (the safe direction). ``source`` is already on every row — the
+    router writes it into ``labels`` — so this is a grouping change, not a
+    data-model one.
 
     ``lookback_minutes`` bounds the scan to the largest configured cooldown —
     anything older cannot suppress anything, so it need not be read. Returns
@@ -178,16 +225,22 @@ async def _load_last_routed(pool: Any, lookback_minutes: int) -> dict[str, Any]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT labels->>'kind' AS kind, MAX(received_at) AS last_routed
+            SELECT labels->>'kind'   AS kind,
+                   labels->>'source' AS source,
+                   MAX(received_at)  AS last_routed
             FROM alert_events
             WHERE category = 'finding'
               AND received_at > NOW() - make_interval(mins => $1)
               AND labels->>'kind' IS NOT NULL
-            GROUP BY 1
+            GROUP BY 1, 2
             """,
             lookback_minutes,
         )
-    return {r["kind"]: r["last_routed"] for r in rows if r["kind"]}
+    return {
+        _cooldown_key(r["kind"], r["source"]): r["last_routed"]
+        for r in rows
+        if r["kind"]
+    }
 
 
 def _issue_labels_for(kind: str, policies: dict[str, dict[str, str]]) -> list[str]:
@@ -642,6 +695,8 @@ class FindingsAlertRouterJob:
 
         for r in rows:
             kind = _finding_kind(r)
+            # Cooldown throttles (kind, source), not kind — see _cooldown_key.
+            cd_key = _cooldown_key(kind, str(r.get("source") or ""))
             severity = r.get("severity") or "info"
             delivery = _delivery_for(kind, severity, policies)
             fallback = (policies.get(kind) or {}).get("fallback", "route")
@@ -652,7 +707,7 @@ class FindingsAlertRouterJob:
             if delivery in ("route", "telegram", "discord") and _is_cooling(
                 severity=severity,
                 cooldown_minutes=_cooldown_minutes_for(kind, policies),
-                last_routed=last_routed.get(kind),
+                last_routed=last_routed.get(cd_key),
             ):
                 cooled += 1
                 max_id = max(max_id, int(r["id"]))
@@ -666,7 +721,7 @@ class FindingsAlertRouterJob:
                         autofixed += 1
                     elif await _deliver_fallback(pool, r, kind, fallback):
                         routed += 1
-                        last_routed[kind] = datetime.now(timezone.utc)
+                        last_routed[cd_key] = datetime.now(timezone.utc)
                     else:
                         suppressed += 1
                 elif delivery == "github_issue":
@@ -675,7 +730,7 @@ class FindingsAlertRouterJob:
                         filed += 1
                     elif await _deliver_fallback(pool, r, kind, fallback):
                         routed += 1
-                        last_routed[kind] = datetime.now(timezone.utc)
+                        last_routed[cd_key] = datetime.now(timezone.utc)
                     else:
                         suppressed += 1
                 else:  # 'route' / 'telegram' / 'discord'
@@ -692,7 +747,7 @@ class FindingsAlertRouterJob:
                     # every row reads the same pre-batch timestamp and pages.
                     # Mirrors what the next cycle will read back from
                     # alert_events, so in-memory and persisted state agree.
-                    last_routed[kind] = datetime.now(timezone.utc)
+                    last_routed[cd_key] = datetime.now(timezone.utc)
             except Exception as exc:
                 errors += 1
                 if first_failed_id is None:
