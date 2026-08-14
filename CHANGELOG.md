@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.122.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.121.0...v0.122.0) (2026-08-14)
+
+
+### Features
+
+* **content:** profile title habits instead of dumping recent titles ([#3209](https://github.com/Glad-Labs/glad-labs-stack/issues/3209)) ([a410eb4](https://github.com/Glad-Labs/glad-labs-stack/commit/a410eb4202257e748a728a1f047e9f8529283ca1))
+
 ## [0.121.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.120.0...v0.121.0) (2026-08-12)
 
 
