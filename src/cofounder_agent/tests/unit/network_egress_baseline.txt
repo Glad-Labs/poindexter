@@ -1,0 +1,59 @@
+# Unit tests known to open network connections (poindexter#1011).
+#
+# RATCHET: this file may only SHRINK. The autouse guard in conftest.py
+# fails any unit test that opens a socket unless its file is listed here
+# with a count >= the number of its tests that do.
+#
+# Generated 2026-08-13 from a full-suite socket probe. Burn these down by
+# stubbing the seam the test reaches through, then lower the count.
+#
+# ENVIRONMENT-DEPENDENT — this is a UNION, not a snapshot. Host and CI reach
+# different services, so they take different code paths and produce different
+# offenders. 7 files here egress ONLY in CI (image-gen 9836, wan 9840,
+# chatterbox 9839, ollama 11434 on the docker bridge) and never on the host.
+# A baseline regenerated from one environment alone will be wrong in the other:
+# regenerate from BOTH and take the per-file max.
+#
+# REGENERATE with one report-mode run, which is the only way to see ALL of it:
+#   EGRESS_GUARD_MODE=report pytest tests/unit/ ...   # then grep '[egress-guard] EGRESS'
+# Enforcing shows only the first failing CI step; report mode lets all ~13
+# steps finish. The 2026-08-13 harvest returned 222 (test, target) pairs.
+#
+# format: <count> <path>
+
+2 tests/unit/cli/test_cli_utf8_output.py
+7 tests/unit/cli/test_tasks_edit_cli.py
+1 tests/unit/modules/content/test_image_atom_contracts.py
+1 tests/unit/modules/content/test_writer_core_silent_failures.py
+3 tests/unit/modules/content/test_writer_markers.py
+1 tests/unit/modules/finance/test_finance_probe.py
+17 tests/unit/routes/test_task_routes.py
+1 tests/unit/services/flows/test_content_generation_flow.py
+1 tests/unit/services/flows/test_content_generation_trace.py
+1 tests/unit/services/jobs/test_backfill_post_performance_gsc_job.py
+4 tests/unit/services/jobs/test_dispatch_media_pipeline.py
+2 tests/unit/services/jobs/test_media_distribute.py
+9 tests/unit/services/stages/test_generate_media_scripts.py
+2 tests/unit/services/stages/test_platform_dispatch_seam.py
+1 tests/unit/services/test_alt_text.py
+3 tests/unit/services/test_brain_health_probes.py
+4 tests/unit/services/test_content_router_service.py
+8 tests/unit/services/test_gpu_scheduler.py
+2 tests/unit/services/test_gpu_scheduler_silent_failures.py
+2 tests/unit/services/test_image_captioner.py
+5 tests/unit/services/test_image_service.py
+3 tests/unit/services/test_image_service_activity.py
+16 tests/unit/services/test_llm_providers_dispatcher.py
+1 tests/unit/services/test_ollama_client_resilience.py
+3 tests/unit/services/test_publish_service_bg_exceptions.py
+2 tests/unit/services/test_qa_rail_gpu_budgets.py
+1 tests/unit/services/test_render_prometheus_rules_job.py
+1 tests/unit/services/test_template_runner_postgres_checkpointer.py
+1 tests/unit/services/topic_sources/test_dev_diary_source.py
+6 tests/unit/services/video_renderers/test_hero_vram_choreography.py
+3 tests/unit/services/video_renderers/test_shot_list_progress.py
+12 tests/unit/services/video_renderers/test_shot_list_renderer.py
+5 tests/unit/test_operator_notifier.py
+2 tests/unit/test_recovery_agent.py
+4 tests/unit/test_voice_brain_host.py
+1 tests/unit/utils/test_uuid_prefix.py

@@ -804,3 +804,135 @@ def repo_root() -> Path:
     parameter is not available.
     """
     return find_repo_root()
+
+
+# ---------------------------------------------------------------------------
+# Network egress guard (Glad-Labs/poindexter#1011)
+# ---------------------------------------------------------------------------
+#
+# WHY. CI runs in containers on the operator box, so a unit test that opens a
+# socket reaches the REAL services — Postgres on 5433, image-gen on 9836, the
+# wan server, even api.telegram.org. Such a test stops grading the code and
+# starts grading whatever the pipeline happens to be doing. That is not
+# hypothetical: `_fit_hero_dims_to_free_vram` tests patched a FALLBACK seam
+# while the code asked a live wan server first, so they passed at ~20GB free
+# and failed at ~4.5GB — read as flakiness for weeks, blocked a PR, and cost a
+# full debugging session (glad-labs-stack#3193).
+#
+# WHY A RATCHET, NOT A BAN. A full-suite probe on 2026-08-13 found 95 such
+# tests across 27 files. Failing them all at once would be unlandable, so this
+# follows the house pattern already used by lint_silent_excepts /
+# adapter_purity_lint / bandit_lint: baseline what exists, forbid anything new,
+# and let the baseline only shrink. Burn-down is per-file — stub the seam, then
+# lower the count in network_egress_baseline.txt.
+#
+# WHY LOOPBACK COUNTS. 127.0.0.1 is the whole problem here; the services under
+# test run locally. A guard that allowed loopback would allow the exact
+# coupling this exists to stop.
+
+# The exception + baseline loader live in tests/unit/_egress_guard.py, NOT here:
+# pytest imports a conftest under its own module name, so `from
+# tests.unit.conftest import UnitTestNetworkEgress` in a test yields a SECOND
+# class object and `pytest.raises` silently misses. Same dual-identity trap as
+# glad-labs-stack#3155. One module, one class.
+from tests.unit._egress_guard import (  # noqa: E402
+    EGRESS_REPORT_PREFIX,
+    UnitTestNetworkEgress,
+    guard_is_enforcing,
+    load_egress_baseline,
+    record_egress,
+    report_sink,
+)
+
+_EGRESS_ALLOWED = load_egress_baseline()
+
+
+@pytest.fixture(autouse=True)
+def _no_network_egress(request, monkeypatch):
+    """Fail a unit test that opens a socket, unless its file is baselined.
+
+    Escape hatch for a test that must genuinely talk to a socket (e.g. one
+    exercising a real local server it started itself):
+
+        @pytest.mark.allow_network
+    """
+    import socket
+
+    node_path = request.node.nodeid.split("::")[0]
+    enforcing = guard_is_enforcing()
+    # Report mode deliberately IGNORES the baseline and the marker: a harvest
+    # wants every offender, including the ones already known, or a regenerated
+    # baseline would silently drop everything currently on it.
+    if enforcing and (
+        request.node.get_closest_marker("allow_network") or node_path in _EGRESS_ALLOWED
+    ):
+        yield
+        return
+
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_create = socket.create_connection
+
+    def _refuse(addr):
+        # AF_UNIX / odd address shapes are local IPC, not egress — let them by.
+        if not (isinstance(addr, tuple) and len(addr) >= 2):
+            return
+        if not guard_is_enforcing():
+            # Report mode: record and let the connection proceed, so a whole CI
+            # run surfaces its egress in one pass instead of one step at a time.
+            record_egress(request.node.nodeid, addr[0], addr[1])
+            return
+        raise UnitTestNetworkEgress(
+            f"{request.node.nodeid} opened a network connection to "
+            f"{addr[0]}:{addr[1]}.\n"
+            "Unit tests must not touch the network — on this box that reaches "
+            "the REAL Postgres / image-gen / wan server, so the test grades "
+            "live state instead of the code (poindexter#1011).\n"
+            "Fix: stub the seam the code reaches through. Note it may not be "
+            "the one you expect — patch the FIRST call in the chain, not a "
+            "fallback (see glad-labs-stack#3193).\n"
+            "If the socket is genuinely intended, mark the test "
+            "@pytest.mark.allow_network."
+        )
+
+    def _connect(self, addr, *a, **k):
+        _refuse(addr)
+        return real_connect(self, addr, *a, **k)
+
+    def _connect_ex(self, addr, *a, **k):
+        _refuse(addr)
+        return real_connect_ex(self, addr, *a, **k)
+
+    def _create_connection(addr, *a, **k):
+        _refuse(addr)
+        return real_create(addr, *a, **k)
+
+    monkeypatch.setattr(socket.socket, "connect", _connect, raising=False)
+    monkeypatch.setattr(socket.socket, "connect_ex", _connect_ex, raising=False)
+    monkeypatch.setattr(socket, "create_connection", _create_connection, raising=False)
+    yield
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Surface report-mode findings where CI can actually see them.
+
+    Terminal-summary output is not swallowed by pytest's per-test capture, and
+    under xdist this hook runs on the controller — so it prints the union of
+    every worker's appended lines.
+    """
+    if guard_is_enforcing():
+        return
+    sink = report_sink()
+    if not sink.exists():
+        return
+    try:
+        lines = sorted(set(sink.read_text(encoding="utf-8").splitlines()))
+    except OSError:
+        return
+    if lines:
+        terminalreporter.write_line("")
+        terminalreporter.write_line(
+            f"{EGRESS_REPORT_PREFIX}-SUMMARY {len(lines)} offending (test, target) pair(s):"
+        )
+        for line in lines:
+            terminalreporter.write_line(line)

@@ -625,6 +625,7 @@ markers = [
     # runs + fails loud where it is (host dev, worker image, the
     # rerank-import-guard workflow).
     "rerank: real cross-encoder / sentence-transformers import guard (opt-in `rerank` extra)",
+    "allow_network: test deliberately opens a socket (poindexter#1011 egress guard escape hatch)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
