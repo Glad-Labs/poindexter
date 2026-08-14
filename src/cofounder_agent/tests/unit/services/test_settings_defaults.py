@@ -555,8 +555,12 @@ class TestGroupingMakesSense:
         # (poindexter#1002): three plugin.image_provider.screenshot.* keys with
         # their comment sit beside plugin.image_provider.flux_schnell.server_url
         # — the same plugin.* interleave this span already tolerates for the
-        # plugin.llm_provider.litellm.* flags noted above.
-        assert span < 371, (
+        # plugin.llm_provider.litellm.* flags noted above. Bumped 371→381 for
+        # the judge-call timeout keys (2026-08-14): qa_critic_timeout_seconds +
+        # qa_gate_timeout_seconds with their comment sit directly beside
+        # qa_review_content_max_chars — the #985 judge block they extend —
+        # inside the same cluster.
+        assert span < 381, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

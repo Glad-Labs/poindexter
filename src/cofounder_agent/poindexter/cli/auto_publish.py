@@ -52,6 +52,69 @@ def auto_publish_group() -> None:
     """auto-publish command group."""
 
 
+def _group_by_niche(settings: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Group ``{niche}_auto_publish_{suffix}`` keys by niche.
+
+    Every niche opts in via its own key family (the 2026-05-27 niche-leak
+    fix), so the status surface must enumerate whatever niches exist rather
+    than hardcode one — the pre-2026-08-14 version showed only dev_diary,
+    which turned actively misleading the day a second niche (glad-labs)
+    started its dry-run ramp. Non-niche keys (the global
+    ``auto_publish_threshold``, ``seo.refresh.auto_publish_after_clean_runs``)
+    have no ``_auto_publish_`` infix after a non-empty stem and fall through.
+    """
+    niches: dict[str, dict[str, str]] = {}
+    for key, value in settings.items():
+        stem, sep, suffix = key.partition("_auto_publish_")
+        if sep and stem and suffix:
+            niches.setdefault(stem, {})[suffix] = value
+    return niches
+
+
+def _niche_state(niche: str, cfg: dict[str, str]) -> str:
+    """One-line gate state for a niche — mirrors auto_publish_gate.evaluate."""
+    try:
+        threshold = float(cfg.get("threshold", "-1"))
+    except (TypeError, ValueError):
+        threshold = -1.0
+    dry_run = str(cfg.get("dry_run", "true")).strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+    if threshold < 0:
+        return "DISABLED (no threshold opt-in)"
+    if dry_run:
+        return (
+            "DRY-RUN (observe only — flip "
+            f"{niche}_auto_publish_dry_run=false to go live)"
+        )
+    return "LIVE — auto-publish active"
+
+
+def _build_status_payload(
+    settings: dict[str, str],
+    last_24h: dict[str, Any],
+    recent_publishes: Any,
+) -> dict[str, Any]:
+    niches = _group_by_niche(settings)
+    niche_states = {
+        niche: _niche_state(niche, cfg) for niche, cfg in sorted(niches.items())
+    }
+    return {
+        "settings": settings,
+        "niches": {
+            niche: {"state": niche_states[niche], "settings": cfg}
+            for niche, cfg in sorted(niches.items())
+        },
+        "last_24h_decisions": last_24h,
+        "publishes_last_7d": recent_publishes,
+        # Backcompat summary line (pre-niche-aware consumers read this key).
+        "live_or_dry_run": (
+            "; ".join(f"{n}: {s}" for n, s in niche_states.items())
+            or "no niche has auto-publish keys"
+        ),
+    }
+
+
 @auto_publish_group.command("status")
 @click.option(
     "--json", "as_json", is_flag=True,
@@ -67,7 +130,7 @@ async def _run_status(as_json: bool) -> None:
     async with pool.acquire() as conn:
         settings_rows = await conn.fetch(
             "SELECT key, value FROM app_settings "
-            "WHERE key LIKE 'dev_diary_auto_publish%' ORDER BY key"
+            "WHERE key LIKE '%auto_publish%' ORDER BY key"
         )
         settings = {r["key"]: r["value"] for r in settings_rows}
 
@@ -93,30 +156,23 @@ async def _run_status(as_json: bool) -> None:
 
     await pool.close()
 
-    payload = {
-        "settings": settings,
-        "last_24h_decisions": dict(last_24h) if last_24h else {},
-        "publishes_last_7d": recent_publishes,
-        "live_or_dry_run": (
-            "LIVE — auto-publish active"
-            if settings.get("dev_diary_auto_publish_dry_run", "true").lower() == "false"
-            and float(settings.get("dev_diary_auto_publish_threshold", "-1")) >= 0
-            else "DRY-RUN (observe only — flip dry_run=false in app_settings to enable)"
-        ),
-    }
+    payload = _build_status_payload(
+        settings, dict(last_24h) if last_24h else {}, recent_publishes,
+    )
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
 
     click.echo("=== auto_publish_gate status ===")
-    click.echo(f"State: {payload['live_or_dry_run']}")
+    for niche, info in payload["niches"].items():
+        click.echo(f"[{niche}] {info['state']}")
+        for k, v in sorted(info["settings"].items()):
+            click.echo(f"  {k} = {v}")
+    if not payload["niches"]:
+        click.echo("(no niche has auto-publish keys — every gate disabled)")
     click.echo()
-    click.echo("Settings:")
-    for k, v in settings.items():
-        click.echo(f"  {k} = {v}")
-    click.echo()
-    click.echo(f"Last 24h decisions: {dict(last_24h) if last_24h else 'none'}")
+    click.echo(f"Last 24h decisions: {payload['last_24h_decisions'] or 'none'}")
     click.echo(f"Publishes (last 7d): {recent_publishes}")
 
 

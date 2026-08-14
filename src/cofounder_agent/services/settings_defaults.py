@@ -976,6 +976,15 @@ DEFAULTS: dict[str, str] = {
     # sources + output; longer content is cut at a paragraph boundary with
     # an explicit excerpt marker the qa.review prompt explains.
     'qa_review_content_max_chars': '24000',
+    # Judge-call timeouts (poindexter#985 follow-ups). A 31B judge under GPU
+    # contention needs wall-clock headroom to wait out the gpu.lock queue — a
+    # too-short timeout turns an infra wait into an ABSENT rail, and
+    # required_to_pass turns each absence into a missing_required reject at
+    # scores of 90+. The critic was raised 90 -> 240 live on 2026-08-07; the
+    # gate twin (topic_delivery / internal_consistency) sat on its 60s code
+    # default until 2026-08-14, absent on 16/19 terminal rejects since 08-01.
+    'qa_critic_timeout_seconds': '240',
+    'qa_gate_timeout_seconds': '240',
     # Quality-critical model pins watched by reload_site_config — a change
     # to any of these emits a quality_model_changed finding within one
     # reload cycle, whatever surface wrote it (poindexter#985: the Jun 29
@@ -3596,6 +3605,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_rescue_yield_min_attempts': {'owner': 'probe_rescue_yield', 'value_type': 'integer'},
     'qa_flag_instead_of_reject': {'owner': 'qa_aggregate', 'value_type': 'boolean'},
     'qa_critical_floor': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'qa_critic_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_gate_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
