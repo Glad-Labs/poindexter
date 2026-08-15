@@ -2498,6 +2498,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.missing_seo.fallback': 'github_issue',
     'findings.missing_seo.cooldown_minutes': '1440',
     'findings.missing_seo.min_severity': 'warn',
+    # Pro delivery (glad-labs-stack#3216): action_needed = a paying
+    # subscriber is waiting on the operator (missing GitHub username) —
+    # that's revenue-blocking, so it goes to Telegram like other
+    # operator-action pings. error = config/API failures on the sync.
+    'findings.pro_delivery_action_needed.delivery': 'telegram',
+    'findings.pro_delivery_action_needed.fallback': 'discord',
+    'findings.pro_delivery_action_needed.cooldown_minutes': '360',
+    'findings.pro_delivery_action_needed.min_severity': 'warn',
+    'findings.pro_delivery_error.delivery': 'telegram',
+    'findings.pro_delivery_error.fallback': 'discord',
+    'findings.pro_delivery_error.cooldown_minutes': '120',
+    'findings.pro_delivery_error.min_severity': 'warn',
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',
@@ -3388,6 +3400,23 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'postiz_integration_id_reddit': '',
     'postiz_integration_id_tiktok': '',
     'postiz_integration_id_instagram': '',
+
+    # --- Poindexter Pro pay→deliver chain (glad-labs-stack#3216) ---
+    # SyncProSubscriptionsJob polls the Lemon Squeezy API (a local-first
+    # install has no public webhook ingress) and reconciles GitHub
+    # collaborator access on the Pro repo: invite on purchase, revoke on
+    # expiry. Off by default — a fresh install has nothing to deliver.
+    # The two secrets the sync needs (lemon_squeezy_api_key,
+    # pro_delivery_github_token) are deliberately NOT seeded here (see
+    # "What this module is NOT" above).
+    'pro_delivery_enabled': 'false',
+    # "owner/name" of the private deliverable repo buyers are invited to.
+    'pro_delivery_github_repo': '',
+    'pro_delivery_github_permission': 'pull',
+    # Optional Lemon Squeezy filters; empty = every subscription the API
+    # key can see counts as Pro.
+    'pro_delivery_ls_store_id': '',
+    'pro_delivery_ls_product_id': '',
     # X exposes a "made with AI" disclosure flag on each post. Glad Labs
     # content is AI-authored, so this defaults true; a future operator can
     # set it false per their content policy or jurisdiction.
@@ -4241,6 +4270,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'prefect_stuck_flow_queue_depth_threshold': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
     'prefect_stuck_flow_queue_reap_minutes': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},
     'preferred_ollama_model': {'value_type': 'model'},
+    'pro_delivery_enabled': {'owner': 'sync_pro_subscriptions', 'value_type': 'boolean'},
+    'pro_delivery_github_permission': {'owner': 'sync_pro_subscriptions'},
+    'pro_delivery_github_repo': {'owner': 'sync_pro_subscriptions'},
+    'pro_delivery_ls_product_id': {'owner': 'sync_pro_subscriptions'},
+    'pro_delivery_ls_store_id': {'owner': 'sync_pro_subscriptions'},
     'publish_quiet_hours': {'owner': 'scheduling_service'},
     'pyroscope_server_url': {'value_type': 'url'},
     'qa_accuracy_bad_link_max_penalty': {'owner': 'quality_scorers', 'value_type': 'float'},

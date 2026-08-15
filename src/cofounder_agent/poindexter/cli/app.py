@@ -30,6 +30,7 @@ from .model_eval import model_eval_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
 from .premium import premium_group
+from .pro import pro_group
 from .publish_approval import PUBLISH_FLAT_ALIASES
 from .publishers import publishers_group
 from .qa_gates import qa_gates_group
@@ -113,6 +114,7 @@ main.add_command(logs_command, name="logs")
 main.add_command(costs_group, name="costs")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
+main.add_command(pro_group, name="pro")
 main.add_command(skills_group, name="skills")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")

@@ -784,6 +784,14 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.schedule_social_drafts",
             "ScheduleSocialDraftsJob",
         ),
+        # SyncProSubscriptionsJob — pay→deliver chain (glad-labs-stack#3216):
+        # polls Lemon Squeezy and reconciles GitHub collaborator access on
+        # the Pro deliverable repo. No-op until pro_delivery_enabled=true.
+        (
+            "jobs",
+            "services.jobs.sync_pro_subscriptions",
+            "SyncProSubscriptionsJob",
+        ),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

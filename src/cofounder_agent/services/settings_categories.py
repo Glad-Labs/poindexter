@@ -224,6 +224,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("finance", "cost"),
     ("mercury", "cost"),
     ("lemon", "cost"),
+    ("pro_delivery", "cost"),
     ("stripe", "cost"),
     ("electricity", "cost"),
     ("daily_spend", "cost"),
