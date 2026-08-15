@@ -476,6 +476,7 @@ pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 | `triage-sweep` | deterministic | Mon 07:00 | applies keyword area-labels + Discord digest |
 | `alert-triage` | local LLM | daily 01:00 | classifies noisy `alert_events` → probe-bug issues |
 | `test-health` | local LLM | daily 03:00 | fixes simple test failures behind a re-run gate |
+| `pro-freshness` | deterministic | Sun 04:30 | rebuilds `Glad-Labs/poindexter-pro` from the live system (tuned seed / SKILL.md prompt packs / premium boards) behind a PII-scrub gate; pushes + Discord note |
 | `issue-resolver` | **disabled** | daily 05:00 | (frontier) fixes one scoped open issue |
 | `test-expansion` | **disabled** | daily 04:00 | (frontier) adds tests to low-coverage files |
 

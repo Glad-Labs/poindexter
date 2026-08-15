@@ -20,17 +20,18 @@ the Max subscription. Seven run as plain Python scripts under
 [`scripts/ops_sessions/`](../../scripts/ops_sessions/); two that need a frontier
 cloud model are kept **disabled** pending a metered-API decision.
 
-| Session             | Tier                    | Schedule    | What it does                                  | Output                         |
-| ------------------- | ----------------------- | ----------- | --------------------------------------------- | ------------------------------ |
-| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs         | `gh pr merge`                  |
-| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                        | lint PR                        |
-| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references       | PR (or flag)                   |
-| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface       | self-merging PR / Discord note |
-| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels            | label edits + Discord digest   |
-| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)   | probe-bug issues               |
-| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate | PR                             |
-| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                     | —                              |
-| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files               | —                              |
+| Session             | Tier                    | Schedule    | What it does                                                                                                                                                                                           | Output                                            |
+| ------------------- | ----------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs                                                                                                                                                                  | `gh pr merge`                                     |
+| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                                                                                                                                                                                 | lint PR                                           |
+| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references                                                                                                                                                                | PR (or flag)                                      |
+| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface                                                                                                                                                                | self-merging PR / Discord note                    |
+| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels                                                                                                                                                                     | label edits + Discord digest                      |
+| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)                                                                                                                                                            | probe-bug issues                                  |
+| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate                                                                                                                                                          | PR                                                |
+| `pro-freshness`     | deterministic           | Sun 04:30   | rebuild the Pro deliverable from the live system (seed from prod app_settings, prompts from SKILL.md packs, premium dashboards; book drift reported not edited; PII/secret scrub gate before any push) | push to `Glad-Labs/poindexter-pro` + Discord note |
+| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                                                                                                                                                                              | —                                                 |
+| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files                                                                                                                                                                        | —                                                 |
 
 The deterministic five make **zero model calls**. The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-session-timers.sh — generate + enable the 7 systemd session timers
+# install-session-timers.sh — generate + enable the 8 systemd session timers
 # (Linux replacement for claude-sessions.ps1 -Install). OnCalendar times are
 # local; systemd honors the host timezone (set it to operator_timezone).
 set -euo pipefail
@@ -13,6 +13,7 @@ SCHED=(
   "triage-sweep|Mon *-*-* 07:00:00"
   "alert-triage|*-*-* 01:00:00"
   "test-health|*-*-* 03:00:00"
+  "pro-freshness|Sun *-*-* 04:30:00"
 )
 
 for row in "${SCHED[@]}"; do

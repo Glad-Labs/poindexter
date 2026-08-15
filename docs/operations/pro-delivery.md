@@ -84,6 +84,19 @@ poindexter pro unlink 101        # revoke + detach
   (idempotent, `ls_order_<id>`), giving the parked Revenue board a live
   data path. Renewal invoices are a tracked follow-up on #3216.
 
+## Freshness (the other half of the promise)
+
+The `pro-freshness` ops session (Sun 04:30, `scripts/ops_sessions/pro_freshness.py`)
+rebuilds the deliverable repo weekly from the live system: the tuned seed is
+exported from **prod `app_settings`** (non-secret, identity/operator values
+dropped and counted), the prompt pack mirrors the live SKILL.md packs
+(post-#825 source of truth), and the premium Grafana boards are re-copied
+from provisioning. The book is scanned for deleted-code fossils and stale
+prices but never auto-edited. Every generated file passes the PII/secret
+scrub gate or nothing is pushed. Runbook row in
+[scheduled-agents.md](scheduled-agents.md); manual run:
+`bash scripts/linux/run-session.sh pro-freshness`.
+
 ## Edge cases
 
 - **Buyer changes GitHub account**: `poindexter pro unlink` then `pro link`
