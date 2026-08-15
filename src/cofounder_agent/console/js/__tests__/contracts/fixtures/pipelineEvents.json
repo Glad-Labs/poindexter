@@ -1,56 +1,23 @@
 {
-  "count": 15,
+  "count": 4,
   "events": [
     {
-      "id": 318813,
-      "timestamp": "2026-08-12T09:02:50.595971+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "21111979-fe30-4c53-913d-c93d4ef4a598",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
-      }
-    },
-    {
-      "id": 318804,
-      "timestamp": "2026-08-12T09:00:35.331224+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "21111979-fe30-4c53-913d-c93d4ef4a598",
-      "severity": "info",
-      "details": {
-        "topic": "The Brand Guide as Fact-Checker",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 318657,
-      "timestamp": "2026-08-12T08:39:46.701088+00:00",
+      "id": 344080,
+      "timestamp": "2026-08-15T06:37:11.763813+00:00",
       "event_type": "qa_pass_completed",
       "source": "qa.aggregate",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
+      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
       "severity": "warning",
       "details": {
         "rescued": false,
         "reviews": [
           {
-            "score": 0,
-            "advisory": false,
-            "approved": false,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "2 critical issue(s) — first: Placeholder citation left in content (needs a real link or removal): '(source)'"
-          },
-          {
-            "score": 92,
+            "score": 85,
             "advisory": false,
             "approved": true,
-            "provider": "ollama",
-            "reviewer": "ollama_critic",
-            "feedback_preview": "The writing is excellent—engaging, well-structured, and perfectly tailored to a developer audience with sharp analogies like \"tuning your GPU's power limit before you've written the render loop.\" It e"
+            "provider": "programmatic",
+            "reviewer": "programmatic_validator",
+            "feedback_preview": "clean (no fabrication); 3 warning(s)"
           },
           {
             "score": 100,
@@ -61,28 +28,36 @@
             "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
           },
           {
-            "score": 35,
+            "score": 63.5,
             "advisory": true,
             "approved": true,
             "provider": "ragas",
             "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) faithfulness=0.35"
+            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.91, context_precision=0.00, faithfulness=1.00"
           },
           {
-            "score": 58,
+            "score": 65,
             "advisory": true,
             "approved": true,
             "provider": "vision_gate",
             "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) Vision QA avg=58, overall=58. [40] v/images/featured/1bdf0360-8aa221cf.webp: Generic hardware (PCB) not directly illustrating software value creation; focuse;"
+            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=65, overall=65. [65] v/images/featured/f7460760-0c863a0b.webp: Abstract tech illustration of AI infrastructure; visually represents 'AI system'"
           },
           {
-            "score": 50,
+            "score": 98,
             "advisory": false,
-            "approved": false,
+            "approved": true,
+            "provider": "consistency_gate",
+            "reviewer": "topic_delivery",
+            "feedback_preview": "The article faithfully executes the requested topic by defining the 'learning-first' philosophy, contrasting it with common industry failures, and providing concrete operational examples of how to imp"
+          },
+          {
+            "score": 100,
+            "advisory": false,
+            "approved": true,
             "provider": "http_head",
             "reviewer": "citation_verifier",
-            "feedback_preview": "50% of citations dead (max 30%): https://themakingofamillionaire.com/money-is-a-by-product-of-your-obsession-f40b7cbd8539 (bad_status)"
+            "feedback_preview": "All 4 external URL(s) verified alive"
           },
           {
             "score": 100,
@@ -93,65 +68,80 @@
             "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
           },
           {
-            "score": 18.9,
+            "score": 97.8,
+            "advisory": true,
+            "approved": true,
+            "provider": "self_consistency_gate",
+            "reviewer": "self_consistency",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.978 across 3 samples (threshold=0.55) PASS"
+          },
+          {
+            "score": 20.4,
             "advisory": true,
             "approved": true,
             "provider": "content_originality_gate",
             "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'the-vram-currency-problem-bb10de87' at worst-chunk cosine 0.81"
+            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'the-trap-nobody-notices-until-output-breaks-249a74ca' at worst-chunk cosine 0.80"
+          },
+          {
+            "score": 100,
+            "advisory": true,
+            "approved": true,
+            "provider": "title_coherence_gate",
+            "reviewer": "title_coherence",
+            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: Why 'Just Have the AI Do It' Breaks by Week Three] The article directly explains why skipping a 'learning-first' phase leads to fragile automation tha"
           }
         ],
         "approved": false,
         "terminal": true,
-        "final_score": 72.91,
-        "reviewer_count": 8,
+        "final_score": 93.33,
+        "reviewer_count": 10,
         "schema_version": 1,
         "gating_rail_count": 3,
-        "qa_all_rail_score": 66.82,
+        "qa_all_rail_score": 80.84,
         "approval_threshold": 80,
-        "advisory_rail_count": 5,
+        "advisory_rail_count": 7,
         "qa_rewrite_attempts": 0
       }
     },
     {
-      "id": 318656,
-      "timestamp": "2026-08-12T08:39:46.690568+00:00",
+      "id": 344079,
+      "timestamp": "2026-08-15T06:37:11.757346+00:00",
       "event_type": "qa_flagged_surfaced",
       "source": "qa.aggregate",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
+      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
       "severity": "warning",
       "details": {
         "attempts": 0,
         "threshold": 80,
         "vetoed_by": [
-          "programmatic_validator",
-          "citation_verifier"
+          "missing_required:llm_critic"
         ],
-        "final_score": 72.91
+        "final_score": 93.33
       }
     },
     {
-      "id": 318264,
-      "timestamp": "2026-08-12T07:39:00.356268+00:00",
+      "id": 344052,
+      "timestamp": "2026-08-15T06:32:16.434846+00:00",
       "event_type": "ragas_score",
       "source": "ragas_eval",
       "task_id": null,
       "severity": "info",
       "details": {
-        "score": 0.35,
-        "topic": "Money as a Byproduct",
-        "faithfulness": 0.35,
-        "metric_count": 1,
-        "answer_relevancy": -1,
-        "context_precision": -1
+        "score": 0.6354,
+        "topic": "The Learning-First Approach to AI Automation",
+        "faithfulness": 1,
+        "metric_count": 3,
+        "answer_relevancy": 0.9062,
+        "context_precision": 0
       }
     },
     {
-      "id": 318196,
-      "timestamp": "2026-08-12T07:30:15.746798+00:00",
+      "id": 343996,
+      "timestamp": "2026-08-15T06:24:07.917541+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
+      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
       "severity": "info",
       "details": {
         "model": "z_image_turbo",
@@ -164,216 +154,8 @@
         "attempt_scores": [
           0
         ]
-      }
-    },
-    {
-      "id": 318154,
-      "timestamp": "2026-08-12T07:25:00.237958+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "style": "risograph print style",
-        "topic": "Money as a Byproduct"
-      }
-    },
-    {
-      "id": 318153,
-      "timestamp": "2026-08-12T07:24:55.029220+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 2,
-        "attempt_scores": [
-          2
-        ]
-      }
-    },
-    {
-      "id": 318151,
-      "timestamp": "2026-08-12T07:24:49.485457+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 318149,
-      "timestamp": "2026-08-12T07:24:43.196959+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 318148,
-      "timestamp": "2026-08-12T07:24:42.297737+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 318095,
-      "timestamp": "2026-08-12T07:14:53.057715+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
-      }
-    },
-    {
-      "id": 318067,
-      "timestamp": "2026-08-12T07:10:54.494184+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "1bdf0360-6116-4e7b-be06-c6cd812eb5a3",
-      "severity": "info",
-      "details": {
-        "topic": "Money as a Byproduct",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 318058,
-      "timestamp": "2026-08-12T07:10:26.639917+00:00",
-      "event_type": "template_completed",
-      "source": "content_router",
-      "task_id": "cc89c85a-93e1-4a63-9fd5-7e11b7062026",
-      "severity": "info",
-      "details": {
-        "ok": true,
-        "records": [
-          "stage.verify_task",
-          "content.generate_draft",
-          "content.generate_title",
-          "content.check_title_originality",
-          "content.normalize_draft",
-          "atoms.approval_gate",
-          "stage.writer_self_review",
-          "stage.resolve_internal_link_placeholders",
-          "content.reconcile_citations",
-          "content.llm_reconcile_citations",
-          "content.inject_affiliate_links",
-          "stage.quality_evaluation",
-          "stage.url_validation",
-          "content.plan_image_markers",
-          "content.generate_images",
-          "content.inject_images",
-          "stage.source_featured_image",
-          "stage.caption_images",
-          "qa.programmatic",
-          "qa.critic",
-          "qa.deepeval",
-          "qa.ragas",
-          "qa.vision",
-          "qa.topic_delivery",
-          "qa.citations",
-          "qa.unlinked_attribution",
-          "qa.consistency",
-          "qa.self_consistency",
-          "qa.content_originality",
-          "qa.title_coherence",
-          "qa.web_factcheck",
-          "qa.aggregate",
-          "qa.rewrite",
-          "qa.programmatic",
-          "qa.critic",
-          "qa.deepeval",
-          "qa.ragas",
-          "qa.vision",
-          "qa.topic_delivery",
-          "qa.citations",
-          "qa.unlinked_attribution",
-          "qa.consistency",
-          "qa.self_consistency",
-          "qa.content_originality",
-          "qa.title_coherence",
-          "qa.web_factcheck",
-          "qa.aggregate",
-          "seo.generate_all_metadata",
-          "stage.generate_media_scripts",
-          "stage.generate_video_shot_list",
-          "stage.review_video_shot_list",
-          "stage.capture_training_data",
-          "content.compile_meta",
-          "content.persist_task",
-          "social.generate_drafts",
-          "content.record_pipeline_version",
-          "atoms.approval_gate",
-          "content.evaluate_auto_publish"
-        ],
-        "template": "canonical_blog",
-        "halted_at": null
-      }
-    },
-    {
-      "id": 318057,
-      "timestamp": "2026-08-12T07:10:26.309247+00:00",
-      "event_type": "auto_publish_gate",
-      "source": "content.evaluate_auto_publish",
-      "task_id": "cc89c85a-93e1-4a63-9fd5-7e11b7062026",
-      "severity": "info",
-      "details": {
-        "reason": "post flagged by QA — operator sign-off required, never auto-publish",
-        "dry_run": true,
-        "threshold": -1,
-        "gate_state": "block_qa_flagged",
-        "would_fire": false,
-        "quality_score": 83,
-        "required_clean_runs": 0,
-        "trailing_clean_runs": 0
       }
     }
   ],
-  "server_time": "2026-08-12T09:06:31.807839+00:00"
+  "server_time": "2026-08-15T08:20:04.335708+00:00"
 }
