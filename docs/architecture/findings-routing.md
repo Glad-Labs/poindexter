@@ -92,6 +92,57 @@ on `.` and requires exactly three segments) and sources contain dots anyway
 `source` was already on every row — the router writes it into `labels`, and `alertname` is
 literally `f"{source}:{kind}"` — so this is a grouping change, not a data-model one.
 
+### The producer side: pick both keys per subject (poindexter#1015)
+
+#1010 fixed the router. It cannot fix a producer that emits everything under one identity —
+and `job_failure` is exactly that, which is how a tap outage stayed invisible for a year.
+
+`external_taps` failures reached the operator only through the scheduler's generic
+`job_failure` escalation, whose `dedup_key` is `job-fail:run_taps` for all nine taps and
+every failure mode. Over the 30 days to 2026-08-15 that key fired 53 times, **43 of them
+`internal_rag`**. A chronically failing tap owned the fingerprint, so any other tap breaking
+arrived behind it and the dispatcher collapsed it as a repeat.
+
+The fix is a per-subject producer, `tap_failure`, which sets **both** identities per tap:
+
+| key         | value             | throttle it governs                     |
+| ----------- | ----------------- | --------------------------------------- |
+| `dedup_key` | `tap-fail:<name>` | dispatcher fingerprint dedup            |
+| `source`    | `tap.<name>`      | router cooldown, keyed `(kind, source)` |
+
+Setting only one is a trap. A per-tap `dedup_key` under a shared `source` still lets
+`findings.tap_failure.cooldown_minutes` mute one tap for another — rebuilding the masking
+bug one level up, which is why the 12h cooldown on this kind is only safe alongside the
+per-tap `source`.
+
+**Rule for new producers: if a kind can describe more than one subject, the subject belongs
+in both `dedup_key` and `source`.** A kind that names exactly one thing (`gpu_lock_timeout`
+is always the GPU lock) needs neither.
+
+#### Severity as a streak gate
+
+`tap_failure` also shows the cheap way to keep a transient blip off the ops channel without
+suppressing anything. `info` is **structurally** unroutable — the router's fetch floor
+(`_ROUTABLE_SEVERITIES`) selects `warn`/`critical` only — so a producer can record at `info`
+and escalate to `warn` once the fault proves itself:
+
+- 1st consecutive failure → `info`: on the Findings board, never paged.
+- Nth (`tap_failure_alert_after_consecutive`, default 2) → `warn`: routed.
+
+That is what makes a one-off container-DNS `ConnectError` (2026-08-15, healed on the next
+run) free while a genuinely dead tap still pages an hour later. It needs a real counter —
+`external_taps.consecutive_failures` — not `last_run_status`, which is one bit.
+
+#### Declined is not failed
+
+The same change stopped counting `GpuBusyError` / `GpuLockTimeoutError` as tap failures
+(`tap_deferral_exception_types`). Those are the GPU scheduler correctly declining while the
+operator is gaming or the video pipeline holds the lock — 16 of the 43 `internal_rag`
+"failures" above. They record `last_run_status='deferred'`, never advance the streak, never
+emit a finding, and no longer flip `RunTapsJob` to `ok=False`. `sentry_integration.py`
+already draws this line the other way round (`DEFAULT_DROP_EXCEPTION_TYPES`); a finding
+producer that pages on backpressure is reporting an outage that isn't one.
+
 ### Cooldown rules
 
 1. **`critical` is never cooled.** Same floor `_delivery_for` and `_deliver_fallback` already

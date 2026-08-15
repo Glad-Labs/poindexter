@@ -2621,6 +2621,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.tap_zero_yield.fallback': 'log_only',
     'findings.tap_zero_yield.cooldown_minutes': '720',
     'findings.tap_zero_yield.min_severity': 'warn',
+    # An external_taps row failing (poindexter#1015). Discord, not Telegram:
+    # a dead tap starves topic discovery but blocks neither the pipeline nor
+    # publishing (feedback_telegram_vs_discord). The 12h cooldown is SAFE to
+    # set here only because the finding's `source` is per-tap (`tap.<name>`)
+    # and the router keys cooldowns on (kind, source) since poindexter#1010 —
+    # a kind-only cooldown would let one tap's window mute another tap's
+    # outage, which is the masking bug this whole change exists to fix.
+    'findings.tap_failure.delivery': 'discord',
+    'findings.tap_failure.fallback': 'log_only',
+    'findings.tap_failure.cooldown_minutes': '720',
+    'findings.tap_failure.min_severity': 'warn',
     # Stale-batch reaper (reap_stale_topic_batches). A wedged open batch =
     # niche content-dark, so route the alert to the ops channel. severity is
     # 'warn' when the batch still wedges the niche (pages) and 'info' when the
@@ -3172,6 +3183,29 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # auto-embed watchdog measures run completion, not coverage, so it stayed
     # green the whole time.
     'tap_zero_yield_finding_enabled': 'true',
+
+    # Per-tap failure findings for the external_taps walker (#1015). Distinct
+    # subsystem from tap_zero_yield above, which covers the *embedding* taps:
+    # this one is services/integrations/tap_runner.py, the declarative
+    # data-plane rows (devto, hackernews, ga4, gsc, ...).
+    'tap_failure_finding_enabled': 'true',
+
+    # Consecutive genuine failures before a tap's finding escalates from
+    # `info` (recorded on the Findings board, structurally never routed) to
+    # `warn` (routed per findings.tap_failure.*). 2 means "one blip is free":
+    # the 2026-08-15 dev.to failure was a container-DNS ConnectError that
+    # healed on the very next run and needed no operator, while a genuinely
+    # dead tap still pages an hour later. Set to 1 to page on contact.
+    'tap_failure_alert_after_consecutive': '2',
+
+    # Exception class names recorded as `deferred` rather than `failed`.
+    # These are the GPU scheduler declining work — admission refusing while
+    # the operator is gaming, or a budgeted lock wait expiring behind the
+    # video pipeline — not the tap breaking, so they must not burn the
+    # failure streak or page. 16 of 43 internal_rag "failures" in the 30
+    # days to 2026-08-15 were exactly these. Mirrors the line
+    # sentry_integration.DEFAULT_DROP_EXCEPTION_TYPES already draws.
+    'tap_deferral_exception_types': 'GpuBusyError,GpuLockTimeoutError',
 
     # GitHub issues tap (poindexter#991). Issues are where design decisions,
     # post-mortems and rejected approaches get written down, so embedding them
@@ -4568,6 +4602,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tap_interval_enforcement_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'tap_zero_yield_finding_enabled': {'owner': 'runner', 'value_type': 'boolean'},
+    'tap_failure_finding_enabled': {'owner': 'tap_runner', 'value_type': 'boolean'},
+    'tap_failure_alert_after_consecutive': {
+        'owner': 'tap_runner', 'value_type': 'integer',
+    },
+    'tap_deferral_exception_types': {'owner': 'tap_runner', 'value_type': 'string'},
     'template_runner_progress_streaming': {'owner': 'template_runner', 'value_type': 'boolean'},
     'title_avoidance_lexical_min_count': {'owner': 'title_avoidance', 'value_type': 'integer'},
     'title_avoidance_mode': {'owner': 'title_avoidance', 'value_type': 'string'},

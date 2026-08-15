@@ -62,9 +62,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -119,9 +117,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -174,9 +170,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -229,9 +223,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -292,9 +284,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -351,9 +341,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -465,9 +453,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -529,9 +515,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -594,9 +578,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -678,9 +660,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -754,9 +734,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -839,9 +817,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -893,7 +869,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 50
       },
@@ -903,9 +879,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -931,7 +905,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Taps whose last run ended in 'failed' state. Check last_error for each.",
+      "description": "Taps whose last run genuinely failed. Deferrals (GPU admission / lock timeout) are excluded \u2014 they record as 'deferred' and show in the panel to the right. Check last_error, and consecutive_failures for the streak.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -958,8 +932,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 50
       },
       "id": 15,
@@ -968,9 +942,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "textMode": "value_and_name"
       },
@@ -987,6 +959,59 @@
         }
       ],
       "title": "Failing taps",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Taps whose last run was declined rather than broken \u2014 GPU admission refused (game_mode) or a lock wait expired behind the video pipeline. Not a fault: these do not advance the failure streak and never page. Persistently non-zero means the GPU is contended, not that a tap is sick.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 50
+      },
+      "id": 58,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Deferred\" FROM external_taps WHERE enabled = TRUE AND last_run_status = 'deferred';",
+          "refId": "A"
+        }
+      ],
+      "title": "Deferred taps",
       "type": "stat"
     },
     {
@@ -1052,9 +1077,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -1067,7 +1090,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT name AS \"Name\", handler_name AS \"Handler\", tap_type AS \"Tap type\", schedule AS \"Schedule\", enabled AS \"Enabled\", total_runs AS \"Runs\", total_records AS \"Records\", last_run_status AS \"Last\", last_run_at AS \"Last run\", LEFT(COALESCE(last_error, ''), 80) AS \"Last error\" FROM external_taps ORDER BY name;",
+          "rawSql": "SELECT name AS \"Name\", handler_name AS \"Handler\", tap_type AS \"Tap type\", schedule AS \"Schedule\", enabled AS \"Enabled\", total_runs AS \"Runs\", total_records AS \"Records\", last_run_status AS \"Last\", consecutive_failures AS \"Fail streak\", last_run_at AS \"Last run\", LEFT(COALESCE(last_error, ''), 80) AS \"Last error\" FROM external_taps ORDER BY name;",
           "refId": "A"
         }
       ],
@@ -1265,9 +1288,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1319,9 +1340,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1369,9 +1388,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1427,9 +1444,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         },
         "colorMode": "value",
         "graphMode": "none",
@@ -1606,9 +1621,7 @@
         "footer": {
           "countRows": true,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": true
         },
         "showHeader": true
@@ -1803,9 +1816,7 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": false
         },
         "showHeader": true
@@ -1980,9 +1991,7 @@
         "footer": {
           "countRows": true,
           "fields": "",
-          "reducer": [
-            "sum"
-          ],
+          "reducer": ["sum"],
           "show": true
         },
         "showHeader": true
@@ -2049,9 +2058,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2106,9 +2113,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2171,9 +2176,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2236,9 +2239,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2301,9 +2302,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2358,9 +2357,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2419,9 +2416,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2484,9 +2479,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2545,9 +2538,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2606,9 +2597,7 @@
         "graphMode": "none",
         "justifyMode": "center",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2632,13 +2621,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": [
-    "integrations",
-    "webhooks",
-    "admin",
-    "links",
-    "reference"
-  ],
+  "tags": ["integrations", "webhooks", "admin", "links", "reference"],
   "templating": {
     "list": []
   },

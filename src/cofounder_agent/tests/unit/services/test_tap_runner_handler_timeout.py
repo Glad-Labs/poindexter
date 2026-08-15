@@ -43,6 +43,11 @@ class _FakeConn:
         self._pool.executes.append((query, args))
         return "UPDATE 1"
 
+    async def fetchval(self, query, *args):
+        # _record_failure UPDATEs ... RETURNING consecutive_failures.
+        self._pool.executes.append((query, args))
+        return self._pool.next_streak
+
     async def fetch(self, query, *args):
         return self._pool.next_fetch
 
@@ -51,6 +56,7 @@ class _FakePool:
     def __init__(self):
         self.executes: list[tuple[str, tuple]] = []
         self.next_fetch: list[dict[str, Any]] = []
+        self.next_streak: int = 1
 
     def acquire(self):
         return _FakeConn(self)
@@ -59,10 +65,12 @@ class _FakePool:
 class _FakeSiteConfig:
     """Minimal SiteConfig stand-in recording ``get_int`` lookups.
 
-    Returns whatever value it was constructed with — the real
-    ``SiteConfig.get_int`` returns int, and ``run_all`` floats it, so a
-    fractional fake value exercises the same plumbing without a
-    multi-second test sleep.
+    Key-aware: only ``tap_handler_timeout_seconds`` returns the constructed
+    value (the real ``SiteConfig.get_int`` returns int, and ``run_all``
+    floats it, so a fractional fake exercises the same plumbing without a
+    multi-second sleep). Every other key falls through to its own default,
+    so unrelated lookups added to ``run_all`` later cannot silently inherit
+    a timeout meant for this one setting.
     """
 
     def __init__(self, timeout_value):
@@ -71,7 +79,15 @@ class _FakeSiteConfig:
 
     def get_int(self, key, default=0):
         self.get_int_calls.append((key, default))
-        return self._timeout_value
+        if key == "tap_handler_timeout_seconds":
+            return self._timeout_value
+        return default
+
+    def get(self, key, default=None):
+        return default
+
+    def get_bool(self, key, default=False):
+        return default
 
 
 def _tap_row(**overrides):
@@ -164,7 +180,7 @@ class TestHandlerTimeout:
 
         summary = await tap_runner.run_all(pool, site_config=site_config)
 
-        assert site_config.get_int_calls == [("tap_handler_timeout_seconds", 600)]
+        assert ("tap_handler_timeout_seconds", 600) in site_config.get_int_calls
         assert summary.total_failed == 1
         assert "tap_handler_timeout_seconds" in (summary.taps[0].error or "")
 
@@ -182,9 +198,11 @@ class TestHandlerTimeout:
         assert summary.taps[0].records == 1
 
     async def test_explicit_param_pins_over_site_config(self):
-        """An explicit ``handler_timeout_s`` wins and the setting is not
-        consulted — mirrors the pinned-param semantics of the embedding
-        runner's ``tap_timeout_s``."""
+        """An explicit ``handler_timeout_s`` wins and the TIMEOUT setting is
+        not consulted — mirrors the pinned-param semantics of the embedding
+        runner's ``tap_timeout_s``. Unrelated settings that ``run_all``
+        resolves (the #1015 findings knobs) are still read; the pin is
+        scoped to the timeout, not to site_config as a whole."""
         pool = _FakePool()
         pool.next_fetch = [_tap_row(name="wedged", handler_name="hang_handler")]
         site_config = _FakeSiteConfig(999)
@@ -193,5 +211,5 @@ class TestHandlerTimeout:
             pool, site_config=site_config, handler_timeout_s=0.05,
         )
 
-        assert site_config.get_int_calls == []
+        assert ("tap_handler_timeout_seconds", 600) not in site_config.get_int_calls
         assert summary.total_failed == 1

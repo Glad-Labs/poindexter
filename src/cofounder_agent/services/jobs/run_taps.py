@@ -55,6 +55,20 @@ class RunTapsJob:
             logger.exception("RunTapsJob failed: %s", exc)
             return JobResult(ok=False, detail=str(exc), changes_made=0)
 
+        # Deferrals are reported but never flip `ok`. A tap declined by GPU
+        # admission (game_mode) is the scheduler working, not an outage, and
+        # folding it into `ok=False` emitted a `job_failure` finding claiming
+        # a fault while the rest of the walk collected records normally
+        # (poindexter#1015). Per-tap detail now rides the `tap_failure`
+        # finding, keyed per tap; this aggregate stays a summary.
+        deferred_note = ""
+        if summary.total_deferred:
+            deferred_names = [t.name for t in summary.taps if t.deferred]
+            deferred_note = (
+                f"; {summary.total_deferred} deferred "
+                f"({', '.join(deferred_names)})"
+            )
+
         if summary.total_failed:
             failed_names = [t.name for t in summary.taps if not t.ok]
             failed_errors = "; ".join(
@@ -65,12 +79,15 @@ class RunTapsJob:
                 detail=(
                     f"{summary.total_failed} tap(s) failed ({', '.join(failed_names)}): "
                     f"{failed_errors}; records collected={summary.total_records}"
+                    f"{deferred_note}"
                 ),
                 changes_made=summary.total_records,
             )
 
         return JobResult(
             ok=True,
-            detail=f"records collected={summary.total_records}",
+            detail=(
+                f"records collected={summary.total_records}{deferred_note}"
+            ),
             changes_made=summary.total_records,
         )
