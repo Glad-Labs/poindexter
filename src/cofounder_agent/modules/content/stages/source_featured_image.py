@@ -68,6 +68,10 @@ from typing import Any
 import httpx
 
 from plugins.stage import StageResult
+from services.image_prompt_sanitizer import (
+    clean_image_prompt,
+    subject_fallback_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +131,21 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 3.0
 # (unbounded under video/VRAM contention — this is what actually blew the
 # budget), and the R2 upload.
 DEFAULT_STAGE_OVERHEAD_SECONDS = 120
+
+
+def describe_exception(exc: BaseException) -> str:
+    """Render an exception as something an operator can act on.
+
+    ``str()`` on the exceptions this stage actually hits is the EMPTY STRING —
+    ``httpx.ReadTimeout``, ``asyncio.TimeoutError`` and friends carry their
+    meaning in the type, not the message. So the long-standing
+    ``"image-gen featured render failed (%s)"`` log rendered as ``failed ()``
+    and the routed finding said the same: a warn-level alert that named no
+    cause, fired for weeks, and told nobody the renders were timing out
+    (poindexter#3229). Always prefer the type name over an empty message.
+    """
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 
 
 def _render_timeout_seconds(site_config: Any) -> int:
@@ -805,7 +824,8 @@ async def _try_image_gen_featured(
                         "Featured image rendered on attempt %d/%d", attempt, attempts,
                     )
                 break
-            if isinstance(server_meta, dict) and server_meta.get("ocr_gate_rejected"):
+            meta = server_meta if isinstance(server_meta, dict) else {}
+            if meta.get("ocr_gate_rejected"):
                 # Verdict, not window — see _render_image_gen. Retrying spends
                 # another full server-side re-roll budget to be told the same
                 # thing, so fall through to the no-image-gen-image path now.
@@ -814,9 +834,17 @@ async def _try_image_gen_featured(
                     "(attempt %d/%d) — not retrying", attempt, attempts,
                 )
                 break
+            if meta.get("transient") is False:
+                # A verdict _render_image_gen already named (e.g. game_mode):
+                # burning the remaining attempts changes nothing.
+                logger.warning(
+                    "Featured image render failed terminally (%s) — not retrying",
+                    meta.get("failure", "unknown"),
+                )
+                break
             logger.warning(
-                "Featured image render returned nothing (attempt %d/%d)",
-                attempt, attempts,
+                "Featured image render returned nothing (attempt %d/%d): %s",
+                attempt, attempts, meta.get("failure", "no image returned"),
             )
             if attempt < attempts:
                 await asyncio.sleep(backoff)
@@ -852,7 +880,7 @@ async def _try_image_gen_featured(
         # whole outage window to one page.
         logger.warning(
             "image-gen featured render failed (%s) — falling back to a Pexels "
-            "STOCK photo (not a unique generated image)", e,
+            "STOCK photo (not a unique generated image)", describe_exception(e),
         )
         from utils.findings import emit_finding
 
@@ -863,7 +891,7 @@ async def _try_image_gen_featured(
             body=(
                 "The featured-image render failed, so the post is shipping a "
                 "Pexels **stock** photo instead of a unique generated image. "
-                f"Error: `{e!r}`. Check the image-gen server addressed by "
+                f"Error: `{describe_exception(e)}`. Check the image-gen server addressed by "
                 "`app_settings.image_gen_server_url` is reachable from the "
                 "worker container (it should be the compose service DNS name, "
                 "not a host-published port)."
@@ -1008,7 +1036,7 @@ async def _build_image_gen_prompt(
         logger.debug(
             "[IMAGE] no DB pool on site_config; using fallback prompt",
         )
-        return f"{chosen_style}, {style_tags}, no text, no faces"
+        return subject_fallback_prompt(subject, chosen_style, style_tags)
 
     try:
         if platform is not None:
@@ -1025,14 +1053,32 @@ async def _build_image_gen_prompt(
             raise RuntimeError(
                 "platform handle required for dispatch — check pipeline context threading"
             )
-        prompt_text = (getattr(result, "text", "") or "").strip().strip('"')
+        raw_text = (getattr(result, "text", "") or "").strip().strip('"')
+        prompt_text = clean_image_prompt(raw_text)
+        if not prompt_text:
+            # The model planned instead of answering and nothing survived the
+            # scaffolding filter. Rendering the plan is strictly worse than
+            # rendering the subject in the rotated style.
+            logger.warning(
+                "[IMAGE] prompt model returned no usable prompt (%r) — "
+                "falling back to the subject", raw_text[:120],
+            )
+            return subject_fallback_prompt(subject, chosen_style, style_tags)
+        if prompt_text != raw_text:
+            logger.info(
+                "[IMAGE] stripped prompt-model scaffolding (%d → %d chars)",
+                len(raw_text), len(prompt_text),
+            )
         logger.info(
             "[IMAGE] Style: %s | image-gen prompt: %s", chosen_style, prompt_text[:80],
         )
         return prompt_text
     except Exception as e:
-        logger.warning("[IMAGE] LLM prompt generation failed, using fallback: %s", e)
-        return f"{chosen_style}, {style_tags}, no text, no faces"
+        logger.warning(
+            "[IMAGE] LLM prompt generation failed, using fallback: %s",
+            describe_exception(e),
+        )
+        return subject_fallback_prompt(subject, chosen_style, style_tags)
 
 
 def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]:
@@ -1185,31 +1231,65 @@ async def _render_image_gen(
     the caller from ``site_config`` so neither the render cap nor the GPU-session
     attribution is hardcoded to a single model. #image-zimage-and-variety.
     """
-    from services.gpu_scheduler import gpu
+    from services.gpu_admission import GpuBusyError
+    from services.gpu_scheduler import GpuLockTimeoutError, gpu
 
-    async with gpu.lock(
-        "image_gen", model=gpu_model_label,
-        task_id=task_id, phase="featured_image",
-    ):
-        # Cap from image_render_timeout_seconds — headroom for a cold model
-        # load (Z-Image ~21s) + render + upload.
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds, connect=5.0)
-        ) as client:
-            resp = await client.post(
-                f"{image_gen_url}/generate",
-                json={
-                    "prompt": img_gen_prompt,
-                    "negative_prompt": negative_prompt,
-                    # steps / guidance_scale are intentionally omitted: the image-gen
-                    # server drives them from its per-model registry
-                    # (sdxl_lightning=4/0, z_image_turbo=9/0). Hardcoding them
-                    # here forced wrong values on a model swap (and was already
-                    # clamped away for Lightning). #image-zimage-and-variety.
-                    "task_id": str(task_id) if task_id else None,
-                },
-                timeout=timeout_seconds,
-            )
+    try:
+        async with gpu.lock(
+            "image_gen", model=gpu_model_label,
+            task_id=task_id, phase="featured_image",
+        ):
+            # Cap from image_render_timeout_seconds — headroom for a cold model
+            # load (Z-Image ~21s) + render + upload.
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout_seconds, connect=5.0)
+            ) as client:
+                resp = await client.post(
+                    f"{image_gen_url}/generate",
+                    json={
+                        "prompt": img_gen_prompt,
+                        "negative_prompt": negative_prompt,
+                        # steps / guidance_scale are intentionally omitted: the image-gen
+                        # server drives them from its per-model registry
+                        # (sdxl_lightning=4/0, z_image_turbo=9/0). Hardcoding them
+                        # here forced wrong values on a model swap (and was already
+                        # clamped away for Lightning). #image-zimage-and-variety.
+                        "task_id": str(task_id) if task_id else None,
+                    },
+                    timeout=timeout_seconds,
+                )
+    except GpuBusyError as e:
+        # Admission refused before any wait. "game_mode" is the operator
+        # holding the GPU for a declared window (hours) — retrying inside this
+        # stage cannot outlast it, so report it terminal. The capacity reasons
+        # ("eta_exceeds_budget" / "no_fit") clear as the current holder drains,
+        # which is exactly what the caller's backoff is for.
+        terminal = getattr(e, "reason", "") == "game_mode"
+        logger.warning(
+            "[IMAGE] Featured render admission refused (%s)%s",
+            describe_exception(e), "" if terminal else " — retryable",
+        )
+        return None, {"transient": not terminal, "failure": describe_exception(e)}
+    except (GpuLockTimeoutError, httpx.TimeoutException, httpx.TransportError) as e:
+        # THE failure this whole retry loop exists for, and the one it could
+        # never see (poindexter#3229). A read timeout or a wedged lock holder
+        # arrived as an EXCEPTION, so it flew straight past the caller's
+        # `for attempt in ...` loop into its outer `except Exception` — one
+        # attempt, no backoff, hero abandoned. Returning it as a value puts the
+        # dominant transient failure back under the retry the comment there
+        # promises. `str()` on these is empty, hence describe_exception.
+        logger.warning(
+            "[IMAGE] Featured render failed transiently (%s)", describe_exception(e),
+        )
+        return None, {"transient": True, "failure": describe_exception(e)}
+
+    if resp.status_code >= 500:
+        # The server is up but unhealthy (model reloading, OOM mid-render).
+        # Transient by nature; 4xx is a verdict on the request and is not.
+        logger.warning(
+            "[IMAGE] Featured render got HTTP %d from image-gen", resp.status_code,
+        )
+        return None, {"transient": True, "failure": f"HTTP {resp.status_code}"}
 
     if resp.status_code != 200:
         from services.image_ocr_gate import (

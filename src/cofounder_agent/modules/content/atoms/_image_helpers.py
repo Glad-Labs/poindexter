@@ -46,6 +46,7 @@ from typing import Any
 
 import httpx
 
+from services.image_prompt_sanitizer import clean_image_prompt
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -440,7 +441,13 @@ async def _try_image_gen(
                 raise RuntimeError(
                     "platform handle required for dispatch — check pipeline context threading"
                 )
-            img_gen_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+            # Drop any planning scaffolding the instruct model wrapped its
+            # answer in — the >20-char guard below waves a bulleted
+            # "Subject:/Constraints:/Output ONLY" plan straight through to the
+            # renderer. See services.image_prompt_sanitizer (poindexter#3229).
+            img_gen_prompt = clean_image_prompt(
+                (getattr(result, "text", "") or "").strip().strip('"')
+            )
         img_gen_prompt = _apply_base_style(img_gen_prompt, site_config)
 
         if not img_gen_prompt or len(img_gen_prompt) <= 20:
@@ -692,7 +699,10 @@ async def _batch_generate_inline_image_urls(
                         temperature=site_config.get_float("image_prompt_temperature", 0.8),
                         max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
                     )
-                    img_gen_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+                    # Same scaffolding strip as the per-image path above.
+                    img_gen_prompt = clean_image_prompt(
+                        (getattr(result, "text", "") or "").strip().strip('"')
+                    )
                     img_gen_prompt = _apply_base_style(img_gen_prompt, site_config)
                     if img_gen_prompt and len(img_gen_prompt) > 20:
                         logger.info(

@@ -93,15 +93,19 @@ class TestRenderImageGenNon200ReturnsNone:
     )
     @pytest.mark.asyncio
     async def test_non_200_response_returns_none(self, status_code, scenario):
-        """``_render_image_gen`` returns ``(None, {})`` on any non-200 — the
-        stage's Pexels-fallback branch keys on the None local path.
+        """``_render_image_gen`` returns a None local-path on any non-200 —
+        the stage's Pexels-fallback branch keys on that.
 
         Post-2026-05-19 the function returns a tuple of
         ``(local_path, gen_meta)`` so the image-gen response payload can be
         threaded onto ``posts.featured_image_data``. The Pexels-fallback
-        contract on non-200 is preserved by returning ``None`` in
-        position 0; ``gen_meta`` is ``{}`` because there's no JSON to
-        parse on an error response.
+        contract on non-200 is preserved by returning ``None`` in position 0.
+
+        ``gen_meta`` carries no *response* payload here (there is no JSON to
+        parse on an error), but since poindexter#3229 it does carry the retry
+        classification the caller's loop reads: 5xx means the server is up but
+        unhealthy, which is transient, while 4xx is a verdict on the request.
+        Asserted below per status code.
         """
         from modules.content.stages.source_featured_image import _render_image_gen
 
@@ -123,9 +127,24 @@ class TestRenderImageGenNon200ReturnsNone:
             f"_render_image_gen must return None local-path on HTTP {status_code} "
             f"({scenario}) so the featured-image stage falls through to Pexels."
         )
-        assert gen_meta == {}, (
-            "gen_meta must be empty on the error branch — no JSON to parse."
+        assert "model" not in gen_meta and "seed" not in gen_meta, (
+            "gen_meta must carry no response payload on the error branch — "
+            "there is no JSON to parse."
         )
+        if status_code >= 500:
+            assert gen_meta.get("transient") is True, (
+                f"HTTP {status_code} ({scenario}) is the server up-but-unhealthy: "
+                "the caller must be allowed to retry it rather than concede the hero."
+            )
+            assert str(status_code) in gen_meta.get("failure", ""), (
+                "the failure must name itself — an unnamed cause is what let "
+                "silent hero loss run for weeks (poindexter#3229)."
+            )
+        else:
+            assert gen_meta.get("transient") is not True, (
+                f"HTTP {status_code} ({scenario}) is a verdict on the request; "
+                "retrying it just spends the budget to be told the same thing."
+            )
 
 
 # ---------------------------------------------------------------------------
