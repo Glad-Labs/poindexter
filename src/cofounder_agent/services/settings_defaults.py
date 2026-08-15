@@ -2387,6 +2387,19 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Re-armed each heartbeat tick, so only a genuine freeze trips it; set above
     # brain_cycle_timeout_seconds. Mirrors worker_hang_dump_seconds. (2026-06-29)
     'brain_hang_dump_seconds': '300',
+    # Consecutive failed monitor cycles (5 min apart) before the brain
+    # auto-restarts a hard-down local service. 2 means one slow/timed-out
+    # probe under load never bounces a busy worker — the restart itself
+    # costs 40-90 s of downtime and cancels in-flight pipeline work.
+    # Degraded (503 + {"status": "degraded"}) never restarts regardless.
+    # (2026-08-15 api-down investigation)
+    'brain_restart_consecutive_failures': '2',
+    # Subprocess timeout (seconds) for the brain's `docker restart` heal.
+    # The worker needs ~30-45 s for a graceful stop + start; the old
+    # hardcoded 30 s expired on every worker restart and paged a
+    # misleading "Restart failed" while dockerd completed the restart
+    # anyway. (2026-08-15)
+    'brain_docker_restart_timeout_seconds': '90',
 
     # ----- Migration-drift in-flight guard (brain/migration_drift_probe.py, #228) -----
     # When true, the migration-drift auto-recover path defers the worker
@@ -3742,6 +3755,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'brain_cycle_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_heartbeat_interval_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_hang_dump_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
+
+    # ----- Brain / service-monitor restart discipline (2026-08-15) -----
+    'brain_restart_consecutive_failures': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'brain_docker_restart_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Deprecated keys — emit warning on read (add new ones here) -----
     # nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto

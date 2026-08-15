@@ -1117,6 +1117,32 @@ EXTERNAL_SERVICES = {
 # Track previous external status to detect transitions
 _prev_external_status = {}
 
+# --- Internal-service failure classification (2026-08-15) -----------------
+# Both dicts are only touched inside monitor_services, which has a single
+# call site (the main cycle), so the dual-module-instance landmine (#344,
+# see the pool-registry note above check_http) can't split their state.
+#
+# Consecutive hard-down cycles per service. Auto-restart is deferred until
+# app_settings.brain_restart_consecutive_failures cycles in a row (default
+# 2) so one slow/timed-out probe under load doesn't bounce a busy worker —
+# the restart itself costs 40-90 s of real downtime and cancels in-flight
+# pipeline work. In-memory: a brain restart forgives the count, which only
+# delays a genuine heal by one extra cycle.
+_consecutive_down: dict[str, int] = {}
+BRAIN_RESTART_CONSECUTIVE_FAILURES_DEFAULT = 2
+
+# Services currently in "degraded" (up-but-pressured) state → epoch seconds
+# of when the degradation was first seen, for transition notices.
+_degraded_since: dict[str, float] = {}
+
+# ``docker restart`` subprocess timeout. The worker takes ~30-45 s to stop
+# (graceful uvicorn drain) + start, so the old hardcoded 30 s expired on
+# every worker restart: dockerd finished the restart anyway, but the brain
+# paged a misleading "Restart failed: ... timed out" alert each time
+# (observed in both 2026-08-15 incidents). DB-tunable via
+# app_settings.brain_docker_restart_timeout_seconds.
+BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS = 90
+
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
 
 # --- Cycle watchdog (2026-06-29 follow-up) -------------------------------
@@ -1281,14 +1307,34 @@ def check_instatus(url: str, timeout: int = 10) -> tuple:
 
 
 def check_json_status(url: str, timeout: int = 10) -> tuple:
-    """Check a JSON health endpoint. Returns (ok, status, detail)."""
+    """Check a JSON health endpoint. Returns (ok, status_code, detail).
+
+    ``detail`` is the endpoint's own ``status`` field whenever a JSON body
+    was readable — including on HTTP *error* responses. The worker's
+    ``/api/health`` deliberately answers 503 while "degraded" so load
+    balancers can shed on the status code (see main.py); ``urlopen``
+    raises ``HTTPError`` for that, but the body still carries the real
+    state. Parse it before declaring the service down: "degraded" means
+    up-but-pressured, which is not an outage. Until 2026-08-15 the
+    HTTPError fell through to the generic handler, a pool-pressure 503
+    read as DOWN, and the brain restarted a merely-busy worker.
+    """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
         resp = urllib.request.urlopen(req, timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("status", "unknown")
         ok = status in ("healthy", "degraded", "ok")
-        return ok, 200, status
+        return ok, resp.status, status
+    except urllib.error.HTTPError as e:
+        try:
+            body_status = json.loads(e.read()).get("status", "")
+        except Exception:  # noqa: BLE001 — non-JSON error page
+            body_status = ""
+        if body_status in ("healthy", "degraded", "ok"):
+            return True, e.code, body_status
+        detail = body_status or str(e.reason)[:80]
+        return False, e.code, f"HTTP {e.code}: {detail}"
     except Exception as e:
         return False, 0, str(e)[:100]
 
@@ -1767,10 +1813,22 @@ async def restart_service(name: str, *, pool=None):
                     )
                     return
 
+                # The worker needs ~30-45 s for a graceful stop + start,
+                # so a 30 s subprocess timeout expired on every worker
+                # restart and paged "Restart failed" while dockerd was
+                # completing the restart fine. Default 90 s covers the
+                # observed worst case with headroom.
+                restart_timeout = BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
+                if pool is not None:
+                    restart_timeout = await _setting_int(
+                        pool,
+                        "brain_docker_restart_timeout_seconds",
+                        BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS,
+                    )
                 result = await asyncio.to_thread(
                     subprocess.run,
                     ["docker", "restart", container],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True, text=True, timeout=restart_timeout,
                 )
                 if result.returncode == 0:
                     logger.info("[BRAIN] Docker-restarted container %s", container)
@@ -1879,14 +1937,37 @@ def _should_auto_restart(name: str) -> bool:
 
 
 async def monitor_services(pool) -> list:
-    """Check all services, log to knowledge graph, alert on failures."""
+    """Check all services, log to knowledge graph, alert on failures.
+
+    Failure classification (2026-08-15 api-down investigation):
+
+    * DEGRADED — the service answered and its health body says
+      "degraded" (the worker 503s that state for load balancers; the
+      JSON body is authoritative). Up-but-pressured: Discord notice on
+      the transition, never auto-restart — bouncing a busy worker
+      cancels in-flight pipeline work and *creates* the 40-90 s outage
+      being alerted about.
+    * DOWN — no usable response (refused / timeout / DNS / non-health
+      HTTP error). Auto-restart waits for
+      ``app_settings.brain_restart_consecutive_failures`` consecutive
+      failed cycles (default 2), then fires every failing cycle
+      thereafter; the critical-alert triage path is untouched and still
+      fires from the first failed cycle.
+    """
     global _last_openclaw_doctor
     issues = []
+    restart_after = await _setting_int(
+        pool,
+        "brain_restart_consecutive_failures",
+        BRAIN_RESTART_CONSECUTIVE_FAILURES_DEFAULT,
+    )
     for name, config in SERVICES.items():
         if config["type"] == "json_status":
             ok, code, detail = check_json_status(config["url"])
         else:
             ok, code, detail = check_http(config["url"])
+        degraded = ok and detail == "degraded"
+        kg_status = "degraded" if degraded else ("up" if ok else "down")
 
         # Store in knowledge graph. GUARDED (audit C2): this write must NOT be
         # able to suppress the outage page below. Previously an unguarded
@@ -1901,73 +1982,129 @@ async def monitor_services(pool) -> list:
                 VALUES ($1, $2, $3, $4, 'brain_monitor', $5)
                 ON CONFLICT (entity, attribute) DO UPDATE SET
                     value = EXCLUDED.value, updated_at = NOW()
-            """, f"service.{name}", "status", "up" if ok else "down", 1.0, ["monitoring"])
+            """, f"service.{name}", "status", kg_status, 1.0, ["monitoring"])
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[BRAIN] brain_knowledge write for service.%s failed "
                 "(continuing to alert): %s", name, exc,
             )
 
-        if not ok:
-            issues.append({"service": name, "code": code, "detail": detail, "critical": config["critical"]})
-            logger.warning("[BRAIN] Service %s is DOWN: %s", name, detail)
-
-            # Auto-restart local services. Openclaw is host-side (no
-            # container, host CLI not on the brain container's PATH), so
-            # in Docker the restart_service helper would fall through to
-            # the "no container mapping for auto-restart" notify() and
-            # spam Telegram with a misleading "down" alert even on a
-            # transient probe blip. The host-side `_run_openclaw_doctor`
-            # mechanism (line ~1377) is the recovery path on bare metal.
-            if _should_auto_restart(name):
-                await restart_service(name, pool=pool)
-                logger.info("[BRAIN] Auto-restarted %s", name)
-            elif name == "openclaw" and IS_DOCKER:
-                logger.info(
-                    "[BRAIN] Openclaw probe failed but skipping restart "
-                    "(host-side service, no in-container recovery path)",
+        if ok:
+            _consecutive_down.pop(name, None)
+            if degraded:
+                # Up-but-pressured. Surface it (issues list + KG +
+                # routine Discord notice on the transition) but never
+                # auto-restart and never page Telegram — the service is
+                # answering, and a restart would cancel the very work
+                # that's causing the pressure.
+                issues.append({"service": name, "code": code, "detail": detail,
+                               "critical": config["critical"], "state": "degraded"})
+                logger.warning(
+                    "[BRAIN] Service %s is DEGRADED (up, not restarting): %s", name, detail,
                 )
-
-            # Auto-triage: check alert_actions table before escalating
-            if config["critical"]:
-                try:
-                    pattern = f"{name}_down" if name != "api" else "api_down"
-                    action = await pool.fetchrow(
-                        "SELECT id, action_type, cooldown_minutes, last_triggered_at, consecutive_failures, escalate_after_failures "
-                        "FROM alert_actions WHERE pattern = $1 AND enabled = true", pattern
+                if name not in _degraded_since:
+                    _degraded_since[name] = time.time()
+                    try:
+                        sent = await send_discord(
+                            f"⚠️ Service {name} DEGRADED (up — auto-restart suppressed)",
+                            pool=pool,
+                        )
+                        if not sent:
+                            logger.warning(
+                                "[BRAIN] degraded notice for %s did not reach Discord", name,
+                            )
+                    except Exception as exc:  # noqa: BLE001 — notice must not kill the loop
+                        logger.warning("[BRAIN] degraded notice for %s failed: %s", name, exc)
+            else:
+                since = _degraded_since.pop(name, None)
+                if since is not None:
+                    mins = (time.time() - since) / 60
+                    logger.info(
+                        "[BRAIN] Service %s recovered from degraded after %.0f min", name, mins,
                     )
-                    if action:
-                        # Check cooldown
-                        in_cooldown = False
-                        if action["last_triggered_at"]:
-                            elapsed = (datetime.now(UTC) - action["last_triggered_at"]).total_seconds() / 60
-                            in_cooldown = elapsed < action["cooldown_minutes"]
+                    try:
+                        await send_discord(
+                            f"✅ Service {name} recovered from degraded after {mins:.0f} min",
+                            pool=pool,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "[BRAIN] degraded-recovery notice for %s failed: %s", name, exc,
+                        )
+                logger.debug("[BRAIN] Service %s: OK", name)
+            continue
 
-                        if not in_cooldown:
-                            await pool.execute(
-                                "UPDATE alert_actions SET last_triggered_at = NOW(), total_triggers = total_triggers + 1, "
-                                "consecutive_failures = consecutive_failures + 1 WHERE id = $1", action["id"]
-                            )
-                            await pool.execute(
-                                "INSERT INTO alert_log (alert_action_id, pattern, trigger_detail, action_taken, result) "
-                                "VALUES ($1, $2, $3, $4, 'logged')",
-                                action["id"], pattern, f"{name}: {detail}"[:500], action["action_type"]
-                            )
-                            failures = (action["consecutive_failures"] or 0) + 1
-                            if failures >= action["escalate_after_failures"] and action["escalate_after_failures"] > 0:
-                                await notify(f"🚨 {name} DOWN ({failures}x): {detail}", pool=pool)
-                            else:
-                                logger.info("[BRAIN] Alert '%s' logged (failure %d/%d before escalation)",
-                                            pattern, failures, action["escalate_after_failures"])
+        # Hard down — no usable response (refused / timeout / DNS /
+        # non-health HTTP error). A degraded run that collapses into
+        # down is a worsening, not a recovery, so drop the degraded
+        # marker without the recovery notice.
+        _degraded_since.pop(name, None)
+        fails = _consecutive_down.get(name, 0) + 1
+        _consecutive_down[name] = fails
+        issues.append({"service": name, "code": code, "detail": detail,
+                       "critical": config["critical"], "state": "down"})
+        logger.warning("[BRAIN] Service %s is DOWN (%d consecutive): %s", name, fails, detail)
+
+        # Auto-restart local services. Openclaw is host-side (no
+        # container, host CLI not on the brain container's PATH), so
+        # in Docker the restart_service helper would fall through to
+        # the "no container mapping for auto-restart" notify() and
+        # spam Telegram with a misleading "down" alert even on a
+        # transient probe blip. The host-side `_run_openclaw_doctor`
+        # mechanism (line ~1377) is the recovery path on bare metal.
+        # Restart outcomes are logged/notified inside restart_service.
+        if _should_auto_restart(name):
+            if fails >= restart_after:
+                await restart_service(name, pool=pool)
+            else:
+                logger.info(
+                    "[BRAIN] %s down %d/%d consecutive cycle(s) — deferring auto-restart",
+                    name, fails, restart_after,
+                )
+        elif name == "openclaw" and IS_DOCKER:
+            logger.info(
+                "[BRAIN] Openclaw probe failed but skipping restart "
+                "(host-side service, no in-container recovery path)",
+            )
+
+        # Auto-triage: check alert_actions table before escalating
+        if config["critical"]:
+            try:
+                pattern = f"{name}_down" if name != "api" else "api_down"
+                action = await pool.fetchrow(
+                    "SELECT id, action_type, cooldown_minutes, last_triggered_at, consecutive_failures, escalate_after_failures "
+                    "FROM alert_actions WHERE pattern = $1 AND enabled = true", pattern
+                )
+                if action:
+                    # Check cooldown
+                    in_cooldown = False
+                    if action["last_triggered_at"]:
+                        elapsed = (datetime.now(UTC) - action["last_triggered_at"]).total_seconds() / 60
+                        in_cooldown = elapsed < action["cooldown_minutes"]
+
+                    if not in_cooldown:
+                        await pool.execute(
+                            "UPDATE alert_actions SET last_triggered_at = NOW(), total_triggers = total_triggers + 1, "
+                            "consecutive_failures = consecutive_failures + 1 WHERE id = $1", action["id"]
+                        )
+                        await pool.execute(
+                            "INSERT INTO alert_log (alert_action_id, pattern, trigger_detail, action_taken, result) "
+                            "VALUES ($1, $2, $3, $4, 'logged')",
+                            action["id"], pattern, f"{name}: {detail}"[:500], action["action_type"]
+                        )
+                        failures = (action["consecutive_failures"] or 0) + 1
+                        if failures >= action["escalate_after_failures"] and action["escalate_after_failures"] > 0:
+                            await notify(f"🚨 {name} DOWN ({failures}x): {detail}", pool=pool)
                         else:
-                            logger.debug("[BRAIN] Alert '%s' in cooldown", pattern)
+                            logger.info("[BRAIN] Alert '%s' logged (failure %d/%d before escalation)",
+                                        pattern, failures, action["escalate_after_failures"])
                     else:
-                        await notify(f"ALERT: {name} is DOWN — {detail}", pool=pool)
-                except Exception as alert_err:
-                    logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err, exc_info=True)
+                        logger.debug("[BRAIN] Alert '%s' in cooldown", pattern)
+                else:
                     await notify(f"ALERT: {name} is DOWN — {detail}", pool=pool)
-        else:
-            logger.debug("[BRAIN] Service %s: OK", name)
+            except Exception as alert_err:
+                logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err, exc_info=True)
+                await notify(f"ALERT: {name} is DOWN — {detail}", pool=pool)
 
     # Run openclaw doctor every 15 minutes to heal degraded channels
     # (Telegram 409 conflicts, WhatsApp disconnects) that appear "up" to HTTP checks

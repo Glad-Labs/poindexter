@@ -384,6 +384,39 @@ Modes: bare invocation (one-shot check), `-Loop -IntervalSeconds N`, and
 elevated background task — run `-Install` yourself rather than scripting it
 unattended.
 
+## Core service monitor — degraded vs down (`monitor_services`)
+
+The oldest self-heal: every 5-minute cycle `brain_daemon.monitor_services`
+probes the core surfaces (`site`, `api`, `worker`, exporters) and can
+`docker restart` the worker. Two rules, both earned by the 2026-08-15
+"API down" incident (the brain restarted a worker that was merely busy,
+twice in one night, cancelling an in-flight media render):
+
+- **Degraded ≠ down.** The worker's `/api/health` deliberately answers
+  **503** while `{"status": "degraded"}` (DB pool pressure, startup error)
+  so load balancers can shed on the status code. `check_json_status`
+  parses the body even on HTTP errors: a "degraded" body is **up** — the
+  knowledge graph records `degraded`, a routine **Discord** notice fires on
+  the transition (plus a recovery notice when it clears), and there is **no
+  restart and no Telegram page**. Restarting a busy worker cancels the
+  in-flight work that caused the pressure and creates the 40-90 s outage
+  the alert claims.
+- **Hard-down restarts are gated on consecutive failures.** No response at
+  all (refused / timeout / DNS / non-health HTTP error) increments a
+  per-service counter; the auto-restart fires only at
+  `app_settings.brain_restart_consecutive_failures` consecutive failed
+  cycles (default **2**, i.e. ~5 min of confirmed downness), then keeps
+  firing each failing cycle. The **critical-alert triage path is not
+  gated** — it still fires from the first failed cycle, so detection speed
+  is unchanged; only the side-effecting heal waits for confirmation. The
+  counter is in-memory: a brain restart forgives it, costing at most one
+  extra cycle before a genuine heal.
+
+Related knob: `brain_docker_restart_timeout_seconds` (default 90) bounds the
+`docker restart` subprocess. The old hardcoded 30 s was shorter than the
+worker's graceful stop (~30-45 s), so every worker heal paged a misleading
+"Restart failed: timed out" while dockerd completed the restart fine.
+
 ## Liveness probes
 
 The brain runs these every 5-minute cycle. Two patterns:
@@ -749,6 +782,8 @@ full incident write-up.
 
 | Setting                                                       | Default                                    | Meaning                                                                                                                   |
 | ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).   |
+| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).       |
 | `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                               |
 | `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                |
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                           |

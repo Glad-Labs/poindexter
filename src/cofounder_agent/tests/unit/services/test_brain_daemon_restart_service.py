@@ -246,12 +246,38 @@ async def test_inspect_command_uses_state_status_format(mock_notify):
     assert "--format" in inspect_args
     assert "{{.State.Status}}" in inspect_args
     # And the timeouts are asymmetric — inspect is cheap, restart slow.
+    # The restart timeout must exceed the worker's graceful stop+start
+    # (~30-45 s): the old hardcoded 30 s expired on every worker restart
+    # and paged a misleading "Restart failed" while dockerd completed
+    # the restart fine (2026-08-15 api-down investigation).
     inspect_kwargs = run_mock.call_args_list[0].kwargs
     restart_kwargs = run_mock.call_args_list[1].kwargs
     assert inspect_kwargs.get("timeout") == 10
-    assert restart_kwargs.get("timeout") == 30
+    assert (
+        restart_kwargs.get("timeout")
+        == bd.BRAIN_DOCKER_RESTART_TIMEOUT_DEFAULT_SECONDS
+        == 90
+    )
     # Sanity: the format pre-check still drives a real notify on success.
     mock_notify.assert_called_once()
+
+
+async def test_restart_timeout_is_db_tunable(mock_notify):
+    """With a pool available, the docker-restart subprocess timeout comes
+    from ``app_settings.brain_docker_restart_timeout_seconds``."""
+    inspect_hit = _inspect_result(returncode=0, stdout="running\n")
+    restart_ok = _inspect_result(returncode=0)
+    pool = MagicMock()
+    pool.fetchval = AsyncMock(return_value="120")
+
+    with patch.object(bd, "IS_DOCKER", True), \
+         patch.object(
+             bd.subprocess, "run",
+             side_effect=[inspect_hit, restart_ok],
+         ) as run_mock:
+        await bd.restart_service("worker", pool=pool)
+
+    assert run_mock.call_args_list[1].kwargs.get("timeout") == 120
 
 
 async def test_host_worker_without_restart_script_notifies(mock_notify):
