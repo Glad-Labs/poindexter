@@ -209,6 +209,14 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("alt_text", "media"),
     ("preferred_ai_video", "media"),
     ("youtube", "media"),
+    # Media-lane watchdogs + recovery jobs (subsystem-first, like the
+    # infra-component probes above): the narration-failure pager, the hero
+    # i2v fallback pager, and the two Stage-1 backfill jobs are all knobs on
+    # the media pipeline, not generic observability.
+    ("narration", "media"),
+    ("hero_fallback", "media"),
+    ("backfill_media_scripts", "media"),
+    ("backfill_video_shot_lists", "media"),
     # distribution
     ("social", "distribution"),
     ("publishing", "distribution"),

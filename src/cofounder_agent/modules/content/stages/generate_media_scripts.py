@@ -151,6 +151,18 @@ class GenerateMediaScriptsStage:
 
         clean_content = _strip_markdown(content_text)
 
+        # Video-only mode (media_regen / backfill_media_scripts): generate
+        # ONLY the video narration text — skip the podcast LLM call and every
+        # audio side effect (podcast TTS, intro sting, ambient bed). The
+        # regen callers run against pieces whose podcast is already a
+        # published artifact; regenerating its script would desync the frozen
+        # text from the shipped audio, and synthesizing fresh audio is a side
+        # effect they must not pay for. A first-class flag rather than
+        # patching is_tts_enabled/is_audio_gen_enabled: those patches are
+        # module-global, and a live pipeline run in the same worker process
+        # would silently skip ITS podcast audio while a regen held them.
+        video_only = bool(context.get("media_scripts_video_only"))
+
         podcast_script = ""
         video_scenes: list[str] = []
         short_summary = ""
@@ -167,27 +179,30 @@ class GenerateMediaScriptsStage:
 
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
-            async with gpu.lock(
-                "ollama", model=model, task_id=context.get("task_id"),
-                phase="media_scripts",
-                # poindexter#914 P2 group 2 — bounded wait. This stage is
-                # explicitly non-critical (see the handler below), so skipping
-                # beats queueing behind a ~230s render up to the 900s lock
-                # ceiling on an article that is otherwise finished.
-                max_wait_s=media_wait_budget_s(), priority="background",
-            ):
-                podcast_script = await _build_script_with_llm(
-                    title, content_text, site_config=sc,
-                )
+            # Skipped in video-only mode — the caller's podcast is a shipped
+            # artifact and the writeback discards podcast keys anyway.
+            if not video_only:
+                async with gpu.lock(
+                    "ollama", model=model, task_id=context.get("task_id"),
+                    phase="media_scripts",
+                    # poindexter#914 P2 group 2 — bounded wait. This stage is
+                    # explicitly non-critical (see the handler below), so skipping
+                    # beats queueing behind a ~230s render up to the 900s lock
+                    # ceiling on an article that is otherwise finished.
+                    max_wait_s=media_wait_budget_s(), priority="background",
+                ):
+                    podcast_script = await _build_script_with_llm(
+                        title, content_text, site_config=sc,
+                    )
 
-            if podcast_script and len(podcast_script) > 200:
-                logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))
-            else:
-                logger.warning(
-                    "[MEDIA] Podcast script too short (%d chars)",
-                    len(podcast_script or ""),
-                )
-                podcast_script = ""
+                if podcast_script and len(podcast_script) > 200:
+                    logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))
+                else:
+                    logger.warning(
+                        "[MEDIA] Podcast script too short (%d chars)",
+                        len(podcast_script or ""),
+                    )
+                    podcast_script = ""
 
             # TTS narration — synthesize the podcast script to audio via Speaches.
             # Non-critical: failure logs a warning, pipeline continues.
@@ -498,9 +513,13 @@ class GenerateMediaScriptsStage:
                             },
                         )
 
-            # Audio gen — ambient video bed via StableAudioOpen.
+            # Audio gen — ambient video bed via StableAudioOpen. Gated off in
+            # video-only mode: unlike the podcast blocks (dead once Call 1 is
+            # skipped), this keys off video_scenes, which video-only DOES
+            # produce — without the gate a regen would synthesize a fresh bed
+            # as a side effect.
             ambient_audio_path = ""
-            if video_scenes and is_audio_gen_enabled(sc):
+            if video_scenes and not video_only and is_audio_gen_enabled(sc):
                 try:
                     # Music-directed template (operator-tunable); the scene
                     # text rides along as mood cues only — verbatim visual

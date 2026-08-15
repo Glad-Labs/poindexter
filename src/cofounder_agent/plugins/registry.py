@@ -840,6 +840,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the operator, not the system, noticed the missing motion
         # (poindexter#992). Pages once per window on a fallback cluster.
         ("jobs", "services.jobs.probe_hero_fallback", "ProbeHeroFallbackJob"),
+        # ProbeNarrationFailureJob — hourly watchdog for the narration lane:
+        # per-render narration_synthesis_failed warns route to Discord and
+        # scroll past (the 2026-08-13 chatterbox outage ran two days, 30+
+        # sends, three silent renders rejected). Pages critical → Telegram
+        # on a failure cluster OR a live TTS probe staying down N runs —
+        # the latter because the media_tts_gate turns an outage into silent
+        # deferral, so failure findings alone go quiet exactly then.
+        ("jobs", "services.jobs.probe_narration_failure", "ProbeNarrationFailureJob"),
         # BackfillVideoShotListsJob — recovery for pieces whose Stage-1
         # director was skipped on a busy GPU, leaving video_shot_list = {}.
         # Those pieces were dispatched once, produced nothing, and kept their
@@ -848,6 +856,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Lives in the MODULE, not services/jobs/: it drives the Stage-1
         # director, so a kernel home would need a Seam 2 exemption.
         ("jobs", "modules.content.jobs.backfill_video_shot_lists", "BackfillVideoShotListsJob"),
+        # BackfillMediaScriptsJob — the scripts-side sibling of the shot-list
+        # backfill: a GPU-skipped media_scripts leaves video_long_script
+        # empty FOREVER, and the narration atom's podcast_script fallback
+        # then voices the whole podcast episode over the video (operator-
+        # rejected 2026-08-15). Regenerates the video scripts + replans the
+        # shot lists via the shared media_regen core. Module home for the
+        # same Seam 2 reason as its sibling.
+        ("jobs", "modules.content.jobs.backfill_media_scripts", "BackfillMediaScriptsJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live

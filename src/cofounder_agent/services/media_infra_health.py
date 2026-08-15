@@ -32,6 +32,15 @@ Probes (all app_settings-tunable, per DB-first config):
   ``nvidia_gpu_memory_*_mib``). Fail-closed: an unreadable reading defers, so
   a blind render can't oversubscribe the 32 GB display GPU and freeze WDDM
   (2026-07-12 desktop-lockup fix).
+- **TTS engine** ``GET {engine}/health`` (2026-08-15) — the configured
+  ``podcast_tts_engine`` sidecar (chatterbox, else Speaches). Narration is
+  fail-soft by design, so before this probe a TTS outage did NOT defer
+  dispatch — it shipped voiceless, caption-less videos: the chatterbox
+  container (opt-in ``--profile tts-hq``) was stopped in a stack maintenance
+  window on 08-13 and stayed down two days while three renders shipped
+  silent and were all operator-rejected. A wan outage defers; a TTS outage
+  must too. Skipped when ``podcast_tts_enabled`` is off — an install that
+  deliberately runs without TTS keeps rendering (silent by choice).
 
 Settings:
 
@@ -41,6 +50,8 @@ Settings:
 - ``media_infra_dns_canary_host`` (default ``''`` = derive / skip).
 - ``media_render_vram_gate_enabled`` (default ``true``) — render-GPU VRAM gate.
 - ``media_render_min_free_vram_gb`` (default ``25``) — min free VRAM to render.
+- ``media_tts_gate_enabled`` (default ``true``) — TTS-engine probe; only
+  consulted when ``podcast_tts_enabled`` is on.
 """
 
 from __future__ import annotations
@@ -89,6 +100,60 @@ def _resolve_image_gen_health_url(site_config: Any) -> str:
         or "http://image-gen-server:9836"
     )
     return str(base).rstrip("/") + "/health"
+
+
+def resolve_tts_health_url(site_config: Any) -> tuple[str, str]:
+    """``(engine, health_url)`` for the configured TTS engine.
+
+    Mirrors ``podcast_service``'s engine selection (``podcast_tts_engine``:
+    ``'chatterbox'`` → ``plugin.tts_provider.chatterbox.base_url``, anything
+    else → Speaches via ``podcast_tts_base_url``) so the probe watches the
+    exact sidecar narration will hit. Bases are OpenAI-style ``.../v1`` roots;
+    both sidecars serve ``/health`` at the origin, so a trailing ``/v1`` is
+    stripped. An empty base (misconfig) returns ``(engine, '')`` = skip.
+
+    Public (no underscore): ``probe_narration_failure`` reuses it so the
+    streak pager and the dispatch gate can never watch different URLs.
+    """
+    engine = (
+        str(site_config.get("podcast_tts_engine", "") or "").strip() or "speaches"
+    )
+    if engine == "chatterbox":
+        base = (
+            site_config.get(
+                "plugin.tts_provider.chatterbox.base_url",
+                "http://chatterbox:8000/v1",
+            )
+            # prod seeds this key as '' (unset per feedback_db_first_config),
+            # so the empty string must fall through to the provider default
+            # exactly like ChatterboxTTSProvider does.
+            or "http://chatterbox:8000/v1"
+        )
+    else:
+        base = (
+            site_config.get("podcast_tts_base_url", "http://speaches:8000/v1")
+            or "http://speaches:8000/v1"
+        )
+    base = str(base).strip().rstrip("/")
+    if not base:
+        return engine, ""
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")].rstrip("/")
+    return engine, base + "/health"
+
+
+def _tts_remediation_hint(engine: str) -> str:
+    """Operator-facing tail for a failed TTS probe — the 08-13 outage was a
+    stopped opt-in-profile container, so name the exact restart command."""
+    if engine == "chatterbox":
+        return (
+            " — narration + captions would silently fail-soft; is the tts-hq "
+            "profile up? `docker compose --profile tts-hq up -d chatterbox`"
+        )
+    return (
+        " — narration + captions would silently fail-soft; ensure the "
+        "poindexter-speaches container is running"
+    )
 
 
 def _resolve_dns_canary_host(site_config: Any) -> str:
@@ -153,6 +218,18 @@ async def check_media_infra_health(
         http_client_factory = httpx.AsyncClient
     timeout_s = site_config.get_float("media_infra_health_timeout_seconds", 5.0) or 5.0
 
+    # TTS probe (2026-08-15): only when narration is actually expected —
+    # podcast_tts_enabled off means silent renders are the operator's
+    # configured choice, and the gate must not brick that install.
+    tts_probe: tuple[str, str] | None = None
+    if site_config.get_bool("media_tts_gate_enabled", True):
+        from services.tts_service import is_tts_enabled
+
+        if is_tts_enabled(site_config):
+            engine, tts_url = resolve_tts_health_url(site_config)
+            if tts_url:
+                tts_probe = (engine, tts_url)
+
     failures: list[str] = []
     probes = (
         ("wan-server", _resolve_wan_health_url(site_config)),
@@ -165,6 +242,11 @@ async def check_media_infra_health(
             failure = await _probe_http(client, name, url)
             if failure:
                 failures.append(failure)
+        if tts_probe is not None:
+            engine, tts_url = tts_probe
+            failure = await _probe_http(client, f"tts-{engine}", tts_url)
+            if failure:
+                failures.append(failure + _tts_remediation_hint(engine))
 
     canary = _resolve_dns_canary_host(site_config)
     if canary:
@@ -208,4 +290,8 @@ async def check_media_infra_health(
     return MediaInfraHealth(healthy=True, detail="all render-infra probes passed")
 
 
-__all__ = ["MediaInfraHealth", "check_media_infra_health"]
+__all__ = [
+    "MediaInfraHealth",
+    "check_media_infra_health",
+    "resolve_tts_health_url",
+]

@@ -1049,3 +1049,77 @@ async def test_curated_sting_file_skips_generation(tmp_path):
     assert result.ok
     assert "intro" not in audio_calls
     assert result.context_updates["podcast_intro_audio_path"] == str(theme)
+
+
+# ---------------------------------------------------------------------------
+# Video-only mode (media_scripts_video_only, 2026-08-15) — the media_regen /
+# backfill_media_scripts contract: regenerate ONLY the video narration text.
+# The podcast LLM call and every audio side effect must be skipped, because
+# the callers run against pieces whose podcast is a published artifact — and
+# because the flag replaces a module-global patch.object of the enable
+# helpers that would have disabled podcast audio for concurrent pipeline
+# runs in the same process.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_video_only_skips_podcast_call_but_produces_video_scripts():
+    gpu = SimpleNamespace(lock=_fake_lock)
+    scene_text = "1. a scene\n2. another\n\nSHORT:\n" + ("word " * 30).strip()
+    ctx = _ctx()
+    ctx["media_scripts_video_only"] = True
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        side_effect=[
+            SimpleNamespace(text="Long narration sentence. " * 20),
+            SimpleNamespace(text=scene_text),
+        ],
+    )
+    podcast_llm = AsyncMock(return_value="P" * 600)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm", new=podcast_llm):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    podcast_llm.assert_not_called()
+    assert result.context_updates["podcast_script"] == ""
+    assert result.context_updates["video_long_script"].startswith("Long narration")
+    assert len(result.context_updates["short_summary_script"].split()) >= 25
+
+
+@pytest.mark.asyncio
+async def test_video_only_never_generates_ambient_bed():
+    """The ambient bed keys off video_scenes — which video-only mode DOES
+    produce — so it needs its own gate, unlike the podcast blocks that die
+    with the skipped Call 1."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    scene_text = "1. a cinematic wide shot\n\nSHORT:\n" + ("word " * 30).strip()
+    ctx = _ctx()
+    ctx["media_scripts_video_only"] = True
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        side_effect=[
+            SimpleNamespace(text="Long narration sentence. " * 20),
+            SimpleNamespace(text=scene_text),
+        ],
+    )
+    generate_audio_mock = AsyncMock(
+        return_value=SimpleNamespace(file_path="/tmp/must-not-exist.wav"),
+    )
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="P" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.generate_audio",
+               new=generate_audio_mock):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    generate_audio_mock.assert_not_called()
+    assert result.context_updates["video_ambient_audio_path"] == ""
+    assert result.context_updates["podcast_audio_path"] == ""

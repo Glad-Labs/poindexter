@@ -234,6 +234,110 @@ class TestCheckMediaInfraHealth:
         assert seen == ["media.gladlabs.io"]
 
 
+_CHATTERBOX_HEALTH = "http://chatterbox:8000/health"
+_SPEACHES_HEALTH = "http://speaches:8000/health"
+
+
+@pytest.mark.unit
+class TestTtsGate:
+    """TTS-engine probe (2026-08-15): a down TTS sidecar must defer dispatch
+    instead of letting the fail-soft narration ship silent, caption-less
+    videos (the 08-13 chatterbox two-day outage)."""
+
+    @pytest.mark.asyncio
+    async def test_chatterbox_down_is_unhealthy_with_remediation(self):
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_CHATTERBOX_HEALTH},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(podcast_tts_enabled="true", podcast_tts_engine="chatterbox"),
+            http_client_factory=factory,
+        )
+        assert out.healthy is False
+        assert "tts-chatterbox" in out.detail
+        assert "tts-hq" in out.detail  # names the exact restart command
+        assert out.vram_insufficient is False  # a reclaim can't fix TTS
+
+    @pytest.mark.asyncio
+    async def test_speaches_down_is_unhealthy(self):
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_SPEACHES_HEALTH},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(podcast_tts_enabled="true"),  # engine unset → speaches
+            http_client_factory=factory,
+        )
+        assert out.healthy is False
+        assert "tts-speaches" in out.detail
+        assert "poindexter-speaches" in out.detail
+
+    @pytest.mark.asyncio
+    async def test_tts_healthy_passes(self):
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200, _CHATTERBOX_HEALTH: 200},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(podcast_tts_enabled="true", podcast_tts_engine="chatterbox"),
+            http_client_factory=factory,
+        )
+        assert out.healthy is True
+
+    @pytest.mark.asyncio
+    async def test_tts_disabled_install_is_never_gated(self):
+        """podcast_tts_enabled off = silent renders are the operator's
+        choice; the TTS endpoint must not even be probed."""
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_CHATTERBOX_HEALTH, _SPEACHES_HEALTH},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(podcast_tts_enabled="false", podcast_tts_engine="chatterbox"),
+            http_client_factory=factory,
+        )
+        assert out.healthy is True
+
+    @pytest.mark.asyncio
+    async def test_gate_switch_off_skips_probe(self):
+        factory = _client_factory(
+            {_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200},
+            raise_for={_CHATTERBOX_HEALTH},
+        )
+        out = await mih.check_media_infra_health(
+            _sc(
+                podcast_tts_enabled="true",
+                podcast_tts_engine="chatterbox",
+                media_tts_gate_enabled="false",
+            ),
+            http_client_factory=factory,
+        )
+        assert out.healthy is True
+
+    def test_resolve_url_chatterbox_strips_v1(self):
+        sc = _sc(podcast_tts_engine="chatterbox")
+        assert mih.resolve_tts_health_url(sc) == ("chatterbox", _CHATTERBOX_HEALTH)
+
+    def test_resolve_url_chatterbox_empty_base_falls_to_default(self):
+        """Prod seeds plugin.tts_provider.chatterbox.base_url as '' (unset);
+        the resolver must fall through to the provider default, mirroring
+        ChatterboxTTSProvider."""
+        sc = _sc(
+            podcast_tts_engine="chatterbox",
+            **{"plugin.tts_provider.chatterbox.base_url": ""},
+        )
+        assert mih.resolve_tts_health_url(sc) == ("chatterbox", _CHATTERBOX_HEALTH)
+
+    def test_resolve_url_default_engine_is_speaches(self):
+        assert mih.resolve_tts_health_url(_sc()) == ("speaches", _SPEACHES_HEALTH)
+
+    def test_resolve_url_custom_speaches_base(self):
+        sc = _sc(podcast_tts_base_url="http://tts.internal:9999/v1")
+        assert mih.resolve_tts_health_url(sc) == (
+            "speaches", "http://tts.internal:9999/health",
+        )
+
+
 @pytest.mark.unit
 class TestUrlResolution:
 

@@ -23,6 +23,27 @@ Root-cause investigation (2026-07-12): the scheduler's pre-render eviction only 
 
 `vram_insufficient` distinguishes a VRAM-only defer from a wan/image-gen/DNS outage, so the reclaim follow-up (PR 2) can attempt to free VRAM before deferring — a reclaim during an infra outage would be pointless.
 
+### TTS probe (2026-08-15)
+
+The same pass also probes the **configured TTS engine's `/health`** —
+`podcast_tts_engine='chatterbox'` → `plugin.tts_provider.chatterbox.base_url`,
+anything else → Speaches via `podcast_tts_base_url` (URL resolution shared
+with `probe_narration_failure` via `resolve_tts_health_url`). Narration is
+fail-soft by design, so before this probe a TTS outage did not defer anything:
+it shipped **silent, caption-less videos** (captions are Whisper ASR _of the
+narration_, so they die together). The 2026-08-13 outage — the chatterbox
+container is an opt-in `--profile tts-hq` service that a stack stop leaves
+stopped and a plain `compose up -d` never restarts — ran two days and every
+render in the window was operator-rejected. A wan outage defers; a TTS outage
+must too.
+
+Skipped entirely when `podcast_tts_enabled` is off (an install that
+deliberately runs without TTS keeps rendering, silent by choice) or when no
+engine URL resolves. A TTS failure never sets `vram_insufficient` — a VRAM
+reclaim can't fix a stopped sidecar. Because `media_reconciliation` requires a
+healthy pass before resetting a cap-wedged task's re-dispatch counter, attempts
+burned during a TTS outage now also self-heal on recovery, same as wan outages.
+
 ## Settings (`settings_defaults.py`, DB-tunable)
 
 | Key                              | Default                  | Meaning                                                                                |
@@ -31,6 +52,7 @@ Root-cause investigation (2026-07-12): the scheduler's pre-render eviction only 
 | `media_render_min_free_vram_gb`  | `25`                     | Min free VRAM on `pipeline_gpu_index` to allow a render (~24 GB model + ~1 GB margin). |
 | `pipeline_gpu_index`             | `0`                      | The render/display GPU (existing key — the 5090).                                      |
 | `gpu_metrics_prometheus_url`     | `http://prometheus:9090` | Prometheus base URL (existing key).                                                    |
+| `media_tts_gate_enabled`         | `true`                   | TTS-engine probe; only consulted while `podcast_tts_enabled=true`.                     |
 
 ## Observability
 

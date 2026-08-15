@@ -222,6 +222,49 @@ because three components each used a different reference:
   `media.persist` likewise records the **probed** file duration into
   `media_assets` (plan total only as fallback).
 
+### 6c. Narration outage + empty-script hardening (2026-08-15)
+
+Narration is fail-soft (a TTS failure must not halt the graph), which left two
+degradation paths that both ended in operator rejections:
+
+- **TTS outage → silent videos.** The chatterbox sidecar is an opt-in
+  `--profile tts-hq` compose service: a stack stop leaves it stopped and a
+  plain `compose up -d` never restarts it. During the 2026-08-13 two-day
+  outage every render shipped voiceless AND caption-less (captions are ASR of
+  the narration), while the per-render `narration_synthesis_failed` warns
+  routed to Discord and scrolled past. Three layers now close this:
+  1. **Dispatch preflight** — `check_media_infra_health` probes the configured
+     engine's `/health` (`media_tts_gate_enabled`, skipped when
+     `podcast_tts_enabled` is off), so an outage **defers** renders instead of
+     degrading them; burned re-dispatch attempts self-heal on recovery via the
+     existing cap-reset machinery. See
+     [video-render-vram-gate.md](video-render-vram-gate.md).
+  2. **Escalation** — `ProbeNarrationFailureJob` (hourly) pages **critical →
+     Telegram** on a `narration_synthesis_failed` cluster
+     (`narration_failure_min_count` per `narration_failure_window_hours`) OR
+     on its own live TTS probe staying down
+     `narration_failure_min_consecutive_probes` consecutive runs. The second
+     trigger exists because the dispatch gate turns a total outage into
+     silent deferral — zero failure findings exactly when it matters.
+  3. The per-render finding (poindexter#910) stays as the forensic record.
+
+- **Empty frozen scripts → podcast-voiced videos.** A GPU-admission skip of
+  Stage-1 `media_scripts` freezes `video_long_script=''` permanently, and the
+  narration atom's deliberate `video_long_script → podcast_script` fallback
+  then voices the **entire podcast episode** over the video (a 371s video
+  narrating a 5,375-char podcast script). `BackfillMediaScriptsJob`
+  (6-hourly, batch `backfill_media_scripts_batch`) finds publishable,
+  media-bearing pieces with an empty long script and **no operator-approved
+  video**, and runs the shared `modules/content/media_regen.py` core: regen
+  the video scripts in **video-only mode** (`media_scripts_video_only`
+  context flag — no podcast LLM call, no TTS/sting/ambient side effects;
+  published podcast artifacts are never touched), replan the shot lists over
+  the NEW long script, write back the five video keys, delete the bad-script
+  renders, reset their approvals, clear the dispatch marker. The
+  `regen_media_scripts.py` operator CLI is a thin wrapper over the same core.
+  Fail-conservative: any step that produces nothing usable writes nothing and
+  leaves the piece for the next cycle.
+
 ---
 
 ## 7. Voice variety (deterministic rotation)

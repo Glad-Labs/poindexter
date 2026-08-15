@@ -592,9 +592,24 @@ DEFAULTS: dict[str, str] = {
     # would starve the live pipeline — the condition that caused the backlog.
     'backfill_video_shot_lists_enabled': 'true',
     'backfill_video_shot_lists_batch': '2',
+    # Scripts-side sibling of the shot-list backfill (2026-08-15): a
+    # GPU-skipped media_scripts leaves video_long_script empty forever, and
+    # the narration fallback then voices the PODCAST script over the video.
+    # Batch 1 — each piece costs 2 LLM script calls + director + review.
+    'backfill_media_scripts_enabled': 'true',
+    'backfill_media_scripts_batch': '1',
     'hero_fallback_probe_enabled': 'true',
     'hero_fallback_window_hours': '24',
     'hero_fallback_min_count': '3',
+    # Narration-lane escalation (2026-08-15): per-render TTS failures are
+    # Discord-routine and scrolled past for two days while silent videos
+    # shipped; this pages critical → Telegram on a cluster, or on the live
+    # TTS probe staying down min_consecutive hourly runs (the dispatch gate
+    # makes an outage silent, so failure counts alone go quiet exactly then).
+    'narration_failure_probe_enabled': 'true',
+    'narration_failure_window_hours': '6',
+    'narration_failure_min_count': '3',
+    'narration_failure_min_consecutive_probes': '3',
     # Wait for image-gen /health before the still phase. The hero phase exits
     # image-gen to free the card for wan, so the NEXT render raced a cold
     # container lazy-loading a 6B checkpoint: /generate 503'd and 7 of 11
@@ -1908,6 +1923,13 @@ DEFAULTS: dict[str, str] = {
     'media_infra_healthcheck_enabled': 'true',
     'media_infra_health_timeout_seconds': '5',
     'media_infra_dns_canary_host': '',
+    # TTS-engine probe in the Stage-2 dispatch preflight (2026-08-15): the
+    # narration atom is fail-soft, so a down TTS sidecar used to ship silent,
+    # caption-less videos instead of deferring the render (the 08-13
+    # chatterbox two-day outage — every render in the window was rejected).
+    # Only consulted while podcast_tts_enabled=true; a no-TTS install is
+    # never gated.
+    'media_tts_gate_enabled': 'true',
     # Bounded cap-reset self-heal (feedback_self_heal_not_suppress): when a
     # missing-video post's task sits AT media_pipeline_redispatch_max but the
     # render infra probes healthy again, media_reconciliation resets the
@@ -3587,6 +3609,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_adaptive_plate_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'backfill_video_shot_lists_enabled': {'owner': 'backfill_video_shot_lists', 'value_type': 'boolean'},
     'backfill_video_shot_lists_batch': {'owner': 'backfill_video_shot_lists', 'value_type': 'integer'},
+    'backfill_media_scripts_enabled': {'owner': 'backfill_media_scripts', 'value_type': 'boolean'},
+    'backfill_media_scripts_batch': {'owner': 'backfill_media_scripts', 'value_type': 'integer'},
+    'narration_failure_probe_enabled': {'owner': 'probe_narration_failure', 'value_type': 'boolean'},
+    'narration_failure_window_hours': {'owner': 'probe_narration_failure', 'value_type': 'integer'},
+    'narration_failure_min_count': {'owner': 'probe_narration_failure', 'value_type': 'integer'},
+    'narration_failure_min_consecutive_probes': {'owner': 'probe_narration_failure', 'value_type': 'integer'},
     'hero_fallback_probe_enabled': {'owner': 'probe_hero_fallback', 'value_type': 'boolean'},
     'hero_fallback_window_hours': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
     'hero_fallback_min_count': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
@@ -3748,6 +3776,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_infra_healthcheck_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
     'media_infra_health_timeout_seconds': {'owner': 'media_infra_health', 'value_type': 'float'},
     'media_infra_dns_canary_host': {'owner': 'media_infra_health', 'value_type': 'string'},
+    'media_tts_gate_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_enabled': {'owner': 'media_reconciliation', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
 

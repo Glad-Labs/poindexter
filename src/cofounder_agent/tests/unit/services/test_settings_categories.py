@@ -55,6 +55,12 @@ def test_thirteen_canonical_categories():
         ("affiliate_injection_enabled", "cost"),  # affiliate = monetization
         ("affiliate_redirect_base_url", "cost"),
         ("affiliate_clicks_last_sync", "cost"),  # runtime watermark, not in DEFAULTS
+        # Media-lane watchdogs + recovery jobs (2026-08-15): subsystem-first,
+        # like compose_drift -> infrastructure.
+        ("narration_failure_probe_enabled", "media"),
+        ("hero_fallback_window_hours", "media"),
+        ("backfill_media_scripts_batch", "media"),
+        ("backfill_video_shot_lists_enabled", "media"),
     ],
 )
 def test_anchor_mappings(key, expected):
