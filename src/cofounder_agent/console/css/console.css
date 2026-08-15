@@ -1141,6 +1141,21 @@ button {
     animation: none;
   }
 }
+/* Stale pulse (retained /api/activity data — poll failing or tab wedged):
+   keep showing the last-good rows (never swap in a fabricated idle) but stop
+   the band reading as live — freeze the liveness choreography (same selector
+   set as the reduced-motion override above) and dim the columns; the amber
+   ⚠ "stale Ns" freshness badge in the header carries the label, so the
+   signal is never animation/color alone. */
+.nowrun--stale .nowrun__scan > i,
+.nowrun--stale .nowrun__eq i,
+.nowrun--stale .nowrun__dot,
+.nowrun--stale .nowrun__age {
+  animation: none;
+}
+.nowrun--stale .nowrun__grid {
+  opacity: 0.55;
+}
 .nowrun__grid {
   display: grid;
   grid-template-columns: 1fr 1fr 300px;

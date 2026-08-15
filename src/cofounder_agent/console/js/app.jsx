@@ -1820,9 +1820,15 @@ function App() {
               {/* SYSTEM PULSE band — In Production / Background / Just Happened,
                   fed by the /api/activity ledger (Phase 1). Truly-running work
                   comes from the ledger, so terminal tasks never read as "in
-                  flight" (the taskStatusKind over-mapping the mock band had). */}
+                  flight" (the taskStatusKind over-mapping the mock band had).
+                  fresh= carries the resource's stale flag: on a failed poll the
+                  band retains last-good rows (deliberate) but must dress them
+                  as stale — ages recompute from started_at each render, so a
+                  retained row otherwise keeps aging like live work (a finished
+                  run_taps job once sat in BACKGROUND for hours this way). */}
               <NowRunningBand
                 activity={activity}
+                fresh={activityR}
                 onOpenTask={(t) => open('task', t)}
               />
               {/* Live in live mode (kpis memo → PX.kpisFromLive); PX.kpis in mock. */}

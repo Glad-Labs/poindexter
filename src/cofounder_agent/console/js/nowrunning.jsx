@@ -11,9 +11,19 @@
    so terminal tasks (rejected / awaiting-gate) never read as "in flight"
    (the taskStatusKind over-mapping the mock band carried). Idle → honest
    empty, never a fabricated row (feedback_no_dummy_data).
+
+   `fresh` is the activity polled resource (app.jsx passes fresh={activityR}).
+   On a failed poll the resource retains last-good data — deliberately — but
+   the elapsed ages here are recomputed from started_at every render, so a
+   retained row keeps aging on screen exactly like live work. When the
+   resource goes stale the band therefore dresses down (nowrun--stale freezes
+   the liveness choreography + dims the columns) and the header carries the
+   amber "stale Ns" <Freshness> badge. Retained rows stay VISIBLE: a stale
+   label over real data is honest; swapping in a fabricated idle is not.
    ────────────────────────────────────────────────────────────── */
-function NowRunningBand({ activity, onOpenTask }) {
+function NowRunningBand({ activity, fresh, onOpenTask }) {
   const m = window.PX.mapActivity(activity || {}, Date.now());
+  const f = window.PX.mapPulseFreshness(fresh);
   const fmtAge = (s) =>
     s == null ? '' : s < 90 ? `${s}s` : `${Math.round(s / 60)}m`;
   const glyph = { ok: '✓', fail: '✕', stale: '⚠' };
@@ -25,7 +35,7 @@ function NowRunningBand({ activity, onOpenTask }) {
     whiteSpace: 'nowrap',
   };
   return (
-    <section className="nowrun" aria-label="System pulse">
+    <section className={f.bandClass} aria-label="System pulse">
       <div className="nowrun__scan">
         <i />
       </div>
@@ -36,6 +46,9 @@ function NowRunningBand({ activity, onOpenTask }) {
           {m.inProduction.length} in production · {m.background.length}{' '}
           background · {m.trail.length} recent
         </span>
+        {f.showBadge && (
+          <Freshness lastUpdatedAt={f.lastUpdatedAt} stale={f.stale} />
+        )}
         <span className="nowrun__eq" aria-hidden="true">
           <i />
           <i />

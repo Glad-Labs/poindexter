@@ -10,7 +10,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mapActivity } = require('../activity.js');
+const { mapActivity, mapPulseFreshness } = require('../activity.js');
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
 const iso = (msAgo) => new Date(NOW - msAgo).toISOString();
@@ -60,4 +60,67 @@ test('trail carries duration_ms as durationMs', () => {
     NOW
   );
   assert.equal(m.trail[0].durationMs, 8200);
+});
+
+// ── mapPulseFreshness — the band's stale dressing ──────────────────────────
+// WHY: the polled resource retains last-good data on error (deliberate), and
+// elapsedS above recomputes ages from started_at every render — so a retained
+// row keeps aging on screen. Observed 2026-08-15: a finished run_taps job sat
+// in BACKGROUND for hours, aging, while /api/activity served empty to live
+// pollers, because app.jsx dropped the resource's stale flag at the band
+// boundary. These pin the presentation contract that closes the gap.
+
+test('mapPulseFreshness: stale resource flags the band and keeps the badge', () => {
+  const f = mapPulseFreshness({ stale: true, lastUpdatedAt: NOW - 42000 });
+  assert.equal(f.stale, true);
+  assert.equal(f.bandClass, 'nowrun nowrun--stale');
+  assert.equal(f.showBadge, true);
+  assert.equal(f.lastUpdatedAt, NOW - 42000);
+});
+
+test('mapPulseFreshness: fresh resource renders the plain band', () => {
+  const f = mapPulseFreshness({ stale: false, lastUpdatedAt: NOW });
+  assert.equal(f.stale, false);
+  assert.equal(f.bandClass, 'nowrun');
+  assert.equal(f.showBadge, true);
+});
+
+test('mapPulseFreshness: null-safe when no resource is passed (no badge, not stale)', () => {
+  for (const fresh of [undefined, null]) {
+    const f = mapPulseFreshness(fresh);
+    assert.equal(f.stale, false);
+    assert.equal(f.bandClass, 'nowrun');
+    assert.equal(f.showBadge, false);
+    assert.equal(f.lastUpdatedAt, null);
+  }
+});
+
+test('mapPulseFreshness: never-loaded resource is stale with a null timestamp', () => {
+  const f = mapPulseFreshness({ stale: true, lastUpdatedAt: null });
+  assert.equal(f.stale, true);
+  assert.equal(f.lastUpdatedAt, null); // Freshness renders "stale —"
+});
+
+test('staleness is presentation-only: retained rows still map, never swapped for idle', () => {
+  // The incident payload: one retained background job, hours old.
+  const retained = {
+    running: [
+      {
+        kind: 'job',
+        ref_id: 'run_taps',
+        title: 'run_taps',
+        started_at: iso(3 * 3600 * 1000),
+      },
+    ],
+    recent: [],
+    summary: { running_by_kind: { job: 1 } },
+  };
+  const m = mapActivity(retained, NOW);
+  const f = mapPulseFreshness({ stale: true, lastUpdatedAt: NOW - 600000 });
+  // Rows survive (honest retained data, feedback_no_dummy_data)…
+  assert.equal(m.background.length, 1);
+  assert.equal(m.background[0].elapsedS, 3 * 3600);
+  // …but the band is dressed stale so they can't read as live work.
+  assert.equal(f.stale, true);
+  assert.match(f.bandClass, /nowrun--stale/);
 });
