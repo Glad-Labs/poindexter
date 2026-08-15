@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## [0.123.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.122.0...v0.123.0) (2026-08-15)
+
+
+### Features
+
+* **auto-publish:** veto-window fire mode — stage + schedule + ping, veto-to-stop ([#3215](https://github.com/Glad-Labs/glad-labs-stack/issues/3215)) ([069c29a](https://github.com/Glad-Labs/glad-labs-stack/commit/069c29a35994baee273f63985dbe47b1f7fbee9f))
+* **content:** compare titles against our own corpus, not just the web ([#3213](https://github.com/Glad-Labs/glad-labs-stack/issues/3213)) ([16366cb](https://github.com/Glad-Labs/glad-labs-stack/commit/16366cb84cf2b33311678ca162dc53c8d2e559ef))
+* **pro:** pay→deliver chain — LS subscription poll → GitHub collaborator sync ([#3216](https://github.com/Glad-Labs/glad-labs-stack/issues/3216)) ([#3218](https://github.com/Glad-Labs/glad-labs-stack/issues/3218)) ([b48d7a2](https://github.com/Glad-Labs/glad-labs-stack/commit/b48d7a2f0ac95253d60077bd5f85bb56095ac8ef))
+* **pro:** pro-freshness ops session — weekly deliverable rebuild from the live system ([#3221](https://github.com/Glad-Labs/glad-labs-stack/issues/3221)) ([1a50a62](https://github.com/Glad-Labs/glad-labs-stack/commit/1a50a628cbb9692ad647266210084dc2a88b150f))
+* **video:** comfyui provider — Wan 2.2 14B heroes behind the generative seam ([#3226](https://github.com/Glad-Labs/glad-labs-stack/issues/3226)) ([1d2786a](https://github.com/Glad-Labs/glad-labs-stack/commit/1d2786a8836732e54c535b2094e3622c98bb8ef7))
+
+
+### Bug Fixes
+
+* **brain:** degraded ≠ down — stop restarting a busy worker; gate heals on consecutive failures ([#3219](https://github.com/Glad-Labs/glad-labs-stack/issues/3219)) ([b6ee470](https://github.com/Glad-Labs/glad-labs-stack/commit/b6ee470b58c15ae4538e32e30d60e057c7d26cc7))
+* **console:** dress the pulse band stale when its activity poll dies ([#3222](https://github.com/Glad-Labs/glad-labs-stack/issues/3222)) ([9bf5d8f](https://github.com/Glad-Labs/glad-labs-stack/commit/9bf5d8fdddfad3f09f7bb991cef46ed046d12405))
+* **findings:** key the cooldown on (kind, source) — one job must not mute another ([#3208](https://github.com/Glad-Labs/glad-labs-stack/issues/3208)) ([bd9296a](https://github.com/Glad-Labs/glad-labs-stack/commit/bd9296a91265168be46a119a01f38c07560276f8))
+* **image:** retry the featured render that could never retry; stop feeding SDXL its own brief ([#3227](https://github.com/Glad-Labs/glad-labs-stack/issues/3227)) ([62e11ef](https://github.com/Glad-Labs/glad-labs-stack/commit/62e11efdb59e1062b62b711e5df1e31da0ed5de8))
+* **media:** defer on TTS outage, page on narration streaks, backfill empty video scripts ([#3224](https://github.com/Glad-Labs/glad-labs-stack/issues/3224)) ([09f639d](https://github.com/Glad-Labs/glad-labs-stack/commit/09f639d7f891266d87c7a8b663ace5bb68d69636))
+* **ops:** retry transient git fetch in run-session.sh + log setup failures ([#3228](https://github.com/Glad-Labs/glad-labs-stack/issues/3228)) ([58f1c7c](https://github.com/Glad-Labs/glad-labs-stack/commit/58f1c7ccfebea7fd2e1e0879bf6d1c5efd9a9e9a))
+* **publish:** ship the title the pipeline chose, not the draft's heading ([#3217](https://github.com/Glad-Labs/glad-labs-stack/issues/3217)) ([072a0f5](https://github.com/Glad-Labs/glad-labs-stack/commit/072a0f5cbc34fc05e64f99835bb98b5507074c39))
+* **qa:** seed judge-call timeout defaults — gate rails were rejecting at 60s ([#3214](https://github.com/Glad-Labs/glad-labs-stack/issues/3214)) ([8ad71b1](https://github.com/Glad-Labs/glad-labs-stack/commit/8ad71b16607b4e38eceed36f0c2f7c12d2f5a1a2))
+* **security:** bump nanoid 3.3.17 → 3.3.18 for CVE-2026-67213 ([#3225](https://github.com/Glad-Labs/glad-labs-stack/issues/3225)) ([b14e204](https://github.com/Glad-Labs/glad-labs-stack/commit/b14e2044c5c888452fc54f8b4a8f2f320f6e2c82))
+* **taps:** bound hung tap handlers + forbid RunTapsJob overlap ([#3223](https://github.com/Glad-Labs/glad-labs-stack/issues/3223)) ([408c9ed](https://github.com/Glad-Labs/glad-labs-stack/commit/408c9edf68189be2a8b8c1939d99257b5eb3247e))
+* **taps:** per-tap failure findings + stop counting GPU deferrals as failures ([#3229](https://github.com/Glad-Labs/glad-labs-stack/issues/3229)) ([ed150d3](https://github.com/Glad-Labs/glad-labs-stack/commit/ed150d3a2a49029d30365afaafed4bbdd4ffe81a))
+* **video:** comfyui default URL — compose service DNS, not host.docker.internal ([#3233](https://github.com/Glad-Labs/glad-labs-stack/issues/3233)) ([6e4d958](https://github.com/Glad-Labs/glad-labs-stack/commit/6e4d95848689a235786a2fb4e16ee1869e73a1f4))
+
 ## [0.122.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.121.0...v0.122.0) (2026-08-14)
 
 
