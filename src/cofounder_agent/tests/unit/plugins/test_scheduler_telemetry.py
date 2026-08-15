@@ -222,13 +222,14 @@ def test_get_stats_returns_safe_defaults_before_any_jobs_fire():
 
     stats = scheduler.get_stats()
 
-    # All seven contract keys present.
+    # All eight contract keys present.
     assert set(stats.keys()) == {
         "is_running",
         "registered_job_count",
         "jobs_run",
         "jobs_succeeded",
         "jobs_failed",
+        "jobs_overlap_skipped",
         "last_tick_epoch",
         "next_run_epoch",
     }
@@ -238,6 +239,7 @@ def test_get_stats_returns_safe_defaults_before_any_jobs_fire():
     assert stats["jobs_run"] == 0
     assert stats["jobs_succeeded"] == 0
     assert stats["jobs_failed"] == 0
+    assert stats["jobs_overlap_skipped"] == 0
     assert stats["last_tick_epoch"] is None
     assert stats["next_run_epoch"] is None
 

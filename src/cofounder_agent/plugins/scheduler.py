@@ -42,6 +42,7 @@ from services import live_activity
 # Mirrors the pipecat-gating pattern in voice_agent_claude_code.py. Constructing
 # PluginScheduler without apscheduler fails loud in __init__ (below).
 try:
+    from apscheduler.events import EVENT_JOB_MAX_INSTANCES
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
@@ -49,6 +50,7 @@ try:
     _APSCHEDULER_IMPORT_ERROR: ImportError | None = None
 except ImportError as _exc:  # noqa: BLE001
     AsyncIOScheduler = CronTrigger = IntervalTrigger = None  # type: ignore[assignment,misc]
+    EVENT_JOB_MAX_INSTANCES = 0  # type: ignore[assignment]
     _APSCHEDULER_IMPORT_ERROR = _exc
 
 from .config import PluginConfig
@@ -160,7 +162,16 @@ class PluginScheduler:
         self._jobs_run: int = 0
         self._jobs_succeeded: int = 0
         self._jobs_failed: int = 0
+        self._jobs_overlap_skipped: int = 0
         self._last_tick_epoch: float | None = None
+        # Overlap skips must be LOUD (2026-08-15: taps overlapped for 80 min
+        # with only apscheduler's own quiet warning). apscheduler fires
+        # EVENT_JOB_MAX_INSTANCES when a due job is skipped because its
+        # previous run is still in flight; route it through our logging +
+        # findings so the operator hears about a job outrunning its interval.
+        self._scheduler.add_listener(
+            self._on_job_max_instances, EVENT_JOB_MAX_INSTANCES
+        )
         # Per-job last-failure-notify timestamps for the direct-notify
         # (circular-safe) escalation path's cooldown. See _escalate_job_failure.
         self._last_failure_notify: dict[str, datetime] = {}
@@ -311,6 +322,9 @@ class PluginScheduler:
             name=job.name,
             replace_existing=True,
             coalesce=True,
+            # Overlap policy: idempotent=False jobs never run concurrently
+            # (a skipped fire surfaces via _on_job_max_instances). A skip is
+            # not a retry — the dropped fire waits for the next tick.
             max_instances=1 if not getattr(job, "idempotent", False) else 3,
             # APScheduler default misfire_grace_time=1 silently drops a
             # ``next_run_time`` fire that lands >1s in the past — which
@@ -468,6 +482,8 @@ class PluginScheduler:
                 ``jobs_run`` — total fires since last restart
                 ``jobs_succeeded`` — fires that returned ok=True
                 ``jobs_failed`` — fires that raised or returned ok=False
+                ``jobs_overlap_skipped`` — due fires skipped because the
+                    previous run was still in flight (max_instances)
                 ``last_tick_epoch`` — Unix epoch (float) of the most
                     recent fire, or None if the scheduler hasn't fired
                 ``next_run_epoch`` — Unix epoch (float) of the next
@@ -498,6 +514,7 @@ class PluginScheduler:
             "jobs_run": self._jobs_run,
             "jobs_succeeded": self._jobs_succeeded,
             "jobs_failed": self._jobs_failed,
+            "jobs_overlap_skipped": self._jobs_overlap_skipped,
             "last_tick_epoch": self._last_tick_epoch,
             "next_run_epoch": next_run_epoch,
         }
@@ -605,6 +622,59 @@ class PluginScheduler:
         (they never populate the dict).
         """
         self._consecutive_circular_failures.pop(job_name, None)
+
+    def _on_job_max_instances(self, event: Any) -> None:
+        """A due fire was SKIPPED because the previous run is still in flight.
+
+        apscheduler handles this with a single quiet warning in its own logger
+        namespace — which is how the 2026-08-15 tap overlap went unnoticed (an
+        hourly job wedged for 80 minutes and the next fire piled on; with
+        ``max_instances=1`` it would instead have skipped, silently). A skip
+        means a job is running longer than its interval, which is always worth
+        surfacing: warn in OUR logger, count it for ``get_stats``, and emit a
+        deduped ``job_overlap_skipped`` finding (severity warn, so it routes)
+        gated by ``scheduler_alert_on_job_overlap`` (default on).
+
+        Sync + best-effort: listeners run inside apscheduler's dispatch, so
+        this must never raise or block.
+        """
+        job_name = getattr(event, "job_id", None) or "<unknown>"
+        self._jobs_overlap_skipped += 1
+        logger.warning(
+            "scheduler: job %r fire skipped — previous run still in progress "
+            "(the job is running longer than its interval; next tick will "
+            "catch up)",
+            job_name,
+        )
+        try:
+            enabled = True
+            if self._site_config is not None:
+                enabled = self._site_config.get_bool(
+                    "scheduler_alert_on_job_overlap", True
+                )
+            if not enabled:
+                return
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source=f"scheduler.{job_name}",
+                kind="job_overlap_skipped",
+                title=f"scheduled job '{job_name}' fire skipped — still running",
+                body=(
+                    f"A scheduled fire of {job_name!r} was skipped because the "
+                    "previous run had not finished (max_instances=1). The job "
+                    "is outrunning its interval — likely wedged on a hung "
+                    "downstream call. The skipped fire is dropped; the next "
+                    "tick runs normally once the in-flight run completes."
+                ),
+                severity="warn",
+                dedup_key=f"job-overlap:{job_name}",
+            )
+        except Exception as e:  # noqa: BLE001 — listener must never crash dispatch
+            logger.error(
+                "scheduler: failed to escalate overlap-skip for %r: %s",
+                job_name, e,
+            )
 
     async def _record_last_run(self, name: str, ok: bool) -> None:
         """Stamp ``job_run_state`` with this job's last-run time + status.

@@ -13,6 +13,15 @@ every 1 hour``, so hourly is the right floor; slower taps (e.g.
 ``knowledge: every 12 hours``) get woken more often than their row
 asks, which is harmless because the handlers are idempotent.
 
+Idempotent *sequentially* — NOT overlap-safe, hence ``idempotent =
+False`` (the scheduler maps that to apscheduler ``max_instances=1``, so
+a fire whose predecessor is still in flight is skipped, loudly, via the
+``EVENT_JOB_MAX_INSTANCES`` listener in plugins/scheduler.py). The
+2026-08-15 incident is why: the 02:06 walk hung for 80 minutes on two
+wedged internal_rag handlers, the 03:06 fire started anyway, and two
+full tap walks ran concurrently — doubling LLM/embedding load on a GPU
+that was already OOM. One walk at a time; the next tick catches up.
+
 A future refinement would respect each tap's per-row ``schedule`` +
 ``last_run_at`` and skip not-yet-due rows inside ``run_all`` — see
 ``deletion-candidates.md`` follow-up.
@@ -32,7 +41,9 @@ class RunTapsJob:
     name = "run_taps"
     description = "Walk enabled external_taps rows and invoke each handler"
     schedule = "every 1 hour"
-    idempotent = True
+    # Overlap guard (2026-08-15 incident — see module docstring): re-running
+    # is safe, running CONCURRENTLY is not. False → max_instances=1.
+    idempotent = False
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         from services.integrations import tap_runner

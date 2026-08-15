@@ -7,6 +7,7 @@ counters recorded on the row.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -16,6 +17,17 @@ from typing import Any
 from services.integrations import registry
 
 logger = logging.getLogger(__name__)
+
+# Per-handler wall-clock budget (seconds); DB-tunable via
+# app_settings.tap_handler_timeout_seconds. NOT the same knob as
+# ``tap_run_timeout_seconds``, which bounds the *embedding* taps in
+# services/taps/runner.py — this one bounds the external_taps handlers
+# dispatched below. Generous: a full walk of every tap is normally 3–9
+# minutes, so 10 minutes for ONE handler catches an infinite hang (the
+# 2026-08-15 incident: two internal_rag handlers wedged on LiteLLM→Ollama
+# embedding calls held the hourly run for 80 minutes) without clipping a
+# legitimately slow tap.
+_DEFAULT_HANDLER_TIMEOUT_S = 600
 
 
 @dataclass
@@ -46,16 +58,33 @@ async def run_all(
     *,
     site_config: Any = None,
     only_names: list[str] | None = None,
+    handler_timeout_s: float | None = None,
 ) -> RunSummary:
     """Execute every enabled tap once.
 
     Args:
         pool: asyncpg pool.
-        site_config: passed through to handlers for credential resolution.
+        site_config: passed through to handlers for credential resolution
+            (and consulted for ``tap_handler_timeout_seconds``).
         only_names: restrict to specific tap names.
+        handler_timeout_s: per-handler wall-clock budget. ``None`` (the
+            default) resolves ``app_settings.tap_handler_timeout_seconds``
+            off ``site_config``; ``<= 0`` disables the bound. A handler
+            that exceeds it is cancelled and recorded as that tap's
+            failure — the walk continues to the next row, same per-row
+            isolation as any other handler exception.
 
     Returns a :class:`RunSummary` describing per-tap outcomes.
     """
+    if handler_timeout_s is None:
+        handler_timeout_s = float(_DEFAULT_HANDLER_TIMEOUT_S)
+        if site_config is not None:
+            handler_timeout_s = float(
+                site_config.get_int(
+                    "tap_handler_timeout_seconds", _DEFAULT_HANDLER_TIMEOUT_S
+                )
+            )
+
     rows = await _load_enabled_taps(pool, only_names)
     results: list[TapResult] = []
     total_records = total_failed = 0
@@ -64,7 +93,7 @@ async def run_all(
         name = row["name"]
         start = time.perf_counter()
         try:
-            result = await registry.dispatch(
+            dispatch = registry.dispatch(
                 "tap",
                 row["handler_name"],
                 None,
@@ -72,6 +101,10 @@ async def run_all(
                 row=dict(row),
                 pool=pool,
             )
+            if handler_timeout_s > 0:
+                result = await asyncio.wait_for(dispatch, timeout=handler_timeout_s)
+            else:
+                result = await dispatch
             duration_ms = int((time.perf_counter() - start) * 1000)
             records = int(result.get("records", 0)) if isinstance(result, dict) else 0
             total_records += records
@@ -83,6 +116,32 @@ async def run_all(
             )
             logger.info(
                 "[tap-runner] %s: records=%d (%dms)", name, records, duration_ms,
+            )
+        except asyncio.TimeoutError:
+            # Bound a wedged handler (2026-08-15: internal_rag taps blocked on
+            # LiteLLM→Ollama embedding calls after a CUDA OOM held the hourly
+            # run for 80 minutes) instead of letting it stall the whole walk.
+            # Recorded through the same _record_failure path as any handler
+            # exception — WITH a reason, since a bare TimeoutError stringifies
+            # to nothing (feedback_no_silent_defaults) — and the run continues
+            # to the next tap. wait_for can only cancel at an await point, but
+            # every real handler awaits HTTP/DB.
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            total_failed += 1
+            err = (
+                f"TimeoutError: handler exceeded {handler_timeout_s:g}s "
+                "(tap_handler_timeout_seconds) — cancelled"
+            )
+            await _record_failure(pool, row["id"], duration_ms, err)
+            results.append(
+                TapResult(
+                    name=name, ok=False, duration_ms=duration_ms, error=err,
+                )
+            )
+            logger.warning(
+                "[tap-runner] %s exceeded %ss handler timeout — cancelled to "
+                "keep the walk moving",
+                name, handler_timeout_s,
             )
         except Exception as exc:
             duration_ms = int((time.perf_counter() - start) * 1000)

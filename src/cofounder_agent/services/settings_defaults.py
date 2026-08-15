@@ -2447,6 +2447,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # genuinely persistent failure ~one interval later. 1 restores immediate
     # paging. Only affects the three jobs in scheduler._CIRCULAR_SAFE_JOBS.
     'scheduler_circular_job_page_threshold': '2',
+    # When a due fire is SKIPPED because the previous run is still in flight
+    # (max_instances=1 — jobs declaring idempotent=False, e.g. run_taps), emit
+    # a deduped `job_overlap_skipped` finding. A skip means the job is running
+    # longer than its interval — usually wedged on a hung downstream call
+    # (2026-08-15: two tap walks overlapped for 80 min with only apscheduler's
+    # quiet internal warning). The scheduler's own WARNING log fires
+    # regardless; this switch only gates the findings-pipeline escalation.
+    'scheduler_alert_on_job_overlap': 'true',
 
     # ----- Scheduler job-metrics sink (Glad-Labs/poindexter#853) -----
     # Persist every metrics-emitting job fire as an audit_log 'job_run' row
@@ -3058,6 +3066,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # freezing the whole hourly run. Generous — catches an infinite hang, not a
     # tight SLA (slowest real tap, claude_code_sessions, is ~50s and growing).
     'tap_run_timeout_seconds': '300',
+
+    # Per-HANDLER wall-clock budget (seconds) for the OTHER tap runner —
+    # services/integrations/tap_runner.py::run_all, which walks external_taps
+    # rows (RunTapsJob, hourly). Same idea as tap_run_timeout_seconds above,
+    # different subsystem. A handler that exceeds it is cancelled and recorded
+    # as that tap's failure; the walk continues (per-row isolation). 2026-08-15
+    # incident: two internal_rag handlers wedged on LiteLLM→Ollama embedding
+    # calls (CUDA OOM) held the hourly run for 80 minutes. A full walk of ALL
+    # taps is normally 3–9 min, so 600s for one handler is hang-detection
+    # headroom, not a tight SLA. 0 disables the bound.
+    'tap_handler_timeout_seconds': '600',
 
     # Documents the tap runner buffers before a batched chunk-0 dedup pre-fetch
     # (services/taps/runner.py). The dedup hash lookup runs one query per
@@ -4386,6 +4405,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'router_feedback_alpha': {'owner': 'router_outcome_feedback', 'value_type': 'float'},
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
+    'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_circular_job_page_threshold': {'owner': 'scheduler', 'value_type': 'integer'},
     'scheduler_job_metrics_capture_enabled': {'owner': 'scheduler', 'value_type': 'boolean'},
     'self_consistency_enabled': {'value_type': 'boolean'},
@@ -4440,6 +4460,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'storage_image_max_width': {'owner': 'r2_upload_service', 'value_type': 'integer'},
     'tap_chunk_max_chars': {'owner': 'runner', 'value_type': 'integer'},
     'tap_dedup_batch_size': {'owner': 'runner', 'value_type': 'integer'},
+    'tap_handler_timeout_seconds': {'owner': 'tap_runner', 'value_type': 'integer'},
     'tap_run_timeout_seconds': {'owner': 'runner', 'value_type': 'integer'},
     'tap_interval_enforcement_enabled': {'owner': 'runner', 'value_type': 'boolean'},
     'tap_interval_grace_seconds': {'owner': 'runner', 'value_type': 'integer'},
