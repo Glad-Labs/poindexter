@@ -51,19 +51,19 @@ quality class, so it is the provider's default regime.
 
 ## Settings (all `app_settings`)
 
-| Key                                                                           | Default                            | Meaning                                                                                          |
-| ----------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `video_generative_provider`                                                   | `wan21`                            | Animator: `wan21` or `comfyui`                                                                   |
-| `video_comfyui_server_url`                                                    | `http://host.docker.internal:8188` | Sidecar URL                                                                                      |
-| `video_comfyui_steps` / `video_comfyui_cfg`                                   | `4` / `1.0`                        | Sampler regime (lightx2v 4-step). Quality tier: `20` / `3.5` + LoRA off                          |
-| `video_comfyui_use_lightning_lora`                                            | `true`                             | Wire the distill LoRAs                                                                           |
-| `video_comfyui_shift`                                                         | `5.0`                              | ModelSamplingSD3 (official 14B i2v template value)                                               |
-| `video_comfyui_length_frames` / `video_comfyui_fps`                           | `81` / `16`                        | Model-native ~5s profile (caller fps ignored — compositor conforms/loops)                        |
-| `video_comfyui_negative_prompt`                                               | canonical Wan negative (Chinese)   | Model-native negative                                                                            |
-| `video_comfyui_{high,low}_model`, `_text_encoder`, `_vae`, `_lora_{high,low}` | repackaged filenames               | Weight swaps are settings-only                                                                   |
-| `video_comfyui_timeout_s`                                                     | `900`                              | End-to-end render budget (20-step 960×544 measured 644s)                                         |
-| `video_comfyui_ready_wait_s`                                                  | `90`                               | Cold-boot wait before first submit                                                               |
-| `video_comfyui_workflow_override_json`                                        | `''`                               | Full graph swap: API-format JSON with `__PROMPT__`/`__WIDTH__`/… placeholders, substituted typed |
+| Key                                                                           | Default                          | Meaning                                                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `video_generative_provider`                                                   | `wan21`                          | Animator: `wan21` or `comfyui`                                                                   |
+| `video_comfyui_server_url`                                                    | `http://comfyui:8188`            | Sidecar URL                                                                                      |
+| `video_comfyui_steps` / `video_comfyui_cfg`                                   | `4` / `1.0`                      | Sampler regime (lightx2v 4-step). Quality tier: `20` / `3.5` + LoRA off                          |
+| `video_comfyui_use_lightning_lora`                                            | `true`                           | Wire the distill LoRAs                                                                           |
+| `video_comfyui_shift`                                                         | `5.0`                            | ModelSamplingSD3 (official 14B i2v template value)                                               |
+| `video_comfyui_length_frames` / `video_comfyui_fps`                           | `81` / `16`                      | Model-native ~5s profile (caller fps ignored — compositor conforms/loops)                        |
+| `video_comfyui_negative_prompt`                                               | canonical Wan negative (Chinese) | Model-native negative                                                                            |
+| `video_comfyui_{high,low}_model`, `_text_encoder`, `_vae`, `_lora_{high,low}` | repackaged filenames             | Weight swaps are settings-only                                                                   |
+| `video_comfyui_timeout_s`                                                     | `900`                            | End-to-end render budget (20-step 960×544 measured 644s)                                         |
+| `video_comfyui_ready_wait_s`                                                  | `90`                             | Cold-boot wait before first submit                                                               |
+| `video_comfyui_workflow_override_json`                                        | `''`                             | Full graph swap: API-format JSON with `__PROMPT__`/`__WIDTH__`/… placeholders, substituted typed |
 
 ## Operator runbook (enable on a host)
 

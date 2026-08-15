@@ -34,7 +34,9 @@ reads it per clip, so flipping providers is a settings change, no deploy.
 
 Config (all in app_settings; per-call ``config`` overrides win where noted):
 
-- ``video_comfyui_server_url`` (default ``http://host.docker.internal:8188``)
+- ``video_comfyui_server_url`` (default ``http://comfyui:8188`` — compose
+  service DNS; the sidecar's host publish is loopback-only, so the
+  host-gateway route the other sidecars use cannot reach it)
 - ``video_comfyui_steps`` / ``video_comfyui_cfg`` — sampler regime. Defaults
   ``4`` / ``1.0`` = the lightx2v 4-step distill configuration (requires the
   LoRAs, below). The full-quality regime is ``20`` / ``3.5`` with
@@ -86,7 +88,10 @@ from plugins.video_provider import VideoResult
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_SERVER_URL = "http://host.docker.internal:8188"
+# Compose-network service DNS. The sidecar binds its host publish to
+# 127.0.0.1 only, which host.docker.internal (the host-gateway IP) cannot
+# reach — a worker-side probe caught exactly that before first flip.
+_DEFAULT_SERVER_URL = "http://comfyui:8188"
 
 # 14B-native output profile (~5s @ 16fps). The lightx2v 4-step regime is the
 # default because the spike measured it at ~123s/clip on a 5090 — inside the

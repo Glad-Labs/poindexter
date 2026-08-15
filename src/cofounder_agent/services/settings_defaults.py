@@ -492,7 +492,11 @@ DEFAULTS: dict[str, str] = {
     # Default stays wan21 so a fresh install works without the extra
     # sidecar + ~38GB of weights; flipping is a settings change, no deploy.
     'video_generative_provider': 'wan21',
-    'video_comfyui_server_url': 'http://host.docker.internal:8188',
+    # Compose-network service DNS, NOT host.docker.internal: the sidecar
+    # publishes on 127.0.0.1 only (unauthenticated API stays off the LAN),
+    # and a loopback publish is unreachable via the host-gateway route —
+    # the worker reaches it through the shared compose network instead.
+    'video_comfyui_server_url': 'http://comfyui:8188',
     # Sampler regime. Defaults = the lightx2v 4-step distill configuration
     # (steps 4 / cfg 1.0, requires the two LoRA files). Full-quality tier:
     # steps 20 / cfg 3.5 / video_comfyui_use_lightning_lora=false — ~4x the
