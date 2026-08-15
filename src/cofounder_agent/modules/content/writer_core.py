@@ -356,7 +356,7 @@ class GenerateContentStage:
                     title_v2, site_config=context.get("site_config"),  # type: ignore[arg-type]
                     pool=pool, exclude_task_id=str(task_id) if task_id else None,
                 )
-                # Rank on BOTH axes (poindexter#1044). The old comparison read
+                # Rank on BOTH axes (stack#3213). The old comparison read
                 # max_similarity — an EXTERNAL-only field — so a v2 that fixed
                 # an internal duplicate but scored the same against the web was
                 # discarded as "not more unique".

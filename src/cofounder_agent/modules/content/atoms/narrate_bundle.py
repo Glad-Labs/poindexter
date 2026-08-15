@@ -614,7 +614,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         site_name=(site_config.get("site_name") if site_config else "") or "",
         site_url=(site_config.get("site_url") if site_config else "") or "",
     )
-    # Title-variety guidance (poindexter#1043). dev_diary titles the post from
+    # Title-variety guidance (stack#3209). dev_diary titles the post from
     # the TITLE: line below and never runs content.generate_title, so before
     # this it had NO avoidance mechanism of any kind — and it is the larger
     # half of published output. Measured over 120 days: 36% of dev_diary

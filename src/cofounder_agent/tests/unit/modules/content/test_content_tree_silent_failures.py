@@ -274,7 +274,7 @@ class TestAtomSideTwinsOfWriterCoreGaps:
 
         The atom-local ``_fetch_existing_titles`` copy this used to target was
         consolidated into ``services.title_avoidance.fetch_recent_titles``
-        (poindexter#1043) — one lookup now serving all three title paths. The
+        (stack#3209) — one lookup now serving all three title paths. The
         de-silencing contract is what matters and it moves with it.
         """
         from services.title_avoidance import fetch_recent_titles

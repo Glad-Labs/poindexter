@@ -624,7 +624,7 @@ async def generate_canonical_title(
       every in-graph caller uses: it describes the *habits* of the recent
       corpus rather than listing its titles, because listing twenty titles
       that are themselves half ``"The …"`` primes the very pattern the
-      instruction is trying to suppress (poindexter#1043).
+      instruction is trying to suppress (stack#3209).
     - ``existing_titles`` — the legacy newline-joined ``"- Title"`` dump,
       wrapped in the pre-2026-08 framing. Retained so external/bootstrap
       callers keep working; ignored when ``avoidance_block`` is supplied.
@@ -821,7 +821,7 @@ def originality_rank(report: dict) -> tuple[int, float]:
     Why a tuple and not ``max_similarity``: that field is EXTERNAL-only, so
     comparing it alone silently discards a v2 that fixed an internal
     duplicate while scoring identically against the web — the exact case
-    poindexter#1044 exists to catch. Clearing a collision axis outranks any
+    stack#3213 exists to catch. Clearing a collision axis outranks any
     similarity delta; the float only breaks ties.
     """
     axes = 0
@@ -857,7 +857,7 @@ async def check_title_originality(
             "external_penalty": int,     # points to subtract from QA score
             "external_matches": list[dict],  # [{"title": str, "url": str}, ...]
             "external_fail_open": bool,  # true if the external check couldn't run
-            # poindexter#1044 additions (internal corpus):
+            # stack#3213 additions (internal corpus):
             "internal_similarity": float,      # 0.0..1.0 vs our own titles
             "internal_matches": list[str],     # our titles at/above threshold
             "internal_duplicate": bool,
@@ -918,7 +918,7 @@ async def check_title_originality(
         "internal_threshold": 0.0,
     }
 
-    # --- Internal corpus (poindexter#1044) --------------------------------
+    # --- Internal corpus (stack#3213) --------------------------------
     # Runs BEFORE the external gate and is NOT governed by
     # ``qa_title_originality_enabled``: the two axes answer different
     # questions and each owns its own switch. Folding it into the external

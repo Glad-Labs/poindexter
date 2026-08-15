@@ -26,7 +26,7 @@ Everything is DB-tunable (``title_avoidance_*`` in ``app_settings``), including
 an escape hatch back to the legacy raw-dump behaviour via
 ``title_avoidance_mode='titles'``.
 
-Issue: Glad-Labs/poindexter#1043.
+Issue: Glad-Labs/stack#3209.
 """
 
 from __future__ import annotations
@@ -476,7 +476,7 @@ async def build_avoidance_block_for_pool(
 
 
 # ---------------------------------------------------------------------------
-# Internal-corpus similarity (poindexter#1044)
+# Internal-corpus similarity (stack#3213)
 # ---------------------------------------------------------------------------
 #
 # ``check_title_originality`` reads like an internal-diversity gate and is not:

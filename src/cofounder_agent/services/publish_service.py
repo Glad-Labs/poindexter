@@ -82,30 +82,125 @@ def build_post_slug(title: str, task_id: str) -> str:
     return f"{base or 'post'}-{task_id[:8]}"
 
 
+#: ``publish_title_source`` values. ``canonical`` (default) honours the
+#: pipeline's own title decision; ``body_heading`` restores the pre-2026-08-15
+#: behaviour where the draft's leading markdown heading won.
+_TITLE_SOURCE_CANONICAL = "canonical"
+_TITLE_SOURCE_BODY_HEADING = "body_heading"
+
+
+def choose_publish_title(
+    canonical_title: str | None,
+    body_heading: str | None,
+    topic: str | None,
+) -> str:
+    """Pick the published title from the three candidates, best first.
+
+    Order is ``canonical_title`` → ``body_heading`` → ``topic``, with one
+    refinement: a candidate that merely **echoes the topic** is skipped in
+    favour of the next real one. The topic is the internal assignment label
+    ("The Brand Guide as Fact-Checker"), so shipping it is the failure the
+    writer/title prompts already guard against — 25 of 101 canonical_blog
+    posts (24.8%) had published under their own topic verbatim.
+
+    Why canonical first (this INVERTED on 2026-08-15): ``content.generate_title``
+    already runs the full decision — LLM title, else the draft's H1, else the
+    topic (``choose_canonical_title``) — plus the variety block and the
+    internal-duplicate check, and persists the winner to
+    ``pipeline_versions.title``. Preferring the body heading here silently
+    discarded that decision for **72 of 101** canonical_blog posts (71.3%),
+    which is why every published title looked like the writer's H1 and why
+    the title-variety + duplicate machinery appeared to do nothing: it
+    governed a string that never shipped.
+    """
+    canonical = (canonical_title or "").strip()
+    heading = (body_heading or "").strip()
+    topic_text = (topic or "").strip()
+    topic_key = topic_text.casefold()
+
+    def _echoes_topic(value: str) -> bool:
+        return bool(topic_key) and value.casefold() == topic_key
+
+    for candidate in (canonical, heading):
+        if candidate and not _echoes_topic(candidate):
+            return candidate
+    # Everything left echoes the topic (or is empty) — keep the old order so a
+    # post still gets *a* title rather than none.
+    return canonical or heading or topic_text
+
+
+def resolve_canonical_title(
+    task: dict[str, Any] | None, merged: dict[str, Any] | None,
+) -> str:
+    """The canonical title for a task, preferring the column over stage_data.
+
+    ``task["title"]`` is ``pipeline_versions.title`` (via the ``content_tasks``
+    view) — what ``content.generate_title`` persists. ``merged["title"]`` is
+    the ``stage_data`` JSON copy, which is **absent for 91 of 101** finished
+    canonical_blog tasks (90%). Reading only ``merged`` meant the canonical
+    title was almost never even a candidate at publish time, so inverting the
+    precedence alone would have fixed nothing.
+    """
+    for source in (task, merged):
+        value = ((source or {}).get("title") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def derive_publish_identity(
     draft_content: str,
-    fallback_title: str,
-    topic: str,
-    task_id: str,
+    canonical_title: str = "",
+    topic: str = "",
+    task_id: str = "",
+    *,
+    fallback_title: str | None = None,
+    site_config: Any = None,
 ) -> tuple[str, str | None, str]:
     """Single source of truth for the publish-time ``(title, content, slug)``.
 
-    ``publish_post_from_task`` derives the live slug through this exact
-    chain (H1 extracted from content → merged title → topic, sanitized,
-    then ``build_post_slug``). The ``social.generate_drafts`` atom calls
-    the same function at pipeline time — the posts row doesn't exist yet
-    (posts are created on approve) — so the URL baked into social copy
-    matches the slug the post later publishes under. If the two ever
-    drift (e.g. the title is edited between persist and publish),
-    ``SocialDraftsService.approve_draft`` repairs the URL against the
-    live posts row before anything reaches Postiz.
+    ``publish_post_from_task`` derives the live slug through this exact chain
+    (canonical title → draft heading → topic, sanitized, then
+    ``build_post_slug``). The ``social.generate_drafts`` atom calls the same
+    function at pipeline time — the posts row doesn't exist yet (posts are
+    created on approve) — so the URL baked into social copy matches the slug
+    the post later publishes under. If the two ever drift (e.g. the title is
+    edited between persist and publish), ``SocialDraftsService.approve_draft``
+    repairs the URL against the live posts row before anything reaches Postiz.
+
+    The leading heading is stripped from the returned body either way — that
+    is what keeps the page from rendering the post title twice — so changing
+    which candidate WINS never changes the article text.
+
+    ``fallback_title`` is the pre-2026-08-15 name for ``canonical_title`` and
+    still works as a keyword; it was accurate when the value was only ever a
+    fallback. Operators can restore the old precedence with
+    ``app_settings.publish_title_source='body_heading'`` (needs *site_config*
+    to be passed; absent it, canonical wins).
     """
+    if fallback_title is not None:
+        canonical_title = fallback_title
+
     extracted_title, cleaned_content = extract_title_from_content(
         draft_content or ""
     )
-    post_title = sanitize_published_title(
-        extracted_title or fallback_title or topic
-    )
+
+    source = _TITLE_SOURCE_CANONICAL
+    if site_config is not None:
+        try:
+            source = (
+                site_config.get("publish_title_source", _TITLE_SOURCE_CANONICAL)
+                or _TITLE_SOURCE_CANONICAL
+            ).strip().lower()
+        except Exception:  # noqa: BLE001 — a settings read must not block publish
+            source = _TITLE_SOURCE_CANONICAL
+
+    if source == _TITLE_SOURCE_BODY_HEADING:
+        chosen = extracted_title or canonical_title or topic
+    else:
+        chosen = choose_publish_title(canonical_title, extracted_title, topic)
+
+    post_title = sanitize_published_title(chosen)
     return post_title, cleaned_content, build_post_slug(post_title, task_id)
 
 
@@ -1591,7 +1686,11 @@ async def publish_post_from_task(
     # time, so social-draft URLs can't drift from the published URL.
     # ---------------------------------------------------------------
     post_title, post_content, slug = derive_publish_identity(
-        draft_content, merged.get("title") or "", topic, task_id,
+        draft_content,
+        resolve_canonical_title(task, merged),
+        topic,
+        task_id,
+        site_config=_sc,
     )
 
     logger.info("[publish_service] Post title: %s", post_title)

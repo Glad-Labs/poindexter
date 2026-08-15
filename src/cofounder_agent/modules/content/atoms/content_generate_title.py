@@ -121,7 +121,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     )
     logger.info("Title generated: %s", title)
 
-    # Originality: the web AND our own corpus (poindexter#1044). ``pool``
+    # Originality: the web AND our own corpus (stack#3213). ``pool``
     # enables the internal check; ``exclude_task_id`` stops a re-run matching
     # the title it wrote last time.
     originality = await _check_title_originality(

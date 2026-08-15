@@ -435,7 +435,7 @@ async def test_avoidance_block_supersedes_legacy_existing_titles():
     The dump is retained only for external/bootstrap callers. When both are
     supplied the block must be the one that reaches the model — otherwise the
     pattern-based guidance silently reverts to the priming behaviour it
-    replaced (poindexter#1043).
+    replaced (stack#3209).
     """
     captured: dict[str, Any] = {}
     provider = MagicMock()

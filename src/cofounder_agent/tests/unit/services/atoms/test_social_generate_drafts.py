@@ -120,9 +120,9 @@ async def test_drafts_predict_publish_slug_when_post_slug_missing(
 
     state = {
         "task_id": "f3a71ef6-27a9-47db-ad3c-426d7fc35a2f",
-        "title": "Fallback Title",
+        "title": "Why Memory Bandwidth Beats Raw VRAM",
         "topic": "Some topic",
-        "content": "# Why VRAM Bandwidth Matters\n\nBody text here.",
+        "content": "# The Writer H1\n\nBody text here.",
         "post_slug": None,
         "database_service": SimpleNamespace(pool=object()),
         "site_config": enabled_site_config,
@@ -131,8 +131,21 @@ async def test_drafts_predict_publish_slug_when_post_slug_missing(
     await drafts_run(state)
 
     gen.assert_awaited_once()
-    # Same derivation as publish: extracted H1 → sanitize → slug + task_id[:8].
-    assert gen.await_args.kwargs["slug"] == "why-vram-bandwidth-matters-f3a71ef6"
+    # The invariant is "the predicted slug IS the publish slug", so assert it
+    # against derive_publish_identity itself rather than against a literal.
+    # Pinning a literal here is what made this test fail the 2026-08-15
+    # precedence inversion even though the two sides still agreed — the
+    # drift it exists to catch is between the atom and publish, not between
+    # the atom and a hardcoded string.
+    from services.publish_service import derive_publish_identity
+
+    _t, _c, expected_slug = derive_publish_identity(
+        state["content"], state["title"], state["topic"], state["task_id"],
+    )
+    assert gen.await_args.kwargs["slug"] == expected_slug
+    # ...and it must be a real slug, not the dead ``/posts/`` index URL.
+    assert gen.await_args.kwargs["slug"].endswith("-f3a71ef6")
+    assert gen.await_args.kwargs["slug"] != "-f3a71ef6"
 
 
 @pytest.mark.asyncio

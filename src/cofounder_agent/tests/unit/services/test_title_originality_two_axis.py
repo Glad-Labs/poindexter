@@ -1,4 +1,4 @@
-"""Two-axis title originality — web AND our own corpus (poindexter#1044).
+"""Two-axis title originality — web AND our own corpus (stack#3213).
 
 ``check_title_originality`` read like an internal-diversity gate and was not:
 it SequenceMatchered the candidate against DuckDuckGo results only. Nothing

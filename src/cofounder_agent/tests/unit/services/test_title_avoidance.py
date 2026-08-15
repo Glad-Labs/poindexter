@@ -1,4 +1,4 @@
-"""Tests for services.title_avoidance (poindexter#1043).
+"""Tests for services.title_avoidance (stack#3209).
 
 The behaviour under test exists because the previous mechanism — dumping the
 last 20 published titles into the prompt under an "AVOID SIMILARITY" banner —
@@ -447,7 +447,7 @@ class TestFetchRecentTitles:
 
 
 # ---------------------------------------------------------------------------
-# Internal-corpus similarity (poindexter#1044)
+# Internal-corpus similarity (stack#3213)
 # ---------------------------------------------------------------------------
 
 from services.title_avoidance import (  # noqa: E402

@@ -918,7 +918,7 @@ class TestResolveSystemPrompt:
 
 
 # ---------------------------------------------------------------------------
-# Title-variety guidance (poindexter#1043)
+# Title-variety guidance (stack#3209)
 # ---------------------------------------------------------------------------
 
 

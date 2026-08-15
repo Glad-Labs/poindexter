@@ -9,8 +9,14 @@ against the live corpus rather than guessed:
 2. **Duplicate detection** — compares the candidate against titles we have
    already published or queued, and routes a real collision back through the
    regeneration loop.
+3. **Publish precedence** — makes the title those two mechanisms produce the
+   one that actually ships. Until 2026-08-15 it usually wasn't: 71.3% of posts
+   published under the writer's body heading instead. Read
+   [Which title actually ships](#which-title-actually-ships-the-precedence-fix-2026-08-15)
+   first if you are wondering why a title change had no visible effect.
 
-Issues: Glad-Labs/poindexter#1043 (variety), #1044 (duplicate detection).
+Shipped in Glad-Labs/glad-labs-stack#3209 (variety guidance), #3213 (duplicate
+detection), #3217 (publish precedence).
 
 ## The measurement that motivated it
 
@@ -34,7 +40,7 @@ prompt under an `AVOID SIMILARITY` banner.
 
 **`dev_diary`** never runs `content.generate_title` at all. Its title comes
 from the `TITLE:` line the writer emits inside `atoms.narrate_bundle`, parsed
-back out by `_parse_title_and_prose`. Before #1043 that path had **no
+back out by `_parse_title_and_prose`. Before stack#3209 that path had **no
 avoidance mechanism of any kind** — no recent-title context, no originality
 check, no `pipeline_title_model` involvement — and it is the larger half of
 published output.
@@ -190,7 +196,7 @@ keeps a re-run from matching the title it wrote last time.
 worst_similarity)` — lower is better. Clearing a collision axis outranks any
 similarity delta; the float only breaks ties.
 
-This matters because the pre-#1044 comparison read `max_similarity`, which is
+This matters because the pre-stack#3213 comparison read `max_similarity`, which is
 **external-only**. A regenerated title that fixed an internal duplicate while
 scoring identically against the web was discarded as "not more unique" —
 silently defeating the gate it was supposed to serve.
@@ -206,6 +212,81 @@ attention — if it starts firing regularly, tune before the corpus drifts.
 An unreadable corpus reports `internal_fail_open=True` rather than "original",
 per the QA-rail fail-open contract: a degraded check is never a fabricated
 pass.
+
+## Which title actually ships (the precedence fix, 2026-08-15)
+
+Everything above governs the **canonical title** — what `content.generate_title`
+persists to `pipeline_versions.title`. For most of this system's life that was
+not the title readers saw.
+
+`publish_post_from_task` builds the live `(title, content, slug)` through
+`derive_publish_identity`, and that function had two independent defects:
+
+| defect                                                        | effect                                                                          |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Body heading tried **before** the canonical title             | the writer's leading `#`/`##` won                                               |
+| Canonical title read from `merged["title"]` (stage_data JSON) | absent for **91 of 101** finished tasks (90%), so it was an empty string anyway |
+
+Together they meant **72 of 101 canonical_blog posts (71.3%)** published under a
+title that was not the one the pipeline chose:
+
+```
+generated : Solving Retrieval Mismatch: Why Asymmetric Embedding Matters for RAG
+shipped   : The Gap Nobody Names
+body line : ## The Gap Nobody Names
+```
+
+Note the two defects compound: fixing precedence alone would have changed
+almost nothing, because the canonical title was never a populated candidate.
+Both halves are required, which is why `resolve_canonical_title` (column over
+stage_data) is a separate, separately-tested function.
+
+Precedence is now **canonical title → body heading → topic**, with one
+refinement: a candidate that merely _echoes the topic_ is skipped in favour of
+the next real one. The topic is the internal assignment label, and 25 of 101
+posts (24.8%) had shipped under theirs verbatim.
+
+The leading heading is stripped from the stored body either way — that is what
+stops the page rendering its title twice — so changing which candidate wins
+never changes the article text.
+
+### What the fix does and does not do
+
+Replaying all 101 published canonical_blog posts through the new chain:
+
+| measure                        | before   | after        |
+| ------------------------------ | -------- | ------------ |
+| titles that would change       | —        | 61 (60%)     |
+| shipped title echoes the topic | 25 (24%) | **12 (11%)** |
+| opens with `"The …"`           | 39 (38%) | 38 (37%)     |
+
+Topic-echo roughly halves. **The `"The …"` habit barely moves** — be clear about
+that. The habit is not purely an artefact of the writer's H1 as first assumed;
+the canonical titles carry it at a similar rate, partly because
+`choose_canonical_title` falls back to the H1 whenever the LLM returns nothing.
+
+That replay also _understates_ the go-forward benefit, because every one of
+those 101 canonical titles predates the variety block — none of them were
+generated with habit guidance. The precedence fix is what makes that block
+matter at all: before it, the block shaped a string that never reached a
+reader, and the corpus it profiles (shipped titles) was a different population
+from the string it constrained.
+
+The 12 residual topic-echoes are the degenerate case where the canonical title
+_and_ the heading both equal the topic. Nothing is left to prefer, so the topic
+ships rather than an empty title; only regeneration fixes those.
+
+### Escape hatch
+
+`app_settings.publish_title_source`:
+
+| value                 | behaviour                                       |
+| --------------------- | ----------------------------------------------- |
+| `canonical` (default) | canonical → heading → topic, topic-echo skipped |
+| `body_heading`        | pre-2026-08-15 order (heading first)            |
+
+Flipping to `body_heading` re-opens the gap — it exists so a bad rollout is one
+setting away from reverting, not as a supported mode.
 
 ## Where the prompts live
 

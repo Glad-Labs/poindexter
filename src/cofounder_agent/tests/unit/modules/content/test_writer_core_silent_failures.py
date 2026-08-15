@@ -159,7 +159,7 @@ async def test_collect_research_context_emits_finding_when_task_read_fails(
 async def test_fetch_recent_titles_emits_finding_on_db_error(monkeypatch):
     """The writer's ``_fetch_existing_titles`` moved to a shared service.
 
-    poindexter#1043 consolidated the writer copy, the atom copy, and the
+    stack#3209 consolidated the writer copy, the atom copy, and the
     (previously absent) dev_diary lookup into
     ``services.title_avoidance.fetch_recent_titles``. The finding contract is
     unchanged: degraded, never fatal, and never silent.

@@ -1356,7 +1356,7 @@ DEFAULTS: dict[str, str] = {
     # fresh installs default to never-discard. 'false' restores legacy discard.
     'qa_flag_instead_of_reject': 'true',
 
-    # --- Title variety / avoidance (poindexter#1043) -------------------------
+    # --- Title variety / avoidance (stack#3209) -------------------------
     # Strategy for steering the title model away from the recent corpus:
     #   patterns — describe the corpus's structural + lexical HABITS (default)
     #   titles   — legacy raw dump of the recent titles (pre-2026-08 behaviour)
@@ -1377,7 +1377,7 @@ DEFAULTS: dict[str, str] = {
     # Times a content word must recur in the window to be called out as
     # over-used vocabulary.
     'title_avoidance_lexical_min_count': '3',
-    # --- Internal-corpus duplicate check (poindexter#1044) -------------------
+    # --- Internal-corpus duplicate check (stack#3213) -------------------
     # qa_title_similarity_threshold compares against DuckDuckGo results ONLY —
     # it is an external-plagiarism check. These govern the separate question
     # "did we already write this?", comparing the candidate against titles we
@@ -2992,6 +2992,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # 'false' to disable the gate entirely.
     'enforce_niche_allowlist': 'true',
 
+    # Which title actually ships. 'canonical' (default) honours the pipeline's
+    # own decision — the title content.generate_title persists to
+    # pipeline_versions.title after the variety block + internal-duplicate
+    # check. 'body_heading' restores the pre-2026-08-15 behaviour where the
+    # draft's leading markdown heading won instead, which silently discarded
+    # that decision for 71.3% of canonical_blog posts and left the title
+    # machinery governing a string that never reached a reader.
+    # Escape hatch only — flipping this back re-opens that gap.
+    'publish_title_source': 'canonical',
+
     # ----- Gitea / external integrations -----
     'publish_quiet_hours': '',
 
@@ -3650,6 +3660,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'dev_diary_auto_publish_max_edit_distance': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'dev_diary_auto_publish_min_clean_runs': {'owner': 'auto_publish_gate', 'value_type': 'integer'},
     'enforce_niche_allowlist': {'owner': 'publish_service', 'value_type': 'boolean'},
+    'publish_title_source': {'owner': 'publish_service', 'value_type': 'enum'},
 
     # ----- Dev-diary substance bar (thin-day skip) -----
     'dev_diary_min_substance_score': {'owner': 'dev_diary_source', 'value_type': 'float'},

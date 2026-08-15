@@ -57,7 +57,7 @@ def _originality_result(
         "external_matches": [],
         "external_fail_open": False,
         "external_duplicate": False,
-        # poindexter#1044 — internal-corpus axis.
+        # stack#3213 — internal-corpus axis.
         "internal_duplicate": internal_duplicate,
         "internal_similarity": internal_similarity,
         "internal_matches": internal_matches or [],
@@ -786,7 +786,7 @@ class TestContentRecordPipelineVersionBehavior:
 
 
 # ---------------------------------------------------------------------------
-# Internal-duplicate visibility (poindexter#1044)
+# Internal-duplicate visibility (stack#3213)
 # ---------------------------------------------------------------------------
 
 
