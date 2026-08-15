@@ -1062,6 +1062,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # (entry_points discovery in Docker) is resolved — same pattern
         # as the image_providers above.
         ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
+        ("video_providers", "services.video_providers.comfyui", "ComfyUIProvider"),
         # Core AudioGenProviders. Stable Audio Open 1.0 — text-to-music/SFX
         # via dedicated inference server (Stability AI Community license,
         # free <$1M ARR). GH-Glad-Labs/poindexter#125.

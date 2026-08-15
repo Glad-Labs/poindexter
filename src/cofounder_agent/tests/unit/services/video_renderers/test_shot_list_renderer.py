@@ -113,7 +113,8 @@ def _neutralize_wan_unload():
     unload re-patch locally; the innermost patch wins."""
     from unittest.mock import AsyncMock as _AsyncMock
 
-    with patch("services.gpu_scheduler.gpu._unload_wan", _AsyncMock()):
+    with patch("services.gpu_scheduler.gpu._unload_wan", _AsyncMock()), \
+         patch("services.gpu_scheduler.gpu._unload_comfyui", _AsyncMock()):
         yield
 
 
@@ -1978,11 +1979,16 @@ class TestRenderPassHeroOrdering:
             orientation="landscape", post_id="p-wanclear",
         )
         shots = [s for s in self._mixed_shots() if s.idx == 0]  # image_gen only
+        comfyui_unload = AsyncMock()
         with patch.object(slr, "_render_image_gen_image", fake_still), \
-             patch.object(real_gpu, "_unload_wan", wan_unload):
+             patch.object(real_gpu, "_unload_wan", wan_unload), \
+             patch.object(real_gpu, "_unload_comfyui", comfyui_unload):
             await slr._render_pass(shots, render_kwargs=render_kwargs)
 
         wan_unload.assert_awaited_once_with(hard=True)
+        # The comfyui rung clears alongside wan (2026-08-15) — it holds its
+        # loaded experts the same way and its /free declines when busy/absent.
+        comfyui_unload.assert_awaited_once_with()
 
     @pytest.mark.asyncio
     async def test_render_pass_skips_wan_clear_without_image_gen_work(self, tmp_path):
@@ -2010,12 +2016,15 @@ class TestRenderPassHeroOrdering:
                 fh.write(b"jpg")
             return True
 
+        comfyui_unload = AsyncMock()
         with patch.object(slr, "_render_pexels_video", fake_pexels_video), \
              patch.object(slr, "_render_pexels_image", fake_pexels_image), \
-             patch.object(real_gpu, "_unload_wan", wan_unload):
+             patch.object(real_gpu, "_unload_wan", wan_unload), \
+             patch.object(real_gpu, "_unload_comfyui", comfyui_unload):
             await slr._render_pass(shots, render_kwargs=render_kwargs)
 
         wan_unload.assert_not_awaited()
+        comfyui_unload.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_failed_hero_still_reaches_backfill_ladder(self, tmp_path):
@@ -2712,3 +2721,90 @@ class TestHeroReliability:
             assert await slr._clip_has_motion(
                 "/nonexistent.mp4", min_delta=2.0, work_dir=tmp_path,
             ) is True
+
+
+class TestGenerativeProviderSelection:
+    """``video_generative_provider`` seam (2026-08-15): the renderer picks
+    the animator per clip from settings — ``wan21`` (default) or
+    ``comfyui`` — and surfaces the chosen provider's ``last_error`` when it
+    returns nothing (poindexter#996's intent, now honoured for both)."""
+
+    class _Sc:
+        def __init__(self, provider):
+            self._provider = provider
+
+        def get(self, key, default=None):
+            if key == "video_generative_provider":
+                return self._provider
+            return default
+
+    @staticmethod
+    def _provider_mock(name, results=None, last_error=""):
+        inst = MagicMock()
+        inst.fetch = AsyncMock(return_value=results or [])
+        inst.last_error = last_error
+        cls = MagicMock(return_value=inst)
+        cls.__name__ = name
+        return cls, inst
+
+    @pytest.mark.asyncio
+    async def test_default_routes_to_wan(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        wan_cls, wan_inst = self._provider_mock("Wan21Provider")
+        comfy_cls, comfy_inst = self._provider_mock("ComfyUIProvider")
+        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+             patch(
+                 "services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
+             ), \
+             patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
+            ok, reason = await slr._render_generative_clip(
+                prompt="p", output_path=str(tmp_path / "o.mp4"),
+                image_path=None, duration_s=5, site_config=self._Sc(""),
+            )
+        assert not ok
+        wan_inst.fetch.assert_awaited_once()
+        comfy_inst.fetch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_comfyui_setting_routes_to_comfyui(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        wan_cls, wan_inst = self._provider_mock("Wan21Provider")
+        comfy_cls, comfy_inst = self._provider_mock(
+            "ComfyUIProvider",
+            last_error="comfyui not ready at http://x:8188 after 90s",
+        )
+        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+             patch(
+                 "services.video_providers.comfyui.ComfyUIProvider", comfy_cls,
+             ), \
+             patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
+            ok, reason = await slr._render_generative_clip(
+                prompt="p", output_path=str(tmp_path / "o.mp4"),
+                image_path=None, duration_s=5,
+                site_config=self._Sc("comfyui"),
+            )
+        assert not ok
+        comfy_inst.fetch.assert_awaited_once()
+        wan_inst.fetch.assert_not_awaited()
+        # The provider's own diagnosis travels into the fallback finding.
+        assert "comfyui not ready" in reason
+
+    @pytest.mark.asyncio
+    async def test_settings_failure_falls_back_to_wan(self, tmp_path):
+        from services.video_renderers import shot_list_renderer as slr
+
+        class _BrokenSc:
+            def get(self, key, default=None):
+                raise RuntimeError("settings store down")
+
+        wan_cls, wan_inst = self._provider_mock("Wan21Provider")
+        with patch("services.video_providers.wan2_1.Wan21Provider", wan_cls), \
+             patch.object(slr, "_clear_image_gen_for_hero", AsyncMock()):
+            ok, _ = await slr._render_generative_clip(
+                prompt="p", output_path=str(tmp_path / "o.mp4"),
+                image_path=None, duration_s=5, site_config=_BrokenSc(),
+            )
+        assert not ok
+        wan_inst.fetch.assert_awaited_once()

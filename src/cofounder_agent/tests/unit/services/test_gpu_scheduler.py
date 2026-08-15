@@ -544,6 +544,100 @@ class TestUnloadWan:
             await scheduler._unload_wan(hard=True)  # must not raise
 
 
+class TestUnloadComfyui:
+    """ComfyUI reclaim rung (2026-08-15): POST /free {"unload_models": true,
+    "free_memory": true}, but ONLY when the queue is empty — unloading a
+    renderer mid-generation is the exact defect the wan rung shipped with
+    (poindexter#3094), so the decline gate is the load-bearing half."""
+
+    @staticmethod
+    def _client(queue_json, post_resp=None):
+        from unittest.mock import AsyncMock, MagicMock
+
+        client = MagicMock()
+        queue_resp = MagicMock(status_code=200)
+        queue_resp.json = MagicMock(return_value=queue_json)
+        client.get = AsyncMock(return_value=queue_resp)
+        client.post = AsyncMock(
+            return_value=post_resp or MagicMock(status_code=200),
+        )
+        return client
+
+    @pytest.mark.asyncio
+    async def test_frees_when_queue_empty(self):
+        from unittest.mock import patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = self._client({"queue_running": [], "queue_pending": []})
+        with patch.object(scheduler, "_get_http_client", return_value=client), \
+             patch(
+                 "services.video_providers.comfyui._resolve_server_url",
+                 return_value="http://comfyui:8188/",
+             ):
+            await scheduler._unload_comfyui(hard=True)
+
+        client.post.assert_awaited_once()
+        args, kwargs = client.post.await_args
+        assert args[0] == "http://comfyui:8188/free"
+        assert kwargs["json"] == {"unload_models": True, "free_memory": True}
+
+    @pytest.mark.asyncio
+    async def test_declines_while_render_in_flight(self):
+        from unittest.mock import patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = self._client({"queue_running": [["p1"]], "queue_pending": []})
+        with patch.object(scheduler, "_get_http_client", return_value=client), \
+             patch(
+                 "services.video_providers.comfyui._resolve_server_url",
+                 return_value="http://comfyui:8188",
+             ):
+            await scheduler._unload_comfyui()
+
+        client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unparseable_queue_treated_as_busy(self):
+        # Skipping one reclaim is cheaper than killing a render we couldn't
+        # see — a queue we can't read must decline, not proceed.
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        queue_resp = MagicMock(status_code=200)
+        queue_resp.json = MagicMock(side_effect=ValueError("not json"))
+        client.get = AsyncMock(return_value=queue_resp)
+        client.post = AsyncMock()
+        with patch.object(scheduler, "_get_http_client", return_value=client), \
+             patch(
+                 "services.video_providers.comfyui._resolve_server_url",
+                 return_value="http://comfyui:8188",
+             ):
+            await scheduler._unload_comfyui()
+
+        client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_transport_failure_is_swallowed(self):
+        # The profile-gated sidecar being down is the COMMON case on wan21
+        # installs — the lever must never raise.
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=ConnectionError("refused"))
+        with patch.object(scheduler, "_get_http_client", return_value=client):
+            await scheduler._unload_comfyui()  # must not raise
+
+
 class TestPrepareMode:
     @pytest.mark.asyncio
     async def test_image_gen_mode_unloads_ollama(self):

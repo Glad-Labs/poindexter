@@ -1307,6 +1307,64 @@ services:
       retries: 3
 
   # ===========================================
+  # ComfyUI — headless render sidecar for the `comfyui` video provider
+  # (Wan 2.2 14B i2v hero clips; 2026-08-15 spike verdict). OPT-IN:
+  #   docker compose -f docker-compose.local.yml --profile comfyui up -d
+  # then flip app_settings.video_generative_provider=comfyui.
+  #
+  # GPL-3 boundary: consumed strictly over HTTP; the image clones a pinned
+  # release at build time, nothing vendored (see scripts/Dockerfile.comfyui).
+  # Core nodes only — do not add custom nodes without a security review.
+  #
+  # Weights (~38GB, NOT baked) live on the host under
+  # ~/.poindexter/comfyui/models/ in ComfyUI's dir layout:
+  #   diffusion_models/  wan2.2_i2v_{high,low}_noise_14B_fp8_scaled.safetensors
+  #   text_encoders/     umt5_xxl_fp8_e4m3fn_scaled.safetensors
+  #   vae/               wan_2.1_vae.safetensors
+  #   loras/             wan2.2_i2v_lightx2v_4steps_lora_v1_{high,low}_noise.safetensors
+  # (source: Comfy-Org/Wan_2.2_ComfyUI_Repackaged — download runbook in
+  # docs/architecture/comfyui-video-provider.md).
+  #
+  # Port binds to localhost only: the API is unauthenticated by design and
+  # must never be reachable off-box. No CUDA_VISIBLE_DEVICES here — on
+  # native Linux the device reservation already scopes visibility, and the
+  # redundant env inverts into a break (#2798 lesson).
+  # --reserve-vram keeps headroom for the desktop the render GPU also
+  # drives (the 2026-08-15 spike lost a 720p render to a 31.9GB peak
+  # against the desktop's allocation).
+  # ===========================================
+  comfyui:
+    profiles: ["comfyui"]
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.comfyui
+    container_name: poindexter-comfyui
+    restart: unless-stopped
+    command: ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188",
+              "--reserve-vram", "${COMFYUI_RESERVE_VRAM_GB:-1.5}"]
+    ports:
+      - "127.0.0.1:8188:8188"
+    environment:
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    volumes:
+      - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/diffusion_models:/comfyui/models/diffusion_models:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/text_encoders:/comfyui/models/text_encoders:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/vae:/comfyui/models/vae:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/loras:/comfyui/models/loras:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8188/system_stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
   # Speaches — warm STT + TTS sidecar (#1088)
   # ONE GPU container serving BOTH OpenAI-compatible endpoints:
   #   POST /v1/audio/transcriptions  (faster-whisper)

@@ -269,6 +269,11 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
         ("chatterbox", gpu._unload_chatterbox),
         ("wan", lambda: gpu._unload_wan(hard=True)),
         ("stable-audio", lambda: gpu._unload_stable_audio(hard=True)),
+        # ComfyUI (2026-08-15): holds loaded Wan 14B experts between renders
+        # like every other sidecar. Its rung declines while a render is
+        # queued/in flight (#3094 posture) and no-ops when the profile-gated
+        # sidecar isn't running, so the lever is safe on wan21 installs.
+        ("comfyui", lambda: gpu._unload_comfyui(hard=True)),
     )
     for name, call in levers:
         try:

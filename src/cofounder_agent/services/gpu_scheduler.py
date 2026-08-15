@@ -1616,6 +1616,72 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
+    async def _unload_comfyui(self, hard: bool = False):
+        """Ask the ComfyUI sidecar to release models + free its torch cache.
+
+        ComfyUI's native ``POST /free {"unload_models": true, "free_memory":
+        true}`` both drops the loaded models AND empties the CUDA caching
+        allocator, so unlike the bespoke sidecars there is no soft-vs-hard
+        split — ``hard`` is accepted for ladder-signature symmetry and does
+        the same thing (ComfyUI exposes no self-exit endpoint; if a wedged
+        CUDA context ever needs a process bounce, that's Docker's restart
+        policy via a manual ``docker restart``, not this rung).
+
+        **Declines while a render is in flight** (poindexter#3094's lesson,
+        learned on wan: a running renderer IS the "unhealthy GPU" state the
+        reclaim fires for, and unloading it mid-generation kills the render
+        this ladder exists to enable): checks ``/queue`` first and no-ops
+        when anything is running or pending.
+
+        URL resolution reuses the provider's chain
+        (``video_comfyui_server_url`` → default ``:8188``) so the reclaim
+        hits the exact server the render will. Server absent = debug-log
+        no-op, same posture as the other rungs (the profile-gated sidecar
+        simply isn't up on installs that use wan21).
+        """
+        from services.video_providers.comfyui import _resolve_server_url
+
+        base = _resolve_server_url({}, _sc()).rstrip("/")
+        try:
+            client = self._get_http_client()
+            queue = await client.get(f"{base}/queue", timeout=10)
+            if queue.status_code == 200:
+                try:
+                    q = queue.json()
+                    busy = bool(
+                        (q.get("queue_running") or [])
+                        or (q.get("queue_pending") or []),
+                    )
+                except Exception:  # noqa: BLE001 — unparseable queue: treat
+                    # as busy; skipping one reclaim is cheaper than killing a
+                    # render we couldn't see.
+                    busy = True
+                if busy:
+                    logger.info(
+                        "[GPU] comfyui /free declined — render in flight "
+                        "(poindexter#3094 posture)",
+                    )
+                    return
+            resp = await client.post(
+                f"{base}/free",
+                json={"unload_models": True, "free_memory": True},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    "[GPU] comfyui models unloaded + cache freed via /free%s",
+                    " (hard)" if hard else "",
+                )
+        except Exception as exc:
+            # silent-ok: same posture as _unload_wan — the sidecar being
+            # down between renders is the common case (profile-gated), not
+            # a bug.
+            logger.debug(
+                "[GPU] comfyui /free call failed (server likely offline): "
+                "%s: %s",
+                type(exc).__name__, exc,
+            )
+
     async def _unload_stable_audio(self, hard: bool = False):
         """Tell the stable-audio server to release its VRAM (poindexter#999).
 

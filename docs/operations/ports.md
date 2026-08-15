@@ -54,6 +54,7 @@ table first.**
 | image-gen server    | poindexter-image-gen-server | **9836**  | 9836           | On-demand image generation                                                                 |
 | Postiz              | poindexter-postiz           | **5003**  | 5000           | Social distribution hub (opt-in: `--profile postiz`)                                       |
 | Wan server          | poindexter-wan-server       | **9840**  | 9840           | On-demand video generation                                                                 |
+| ComfyUI             | poindexter-comfyui          | **8188**  | 8188           | Wan 2.2 14B hero renderer, localhost-bound (opt-in: `--profile comfyui`)                   |
 | Stable Audio server | poindexter-stable-audio     | **9839**  | 9839           | Ambient music bed + intro/outro stings (Stable Audio Open 1.0; 5-min idle self-unload)     |
 | Postgres            | poindexter-postgres-local   | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain`                                         |
 | pgAdmin             | poindexter-pgadmin          | **18443** | 80             | <http://localhost:18443>                                                                   |

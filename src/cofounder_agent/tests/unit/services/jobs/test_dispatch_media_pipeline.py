@@ -316,7 +316,9 @@ async def test_attempt_vram_reclaim_calls_ollama_evict_and_hard_image_gen_unload
     with patch.object(real_gpu, "_unload_ollama_models", ollama_mock), \
          patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
          patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
-         patch.object(real_gpu, "_unload_wan", AsyncMock()):
+         patch.object(real_gpu, "_unload_wan", AsyncMock()), \
+         patch.object(real_gpu, "_unload_stable_audio", AsyncMock()), \
+         patch.object(real_gpu, "_unload_comfyui", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     ollama_mock.assert_awaited_once()
     image_gen_mock.assert_awaited_once_with(hard=True)
@@ -337,7 +339,9 @@ async def test_attempt_vram_reclaim_also_unloads_chatterbox():
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
          patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
          patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock), \
-         patch.object(real_gpu, "_unload_wan", AsyncMock()):
+         patch.object(real_gpu, "_unload_wan", AsyncMock()), \
+         patch.object(real_gpu, "_unload_stable_audio", AsyncMock()), \
+         patch.object(real_gpu, "_unload_comfyui", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     chatterbox_mock.assert_awaited_once_with()
 
@@ -357,9 +361,32 @@ async def test_attempt_vram_reclaim_hard_unloads_wan():
     with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
          patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
          patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
-         patch.object(real_gpu, "_unload_wan", wan_mock):
+         patch.object(real_gpu, "_unload_wan", wan_mock), \
+         patch.object(real_gpu, "_unload_stable_audio", AsyncMock()), \
+         patch.object(real_gpu, "_unload_comfyui", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     wan_mock.assert_awaited_once_with(hard=True)
+
+
+@pytest.mark.asyncio
+async def test_attempt_vram_reclaim_frees_comfyui():
+    """ComfyUI (2026-08-15) holds the loaded Wan 14B experts between renders
+    like every other sidecar — its rung must sit on the ladder or a warm
+    ComfyUI pins the render GPU under the dispatch gate exactly the way wan
+    (#962) and stable-audio (#999) each did before earning their seats. The
+    rung itself declines while a render is in flight (#3094 posture) and
+    no-ops when the profile-gated sidecar isn't running."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    comfyui_mock = AsyncMock()
+    with patch.object(real_gpu, "_unload_ollama_models", AsyncMock()), \
+         patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
+         patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
+         patch.object(real_gpu, "_unload_wan", AsyncMock()), \
+         patch.object(real_gpu, "_unload_stable_audio", AsyncMock()), \
+         patch.object(real_gpu, "_unload_comfyui", comfyui_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    comfyui_mock.assert_awaited_once_with(hard=True)
 
 
 @pytest.mark.asyncio
@@ -375,18 +402,22 @@ async def test_attempt_vram_reclaim_survives_a_failing_lever():
     image_gen_mock = AsyncMock()
     chatterbox_mock = AsyncMock()
     wan_mock = AsyncMock()
+    comfyui_mock = AsyncMock()
     with patch.object(
             real_gpu, "_unload_ollama_models",
             AsyncMock(side_effect=RuntimeError("ollama unreachable"))), \
          patch.object(real_gpu, "_unload_image_gen", image_gen_mock), \
          patch.object(real_gpu, "_unload_chatterbox", chatterbox_mock), \
-         patch.object(real_gpu, "_unload_wan", wan_mock):
+         patch.object(real_gpu, "_unload_wan", wan_mock), \
+         patch.object(real_gpu, "_unload_stable_audio", AsyncMock()), \
+         patch.object(real_gpu, "_unload_comfyui", comfyui_mock):
         await dmp._attempt_vram_reclaim(_sc_gated())  # must not raise
 
-    # The levers AFTER the failure still ran — including wan, the last rung.
+    # The levers AFTER the failure still ran — including comfyui, the last rung.
     image_gen_mock.assert_awaited_once_with(hard=True)
     chatterbox_mock.assert_awaited_once_with()
     wan_mock.assert_awaited_once_with(hard=True)
+    comfyui_mock.assert_awaited_once_with(hard=True)
 
 
 @pytest.mark.asyncio
@@ -805,7 +836,8 @@ async def test_attempt_vram_reclaim_hard_unloads_stable_audio():
          patch.object(real_gpu, "_unload_image_gen", AsyncMock()), \
          patch.object(real_gpu, "_unload_chatterbox", AsyncMock()), \
          patch.object(real_gpu, "_unload_wan", AsyncMock()), \
-         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock):
+         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock), \
+         patch.object(real_gpu, "_unload_comfyui", AsyncMock()):
         await dmp._attempt_vram_reclaim(_sc_gated())
     stable_audio_mock.assert_awaited_once_with(hard=True)
 
@@ -813,17 +845,21 @@ async def test_attempt_vram_reclaim_hard_unloads_stable_audio():
 @pytest.mark.asyncio
 async def test_reclaim_lever_isolation_covers_stable_audio():
     """The ladder isolates each lever so an early failure can't skip a later
-    one. stable-audio is LAST, so it is the lever most exposed to that bug —
-    and the one carrying the most VRAM. Pin it: every earlier lever raising
-    must still leave stable-audio called."""
+    one. stable-audio and comfyui run last (comfyui became the final rung
+    2026-08-15), so they are the levers most exposed to that bug — and the
+    ones carrying the most VRAM. Pin it: every earlier lever raising must
+    still leave both called."""
     from services.gpu_scheduler import gpu as real_gpu
 
     stable_audio_mock = AsyncMock()
+    comfyui_mock = AsyncMock()
     boom = AsyncMock(side_effect=RuntimeError("lever exploded"))
     with patch.object(real_gpu, "_unload_ollama_models", boom), \
          patch.object(real_gpu, "_unload_image_gen", boom), \
          patch.object(real_gpu, "_unload_chatterbox", boom), \
          patch.object(real_gpu, "_unload_wan", boom), \
-         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock):
+         patch.object(real_gpu, "_unload_stable_audio", stable_audio_mock), \
+         patch.object(real_gpu, "_unload_comfyui", comfyui_mock):
         await dmp._attempt_vram_reclaim(_sc_gated())
     stable_audio_mock.assert_awaited_once_with(hard=True)
+    comfyui_mock.assert_awaited_once_with(hard=True)

@@ -925,6 +925,11 @@ async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
         from services.gpu_scheduler import gpu
 
         await gpu._unload_wan(hard=True)
+        # ComfyUI holds its loaded models the same way between renders; its
+        # /free is decline-gated (no-ops while a render is queued and costs
+        # one HTTP round-trip when already empty), so calling both
+        # unconditionally is cheaper than threading provider selection here.
+        await gpu._unload_comfyui()
     except Exception as exc:  # noqa: BLE001  # silent-ok: reclaim is an
         # optimisation, not a precondition — a failure here reverts to the
         # pre-fix odds, never blocks the render.
@@ -945,13 +950,14 @@ async def _render_generative_clip(
     height: int | None = None,
     fps: int | None = None,
 ) -> tuple[bool, str]:
-    """Render one hero clip to ``output_path`` via the Wan provider.
+    """Render one hero clip to ``output_path`` via the configured provider.
 
     When ``image_path`` is set it's the shot's stylized image-gen still, passed
     as the image-to-video init frame (animating the brand still keeps visual
-    consistency — spec §3.3). Absent → text-to-video. Delegates to the
-    existing ``Wan21Provider`` so the request body shape is the correct one
-    for the wan-server. ``width``/``height``/``fps`` override the provider's
+    consistency — spec §3.3). Absent → text-to-video (wan21 only; the ComfyUI
+    provider is i2v-only by design). ``video_generative_provider`` picks the
+    animator — ``wan21`` (default) or ``comfyui`` — per clip.
+    ``width``/``height``/``fps`` override the provider's
     defaults when set (the caller passes the lane-aspect hero geometry).
     Returns ``(success, reason)`` — ``reason`` is empty on
     success, else a short operator-facing string so a miss is diagnosable from
@@ -977,7 +983,27 @@ async def _render_generative_clip(
     # (`nothing_to_reclaim`), so the per-clip call is a no-op after the first.
     await _clear_image_gen_for_hero(site_config)
 
-    provider = Wan21Provider()
+    # Provider seam (ComfyUI integration, 2026-08-15 spike): the operator
+    # picks the animator per install via ``video_generative_provider`` —
+    # ``wan21`` (deployed 5B sidecar, the default) or ``comfyui`` (Wan 2.2
+    # 14B via the ComfyUI sidecar). Read per clip, so flipping is a settings
+    # change, not a deploy.
+    provider_choice = "wan21"
+    if site_config is not None:
+        try:
+            provider_choice = str(
+                site_config.get("video_generative_provider", "wan21") or "wan21",
+            ).strip().lower()
+        except Exception:  # noqa: BLE001  # silent-ok: a settings read must
+            # not decide a render's fate; the deployed default provider stands.
+            provider_choice = "wan21"
+    provider: Any
+    if provider_choice == "comfyui":
+        from services.video_providers.comfyui import ComfyUIProvider
+
+        provider = ComfyUIProvider()
+    else:
+        provider = Wan21Provider()
     config: dict[str, Any] = {
         "output_path": output_path,
         "duration_s": min(duration_s, _WAN21_MAX_DURATION_S),
@@ -1003,10 +1029,19 @@ async def _render_generative_clip(
         return False, f"{type(exc).__name__}: {exc}"
 
     if not results:
-        return False, "wan provider returned no result — check wan-server logs/health"
+        # poindexter#996: the provider explains itself via ``last_error`` —
+        # surface that, not a generic string, so the hero_render_fallback
+        # finding is diagnosable after the sidecar container is gone.
+        reason = getattr(provider, "last_error", "") or (
+            f"{provider_choice} provider returned no result — "
+            "check sidecar logs/health"
+        )
+        return False, reason
     ok = bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
     if not ok:
-        return False, "wan provider result had no output file on disk"
+        return False, (
+            f"{provider_choice} provider result had no output file on disk"
+        )
     return True, ""
 
 

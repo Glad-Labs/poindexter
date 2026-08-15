@@ -33,7 +33,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/topic_sources/`](#servicestopicsources) (12 files)
 - [`services/triage/`](#servicestriage) (3 files)
 - [`services/tts_providers/`](#servicesttsproviders) (4 files)
-- [`services/video_providers/`](#servicesvideoproviders) (2 files)
+- [`services/video_providers/`](#servicesvideoproviders) (3 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (3 files)
 - [`modules/content/`](#modulescontent) (18 files)
 - [`modules/content/atoms/`](#modulescontentatoms) (68 files)
@@ -546,6 +546,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | File | Summary |
 | --- | --- |
 | `__init__.py` | Video provider plugins. |
+| `comfyui.py` | ComfyUIProvider — image-to-video hero clips via a ComfyUI sidecar. |
 | `wan2_1.py` | Wan21Provider — text-to-video via Wan-AI/Wan2.1-T2V-1.3B inference server. |
 
 ## services/video_renderers/

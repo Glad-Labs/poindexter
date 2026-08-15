@@ -482,6 +482,62 @@ DEFAULTS: dict[str, str] = {
         'slow cinematic push-in with gentle parallax; ambient particles and '
         'light drift softly; smooth continuous motion, stable composition'
     ),
+    # ------------------------------------------------------------------
+    # Generative hero provider seam (2026-08-15 ComfyUI spike). 'wan21' =
+    # the deployed 5B diffusers sidecar; 'comfyui' = Wan 2.2 14B via the
+    # profile-gated ComfyUI sidecar (docker compose --profile comfyui).
+    # The spike verdict: the 5B model + repo-default sampler config are the
+    # hero-slop root cause; 14B + the lightx2v 4-step LoRAs render a
+    # different quality class in ~123s — faster than the 5B sidecar.
+    # Default stays wan21 so a fresh install works without the extra
+    # sidecar + ~38GB of weights; flipping is a settings change, no deploy.
+    'video_generative_provider': 'wan21',
+    'video_comfyui_server_url': 'http://host.docker.internal:8188',
+    # Sampler regime. Defaults = the lightx2v 4-step distill configuration
+    # (steps 4 / cfg 1.0, requires the two LoRA files). Full-quality tier:
+    # steps 20 / cfg 3.5 / video_comfyui_use_lightning_lora=false — ~4x the
+    # render time for a modest fidelity gain (spike: 468s vs 123s at 480p).
+    'video_comfyui_steps': '4',
+    'video_comfyui_cfg': '1.0',
+    # ModelSamplingSD3 shift for the 14B i2v pair (official template value).
+    'video_comfyui_shift': '5.0',
+    'video_comfyui_use_lightning_lora': 'true',
+    # 14B-native output profile: 81 frames @ 16fps ≈ 5s. The compositor
+    # conforms + loops clips to the shot length, so framerate is a model
+    # property here, not a lane property (the caller's fps is ignored).
+    'video_comfyui_length_frames': '81',
+    'video_comfyui_fps': '16',
+    # Canonical Wan negative prompt (Chinese — the model is trained against
+    # it; an English negative is measurably weaker).
+    'video_comfyui_negative_prompt': (
+        '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，'
+        '低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，'
+        '毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走'
+    ),
+    # Model filenames as ComfyUI sees them under its models dirs — weight
+    # swaps (fp16, GGUF, a newer distill LoRA) are settings-only.
+    'video_comfyui_high_model': 'wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors',
+    'video_comfyui_low_model': 'wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors',
+    'video_comfyui_text_encoder': 'umt5_xxl_fp8_e4m3fn_scaled.safetensors',
+    'video_comfyui_vae': 'wan_2.1_vae.safetensors',
+    'video_comfyui_lora_high': (
+        'wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors'
+    ),
+    'video_comfyui_lora_low': (
+        'wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors'
+    ),
+    # End-to-end render budget per clip (submit → mp4 on disk). The 20-step
+    # 960x544 spike render took 644s; leave headroom above the slowest
+    # intended regime, because a timeout here falls the hero back to a still.
+    'video_comfyui_timeout_s': '900',
+    # Cold-boot ready-wait before the first submit (#3102 shape: a booting
+    # sidecar must delay the render, not silently degrade it).
+    'video_comfyui_ready_wait_s': '90',
+    # Full workflow swap without code: an API-format ComfyUI graph whose
+    # placeholder leaves (__PROMPT__, __INIT_IMAGE__, __WIDTH__, ...) are
+    # substituted typed before submission. Empty = the code-built 14B
+    # two-expert graph. See services/video_providers/comfyui.py docstring.
+    'video_comfyui_workflow_override_json': '',
     # Canonical short-form target length in seconds (issue #867): drives BOTH the
     # short prompt's narration ask (generate_media_scripts._build_scene_prompt)
     # AND the shot-list duration clamp (generate_video_shot_list.
@@ -3592,6 +3648,24 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_height': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_fps': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_motion_default': {'owner': 'video', 'value_type': 'string'},
+    'video_generative_provider': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_server_url': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_steps': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_cfg': {'owner': 'video', 'value_type': 'float'},
+    'video_comfyui_shift': {'owner': 'video', 'value_type': 'float'},
+    'video_comfyui_use_lightning_lora': {'owner': 'video', 'value_type': 'boolean'},
+    'video_comfyui_length_frames': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_fps': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_negative_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_high_model': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_low_model': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_text_encoder': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_vae': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_lora_high': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_lora_low': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_timeout_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_ready_wait_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_workflow_override_json': {'owner': 'video', 'value_type': 'string'},
     'video_short_target_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
