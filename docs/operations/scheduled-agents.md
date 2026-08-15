@@ -108,6 +108,13 @@ which:
   falling back to the shared checkout. The other three (`dependency-review`,
   `triage-sweep`, `alert-triage`) merge PRs, file issues, or edit labels via the
   API and never mutate the local checkout.
+- **Retries the one setup step that touches the network.** The
+  `git fetch origin` feeding that worktree gets `OPS_GIT_FETCH_ATTEMPTS` tries
+  with a linear backoff before the run aborts. Without it a transient GitHub 5xx
+  took a session out for a full day: on 2026-08-14 `test-health` died two
+  seconds in on a 500 from github.com, and since **a systemd unit's state is a
+  latch, not an event**, the unit stayed `failed` — and the Grafana panel red —
+  until the next night's timer fire, long after GitHub had recovered.
 - **Disabled sessions simply have no timer.** There is no `Enabled` flag on
   Linux — `issue-resolver` and `test-expansion` are absent from the installer's
   `SCHED` list, so nothing is generated for them.
@@ -212,7 +219,10 @@ manages.
 
 - **Logs:** `~/.poindexter/logs/claude-sessions/<session>-<timestamp>.log` — one
   file per run, stdout and stderr interleaved (there is no separate `.err` on
-  Linux). `journalctl` carries the unit-level view.
+  Linux). `journalctl` carries the unit-level view. The log is opened **before
+  the first git call**, so a setup failure still leaves a file; it used to start
+  at `worktree add`, which meant a failed `fetch` produced no log at all and the
+  only trace of the 2026-08-14 outage was journald.
 - **Graceful failure:** DB- or Ollama-dependent sessions treat a connection
   failure (e.g. the stack is down after a reboot) as a `notify_operator` warning
   (→ Discord) plus a clean non-zero exit — never a crash, never a false success.
@@ -248,6 +258,19 @@ The merge wait defaults to an hour because what it survives is GitHub Actions
 cron drift, not a race in seconds — see [the adjacent-bullet
 conflict](#the-adjacent-bullet-conflict-pr-3126). The process just sleeps
 between `gh pr view` polls, so a long budget costs nothing at 02:30.
+
+Two more knobs are read by [`run-session.sh`](../../scripts/linux/run-session.sh)
+itself, before any Python starts:
+
+| Var                           | Default | Purpose                                        |
+| ----------------------------- | ------- | ---------------------------------------------- |
+| `OPS_GIT_FETCH_ATTEMPTS`      | `3`     | tries for the setup `git fetch origin`         |
+| `OPS_GIT_FETCH_RETRY_SECONDS` | `15`    | backoff base — waits 15s, 30s, … between tries |
+
+Three attempts is sized for a transient provider 5xx, not for an outage. A real
+GitHub incident should still fail the run and page, which is why the retry is
+bounded rather than infinite; the session is idempotent and the next timer fire
+picks it up.
 
 DB URL and the Discord webhook resolve through the existing
 `~/.poindexter/bootstrap.toml` chain — no new secrets on disk.

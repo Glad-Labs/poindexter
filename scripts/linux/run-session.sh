@@ -11,6 +11,35 @@ LOGDIR="$HOME/.poindexter/logs/claude-sessions"
 mkdir -p "$LOGDIR" "$WT_ROOT"
 STAMP="$(date +%Y-%m-%d-%H%M)"
 LOG="$LOGDIR/$NAME-$STAMP.log"
+# Open the log BEFORE the first git call. Everything below redirects into it, so
+# a setup failure leaves a log file rather than only a journald line — the 2026-08-14
+# test-health fetch died two seconds in and wrote no log at all, because the
+# redirect used to start at `worktree add`.
+echo "=== session $NAME starting $(date -Is) ===" >>"$LOG"
+
+# Bounded retry for the one setup step that touches the network. A transient
+# GitHub 5xx on fetch used to abort the whole run, and because systemd unit
+# state is a latch (not an event) that painted the Grafana panel red until the
+# next day's fire — 24h of red for a blip that cleared in seconds.
+FETCH_ATTEMPTS="${OPS_GIT_FETCH_ATTEMPTS:-3}"
+FETCH_RETRY_SECONDS="${OPS_GIT_FETCH_RETRY_SECONDS:-15}"
+
+fetch_origin() {
+  local attempt=1 delay
+  while :; do
+    if git -C "$WORK" fetch origin --quiet >>"$LOG" 2>&1; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$FETCH_ATTEMPTS" ]; then
+      echo "git fetch origin failed after $attempt attempt(s) — aborting" >>"$LOG"
+      return 1
+    fi
+    delay=$(( FETCH_RETRY_SECONDS * attempt ))     # linear backoff: 15s, 30s, …
+    echo "git fetch origin failed (attempt $attempt/$FETCH_ATTEMPTS) — retrying in ${delay}s" >>"$LOG"
+    sleep "$delay"
+    attempt=$(( attempt + 1 ))
+  done
+}
 
 # Sessions that commit run in an isolated worktree off fresh origin/main;
 # read/act-via-API sessions run from the shared checkout.
@@ -21,8 +50,10 @@ esac
 
 RUNDIR="$WORK"; BRANCH=""; WT=""
 if [ "$NEEDS_WT" = 1 ]; then
-  git -C "$WORK" worktree prune
-  git -C "$WORK" fetch origin --quiet
+  git -C "$WORK" worktree prune >>"$LOG" 2>&1
+  if ! fetch_origin; then
+    exit 1
+  fi
   BRANCH="auto/$NAME-$STAMP"
   WT="$WT_ROOT/$NAME-$STAMP"
   if ! git -C "$WORK" worktree add -b "$BRANCH" "$WT" origin/main >>"$LOG" 2>&1; then
