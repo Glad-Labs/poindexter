@@ -250,7 +250,12 @@ installer. Timer-schedule (`SCHED`) changes need the same re-run, as always.
   Linux). `journalctl` carries the unit-level view. The log is opened **before
   the first git call**, so a setup failure still leaves a file; it used to start
   at `worktree add`, which meant a failed `fetch` produced no log at all and the
-  only trace of the 2026-08-14 outage was journald.
+  only trace of the 2026-08-14 outage was journald. The dir is overridable via
+  `OPS_LOG_DIR` (wrapper and Python `get_logger` both honor it), and the backend
+  unit tests set that knob to a pytest tmp dir — so a file here always means a
+  real session fire. Before that isolation (2026-08-15), pytest runs deposited
+  synthetic `test-health-*.log` / `pin-check-*.log` files here that were
+  mistaken for real session runs.
 - **Graceful failure:** DB- or Ollama-dependent sessions treat a connection
   failure (e.g. the stack is down after a reboot) as a `notify_operator` warning
   (→ Discord) plus a clean non-zero exit — never a crash, never a false success.
@@ -263,14 +268,15 @@ installer. Timer-schedule (`SCHED`) changes need the same re-run, as always.
 Host-side env knobs read by [`scripts/ops_sessions/_common.py`](../../scripts/ops_sessions/_common.py)
 (resolved before any DB is reachable, so not `app_settings`):
 
-| Var                                | Default                  | Purpose                                         |
-| ---------------------------------- | ------------------------ | ----------------------------------------------- |
-| `OPS_OLLAMA_URL`                   | `http://localhost:11434` | local Ollama endpoint                           |
-| `OPS_OLLAMA_MODEL_TRIAGE`          | `llama3.2:3b`            | `alert-triage` classifier model                 |
-| `OPS_OLLAMA_MODEL_TESTFIX`         | `qwen2.5-coder:7b`       | `test-health` fix-proposer model                |
-| `OPS_CLAUDE_MD_MAX_ATTEMPTS`       | `3`                      | `claude-md-sync` regenerate-on-conflict retries |
-| `OPS_CLAUDE_MD_MERGE_WAIT_SECONDS` | `3600`                   | how long it waits for its own PR to merge       |
-| `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                     | PR-state poll interval within that budget       |
+| Var                                | Default                              | Purpose                                            |
+| ---------------------------------- | ------------------------------------ | -------------------------------------------------- |
+| `OPS_OLLAMA_URL`                   | `http://localhost:11434`             | local Ollama endpoint                              |
+| `OPS_OLLAMA_MODEL_TRIAGE`          | `llama3.2:3b`                        | `alert-triage` classifier model                    |
+| `OPS_OLLAMA_MODEL_TESTFIX`         | `qwen2.5-coder:7b`                   | `test-health` fix-proposer model                   |
+| `OPS_CLAUDE_MD_MAX_ATTEMPTS`       | `3`                                  | `claude-md-sync` regenerate-on-conflict retries    |
+| `OPS_CLAUDE_MD_MERGE_WAIT_SECONDS` | `3600`                               | how long it waits for its own PR to merge          |
+| `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                                 | PR-state poll interval within that budget          |
+| `OPS_LOG_DIR`                      | `~/.poindexter/logs/claude-sessions` | session-log dir (also honored by `run-session.sh`) |
 
 **The default models must actually be pulled.** These are plain code defaults,
 not app_settings — `ollama list` must show every model in the table above. A
@@ -296,8 +302,9 @@ cron drift, not a race in seconds — see [the adjacent-bullet
 conflict](#the-adjacent-bullet-conflict-pr-3126). The process just sleeps
 between `gh pr view` polls, so a long budget costs nothing at 02:30.
 
-Two more knobs are read by [`run-session.sh`](../../scripts/linux/run-session.sh)
-itself, before any Python starts:
+Three more knobs are read by [`run-session.sh`](../../scripts/linux/run-session.sh)
+itself, before any Python starts (it also honors `OPS_LOG_DIR` from the table
+above, so both log producers follow one knob):
 
 | Var                           | Default | Purpose                                                       |
 | ----------------------------- | ------- | ------------------------------------------------------------- |

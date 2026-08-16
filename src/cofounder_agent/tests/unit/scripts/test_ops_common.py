@@ -1,6 +1,8 @@
 """Contract tests for scripts/ops_sessions/_common.py pure helpers."""
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -158,3 +160,69 @@ def test_model_pins_registry_covers_every_pin():
         "OPS_OLLAMA_MODEL_TRIAGE": _common.MODEL_TRIAGE,
         "OPS_OLLAMA_MODEL_TESTFIX": _common.MODEL_TESTFIX,
     }
+
+
+# --- get_logger log-dir isolation (OPS_LOG_DIR) ------------------------------
+# get_logger writes <name>-<stamp>.log where "a file here means a session ran"
+# (run-session.sh writes the same shape to the same dir). On 2026-08-15 a
+# pytest run driving session main()s deposited synthetic test-health/pin-check
+# logs into the operator's real ~/.poindexter/logs/claude-sessions/, and one
+# was read as a real 23:35 session fire during an incident investigation.
+# OPS_LOG_DIR — set for every test in this directory by conftest.py's autouse
+# fixture — is the seam that keeps pytest out of that directory.
+
+
+def _close_session_handlers(name: str) -> None:
+    logger = logging.getLogger(name)
+    for handler in _common._SESSION_HANDLERS.pop(name, []):
+        logger.removeHandler(handler)
+        handler.close()
+
+
+def test_get_logger_honors_ops_log_dir(monkeypatch, tmp_path):
+    target = tmp_path / "redirected-logs"
+    monkeypatch.setenv("OPS_LOG_DIR", str(target))
+    try:
+        log = _common.get_logger("isolation-canary")
+        log.info("stays out of the operator log dir")
+        assert len(list(target.glob("isolation-canary-*.log"))) == 1
+        # The canary name is unique to this test, so the real operator dir
+        # gaining one would prove the env seam broke — check it directly.
+        if _common._LOG_DIR.exists():
+            assert list(_common._LOG_DIR.glob("isolation-canary-*.log")) == []
+    finally:
+        _close_session_handlers("isolation-canary")
+
+
+def test_default_log_dir_is_the_operator_location(monkeypatch):
+    """Pins the unset-env default WITHOUT calling get_logger — calling it here
+    would itself write the operator dir, the exact pollution this section is
+    about."""
+    monkeypatch.delenv("OPS_LOG_DIR", raising=False)
+    assert _common._resolve_log_dir() == _common._LOG_DIR
+
+
+def test_conftest_isolation_is_active_for_this_directory():
+    """Regression guard on conftest.py's autouse fixture: if it disappears,
+    every test in this dir that drives a session main() goes back to writing
+    realistic-looking logs into the operator's real log dir. Fail loud here
+    instead."""
+    configured = os.environ.get("OPS_LOG_DIR", "")
+    assert configured, "autouse OPS_LOG_DIR fixture from conftest.py is not active"
+    assert Path(configured) != _common._LOG_DIR
+    assert not Path(configured).is_relative_to(Path.home() / ".poindexter")
+
+
+def test_get_logger_does_not_stack_handlers_across_calls(monkeypatch, tmp_path):
+    """logging.getLogger(name) is process-global; a second get_logger(name)
+    must replace its own handlers, not stack a second file+stream pair that
+    duplicates every record into the earlier call's file."""
+    monkeypatch.setenv("OPS_LOG_DIR", str(tmp_path))
+    try:
+        first = _common.get_logger("handler-stack-canary")
+        count_after_first = len(first.handlers)
+        second = _common.get_logger("handler-stack-canary")
+        assert second is first
+        assert len(second.handlers) == count_after_first
+    finally:
+        _close_session_handlers("handler-stack-canary")

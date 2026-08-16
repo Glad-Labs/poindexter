@@ -463,7 +463,10 @@ committing sessions (`codebase-audit`, `doc-sync`, `claude-md-sync`,
 `test-health`) run in an isolated worktree off fresh `origin/main` and open a PR
 against `Glad-Labs/glad-labs-stack`; the rest merge PRs / file issues / edit
 labels from the shared checkout. Logs land in
-`~/.poindexter/logs/claude-sessions/<name>-<stamp>.log`. Issues are
+`~/.poindexter/logs/claude-sessions/<name>-<stamp>.log` (`OPS_LOG_DIR`
+overrides; the unit tests set it to a pytest tmp dir, so a file there means a
+real session fire — pytest artifacts were mistaken for one on 2026-08-15).
+Issues are
 content-routed (OSS → poindexter, business → glad-labs-stack). Local-LLM model
 pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 

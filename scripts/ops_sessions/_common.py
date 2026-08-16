@@ -412,15 +412,46 @@ def notify_fail(title: str, detail: str, source: str) -> None:
         logging.getLogger("ops").warning("notify_operator failed: %s | %s", title, detail)
 
 
+def _resolve_log_dir() -> Path:
+    """Directory session logs land in. ``OPS_LOG_DIR`` overrides the default.
+
+    Read per call — unlike the import-time ``OPS_*`` model knobs — so the unit
+    tests' autouse fixture (tests/unit/scripts/conftest.py) can redirect
+    modules that were already imported, however they bound ``get_logger``.
+    That redirect is load-bearing: a file in the real dir reads as "a session
+    ran" (run-session.sh writes the same ``<name>-<stamp>.log`` shape), and a
+    pytest-written test-health log was mistaken for a real session fire during
+    an unrelated investigation on 2026-08-15.
+    """
+    override = os.environ.get("OPS_LOG_DIR", "").strip()
+    return Path(override) if override else _LOG_DIR
+
+
+# Handlers get_logger attached per logger name, so a repeat call replaces its
+# own handlers instead of stacking a second file+stream pair (and leaves any
+# externally-attached handler — pytest's caplog etc. — alone).
+_SESSION_HANDLERS: dict[str, list[logging.Handler]] = {}
+
+
 def get_logger(name: str) -> logging.Logger:
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_dir = _resolve_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
     ts = _dt.datetime.now().strftime("%Y-%m-%d-%H%M")
-    handler = logging.FileHandler(_LOG_DIR / f"{name}-{ts}.log", encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
+    # logging.getLogger(name) is process-global: without this sweep, a second
+    # get_logger(name) in one process duplicates every record into every
+    # earlier call's file. Prod fires one session per process so never saw it;
+    # pytest drives several main()s per process and did.
+    for stale in _SESSION_HANDLERS.pop(name, []):
+        logger.removeHandler(stale)
+        stale.close()
+    handler = logging.FileHandler(log_dir / f"{name}-{ts}.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    stream = logging.StreamHandler()
     logger.addHandler(handler)
-    logger.addHandler(logging.StreamHandler())
+    logger.addHandler(stream)
+    _SESSION_HANDLERS[name] = [handler, stream]
     return logger
 
 
