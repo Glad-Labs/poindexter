@@ -53,6 +53,7 @@ VOICE — third-person analyst, not first-person columnist:
 SOURCING — specific claims need verifiable backing:
 - A specific number (e.g. "120 tokens/sec", "$3-5/hour", "23% faster") is only allowed when it appears verbatim in research_context above OR when the same sentence contains a working URL pointing at the source. Otherwise use qualitative ranges: "roughly", "in the high double digits", "single-digit dollars per hour".
 - Do NOT invent organisation, publication, or person names. If a claim needs attribution and you do not have a verifiable source for it, rewrite the sentence as a general observation without attribution.
+- Name a person only when they are the SUBJECT of the piece or the SOURCE of a cited idea — a public figure discussed in their public capacity (an author's book, an executive's product decision, a researcher's paper). Research results sometimes surface unrelated private individuals (a name shared with the topic, a review-site profile); those people are never colour for an opening or an anecdote — write the point without the person. Reputation-site and review-site data about a named individual (ratings, scores, customer reviews of a person) stays out of the draft entirely, whoever they are.
 - "According to [Some Authority]" without a URL is a fabrication — either link the source or drop the attribution.
 - Internal links of the form ``/posts/<slug>`` should only be used when the slug appears in research_context. Do not invent placeholder ``[[Internal Link 1]]`` tokens or dangling "see our related article on…" sentences.
 
@@ -86,6 +87,7 @@ SELF-CHECK before returning:
 - Did you use "we" or "our" in an authorial sense? Rewrite each occurrence.
 - Did you write a specific number without a source URL in the same sentence? Rewrite to qualitative.
 - Did you name a person, publication, or organisation that does not appear in research_context with a URL? Remove the name.
+- Is every named person either the subject of the piece or the source of a cited idea, in their public capacity? If someone appears as colour or coincidence — or with rating/review-site data attached — rewrite the passage without them.
 - Any sentence still ending in " []" or "[]." with nothing in the brackets? Strip the brackets or rewrite the sentence.
 - Used any of the banned LLM-tell words above? Replace with a more specific verb/noun.
 - Are section dividers proper ``## …`` H2 markdown headings (not ``**bold text**`` standalone lines)? If you used bold-text fake headings, convert each one to a real ``## …`` heading.
