@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+## [0.124.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.123.0...v0.124.0) (2026-08-16)
+
+
+### Features
+
+* **console:** image rebuild/regen actions on the approve drawer ([#3240](https://github.com/Glad-Labs/glad-labs-stack/issues/3240)) ([1ce88e5](https://github.com/Glad-Labs/glad-labs-stack/commit/1ce88e5064270ec304411db47b79fe41cd921e7b))
+* **image:** featured-image fan-out — render N models, judge, ship the best ([#3250](https://github.com/Glad-Labs/glad-labs-stack/issues/3250)) ([a0fac23](https://github.com/Glad-Labs/glad-labs-stack/commit/a0fac235c6d636c5a78537722f807bc58e4cb4f2))
+* **mcp:** rebuild_images tool — queue the all-images rebuild from the phone surface ([#3247](https://github.com/Glad-Labs/glad-labs-stack/issues/3247)) ([1a474c8](https://github.com/Glad-Labs/glad-labs-stack/commit/1a474c84979113295b65b4fc93929c19ff2929f2))
+* **prompts:** positive directive on when naming a person is appropriate ([#3256](https://github.com/Glad-Labs/glad-labs-stack/issues/3256)) ([e9b6a76](https://github.com/Glad-Labs/glad-labs-stack/commit/e9b6a76de39ca2f1b5d3eead4eb32ff3368c9edf))
+* **qa:** qa.self_claim rail — verify the draft's claims about our own system ([#3255](https://github.com/Glad-Labs/glad-labs-stack/issues/3255)) ([8c9c193](https://github.com/Glad-Labs/glad-labs-stack/commit/8c9c193d0ff11501c50249050ddd36d4f0481ae4))
+* **taps:** generic RSS/Atom topic source — one plugin, N feeds as external_taps rows ([#3236](https://github.com/Glad-Labs/glad-labs-stack/issues/3236)) ([4a8c979](https://github.com/Glad-Labs/glad-labs-stack/commit/4a8c9794ca65bd31d23eb02e0ce0b513c3fd851f))
+
+
+### Bug Fixes
+
+* **brain:** re-point podcast health probe at media_assets production signal ([#3237](https://github.com/Glad-Labs/glad-labs-stack/issues/3237)) ([3ee3108](https://github.com/Glad-Labs/glad-labs-stack/commit/3ee3108096ba440bcc9ba87c7fecaf8c27f90269))
+* **content:** consume marker whitespace when injecting inline images ([#3243](https://github.com/Glad-Labs/glad-labs-stack/issues/3243)) ([d985829](https://github.com/Glad-Labs/glad-labs-stack/commit/d9858294041a05aa058a14c5ca87a5011c8e3222))
+* **gpu:** multi-card admission fit gate + KV term in the model estimate ([#3253](https://github.com/Glad-Labs/glad-labs-stack/issues/3253)) ([762287b](https://github.com/Glad-Labs/glad-labs-stack/commit/762287b0700ec063e11c348d08f1bb5b88e9d932))
+* **image:** raise the prompt token + timeout budget to what the step measures ([#3239](https://github.com/Glad-Labs/glad-labs-stack/issues/3239)) ([2ccd6d6](https://github.com/Glad-Labs/glad-labs-stack/commit/2ccd6d6f9968672777c3324c890bf5f299a905c0))
+* **media:** treat a recently-stamped dispatch marker as in-flight, not missing ([#3244](https://github.com/Glad-Labs/glad-labs-stack/issues/3244)) ([b8d39fa](https://github.com/Glad-Labs/glad-labs-stack/commit/b8d39fa63b41653de3f7a7489bbcdcb4f6e3643a))
+* **net:** stop resolver blips failing every Cloudflare job as separate pages ([#3251](https://github.com/Glad-Labs/glad-labs-stack/issues/3251)) ([24c071d](https://github.com/Glad-Labs/glad-labs-stack/commit/24c071d032f1681300bfa9d424c83b12df99479d)), closes [#3161](https://github.com/Glad-Labs/glad-labs-stack/issues/3161)
+* **ops-sessions:** close the wrapper deploy gap — ff-only checkout self-update ([#3238](https://github.com/Glad-Labs/glad-labs-stack/issues/3238)) ([f54ff8a](https://github.com/Glad-Labs/glad-labs-stack/commit/f54ff8a6e7951ab9b05e2c30bee8e4946d6a11c0))
+* **ops-sessions:** OPS_LOG_DIR seam keeps pytest out of the real session-log dir ([#3258](https://github.com/Glad-Labs/glad-labs-stack/issues/3258)) ([3be173c](https://github.com/Glad-Labs/glad-labs-stack/commit/3be173c32dcd18dd993c3ffe7518fb8bdcd6bd9e))
+* **ops-sessions:** render session unit for SUDO_USER, not root ([#3242](https://github.com/Glad-Labs/glad-labs-stack/issues/3242)) ([13f45e5](https://github.com/Glad-Labs/glad-labs-stack/commit/13f45e5b9737e0edc6456ccb56e2da441866a0ad))
+* **ops:** auto-deploy mcp-server merges to the phone connector via deploy-sync ([#3249](https://github.com/Glad-Labs/glad-labs-stack/issues/3249)) ([227dfa4](https://github.com/Glad-Labs/glad-labs-stack/commit/227dfa4da9d1269fa7080ca02c2ca2917bc8c84e))
+* **ops:** boot readiness gate for Persistent=true session catch-ups ([#3252](https://github.com/Glad-Labs/glad-labs-stack/issues/3252)) ([d0d2a7e](https://github.com/Glad-Labs/glad-labs-stack/commit/d0d2a7ed96821402d0b870ea76a7cc12871a6776))
+* **ops:** preflight OPS_OLLAMA_MODEL_* pins + daily pin-check session ([#3246](https://github.com/Glad-Labs/glad-labs-stack/issues/3246)) ([c74c99d](https://github.com/Glad-Labs/glad-labs-stack/commit/c74c99d603b4823ec36a832a9cb07bc57127e262)), closes [#3163](https://github.com/Glad-Labs/glad-labs-stack/issues/3163)
+* **pipeline:** allow 'expired' + 'dismissed' in pipeline_tasks status constraint ([#3241](https://github.com/Glad-Labs/glad-labs-stack/issues/3241)) ([a465942](https://github.com/Glad-Labs/glad-labs-stack/commit/a4659421f7f99a6a91ea3af0e8982fe31f07c591))
+* **qa:** re-run absent required rails before terminal-rejecting ([#3248](https://github.com/Glad-Labs/glad-labs-stack/issues/3248)) ([8112a1e](https://github.com/Glad-Labs/glad-labs-stack/commit/8112a1e4f0dc9235b92ce5576879430d2361b2e8))
+
 ## [0.123.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.122.0...v0.123.0) (2026-08-15)
 
 
