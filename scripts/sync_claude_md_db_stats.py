@@ -90,6 +90,21 @@ HEADER_RE = re.compile(
 )
 HEADER_CLAUSE = " last refreshed {date}"
 
+# The prose anchors every DB-derived count rides on, keyed to match
+# COUNT_QUERIES. Module-level (not inline in ``apply_to_claude_md``) so
+# ``scripts/ci/claude_md_anchor_lint.py`` can import and run them against the
+# checked-in CLAUDE.md — a reword that kills an anchor now fails CI on the PR
+# that breaks it, instead of silently freezing the count until someone reads
+# a nightly PR body (#2832). ``app_settings`` keeps its capture group; the
+# lint only searches, the sync substitutes.
+COUNT_ANCHORS: OrderedDict[str, str] = OrderedDict([
+    ("live_posts", r"[\d,]+ live posts on gladlabs\.io"),
+    ("total_posts", r"\([\d,]+ posts total;"),
+    ("pipeline_tasks", r"[\d,]+ pipeline_tasks across"),
+    ("app_settings", r"[\d,]+ (app_settings keys[^(\n]*)\(\d+ secret"),
+    ("embeddings", r"[\d,]+ embeddings across"),
+])
+
 
 def _utc_today() -> str:
     """Today's UTC date as ``YYYY-MM-DD``.
@@ -179,19 +194,20 @@ def apply_to_claude_md(
     def fmt(key: str) -> str:
         return f"{stats[key]:,}"
 
+    # Patterns live in COUNT_ANCHORS (module level, lint-imported — #2832).
     # "78 live posts on gladlabs.io (222 posts total; 1,626 pipeline_tasks ..."
     _sub(
-        r"[\d,]+ live posts on gladlabs\.io",
+        COUNT_ANCHORS["live_posts"],
         f"{fmt('live_posts')} live posts on gladlabs.io",
         f"live_posts ->{fmt('live_posts')}",
     )
     _sub(
-        r"\([\d,]+ posts total;",
+        COUNT_ANCHORS["total_posts"],
         f"({fmt('total_posts')} posts total;",
         f"total_posts ->{fmt('total_posts')}",
     )
     _sub(
-        r"[\d,]+ pipeline_tasks across",
+        COUNT_ANCHORS["pipeline_tasks"],
         f"{fmt('pipeline_tasks')} pipeline_tasks across",
         f"pipeline_tasks ->{fmt('pipeline_tasks')}",
     )
@@ -202,14 +218,14 @@ def apply_to_claude_md(
     # than spelled out, and everything from "secret" onward is left alone, so
     # the anchor survives prose edits on either side of the two numbers.
     _sub(
-        r"[\d,]+ (app_settings keys[^(\n]*)\(\d+ secret",
+        COUNT_ANCHORS["app_settings"],
         rf"{fmt('app_settings')} \1({fmt('app_settings_secret')} secret",
         f"app_settings ->{fmt('app_settings')} ({fmt('app_settings_secret')} secret)",
     )
 
     # "40,497 embeddings across posts / issues / audit / ..."
     _sub(
-        r"[\d,]+ embeddings across",
+        COUNT_ANCHORS["embeddings"],
         f"{fmt('embeddings')} embeddings across",
         f"embeddings ->{fmt('embeddings')}",
     )

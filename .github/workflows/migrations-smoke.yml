@@ -103,6 +103,17 @@ jobs:
       - name: Lint settings seed value drift
         run: python scripts/ci/settings_seed_value_drift_lint.py
 
+      # Every count the CLAUDE.md sync scripts maintain rides on a prose
+      # anchor; rewording the prose kills the regex and the number silently
+      # freezes while still reading as current (#2820 → #2825 did exactly
+      # that to the app_settings bullet). This fails the PR that breaks the
+      # wording instead of leaving it to a nightly PR body nobody reads.
+      # Patterns are imported from the sync scripts, so the lint can't
+      # drift from them. Skips cleanly when CLAUDE.md is absent (the public
+      # mirror strips it but shares this workflow). Static, no DB. (#2832)
+      - name: Lint CLAUDE.md sync anchors
+        run: python scripts/ci/claude_md_anchor_lint.py
+
       # A bare './x' compose mount resolves to the compose PROJECT dir, not
       # ${POINDEXTER_DEPLOY_ROOT}. On an operator host with a separate deploy
       # clone that means the container runs code from the working checkout and

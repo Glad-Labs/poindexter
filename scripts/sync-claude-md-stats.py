@@ -33,6 +33,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_MD = ROOT / "CLAUDE.md"
 
+# The prose anchors each repo-derived stat rides on, keyed to match
+# ``collect_stats``. Module-level so ``scripts/ci/claude_md_anchor_lint.py``
+# can import and run them against the checked-in CLAUDE.md — a reword that
+# kills an anchor now fails CI on the PR that breaks it, instead of silently
+# freezing the count (#2832). The CLAUDE.md "Editing note" warns humans about
+# these exact wordings; the lint makes the warning enforceable.
+STAT_ANCHORS: OrderedDict[str, str] = OrderedDict([
+    ("service_py_files", r"\d+ Python files under `src/cofounder_agent/services/`"),
+    ("test_files", r"\d+ test files"),
+    ("grafana_dashboards", r"\d+ Grafana dashboards"),
+])
+
 
 def _glob_count(pattern: str) -> int:
     return len(list(ROOT.glob(pattern)))
@@ -79,23 +91,24 @@ def apply_to_claude_md(stats: OrderedDict[str, int | str]) -> tuple[str, list[st
             changes.append(label)
             text = new
 
+    # Patterns live in STAT_ANCHORS (module level, lint-imported — #2832).
     # "329 Python files under `src/cofounder_agent/services/`"
     _sub(
-        r"\d+ Python files under `src/cofounder_agent/services/`",
+        STAT_ANCHORS["service_py_files"],
         f"{stats['service_py_files']} Python files under `src/cofounder_agent/services/`",
         f"service_py_files ->{stats['service_py_files']}",
     )
 
     # "8,400+ Python unit tests across 369 test files"
     _sub(
-        r"\d+ test files",
+        STAT_ANCHORS["test_files"],
         f"{stats['test_files']} test files",
         f"test_files ->{stats['test_files']}",
     )
 
     # "8 Grafana dashboards (Mission Control / …)"
     _sub(
-        r"\d+ Grafana dashboards",
+        STAT_ANCHORS["grafana_dashboards"],
         f"{stats['grafana_dashboards']} Grafana dashboards",
         f"grafana_dashboards ->{stats['grafana_dashboards']}",
     )
