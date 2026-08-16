@@ -1,147 +1,12 @@
 {
-  "count": 4,
+  "count": 8,
   "events": [
     {
-      "id": 344080,
-      "timestamp": "2026-08-15T06:37:11.763813+00:00",
-      "event_type": "qa_pass_completed",
-      "source": "qa.aggregate",
-      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
-      "severity": "warning",
-      "details": {
-        "rescued": false,
-        "reviews": [
-          {
-            "score": 85,
-            "advisory": false,
-            "approved": true,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "clean (no fabrication); 3 warning(s)"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_brand_fabrication",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
-          },
-          {
-            "score": 63.5,
-            "advisory": true,
-            "approved": true,
-            "provider": "ragas",
-            "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.91, context_precision=0.00, faithfulness=1.00"
-          },
-          {
-            "score": 65,
-            "advisory": true,
-            "approved": true,
-            "provider": "vision_gate",
-            "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=65, overall=65. [65] v/images/featured/f7460760-0c863a0b.webp: Abstract tech illustration of AI infrastructure; visually represents 'AI system'"
-          },
-          {
-            "score": 98,
-            "advisory": false,
-            "approved": true,
-            "provider": "consistency_gate",
-            "reviewer": "topic_delivery",
-            "feedback_preview": "The article faithfully executes the requested topic by defining the 'learning-first' philosophy, contrasting it with common industry failures, and providing concrete operational examples of how to imp"
-          },
-          {
-            "score": 100,
-            "advisory": false,
-            "approved": true,
-            "provider": "http_head",
-            "reviewer": "citation_verifier",
-            "feedback_preview": "All 4 external URL(s) verified alive"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "unlinked_attribution",
-            "reviewer": "unlinked_attribution",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
-          },
-          {
-            "score": 97.8,
-            "advisory": true,
-            "approved": true,
-            "provider": "self_consistency_gate",
-            "reviewer": "self_consistency",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.978 across 3 samples (threshold=0.55) PASS"
-          },
-          {
-            "score": 20.4,
-            "advisory": true,
-            "approved": true,
-            "provider": "content_originality_gate",
-            "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'the-trap-nobody-notices-until-output-breaks-249a74ca' at worst-chunk cosine 0.80"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "title_coherence_gate",
-            "reviewer": "title_coherence",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: Why 'Just Have the AI Do It' Breaks by Week Three] The article directly explains why skipping a 'learning-first' phase leads to fragile automation tha"
-          }
-        ],
-        "approved": false,
-        "terminal": true,
-        "final_score": 93.33,
-        "reviewer_count": 10,
-        "schema_version": 1,
-        "gating_rail_count": 3,
-        "qa_all_rail_score": 80.84,
-        "approval_threshold": 80,
-        "advisory_rail_count": 7,
-        "qa_rewrite_attempts": 0
-      }
-    },
-    {
-      "id": 344079,
-      "timestamp": "2026-08-15T06:37:11.757346+00:00",
-      "event_type": "qa_flagged_surfaced",
-      "source": "qa.aggregate",
-      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
-      "severity": "warning",
-      "details": {
-        "attempts": 0,
-        "threshold": 80,
-        "vetoed_by": [
-          "missing_required:llm_critic"
-        ],
-        "final_score": 93.33
-      }
-    },
-    {
-      "id": 344052,
-      "timestamp": "2026-08-15T06:32:16.434846+00:00",
-      "event_type": "ragas_score",
-      "source": "ragas_eval",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "score": 0.6354,
-        "topic": "The Learning-First Approach to AI Automation",
-        "faithfulness": 1,
-        "metric_count": 3,
-        "answer_relevancy": 0.9062,
-        "context_precision": 0
-      }
-    },
-    {
-      "id": 343996,
-      "timestamp": "2026-08-15T06:24:07.917541+00:00",
+      "id": 353143,
+      "timestamp": "2026-08-16T07:49:06.028909+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
-      "task_id": "f7460760-f503-4cd6-80cd-3fb209b74501",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
       "severity": "info",
       "details": {
         "model": "z_image_turbo",
@@ -155,7 +20,125 @@
           0
         ]
       }
+    },
+    {
+      "id": 353097,
+      "timestamp": "2026-08-16T07:42:34.514715+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 353039,
+      "timestamp": "2026-08-16T07:32:03.615891+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "style": "layered paper cutout craft style",
+        "topic": "The Cosine Similarity Trap"
+      }
+    },
+    {
+      "id": 353038,
+      "timestamp": "2026-08-16T07:32:02.684764+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 1,
+        "attempt_scores": [
+          1
+        ]
+      }
+    },
+    {
+      "id": 353035,
+      "timestamp": "2026-08-16T07:31:57.747225+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 353034,
+      "timestamp": "2026-08-16T07:31:51.867110+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 352992,
+      "timestamp": "2026-08-16T07:25:35.632063+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "rejected_reason": "too long (ratio 2.40 > 1.3)",
+        "contradictions_found": 4
+      }
+    },
+    {
+      "id": 352977,
+      "timestamp": "2026-08-16T07:22:07.285256+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+      "severity": "info",
+      "details": {
+        "topic": "The Cosine Similarity Trap",
+        "template_slug": "canonical_blog"
+      }
     }
   ],
-  "server_time": "2026-08-15T08:20:04.335708+00:00"
+  "server_time": "2026-08-16T08:21:24.969805+00:00"
 }
