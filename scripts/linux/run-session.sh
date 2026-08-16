@@ -23,6 +23,7 @@ echo "=== session $NAME starting $(date -Is) ===" >>"$LOG"
 # next day's fire — 24h of red for a blip that cleared in seconds.
 FETCH_ATTEMPTS="${OPS_GIT_FETCH_ATTEMPTS:-3}"
 FETCH_RETRY_SECONDS="${OPS_GIT_FETCH_RETRY_SECONDS:-15}"
+CHECKOUT_SYNC="${OPS_CHECKOUT_SYNC:-1}"
 
 fetch_origin() {
   local attempt=1 delay
@@ -48,10 +49,64 @@ case "$NAME" in
   *) NEEDS_WT=0 ;;
 esac
 
+# Pre-flight self-update: fast-forward the shared checkout to origin/main.
+# Nothing else deploys this tree — poindexter-deploy-sync serves the dedicated
+# deploy clone and must NEVER point here (its step 4 is reset --hard + clean,
+# and this checkout holds Matt's stashes and agent worktrees). Found 2026-08-15:
+# PR #3228's fetch retry was merged but the deployed wrapper still ran the old
+# code, 3 commits behind. ff-only is the whole point — merge, never reset.
+#
+# Guards: only on main, only with clean *tracked* files (-uno: a stray
+# untracked scratch file must not wedge the sync forever), fail-safe on
+# unparseable behind-counts (skip, don't merge). Any skip or failure is a log
+# line, never an abort — a stale wrapper is the status quo, not a new failure.
+#
+# Mid-run safety: git REPLACES files (new inode) rather than truncating in
+# place, so the bash instance running this script keeps reading its old fd
+# untouched; a merged wrapper change takes effect on the NEXT timer fire. The
+# shared-checkout session payloads (scripts/ops_sessions/*.py for the
+# non-worktree sessions) load after this point, so they run current in THIS run.
+DID_FETCH=0
+sync_shared_checkout() {
+  if [ "$CHECKOUT_SYNC" != "1" ]; then
+    echo "checkout sync disabled (OPS_CHECKOUT_SYNC=$CHECKOUT_SYNC)" >>"$LOG"
+    return 0
+  fi
+  local branch behind
+  branch="$(git -C "$WORK" symbolic-ref --quiet --short HEAD || true)"
+  if [ "$branch" != "main" ]; then
+    echo "checkout sync skipped: $WORK is on '${branch:-detached}', not main" >>"$LOG"
+    return 0
+  fi
+  if [ -n "$(git -C "$WORK" status --porcelain -uno 2>>"$LOG")" ]; then
+    echo "checkout sync skipped: $WORK has uncommitted tracked changes (never merged onto)" >>"$LOG"
+    return 0
+  fi
+  if ! fetch_origin; then
+    echo "checkout sync skipped: fetch failed — wrapper may be stale" >>"$LOG"
+    return 0
+  fi
+  DID_FETCH=1
+  behind="$(git -C "$WORK" rev-list --count HEAD..origin/main 2>/dev/null | tr -d '[:space:]')"
+  case "$behind" in
+    ''|*[!0-9]*) behind=0 ;;
+  esac
+  if [ "$behind" = "0" ]; then
+    return 0
+  fi
+  if git -C "$WORK" merge --ff-only origin/main >>"$LOG" 2>&1; then
+    echo "checkout sync: fast-forwarded $WORK $behind commit(s) to origin/main (this run stays on the pre-update wrapper; next fire runs the new one)" >>"$LOG"
+  else
+    echo "checkout sync WARNING: $WORK is $behind commit(s) behind origin/main but cannot fast-forward (diverged, or main checked out in a worktree) — wrapper stays STALE until reconciled by hand" >>"$LOG"
+  fi
+  return 0
+}
+sync_shared_checkout
+
 RUNDIR="$WORK"; BRANCH=""; WT=""
 if [ "$NEEDS_WT" = 1 ]; then
   git -C "$WORK" worktree prune >>"$LOG" 2>&1
-  if ! fetch_origin; then
+  if [ "$DID_FETCH" != 1 ] && ! fetch_origin; then
     exit 1
   fi
   BRANCH="auto/$NAME-$STAMP"

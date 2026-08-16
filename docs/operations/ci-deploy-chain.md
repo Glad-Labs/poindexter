@@ -419,6 +419,40 @@ Deploying the canary itself requires a brain image rebuild
 (`docker compose build brain-daemon && up -d brain-daemon`), since the
 `.git` mount + the `git` binary are new.
 
+## The ops-session wrapper is a third deploy surface
+
+"Deployed" means three different trees on this host, each with its own sync
+mechanism:
+
+| Surface                              | Tree                                         | Synced by                                                              |
+| ------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------- |
+| Public site                          | Vercel build of `glad-labs-stack`            | Vercel, on push to `main`                                              |
+| Worker / brain / pipeline containers | `~/.poindexter/deploy/glad-labs-stack`       | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`) |
+| Ops-session wrapper + shared payload | `~/glad-labs-website` (the working checkout) | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                 |
+
+The third row was the gap: the systemd session units exec `run-session.sh`
+out of the **working checkout**, and until 2026-08-15 nothing auto-updated it —
+PR #3228's fetch retry merged but the deployed wrapper kept running the old
+code, 3 commits behind, until a human fast-forwarded it. The worktree-session
+_payloads_ were immune (fresh worktree off `origin/main` each run), but the
+wrapper itself and the non-worktree sessions' `scripts/ops_sessions/*.py` were
+not.
+
+The fix is deliberately **not** pointing the sessions at the deploy clone, for
+two reasons: the poetry venv is keyed to the working checkout's package path
+(the deploy clone resolves to no env at all), and the deploy clone's design
+contract is "nothing else ever edits it" — sessions create worktrees and hold
+CWDs, and its 10-min `reset --hard` would race them. Instead the wrapper
+self-updates with `git merge --ff-only origin/main`, guarded to skip when the
+checkout is dirty (tracked files), off `main`, or diverged. **Never point
+`deploy-checkout-sync.sh` at a working checkout** — its reset+clean is only
+safe on the dedicated clone; the working checkout holds stashes and agent
+worktrees, and ff-only is the strongest sync it may ever receive. Unit-template
+(`poindexter-session@.service`) changes are the residual manual step: re-run
+`sudo bash scripts/linux/install-session-timers.sh`, which renders and
+installs the unit + timers. Details in
+[scheduled-agents.md](scheduled-agents.md).
+
 ## Fast rollback (pin deploy clone to a known-good SHA)
 
 The durable rollback path is `git revert` + CI + full sync — ~30+ minutes.

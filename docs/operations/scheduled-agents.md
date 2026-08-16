@@ -91,6 +91,23 @@ The unit's only job is to run
 [`scripts/linux/run-session.sh`](../../scripts/linux/run-session.sh) `<name>`,
 which:
 
+- **Self-updates the shared checkout first.** The wrapper (and the shared
+  checkout the non-worktree sessions run their payload from) lives in the
+  operator's working checkout, which nothing else deploys —
+  `poindexter-deploy-sync` serves the dedicated deploy clone and must **never**
+  point at a working checkout (its sync is `reset --hard` + `clean -fd`, and
+  this tree holds stashes and agent worktrees). Before the 2026-08-15 fix that
+  meant merged wrapper changes sat stale until a human pulled: PR #3228's fetch
+  retry shipped while the deployed script ran the old code, 3 commits behind.
+  The pre-flight now runs `git merge --ff-only origin/main` — guarded to
+  **skip, never abort**, when the checkout is not on `main`, has uncommitted
+  _tracked_ changes (untracked scratch files don't block it), or has diverged
+  (that logs a loud `STALE` warning instead). ff-only is the invariant: the
+  sync can only ever advance the checkout, never discard anything. A merged
+  change to `run-session.sh` itself takes effect on the **next** fire (git
+  replaces files rather than truncating, so the running bash keeps its old
+  fd); the shared-checkout session payloads load after the sync, so they run
+  current in the **same** run. `OPS_CHECKOUT_SYNC=0` opts out.
 - **Resolves the payload by convention** — `<name>` maps to
   `scripts/ops_sessions/<name_with_underscores>.py` (`claude-md-sync` →
   `claude_md_sync.py`). There is no per-session command field to edit; adding a
@@ -199,7 +216,7 @@ branch scheme, that test is the thing that notices.
 # what's scheduled, when each last ran, when each fires next
 systemctl list-timers 'poindexter-session@*'
 
-# (re)generate + enable all seven timers — idempotent
+# (re)generate + enable the unit template + all timers — idempotent
 sudo bash scripts/linux/install-session-timers.sh
 
 # run one session now, out of band
@@ -216,6 +233,15 @@ The installer only ever writes the timers in its `SCHED` list, so retiring a
 session takes both steps: `disable --now` the timer **and** drop its `SCHED`
 row. Re-running the installer alone will not remove a timer it no longer
 manages.
+
+The installer is also the deploy path for the **unit template**: it renders
+`infrastructure/systemd/poindexter-session@.service` onto the host
+(substituting `User=` and the `ExecStart` checkout path — the repo copy ships
+a generic `poindexter` / `/home/poindexter` placeholder) and installs it next
+to the timers. The wrapper script self-updates via its ff-only pre-flight, but
+the installed unit render **cannot** (writing `/etc/systemd/system` needs
+sudo) — so after merging any change to the `.service` template, re-run the
+installer. Timer-schedule (`SCHED`) changes need the same re-run, as always.
 
 - **Logs:** `~/.poindexter/logs/claude-sessions/<session>-<timestamp>.log` — one
   file per run, stdout and stderr interleaved (there is no separate `.err` on
@@ -262,10 +288,11 @@ between `gh pr view` polls, so a long budget costs nothing at 02:30.
 Two more knobs are read by [`run-session.sh`](../../scripts/linux/run-session.sh)
 itself, before any Python starts:
 
-| Var                           | Default | Purpose                                        |
-| ----------------------------- | ------- | ---------------------------------------------- |
-| `OPS_GIT_FETCH_ATTEMPTS`      | `3`     | tries for the setup `git fetch origin`         |
-| `OPS_GIT_FETCH_RETRY_SECONDS` | `15`    | backoff base — waits 15s, 30s, … between tries |
+| Var                           | Default | Purpose                                                       |
+| ----------------------------- | ------- | ------------------------------------------------------------- |
+| `OPS_GIT_FETCH_ATTEMPTS`      | `3`     | tries for the setup `git fetch origin`                        |
+| `OPS_GIT_FETCH_RETRY_SECONDS` | `15`    | backoff base — waits 15s, 30s, … between tries                |
+| `OPS_CHECKOUT_SYNC`           | `1`     | pre-flight ff-only self-update of the shared checkout (0=off) |
 
 Three attempts is sized for a transient provider 5xx, not for an outage. A real
 GitHub incident should still fail the run and page, which is why the retry is
