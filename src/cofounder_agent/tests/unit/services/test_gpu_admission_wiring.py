@@ -327,3 +327,134 @@ def test_every_allowlisted_caller_actually_uses_the_contract():
             f"{suffix} is allowlisted as a migrated caller but no longer passes "
             "max_wait_s= — remove it from _MIGRATED_CALLERS."
         )
+
+
+# ---------------------------------------------------------------------------
+# Multi-card + KV-term assembly (poindexter#1016)
+# ---------------------------------------------------------------------------
+# _assemble_admission_inputs must inspect every card ollama-primary can use
+# (ollama_gpu_indexes), carry per-card reserves, and charge a KV term at the
+# configured admission context — the old estimate passed kv_cache_gb=0, which
+# on a 31B model at 8192 ctx left several GB unaccounted and let admission
+# grant loads that CUDA-OOM'd.
+
+
+class _FakeRegistry:
+    def __init__(self, free: dict, evictable: dict):
+        self._free, self._evictable = free, evictable
+        self.asked: list[int] = []
+
+    async def free_gb(self, idx):
+        self.asked.append(idx)
+        return self._free.get(idx)
+
+    async def evictable_ollama_gb(self, idx):
+        return self._evictable.get(idx)
+
+
+def _fake_sc(values: dict):
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda k, d="": values.get(k, d))
+    return sc
+
+
+def _cfg_num_map(values: dict):
+    def _get(key, default):
+        return values.get(key, default)
+
+    return _get
+
+
+@pytest.mark.asyncio
+async def test_assembly_reads_every_configured_card_with_per_card_headroom():
+    gpu = GPUScheduler()
+    reg = _FakeRegistry(free={0: 13.5, 1: 3.1}, evictable={0: 0.0, 1: 0.0})
+    gpu._registry = reg
+    with patch(
+        "services.gpu_scheduler._sc",
+        lambda: _fake_sc({"ollama_gpu_indexes": "0,1"}),
+    ), patch(
+        "services.gpu_scheduler._cfg_float",
+        _cfg_num_map({"gpu0_headroom_gb": 6.0, "gpu1_headroom_gb": 4.5}),
+    ):
+        inputs = await gpu._assemble_admission_inputs(model=None, max_wait_s=60.0)
+    assert reg.asked == [0, 1]
+    assert [c.index for c in inputs.cards] == [0, 1]
+    assert inputs.cards[0].free_gb == 13.5
+    assert inputs.cards[0].headroom_gb == 6.0
+    assert inputs.cards[1].free_gb == 3.1
+    assert inputs.cards[1].headroom_gb == 4.5
+
+
+@pytest.mark.asyncio
+async def test_unset_indexes_falls_back_to_single_pipeline_gpu():
+    """Back-compat: a one-GPU install keeps the exact pre-#1016 behaviour."""
+    gpu = GPUScheduler()
+    reg = _FakeRegistry(free={0: 10.0}, evictable={0: 2.0})
+    gpu._registry = reg
+    with patch(
+        "services.gpu_scheduler._sc", lambda: _fake_sc({}),
+    ), patch(
+        "services.gpu_scheduler._cfg_int",
+        _cfg_num_map({"pipeline_gpu_index": 0}),
+    ):
+        inputs = await gpu._assemble_admission_inputs(model=None, max_wait_s=60.0)
+    assert reg.asked == [0]
+    assert len(inputs.cards) == 1
+
+
+def test_garbage_index_entries_are_skipped_not_fatal():
+    gpu = GPUScheduler()
+    with patch(
+        "services.gpu_scheduler._sc",
+        lambda: _fake_sc({"ollama_gpu_indexes": "0, x, 1,"}),
+    ):
+        assert gpu._admission_gpu_indexes() == [0, 1]
+
+
+def test_all_garbage_falls_back_to_pipeline_gpu_index():
+    gpu = GPUScheduler()
+    with patch(
+        "services.gpu_scheduler._sc",
+        lambda: _fake_sc({"ollama_gpu_indexes": "x,,y"}),
+    ), patch(
+        "services.gpu_scheduler._cfg_int",
+        _cfg_num_map({"pipeline_gpu_index": 0}),
+    ):
+        assert gpu._admission_gpu_indexes() == [0]
+
+
+@pytest.mark.asyncio
+async def test_estimate_includes_a_kv_term_at_the_assumed_context():
+    """The KV term must move the estimate — weights+overhead alone was the
+    under-count that granted doomed loads."""
+    gpu = GPUScheduler()
+    gpu._registry = _FakeRegistry(free={0: 30.0}, evictable={0: 0.0})
+
+    from services.vram_budget import ModelArch
+
+    arch = ModelArch(
+        n_layers=48, n_kv_heads=8, head_dim=128,
+        weight_bytes=int(18.5 * (1024 ** 3)), sliding_window=0,
+    )
+    with patch(
+        "services.gpu_scheduler._sc",
+        lambda: _fake_sc({"ollama_kv_cache_type": "q8_0"}),
+    ), patch(
+        "services.gpu_scheduler._cfg_int",
+        _cfg_num_map({"gpu_admission_assumed_num_ctx": 8192}),
+    ), patch(
+        "services.llm_providers.dispatcher._read_arch_for_budget",
+        AsyncMock(return_value=arch),
+    ):
+        inputs = await gpu._assemble_admission_inputs(
+            model="big-model", max_wait_s=60.0,
+        )
+
+    from services.vram_budget import estimate_model_vram_gb
+
+    weights_only = estimate_model_vram_gb(arch, 0.0)
+    assert inputs.model_estimate_gb is not None
+    assert inputs.model_estimate_gb > weights_only + 0.5, (
+        "admission estimate must charge for the KV cache, not just weights"
+    )

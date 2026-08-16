@@ -58,11 +58,37 @@ class GpuBusyError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class CardVram:
+    """One card's VRAM telemetry as the fit gate sees it (poindexter#1016).
+
+    ``free_gb`` / ``evictable_gb`` keep the #914 None-vs-0.0 contract:
+    ``None`` is UNKNOWN (fails open), ``0.0`` is a known empty answer.
+    ``headroom_gb`` is per-card on purpose — GPU 0 reserves for the desktop,
+    while a compute-only second card may reserve eviction insurance instead
+    (the operator box holds ~4.5 GB free on the 3090 by design).
+    """
+
+    index: int
+    free_gb: float | None = None
+    evictable_gb: float | None = None
+    headroom_gb: float = 6.0
+
+
+@dataclass(frozen=True)
 class AdmissionInputs:
     """Everything :func:`decide` looks at, pre-read by the caller.
 
     ``None`` means "telemetry unavailable" and always fails open — see the
     module docstring for the per-field skip semantics.
+
+    Card telemetry comes in two shapes: the legacy single-card fields
+    (``free_gpu0_gb`` / ``evictable_gpu0_gb`` / ``headroom_gb``) and the
+    multi-card ``cards`` tuple (poindexter#1016 — the deployment runs
+    ollama-primary across two cards, so a gate that inspects one card is
+    answering a question Ollama did not ask). When ``cards`` is non-empty
+    it is authoritative and the legacy fields are ignored; when empty, the
+    legacy fields are folded into a one-card list, so existing callers and
+    tests keep their exact semantics.
     """
 
     max_wait_s: float | None
@@ -79,6 +105,20 @@ class AdmissionInputs:
     evictable_gpu0_gb: float | None = None
     headroom_gb: float = 6.0
     model_estimate_gb: float | None = None
+    cards: tuple[CardVram, ...] = ()
+
+    def effective_cards(self) -> tuple[CardVram, ...]:
+        """The card list the fit gate actually evaluates."""
+        if self.cards:
+            return self.cards
+        return (
+            CardVram(
+                index=0,
+                free_gb=self.free_gpu0_gb,
+                evictable_gb=self.evictable_gpu0_gb,
+                headroom_gb=self.headroom_gb,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -108,20 +148,40 @@ def decide(i: AdmissionInputs) -> AdmissionDecision:
                 action="reject", reason="eta_exceeds_budget", eta_seconds=eta
             )
 
-    # --- Fit gate (needs BOTH free-VRAM telemetry and a model estimate) ---
-    if i.free_gpu0_gb is None or i.model_estimate_gb is None:
+    # --- Fit gate (needs a model estimate + free-VRAM telemetry) ---
+    # Multi-card semantics (poindexter#1016): Ollama places a model on the
+    # card with the most free VRAM when it fits entirely, and SPLITS the
+    # weights across cards when no single card can hold them — so the honest
+    # fit question is "does it fit any one card, or the pool as a whole",
+    # each card contributing its free VRAM minus its own reserve.
+    cards = i.effective_cards()
+    if i.model_estimate_gb is None or any(c.free_gb is None for c in cards):
+        # Unknown estimate, or ANY card's telemetry missing: the pool total
+        # is unknowable, so a no_fit cannot be asserted — fail open, same
+        # posture the single-card gate always had.
         return AdmissionDecision(action="grant", eta_seconds=eta)
 
-    budget = i.free_gpu0_gb - i.headroom_gb
-    if i.model_estimate_gb <= budget:
+    # Per-card budget may be NEGATIVE (free below the card's reserve) — that
+    # deficit is meaningful for the single-card check and for eviction credit
+    # (a freed model must first refill the reserve before contributing), but
+    # a deficit card contributes zero capacity to a split, never negative.
+    budgets = [c.free_gb - c.headroom_gb for c in cards]
+    if i.model_estimate_gb <= max(budgets) or i.model_estimate_gb <= sum(
+        b for b in budgets if b > 0.0
+    ):
         return AdmissionDecision(action="grant", eta_seconds=eta)
     # Eviction credit unknown -> fail open. We already know the model does not
     # fit the free budget, so the only question left is whether something
     # evictable is holding the rest of the card. Answering "no" on ignorance
     # rejects the caller, and a rejected QA rail passes OPEN — trading a slow
     # judgement for no judgement at all (poindexter#914).
-    if i.evictable_gpu0_gb is None:
+    if any(c.evictable_gb is None for c in cards):
         return AdmissionDecision(action="grant_after_unload", eta_seconds=eta)
-    if i.model_estimate_gb <= budget + i.evictable_gpu0_gb:
+    with_credit = [
+        b + (c.evictable_gb or 0.0) for b, c in zip(budgets, cards, strict=True)
+    ]
+    if i.model_estimate_gb <= max(with_credit) or i.model_estimate_gb <= sum(
+        b for b in with_credit if b > 0.0
+    ):
         return AdmissionDecision(action="grant_after_unload", eta_seconds=eta)
     return AdmissionDecision(action="reject", reason="no_fit", eta_seconds=eta)

@@ -296,3 +296,126 @@ def test_gpu_busy_error_without_eta():
     err = GpuBusyError("no_fit", None)
     assert err.eta_seconds is None
     assert "no_fit" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# Multi-card fit gate (poindexter#1016)
+# ---------------------------------------------------------------------------
+# The deployment runs ollama-primary across two cards; a gate that inspects
+# one card is answering a question Ollama did not ask. Ollama places a model
+# on the card with the most free VRAM when it fits entirely and SPLITS the
+# weights when no single card holds them — so fit = any one card, or the
+# clamped pool.
+
+from services.gpu_admission import CardVram  # noqa: E402
+
+
+def _card(index, free, evictable=0.0, headroom=6.0):
+    return CardVram(
+        index=index, free_gb=free, evictable_gb=evictable, headroom_gb=headroom,
+    )
+
+
+class TestMultiCardFit:
+    def test_issue_1016_live_shape_rejects_instead_of_oom(self):
+        """The exact box state from the issue: 5090 ~13.5 free (6 reserve),
+        3090 ~3.1 free (4.5 insurance), 31B model ~20.5 with KV. The old
+        single-card gate granted this and Ollama CUDA-OOM'd; the honest
+        answer is a reject (which callers surface as a clean deferral)."""
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=20.5,
+            cards=(_card(0, 13.5), _card(1, 3.1, headroom=4.5)),
+        ))
+        assert d.action == "reject"
+        assert d.reason == "no_fit"
+
+    def test_fits_entirely_on_the_second_card(self):
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=10.0,
+            cards=(_card(0, 4.0), _card(1, 20.0, headroom=4.5)),
+        ))
+        assert d.action == "grant"
+
+    def test_split_across_cards_fits_the_pool(self):
+        """No single card holds 12 GB but the pool does (7.5 + 5.5)."""
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=12.0,
+            cards=(_card(0, 13.5), _card(1, 10.0, headroom=4.5)),
+        ))
+        assert d.action == "grant"
+
+    def test_deficit_card_contributes_zero_to_the_split_never_negative(self):
+        """A card below its reserve must not subtract from the pool."""
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=4.0,
+            cards=(_card(0, 10.0), _card(1, 0.5, headroom=4.5)),
+        ))
+        assert d.action == "grant"
+
+    def test_any_unknown_card_fails_open(self):
+        """One card's telemetry missing → the pool total is unknowable → a
+        no_fit cannot be asserted (the #914 posture, per card)."""
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=99.0,
+            cards=(_card(0, 13.5), CardVram(index=1, free_gb=None)),
+        ))
+        assert d.action == "grant"
+
+    def test_eviction_credit_is_per_card_and_refills_the_reserve_first(self):
+        """Evicting 10 GB on a card 4 GB under reserve nets 6 usable — enough
+        for a 5 GB model (grant_after_unload), and the deficit math must not
+        be clamped away before the credit lands."""
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=5.0,
+            cards=(
+                _card(0, 2.0, evictable=10.0),
+                _card(1, 1.0, headroom=4.5),
+            ),
+        ))
+        assert d.action == "grant_after_unload"
+
+    def test_unknown_evictable_on_any_card_fails_open_to_unload(self):
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=15.0,
+            cards=(
+                _card(0, 13.5),
+                CardVram(index=1, free_gb=3.1, evictable_gb=None, headroom_gb=4.5),
+            ),
+        ))
+        assert d.action == "grant_after_unload"
+
+    def test_no_fit_even_with_full_eviction_credit_rejects(self):
+        d = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=40.0,
+            cards=(
+                _card(0, 13.5, evictable=5.0),
+                _card(1, 3.1, evictable=0.0, headroom=4.5),
+            ),
+        ))
+        assert d.action == "reject"
+        assert d.reason == "no_fit"
+
+    def test_legacy_single_card_fields_fold_into_one_card(self):
+        """cards=() keeps the pre-#1016 semantics byte-for-byte: the legacy
+        fields become a one-card list, so every existing caller/test above
+        this section is exercising the same code path."""
+        legacy = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            free_gpu0_gb=13.5,
+            evictable_gpu0_gb=0.0,
+            model_estimate_gb=20.5,
+        ))
+        multi = decide(AdmissionInputs(
+            max_wait_s=60.0,
+            model_estimate_gb=20.5,
+            cards=(_card(0, 13.5),),
+        ))
+        assert legacy.action == multi.action == "reject"

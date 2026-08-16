@@ -1041,9 +1041,47 @@ class GPUScheduler:
             )
         return decision
 
+    def _admission_gpu_indexes(self) -> list[int]:
+        """Cards the fit gate inspects (poindexter#1016).
+
+        ``ollama_gpu_indexes`` (CSV, e.g. ``0,1``) names every card
+        ollama-primary can place models on — on the operator box that is
+        both cards, and a gate that only ever read GPU 0 was answering a
+        question Ollama did not ask (18 CUDA OOMs in 30 days of
+        internal_rag runs). Unset (the default) falls back to the
+        single-card ``pipeline_gpu_index`` behaviour, which is correct for
+        a one-GPU install.
+        """
+        raw = (_sc().get("ollama_gpu_indexes", "") or "").strip()
+        if raw:
+            indexes: list[int] = []
+            for part in raw.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    indexes.append(int(part))
+                except ValueError:
+                    logger.warning(
+                        "ollama_gpu_indexes contains non-integer %r — ignoring it",
+                        part,
+                    )
+            if indexes:
+                return indexes
+        return [_cfg_int("pipeline_gpu_index", 0)]
+
+    def _card_headroom_gb(self, index: int) -> float:
+        """Per-card reserve. GPU 0 reserves for the desktop
+        (``gpu0_headroom_gb``); other cards read ``gpu<i>_headroom_gb``,
+        defaulting to the eviction-insurance floor the operator box keeps
+        on its compute-only card."""
+        if index == 0:
+            return _cfg_float("gpu0_headroom_gb", 6.0)
+        return _cfg_float(f"gpu{index}_headroom_gb", 4.5)
+
     async def _assemble_admission_inputs(self, *, model: str | None,
                                          max_wait_s: float):
-        from services.gpu_admission import AdmissionInputs
+        from services.gpu_admission import AdmissionInputs, CardVram
 
         holder_key = holder_elapsed = holder_stats = None
         if self._lock.locked() and self._current_owner is not None:
@@ -1059,35 +1097,54 @@ class GPUScheduler:
                 # silent-ok: stats degrade to the fallback ETA inside decide().
                 holder_stats = None
 
-        free_gb: float | None = None
-        # None = unknown; decide() fails open on it. Do NOT default this to 0.0
-        # — that reads as "nothing evictable" and rejects (poindexter#914).
-        evictable_gb: float | None = None
+        # Multi-card telemetry (poindexter#1016): one CardVram per card
+        # ollama-primary can place on. Per-card None keeps the #914 contract
+        # (unknown fails open inside decide()).
+        cards: list[CardVram] = []
         try:
             registry = self._get_registry()
-            gpu_index = _cfg_int("pipeline_gpu_index", 0)
-            free_gb = await registry.free_gb(gpu_index)
-            evictable_gb = await registry.evictable_ollama_gb(gpu_index)
+            for idx in self._admission_gpu_indexes():
+                cards.append(CardVram(
+                    index=idx,
+                    free_gb=await registry.free_gb(idx),
+                    evictable_gb=await registry.evictable_ollama_gb(idx),
+                    headroom_gb=self._card_headroom_gb(idx),
+                ))
         except Exception:
             # silent-ok: missing VRAM telemetry skips the fit gate (fail-open);
             # a persistent outage already pages via nvidia_exporter_unreachable.
-            free_gb, evictable_gb = None, None
+            cards = []
 
         estimate_gb: float | None = None
         if model:
             try:
                 from services.llm_providers.dispatcher import _read_arch_for_budget
-                from services.vram_budget import estimate_model_vram_gb
+                from services.vram_budget import (
+                    estimate_kv_cache_gb,
+                    estimate_model_vram_gb,
+                    kv_bytes_per_elem,
+                )
 
                 arch = await _read_arch_for_budget(model)
                 if arch is not None:
-                    # Floor estimate: weights + fixed overhead, no KV term (the
-                    # caller's num_ctx isn't known at admission time). Under-
-                    # estimating errs toward "grant" — consistent with fail-open;
-                    # the dispatcher's own num_ctx clamp remains the load-time
-                    # backstop. Non-Ollama models (image_gen/video) have no
-                    # /api/show arch → None → fit gate skipped.
-                    estimate_gb = estimate_model_vram_gb(arch, 0.0)
+                    # Weights + overhead + a KV term at the configured
+                    # admission context. The old kv_cache_gb=0.0 dropped the
+                    # KV entirely ("num_ctx unknown at admission"), which on
+                    # a 31B model at OLLAMA_CONTEXT_LENGTH=8192 left several
+                    # GB unaccounted — admission granted loads that then
+                    # CUDA-OOM'd (poindexter#1016). The assumed ctx is the
+                    # floor the runner actually allocates, not the caller's
+                    # request; the dispatcher's num_ctx clamp remains the
+                    # load-time backstop. effective_kv_ctx() keeps
+                    # sliding-window models (gemma) honest. Non-Ollama
+                    # models (image_gen/video) have no /api/show arch →
+                    # None → fit gate skipped.
+                    assumed_ctx = _cfg_int("gpu_admission_assumed_num_ctx", 8192)
+                    kv_bytes = kv_bytes_per_elem(
+                        _sc().get("ollama_kv_cache_type", "q8_0") or "q8_0"
+                    )
+                    kv_gb = estimate_kv_cache_gb(arch, assumed_ctx, kv_bytes)
+                    estimate_gb = estimate_model_vram_gb(arch, kv_gb)
             except Exception:
                 # silent-ok: unknown model size skips the fit gate (fail-open).
                 estimate_gb = None
@@ -1098,9 +1155,7 @@ class GPUScheduler:
             holder_elapsed_s=holder_elapsed,
             holder_stats=holder_stats,
             eta_fallback_s=_cfg_float("gpu_sched_eta_fallback_seconds", 120.0),
-            free_gpu0_gb=free_gb,
-            evictable_gpu0_gb=evictable_gb,
-            headroom_gb=_cfg_float("gpu0_headroom_gb", 6.0),
+            cards=tuple(cards),
             model_estimate_gb=estimate_gb,
         )
 

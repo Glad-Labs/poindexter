@@ -943,6 +943,22 @@ DEFAULTS: dict[str, str] = {
     # larger rejects (no_fit). Sized for Matt's 32GB RTX 5090 + desktop; a
     # dedicated headless card can drop this toward 2.
     'gpu0_headroom_gb': '6',
+    # Multi-card admission (poindexter#1016). ollama_gpu_indexes names every
+    # card ollama-primary can place models on (CSV, e.g. '0,1'); unset keeps
+    # the single-card pipeline_gpu_index behaviour, which is right for a
+    # one-GPU install. The fit gate then admits against the honest pool:
+    # any single card, or a split across them — the single-card gate granted
+    # loads Ollama then split-OOM'd (18 CUDA OOMs in 30 days of internal_rag
+    # runs). gpu1_headroom_gb is the second card's reserve — the operator box
+    # deliberately keeps ~4.5 GB free on the compute-only 3090 as eviction
+    # insurance, which is a different kind of reserve than GPU 0's desktop
+    # headroom. gpu_admission_assumed_num_ctx feeds the KV term the old
+    # estimate dropped entirely (kv_cache_gb=0): the runner allocates KV at
+    # its configured context, not the caller's request, so admission must
+    # charge for it — several GB on a 31B model at 8192.
+    'ollama_gpu_indexes': '',
+    'gpu1_headroom_gb': '4.5',
+    'gpu_admission_assumed_num_ctx': '8192',
     # Case-insensitive substring that identifies the primary Ollama runner in
     # the per-process VRAM series (nvidia_gpu_process_memory_mib{process=...})
     # when computing the admission eviction credit — the per-card share the
@@ -4324,6 +4340,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'glitchtip_triage_org_slug': {'owner': 'glitchtip_triage_probe', 'value_type': 'string'},
     'google_sitemap_ping_url': {'owner': 'publish_service', 'value_type': 'url'},
     'gpu0_headroom_gb': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
+    'ollama_gpu_indexes': {'owner': 'gpu_scheduler', 'value_type': 'string'},
+    'gpu1_headroom_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'gpu_admission_assumed_num_ctx': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'gpu_evictable_process_pattern': {'owner': 'gpu_registry', 'value_type': 'csv'},
     'gpu_evictable_unattributed_tolerance_gb': {'owner': 'gpu_registry', 'value_type': 'float'},
     'gpu_external_workload_wait_enabled': {'owner': 'gpu_scheduler', 'value_type': 'boolean'},
