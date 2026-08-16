@@ -1028,6 +1028,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # queries as new topic candidates (poindexter#764). Ships inert:
         # gated on app_settings.seo.query_ingestion.enabled (default false).
         ("topic_sources", "services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
+        # RssSource — generic RSS/Atom ingestion (poindexter#1017). One plugin,
+        # N feeds: every feed is an external_taps row with tap_type='rss' and
+        # config.feed_url. No engagement signal by design — a feed's signal is
+        # that the operator curated it; candidates carry a flat configurable
+        # relevance_score and the ranking layer differentiates from there.
+        ("topic_sources", "services.topic_sources.rss", "RssSource"),
         # SearchAutocompleteSource — the only source that measures search DEMAND
         # rather than what's being published/discussed. gsc_query_gap is
         # demand-driven but circular (it only sees queries the site already
