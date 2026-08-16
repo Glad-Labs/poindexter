@@ -12,7 +12,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 UNIT_DIR="${POINDEXTER_UNIT_DIR:-/etc/systemd/system}"
-RUN_USER="$(id -un)"
+# The documented invocation is `sudo bash install-session-timers.sh`, so
+# `id -un` answers root — SUDO_USER carries the operator login the sessions
+# must actually run as (caught live on the first deploy: it rendered
+# User=root, which would have run every session against root's HOME with no
+# poetry env, no ~/.poindexter, and root-owned artifacts everywhere).
+RUN_USER="${SUDO_USER:-$(id -un)}"
 
 # Render the template onto this host: the repo copy ships a generic
 # `poindexter` / /home/poindexter placeholder; the live unit must carry the

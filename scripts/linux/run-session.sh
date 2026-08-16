@@ -92,6 +92,10 @@ sync_shared_checkout() {
     ''|*[!0-9]*) behind=0 ;;
   esac
   if [ "$behind" = "0" ]; then
+    # Breadcrumb on the no-op path too — this file's own history (the
+    # 2026-08-14 no-log fetch outage) is why "no line" must never be the
+    # only evidence the pre-flight ran.
+    echo "checkout sync: already at origin/main" >>"$LOG"
     return 0
   fi
   if git -C "$WORK" merge --ff-only origin/main >>"$LOG" 2>&1; then

@@ -35,7 +35,9 @@ def _repo_root() -> Path:
     )
 
 
-def _run_installer(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path, Path]:
+def _run_installer(
+    tmp_path: Path, **env_extra: str
+) -> tuple[subprocess.CompletedProcess, Path, Path]:
     bin_dir = tmp_path / "bin"
     unit_dir = tmp_path / "units"
     bin_dir.mkdir()
@@ -58,6 +60,7 @@ def _run_installer(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path, P
             "PATH": f"{bin_dir}:/usr/bin:/bin",
             "HOME": str(tmp_path),
             "POINDEXTER_UNIT_DIR": str(unit_dir),
+            **env_extra,
         },
         capture_output=True, text=True, timeout=60,
     )
@@ -89,6 +92,19 @@ def test_all_eight_timers_are_written_and_enabled(tmp_path):
     for name in _SESSIONS:
         assert f"enable --now poindexter-session@{name}.timer" in recorded
     assert "daemon-reload" in recorded
+
+
+def test_sudo_user_wins_over_effective_user(tmp_path):
+    """The documented invocation is `sudo bash install-session-timers.sh`, so the
+    whole script runs as root and `id -un` answers root. Caught live on the first
+    deploy (2026-08-16): the unit rendered User=root, which would have run every
+    session against root's HOME — no poetry env, no ~/.poindexter. SUDO_USER
+    (set by sudo to the invoking login) must win."""
+    proc, unit_dir, _ = _run_installer(tmp_path, SUDO_USER="operator-login")
+    assert proc.returncode == 0, proc.stderr
+    unit = (unit_dir / "poindexter-session@.service").read_text(encoding="utf-8")
+    assert "User=operator-login" in unit
+    assert f"User={getpass.getuser()}" not in unit
 
 
 def test_repo_template_keeps_generic_placeholder(tmp_path):

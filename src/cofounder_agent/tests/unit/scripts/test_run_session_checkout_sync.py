@@ -208,11 +208,15 @@ def test_worktree_session_syncs_then_builds_worktree_off_new_main(tmp_path):
     assert leftovers == [], f"worktree should be removed on cleanup: {leftovers}"
 
 
-def test_already_current_checkout_is_a_quiet_noop(tmp_path):
+def test_already_current_checkout_noop_still_leaves_a_breadcrumb(tmp_path):
+    """No merge happens, but the log must still prove the pre-flight ran —
+    this script's own 2026-08-14 lesson: silence is indistinguishable from
+    breakage."""
     w = _World(tmp_path)
     before = w.head()
     res = w.run()
     assert res.proc.returncode == 0
     assert w.head() == before
+    assert "checkout sync: already at origin/main" in res.log
     assert "fast-forwarded" not in res.log
     assert "WARNING" not in res.log
