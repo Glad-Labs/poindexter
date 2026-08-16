@@ -3,8 +3,22 @@
 # Linux port of the Windows logon-task launcher (Pop!_OS migration audit,
 # 2026-07-23). Binds 0.0.0.0 so the brain container's probe reaches it via
 # host-gateway; external exposure is via Tailscale serve/funnel, not the LAN.
-# Operators: set User= and the paths to your login + checkout (ships generic),
-# and run `uv sync` in mcp-server/ once to create .venv.
+#
+# Runs from the DEPLOY CLONE (~/.poindexter/deploy/glad-labs-stack), not a
+# working checkout — deploy-checkout-sync.sh keeps the clone on origin/main
+# and restarts this unit whenever a merge touches mcp-server/** (plus a
+# `uv sync` when pyproject.toml/uv.lock changed), so mcp-server merges reach
+# the phone surface without a manual FF + restart (the pre-2026-08-16 gap).
+# The venv lives INSIDE the clone (mcp-server/.venv, gitignored — the sync's
+# reset --hard + clean -fd spare it); setup-deploy-checkout.sh seeds it, and
+# the sync self-heals a missing one on its next deploy pass.
+#
+# Operators: set User= and the paths to your login (ships generic). If the
+# deploy-sync timer runs unprivileged, its user needs passwordless sudo for
+# `systemctl restart poindexter-mcp-http.service` (same posture as
+# docker-watchdog's `systemctl restart docker`). No deploy clone on this
+# host? Point WorkingDirectory/ExecStart at your checkout's mcp-server/ and
+# run `uv sync` there once — you're back to manual restarts on merge.
 [Unit]
 Description=Poindexter MCP HTTP server (claude.ai connector, :8004)
 After=network-online.target docker.service
@@ -12,12 +26,12 @@ Wants=network-online.target
 
 [Service]
 User=poindexter
-WorkingDirectory=/home/poindexter/glad-labs-website/mcp-server
+WorkingDirectory=/home/poindexter/.poindexter/deploy/glad-labs-stack/mcp-server
 Environment=POINDEXTER_API_URL=http://localhost:8002
 Environment=OLLAMA_URL=http://localhost:11434
 Environment=POINDEXTER_MCP_HTTP_HOST=0.0.0.0
 Environment=POINDEXTER_MCP_HTTP_PORT=8004
-ExecStart=/home/poindexter/glad-labs-website/mcp-server/.venv/bin/python http_server.py
+ExecStart=/home/poindexter/.poindexter/deploy/glad-labs-stack/mcp-server/.venv/bin/python http_server.py
 Restart=on-failure
 RestartSec=10
 

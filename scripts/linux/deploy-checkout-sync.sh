@@ -43,9 +43,22 @@
 #      re-imports /app; a bounce would kill an in-flight post). Redundancy
 #      guard: skip a container whose process already started after this
 #      pass's reset (it's necessarily on the new tree).
-#   8. step independence: rebuilds, compose-apply, and restarts ALL run even
-#      if an earlier one failed; ANY failure withholds the marker so the pass
-#      retries next cycle (re-restarting a current container is a no-op).
+#   8. claude.ai-connector sync: poindexter-mcp-http.service is host systemd,
+#      not compose — it runs mcp-server/http_server.py out of THIS clone
+#      (unit template: infrastructure/systemd/poindexter-mcp-http.service).
+#      When the diff touches mcp-server/**, restart the unit; when it touches
+#      mcp-server/{pyproject.toml,uv.lock} — or the clone's mcp-server/.venv
+#      is missing (first pass after setup) — `uv sync` the venv first, since
+#      ExecStart uses .venv/bin/python directly and the venv never
+#      self-updates. .venv/ is gitignored, so step 4's reset+clean spare it.
+#      Unit management needs root: plain systemctl as root, else
+#      `sudo -n systemctl` (docker-watchdog precedent — the operator user
+#      needs passwordless sudo; see the unit header). Hosts without the unit
+#      installed skip this step; --no-restart leaves the unit alone too.
+#   9. step independence: rebuilds, compose-apply, restarts, and the
+#      connector sync ALL run even if an earlier one failed; ANY failure
+#      withholds the marker so the pass retries next cycle (re-restarting a
+#      current container is a no-op).
 #
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone)
 # Log     : ~/.poindexter/deploy-checkout-sync.log    (single .1 rotation)
@@ -69,6 +82,11 @@ MAX_WAIT_SEC="${SYNC_FLOW_WAIT_MAX_SEC:-90}"
 FORCE_FLOW_RESET="${SYNC_FLOW_FORCE:-0}"
 RESTART_CONTAINERS=(${SYNC_RESTART_CONTAINERS:-poindexter-worker poindexter-pipeline-bot})
 SKEW_MARGIN_SEC=5
+# Host systemd unit serving mcp-server/http_server.py from this clone (step 8).
+# "Not installed" is the opt-out — hosts that never enabled the connector skip
+# the step without config. SYNC_UV_BIN overrides uv discovery (systemd PATH
+# doesn't include ~/.local/bin, so we probe the standard install dirs).
+MCP_UNIT="${SYNC_MCP_UNIT:-poindexter-mcp-http.service}"
 
 POINDEXTER_HOME="$HOME/.poindexter"
 LOG_FILE="$POINDEXTER_HOME/deploy-checkout-sync.log"
@@ -238,8 +256,9 @@ declare -A REBUILD_MAP=(
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
   ['^scripts/Dockerfile\.backup$|^scripts/backup/']="backup-daily backup-hourly backup-offsite"
 )
-rebuild_services=""
+rebuild_services=""; diff_ok=0
 if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_sha" 2>/dev/null)"; then
+  diff_ok=1
   for re in "${!REBUILD_MAP[@]}"; do
     if echo "$diff_paths" | grep -qE "$re"; then
       rebuild_services="$rebuild_services ${REBUILD_MAP[$re]}"
@@ -248,6 +267,16 @@ if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_s
 else
   log "Could not diff $last_short..$short_head; rebuilding brain-daemon defensively." WARN
   rebuild_services="brain-daemon"
+fi
+
+# connector change detection (diff-uncomputable -> defensive full treatment,
+# same posture as the brain rebuild above)
+mcp_changed=0; mcp_deps_changed=0
+if [ "$diff_ok" = "1" ]; then
+  echo "$diff_paths" | grep -qE '^mcp-server/' && mcp_changed=1
+  echo "$diff_paths" | grep -qE '^mcp-server/(pyproject\.toml|uv\.lock)$' && mcp_deps_changed=1
+else
+  mcp_changed=1; mcp_deps_changed=1
 fi
 rebuild_services="$(echo "$rebuild_services" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ' | sed 's/ $//')"
 
@@ -289,8 +318,64 @@ for c in "${RESTART_CONTAINERS[@]}"; do
   fi
 done
 
+# ---- claude.ai-connector sync (host systemd unit, not compose) -------------
+# poindexter-mcp-http.service runs mcp-server/http_server.py out of THIS
+# clone; before 2026-08-16 it ran from the operator checkout and mcp-server
+# merges silently never reached the phone surface (PR #3247 needed a manual
+# FF + restart). ExecStart is .venv/bin/python (not `uv run`), so dependency
+# changes need an explicit `uv sync`; a missing venv (first pass after
+# setup-deploy-checkout.sh) is self-healed the same way. .venv/ is
+# gitignored, so the reset+clean above spare it.
+mcp_failed=0; mcp_venv_python="$DEPLOY_DIR/mcp-server/.venv/bin/python"
+
+mcp_unit_loaded() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  [ "$(systemctl show -p LoadState --value "$MCP_UNIT" 2>/dev/null)" = "loaded" ]
+}
+
+systemctl_root() { # unit management needs root; queries above do not
+  if [ "$(id -u)" = "0" ]; then systemctl "$@"; else sudo -n systemctl "$@"; fi
+}
+
+if mcp_unit_loaded; then
+  need_uv_sync=0; need_mcp_restart=0
+  [ "$mcp_deps_changed" = "1" ] && need_uv_sync=1
+  [ -x "$mcp_venv_python" ] || need_uv_sync=1   # self-heal a missing venv
+  [ "$mcp_changed" = "1" ] && need_mcp_restart=1
+  [ "$need_uv_sync" = "1" ] && need_mcp_restart=1  # fresh deps => reload process
+
+  if [ "$need_uv_sync" = "1" ]; then
+    UV_BIN="${SYNC_UV_BIN:-$(command -v uv || true)}"
+    if [ -z "$UV_BIN" ]; then
+      for cand in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        [ -x "$cand" ] && { UV_BIN="$cand"; break; }
+      done
+    fi
+    if [ -z "$UV_BIN" ]; then
+      log "connector: uv not found but $DEPLOY_DIR/mcp-server needs a venv sync; install uv or set SYNC_UV_BIN." ERROR
+      mcp_failed=1
+    elif "$UV_BIN" sync --directory "$DEPLOY_DIR/mcp-server" >>"$LOG_FILE" 2>&1; then
+      log "connector: mcp-server venv synced"
+    else
+      log "connector: uv sync failed for $DEPLOY_DIR/mcp-server" ERROR
+      mcp_failed=1
+    fi
+  fi
+
+  if [ "$mcp_failed" = "0" ] && [ "$need_mcp_restart" = "1" ]; then
+    if systemctl_root restart "$MCP_UNIT" >>"$LOG_FILE" 2>&1; then
+      restarted="${restarted:+$restarted,}$MCP_UNIT"; log "connector: restarted $MCP_UNIT"
+    else
+      log "connector: FAILED to restart $MCP_UNIT (root or passwordless sudo for systemctl required — see the unit header)" ERROR
+      mcp_failed=1
+    fi
+  fi
+elif [ "$mcp_changed" = "1" ]; then
+  log "connector: mcp-server/ changed but $MCP_UNIT is not installed on this host; skipping."
+fi
+
 # ---- outcome (step independence: marker only on a fully-clean pass) --------
-if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed" = "0" ]; then
+if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
   printf '%s' "$head_sha" > "$MARKER_FILE"
   detail=""
   [ -n "$rebuild_services" ] && detail="rebuilt: $rebuild_services"
@@ -302,6 +387,7 @@ else
   [ "$build_failed" = "1" ] && steps="${steps}image-rebuild "
   [ "$apply_failed" = "1" ] && steps="${steps}compose-apply "
   [ "$restart_failed" = "1" ] && steps="${steps}container-restart "
+  [ "$mcp_failed" = "1" ] && steps="${steps}mcp-connector "
   log "Deploy pass incomplete (failed: $steps); NOT recording marker — retries next cycle." ERROR
   write_status error "$head_sha" "$last_deployed" "$restarted" "failed steps: $steps"
   exit 1

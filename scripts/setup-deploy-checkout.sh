@@ -90,6 +90,23 @@ fi
 git -C "${DEPLOY_DIR}" reset --hard "${SOURCE_REMOTE}/${SYNC_BRANCH}"
 git -C "${DEPLOY_DIR}" clean -fd
 
+# ── Seed the mcp-server venv (claude.ai connector) ────────────────────
+# poindexter-mcp-http.service runs mcp-server/http_server.py out of THIS
+# clone with .venv/bin/python directly (no `uv run`), so the venv must
+# exist inside the clone. .venv/ is gitignored — the reset+clean above
+# (and every future sync pass) leave it alone. Best-effort: hosts that
+# never run the connector just see a note, and deploy-checkout-sync.sh
+# self-heals a missing venv on its next deploy pass anyway (only when
+# the unit is installed).
+if command -v uv >/dev/null 2>&1; then
+  log "Seeding mcp-server venv (uv sync)…"
+  if ! uv sync --directory "${DEPLOY_DIR}/mcp-server"; then
+    log "WARN: uv sync failed — poindexter-mcp-http.service needs the venv; re-run, or let deploy-checkout-sync self-heal it."
+  fi
+else
+  log "NOTE: uv not on PATH — skipped the mcp-server venv seed (only needed for poindexter-mcp-http.service)."
+fi
+
 HEAD_SHA="$(git -C "${DEPLOY_DIR}" rev-parse --short HEAD)"
 log "Deploy checkout ready at HEAD ${HEAD_SHA} (${SOURCE_REMOTE}/${SYNC_BRANCH})"
 log ""

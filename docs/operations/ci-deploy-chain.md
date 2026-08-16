@@ -421,14 +421,15 @@ Deploying the canary itself requires a brain image rebuild
 
 ## The ops-session wrapper is a third deploy surface
 
-"Deployed" means three different trees on this host, each with its own sync
-mechanism:
+"Deployed" means four surfaces across three trees on this host, each with its
+own sync mechanism:
 
-| Surface                              | Tree                                         | Synced by                                                              |
-| ------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------- |
-| Public site                          | Vercel build of `glad-labs-stack`            | Vercel, on push to `main`                                              |
-| Worker / brain / pipeline containers | `~/.poindexter/deploy/glad-labs-stack`       | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`) |
-| Ops-session wrapper + shared payload | `~/glad-labs-website` (the working checkout) | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                 |
+| Surface                                           | Tree                                                                          | Synced by                                                                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Public site                                       | Vercel build of `glad-labs-stack`                                             | Vercel, on push to `main`                                                                                       |
+| Worker / brain / pipeline containers              | `~/.poindexter/deploy/glad-labs-stack`                                        | `deploy-checkout-sync.sh` (10-min timer; `reset --hard` + `clean -fd`)                                          |
+| claude.ai phone connector (`poindexter-mcp-http`) | `~/.poindexter/deploy/glad-labs-stack` (`mcp-server/` + its in-clone `.venv`) | same `deploy-checkout-sync.sh` pass (2026-08-16): unit restart on `mcp-server/**`, `uv sync` on lockfile change |
+| Ops-session wrapper + shared payload              | `~/glad-labs-website` (the working checkout)                                  | `run-session.sh`'s own ff-only pre-flight (2026-08-15)                                                          |
 
 The third row was the gap: the systemd session units exec `run-session.sh`
 out of the **working checkout**, and until 2026-08-15 nothing auto-updated it —
@@ -452,6 +453,40 @@ worktrees, and ff-only is the strongest sync it may ever receive. Unit-template
 `sudo bash scripts/linux/install-session-timers.sh`, which renders and
 installs the unit + timers. Details in
 [scheduled-agents.md](scheduled-agents.md).
+
+**The phone connector was a fourth tree until 2026-08-16.**
+`poindexter-mcp-http.service` (the claude.ai connector, :8004) used to exec
+`mcp-server/http_server.py` from the operator checkout — outside every sync
+mechanism above — so a merged `mcp-server/**` change silently never reached
+the phone surface (PR #3247 needed a manual FF + `systemctl restart` by
+hand). Unlike the ops sessions, the connector had no reason to stay on the
+working checkout: its uv venv lives at `mcp-server/.venv` relative to
+wherever it runs (nothing is keyed to the checkout path), and the server
+never writes to its tree, so the deploy clone's `reset --hard` cannot race
+it. The fix therefore moved it INTO the clone rather than pointing any sync
+at the working checkout:
+
+- The unit template (`infrastructure/systemd/poindexter-mcp-http.service`)
+  now points `WorkingDirectory`/`ExecStart` at
+  `~/.poindexter/deploy/glad-labs-stack/mcp-server`. The venv lives inside
+  the clone — `.venv/` is gitignored, so the sync's `reset --hard` +
+  `clean -fd` spare it — and `setup-deploy-checkout.sh` seeds it (best-effort
+  when `uv` is on PATH).
+- `deploy-checkout-sync.sh` grew a connector step: any `mcp-server/**` diff
+  restarts the unit; a `pyproject.toml`/`uv.lock` diff — or a missing venv —
+  runs `uv sync` first, because `ExecStart` uses `.venv/bin/python` directly
+  and the venv never self-updates. Unit management is plain `systemctl` as
+  root, else `sudo -n systemctl` (the sync's user needs passwordless sudo —
+  same posture as docker-watchdog's `systemctl restart docker`). Hosts
+  without the unit installed skip the step entirely; a failed connector step
+  withholds the deploy marker like every other step, so the pass retries
+  next cycle. Env seams: `SYNC_MCP_UNIT` (unit name), `SYNC_UV_BIN` (uv
+  path — systemd's PATH lacks `~/.local/bin`, so the script probes the
+  standard install dirs).
+
+Unit-template changes for the connector remain manual, same as the session
+units: copy the rendered template to `/etc/systemd/system`, then
+`sudo systemctl daemon-reload && sudo systemctl restart poindexter-mcp-http`.
 
 ## Fast rollback (pin deploy clone to a known-good SHA)
 
@@ -479,7 +514,9 @@ git -C ~/.poindexter/deploy/glad-labs-stack rev-parse --short HEAD
 
 **What this does:** the containers bind-mount the deploy clone, so resetting
 the clone and restarting the containers immediately loads the old code without
-any CI run. The 10-minute `deploy-checkout-sync.ps1` task will try to advance
+any CI run. The claude.ai connector runs from the same clone — if the bad
+change touched `mcp-server/`, also
+`sudo systemctl restart poindexter-mcp-http` after pinning. The 10-minute `deploy-checkout-sync.ps1` task will try to advance
 the clone again on its next cycle — stop the scheduled task while the incident
 is live:
 
