@@ -48,6 +48,8 @@ _VALID_STATUSES = (
     "rejected_final",
     "failed",
     "cancelled",
+    "expired",
+    "dismissed",
     "superseded",
     "dry_run",
     "all",

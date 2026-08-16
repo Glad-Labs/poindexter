@@ -60,6 +60,7 @@ def namespace_spec(spec: dict[str, Any]) -> dict[str, Any]:
 _TERMINAL_STATUSES = frozenset({
     "awaiting_approval", "completed", "approved", "published",
     "failed", "rejected", "rejected_final", "cancelled", "dismissed",
+    "expired",
 })
 
 

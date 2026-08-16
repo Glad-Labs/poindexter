@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 TERMINAL_STATUSES = frozenset(
     {"published", "approved", "awaiting_approval", "rejected", "rejected_final",
-     "dismissed", "failed", "cancelled", "completed"}
+     "dismissed", "expired", "failed", "cancelled", "completed"}
 )
 
 

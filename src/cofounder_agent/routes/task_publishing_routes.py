@@ -972,7 +972,7 @@ async def go_live(
                   FROM posts p
                  WHERE p.id::text = $1
                    AND p.metadata ->> 'pipeline_task_id' = pt.task_id
-                   AND pt.status IN ('approved', 'scheduled')
+                   AND pt.status = 'approved'
                 """,
                 post_id,
             )

@@ -99,7 +99,7 @@ class PipelineDB:
                     model_used = COALESCE($6, model_used),
                     error_message = COALESCE($7, error_message),
                     updated_at = NOW(),
-                    completed_at = CASE WHEN $2 IN ('published','failed','cancelled','rejected','rejected_final') THEN NOW() ELSE completed_at END
+                    completed_at = CASE WHEN $2 IN ('published','failed','cancelled','rejected','rejected_final','expired','dismissed') THEN NOW() ELSE completed_at END
                 WHERE task_id = $1
                 """,
                 task_id,

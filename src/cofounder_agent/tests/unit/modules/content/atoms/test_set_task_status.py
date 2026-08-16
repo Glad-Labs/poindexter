@@ -138,7 +138,15 @@ async def test_missing_guarded_method_is_nonfatal():
 
 def test_valid_statuses_match_db_constraint():
     """Drift guard: the atom's _VALID_STATUSES must equal the DB
-    pipeline_tasks_status_check CHECK constraint set."""
+    pipeline_tasks_status_check CHECK constraint set.
+
+    The live constraint is the baseline's inline definition as amended by
+    the 20260816_021929 migration (which swaps it for one including
+    'expired' + 'dismissed'), so the anchor composes both sources: the
+    migration's exported PIPELINE_TASK_STATUSES is the full set, and the
+    baseline must be exactly that set minus the migration's two additions.
+    """
+    import importlib
     import re
     from pathlib import Path
 
@@ -152,5 +160,18 @@ def test_valid_statuses_match_db_constraint():
         r"pipeline_tasks_status_check CHECK \(status IN \(([^)]*)\)\)", schema
     )
     assert m, "could not find pipeline_tasks_status_check in baseline schema"
-    db_statuses = frozenset(s.strip().strip("'") for s in m.group(1).split(","))
-    assert _VALID_STATUSES == db_statuses
+    baseline_statuses = frozenset(
+        s.strip().strip("'") for s in m.group(1).split(",")
+    )
+
+    mig = importlib.import_module(
+        "services.migrations."
+        "20260816_021929_add_expired_and_dismissed_to_pipeline_tasks_status_check"
+    )
+    live_statuses = frozenset(mig.PIPELINE_TASK_STATUSES)
+
+    assert live_statuses - baseline_statuses == {"expired", "dismissed"}, (
+        "migration PIPELINE_TASK_STATUSES should be the baseline set plus "
+        "exactly the two statuses the migration adds"
+    )
+    assert _VALID_STATUSES == live_statuses

@@ -85,6 +85,7 @@ _TERMINAL_REJECT_TASK_STATUSES: tuple[str, ...] = (
     "rejected_final",
     "rejected",
     "dismissed",
+    "expired",
 )
 
 # Statuses where the (task, platform, subreddit) key is SPOKEN FOR — a promo

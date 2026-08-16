@@ -641,7 +641,7 @@ async def veto_auto_publish(pool: Any, task_id: str) -> dict[str, Any]:
                 """
                 UPDATE pipeline_tasks
                    SET status = 'awaiting_approval', updated_at = NOW()
-                 WHERE task_id = $1 AND status IN ('approved', 'scheduled')
+                 WHERE task_id = $1 AND status = 'approved'
                 """,
                 tid,
             )

@@ -59,7 +59,8 @@ class ExpireStaleApprovalsJob:
                         result = jsonb_build_object(
                           'reason', 'Auto-expired: exceeded approval TTL of '
                                     || $1 || ' days'
-                        )
+                        ),
+                        updated_at = NOW()
                     WHERE status = 'awaiting_approval'
                       AND updated_at < NOW() - make_interval(days => $1)
                     RETURNING task_id, topic

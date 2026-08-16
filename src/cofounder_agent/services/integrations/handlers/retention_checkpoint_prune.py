@@ -69,11 +69,11 @@ logger = logging.getLogger(__name__)
 # Tables cleared in this order. checkpoint_migrations is intentionally absent.
 _CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
 
-# Every pipeline_tasks status from which a run never resumes. The first five
-# are exactly the set services/pipeline_db.py stamps ``completed_at`` for --
-# the codebase's own "this run is done" definition -- plus ``completed`` and
-# the three archival end-states. Deliberately absent: pending, in_progress,
-# approved, awaiting_approval, awaiting_gate, rejected_retry.
+# Every pipeline_tasks status from which a run never resumes: the set
+# services/pipeline_db.py stamps ``completed_at`` for -- the codebase's own
+# "this run is done" definition -- plus ``completed`` and the three archival
+# end-states. Deliberately absent: pending, in_progress, approved,
+# awaiting_approval, awaiting_gate, rejected_retry.
 _DEFAULT_TERMINAL_STATUSES = [
     "completed",
     "published",
@@ -81,6 +81,8 @@ _DEFAULT_TERMINAL_STATUSES = [
     "cancelled",
     "rejected",
     "rejected_final",
+    "expired",
+    "dismissed",
     "dry_run",
     "superseded",
     "archived",

@@ -950,7 +950,7 @@ async def _promote_or_skip_existing(
                        SET status = 'published',
                            updated_at = NOW()
                      WHERE task_id = $1
-                       AND status IN ('approved', 'scheduled')
+                       AND status = 'approved'
                     """,
                     str(task_id),
                 )
@@ -2102,7 +2102,7 @@ async def fire_post_distribution_hooks(
                   FROM posts p
                  WHERE p.id::text = $1
                    AND p.metadata ->> 'pipeline_task_id' = pt.task_id
-                   AND pt.status IN ('approved', 'scheduled')
+                   AND pt.status = 'approved'
                 """,
                 str(post_id),
             )
@@ -2278,7 +2278,7 @@ async def publish_now(
                   FROM posts p
                  WHERE p.id::text = $1
                    AND p.metadata ->> 'pipeline_task_id' = pt.task_id
-                   AND pt.status IN ('approved', 'scheduled')
+                   AND pt.status = 'approved'
                 """,
                 str(post_id),
             )

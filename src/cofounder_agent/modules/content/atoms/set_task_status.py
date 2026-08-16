@@ -26,8 +26,9 @@ from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 logger = logging.getLogger(__name__)
 
 # Mirror of the pipeline_tasks_status_check CHECK constraint
-# (services/migrations/0000_baseline.schema.sql). Kept honest by
-# test_set_task_status.py::test_valid_statuses_match_db_constraint.
+# (services/migrations/0000_baseline.schema.sql, as amended by the
+# 20260816_021929 migration that added 'expired' + 'dismissed'). Kept
+# honest by test_set_task_status.py::test_valid_statuses_match_db_constraint.
 _VALID_STATUSES: frozenset[str] = frozenset(
     {
         "pending",
@@ -45,6 +46,8 @@ _VALID_STATUSES: frozenset[str] = frozenset(
         "dry_run",
         "superseded",
         "archived",
+        "expired",
+        "dismissed",
     }
 )
 

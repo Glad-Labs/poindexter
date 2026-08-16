@@ -501,7 +501,12 @@ async def test_cancel_orphaned_targets_live_drafts_and_terminal_tasks_only():
     assert "posted" not in draft_statuses  # posted drafts are never cancelled
     # terminal-reject task statuses passed as the bound array; excludes
     # rejected_retry (re-runs) and approved/awaiting_approval (awaiting publish).
-    assert set(task_statuses) == {"rejected_final", "rejected", "dismissed"}
+    # 'expired' joined with poindexter#981: a task auto-expired past the
+    # approval TTL is terminal-dead, so its speculative promos must be reaped
+    # the same as a rejected one's.
+    assert set(task_statuses) == {
+        "rejected_final", "rejected", "dismissed", "expired",
+    }
     assert "rejected_retry" not in task_statuses
     assert "approved" not in task_statuses
 

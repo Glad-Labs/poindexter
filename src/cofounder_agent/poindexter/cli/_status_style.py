@@ -76,6 +76,8 @@ TASK_STATUS: dict[str, str] = {
     "rejected_final": FAILURE,
     "failed": FAILURE,
     "cancelled": INACTIVE,
+    "expired": INACTIVE,
+    "dismissed": INACTIVE,
 }
 
 

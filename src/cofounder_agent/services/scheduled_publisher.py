@@ -163,7 +163,7 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                                    SET status = 'published',
                                        updated_at = NOW()
                                  WHERE task_id = ANY($1::text[])
-                                   AND status IN ('approved', 'scheduled')
+                                   AND status = 'approved'
                                 """,
                                 task_ids_to_sync,
                             )
@@ -265,7 +265,7 @@ async def _demote_vetoed_auto_posts(conn) -> None:
            AND EXISTS (
                  SELECT 1 FROM pipeline_tasks t
                   WHERE t.task_id::text = p.metadata->>'pipeline_task_id'
-                    AND t.status NOT IN ('approved', 'scheduled', 'published')
+                    AND t.status NOT IN ('approved', 'published')
                )
         RETURNING id, title, metadata->>'pipeline_task_id' AS pipeline_task_id
         """

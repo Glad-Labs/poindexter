@@ -485,10 +485,10 @@ class TestPipelineTasksStatusSync:
         sync_sql, sync_arg = conn.execute.call_args[0]
         assert "UPDATE pipeline_tasks" in sync_sql
         assert "status = 'published'" in sync_sql
-        # Only flips 'approved' / 'scheduled' tasks — never clobbers
-        # 'rejected' / 'failed'.
+        # Only flips 'approved' tasks — never clobbers 'rejected' /
+        # 'failed'. ('scheduled' is a posts status; it was never legal on
+        # pipeline_tasks and its dead arm was removed with poindexter#981.)
         assert "approved" in sync_sql
-        assert "scheduled" in sync_sql
         assert sync_arg == ["task-uuid-12345678"]
 
     @pytest.mark.asyncio
@@ -542,11 +542,11 @@ class TestPipelineTasksStatusSync:
 
     @pytest.mark.asyncio
     async def test_idempotent_when_task_already_published(self):
-        """The pipeline_tasks UPDATE filters on ``status IN ('approved',
-        'scheduled')`` so re-running against a task already at
-        'published' (or 'rejected' / 'failed') is a no-op. Demonstrated
-        via the WHERE clause; a real DB returns 'UPDATE 0' for the
-        no-match case and the loop doesn't care."""
+        """The pipeline_tasks UPDATE filters on ``status = 'approved'``
+        so re-running against a task already at 'published' (or
+        'rejected' / 'failed') is a no-op. Demonstrated via the WHERE
+        clause; a real DB returns 'UPDATE 0' for the no-match case and
+        the loop doesn't care."""
         rows = [
             {
                 "id": "post-uuid-3",
@@ -568,7 +568,7 @@ class TestPipelineTasksStatusSync:
         # is what makes it idempotent at the database level.
         conn.execute.assert_awaited_once()
         sync_sql = conn.execute.call_args[0][0]
-        assert "status IN ('approved', 'scheduled')" in sync_sql
+        assert "status = 'approved'" in sync_sql
 
     @pytest.mark.asyncio
     async def test_mixed_batch_only_syncs_rows_with_seam(self):
@@ -767,7 +767,7 @@ class TestDemoteVetoedAutoPosts:
         assert "auto_publish_veto_window" in sql
         # Only due rows, and only when the source task left approved.
         assert "published_at <= NOW()" in sql
-        assert "NOT IN ('approved', 'scheduled', 'published')" in sql
+        assert "NOT IN ('approved', 'published')" in sql
         # Demotes rather than deletes: back to the staged state.
         assert "SET status = 'approved'" in sql
         conn.execute.assert_not_awaited()

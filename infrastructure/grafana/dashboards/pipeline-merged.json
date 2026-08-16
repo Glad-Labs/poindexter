@@ -675,7 +675,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM pipeline_tasks_view WHERE status IN ('awaiting_approval', 'published', 'rejected') AND $__timeFilter(updated_at);",
+          "rawSql": "SELECT COUNT(*) AS \"Completed\" FROM pipeline_tasks_view WHERE status IN ('awaiting_approval', 'published', 'rejected', 'expired') AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ],
@@ -961,7 +961,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT quality_score AS approved FROM pipeline_tasks_view WHERE status IN ('awaiting_approval','approved','published') AND quality_score IS NOT NULL AND $__timeFilter(created_at) UNION ALL SELECT -quality_score AS rejected FROM pipeline_tasks_view WHERE status = 'rejected' AND quality_score IS NOT NULL AND $__timeFilter(created_at);",
+          "rawSql": "SELECT quality_score AS approved FROM pipeline_tasks_view WHERE status IN ('awaiting_approval','approved','published','expired') AND quality_score IS NOT NULL AND $__timeFilter(created_at) UNION ALL SELECT -quality_score AS rejected FROM pipeline_tasks_view WHERE status = 'rejected' AND quality_score IS NOT NULL AND $__timeFilter(created_at);",
           "refId": "A"
         }
       ],
@@ -1318,7 +1318,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'rejected')::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected', 'awaiting_approval', 'approved', 'published')), 0), 1) AS \"Rejection %\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'rejected')::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected', 'awaiting_approval', 'approved', 'published', 'expired')), 0), 1) AS \"Rejection %\" FROM pipeline_tasks_view WHERE $__timeFilter(created_at);",
           "refId": "A"
         }
       ],
@@ -1611,7 +1611,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND status IN ('published', 'rejected', 'awaiting_approval') GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, status AS metric, COUNT(*) AS value FROM pipeline_tasks_view WHERE $__timeFilter(created_at) AND status IN ('published', 'rejected', 'awaiting_approval', 'expired') GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -1737,7 +1737,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(models_used_by_phase->>'writer', 'unknown') AS \"Writer Model\", COUNT(*) AS \"Tasks\", COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published')) AS \"Approved\", ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published'))::numeric / NULLIF(COUNT(*),0), 1) AS \"Approval %\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status IN ('rejected','awaiting_approval','approved','published') AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
+          "rawSql": "SELECT COALESCE(models_used_by_phase->>'writer', 'unknown') AS \"Writer Model\", COUNT(*) AS \"Tasks\", COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published','expired')) AS \"Approved\", ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published','expired'))::numeric / NULLIF(COUNT(*),0), 1) AS \"Approval %\", ROUND(AVG(quality_score)::numeric, 1) AS \"Avg Score\" FROM pipeline_tasks_view WHERE status IN ('rejected','awaiting_approval','approved','published','expired') AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC;",
           "refId": "A"
         }
       ],
@@ -4278,7 +4278,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\nSELECT '1. Topic candidates ranked' AS metric,\n       (SELECT COUNT(*) FROM topic_candidates tc JOIN topic_batches tb ON tb.id = tc.batch_id\n        WHERE $__timeFilter(tb.created_at))::int AS value\nUNION ALL SELECT '2. Batches resolved',\n       (SELECT COUNT(*) FROM topic_batches WHERE $__timeFilter(created_at)\n        AND status != 'open')::int\nUNION ALL SELECT '3. Tasks created (cohort)', COUNT(*)::int FROM cohort\nUNION ALL SELECT '4. Draft generated', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate')\nUNION ALL SELECT '5. Survived QA', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published') OR is_published\nUNION ALL SELECT '6. Published', COUNT(*)::int FROM cohort WHERE is_published\nUNION ALL SELECT '7. Socially distributed', COUNT(*)::int FROM cohort WHERE is_distributed\nUNION ALL SELECT '8. Viewed at least once', COUNT(*)::int FROM cohort WHERE is_viewed\nUNION ALL SELECT '9. Indexed by Google', COUNT(*)::int FROM cohort WHERE is_indexed\nORDER BY 1",
+          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\nSELECT '1. Topic candidates ranked' AS metric,\n       (SELECT COUNT(*) FROM topic_candidates tc JOIN topic_batches tb ON tb.id = tc.batch_id\n        WHERE $__timeFilter(tb.created_at))::int AS value\nUNION ALL SELECT '2. Batches resolved',\n       (SELECT COUNT(*) FROM topic_batches WHERE $__timeFilter(created_at)\n        AND status != 'open')::int\nUNION ALL SELECT '3. Tasks created (cohort)', COUNT(*)::int FROM cohort\nUNION ALL SELECT '4. Draft generated', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate','expired')\nUNION ALL SELECT '5. Survived QA', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published','expired') OR is_published\nUNION ALL SELECT '6. Published', COUNT(*)::int FROM cohort WHERE is_published\nUNION ALL SELECT '7. Socially distributed', COUNT(*)::int FROM cohort WHERE is_distributed\nUNION ALL SELECT '8. Viewed at least once', COUNT(*)::int FROM cohort WHERE is_viewed\nUNION ALL SELECT '9. Indexed by Google', COUNT(*)::int FROM cohort WHERE is_indexed\nORDER BY 1",
           "refId": "A"
         }
       ],
@@ -4337,7 +4337,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\n, stages AS (\n  SELECT 3 AS ord, 'Tasks created' AS stage, COUNT(*)::float AS n FROM cohort\n  UNION ALL SELECT 4, 'Draft generated', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate')\n  UNION ALL SELECT 5, 'Survived QA', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published') OR is_published\n  UNION ALL SELECT 6, 'Published', COUNT(*) FROM cohort WHERE is_published\n  UNION ALL SELECT 7, 'Socially distributed', COUNT(*) FROM cohort WHERE is_distributed\n  UNION ALL SELECT 8, 'Viewed at least once', COUNT(*) FROM cohort WHERE is_viewed\n  UNION ALL SELECT 9, 'Indexed by Google', COUNT(*) FROM cohort WHERE is_indexed\n)\nSELECT stage AS \"Stage\", n::int AS \"Count\",\n  ROUND((100 * n / NULLIF(FIRST_VALUE(n) OVER (ORDER BY ord), 0))::numeric, 1) AS \"% of cohort\",\n  CASE WHEN ord <= 6 THEN ROUND((100 * n / NULLIF(LAG(n) OVER (ORDER BY ord), 0))::numeric, 1) END AS \"% of previous\"\nFROM stages ORDER BY ord",
+          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\n, stages AS (\n  SELECT 3 AS ord, 'Tasks created' AS stage, COUNT(*)::float AS n FROM cohort\n  UNION ALL SELECT 4, 'Draft generated', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate','expired')\n  UNION ALL SELECT 5, 'Survived QA', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published','expired') OR is_published\n  UNION ALL SELECT 6, 'Published', COUNT(*) FROM cohort WHERE is_published\n  UNION ALL SELECT 7, 'Socially distributed', COUNT(*) FROM cohort WHERE is_distributed\n  UNION ALL SELECT 8, 'Viewed at least once', COUNT(*) FROM cohort WHERE is_viewed\n  UNION ALL SELECT 9, 'Indexed by Google', COUNT(*) FROM cohort WHERE is_indexed\n)\nSELECT stage AS \"Stage\", n::int AS \"Count\",\n  ROUND((100 * n / NULLIF(FIRST_VALUE(n) OVER (ORDER BY ord), 0))::numeric, 1) AS \"% of cohort\",\n  CASE WHEN ord <= 6 THEN ROUND((100 * n / NULLIF(LAG(n) OVER (ORDER BY ord), 0))::numeric, 1) END AS \"% of previous\"\nFROM stages ORDER BY ord",
           "refId": "A"
         }
       ],
