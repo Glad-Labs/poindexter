@@ -259,6 +259,13 @@ services:
       dockerfile: Dockerfile
     container_name: poindexter-brain-daemon
     restart: unless-stopped
+    # Explicit public resolvers for external lookups (stack#3161): the ISP /
+    # router DNS the host DHCP hands out times out intermittently (EAI_AGAIN),
+    # failing every outbound Cloudflare call behind it. Docker's embedded DNS
+    # still serves compose service names; only external forwards change.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     # Run as root so the brain can read the host's docker.sock (root-owned
     # on Docker Desktop). The Dockerfile creates appuser:docker, but on
     # Docker Desktop the in-container socket is `srw-rw---- root:root`,
@@ -391,6 +398,11 @@ services:
       dockerfile: Dockerfile.worker
     container_name: poindexter-worker
     restart: unless-stopped
+    # Explicit public resolvers for external lookups (stack#3161) — see the
+    # brain-daemon note. The CF analytics/affiliate sync jobs run here.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     # uvicorn only honors a SIGTERM received mid-startup once lifespan startup
     # (~40-55s) completes, so Docker's default 10s stop window SIGKILLs a
     # half-started process whenever a manual post-merge restart races the
@@ -863,6 +875,11 @@ services:
       dockerfile: Dockerfile.worker
     container_name: poindexter-prefect-worker
     restart: unless-stopped
+    # Explicit public resolvers for external lookups (stack#3161) — see the
+    # brain-daemon note. Web research + publish-path calls run here.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     command: ["prefect", "worker", "start", "--pool", "content-pool", "--name", "prefect-worker-1", "--type", "process"]
     environment:
       # Database lives in the postgres-local container; bootstrap.toml

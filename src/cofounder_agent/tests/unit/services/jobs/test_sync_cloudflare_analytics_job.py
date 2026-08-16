@@ -471,3 +471,60 @@ class TestBotFiltering:
                 pool, {"_site_config": sc}
             )
         assert result.changes_made == 1
+
+
+class TestTransientNetworkDeferral:
+    """stack#3161: a resolver blip that survives the connect-retry budget is a
+    NETWORK fault, not a job fault — deferred (ok=True, tap-runner posture)
+    with ONE shared network_unreachable finding, so the fault that used to
+    page both CF jobs pages once."""
+
+    async def test_resolver_failure_defers_with_shared_finding(self):
+        pool, _ = _make_pool()
+        fake_httpx, _ = _fake_httpx(
+            raises=ConnectionError("[Errno -3] Temporary failure in name resolution"),
+        )
+        findings: list = []
+        with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
+            "services.jobs.sync_cloudflare_analytics.emit_finding",
+            lambda **kw: findings.append(kw),
+        ):
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": _sc()}
+            )
+        assert result.ok is True
+        assert "deferred" in result.detail
+        assert result.changes_made == 0
+        (f,) = findings
+        assert f["kind"] == "network_unreachable"
+        assert f["severity"] == "warning"
+        # The dedup key is SHARED across every CF consumer — the whole point.
+        assert f["dedup_key"] == "network_unreachable:cloudflare"
+
+    async def test_non_transient_failure_still_fails_the_job(self):
+        """A failure with no couldn't-connect shape keeps the honest ok=False
+        (and its job_failure page) — deferral must not swallow real faults."""
+        pool, _ = _make_pool()
+        fake_httpx, _ = _fake_httpx(raises=ValueError("CF rejected the query"))
+        findings: list = []
+        with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
+            "services.jobs.sync_cloudflare_analytics.emit_finding",
+            lambda **kw: findings.append(kw),
+        ):
+            result = await SyncCloudflareAnalyticsJob().run(
+                pool, {"_site_config": _sc()}
+            )
+        assert result.ok is False
+        assert findings == []
+
+    def test_affiliate_job_shares_the_posture(self):
+        """Both CF jobs must route through the shared classifier and the SAME
+        dedup key — a divergent copy re-splits the page."""
+        from pathlib import Path
+
+        import services.jobs.sync_affiliate_clicks as aff
+
+        src = Path(aff.__file__).read_text(encoding="utf-8")
+        assert "is_transient_network_error" in src
+        assert "transient_retry_transport" in src
+        assert '"network_unreachable:cloudflare"' in src

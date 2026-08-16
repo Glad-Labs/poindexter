@@ -146,6 +146,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `metrics_exporter.py` | Prometheus metrics exporter — exposes pipeline state via ``/metrics``. |
 | `model_preferences.py` | Parse operator / API caller model selections into ``(model, provider)``. |
 | `module_runner.py` | Per-module migration runner — applies one ``Module``'s migrations. |
+| `net_transient.py` | Transient-network classification + connect-retry transport (stack#3161). |
 | `newsletter_service.py` | Newsletter Service — send emails to subscribers on post publish. |
 | `niche_service.py` | CRUD service for niches + their goals + their source configs. |
 | `ollama_client.py` | Ollama Client Service |

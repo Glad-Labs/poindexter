@@ -246,8 +246,25 @@ class SyncCloudflareAnalyticsJob:
         # ------------------------------------------------------------------
         # Query CF AE.
         # ------------------------------------------------------------------
+        # Connect-level retries absorb resolver blips (stack#3161): the
+        # container's upstream DNS intermittently times out (EAI_AGAIN), and
+        # one blip used to fail this whole 5-min job. A request that STILL
+        # fails with the couldn't-connect shape is a NETWORK fault, not a job
+        # fault — defer (ok=True, the tap-runner "declined, not broken"
+        # posture; the high-water mark is untouched so the next cycle
+        # re-pulls everything) and raise the SHARED network_unreachable
+        # finding so one fault pages once, however many CF consumers it hits.
+        from services.net_transient import (
+            is_transient_network_error,
+            transient_retry_transport,
+        )
+
+        transient_retries = int(config.get("transient_retries", 3))
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=30.0,
+                transport=transient_retry_transport(transient_retries),
+            ) as client:
                 resp = await client.post(
                     url,
                     headers={
@@ -257,6 +274,31 @@ class SyncCloudflareAnalyticsJob:
                     content=sql,
                 )
         except Exception as e:
+            if is_transient_network_error(e):
+                logger.warning(
+                    "[SYNC_CF_AE] transient network failure after %d connect "
+                    "retries — deferring to next cycle: %s",
+                    transient_retries, e,
+                )
+                emit_finding(
+                    source="sync_cloudflare_analytics",
+                    kind="network_unreachable",
+                    severity="warning",
+                    title="Cloudflare API unreachable (transient network fault)",
+                    body=(
+                        f"Connect still failing after {transient_retries} "
+                        f"retries: {e}. Deferred to the next cycle — the "
+                        "sync high-water mark is untouched, so no data is "
+                        "skipped. A sustained fault repeats this finding "
+                        "under one dedup key across every CF consumer."
+                    ),
+                    dedup_key="network_unreachable:cloudflare",
+                )
+                return JobResult(
+                    ok=True,
+                    detail=f"deferred: transient network failure ({e})",
+                    changes_made=0,
+                )
             logger.warning("[SYNC_CF_AE] CF SQL API request failed: %s", e)
             return JobResult(ok=False, detail=f"cf api request failed: {e}", changes_made=0)
 

@@ -228,8 +228,22 @@ class SyncAffiliateClicksJob:
         # ------------------------------------------------------------------
         # Query CF AE.
         # ------------------------------------------------------------------
+        # Same transient-network posture as sync_cloudflare_analytics
+        # (stack#3161): connect retries absorb resolver blips; a request that
+        # still fails couldn't-connect is deferred (ok=True — declined, not
+        # broken) with the SHARED network_unreachable finding, so the one
+        # resolver fault that used to page both CF jobs pages once.
+        from services.net_transient import (
+            is_transient_network_error,
+            transient_retry_transport,
+        )
+
+        transient_retries = int(config.get("transient_retries", 3))
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(
+                timeout=30.0,
+                transport=transient_retry_transport(transient_retries),
+            ) as client:
                 resp = await client.post(
                     url,
                     headers={
@@ -239,6 +253,30 @@ class SyncAffiliateClicksJob:
                     content=sql,
                 )
         except Exception as e:
+            if is_transient_network_error(e):
+                logger.warning(
+                    "[SYNC_AFFILIATE] transient network failure after %d "
+                    "connect retries — deferring to next cycle: %s",
+                    transient_retries, e,
+                )
+                emit_finding(
+                    source="sync_affiliate_clicks",
+                    kind="network_unreachable",
+                    severity="warning",
+                    title="Cloudflare API unreachable (transient network fault)",
+                    body=(
+                        f"Connect still failing after {transient_retries} "
+                        f"retries: {e}. Deferred to the next cycle — the "
+                        "click high-water mark is untouched, so no data is "
+                        "skipped."
+                    ),
+                    dedup_key="network_unreachable:cloudflare",
+                )
+                return JobResult(
+                    ok=True,
+                    detail=f"deferred: transient network failure ({e})",
+                    changes_made=0,
+                )
             logger.warning("[SYNC_AFFILIATE] CF SQL API request failed: %s", e)
             return JobResult(ok=False, detail=f"cf api request failed: {e}", changes_made=0)
 

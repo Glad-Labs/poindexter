@@ -2767,6 +2767,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.qa_rail_gpu_busy_skip.delivery': 'log_only',
     'findings.qa_rail_gpu_busy_skip.cooldown_minutes': '60',
     'findings.qa_rail_gpu_busy_skip.min_severity': 'info',
+    # A transient network fault (resolver EAI_AGAIN, connect timeout) that
+    # survived the connect-retry budget (stack#3161). ONE kind + one dedup key
+    # shared across every consumer the fault hits, so a resolver outage pages
+    # once — not once per Cloudflare job (the 08-07 pattern: two job_failure
+    # pages per blip, filed as three separate issues by alert-triage). The
+    # jobs defer (ok=True) rather than fail, so this finding is the ONLY
+    # signal — cooldown bounds a sustained outage to ~1 page/hour.
+    'findings.network_unreachable.delivery': 'discord',
+    'findings.network_unreachable.cooldown_minutes': '60',
+    'findings.network_unreachable.min_severity': 'warning',
     # A required QA rail produced no review even after the aggregate-level
     # re-invoke, so the draft was rejected on AVAILABILITY, not content
     # (poindexter#1012). Routed (not log_only) because each one is a burned
@@ -4234,6 +4244,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.qa_rail_gpu_busy_skip.cooldown_minutes': {'value_type': 'integer'},
     'findings.qa_rail_gpu_busy_skip.delivery': {'value_type': 'string'},
     'findings.qa_rail_gpu_busy_skip.min_severity': {'value_type': 'string'},
+    'findings.network_unreachable.delivery': {'value_type': 'string'},
+    'findings.network_unreachable.cooldown_minutes': {'value_type': 'integer'},
+    'findings.network_unreachable.min_severity': {'value_type': 'string'},
     'findings.qa_required_rail_unavailable.delivery': {'value_type': 'string'},
     'findings.qa_required_rail_unavailable.cooldown_minutes': {'value_type': 'integer'},
     'findings.qa_required_rail_unavailable.min_severity': {'value_type': 'string'},
