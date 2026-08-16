@@ -216,6 +216,9 @@ The same edits from the bot / Claude surface:
 - `edit_post_body(task_id, find?, replace?, new_content?)`
 - `replace_post_image(task_id, which, url)`
 - `regen_post_image(task_id, which, prompt)`
+- `rebuild_images(task_id, allow_stock?)` — the bulk rebuild: enqueues the
+  `image_rebuild` pipeline and returns immediately with the queued task id;
+  the draft stays `awaiting_approval` and refreshes when the job lands
 - `remove_post_image(task_id, which)`
 - `add_post_image(task_id, after?, section?, prompt?)` — exactly one of
   `after`/`section` required
@@ -234,9 +237,11 @@ The same edits from the bot / Claude surface:
 
 These five each return `{ok, field, detail, warnings, new_url}`.
 
-- `POST /api/tasks/{task_id}/rebuild-images` — body `{allow_stock}` — returns
-  `{ok, task_id, detail, inline_total, inline_generated, featured_source, stock_slots}`
-  (no MCP wrapper yet; CLI + API only).
+- `POST /api/tasks/{task_id}/rebuild-images` — body `{allow_stock}` — enqueues
+  the `image_rebuild` pipeline task and returns immediately with
+  `{ok, task_id, target_task_id, detail}`, where `task_id` is the **queued
+  rebuild task** (watch it with `poindexter tasks get`) and `target_task_id`
+  the draft being rebuilt. Wrapped by the `rebuild_images` MCP tool.
 
 ## Auditability
 

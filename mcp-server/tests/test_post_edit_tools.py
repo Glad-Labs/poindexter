@@ -1,9 +1,10 @@
 """Tests for the draft-editing MCP tools (poindexter#523, poindexter#2233).
 
 ``edit_post_body`` / ``replace_post_image`` / ``regen_post_image`` /
-``remove_post_image`` / ``add_post_image`` wrap the worker-API edit routes.
-These verify each tool resolves the task id and POSTs the right payload;
-the service logic is covered in the backend test suite.
+``rebuild_images`` / ``remove_post_image`` / ``add_post_image`` wrap the
+worker-API edit routes. These verify each tool resolves the task id and
+POSTs the right payload; the service logic is covered in the backend test
+suite.
 """
 from __future__ import annotations
 
@@ -90,6 +91,67 @@ async def test_regen_post_image_calls_route():
         {"which": "inline:2", "prompt": "a teal robot"},
     )
     assert "regenerated" in out
+
+
+@pytest.mark.asyncio
+async def test_rebuild_images_calls_route():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={
+                "ok": True,
+                "task_id": "rb-123",
+                "target_task_id": "full",
+                "detail": (
+                    "image rebuild queued as task rb-123; "
+                    "watch with: poindexter tasks get rb-123"
+                ),
+            }),
+        ) as api,
+    ):
+        out = await server.rebuild_images("abc1")
+    api.assert_awaited_once_with(
+        "POST", "/api/tasks/full/rebuild-images", {"allow_stock": False},
+    )
+    assert "rb-123" in out
+
+
+@pytest.mark.asyncio
+async def test_rebuild_images_allow_stock_passes_through():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={"ok": True, "task_id": "rb-1", "detail": "queued"}),
+        ) as api,
+    ):
+        await server.rebuild_images("abc1", allow_stock=True)
+    api.assert_awaited_once_with(
+        "POST", "/api/tasks/full/rebuild-images", {"allow_stock": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_rebuild_images_surfaces_non_draft_refusal():
+    """The route 400s unless the task is awaiting_approval — the refusal's
+    detail (which names the actual status) must surface, not a bare code."""
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={
+                "error": "HTTP 400",
+                "detail": (
+                    "rebuild-images requires an awaiting_approval draft; "
+                    "task full is 'published'"
+                ),
+            }),
+        ),
+    ):
+        out = await server.rebuild_images("abc1")
+    assert "Error" in out
+    assert "awaiting_approval" in out
 
 
 @pytest.mark.asyncio

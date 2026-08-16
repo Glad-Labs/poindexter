@@ -647,6 +647,32 @@ async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
 
 
 @mcp.tool()
+async def rebuild_images(task_id: str, allow_stock: bool = False) -> str:
+    """Queue a rebuild of ALL images on an awaiting_approval draft.
+
+    Enqueues the async ``image_rebuild`` pipeline and returns immediately
+    with the queued rebuild task id: the worker re-plans every image
+    (featured + inline) from the article text and regenerates — no prompts
+    are typed, and the body text is untouched. The draft stays
+    awaiting_approval throughout and refreshes in place when the job lands;
+    approve it as usual once the rebuilt images look right.
+
+    Prefers generated images: without ``allow_stock`` the rebuild task fails
+    (changing nothing) if any slot would fall back to a Pexels stock photo.
+    Re-planning is a fresh plan, not a 1-for-1 swap — the inline image count
+    may change. Unlike the single-image tools, drafts-only is ENFORCED: any
+    other status is refused loud.
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api(
+        "POST", f"/api/tasks/{full_id}/rebuild-images", {"allow_stock": allow_stock},
+    )
+    if result.get("error"):
+        return f"Error: {_api_error(result)}"
+    return result.get("detail") or f"image rebuild queued as task {result.get('task_id')}"
+
+
+@mcp.tool()
 async def remove_post_image(task_id: str, which: str) -> str:
     """Remove an image from a draft or a published post.
 
