@@ -2024,6 +2024,16 @@ DEFAULTS: dict[str, str] = {
     # the same media_drift forever with no recovery path.
     'media_redispatch_cap_reset_enabled': 'true',
     'media_redispatch_cap_reset_cooldown_hours': '24',
+    # In-flight grace (poindexter#971): a dispatch marker stamped within this
+    # many minutes means the render is (likely) STILL RUNNING — the watchdog's
+    # ~15-min cycle is shorter than a hero render (20-30 min), so
+    # "video_missing" is routinely true mid-flight. Clearing the marker then
+    # re-armed the dispatcher against an already-landing render: one full
+    # wasted duplicate render (~25 min GPU) per completed video. A genuinely
+    # dead flow ages past the grace and re-dispatches exactly as before. Size
+    # comfortably above the slowest expected render, below the point where a
+    # dead flow's recovery lag hurts.
+    'media_redispatch_inflight_grace_minutes': '45',
     # media_feed_reconciliation — converges the published podcast/video RSS
     # feeds on R2 onto the DB's eligible-episode set. ON by default: unlike the
     # Stage-2 media jobs it needs no GPU and no dormant master switch, and its
@@ -3917,6 +3927,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_tts_gate_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_enabled': {'owner': 'media_reconciliation', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
+    'media_redispatch_inflight_grace_minutes': {'owner': 'media_reconciliation', 'value_type': 'integer'},
 
     # ----- R2 media orphan-reaper (design 2026-07-11) -----
     'media_orphan_sweep_armed': {'owner': 'media_orphan_sweep', 'value_type': 'boolean'},

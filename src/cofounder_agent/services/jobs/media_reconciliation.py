@@ -1062,6 +1062,15 @@ class MediaReconciliationJob:
     # to have its count bumped every 15-min cycle, hitting the cap in ~45 min
     # with zero real render attempts.
     #
+    # The recently-stamped guard (poindexter#971): a marker younger than the
+    # grace window is IN-FLIGHT, not missing. The watchdog's ~15-min cycle is
+    # shorter than a hero render (20-30 min), so "video_missing" is routinely
+    # true mid-flight; clearing the marker then meant the dispatcher re-claimed
+    # the task after the render landed — one full wasted duplicate render
+    # (~25 min GPU) per completed video, its persist discarded by the
+    # idempotency guard. A genuinely dead flow ages past the grace and
+    # re-dispatches exactly as before.
+    #
     # ``media_pipeline_unclaim_count`` resets here (poindexter#995): this IS a
     # fresh, deliberately-authorised attempt, so it should start with a full
     # free-outage-retry budget. Without the reset a piece that once exhausted
@@ -1075,6 +1084,7 @@ class MediaReconciliationJob:
          WHERE task_id = $1
            AND media_pipeline_redispatch_count < $2
            AND media_pipeline_dispatched_at IS NOT NULL
+           AND media_pipeline_dispatched_at < NOW() - make_interval(mins => $3)
     """
 
     # Bounded cap-reset self-heal (2026-07-03, feedback_self_heal_not_suppress):
@@ -1084,6 +1094,10 @@ class MediaReconciliationJob:
     # restarts at 1 because this reset IS the first re-dispatch of the fresh
     # budget. Command tag 'UPDATE 0' = cooldown not elapsed (or a concurrent
     # cycle won the race).
+    # The in-flight grace applies here too (poindexter#971): a capped task
+    # whose marker was stamped minutes ago is mid-render right now — resetting
+    # would clear the marker under the live flow, the exact duplicate-render
+    # bug the grace exists to stop. Marker-NULL rows pass (nothing in flight).
     _CAP_RESET_SQL = """
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
@@ -1094,6 +1108,8 @@ class MediaReconciliationJob:
            AND media_pipeline_redispatch_count >= $2
            AND (media_pipeline_cap_reset_at IS NULL
                 OR media_pipeline_cap_reset_at < NOW() - make_interval(hours => $3))
+           AND (media_pipeline_dispatched_at IS NULL
+                OR media_pipeline_dispatched_at < NOW() - make_interval(mins => $4))
     """
 
     async def _redispatch_video(self, pool: Any, post_row: dict[str, Any]) -> bool:
@@ -1109,6 +1125,7 @@ class MediaReconciliationJob:
             (sc.get("media_pipeline_redispatch_max", "3") if sc is not None else "3")
             or 3
         )
+        grace_minutes = self._inflight_grace_minutes()
         row = await pool.fetchrow(self._RESOLVE_TASK_SQL, post_row["id"])
         if not row or not row["task_id"]:
             logger.warning(
@@ -1118,7 +1135,7 @@ class MediaReconciliationJob:
             return False
         if row["media_pipeline_redispatch_count"] >= cap:
             if await self._maybe_reset_video_redispatch_cap(
-                pool, post_row["id"], row["task_id"], cap,
+                pool, post_row["id"], row["task_id"], cap, grace_minutes,
             ):
                 return True
             logger.warning(
@@ -1126,11 +1143,25 @@ class MediaReconciliationJob:
                 post_row["id"], cap,
             )
             return False
-        result = await pool.execute(self._CLEAR_MARKER_SQL, row["task_id"], cap)
+        result = await pool.execute(
+            self._CLEAR_MARKER_SQL, row["task_id"], cap, grace_minutes,
+        )
+        # 'UPDATE 0' folds three benign cases: already pending pickup (marker
+        # NULL), raced by a concurrent cycle, or stamped within the in-flight
+        # grace window — the render is likely still running, so leave it be.
         return str(result).strip().endswith(" 1")
+
+    def _inflight_grace_minutes(self) -> int:
+        """Render budget below which a stamped dispatch marker means
+        "in flight", not "missing" (poindexter#971)."""
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            return 45
+        return sc.get_int("media_redispatch_inflight_grace_minutes", 45) or 45
 
     async def _maybe_reset_video_redispatch_cap(
         self, pool: Any, post_id: str, task_id: str, cap: int,
+        grace_minutes: int = 45,
     ) -> bool:
         """Bounded self-heal for a cap-wedged video task (2026-07-03).
 
@@ -1156,7 +1187,9 @@ class MediaReconciliationJob:
             )
             return False
         cooldown_h = sc.get_int("media_redispatch_cap_reset_cooldown_hours", 24) or 24
-        result = await pool.execute(self._CAP_RESET_SQL, task_id, cap, cooldown_h)
+        result = await pool.execute(
+            self._CAP_RESET_SQL, task_id, cap, cooldown_h, grace_minutes,
+        )
         if not str(result).strip().endswith(" 1"):
             return False  # cooldown not elapsed, or a concurrent cycle won
         logger.warning(

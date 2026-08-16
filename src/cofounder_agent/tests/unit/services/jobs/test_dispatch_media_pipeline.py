@@ -184,6 +184,19 @@ def test_eligible_sql_requires_both_podcast_script_and_a_shot_list():
     assert "jsonb_array_length" in dmp._ELIGIBLE_SQL
 
 
+def test_eligible_sql_excludes_tasks_that_already_have_a_video():
+    """Dispatcher half of poindexter#971: a stale NULL marker on a
+    video-complete task must be harmless. The watchdog's mid-flight marker
+    clear (render landed :18, marker cleared :15) left exactly that state,
+    and the dispatcher re-claimed it for a full duplicate render whose
+    persist was then discarded. Both seams are checked — fresh rows are
+    task-keyed, distribute-linked rows may be post-keyed only."""
+    assert "NOT EXISTS" in dmp._ELIGIBLE_SQL
+    assert "ma.type = 'video'" in dmp._ELIGIBLE_SQL
+    assert "ma.task_id = pt.task_id" in dmp._ELIGIBLE_SQL
+    assert "mp.metadata->>'pipeline_task_id' = pt.task_id" in dmp._ELIGIBLE_SQL
+
+
 def test_stranded_count_is_not_filtered_by_the_dispatch_marker():
     """The stranded metric must count pieces regardless of their marker.
 

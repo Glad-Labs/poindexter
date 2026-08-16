@@ -928,6 +928,42 @@ class TestVideoRedispatch:
         ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is False
 
+    def test_clear_marker_sql_has_inflight_grace_guard(self):
+        """poindexter#971: a marker younger than the grace window is IN
+        FLIGHT, not missing — the watchdog's ~15-min cycle is shorter than a
+        hero render (20-30 min), so clearing on sight re-armed the dispatcher
+        against an already-landing render: one wasted duplicate render
+        (~25 min GPU) per completed video."""
+        sql = MediaReconciliationJob._CLEAR_MARKER_SQL
+        assert "media_pipeline_dispatched_at < NOW() - make_interval(mins => $3)" in sql
+        # The cap-reset path takes the same guard (marker-NULL rows pass —
+        # nothing is in flight for them).
+        cap_sql = MediaReconciliationJob._CAP_RESET_SQL
+        assert "make_interval(mins => $4)" in cap_sql
+        assert "media_pipeline_dispatched_at IS NULL" in cap_sql
+
+    async def test_redispatch_video_passes_grace_minutes_to_the_guard(self):
+        """The configured grace threads into the SQL as $3 (default 45)."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "3"})
+        pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 0})
+        await job._redispatch_video(pool, {"id": "post-1"})
+        args = pool.execute.await_args.args
+        assert args[1] == "t1"
+        assert args[3] == 45
+
+    async def test_redispatch_video_grace_is_configurable(self):
+        """Operators with slower renders can widen the window via
+        media_redispatch_inflight_grace_minutes."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={
+            "media_pipeline_redispatch_max": "3",
+            "media_redispatch_inflight_grace_minutes": "90",
+        })
+        pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 0})
+        await job._redispatch_video(pool, {"id": "post-1"})
+        assert pool.execute.await_args.args[3] == 90
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

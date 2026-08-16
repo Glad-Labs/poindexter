@@ -84,11 +84,32 @@ logger = logging.getLogger(__name__)
 # renders the moment a shot list exists (BackfillVideoShotListsJob), instead
 # of being consumed once and lost. It also stops paying TTS for a render that
 # cannot happen.
+#
+# The NOT-EXISTS-video exclusion is the dispatcher half of poindexter#971:
+# a task whose video already exists must not be re-claimed just because its
+# dispatch marker reads NULL — the watchdog's mid-flight marker clear left
+# exactly that state behind (render landed at :18, marker cleared at :15),
+# and the resulting duplicate render burned ~25 min of GPU per completed
+# video before its persist was discarded. A stale NULL marker on a
+# video-complete task is now harmless. Legit re-renders are unaffected:
+# the manual re-render recipe deletes the stale media_assets rows first
+# (which is already required — a kept row makes the new render prune
+# itself), so those tasks don't match the exclusion. Two-seam join matches
+# media_reconciliation._EXISTING_MEDIA_SQL semantics (fresh rows are
+# task-keyed; ``podcast_distribute``-linked rows may be post-keyed only).
 _ELIGIBLE_SQL = """
     SELECT pt.task_id
       FROM pipeline_tasks pt
      WHERE pt.status IN ('approved', 'published')
        AND pt.media_pipeline_dispatched_at IS NULL
+       AND NOT EXISTS (
+           SELECT 1
+             FROM media_assets ma
+        LEFT JOIN posts mp ON mp.id = ma.post_id
+            WHERE ma.type = 'video'
+              AND (ma.task_id = pt.task_id
+                   OR mp.metadata->>'pipeline_task_id' = pt.task_id)
+       )
        AND EXISTS (
            SELECT 1
              FROM pipeline_versions pv
