@@ -95,6 +95,17 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
   // `slot` is a datetime-local string (local wall clock, no zone).
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [slot, setSlot] = useState('');
+  // Images sub-state (third inline panel): the "text is fine, an image is
+  // bad" path. Neither action is a reject — the draft stays awaiting
+  // approval and only images change. `imgList` is the fetched thumbnail
+  // strip; `imgSel` the chosen regen target ('featured' | 'inline:N');
+  // `imgBusy` blocks double-submits ('' | 'rebuild' | 'regen').
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const [imgList, setImgList] = useState({ status: 'idle', items: [] });
+  const [imgSel, setImgSel] = useState(null);
+  const [imgPrompt, setImgPrompt] = useState('');
+  const [allowStock, setAllowStock] = useState(false);
+  const [imgBusy, setImgBusy] = useState('');
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -111,7 +122,50 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
     setFeedback('');
     setScheduleOpen(false);
     setSlot('');
+    setImagesOpen(false);
+    setImgList({ status: 'idle', items: [] });
+    setImgSel(null);
+    setImgPrompt('');
+    setAllowStock(false);
+    setImgBusy('');
   }, [entity]);
+
+  // Load the draft's image list when the Images panel opens. The task detail
+  // read serves content from the same max-version pipeline_versions row the
+  // regen route rewrites (content_tasks view), so the inline numbering the
+  // strip shows is the numbering the server will act on. Live-only, same as
+  // MediaPreviewPlayer: mock mode has no draft body to parse, and a
+  // fabricated strip would misreport what a click regenerates.
+  const imagesEntityId =
+    imagesOpen && entity && entity.type === 'inbox'
+      ? (entity.data.detail && entity.data.detail.task) || entity.data.id
+      : null;
+  useEffect(() => {
+    if (!imagesEntityId) return undefined;
+    if (!window.PX.api.isLive()) {
+      setImgList({ status: 'unavailable', items: [] });
+      return undefined;
+    }
+    let alive = true;
+    setImgList({ status: 'loading', items: [] });
+    window.PX.api
+      .getTask(imagesEntityId)
+      .then((t) => {
+        if (!alive) return;
+        const items = window.PXImages.listImages(
+          (t && t.content) || '',
+          t && t.featured_image_url
+        );
+        setImgList({ status: 'ready', items });
+      })
+      .catch((err) => {
+        if (alive)
+          setImgList({ status: 'error', items: [], error: err.message });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [imagesEntityId]);
 
   // Derived slot state, shared by the picker body and its footer so the
   // hint text and the Schedule button can never disagree about whether the
@@ -266,7 +320,153 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
                     <b>Send back to edit</b> regenerates the post and returns it
                     here for review. <b>Reject for good</b> closes the task out
                     — nothing regenerates. Use it for a bad topic or a quiet-day
-                    dev diary you don&rsquo;t want written at all.
+                    dev diary you don&rsquo;t want written at all. Only the
+                    images wrong? Cancel and use <b>Images</b> instead — it
+                    rebuilds them without touching the text.
+                  </p>
+                </div>
+              ) : null}
+              {imagesOpen ? (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label>Images — rebuild without touching the text</label>
+                  {imgList.status === 'unavailable' ? (
+                    <p className="mono c-dim" style={{ fontSize: 11 }}>
+                      Connect to a live worker to manage draft images.
+                    </p>
+                  ) : imgList.status === 'loading' ? (
+                    <p className="mono c-dim" style={{ fontSize: 11 }}>
+                      Loading draft images…
+                    </p>
+                  ) : imgList.status === 'error' ? (
+                    <p className="mono c-red" style={{ fontSize: 11 }}>
+                      Could not load the draft — {imgList.error}
+                    </p>
+                  ) : imgList.status === 'ready' &&
+                    imgList.items.length === 0 ? (
+                    <p className="mono c-dim" style={{ fontSize: 11 }}>
+                      This draft has no images yet — <b>Rebuild all</b> plans
+                      and generates a fresh set from the text.
+                    </p>
+                  ) : (
+                    <>
+                      <p
+                        className="c-dim"
+                        style={{
+                          fontSize: 11,
+                          margin: '0 0 8px',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Pick one image to regenerate, or rebuild them all. The
+                        text is never touched; the draft stays here for review.
+                      </p>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                          marginBottom: 8,
+                        }}
+                      >
+                        {imgList.items.map((img) => (
+                          <button
+                            key={img.which}
+                            type="button"
+                            title={`${img.label} — click to select for regen`}
+                            onClick={() => {
+                              setImgSel(img.which);
+                              setImgPrompt(
+                                window.PXImages.defaultPrompt(
+                                  img,
+                                  (e.detail && e.detail.topic) || e.title || ''
+                                )
+                              );
+                            }}
+                            style={{
+                              width: 104,
+                              padding: 0,
+                              cursor: 'pointer',
+                              background: 'transparent',
+                              border:
+                                imgSel === img.which
+                                  ? '2px solid var(--gl-cyan)'
+                                  : '1px solid var(--gl-hairline-strong)',
+                              borderRadius: 6,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <img
+                              src={img.url}
+                              alt={img.alt || img.label}
+                              loading="lazy"
+                              style={{
+                                width: '100%',
+                                height: 64,
+                                objectFit: 'cover',
+                                display: 'block',
+                              }}
+                            />
+                            <span
+                              className="mono"
+                              style={{
+                                display: 'block',
+                                fontSize: 10,
+                                padding: '3px 4px',
+                                color:
+                                  imgSel === img.which
+                                    ? 'var(--gl-cyan)'
+                                    : 'var(--gl-dim)',
+                              }}
+                            >
+                              {img.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      {imgSel ? (
+                        <>
+                          <label style={{ marginTop: 6 }}>
+                            New-image prompt · {imgSel}
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={imgPrompt}
+                            onChange={(ev) => setImgPrompt(ev.target.value)}
+                            placeholder="What should this image show?"
+                            style={{ resize: 'vertical' }}
+                          />
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                  <label
+                    className="mono c-dim"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 11,
+                      marginTop: 8,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allowStock}
+                      onChange={(ev) => setAllowStock(ev.target.checked)}
+                      style={{ margin: 0 }}
+                    />
+                    Allow stock-photo fallback on full rebuild (otherwise a
+                    failed generation fails the rebuild loudly)
+                  </label>
+                  <p
+                    className="c-dim"
+                    style={{ fontSize: 11, margin: '6px 0 0', lineHeight: 1.5 }}
+                  >
+                    <b>Rebuild all</b> queues a pipeline job that re-plans every
+                    image from the article text — the draft refreshes here when
+                    it finishes. <b>Regenerate selected</b> renders one image
+                    now from your prompt; it can take a few minutes on the GPU.
                   </p>
                 </div>
               ) : null}
@@ -411,6 +611,80 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
                 Cancel
               </button>
             </>
+          ) : imagesOpen ? (
+            <>
+              <button
+                className="mbtn mbtn--amber"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                disabled={imgBusy !== '' || imgList.status === 'unavailable'}
+                title="Queue the image_rebuild pipeline — every image re-planned from the text; the body is never touched"
+                onClick={async () => {
+                  setImgBusy('rebuild');
+                  const res = await actions.rebuildImages(e, { allowStock });
+                  // Success closes the drawer (entity reset clears state);
+                  // only the failure path needs the button back.
+                  if (!res) setImgBusy('');
+                }}
+              >
+                <Icon name="refresh" size={13} />
+                {imgBusy === 'rebuild' ? 'Queuing…' : 'Rebuild all'}
+              </button>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                disabled={
+                  imgBusy !== '' ||
+                  !imgSel ||
+                  !imgPrompt.trim() ||
+                  imgList.status !== 'ready'
+                }
+                title={
+                  imgSel
+                    ? `Render a new ${imgSel} image from the prompt and swap it into the draft — a real GPU render, can take a few minutes`
+                    : 'Select an image in the strip first'
+                }
+                onClick={async () => {
+                  const which = imgSel;
+                  setImgBusy('regen');
+                  const res = await actions.regenImage(
+                    e,
+                    which,
+                    imgPrompt.trim()
+                  );
+                  setImgBusy('');
+                  if (res && res.new_url) {
+                    // Swap the fresh URL into the strip in place. If the
+                    // operator moved on (entity change reset the list to
+                    // []), this maps over nothing — no stale resurrect.
+                    setImgList((prev) => ({
+                      ...prev,
+                      items: prev.items.map((img) =>
+                        img.which === which ? { ...img, url: res.new_url } : img
+                      ),
+                    }));
+                  }
+                }}
+              >
+                <Icon name="image" size={13} />
+                {imgBusy === 'regen' ? 'Rendering…' : 'Regenerate selected'}
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                title={
+                  imgBusy === 'regen'
+                    ? 'Close — the render keeps going server-side and lands on the draft when done'
+                    : 'Back to the approve actions'
+                }
+                onClick={() => {
+                  setImagesOpen(false);
+                  setImgSel(null);
+                  setImgPrompt('');
+                }}
+              >
+                Cancel
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -437,6 +711,21 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
               >
                 Schedule
               </button>
+              {d.task_type !== 'podcast' ? (
+                // The surgical middle path between Approve and Reject: the
+                // text is fine, an image is bad. Rebuild/regen images on the
+                // draft without a reject (a reject regenerates the text too).
+                // Hidden for podcast tasks — their artifact is audio.
+                <button
+                  className="mbtn"
+                  style={{ padding: '10px 14px' }}
+                  title="Rebuild all images or regenerate one — never touches the text"
+                  onClick={() => setImagesOpen(true)}
+                >
+                  <Icon name="image" size={13} />
+                  Images
+                </button>
+              ) : null}
               <button
                 className="mbtn mbtn--ghost mbtn--danger"
                 style={{ padding: '10px 14px' }}

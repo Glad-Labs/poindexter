@@ -35,6 +35,8 @@ const ICON_PATHS = {
   // Circle + hands. Used by the social schedule action; without it, Icon's
   // unknown-name fallback would quietly render the `overview` grid.
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3.5 2',
+  // Frame + horizon + sun. Used by the approve drawer's Images action.
+  image: 'M4 5h16v14H4zM4 15l4.5-4.5 3 3L16 9l4 4M8.5 8.5h.01',
 };
 
 function Icon({ name, size = 18, style, className = '' }) {

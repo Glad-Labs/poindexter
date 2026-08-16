@@ -123,6 +123,7 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | settings          | `GET /api/settings` · `PUT /api/settings/{id}`                                                                                                       |
 | approvals         | `GET /api/tasks/pending-approval` · `POST /api/tasks/{id}/{approve\|reject\|publish}` (approve ≠ publish)                                            |
 | ↳ reject mode     | `reject(id,notes,{final:true})` → `allow_revisions:false` → `rejected_final`; default → `rejected_retry`                                             |
+| ↳ draft images    | `POST /api/tasks/{id}/rebuild-images` (queue async all-image rebuild) · `POST /api/tasks/{id}/regen-image` (`{which, prompt}`, 300s ceiling)         |
 | draft preview     | same-origin `/preview/{preview_token}` link (token rides each pending-approval row's `metadata`)                                                     |
 | tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel)                                         |
 | events            | `GET /api/pipeline/events` (the live audit feed)                                                                                                     |
@@ -146,6 +147,32 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | logs              | `GET /api/logs` (worker proxy → Loki `query_range`)                                                                                                  |
 | traces            | `GET /api/traces` (worker proxy → Langfuse `/api/public/traces`)                                                                                     |
 | cofounder chat    | `GET /api/chat/tools` · `GET/POST /api/chat/conversations` · `GET /…/{id}` · `POST /…/{id}/archive` · `POST /…/{id}/messages` (streamed NDJSON turn) |
+
+### Draft images (approve drawer · Images action)
+
+The approve drawer's **Images** button is the surgical middle path between
+Approve and Reject for "the text is fine, an image is bad" — neither action
+touches the body, and the draft stays `awaiting_approval` in the inbox
+(a reject would regenerate the text too). Two verbs:
+
+- **Rebuild all** queues the async `image_rebuild` pipeline
+  (`POST /api/tasks/{id}/rebuild-images`) — every image (featured + inline)
+  re-planned from the article text; the drawer closes and the draft refreshes
+  when the job lands. Stock-photo fallback is opt-in (`allow_stock`),
+  otherwise a failed generation fails the rebuild loudly.
+- **Regenerate selected** renders ONE image in-request
+  (`POST /api/tasks/{id}/regen-image`, `which` = `featured` | `inline:N`)
+  from an operator prompt, prefilled from the image's section heading. Slow
+  by nature (a real GPU render), so the call rides a 300s abort ceiling
+  mirroring the CLI's `post_edit_regen_image_timeout_s` — not the default 8s.
+
+The thumbnail strip parses the draft via `GET /api/tasks/{id}` with
+`js/image-helpers.js` (`window.PXImages`), whose `inline:N` numbering
+deliberately mirrors `PostEditService`'s src-carrying-`<img>` regex over the
+same max-version `pipeline_versions` content — contract-tested in
+`__tests__/image-helpers.test.js` + `__tests__/api.images.test.js` so a
+console click can never regenerate a different image than the server swaps.
+Live-only (mock mode has no draft body to parse); hidden for podcast tasks.
 
 ### Now-running band (live activity)
 

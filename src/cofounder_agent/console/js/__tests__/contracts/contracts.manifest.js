@@ -234,6 +234,28 @@ module.exports = [
     request: { method: 'POST', path: '/api/tasks/task_1/publish' },
   },
   {
+    // Approve drawer · Images. allow_stock defaults FALSE — stock fallback is
+    // opt-in, else the rebuild gate fails loud (RebuildImagesRequest).
+    name: 'rebuildImages',
+    invoke: (api) => api.rebuildImages('task_1'),
+    request: {
+      method: 'POST',
+      path: '/api/tasks/task_1/rebuild-images',
+      body: { allow_stock: false },
+    },
+  },
+  {
+    // Both RegenImageRequest fields are required — a drifted body 400s only
+    // when an operator hits the button (the reject() lesson, audit bug #3).
+    name: 'regenImage',
+    invoke: (api) => api.regenImage('task_1', 'inline:2', 'a cooling loop'),
+    request: {
+      method: 'POST',
+      path: '/api/tasks/task_1/regen-image',
+      body: { which: 'inline:2', prompt: 'a cooling loop' },
+    },
+  },
+  {
     name: 'retryTask',
     invoke: (api) => api.retryTask('task_1'),
     request: {

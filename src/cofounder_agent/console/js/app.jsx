@@ -887,6 +887,73 @@ function App() {
         pushToast(`Reject failed — ${err.message}`, 'red', '✕');
       }
     },
+    // The surgical image path (drawer · Images): fix images on an
+    // awaiting_approval draft WITHOUT a reject — the body is never touched
+    // and the task stays in the inbox. Both return the API result on success
+    // and null on failure (the drawer branches its busy state on that);
+    // toasts live here so an outcome lands even if the drawer has closed.
+    //
+    // rebuildImages queues the async image_rebuild pipeline job — every
+    // image re-planned from the article text. Success closes the drawer:
+    // there is nothing more to do on this post until the job lands and the
+    // draft comes back with fresh images.
+    rebuildImages: async (e, opts = {}) => {
+      try {
+        const res = await PX.api.rebuildImages(e.id, opts);
+        closeDrawer();
+        const jobId = String((res && res.task_id) || '').slice(0, 8);
+        pushToast(
+          `Image rebuild queued${jobId ? ` (job ${jobId})` : ''} — “${trunc(
+            e.title
+          )}” stays here and refreshes when it lands`,
+          'cyan',
+          '✓'
+        );
+        pushFeed(
+          ['cyan', 'IMAGES'],
+          `operator queued image rebuild for <b>${trunc(e.title)}</b>` +
+            (jobId ? ` → job <b>${jobId}</b>` : '')
+        );
+        return res;
+      } catch (err) {
+        pushToast(`Image rebuild failed — ${err.message}`, 'red', '✕');
+        return null;
+      }
+    },
+    // regenImage renders ONE image in-request (slow — a real GPU render) and
+    // swaps it into the draft. The drawer stays open and repaints its strip
+    // from the returned new_url; a featured swap also syncs the inbox row's
+    // thumbnail so the strip and the row can't disagree until the next poll.
+    regenImage: async (e, which, prompt) => {
+      try {
+        const res = await PX.api.regenImage(e.id, which, prompt);
+        pushToast(
+          `${which === 'featured' ? 'Featured image' : `Image ${which}`} regenerated — draft updated`,
+          'mint',
+          '✓'
+        );
+        pushFeed(
+          ['cyan', 'IMAGES'],
+          `operator regenerated <b>${which}</b> on <b>${trunc(e.title)}</b>`
+        );
+        if (which === 'featured' && res && res.new_url) {
+          setInbox((rows) =>
+            rows.map((r) =>
+              r.id === e.id
+                ? {
+                    ...r,
+                    detail: { ...r.detail, featured_image_url: res.new_url },
+                  }
+                : r
+            )
+          );
+        }
+        return res;
+      } catch (err) {
+        pushToast(`Image regen failed — ${err.message}`, 'red', '✕');
+        return null;
+      }
+    },
     // Schedule = approve + a publish slot, in one call. The server stages
     // the post and hands it to scheduling_service.assign_slot, which owns
     // the (posts.status='scheduled', published_at) pair that

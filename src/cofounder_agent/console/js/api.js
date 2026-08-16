@@ -31,6 +31,8 @@
      settings      GET  /api/settings           · PUT /api/settings/{id}
      approvals     GET  /api/tasks/pending-approval
                    POST /api/tasks/{id}/{approve|reject|publish}  (approve != publish)
+     draft images  POST /api/tasks/{id}/rebuild-images  (queue async all-image rebuild)
+                   POST /api/tasks/{id}/regen-image     ({which, prompt} — one image, slow)
      tasks         GET  /api/tasks, /{id}        · PUT /api/tasks/{id}/status  (retry→pending)
                    DELETE /api/tasks/{id}  (cancel)
      events        GET  /api/pipeline/events
@@ -177,13 +179,18 @@
 
   // Thin fetch wrapper with sane errors + OAuth. Used only by live branches.
   // Mints a JWT, and on a 401 clears the cache and retries once (token rotated
-  // or expired early).
-  async function http(method, path, body, root) {
+  // or expired early). `opts.timeoutMs` raises the abort ceiling for the few
+  // routes that legally run long (regen-image renders on the GPU in-request —
+  // the CLI gives it post_edit_regen_image_timeout_s = 300s; the default 8s
+  // here would abort the fetch while the server kept rendering, so the swap
+  // would land server-side with the console reporting a timeout).
+  async function http(method, path, body, root, opts = {}) {
     const url = (root ?? cfg.base) + path;
+    const timeoutMs = opts.timeoutMs || HTTP_TIMEOUT_MS;
     const doFetch = async () => {
       const tok = await getToken();
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         return await fetch(url, {
           method,
@@ -196,9 +203,7 @@
         });
       } catch (e) {
         if (e && e.name === 'AbortError')
-          throw new Error(
-            `${method} ${path} → timed out after ${HTTP_TIMEOUT_MS}ms`
-          );
+          throw new Error(`${method} ${path} → timed out after ${timeoutMs}ms`);
         throw e;
       } finally {
         clearTimeout(timer);
@@ -869,6 +874,55 @@
       return pick(
         () => http('POST', `/api/tasks/${id}/publish`),
         () => ({ ok: true })
+      );
+    },
+
+    // ── draft image surgery (approve drawer · Images action) ─
+    // The "text is fine, an image is bad" path — both act on the
+    // awaiting_approval draft WITHOUT touching the body, so neither is a
+    // reject. (A reject regenerates everything, text included.)
+    //
+    // rebuildImages: queue the async image_rebuild pipeline — re-plans EVERY
+    // image (featured + inline) from the article text and swaps them into the
+    // draft. Returns immediately with the queued job's task_id; the draft
+    // stays in the inbox and shows fresh images when the job lands. The
+    // graph's gate atom fails the rebuild LOUD on stock-photo fallback unless
+    // allowStock — a silent Pexels swap is how off-topic heroes ship.
+    rebuildImages(id, opts = {}) {
+      return pick(
+        () =>
+          http('POST', `/api/tasks/${id}/rebuild-images`, {
+            allow_stock: !!opts.allowStock,
+          }),
+        () => ({
+          ok: true,
+          task_id: `mock-rebuild-${id}`,
+          target_task_id: id,
+          detail: 'mock: image rebuild queued',
+        })
+      );
+    },
+    // regenImage: regenerate ONE image (`which` = 'featured' | 'inline:N',
+    // 1-based, numbered against the draft's <img> order) from an operator
+    // prompt, then swap it in. Synchronous — the render happens in-request,
+    // so this rides a 300s ceiling mirroring the CLI's
+    // post_edit_regen_image_timeout_s instead of the default 8s.
+    regenImage(id, which, prompt) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/tasks/${id}/regen-image`,
+            { which, prompt },
+            undefined,
+            { timeoutMs: 300_000 }
+          ),
+        () => ({
+          ok: true,
+          field: which,
+          new_url: null,
+          detail: 'mock: regen is live-only',
+        })
       );
     },
 
