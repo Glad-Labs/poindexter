@@ -130,7 +130,12 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 3.0
 # per-request render timeout: the prompt-build LLM call, the GPU-lock wait
 # (unbounded under video/VRAM contention — this is what actually blew the
 # budget), and the R2 upload.
-DEFAULT_STAGE_OVERHEAD_SECONDS = 120
+#
+# Must stay >= image_prompt_timeout_seconds (240), because the prompt build is
+# the single largest item it covers — measured at ~197s in production, where
+# the call waits on gpu.lock and a model load before generating a token. The
+# old 120 could not contain the step it was named for.
+DEFAULT_STAGE_OVERHEAD_SECONDS = 360
 
 
 def describe_exception(exc: BaseException) -> str:

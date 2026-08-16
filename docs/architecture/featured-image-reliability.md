@@ -76,8 +76,8 @@ interpolate it bare.**
 ## Failure 2 — the prompt model planning out loud
 
 Local instruct models frequently answer the `image.featured_image` brief by
-_restating it_, and `image_prompt_max_tokens` (150) truncates them before they
-reach the actual prompt. The reply went to the diffusion model verbatim:
+_restating it_, and `image_prompt_max_tokens` truncated them before they
+reached the actual prompt (it was 150; see the token-budget note below). The reply went to the diffusion model verbatim:
 
 ```
 *   Subject: A single polished chrome sphere on a dark mirrored surface...
@@ -136,14 +136,47 @@ to it, so a post with only a cover is not missing its hero.
 
 ## Settings
 
-| Key                                     | Default | Role                                                    |
-| --------------------------------------- | ------- | ------------------------------------------------------- |
-| `image_gen_render_attempts`             | 2       | render attempts per hero                                |
-| `image_gen_retry_backoff_seconds`       | 3.0     | pause between attempts                                  |
-| `image_render_timeout_seconds`          | 300     | per-request render cap                                  |
-| `image_featured_stage_overhead_seconds` | 120     | prompt build + lock wait + upload headroom              |
-| `image_prompt_max_tokens`               | 150     | prompt-model output cap — too low to survive a preamble |
-| `image_stock_fallback_enabled`          | false   | opt-in Pexels hero when image-gen yields nothing        |
+| Key                                     | Default | Role                                             |
+| --------------------------------------- | ------- | ------------------------------------------------ |
+| `image_gen_render_attempts`             | 2       | render attempts per hero                         |
+| `image_gen_retry_backoff_seconds`       | 3.0     | pause between attempts                           |
+| `image_render_timeout_seconds`          | 300     | per-request render cap                           |
+| `image_featured_stage_overhead_seconds` | 360     | prompt build + lock wait + upload headroom       |
+| `image_prompt_max_tokens`               | 768     | prompt-model output cap                          |
+| `image_prompt_timeout_seconds`          | 240     | patience for the prompt-build LLM call           |
+| `image_stock_fallback_enabled`          | false   | opt-in Pexels hero when image-gen yields nothing |
 
-`resolve_stage_timeout_seconds` derives the node-timeout floor from the first
-four, so the wrapper can never kill a render it asked for.
+`resolve_stage_timeout_seconds` derives the node-timeout floor from the render
+attempts, backoff and overhead, so the wrapper can never kill a render it asked
+for. At the defaults above that floor is `2×300 + 3 + 360` = 963s.
+
+### The token budget, measured
+
+Both prompt keys were raised in the poindexter#3229 follow-up. The old values
+were not merely conservative — each was below the step's own measured
+requirement, so the degraded path was the _normal_ path:
+
+| `max_tokens` | raw reply | usable prompt after sanitising | model finished? |
+| ------------ | --------- | ------------------------------ | --------------- |
+| 150 (old)    | 636 ch    | 132 ch (`Subject:` salvage)    | no — mid-plan   |
+| 320          | 1334 ch   | 132 ch                         | no              |
+| 512          | 2135 ch   | 125 ch                         | no              |
+| **768**      | 2700 ch   | **760 ch of real description** | yes             |
+| 1024         | 2509 ch   | 645 ch                         | yes             |
+
+Measured on `gemma-4-31B-it-qat` against the real `image.featured_image` brief.
+The model works through a planning preamble before answering, so anything under
+~768 truncates it mid-plan and the sanitiser has only the `Subject:` line to
+salvage. Past ~1024 there is no further gain.
+
+`image_prompt_timeout_seconds` had the same shape of error: production traces
+show ~197s for one prompt build, because the call waits on `gpu.lock` and a
+model load before generating a token. The old 90s cap expired on healthy runs
+and dropped them onto the fallback prompt. **These two keys are shared with the
+inline-image atom**, which builds one prompt per marker, so raising them costs
+wall-clock on every image — the cost is dominated by lock wait and model load
+rather than token count, but it is not free.
+
+If prompt-build latency ever becomes the bottleneck, the cheaper lever is a
+prompt model that answers without a preamble (`inline_image_prompt_model`),
+not a smaller cap — a smaller cap only truncates the preamble.

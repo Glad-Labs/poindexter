@@ -1827,8 +1827,20 @@ DEFAULTS: dict[str, str] = {
     # render itself). Externalised so prompt creativity / length / patience are
     # tunable without a code edit. #image-zimage-and-variety.
     'image_prompt_temperature': '0.8',
-    'image_prompt_max_tokens': '150',
-    'image_prompt_timeout_seconds': '90',
+    # 768, not 150 (poindexter#3229 follow-up). Instruct models work through a
+    # planning preamble before answering; measured against the real
+    # image.featured_image brief on gemma-4-31B-it-qat, the reply is still
+    # mid-plan at 150 / 320 / 512 tokens and only reaches a finished prompt at
+    # ~768. Every value below that guaranteed a truncated scratchpad, which is
+    # what the sanitiser was left cleaning up. Above ~1024 buys nothing.
+    'image_prompt_max_tokens': '768',
+    # 240, not 90. The old value was below the step's OWN measured latency:
+    # production trace 2026-08-15 shows 197s from "STAGE 3: Sourcing featured
+    # image" to the built prompt, because this call waits on gpu.lock and a
+    # model load before generating a token. A 90s cap therefore expired on
+    # healthy runs and dropped them onto the fallback prompt. Shared with the
+    # inline-image atom, which builds one prompt per marker.
+    'image_prompt_timeout_seconds': '240',
     # Render retry (2026-07-28). The dominant inline/featured render failure is
     # a WINDOW, not a verdict — image-gen restarting for a VRAM reclaim (cold
     # start + lazy model reload) or a GPU lock timeout under contention. Both
@@ -1845,7 +1857,11 @@ DEFAULTS: dict[str, str] = {
     # timeout against a 483s configured budget, a hero image that had already
     # rendered AND uploaded was discarded two seconds before the stage
     # returned it, and the run recorded itself clean.
-    'image_featured_stage_overhead_seconds': '120',
+    # 360, not 120: the prompt-build call alone is budgeted at
+    # image_prompt_timeout_seconds (240) and measured at ~197s in production,
+    # so a 120s overhead could not contain even the step it is named for —
+    # re-opening the exact RCA above from the other end.
+    'image_featured_stage_overhead_seconds': '360',
     # Stock-photo FALLBACK for a failed image-gen render. Default OFF: owned
     # imagery is the brand asset, and an undisclosed stock swap ran unnoticed
     # for weeks because the fallback logged per-image and still reported
