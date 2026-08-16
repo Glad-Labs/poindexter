@@ -481,6 +481,18 @@ class TestInlineImageHelpersPure:
         assert out.count("<img") == 1
         assert "[IMAGE-1: other]" in out
 
+    def test_inject_html_image_consumes_surrounding_blank_lines(self):
+        """poindexter#1006: the marker sits on its own line with blank lines
+        both sides; injection must consume them and leave exactly one blank
+        line on each side — padding-without-consuming shipped 3-5 newline
+        runs into every stored draft with inline images."""
+        from modules.content.atoms._image_helpers import _inject_html_image
+        body = "## Why\n\n[IMAGE-1: cat]\n\nMost models treat this..."
+        out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
+        assert "## Why\n\n<img" in out
+        assert '/>\n\nMost models treat this...' in out
+        assert "\n\n\n" not in out
+
 
 @pytest.mark.asyncio
 class TestSourceFeaturedImageAdapter:

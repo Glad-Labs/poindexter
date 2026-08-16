@@ -27,7 +27,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import content_generate_images, content_plan_image_markers
+from modules.content.atoms import (
+    content_generate_images,
+    content_inject_images,
+    content_plan_image_markers,
+)
 
 
 def _site_config(unload_enabled: bool = True) -> Any:
@@ -334,3 +338,81 @@ class TestRecordInlineImageAssetContract:
             )
 
         recorder.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# marker whitespace ownership — content.inject_images (poindexter#1006)
+# ---------------------------------------------------------------------------
+
+
+class TestInjectImagesWhitespace:
+    """Injection must CONSUME the marker's surrounding blank lines, not add to
+    them. The marker sits on its own line (blank lines both sides), and the
+    old pattern matched only the bracket expression while the replacement
+    padded ``\\n\\n`` on each side — every inline image left 3-5 consecutive
+    newlines in the stored draft body (3 of 5 awaiting_approval drafts on
+    2026-08-09, exactly 2 blank-runs per image)."""
+
+    @staticmethod
+    def _result(num: str, source: str, **over: Any) -> dict[str, Any]:
+        base: dict[str, Any] = {
+            "num": num,
+            "url": "https://cdn.example/img.png",
+            "alt_text": "a cat",
+            "source": source,
+        }
+        base.update(over)
+        return base
+
+    @pytest.mark.asyncio
+    async def test_image_gen_injection_leaves_one_blank_line_each_side(self):
+        result = await content_inject_images.run({
+            "content": "## Heading\n\n[IMAGE-1: cat]\n\nProse continues.",
+            "image_results": [self._result("1", "image_gen")],
+        })
+        out = result["content"]
+        assert out.count("<img") == 1
+        # Exactly one blank line on each side — no 3+ newline runs anywhere.
+        assert "## Heading\n\n<img" in out
+        assert '/>\n\nProse continues.' in out
+        assert "\n\n\n" not in out
+
+    @pytest.mark.asyncio
+    async def test_pexels_injection_owns_its_whitespace(self):
+        result = await content_inject_images.run({
+            "content": "Intro.\n\n[IMAGE-2: sofa]\n\nOutro.",
+            "image_results": [
+                self._result("2", "pexels", alt_text="Photo by Jane"),
+            ],
+        })
+        out = result["content"]
+        assert "<figcaption>" in out
+        assert "Intro.\n\n<img" in out
+        assert "</figcaption>\n\nOutro." in out
+        assert "\n\n\n" not in out
+
+    @pytest.mark.asyncio
+    async def test_removed_marker_collapses_to_one_paragraph_break(self):
+        """A marker with no image must not leave its blank lines behind as a
+        4-newline hole between the surrounding paragraphs."""
+        result = await content_inject_images.run({
+            "content": "Intro.\n\n[IMAGE-3: none]\n\nOutro.",
+            "image_results": [self._result("3", "image_gen", url=None)],
+        })
+        out = result["content"]
+        assert "[IMAGE-3" not in out
+        assert "Intro.\n\nOutro." in out
+
+    @pytest.mark.asyncio
+    async def test_alt_text_with_regex_escape_is_inserted_literally(self):
+        r"""Alt text containing ``\1`` used to crash re.sub with 'invalid
+        group reference'; the callable replacement inserts it literally."""
+        result = await content_inject_images.run({
+            "content": "A.\n\n[IMAGE-4: x]\n\nB.",
+            "image_results": [
+                self._result("4", "image_gen", alt_text=r"win\1dows \g<0> path"),
+            ],
+        })
+        out = result["content"]
+        assert r"win\1dows" in out
+        assert "\n\n\n" not in out

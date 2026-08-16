@@ -12,7 +12,6 @@ Issue: Glad-Labs/poindexter#362.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
@@ -54,6 +53,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         cleanup_leaked_descriptions,
         inject_html_image,
         normalize_from_router,
+        replace_image_marker,
     )
 
     content_text = state.get("content") or ""
@@ -69,8 +69,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         source = result.get("source", "none")
 
         if not img_url or not num:
-            # Remove placeholder — no image available.
-            content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+            # Remove placeholder — no image available. A bare paragraph
+            # break keeps the prose above/below correctly separated once
+            # the marker's own blank lines are consumed.
+            content_text = replace_image_marker(content_text, num, "\n\n")
             continue
 
         if source == "image_gen":
@@ -98,14 +100,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 f'width="650" height="433" loading="lazy" />\n'
                 f'<figcaption>Photo by {photographer} on Pexels</figcaption>\n\n'
             )
-            content_text = re.sub(
-                rf"\[IMAGE-{num}[^\]]*\]", pexels_html, content_text, count=1,
-            )
+            content_text = replace_image_marker(content_text, num, pexels_html)
             replaced_count += 1
             logger.info("  [IMAGE-%s] Pexels injected", num)
         else:
-            # Strip unresolved placeholder.
-            content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+            # Strip unresolved placeholder (same spacing rule as the
+            # no-image branch above).
+            content_text = replace_image_marker(content_text, num, "\n\n")
 
     content_text = cleanup_leaked_descriptions(content_text)
     content_text = normalize_from_router(content_text)

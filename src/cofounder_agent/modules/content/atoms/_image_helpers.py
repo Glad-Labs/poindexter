@@ -912,6 +912,25 @@ async def _try_pexels(
     return None
 
 
+def _replace_image_marker(content_text: str, num: str, replacement: str) -> str:
+    """Substitute the first ``[IMAGE-<num> ...]`` marker, whitespace included.
+
+    The marker normally sits on its own line, so it already carries blank
+    lines on both sides. The pattern consumes that surrounding whitespace so
+    the replacement fully owns its spacing — padding without consuming left
+    3–5 blank lines around every injected image (poindexter#1006). The
+    replacement is passed as a callable so URLs/alt text containing regex
+    escape sequences (``\\1``, ``\\g``) are inserted literally instead of
+    crashing ``re.sub``.
+    """
+    return re.sub(
+        rf"[ \t]*\n*[ \t]*\[IMAGE-{num}[^\]]*\][ \t]*\n*",
+        lambda _m: replacement,
+        content_text,
+        count=1,
+    )
+
+
 def _inject_html_image(
     content_text: str,
     num: str,
@@ -926,9 +945,7 @@ def _inject_html_image(
         f'\n\n<img src="{img_url}" alt="{alt_text}" '
         f'width="{width}" height="{height}" loading="lazy" />\n\n'
     )
-    return re.sub(
-        rf"\[IMAGE-{num}[^\]]*\]", replacement, content_text, count=1,
-    )
+    return _replace_image_marker(content_text, num, replacement)
 
 
 def _cleanup_leaked_descriptions(content_text: str) -> str:
@@ -966,6 +983,7 @@ inject_html_image = _inject_html_image
 normalize_from_router = _normalize_from_router
 plan_and_inject_placeholders = _plan_and_inject_placeholders
 record_inline_image_asset = _record_inline_image_asset
+replace_image_marker = _replace_image_marker
 try_image_gen = _try_image_gen
 try_pexels = _try_pexels
 
@@ -976,6 +994,7 @@ __all__ = [
     "normalize_from_router",
     "plan_and_inject_placeholders",
     "record_inline_image_asset",
+    "replace_image_marker",
     "stock_fallback_enabled",
     "try_image_gen",
     "try_pexels",
