@@ -1807,6 +1807,41 @@ DEFAULTS: dict[str, str] = {
     # is tunable (a small style pool wants a shorter window to avoid starving).
     'image_style_history_size': '10',
     'image_style_history_ttl_seconds': '3600',
+    # ------------------------------------------------------------------
+    # Featured-image fan-out (Phase 1, 2026-08-15 bake-off follow-up).
+    # Render the featured brief on several models, vision-judge, ship the
+    # best; every judged render writes an image_fanout_judged audit row —
+    # the Phase-2 class→provider router is seeded from those win rates.
+    # Dark-launched: everything below is inert until image_fanout_enabled.
+    # Candidates: 'zimage' (production image-gen server, OCR-gated),
+    # 'schnell' + 'qwen' (ComfyUI sidecar — needs --profile comfyui up and
+    # the image weights in ~/.poindexter/comfyui/models; see
+    # docs/architecture/image-fanout.md).
+    'image_fanout_enabled': 'false',
+    'image_fanout_candidates': 'zimage,schnell,qwen',
+    # Tie-break AND judge-down order — first listed wins when scores tie or
+    # the judge is unavailable. zimage-first means a downed judge reproduces
+    # today's single-model behaviour exactly.
+    'image_fanout_priority': 'zimage,schnell,qwen',
+    'image_fanout_judge_enabled': 'true',
+    'image_fanout_comfyui_url': 'http://comfyui:8188',
+    # Per-candidate render budget. Warm renders are seconds (schnell ~3s,
+    # qwen ~24s); the FIRST qwen render after an unload loads ~28GB and can
+    # take minutes — this budget must cover it or the candidate is skipped
+    # for that post (the fan-out degrades gracefully, never blocks).
+    'image_fanout_render_timeout_s': '600',
+    'image_fanout_width': '1024',
+    'image_fanout_height': '1024',
+    'image_fanout_schnell_checkpoint': 'flux1-schnell-fp8.safetensors',
+    'image_fanout_schnell_steps': '4',
+    'image_fanout_schnell_cfg': '1.0',
+    'image_fanout_qwen_model': 'qwen_image_2512_fp8_e4m3fn.safetensors',
+    'image_fanout_qwen_text_encoder': 'qwen_2.5_vl_7b_fp8_scaled.safetensors',
+    'image_fanout_qwen_vae': 'qwen_image_vae.safetensors',
+    'image_fanout_qwen_steps': '20',
+    'image_fanout_qwen_cfg': '2.5',
+    # ModelSamplingAuraFlow shift — official Qwen-Image template value.
+    'image_fanout_qwen_shift': '3.1',
     # Per-call HTTP timeout (seconds) for a local image inference server
     # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
     # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
@@ -4306,6 +4341,23 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_gen_server_url': {'value_type': 'url'},
     'image_model': {'value_type': 'model'},
     'image_negative_prompt': {'value_type': 'string'},
+    'image_fanout_enabled': {'value_type': 'boolean'},
+    'image_fanout_candidates': {'value_type': 'string'},
+    'image_fanout_priority': {'value_type': 'string'},
+    'image_fanout_judge_enabled': {'value_type': 'boolean'},
+    'image_fanout_comfyui_url': {'value_type': 'url'},
+    'image_fanout_render_timeout_s': {'value_type': 'integer'},
+    'image_fanout_width': {'value_type': 'integer'},
+    'image_fanout_height': {'value_type': 'integer'},
+    'image_fanout_schnell_checkpoint': {'value_type': 'string'},
+    'image_fanout_schnell_steps': {'value_type': 'integer'},
+    'image_fanout_schnell_cfg': {'value_type': 'float'},
+    'image_fanout_qwen_model': {'value_type': 'string'},
+    'image_fanout_qwen_text_encoder': {'value_type': 'string'},
+    'image_fanout_qwen_vae': {'value_type': 'string'},
+    'image_fanout_qwen_steps': {'value_type': 'integer'},
+    'image_fanout_qwen_cfg': {'value_type': 'float'},
+    'image_fanout_qwen_shift': {'value_type': 'float'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
     'image_ocr_gate_enforce': {'value_type': 'boolean'},
     'image_ocr_gate_fail_closed_when_unavailable': {'value_type': 'boolean'},

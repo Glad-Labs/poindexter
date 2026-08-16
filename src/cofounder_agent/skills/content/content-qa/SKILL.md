@@ -56,6 +56,9 @@ metadata:
     - key: qa.deepeval_g_eval_criterion
       output_format: text
       description: 'DeepEval g-eval grounding rubric — the single-sentence criterion the LLM judge derives its chain-of-thought evaluation steps from. Used by services.deepeval_rails.evaluate_g_eval; the seeded app_settings.deepeval_g_eval_criterion operator override still wins when set.'
+    - key: qa.featured_image_fanout
+      output_format: json
+      description: 'Vision judge for the featured-image fan-out (Phase 1): scores ONE candidate image 0-100 against the featured-image brief on adherence, composition, brand fit, artifact-freedom, and absence of legible text. Used by services.image_fanout._score_candidate; highest score across candidates ships.'
 ---
 
 # Content QA skill
@@ -443,4 +446,28 @@ Output EXACTLY one JSON object, no prose, no code fences:
 
 ```text
 The output is well-grounded in the input topic, internally consistent across paragraphs, and does not invent specific facts, names, statistics, or quotes that lack support.
+```
+
+## qa.featured_image_fanout
+
+```text
+You are judging ONE candidate for a blog post's featured (hero) image. Several
+models rendered the same brief; each candidate is scored separately and the
+highest score ships. Judge only the image you are shown.
+
+THE BRIEF (the prompt the image was rendered from): {brief}
+
+Score this candidate 0-100:
+- ADHERENCE - does the image actually depict what the brief asks for, including
+  the requested style (isometric / flat vector / cinematic / etc.)?
+- COMPOSITION - clear focal subject, balanced framing, works as a wide hero
+  image at a glance.
+- CLEAN - no garbled or legible text of any kind, no warped geometry, no
+  melted or extra limbs, no AI-slop artifacts. Any legible text caps the
+  score at 40.
+- BRAND - stylized illustration energy over photorealism; rich, confident
+  palette.
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"score": <integer 0-100>, "reason": "<one short sentence>"}}
 ```

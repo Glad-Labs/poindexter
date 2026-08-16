@@ -39,6 +39,10 @@ RUN git clone --depth 1 --branch ${COMFYUI_REF} \
 WORKDIR /comfyui
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Model-path aliases (image fan-out): all-in-one checkpoints (FLUX-schnell)
+# share the mounted diffusion_models dir — see the yaml for why.
+COPY comfyui-extra-model-paths.yaml /comfyui/extra_model_paths.yaml
+
 # Non-root, mirroring the other GPU sidecars. ComfyUI writes to input/,
 # output/, temp/ and user/ inside its own tree.
 RUN addgroup --system --gid 1001 appgroup && \

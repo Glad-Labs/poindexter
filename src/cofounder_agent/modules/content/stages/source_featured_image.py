@@ -208,7 +208,23 @@ def resolve_stage_timeout_seconds(site_config: Any) -> int:
         if site_config is not None
         else DEFAULT_STAGE_OVERHEAD_SECONDS
     )
-    return int(attempts * render + (attempts - 1) * backoff + overhead)
+    budget = int(attempts * render + (attempts - 1) * backoff + overhead)
+
+    # Fan-out budget (Phase 1): when enabled, the stage additionally renders
+    # up to two ComfyUI candidates (each bounded by its own render timeout —
+    # a cold Qwen load can consume most of one) plus up to three judge calls.
+    # The floor must cover it or the node wrapper kills the render it asked
+    # for — the exact bug this function exists to prevent.
+    from services.image_fanout import fanout_enabled
+
+    if fanout_enabled(site_config):
+        fanout_render = (
+            site_config.get_int("image_fanout_render_timeout_s", 600)
+            if site_config is not None else 600
+        )
+        judge_budget = 3 * 150
+        budget += 2 * int(fanout_render) + judge_budget
+    return budget
 
 
 @dataclass
@@ -438,6 +454,7 @@ class SourceFeaturedImageStage:
                     # audit emit is skipped, which has nowhere to run anyway.
                     pass
 
+            _db = context.get("database_service")
             gen_image = await _try_image_gen_featured(
                 subject=_resolve_featured_subject(context),
                 existing_prompt=context.get("featured_image_prompt", ""),
@@ -446,6 +463,7 @@ class SourceFeaturedImageStage:
                 style_tracker=style_tracker,
                 site_config=site_config,
                 platform=platform,
+                pool=getattr(_db, "pool", None) if _db else None,
             )
             if gen_image is not None:
                 stages["3_featured_image_found"] = True
@@ -772,6 +790,7 @@ async def _try_image_gen_featured(
     *,
     site_config: Any = None,
     platform: Any = None,
+    pool: Any = None,
 ) -> GeneratedImage | None:
     """Full image-gen path: pick style → build prompt → render → upload to R2.
 
@@ -853,6 +872,30 @@ async def _try_image_gen_featured(
             )
             if attempt < attempts:
                 await asyncio.sleep(backoff)
+
+        # Featured fan-out (Phase 1, 2026-08-15): render ComfyUI candidates
+        # alongside the z-image attempt above, judge, ship the best. The
+        # z-image render (or its absence — the OCR gate blocking it is
+        # exactly the class the other candidates cover) rides in as one
+        # candidate. Fan-out returning None means NO candidate rendered:
+        # fall through to the existing no-image path unchanged. The service
+        # never imports this stage; the stage composes it (services must not
+        # depend on modules/content).
+        from services import image_fanout
+
+        if image_fanout.fanout_enabled(site_config):
+            fanout_result = await image_fanout.run_featured_fanout(
+                prompt=img_gen_prompt,
+                negative=negative,
+                zimage_path=output_path,
+                zimage_meta=server_meta if isinstance(server_meta, dict) else {},
+                site_config=site_config,
+                pool=pool,
+                task_id=task_id,
+            )
+            if fanout_result is not None:
+                output_path, server_meta = fanout_result
+
         if output_path is None:
             return None
 

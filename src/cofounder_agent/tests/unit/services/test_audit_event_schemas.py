@@ -93,6 +93,9 @@ class TestEventSchemasRegistry:
             "chat_turn_completed",
             "chat_approval_resolved",
             "chat_plan_run",
+            # Featured fan-out win-rate panel + the Phase-2 router dataset
+            # (docs/architecture/image-fanout.md).
+            "image_fanout_judged",
         }
 
 

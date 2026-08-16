@@ -1,0 +1,11 @@
+# Baked into the ComfyUI sidecar image (scripts/Dockerfile.comfyui).
+#
+# The compose service mounts four model subdirs (diffusion_models,
+# text_encoders, vae, loras). All-in-one *checkpoints* — currently the
+# FLUX.1-schnell fp8 file the featured-image fan-out renders with — live in
+# the same host diffusion_models dir rather than a fifth mounted dir; this
+# mapping lets CheckpointLoaderSimple scan it. Keeping one host weights dir
+# per model *kind* (not per loader class) keeps the operator layout flat.
+poindexter:
+  base_path: /comfyui/models
+  checkpoints: diffusion_models

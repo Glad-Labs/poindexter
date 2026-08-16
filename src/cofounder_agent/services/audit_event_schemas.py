@@ -161,6 +161,32 @@ class ChatPlanRunDetails(BaseModel):
     task_id: str
 
 
+class ImageFanoutCandidateEntry(BaseModel):
+    """One candidate inside an ``image_fanout_judged`` row."""
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    score: float | None = None
+    reason: str = ""
+    elapsed_s: float | None = None
+
+
+class ImageFanoutJudgedDetails(BaseModel):
+    """Powers the Pipeline board's featured fan-out win-rate panel AND the
+    Phase-2 provider-routing dataset. Single producer:
+    ``services/image_fanout.py::_record_outcome``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: int = 1
+    winner: str
+    judge_ran: bool
+    brief: str
+    candidates: list[ImageFanoutCandidateEntry]
+
+
 EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "qa_pass_completed": QaPassCompletedDetails,
     "finding": FindingDetails,
@@ -168,6 +194,7 @@ EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "chat_turn_completed": ChatTurnCompletedDetails,
     "chat_approval_resolved": ChatApprovalResolvedDetails,
     "chat_plan_run": ChatPlanRunDetails,
+    "image_fanout_judged": ImageFanoutJudgedDetails,
 }
 
 

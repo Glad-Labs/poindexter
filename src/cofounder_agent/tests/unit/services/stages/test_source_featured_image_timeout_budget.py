@@ -95,3 +95,27 @@ class TestDerivedNodeTimeout:
         )
         expected = attempts * render + (attempts - 1) * 3 + DEFAULT_STAGE_OVERHEAD_SECONDS
         assert resolve_stage_timeout_seconds(cfg) == expected
+
+
+class TestFanoutBudget:
+    """The fan-out (Phase 1) renders up to two ComfyUI candidates + judge
+    calls inside this stage — the floor must grow with it or the node
+    wrapper kills the render it asked for (the exact bug this file pins)."""
+
+    def test_enabled_fanout_grows_the_floor(self):
+        base = resolve_stage_timeout_seconds(_site_config())
+        with_fanout = resolve_stage_timeout_seconds(_site_config(
+            image_fanout_enabled="true",
+            image_fanout_render_timeout_s=600,
+        ))
+        assert with_fanout >= base + 2 * 600, (
+            "fan-out budget (two comfy candidates x render timeout + judge "
+            "calls) must ride the stage-timeout floor"
+        )
+
+    def test_disabled_fanout_changes_nothing(self):
+        assert resolve_stage_timeout_seconds(
+            _site_config(),
+        ) == resolve_stage_timeout_seconds(
+            _site_config(image_fanout_enabled="false"),
+        )
