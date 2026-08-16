@@ -20,20 +20,22 @@ the Max subscription. Seven run as plain Python scripts under
 [`scripts/ops_sessions/`](../../scripts/ops_sessions/); two that need a frontier
 cloud model are kept **disabled** pending a metered-API decision.
 
-| Session             | Tier                    | Schedule    | What it does                                                                                                                                                                                           | Output                                            |
-| ------------------- | ----------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs                                                                                                                                                                  | `gh pr merge`                                     |
-| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                                                                                                                                                                                 | lint PR                                           |
-| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references                                                                                                                                                                | PR (or flag)                                      |
-| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface                                                                                                                                                                | self-merging PR / Discord note                    |
-| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels                                                                                                                                                                     | label edits + Discord digest                      |
-| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)                                                                                                                                                            | probe-bug issues                                  |
-| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate                                                                                                                                                          | PR                                                |
-| `pro-freshness`     | deterministic           | Sun 04:30   | rebuild the Pro deliverable from the live system (seed from prod app_settings, prompts from SKILL.md packs, premium dashboards; book drift reported not edited; PII/secret scrub gate before any push) | push to `Glad-Labs/poindexter-pro` + Discord note |
-| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                                                                                                                                                                              | —                                                 |
-| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files                                                                                                                                                                        | —                                                 |
+| Session             | Tier                    | Schedule    | What it does                                                                                                                                                                                               | Output                                            |
+| ------------------- | ----------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs                                                                                                                                                                      | `gh pr merge`                                     |
+| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                                                                                                                                                                                     | lint PR                                           |
+| `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references                                                                                                                                                                    | PR (or flag)                                      |
+| `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface                                                                                                                                                                    | self-merging PR / Discord note                    |
+| `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels                                                                                                                                                                         | label edits + Discord digest                      |
+| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)                                                                                                                                                                | probe-bug issues                                  |
+| `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate                                                                                                                                                              | PR                                                |
+| `pro-freshness`     | deterministic           | Sun 04:30   | rebuild the Pro deliverable from the live system (seed from prod app_settings, prompts from SKILL.md packs, premium dashboards; book drift reported not edited; PII/secret scrub gate before any push)     | push to `Glad-Labs/poindexter-pro` + Discord note |
+| `pin-check`         | deterministic           | daily 12:30 | verify every `OPS_OLLAMA_MODEL_*` pin exists on `OPS_OLLAMA_URL` (`GET /api/tags`) — daytime on purpose, so a broken pin pages while the operator is awake instead of failing a 03:00 session (stack#3163) | operator notify on missing pin                    |
+| `issue-resolver`    | **disabled** (frontier) | daily 05:00 | fix one scoped open issue                                                                                                                                                                                  | —                                                 |
+| `test-expansion`    | **disabled** (drop)     | daily 04:00 | add tests to low-coverage files                                                                                                                                                                            | —                                                 |
 
-The deterministic five make **zero model calls**. The two local-LLM sessions
+The deterministic sessions make **zero model calls** (`pin-check` GETs
+`/api/tags` — daemon metadata, no inference). The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.
 
 ### What `test-health` will and won't fix
@@ -271,14 +273,23 @@ Host-side env knobs read by [`scripts/ops_sessions/_common.py`](../../scripts/op
 | `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                     | PR-state poll interval within that budget       |
 
 **The default models must actually be pulled.** These are plain code defaults,
-not app_settings, and nothing verifies them at install time — `ollama list`
-must show every model in the table above. A missing one 404s at the moment of
-first use, which is not the moment the session starts: `test-health` only calls
-its model when the suite has failures, so `qwen2.5-coder:7b` being absent sat
-latent for weeks and surfaced only on 2026-08-07 when a test first went red.
-The session now reports that as `test-health: Ollama unusable` with the exact
-`ollama pull` command, instead of dying on an uncaught `HTTPStatusError` with
-nobody notified — which is how it stayed broken for three days.
+not app_settings — `ollama list` must show every model in the table above. A
+missing one used to 404 at the moment of first use, which is not the moment
+the session starts: `test-health` only calls its model when the suite has
+failures, so `qwen2.5-coder:7b` being absent sat latent for weeks and surfaced
+only on 2026-08-07 when a test first went red. Three detectors now close that
+gap (stack#3163): the LLM sessions **preflight** every pin they use against
+`GET /api/tags` at startup (seconds-fast failure with the exact `ollama pull`
+command), the daily `pin-check` session runs the same check at 12:30 so a
+broken pin pages the **same day** it breaks, and a 404 mid-run still surfaces
+as `Ollama unusable` with the remedy rather than an uncaught
+`HTTPStatusError` with nobody notified.
+
+**Host-rebuild checklist item:** after any OS migration or Ollama fleet
+rebuild, re-pull every `OPS_OLLAMA_MODEL_*` pin (the table above) — the
+2026-07-23 Pop!_OS re-pull worked from a mental list and missed the one model
+no interactive workflow uses. `pin-check` catches the miss the next day; the
+checklist avoids it entirely.
 
 The merge wait defaults to an hour because what it survives is GitHub Actions
 cron drift, not a race in seconds — see [the adjacent-bullet

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _ops_dir() -> Path:
     return next(
@@ -13,6 +15,14 @@ def _ops_dir() -> Path:
 
 sys.path.insert(0, str(_ops_dir()))
 import test_health as th  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _stub_pin_preflight(monkeypatch):
+    """main() now preflights the model pin (stack#3163) with a real HTTP GET;
+    stub it so these tests exercise the fix loop, not the operator box's
+    live Ollama. The preflight has its own tests in test_ops_common.py."""
+    monkeypatch.setattr(th.c, "preflight_model_pins", lambda *m, **k: None)
 
 
 def test_parse_pytest_failures_extracts_nodeids():

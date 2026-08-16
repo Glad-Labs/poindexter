@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash
 _SESSIONS = (
     "dependency-review", "codebase-audit", "doc-sync", "claude-md-sync",
     "triage-sweep", "alert-triage", "test-health", "pro-freshness",
+    "pin-check",
 )
 
 
@@ -81,7 +82,7 @@ def test_service_template_is_rendered_for_this_host(tmp_path):
     )
 
 
-def test_all_eight_timers_are_written_and_enabled(tmp_path):
+def test_all_session_timers_are_written_and_enabled(tmp_path):
     proc, unit_dir, calls = _run_installer(tmp_path)
     assert proc.returncode == 0, proc.stderr
     for name in _SESSIONS:

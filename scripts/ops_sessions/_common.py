@@ -23,6 +23,15 @@ OPS_OLLAMA_URL = os.environ.get("OPS_OLLAMA_URL", "http://localhost:11434")
 MODEL_TRIAGE = os.environ.get("OPS_OLLAMA_MODEL_TRIAGE", "llama3.2:3b")
 MODEL_TESTFIX = os.environ.get("OPS_OLLAMA_MODEL_TESTFIX", "qwen2.5-coder:7b")
 
+# Every model pin the session fleet uses, keyed by its env knob. The single
+# source the pin-check session and any future preflight consume — a pin added
+# above but not here is invisible to both, so add them as a pair (pinned by
+# test_ops_common.py::test_model_pins_registry_covers_every_pin).
+MODEL_PINS: dict[str, str] = {
+    "OPS_OLLAMA_MODEL_TRIAGE": MODEL_TRIAGE,
+    "OPS_OLLAMA_MODEL_TESTFIX": MODEL_TESTFIX,
+}
+
 _LOG_DIR = Path.home() / ".poindexter" / "logs" / "claude-sessions"
 
 
@@ -116,6 +125,50 @@ def ollama_chat(
             )
         raise OllamaUnavailable(f"{OPS_OLLAMA_URL}: {detail}") from exc
     return parse_ollama_content(resp.json())
+
+
+def preflight_model_pins(*models: str, timeout: float = 10.0) -> None:
+    """Verify every model pin exists on ``OPS_OLLAMA_URL`` before doing work.
+
+    One ``GET /api/tags`` + a set difference (stack#3163). The alternative
+    detector is the session 404ing minutes into its 03:00 run — a full day
+    per iteration — and before #3154 that failure was silent too: the
+    testfix pin sat missing for over two weeks after the Pop!_OS fleet
+    re-pull skipped the one model no interactive workflow uses.
+
+    Raises :class:`OllamaUnavailable` naming every missing pin and its
+    ``ollama pull`` remedy. Connect/HTTP failures classify the same way —
+    sessions catch exactly this type, and catching it is what fires
+    ``notify_fail``. Checks the endpoint the session will actually call
+    (there are two Ollama instances on the operator box; presence on the
+    *other* one doesn't help).
+    """
+    try:
+        resp = httpx.get(f"{OPS_OLLAMA_URL}/api/tags", timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+        raise OllamaUnavailable(f"{OPS_OLLAMA_URL}: {exc}") from exc
+    except httpx.HTTPStatusError as exc:
+        raise OllamaUnavailable(
+            f"{OPS_OLLAMA_URL}: /api/tags answered HTTP {exc.response.status_code}"
+        ) from exc
+
+    present = {str(m.get("name", "")) for m in payload.get("models", [])}
+
+    def _norm(pin: str) -> str:
+        # Ollama registers an untagged pull as ``<name>:latest``.
+        return pin if ":" in pin else f"{pin}:latest"
+
+    missing = [m for m in models if _norm(m) not in present]
+    if missing:
+        pulls = "; ".join(f"`ollama pull {m}`" for m in missing)
+        raise OllamaUnavailable(
+            f"model pin(s) not present on {OPS_OLLAMA_URL}: "
+            f"{', '.join(repr(m) for m in missing)}. Pull with {pulls}, or "
+            "repoint the matching OPS_OLLAMA_MODEL_* env var at a model you "
+            "already have."
+        )
 
 
 def run(cmd: list[str], *, cwd: str | None = None) -> subprocess.CompletedProcess:

@@ -101,6 +101,13 @@ async def _noisy_alerts() -> list[dict]:
 def main() -> int:
     log = c.get_logger("alert-triage")
     root = next(p for p in Path(__file__).resolve().parents if (p / "CLAUDE.md").exists())
+    # Fail in seconds with the pull remedy, not minutes into the run (stack#3163).
+    try:
+        c.preflight_model_pins(c.MODEL_TRIAGE)
+    except c.OllamaUnavailable as exc:
+        log.error("model-pin preflight failed: %s", exc)
+        c.notify_fail("alert-triage: Ollama preflight failed", str(exc)[:400], "alert_triage")
+        return 1
     try:
         alerts = c.asyncio_run(_noisy_alerts())
     except Exception as exc:  # noqa: BLE001

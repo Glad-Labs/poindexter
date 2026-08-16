@@ -38,6 +38,9 @@ SCHED=(
   "alert-triage|*-*-* 01:00:00"
   "test-health|*-*-* 03:00:00"
   "pro-freshness|Sun *-*-* 04:30:00"
+  # Daytime on purpose: a broken model pin should page while the operator is
+  # awake, not surface as a 03:00 session failure (stack#3163).
+  "pin-check|*-*-* 12:30:00"
 )
 
 for row in "${SCHED[@]}"; do

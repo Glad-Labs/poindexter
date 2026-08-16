@@ -62,6 +62,15 @@ def main() -> int:
     log = c.get_logger("test-health")
     root = _repo_root()
     cwd = str(root / "src" / "cofounder_agent")
+    # Fail in seconds with the pull remedy, not after a full suite run — the
+    # missing-testfix-pin failure burned three consecutive 03:00 runs before
+    # anything named the model (stack#3163).
+    try:
+        c.preflight_model_pins(c.MODEL_TESTFIX)
+    except c.OllamaUnavailable as exc:
+        log.error("model-pin preflight failed: %s", exc)
+        c.notify_fail("test-health: Ollama preflight failed", str(exc)[:400], "test_health")
+        return 1
     # sys.executable = the main env python that launched us; the worktree has no
     # provisioned venv, so never spawn a fresh `poetry run` from inside it.
     first = c.run([sys.executable, "-m", "pytest", "tests/unit/", "-q", "--tb=short",

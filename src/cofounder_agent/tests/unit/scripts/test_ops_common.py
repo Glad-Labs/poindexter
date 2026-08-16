@@ -89,3 +89,72 @@ def test_successful_call_is_unaffected(monkeypatch):
     import httpx
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(200))
     assert _common.ollama_chat("hi", model="qwen2.5-coder:7b") == "ok"
+
+
+# --- preflight_model_pins (stack#3163) --------------------------------------
+# A pin can be unsatisfiable for weeks with the 03:00 session failure as the
+# only detector. The preflight turns that into a seconds-fast, correctly-
+# classified (OllamaUnavailable -> notify_fail) startup failure.
+
+
+class _TagsResp:
+    def __init__(self, models: list[str], status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._models = models
+
+    def raise_for_status(self):
+        import httpx
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"{self.status_code}", request=None, response=self,
+            )
+
+    def json(self):
+        return {"models": [{"name": m} for m in self._models]}
+
+
+def test_preflight_passes_when_all_pins_present(monkeypatch):
+    import httpx
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: _TagsResp(["llama3.2:3b", "qwen2.5-coder:7b"]),
+    )
+    _common.preflight_model_pins("llama3.2:3b", "qwen2.5-coder:7b")
+
+
+def test_preflight_missing_pin_names_model_and_remedy(monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _TagsResp(["llama3.2:3b"]))
+    with pytest.raises(_common.OllamaUnavailable) as exc:
+        _common.preflight_model_pins("llama3.2:3b", "qwen2.5-coder:7b")
+    msg = str(exc.value)
+    assert "qwen2.5-coder:7b" in msg
+    assert "ollama pull qwen2.5-coder:7b" in msg
+    assert "OPS_OLLAMA_MODEL_" in msg
+
+
+def test_preflight_normalizes_untagged_pin_to_latest(monkeypatch):
+    """Ollama registers an untagged pull as ``<name>:latest`` — a bare pin
+    must match it rather than false-alarm."""
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _TagsResp(["phi4:latest"]))
+    _common.preflight_model_pins("phi4")
+
+
+def test_preflight_connect_failure_is_ollama_unavailable(monkeypatch):
+    import httpx
+
+    def _boom(*a, **k):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(httpx, "get", _boom)
+    with pytest.raises(_common.OllamaUnavailable):
+        _common.preflight_model_pins("llama3.2:3b")
+
+
+def test_model_pins_registry_covers_every_pin():
+    """MODEL_PINS is the single registry pin-check consumes; a module-level
+    pin missing from it is invisible to the daily probe."""
+    assert _common.MODEL_PINS == {
+        "OPS_OLLAMA_MODEL_TRIAGE": _common.MODEL_TRIAGE,
+        "OPS_OLLAMA_MODEL_TESTFIX": _common.MODEL_TESTFIX,
+    }

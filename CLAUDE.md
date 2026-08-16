@@ -477,6 +477,7 @@ pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 | `alert-triage` | local LLM | daily 01:00 | classifies noisy `alert_events` → probe-bug issues |
 | `test-health` | local LLM | daily 03:00 | fixes simple test failures behind a re-run gate |
 | `pro-freshness` | deterministic | Sun 04:30 | rebuilds `Glad-Labs/poindexter-pro` from the live system (tuned seed / SKILL.md prompt packs / premium boards) behind a PII-scrub gate; pushes + Discord note |
+| `pin-check` | deterministic | daily 12:30 | verifies every `OPS_OLLAMA_MODEL_*` pin exists on the Ollama endpoint; notifies on a missing pin (stack#3163 — the LLM sessions also preflight at startup) |
 | `issue-resolver` | **disabled** | daily 05:00 | (frontier) fixes one scoped open issue |
 | `test-expansion` | **disabled** | daily 04:00 | (frontier) adds tests to low-coverage files |
 
