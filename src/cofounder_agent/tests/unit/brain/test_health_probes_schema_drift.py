@@ -27,7 +27,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from brain.health_probes import probe_embeddings_freshness, probe_newsletter_health
+from brain.health_probes import (
+    probe_embeddings_freshness,
+    probe_newsletter_health,
+    probe_podcast_health,
+)
 
 # ---------------------------------------------------------------------------
 # Baseline-schema helpers
@@ -299,3 +303,81 @@ async def test_embeddings_probe_column_drift_fails_loud():
     res = await probe_embeddings_freshness(pool)
     assert res["ok"] is False
     assert "source_type" in res["detail"]
+
+
+# ---------------------------------------------------------------------------
+# probe_podcast_health (re-pointed 2026-08-15 — same drift class)
+# ---------------------------------------------------------------------------
+#
+# The podcast probe's failure mode was subtler than the 2026-07-11 pair:
+# its SQL was schema-VALID but measured the wrong table entirely
+# (pipeline_tasks_view task rows + a topic ILIKE sweep instead of the
+# media_assets rows actually produced). These tests pin both properties:
+# every identifier exists in the baseline schema, AND the signal source
+# is media_assets.created_at.
+
+
+def _podcast_recording_pool(total: int, last_created):
+    """Pool for probe_podcast_health: ``fetch`` answers the app_settings
+    read (empty → documented defaults), ``fetchrow`` records SQL and
+    returns the media_assets aggregate."""
+    pool = MagicMock()
+    pool.recorded_sql = []
+    pool.fetch = AsyncMock(return_value=[])
+
+    async def _fetchrow(query, *args, **kwargs):  # noqa: ANN001, ARG001
+        pool.recorded_sql.append(query)
+        return {"total": total, "last_created": last_created}
+
+    pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_podcast_probe_sql_matches_baseline_schema():
+    pool = _podcast_recording_pool(
+        total=99, last_created=datetime.now(UTC) - timedelta(days=2)
+    )
+    await probe_podcast_health(pool)
+    assert pool.recorded_sql, "probe issued no SQL"
+    for sql in pool.recorded_sql:
+        _assert_sql_matches_schema(sql, {"media_assets"})
+
+
+@pytest.mark.asyncio
+async def test_podcast_probe_reads_production_not_task_rows():
+    """The staleness signal is media_assets.created_at (production time).
+
+    Not pipeline_tasks (5 task rows ever vs 99 produced assets — a
+    near-dead legacy signal), not topic ILIKE (mis-attributes posts that
+    merely discuss podcasting), and not updated_at (distribution jobs
+    bump it long after production, masking a real stall)."""
+    pool = _podcast_recording_pool(
+        total=99, last_created=datetime.now(UTC) - timedelta(days=2)
+    )
+    await probe_podcast_health(pool)
+    sql = pool.recorded_sql[0]
+    assert "media_assets" in sql
+    assert "type = 'podcast'" in sql
+    assert "created_at" in sql
+    assert "updated_at" not in sql
+    assert "pipeline_tasks" not in sql
+    assert "ilike" not in sql.lower()
+
+
+@pytest.mark.asyncio
+async def test_podcast_probe_missing_relation_reports_bootstrap_state():
+    pool = _raising_pool('relation "media_assets" does not exist')
+    pool.fetch = AsyncMock(return_value=[])
+    res = await probe_podcast_health(pool)
+    assert res["ok"] is True
+    assert "not created yet" in res["detail"]
+
+
+@pytest.mark.asyncio
+async def test_podcast_probe_column_drift_fails_loud():
+    pool = _raising_pool('column "created_at" does not exist')
+    pool.fetch = AsyncMock(return_value=[])
+    res = await probe_podcast_health(pool)
+    assert res["ok"] is False
+    assert "created_at" in res["detail"]

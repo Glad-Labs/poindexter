@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 import urllib.error
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -668,6 +669,177 @@ class TestProbeCadenceSlo:
         assert r.get("status") == "disabled"
         # Only the settings fetch happened — no niches query, no counts.
         assert p.fetch.call_count == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbePodcastHealth:
+    """probe_podcast_health measures media_assets — the produced artefact.
+
+    2026-08-15 false positive: the probe counted ``pipeline_tasks_view
+    WHERE task_type = 'podcast' OR topic ILIKE '%podcast%'`` and reported
+    "stale" while a 4-day-old episode sat in media_assets. Podcasts are a
+    side-effect of the canonical_blog graph, so only 5 task_type='podcast'
+    rows ever existed against 99 produced assets, and the ILIKE clause
+    mis-attributed blog posts that merely discuss podcasting. These tests
+    pin the corrected signal source, the settings-driven threshold, and
+    the disabled-lane / bootstrap escape hatches.
+    """
+
+    def _settings_rows(self, *, threshold=None, enabled=None):
+        rows = []
+        if threshold is not None:
+            rows.append({"key": "podcast_staleness_max_age_days", "value": threshold})
+        if enabled is not None:
+            rows.append({"key": "podcast_pipeline_trigger_enabled", "value": enabled})
+        return rows
+
+    def _make_podcast_pool(self, *, total, age_days=None, settings_rows=None):
+        """Pool whose settings fetch and media_assets fetchrow are canned.
+
+        ``age_days`` places the newest episode that many days in the past;
+        None with total>0 exercises the NULL-created_at oddity branch.
+        """
+        p = _make_pool()
+        p.fetch.return_value = settings_rows or []
+        last = (
+            datetime.now(UTC) - timedelta(days=age_days)
+            if age_days is not None
+            else None
+        )
+        p.fetchrow.return_value = {"total": total, "last_created": last}
+        return p
+
+    async def test_recent_episode_is_healthy(self):
+        p = self._make_podcast_pool(total=99, age_days=4)
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r["total_episodes"] == 99
+        assert r["last_episode_days"] == pytest.approx(4.0, abs=0.1)
+        assert "STALE" not in r["detail"]
+
+    async def test_gap_at_observed_cadence_max_is_healthy(self):
+        # The regression that motivated the rewrite: production gaps of
+        # 8-9 days are NORMAL cadence (p95 gap 8.75d over 90 days). The
+        # old 7d threshold paged on exactly this; 9d must pass now.
+        p = self._make_podcast_pool(total=99, age_days=9)
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+
+    async def test_genuinely_stale_fails(self):
+        p = self._make_podcast_pool(total=99, age_days=20)
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is False
+        assert "STALE" in r["detail"]
+        assert r["max_age_days"] == 14.0
+
+    async def test_no_episodes_at_all_is_ok(self):
+        p = self._make_podcast_pool(total=0)
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r["total_episodes"] == 0
+        assert "no podcast episodes produced yet" in r["detail"]
+
+    async def test_disabled_lane_reports_disabled_without_querying_media(self):
+        p = self._make_podcast_pool(
+            total=99, age_days=400,
+            settings_rows=self._settings_rows(enabled="false"),
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r.get("status") == "disabled"
+        p.fetchrow.assert_not_called()
+
+    async def test_threshold_override_tightens(self):
+        # Operator sets 7d; a 10-day-old episode is stale under it.
+        p = self._make_podcast_pool(
+            total=99, age_days=10,
+            settings_rows=self._settings_rows(threshold="7"),
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is False
+        assert r["max_age_days"] == 7.0
+
+    async def test_threshold_override_loosens(self):
+        p = self._make_podcast_pool(
+            total=99, age_days=20,
+            settings_rows=self._settings_rows(threshold="30"),
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r["max_age_days"] == 30.0
+
+    async def test_unparseable_threshold_falls_back_to_default(self):
+        p = self._make_podcast_pool(
+            total=99, age_days=4,
+            settings_rows=self._settings_rows(threshold="not-a-number"),
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r["max_age_days"] == hp.PODCAST_STALE_DAYS_DEFAULT
+
+    async def test_missing_settings_rows_use_defaults(self):
+        # No app_settings rows at all (brain racing the seeder) — the
+        # documented defaults apply: 14d threshold, lane assumed enabled.
+        p = self._make_podcast_pool(total=99, age_days=4, settings_rows=[])
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert r["max_age_days"] == 14.0
+
+    async def test_rows_without_created_at_fail_loud(self):
+        # COUNT > 0 but MAX(created_at) NULL — a schema oddity the probe
+        # must surface rather than guess a freshness verdict over.
+        p = self._make_podcast_pool(total=5, age_days=None)
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is False
+        assert "cannot judge freshness" in r["detail"]
+
+    async def test_missing_relation_reports_bootstrap_state(self):
+        p = _make_pool()
+        p.fetch.return_value = []
+        p.fetchrow.side_effect = Exception(
+            'relation "media_assets" does not exist'
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is True
+        assert "not created yet" in r["detail"]
+
+    async def test_column_drift_fails_loud(self):
+        # A missing COLUMN is probe-SQL drift, not a bootstrap state —
+        # same rule the 2026-07-11 incident earned for the siblings.
+        p = _make_pool()
+        p.fetch.return_value = []
+        p.fetchrow.side_effect = Exception(
+            'column "created_at" does not exist'
+        )
+        r = await hp.probe_podcast_health(p)
+        assert r["ok"] is False
+        assert "created_at" in r["detail"]
+
+    async def test_sql_targets_media_assets_production_timestamps(self):
+        # Pin the signal source: media_assets.created_at (production),
+        # never the legacy pipeline_tasks/topic-ILIKE query, and never
+        # updated_at — distribution jobs bump that long after production
+        # (96 of 99 live rows), which would mask a real stall.
+        p = self._make_podcast_pool(total=99, age_days=4)
+        recorded = []
+
+        async def _fetchrow(query, *args, **kwargs):
+            recorded.append(query)
+            return {
+                "total": 99,
+                "last_created": datetime.now(UTC) - timedelta(days=4),
+            }
+
+        p.fetchrow = AsyncMock(side_effect=_fetchrow)
+        await hp.probe_podcast_health(p)
+        assert recorded, "probe issued no media query"
+        media_sql = recorded[0]
+        assert "media_assets" in media_sql
+        assert "created_at" in media_sql
+        assert "updated_at" not in media_sql
+        assert "pipeline_tasks" not in media_sql
+        assert "ILIKE" not in media_sql.upper()
 
 
 @pytest.mark.unit

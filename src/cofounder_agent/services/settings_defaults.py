@@ -1930,6 +1930,16 @@ DEFAULTS: dict[str, str] = {
     'podcast_pipeline_trigger_enabled': 'false',
     'podcast_pipeline_max_per_cycle': '2',
     'podcast_distribute_max_per_cycle': '20',
+    # How old the newest podcast media_asset may get before
+    # brain/health_probes.py::probe_podcast_health reports STALE. Podcasts are
+    # a side-effect of the canonical_blog graph, so arrival is bursty: over the
+    # 90 days to 2026-08-15 the median gap between production days was 2d, p95
+    # was 8.75d, and the largest NORMAL gap was 9d — which is why the probe's
+    # previous hardcoded 7d fired on healthy cadence. 14d clears that band and
+    # still catches a real stall (the one 15d gap in the window published 15
+    # posts with zero podcasts). Raise it only alongside a re-derivation from
+    # media_assets, not to quiet an alert.
+    'podcast_staleness_max_age_days': '14',
     # Disable the podcast script model's reasoning channel (default). The
     # thinking-capable gemma-class script model (podcast_script_model) otherwise
     # writes its prompt-echo + planning outline + self-QA checklist into the

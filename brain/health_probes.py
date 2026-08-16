@@ -99,6 +99,24 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
 
     _tracer = _NoopTracer()
 
+# Podcast staleness — the operator-tunable app_settings key and the default
+# the probe falls back to. The default is DERIVED FROM OBSERVED CADENCE, not
+# picked: podcasts are a side-effect of the canonical_blog graph, so they
+# arrive in bursts. Measured over the 90 days to 2026-08-15 (media_assets,
+# type='podcast', distinct production days):
+#
+#   median gap 2d · p95 gap 8.75d · largest NORMAL gap 9d
+#
+# The old hardcoded 7d therefore guaranteed recurring false alarms — 8d and
+# 9d gaps are routine (2026-07-17→07-26, 2026-07-29→08-06). 14d clears that
+# normal band with headroom while still catching a real outage: the one gap
+# in the window that exceeded it (2026-06-04→06-19, 15d) was a genuine
+# stall — 15 posts published, zero podcasts produced — and would have paged
+# on its 15th day. Re-derive from the same query rather than nudging this
+# number when the cadence changes.
+PODCAST_STALE_DAYS_SETTING = "podcast_staleness_max_age_days"
+PODCAST_STALE_DAYS_DEFAULT = 14.0
+
 # Bootstrap defaults — overridden from app_settings on first probe run.
 # localize_url rewrites `localhost` to `host.docker.internal` when running
 # inside a container, so the same DB value works in both environments.
@@ -214,6 +232,28 @@ def _is_due(probe_name: str) -> bool:
 def _mark_run(probe_name: str):
     """Mark a probe as having just run."""
     _last_run[probe_name] = time.time()
+
+
+# --- app_settings value coercion -------------------------------------------
+# Shared by every probe that reads its thresholds from app_settings. The
+# brain is stdlib + asyncpg only (no SettingsService / SiteConfig), so
+# values arrive as raw text and an unparseable one must fall back to the
+# probe's documented default rather than crash a monitoring cycle.
+
+
+def _setting_bool(val: str | None, default: bool) -> bool:
+    if val is None or val == "":
+        return default
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _setting_float(val: str | None, default: float) -> float:
+    if val is None or val == "":
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
 
 
 def _http_json(url: str, method: str = "GET", data: dict | None = None,
@@ -1035,33 +1075,123 @@ async def probe_cost_freshness(pool) -> dict:
 
 
 async def probe_podcast_health(pool) -> dict:
-    """Probe: Check podcast generation is active (episode in last 7 days or no episodes expected)."""
+    """Probe: Check podcast episodes are still being PRODUCED.
+
+    Measures ``media_assets`` rows of ``type = 'podcast'`` — the actual
+    output artefact, the same table the video / video_short surfaces are
+    judged from.
+
+    Why not pipeline_tasks (2026-08-15 false positive)
+    --------------------------------------------------
+    This probe used to count ``pipeline_tasks_view WHERE task_type =
+    'podcast' OR topic ILIKE '%podcast%'``, which was wrong twice over:
+
+    * Podcasts are a **side-effect of the canonical_blog graph** (the
+      ``generate_media_scripts`` node), not dedicated ``task_type =
+      'podcast'`` rows. Only 5 such task rows have ever existed against
+      99 produced assets — the probe was watching a near-dead legacy
+      signal that stops moving while production is perfectly healthy.
+    * The ``topic ILIKE '%podcast%'`` clause swept in ordinary blog posts
+      that merely *discuss* podcasting (3 of the 8 matched rows), so a
+      post about podcasts read as podcast output.
+
+    Result on 2026-08-15: FAIL "podcast last activity 8.0d ago — stale"
+    (newest matched task 2026-08-07) while ``media_assets`` held a
+    4-day-old episode. It cost 20 points of ``poindexter doctor`` health
+    score for a healthy subsystem.
+
+    ``created_at``, not ``updated_at``
+    ----------------------------------
+    ``updated_at`` is bumped long after production by the distribution
+    and reconciliation jobs (``podcast_distribute`` stamps the R2 URL,
+    ``media_reconciliation`` back-links post ids — 96 of 99 live rows
+    carry an ``updated_at`` later than their ``created_at``). Keying on
+    it would let a distribution touch impersonate fresh production and
+    mask exactly the stall this probe exists to catch.
+
+    Settings (DB-first per project rule; defaults in
+    ``services/settings_defaults.py``):
+
+    * ``podcast_staleness_max_age_days`` (default ``14``) — see
+      ``PODCAST_STALE_DAYS_DEFAULT`` for how that number was derived.
+    * ``podcast_pipeline_trigger_enabled`` — when the operator has turned
+      the lane off, report ``disabled`` rather than paging forever about
+      a feature that is off on purpose.
+    """
     try:
-        # Check if any podcast episodes exist at all
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            [PODCAST_STALE_DAYS_SETTING, "podcast_pipeline_trigger_enabled"],
+        )
+        settings = {r["key"]: r["value"] for r in rows}
+
+        # A lane the operator has switched off is not a failure. Default
+        # True: an install whose settings row hasn't seeded yet still gets
+        # the check rather than silently opting out of it.
+        if not _setting_bool(settings.get("podcast_pipeline_trigger_enabled"), True):
+            return {
+                "ok": True,
+                "status": "disabled",
+                "detail": (
+                    "podcast lane disabled "
+                    "(podcast_pipeline_trigger_enabled=false)"
+                ),
+            }
+
+        max_age_days = _setting_float(
+            settings.get(PODCAST_STALE_DAYS_SETTING), PODCAST_STALE_DAYS_DEFAULT
+        )
+
         row = await pool.fetchrow("""
-            SELECT COUNT(*) as total,
-                   MAX(updated_at) as last_gen
-            FROM pipeline_tasks_view
-            WHERE task_type = 'podcast' OR topic ILIKE '%podcast%'
+            SELECT COUNT(*) AS total,
+                   MAX(created_at) AS last_created
+            FROM media_assets
+            WHERE type = 'podcast'
         """)
         total = row["total"] if row else 0
         if total == 0:
-            return {"ok": True, "detail": "no podcast tasks found (feature may not be active)"}
-        last = row["last_gen"]
-        if last:
-            from datetime import datetime
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=UTC)
-            age_days = (datetime.now(UTC) - last).total_seconds() / 86400
-            stale = age_days > 7
             return {
-                "ok": not stale,
-                "total_episodes": total,
-                "last_activity_days": round(age_days, 1),
-                "detail": f"podcast last activity {age_days:.1f}d ago" + (" — stale" if stale else ""),
+                "ok": True,
+                "total_episodes": 0,
+                "detail": "no podcast episodes produced yet (feature may not be active)",
             }
-        return {"ok": True, "total_episodes": total, "detail": f"{total} podcast tasks, activity ongoing"}
+
+        last = row["last_created"]
+        if not last:
+            # COUNT > 0 with a NULL MAX(created_at) means rows exist whose
+            # created_at was never populated — report it instead of
+            # guessing, so the schema oddity is visible.
+            return {
+                "ok": False,
+                "total_episodes": total,
+                "detail": (
+                    f"{total} podcast episode(s) but none carry a created_at "
+                    "timestamp — cannot judge freshness"
+                ),
+            }
+
+        from datetime import datetime
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=UTC)
+        age_days = (datetime.now(UTC) - last).total_seconds() / 86400
+        stale = age_days > max_age_days
+        return {
+            "ok": not stale,
+            "total_episodes": total,
+            "last_episode_days": round(age_days, 1),
+            "max_age_days": max_age_days,
+            "detail": (
+                f"{total} podcast episode(s), newest {age_days:.1f}d ago"
+                + (
+                    f" — STALE (>{max_age_days:g}d)"
+                    if stale
+                    else f" (threshold {max_age_days:g}d)"
+                )
+            ),
+        }
     except Exception as e:
+        if _is_missing_relation(e):
+            return {"ok": True, "detail": "media_assets table not created yet"}
         return {"ok": False, "detail": str(e)[:200]}
 
 
@@ -1422,20 +1552,7 @@ async def probe_cadence_slo(pool) -> dict:
         )
         settings = {r["key"]: r["value"] for r in rows}
 
-        def _bool(val: str | None, default: bool) -> bool:
-            if val is None or val == "":
-                return default
-            return str(val).strip().lower() in ("1", "true", "yes", "on")
-
-        def _float(val: str | None, default: float) -> float:
-            if val is None or val == "":
-                return default
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return default
-
-        enabled = _bool(settings.get("cadence_slo_enabled"), True)
+        enabled = _setting_bool(settings.get("cadence_slo_enabled"), True)
         if not enabled:
             return {
                 "ok": True,
@@ -1443,11 +1560,13 @@ async def probe_cadence_slo(pool) -> dict:
                 "detail": "cadence SLO disabled (cadence_slo_enabled=false)",
             }
 
-        expected_per_day = _float(
+        expected_per_day = _setting_float(
             settings.get("cadence_slo_expected_posts_per_day"), 1.0
         )
-        window_hours = _float(settings.get("cadence_slo_window_hours"), 24.0)
-        shortfall_ratio = _float(settings.get("cadence_slo_shortfall_ratio"), 0.5)
+        window_hours = _setting_float(settings.get("cadence_slo_window_hours"), 24.0)
+        shortfall_ratio = _setting_float(
+            settings.get("cadence_slo_shortfall_ratio"), 0.5
+        )
 
         expected_for_window = expected_per_day * (window_hours / 24.0)
         threshold = shortfall_ratio * expected_for_window
@@ -1462,7 +1581,7 @@ async def probe_cadence_slo(pool) -> dict:
             FROM posts
             WHERE status = 'published'
               AND published_at >= NOW() - INTERVAL '{window_hours} hours'
-            """  # nosec B608 - window_hours is float-cast via the local _float() helper (ValueError falls back to a hardcoded default), never raw text
+            """  # nosec B608 - window_hours is float-cast via the _setting_float() helper (ValueError falls back to a hardcoded default), never raw text
         )
         actual = row["c"] if row else 0
         last = row["last_published"] if row else None
@@ -1499,7 +1618,7 @@ async def probe_cadence_slo(pool) -> dict:
                 WHERE pt.niche_slug = $1
                   AND p.status = 'published'
                   AND p.published_at >= NOW() - INTERVAL '{window_hours} hours'
-                """,  # nosec B608 - window_hours is float-cast via the local _float() helper (ValueError falls back to a hardcoded default), never raw text; niche_slug is bound as $1
+                """,  # nosec B608 - window_hours is float-cast via the _setting_float() helper (ValueError falls back to a hardcoded default), never raw text; niche_slug is bound as $1
                 n["slug"],
             )
             niche_actual = niche_row["c"] if niche_row else 0
