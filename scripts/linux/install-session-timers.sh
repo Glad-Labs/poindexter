@@ -53,6 +53,11 @@ Description=Timer for Poindexter ops session ${name}
 [Timer]
 OnCalendar=${cal}
 Persistent=true
+# Stagger: Persistent=true replays every missed fire at boot in the same
+# second (nine sessions stampeding a half-started stack — stack#3033). The
+# jitter spreads them; run-session.sh's readiness gate does the real
+# waiting. Harmless on scheduled fires (sessions are minute-precision).
+RandomizedDelaySec=120
 
 [Install]
 WantedBy=timers.target

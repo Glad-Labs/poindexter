@@ -306,11 +306,28 @@ Three more knobs are read by [`run-session.sh`](../../scripts/linux/run-session.
 itself, before any Python starts (it also honors `OPS_LOG_DIR` from the table
 above, so both log producers follow one knob):
 
-| Var                           | Default | Purpose                                                       |
-| ----------------------------- | ------- | ------------------------------------------------------------- |
-| `OPS_GIT_FETCH_ATTEMPTS`      | `3`     | tries for the setup `git fetch origin`                        |
-| `OPS_GIT_FETCH_RETRY_SECONDS` | `15`    | backoff base — waits 15s, 30s, … between tries                |
-| `OPS_CHECKOUT_SYNC`           | `1`     | pre-flight ff-only self-update of the shared checkout (0=off) |
+| Var                           | Default | Purpose                                                         |
+| ----------------------------- | ------- | --------------------------------------------------------------- |
+| `OPS_GIT_FETCH_ATTEMPTS`      | `3`     | tries for the setup `git fetch origin`                          |
+| `OPS_GIT_FETCH_RETRY_SECONDS` | `15`    | backoff base — waits 15s, 30s, … between tries                  |
+| `OPS_CHECKOUT_SYNC`           | `1`     | pre-flight ff-only self-update of the shared checkout (0=off)   |
+| `OPS_READY_GATE`              | `1`     | boot readiness gate (0=off — the test-harness seam)             |
+| `OPS_READY_WAIT_SECONDS`      | `300`   | how long the gate waits for Postgres + gh auth before deferring |
+| `OPS_READY_PG_PORT`           | `5433`  | local Postgres port the gate probes                             |
+
+**Boot readiness gate (stack#3033).** `Persistent=true` replays missed fires at
+boot, seconds into a half-ready environment: Postgres still starting, and gh's
+token lives in the desktop keyring, which isn't available pre-login. After the
+2026-08-04→05 downtime both catch-up runs failed exactly that way
+(dependency-review 401'd GitHub, alert-triage got connection-refused on
+`:5433`) — failure pages for runs that would have succeeded minutes later.
+`run-session.sh` now waits up to `OPS_READY_WAIT_SECONDS` for both halves and
+then **defers** (exit 0): every session self-heals at its next scheduled fire,
+so a skipped catch-up costs at most a day, while a mis-fired one costs a page
+and the same day. Normal fires on an up box pass the gate on the first check.
+The timers also carry `RandomizedDelaySec=120` so nine boot catch-ups don't
+stampede the same second (re-run the installer to pick that up on an existing
+host).
 
 Three attempts is sized for a transient provider 5xx, not for an outage. A real
 GitHub incident should still fail the run and page, which is why the retry is

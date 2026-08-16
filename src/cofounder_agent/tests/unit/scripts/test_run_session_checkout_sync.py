@@ -110,6 +110,10 @@ class _World:
             "POINDEXTER_REPO": str(self.work),
             "OPS_GIT_FETCH_RETRY_SECONDS": "0",
             "GIT_CONFIG_NOSYSTEM": "1",
+            # These tests pin the checkout-sync contract; the boot readiness
+            # gate (stack#3033) has its own suite in
+            # test_run_session_ready_gate.py.
+            "OPS_READY_GATE": "0",
             **env_extra,
         }
         proc = subprocess.run(

@@ -77,6 +77,9 @@ def _run_session(tmp_path: Path, *, succeed_after: int, attempts: int = 3) -> _R
         "FAKE_GIT_SUCCEED_AFTER": str(succeed_after),
         "OPS_GIT_FETCH_ATTEMPTS": str(attempts),
         "OPS_GIT_FETCH_RETRY_SECONDS": "0",   # keep the test instant
+        # These tests pin the fetch contract; the boot readiness gate
+        # (stack#3033) has its own suite in test_run_session_ready_gate.py.
+        "OPS_READY_GATE": "0",
     }
     # test-health is one of the four worktree sessions, so it takes the fetch path.
     proc = subprocess.run(

@@ -25,6 +25,49 @@ FETCH_ATTEMPTS="${OPS_GIT_FETCH_ATTEMPTS:-3}"
 FETCH_RETRY_SECONDS="${OPS_GIT_FETCH_RETRY_SECONDS:-15}"
 CHECKOUT_SYNC="${OPS_CHECKOUT_SYNC:-1}"
 
+# Boot-catch-up readiness gate (stack#3033). Persistent=true timers replay
+# missed fires at boot, seconds into a half-ready environment: Postgres is
+# still starting and gh's token lives in the desktop keyring, which isn't
+# available pre-login. Both halves failed exactly that way after the
+# 08-04→05 downtime (dependency-review 401'd GitHub, alert-triage got
+# connection-refused on :5433) — failure pages for runs that would have
+# succeeded minutes later. Wait up to OPS_READY_WAIT_SECONDS for both,
+# then DEFER (exit 0): every session self-heals at its next scheduled
+# fire, so a skipped catch-up costs at most a day, while a mis-fired one
+# costs a page AND the same day. On an already-up box both checks pass on
+# the first try, so normal fires lose nothing.
+READY_GATE="${OPS_READY_GATE:-1}"
+READY_WAIT_SECONDS="${OPS_READY_WAIT_SECONDS:-300}"
+READY_PG_PORT="${OPS_READY_PG_PORT:-5433}"
+ready_gate() {
+  if [ "$READY_GATE" != "1" ]; then
+    echo "readiness gate disabled (OPS_READY_GATE=$READY_GATE)" >>"$LOG"
+    return 0
+  fi
+  local deadline=$(( $(date +%s) + READY_WAIT_SECONDS )) pg_ok gh_ok
+  while :; do
+    pg_ok=0; gh_ok=0
+    if (exec 3<>"/dev/tcp/127.0.0.1/${READY_PG_PORT}") 2>/dev/null; then
+      exec 3>&- 3<&- || true
+      pg_ok=1
+    fi
+    if gh auth status >/dev/null 2>&1; then gh_ok=1; fi
+    if [ "$pg_ok" = 1 ] && [ "$gh_ok" = 1 ]; then
+      return 0
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "readiness gate: timed out after ${READY_WAIT_SECONDS}s (postgres=${pg_ok} gh=${gh_ok}) — deferring to the next scheduled fire" >>"$LOG"
+      return 1
+    fi
+    echo "readiness gate: waiting (postgres=${pg_ok} gh=${gh_ok})" >>"$LOG"
+    sleep 10
+  done
+}
+if ! ready_gate; then
+  echo "session $NAME deferred (environment not ready)" >>"$LOG"
+  exit 0
+fi
+
 fetch_origin() {
   local attempt=1 delay
   while :; do
