@@ -121,12 +121,13 @@ def test_render_pipeline_section_matches_real_spec(mod: ModuleType) -> None:
     gd = mod._load_graph_def()
     lines = mod.render_pipeline_section(gd)
     body = "\n".join(lines)
-    assert lines[0] == "## Content pipeline (`canonical_blog` graph_def) — 44 nodes"
+    assert lines[0] == "## Content pipeline (`canonical_blog` graph_def) — 45 nodes"
     assert "11 `stage.*`" in body
     assert "14 `content.*`" in body
-    # 15 = the 13 rail atoms + qa.aggregate + qa.rewrite (the renderer counts
-    # every "qa."-prefixed node; qa.title_coherence joined 2026-07-24).
-    assert "15 `qa.*`" in body
+    # 16 = the 14 rail atoms + qa.aggregate + qa.rewrite (the renderer counts
+    # every "qa."-prefixed node; qa.title_coherence joined 2026-07-24,
+    # qa.self_claim 2026-08-16 — poindexter#1007).
+    assert "16 `qa.*`" in body
     assert "1 `seo.*`" in body
     assert "1 `social.*`" in body  # social.generate_drafts (PR #1938)
     # draft_gate + preview_gate (component-scoped regen gate, 2026-06-22)
@@ -169,7 +170,7 @@ def test_build_document_has_all_sections(mod: ModuleType) -> None:
     doc = mod.build_document(entries, gd)
     assert doc.startswith("# Poindexter Services Reference")
     assert "## Table of contents" in doc
-    assert "## Content pipeline (`canonical_blog` graph_def) — 44 nodes" in doc
+    assert "## Content pipeline (`canonical_blog` graph_def) — 45 nodes" in doc
     assert "## What's NOT in this catalog" in doc
     assert "## Conventions" in doc
     assert doc.endswith("\n")

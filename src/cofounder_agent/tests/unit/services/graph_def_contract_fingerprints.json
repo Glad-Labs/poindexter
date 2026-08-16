@@ -42,6 +42,7 @@
   "qa.programmatic": "9ab77dd4d9f1",
   "qa.ragas": "52b8807a41d2",
   "qa.rewrite": "3b7215ac5657",
+  "qa.self_claim": "85f1098390fe",
   "qa.self_consistency": "665cf14f8a04",
   "qa.title_coherence": "0375ae106c15",
   "qa.topic_delivery": "52b8807a41d2",

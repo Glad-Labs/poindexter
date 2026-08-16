@@ -1413,6 +1413,17 @@ DEFAULTS: dict[str, str] = {
     # headings). 3000 was the calibrated setup (2026-07-24) that separated
     # the known-bad titles from the legit corpus 10/10.
     'qa_title_coherence_digest_chars': '3000',
+    # Self-claim rail (qa.self_claim, poindexter#1007): deterministic
+    # verification of the draft's claims about OUR OWN system — version
+    # strings vs pyproject, quality-score claims vs pipeline_tasks,
+    # backticked settings keys vs app_settings, package file paths vs the
+    # tree. Runs only on self-referential drafts; advisory via
+    # qa_gates.self_claim. product_names (CSV, + site_name at runtime) are
+    # the markers that make a draft "about our system" — the precision gate
+    # that keeps another product's version numbers out of scope.
+    'qa_self_claim_enabled': 'true',
+    'qa_self_claim_product_names': 'poindexter',
+    'qa_self_claim_offender_penalty': '25',
     # Web fact-check rail (qa.web_factcheck) claim-verification heuristics.
     # A claim is treated as VERIFIED when at least `match_ratio` of its key
     # terms (tokens longer than `min_term_len` chars) appear in the first
@@ -3780,6 +3791,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_originality_chunk_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_excluded_series': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_title_coherence_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'qa_self_claim_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_self_claim_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_title_coherence_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_title_coherence_digest_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'title_content_excerpt_chars': {'owner': 'title_generation', 'value_type': 'integer'},

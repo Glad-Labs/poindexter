@@ -257,6 +257,14 @@ def test_alias_table_covers_every_known_inline_reviewer():
         # counter froze at total_runs=0 (the FIFTH alias-drop — this one slipped
         # past this guard too, because the name was never listed here).
         "content_originality",
+        # title_coherence — the SIXTH recurrence, and the second to slip past
+        # this guard by never being listed: rail live since 2026-07-24, prod
+        # verified total_runs=0 / last_run_at=NEVER on 2026-08-16 against
+        # weeks of real runs. Gate row seeded in 20260724_161837 + baseline.
+        "title_coherence",
+        # self_claim (poindexter#1007) — deterministic our-own-system claim
+        # verification. Gate row seeded advisory-first with the rail.
+        "self_claim",
     }
     missing = must_be_documented - documented
     assert not missing, (

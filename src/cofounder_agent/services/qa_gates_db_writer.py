@@ -99,6 +99,17 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # the exact evidence gap that blocks graduating it to a hard veto (the fifth
     # recurrence of the alias-drop class; opening_originality was never aliased).
     "content_originality": "content_originality",
+    # title_coherence — the SIXTH alias-drop recurrence, found 2026-08-16
+    # while wiring self_claim: the rail shipped 2026-07-24 (migration
+    # 20260724_161837) and runs on every canonical_blog QA pass, but was
+    # never added here OR to the guard test's must_be_documented list, so
+    # prod showed total_runs=0 / last_run_at=NEVER against weeks of real
+    # runs. Identity alias, same as every other same-named rail.
+    "title_coherence": "title_coherence",
+    # self_claim (poindexter#1007) — deterministic our-own-system claim
+    # verification (versions / scores / settings keys / file paths).
+    # Identity alias; gate row seeded advisory-first alongside the rail.
+    "self_claim": "self_claim",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",

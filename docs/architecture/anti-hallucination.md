@@ -22,7 +22,7 @@ to the LLM and HTTP reviewers.
 `qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
 `qa.consistency` → `qa.self_consistency` → `qa.content_originality` →
-`qa.title_coherence` → `qa.web_factcheck` → `qa.aggregate`.
+`qa.title_coherence` → `qa.self_claim` → `qa.web_factcheck` → `qa.aggregate`.
 Each rail atom delegates to the matching `MultiModelQA` rail methods (the
 `_review_with_cloud_model` critic plus the per-rail DeepEval, Ragas, vision,
 topic-delivery, citation, consistency, self-consistency, and web-factcheck
@@ -66,6 +66,25 @@ draft digest (opening excerpt + section headings,
 `qa_gates.title_coherence`; sits inside the QA loop so a `qa.rewrite` rescue
 re-judges the title against the revised body. Fail-open per the
 `qa_rail_degraded` convention below.
+`qa.self_claim` (2026-08-16, poindexter#1007) is the third self-contained
+rail, and it is fully deterministic — no LLM call. When a draft is about our
+OWN system (product-name markers from `qa_self_claim_product_names` +
+`site_name`, or first-person-plural system prose — the precision gate that
+keeps another product's version numbers out of scope), it verifies the
+claims the truth-oriented rails structurally cannot: the corpus for these is
+the repo and the live database, not the research bundle. Four layers:
+version strings claimed for our release vs the running `pyproject.toml`
+version; quality-score claims ("a Q of 85") vs the real `pipeline_tasks`
+distribution (±1); backticked settings-shaped keys vs `app_settings`;
+package-relative file paths vs the tree on disk. Three fabricated/stale
+self-claims reached `awaiting_approval` at Q94–95 on 2026-08-09 — the
+deterministic layers catch two of the three outright (invented scores, a
+stale version); the invented-mechanism class needs the grounded-LLM
+treatment and is deliberately deferred. A draft with no falsifiable
+self-claims appends no review at all (dev-diary prose must not fire, and a
+vacuous 100 would skew the all-rail average). DB layers skip silently
+without a pool — reduced coverage, never a fake verdict. Advisory-first via
+`qa_gates.self_claim`.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

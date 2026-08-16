@@ -108,12 +108,15 @@ class TestCanonicalBlogSpec:
         assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
         assert ("qa_consistency", "qa_self_consistency") in edges
-        # qa_content_originality (RAG self-echo net) then qa_title_coherence
-        # (title↔body honesty check, 2026-07-24) are inserted between
-        # qa_self_consistency and qa_web_factcheck.
+        # qa_content_originality (RAG self-echo net), qa_title_coherence
+        # (title↔body honesty check, 2026-07-24), then qa_self_claim
+        # (our-own-system claim verification, poindexter#1007) are inserted
+        # between qa_self_consistency and qa_web_factcheck.
         assert ("qa_self_consistency", "qa_content_originality") in edges
         assert ("qa_content_originality", "qa_title_coherence") in edges
-        assert ("qa_title_coherence", "qa_web_factcheck") in edges
+        assert ("qa_title_coherence", "qa_self_claim") in edges
+        assert ("qa_self_claim", "qa_web_factcheck") in edges
+        assert ("qa_title_coherence", "qa_web_factcheck") not in edges
         assert ("qa_content_originality", "qa_web_factcheck") not in edges
         assert ("qa_self_consistency", "qa_web_factcheck") not in edges
         assert ("qa_web_factcheck", "qa_aggregate") in edges
@@ -210,10 +213,11 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_44(self):
+    def test_node_count_is_45(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
         # + social.generate_drafts + qa.content_originality (RAG self-echo net)
         # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
         # + content.inject_affiliate_links (curated affiliate-link injection)
         # + qa.title_coherence (title↔body honesty check, 2026-07-24)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 44
+        # + qa.self_claim (our-own-system claim verification, poindexter#1007)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 45

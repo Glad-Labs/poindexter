@@ -561,8 +561,10 @@ class TestGroupingMakesSense:
         # qa_review_content_max_chars — the #985 judge block they extend —
         # inside the same cluster. Bumped 381→387 for
         # qa_gate_retry_backoff_seconds (poindexter#1012), which sits directly
-        # under the qa_gate_timeout_seconds key it complements.
-        assert span < 387, (
+        # under the qa_gate_timeout_seconds key it complements; 387→397 for
+        # the qa_self_claim_* trio (poindexter#1007), seated directly under
+        # the qa_title_coherence_* rail block they mirror.
+        assert span < 397, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )
