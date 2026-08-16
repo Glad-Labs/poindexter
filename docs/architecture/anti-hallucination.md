@@ -245,6 +245,37 @@ still halts immediately. Pinned by `test_qa_rail_common.py`
 (`is_rescuable_reject`), `test_qa_rewrite_atom.py`, and
 `test_qa_aggregate_atom.py::TestQaAggregateRescueDispatch`.
 
+#### Availability is not a content verdict (poindexter#1012)
+
+A required rail returning `None` (timeout, empty completion, unparseable JSON)
+used to become a `missing_required` **terminal** reject at `qa.aggregate` — a
+one-shot infra flake burning a full pipeline re-run and landing a 90+ draft in
+the manual queue. 16 of 19 terminal rejects in the 2026-08-01→08-14 window were
+that shape (score 83–98, zero vetoes, one rail absent). Three layers now stand
+between a flake and a terminal reject:
+
+1. **Gate-level retry** — `_run_gate_prompt` (topic-delivery + consistency
+   plumbing) retries once after `qa_gate_retry_backoff_seconds` (default 2s)
+   before returning `None`, turning transient contention into latency instead
+   of absence. The critic path already retried.
+2. **Aggregate-level re-invoke** — when the ONLY reject reason is absence
+   (zero vetoes, score ≥ threshold), `qa.aggregate` re-invokes just the absent
+   rail(s) once against the unchanged content
+   (`_qa_rail_common.rerun_missing_rails`; `RERUNNABLE_GATES` maps `llm_critic`
+   / `topic_delivery` / `consistency` — deterministic and HTTP rails are a
+   different failure class and stay out). The retry recovers the rail's
+   **verdict**, whatever it is: a late review may legitimately veto, and that
+   reject then stands on the merits. No rewrite, no regen — content unchanged.
+3. **Distinguishable infra-reject** — if the rail is still absent, the
+   fail-closed reject stands (poindexter#680 is not weakened) but emits a
+   `qa_required_rail_unavailable` finding (warning, routed to Discord, 60-min
+   cooldown) so availability artifacts stop polluting the approval-rate signal
+   the auto-publish ramp reads.
+
+Pinned by `test_qa_rail_common.py` (rerun dispatch table),
+`test_qa_aggregate_atom.py::TestQaAggregateRailReinvoke`, and the retry tests
+in `test_multi_model_qa.py::TestGatePromptBranches`.
+
 #### Self-heal before paging: flag-and-continue, never silent-discard (2026-06)
 
 Hard QA was throwing away finished drafts. A single rail veto — frequently a

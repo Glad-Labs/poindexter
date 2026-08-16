@@ -18,6 +18,17 @@ from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, Revie
 from services.site_config import SiteConfig
 from tests.unit._fake_platform import FakePlatform
 
+
+@pytest.fixture(autouse=True)
+def _instant_gate_retry_backoff(monkeypatch):
+    """The #1012 retry wrapper re-runs a None-producing gate once after a real
+    backoff sleep, which would add 2s to every None-branch gate test in this
+    module. Zero the sleep (monkeypatch-scoped); the retry's own tests assert
+    call counts, not wall time."""
+    import asyncio as _asyncio
+
+    monkeypatch.setattr(_asyncio, "sleep", AsyncMock())
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -911,6 +922,40 @@ class TestGatePromptBranches:
         assert "First contradiction" in review.feedback
         assert "Second contradiction" in review.feedback
         assert ";" in review.feedback
+
+    async def test_gate_none_retries_once_and_returns_second_result(self, raw_qa):
+        """poindexter#1012: a required gate's None becomes a missing_required
+        TERMINAL reject at qa.aggregate, so one transient flake used to burn
+        a full pipeline re-run. The wrapper retries exactly once."""
+        sentinel = ReviewerResult(
+            reviewer="topic_delivery", approved=True, score=80.0,
+            feedback="ok", provider="consistency_gate",
+        )
+        once = AsyncMock(side_effect=[None, sentinel])
+        with patch.object(MultiModelQA, "_run_gate_prompt_once", once):
+            review = await raw_qa._run_gate_prompt("p", "topic_delivery", "delivers")
+        assert review is sentinel
+        assert once.await_count == 2
+
+    async def test_gate_success_first_try_does_not_retry(self, raw_qa):
+        sentinel = ReviewerResult(
+            reviewer="topic_delivery", approved=True, score=80.0,
+            feedback="ok", provider="consistency_gate",
+        )
+        once = AsyncMock(side_effect=[sentinel])
+        with patch.object(MultiModelQA, "_run_gate_prompt_once", once):
+            review = await raw_qa._run_gate_prompt("p", "topic_delivery", "delivers")
+        assert review is sentinel
+        assert once.await_count == 1
+
+    async def test_gate_still_none_after_retry_returns_none(self, raw_qa):
+        """A genuinely-down model stays None — rail-level fail-open stands and
+        the aggregate-level machinery (re-invoke + finding) takes over."""
+        once = AsyncMock(side_effect=[None, None])
+        with patch.object(MultiModelQA, "_run_gate_prompt_once", once):
+            review = await raw_qa._run_gate_prompt("p", "topic_delivery", "delivers")
+        assert review is None
+        assert once.await_count == 2
 
 
 # ---------------------------------------------------------------------------

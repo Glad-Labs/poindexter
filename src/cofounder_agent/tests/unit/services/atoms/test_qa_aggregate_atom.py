@@ -1232,3 +1232,112 @@ class TestQaAggregateAllRailVisibility:
         d = self._passes(fake)[0]["details"]
         assert d["advisory_rail_count"] == 0
         assert d["gating_rail_count"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestQaAggregateRailReinvoke:
+    """poindexter#1012: availability is not a content verdict. When the ONLY
+    reject reason is a required rail's absence (zero vetoes, score over
+    threshold), the aggregate re-invokes just the absent rail(s) once against
+    the unchanged content before going terminal — and a reject that stands
+    afterward is emitted as a distinguishable infra finding."""
+
+    def _state(self):
+        return {
+            "platform": FakePlatform(),
+            "database_service": _VacuousDB(),
+            "site_config": _FakeSiteConfig(),
+            "content": "the draft body",
+            "topic": "T",
+            # A passing advisory rail puts the score over threshold with zero
+            # vetoes; the required topic_delivery is absent.
+            "qa_rail_reviews": [
+                {"reviewer": "ragas_eval", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": True, "feedback": ""},
+            ],
+        }
+
+    def _patch_gates(self, monkeypatch):
+        async def _fake_gate_states(_qa):
+            return {"topic_delivery": (True, True), "ragas_eval": (True, False)}
+
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            _fake_gate_states,
+        )
+        monkeypatch.setattr(
+            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            lambda self, **kw: None,
+        )
+
+    async def test_recovered_rail_turns_absence_into_approve(self, monkeypatch):
+        self._patch_gates(monkeypatch)
+        late = [{"reviewer": "topic_delivery", "approved": True, "score": 85.0,
+                 "provider": "consistency_gate", "advisory": False,
+                 "feedback": "on topic"}]
+
+        async def _fake_rerun(_qa, _gates, _state, missing):
+            assert missing == ["topic_delivery"]
+            return late
+
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            _fake_rerun,
+        )
+        out = await qa_aggregate.run(self._state())
+        assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
+        assert not any("missing_required" in v for v in out.get("vetoed_by", []))
+        # The late review lands on the durable channel and the operator list.
+        assert out.get("qa_rail_reviews") == late
+        assert any(r["reviewer"] == "topic_delivery" for r in out["qa_reviews"])
+
+    async def test_still_absent_after_reinvoke_rejects_with_finding(self, monkeypatch):
+        self._patch_gates(monkeypatch)
+
+        async def _fake_rerun(_qa, _gates, _state, missing):
+            return []
+
+        findings: list = []
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            _fake_rerun,
+        )
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.emit_finding",
+            lambda **kw: findings.append(kw),
+        )
+        out = await qa_aggregate.run(self._state())
+        assert out["qa_final_verdict"] == "reject"
+        assert any("missing_required:topic_delivery" in v for v in out["vetoed_by"])
+        # Proposal 3: the infra-reject is distinguishable from content rejects.
+        (f,) = findings
+        assert f["kind"] == "qa_required_rail_unavailable"
+        assert f["severity"] == "warning"
+        assert "topic_delivery" in f["title"]
+
+    async def test_late_review_veto_is_a_content_verdict_not_missing(self, monkeypatch):
+        """The retry recovers the rail's VERDICT — a late hard veto rejects on
+        the merits (no missing_required marker, no infra finding)."""
+        self._patch_gates(monkeypatch)
+        late = [{"reviewer": "topic_delivery", "approved": False, "score": 20.0,
+                 "provider": "consistency_gate", "advisory": False,
+                 "feedback": "bait and switch"}]
+
+        async def _fake_rerun(_qa, _gates, _state, missing):
+            return late
+
+        findings: list = []
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            _fake_rerun,
+        )
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.emit_finding",
+            lambda **kw: findings.append(kw),
+        )
+        out = await qa_aggregate.run(self._state())
+        assert out["qa_final_verdict"] == "reject"
+        assert not any("missing_required" in v for v in out.get("vetoed_by", []))
+        assert findings == []

@@ -414,12 +414,88 @@ async def resolve_gate_states(qa: Any) -> dict[str, Any]:
     return states
 
 
+# Gates qa.aggregate may re-invoke once when required-and-absent
+# (poindexter#1012). Only transient-LLM-shaped rails belong here — a
+# deterministic rail (programmatic_validator) or an HTTP rail
+# (citation_verifier) that produced nothing is a different failure class,
+# and re-running it inside the aggregate would mask it. Keys are GATE
+# names (what missing_required_gates yields), not reviewer names.
+RERUNNABLE_GATES: tuple[str, ...] = ("llm_critic", "topic_delivery", "consistency")
+
+
+async def rerun_missing_rails(
+    qa: Any,
+    gate_states: dict[str, Any],
+    state: dict[str, Any],
+    missing: list[str],
+) -> list[dict[str, Any]]:
+    """Re-invoke absent required rails once against the UNCHANGED content.
+
+    Availability is not a content verdict (poindexter#1012): a required
+    rail returning None (timeout / empty completion / unparseable output)
+    used to become a ``missing_required`` terminal reject at qa.aggregate —
+    a one-shot infra flake burning a full pipeline re-run and landing a
+    90+ draft in the manual queue. 16 of 19 terminal rejects in the
+    2026-08-01→08-14 window were that shape (score 83–98, zero vetoes,
+    one rail absent).
+
+    Returns reviewer dicts for whichever rails produced a review this
+    time. The retry recovers the rail's VERDICT, whatever it is — a late
+    review may legitimately veto; it is never coerced to a pass. Gates not
+    in :data:`RERUNNABLE_GATES` (and topic_delivery with no topic to check
+    against) are left absent, so the fail-closed reject stands for them.
+    """
+    content = str(state.get("content") or "")
+    topic = str(state.get("topic") or "")
+    title = str(state.get("seo_title") or state.get("title") or "")
+    late: list[dict[str, Any]] = []
+    for gate in missing:
+        if gate not in RERUNNABLE_GATES:
+            continue
+        review = None
+        try:
+            if gate == "llm_critic":
+                res = await qa._review_with_cloud_model(
+                    title, content, topic,
+                    research_sources=state.get("research_context"),
+                )
+                if res is not None:
+                    review, _cost = res
+            elif gate == "topic_delivery":
+                if not topic.strip():
+                    continue  # structurally unreviewable, not a flake
+                review = await qa._check_topic_delivery(topic, content)
+            elif gate == "consistency":
+                review = await qa._check_internal_consistency(content)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[qa.aggregate] %s re-invoke failed (reject stands): %s",
+                gate, exc,
+            )
+            continue
+        if review is None:
+            continue
+        # Mirror the rail atoms: advisory status stays DB-driven even on the
+        # late pass (a required gate won't be advisory, but the config is
+        # the authority, not this call site).
+        type(qa)._mark_advisory_if_configured(review, gate_states, gate)
+        logger.info(
+            "[qa.aggregate] %s recovered on aggregate-level re-invoke "
+            "(approved=%s score=%s)",
+            gate, getattr(review, "approved", None), getattr(review, "score", None),
+        )
+        late.append(reviewer_to_dict(review))
+    return late
+
+
 __all__ = [
     "GateStatesUnavailable",
+    "RERUNNABLE_GATES",
     "aggregate_rail_reviews",
     "is_rescuable_reject",
     "known_wrong_fact_rescued",
     "missing_required_gates",
+    "rerun_missing_rails",
     "resolve_gate_states",
     "reviewer_to_dict",
 ]

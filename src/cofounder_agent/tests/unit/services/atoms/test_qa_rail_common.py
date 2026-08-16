@@ -558,3 +558,114 @@ class TestTruncatedContentNeverRescuable:
             self._critic_veto(), ["ollama_critic"],
             final_score=55.0, threshold=70.0,
         ) is True
+
+
+# ---------------------------------------------------------------------------
+# rerun_missing_rails (poindexter#1012)
+# ---------------------------------------------------------------------------
+# Availability is not a content verdict: when the only reject reason is a
+# required rail's absence, the aggregate re-invokes just the absent rail(s)
+# once against the unchanged content. These pin the dispatch table.
+
+
+class _RerunFakeQA:
+    """Records which rail methods run; per-gate results are configurable."""
+
+    marked: list = []
+
+    def __init__(self, *, critic=None, topic=None, consistency=None,
+                 critic_raises=False):
+        self.calls: list[str] = []
+        self._critic = critic
+        self._topic = topic
+        self._consistency = consistency
+        self._critic_raises = critic_raises
+
+    async def _review_with_cloud_model(self, title, content, topic, research_sources=None):
+        self.calls.append("llm_critic")
+        if self._critic_raises:
+            raise RuntimeError("dispatch blew up")
+        return None if self._critic is None else (self._critic, {"cost": 0})
+
+    async def _check_topic_delivery(self, topic, content):
+        self.calls.append("topic_delivery")
+        return self._topic
+
+    async def _check_internal_consistency(self, content):
+        self.calls.append("consistency")
+        return self._consistency
+
+    @classmethod
+    def _mark_advisory_if_configured(cls, review, gate_states, gate_name):
+        cls.marked.append(gate_name)
+
+
+def _review(reviewer: str, approved: bool = True, score: float = 85.0):
+    from modules.content.multi_model_qa import ReviewerResult
+
+    return ReviewerResult(
+        reviewer=reviewer, approved=approved, score=score,
+        feedback="", provider="consistency_gate",
+    )
+
+
+@pytest.mark.asyncio
+async def test_rerun_recovers_mapped_rails_and_skips_unmapped():
+    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+
+    _RerunFakeQA.marked = []
+    qa = _RerunFakeQA(topic=_review("topic_delivery"))
+    late = await rerun_missing_rails(
+        qa, {}, {"content": "body", "topic": "T"},
+        ["topic_delivery", "programmatic_validator"],
+    )
+    # Deterministic rails are never re-run here — their absence is a
+    # different failure class.
+    assert qa.calls == ["topic_delivery"]
+    assert [r["reviewer"] for r in late] == ["topic_delivery"]
+    # Advisory marking mirrors the rail atoms (DB config stays the authority).
+    assert _RerunFakeQA.marked == ["topic_delivery"]
+
+
+@pytest.mark.asyncio
+async def test_rerun_topic_delivery_without_topic_is_structural_not_flake():
+    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+
+    qa = _RerunFakeQA(topic=_review("topic_delivery"))
+    late = await rerun_missing_rails(
+        qa, {}, {"content": "body", "topic": "  "}, ["topic_delivery"],
+    )
+    assert late == []
+    assert qa.calls == []
+
+
+@pytest.mark.asyncio
+async def test_rerun_preserves_a_vetoing_verdict():
+    """The retry recovers the rail's verdict, whatever it is — never a pass."""
+    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+
+    qa = _RerunFakeQA(topic=_review("topic_delivery", approved=False, score=20.0))
+    late = await rerun_missing_rails(
+        qa, {}, {"content": "b", "topic": "T"}, ["topic_delivery"],
+    )
+    assert len(late) == 1
+    assert late[0]["approved"] is False
+
+
+@pytest.mark.asyncio
+async def test_rerun_critic_unpacks_tuple_and_exception_skips():
+    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+
+    ok = _RerunFakeQA(critic=_review("ollama_critic"))
+    late = await rerun_missing_rails(
+        ok, {}, {"content": "b", "topic": "T", "title": "t"}, ["llm_critic"],
+    )
+    assert [r["reviewer"] for r in late] == ["ollama_critic"]
+
+    boom = _RerunFakeQA(critic_raises=True)
+    late = await rerun_missing_rails(
+        boom, {}, {"content": "b", "topic": "T"}, ["llm_critic", "consistency"],
+    )
+    # The crash skips that rail but the loop continues to the next one.
+    assert late == []
+    assert boom.calls == ["llm_critic", "consistency"]

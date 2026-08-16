@@ -559,8 +559,10 @@ class TestGroupingMakesSense:
         # the judge-call timeout keys (2026-08-14): qa_critic_timeout_seconds +
         # qa_gate_timeout_seconds with their comment sit directly beside
         # qa_review_content_max_chars — the #985 judge block they extend —
-        # inside the same cluster.
-        assert span < 381, (
+        # inside the same cluster. Bumped 381→387 for
+        # qa_gate_retry_backoff_seconds (poindexter#1012), which sits directly
+        # under the qa_gate_timeout_seconds key it complements.
+        assert span < 387, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

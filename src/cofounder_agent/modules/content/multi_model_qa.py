@@ -1572,6 +1572,37 @@ class MultiModelQA:
         reviewer_name: str,
         pass_key: str,
     ) -> ReviewerResult | None:
+        """Retry wrapper over ``_run_gate_prompt_once`` (poindexter#1012).
+
+        At the rail level ``None`` is honest fail-open — but when the gate
+        is ``required_to_pass``, that None becomes a ``missing_required``
+        TERMINAL reject at qa.aggregate, so a one-shot infra flake (Ollama
+        cold-load under VRAM pressure, an empty completion, unparseable
+        JSON) used to burn a full pipeline re-run. One short-backoff retry
+        turns transient contention into latency instead of absence; a
+        genuinely down model still returns None and the aggregate-level
+        machinery takes over.
+        """
+        result = await self._run_gate_prompt_once(prompt, reviewer_name, pass_key)
+        if result is not None:
+            return result
+        backoff = (
+            self._platform.config.get_int("qa_gate_retry_backoff_seconds", 2)
+            if self._platform else 2
+        )
+        logger.info(
+            "[MULTI_QA] %s gate produced no result — retrying once in %ss",
+            reviewer_name, backoff,
+        )
+        await asyncio.sleep(float(backoff))
+        return await self._run_gate_prompt_once(prompt, reviewer_name, pass_key)
+
+    async def _run_gate_prompt_once(
+        self,
+        prompt: str,
+        reviewer_name: str,
+        pass_key: str,
+    ) -> ReviewerResult | None:
         """Shared plumbing for the topic-delivery and consistency gates.
 
         Runs a JSON-returning gate prompt through ``_dispatch_llm``

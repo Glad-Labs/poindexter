@@ -32,10 +32,12 @@ from modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
     is_rescuable_reject,
     missing_required_gates,
+    rerun_missing_rails,
     resolve_gate_states,
 )
 from plugins.atom import AtomMeta, FieldSpec
 from services.audit_event_schemas import validate_event_details
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -100,20 +102,28 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # post-cutoff content stops getting hard-rejected with no web second
     # opinion. This PREVENTS a wrong reject; it never introduces a new one.
     known_wrong_fact_only = bool(state.get("qa_known_wrong_fact_only"))
-    result = aggregate_rail_reviews(
-        reviews,
-        validator_weight=_weight(config, "qa_validator_weight", 0.4),
-        critic_weight=_weight(config, "qa_critic_weight", 0.6),
-        gate_weight=_weight(config, "qa_gate_weight", 0.3),
-        threshold=threshold,
-        known_wrong_fact_only=known_wrong_fact_only,
-    )
+    validator_weight = _weight(config, "qa_validator_weight", 0.4)
+    critic_weight = _weight(config, "qa_critic_weight", 0.6)
+    gate_weight = _weight(config, "qa_gate_weight", 0.3)
+
+    def _aggregate(revs: list[dict[str, Any]]) -> dict[str, Any]:
+        return aggregate_rail_reviews(
+            revs,
+            validator_weight=validator_weight,
+            critic_weight=critic_weight,
+            gate_weight=gate_weight,
+            threshold=threshold,
+            known_wrong_fact_only=known_wrong_fact_only,
+        )
+
+    result = _aggregate(reviews)
     final_score = result["qa_final_score"]
     approved = bool(result["approved"])
 
     # Vacuous-pass guard (poindexter#680): a required rail that emits NO review
     # still passes silently because aggregate_rail_reviews sees nothing to veto.
     # Load gate states and fail closed when any required-to-pass rail is absent.
+    late_reviews: list[dict[str, Any]] = []
     pool = resolve_pool(state, atom="qa.aggregate")
     site_config = state.get("site_config")
     settings_service = state.get("settings_service")
@@ -132,10 +142,65 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # ``ollama_critic``.
             missing_required = missing_required_gates(reviews, gate_states)
             if missing_required:
+                # Availability is not a content verdict (poindexter#1012). At
+                # this point the draft passed on everything any rail actually
+                # SAID (approved ⇒ zero vetoes, score ≥ threshold) — the only
+                # problem is absence. Re-invoke just the absent rail(s) once
+                # against the unchanged content before going terminal: 16 of
+                # 19 terminal rejects in 2026-08-01→08-14 were availability
+                # artifacts (83–98 scores, no vetoes, one rail absent), each
+                # burning a full pipeline re-run and polluting the
+                # approval-rate signal the auto-publish ramp reads. The retry
+                # recovers the rail's VERDICT — a late review may veto.
+                late = await rerun_missing_rails(
+                    _qa, gate_states, state, missing_required,
+                )
+                if late:
+                    reviews = list(reviews) + late
+                    late_reviews = late
+                    result = _aggregate(reviews)
+                    final_score = result["qa_final_score"]
+                    approved = bool(result["approved"])
+                    missing_required = missing_required_gates(
+                        reviews, gate_states,
+                    )
+            if missing_required:
                 logger.warning(
                     "[qa.aggregate] required rail(s) produced no review — "
                     "failing closed: %s (task=%s)",
                     missing_required, str(state.get("task_id") or "?")[:8],
+                )
+                # Fail-closed stands — but as a DISTINGUISHABLE infra-reject
+                # (poindexter#1012 part 3), so the QA Rails board can separate
+                # availability artifacts from content verdicts instead of
+                # both polluting the approval-rate signal.
+                emit_finding(
+                    source="qa.aggregate",
+                    kind="qa_required_rail_unavailable",
+                    severity="warning",
+                    title=(
+                        "required QA rail(s) unavailable after retry: "
+                        + ", ".join(missing_required)
+                    ),
+                    body=(
+                        f"Task {str(state.get('task_id') or '?')[:8]} was "
+                        f"rejected because required rail(s) "
+                        f"{missing_required} produced no review even after "
+                        "an aggregate-level re-invoke. This is an "
+                        "infrastructure reject, not a content verdict — the "
+                        "draft had zero vetoes at score "
+                        f"{float(final_score):.1f}. Check Ollama load/VRAM "
+                        "contention and qa_gate_timeout_seconds."
+                    ),
+                    dedup_key=(
+                        "qa_required_rail_unavailable:"
+                        + str(state.get("task_id") or "?")
+                    ),
+                    extra={
+                        "task_id": str(state.get("task_id") or ""),
+                        "missing": list(missing_required),
+                        "final_score": float(final_score),
+                    },
                 )
                 approved = False
                 result = {
@@ -273,6 +338,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "qa_best_content": best_content,
             "qa_best_score": best_score,
             "_goto": "qa_rewrite",
+            # A late-recovered review that soft-vetoed routes here; keep it on
+            # the durable channel like the terminal path does (#1012).
+            **({"qa_rail_reviews": late_reviews} if late_reviews else {}),
         }
     # --- end rescue dispatch --------------------------------------------------
 
@@ -317,6 +385,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "_goto": "",
         # Surface veto reasons for callers and tests; empty list on approve.
         "vetoed_by": result.get("vetoed_by", []),
+        # Late reviews recovered by the aggregate-level re-invoke
+        # (poindexter#1012) append onto the durable rail channel (operator.add
+        # reducer) so persistence and the QA Rails board see them.
+        **({"qa_rail_reviews": late_reviews} if late_reviews else {}),
         # Informational visibility (#2125): an all-rail score (advisory rails
         # included) + per-rail breakdown so the operator can see what EVERY
         # rail scored/said, not just the gated subset. Neither gates.

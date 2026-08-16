@@ -1060,6 +1060,12 @@ DEFAULTS: dict[str, str] = {
     # default until 2026-08-14, absent on 16/19 terminal rejects since 08-01.
     'qa_critic_timeout_seconds': '240',
     'qa_gate_timeout_seconds': '240',
+    # Backoff before a gate rail's single retry (poindexter#1012): a gate
+    # returning None was fail-open at the rail but became a missing_required
+    # TERMINAL reject at qa.aggregate when the gate is required — a one-shot
+    # Ollama flake burning a full pipeline re-run. Short on purpose: the
+    # retry absorbs momentary contention, not an outage.
+    'qa_gate_retry_backoff_seconds': '2',
     # Quality-critical model pins watched by reload_site_config — a change
     # to any of these emits a quality_model_changed finding within one
     # reload cycle, whatever surface wrote it (poindexter#985: the Jun 29
@@ -2726,6 +2732,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.qa_rail_gpu_busy_skip.delivery': 'log_only',
     'findings.qa_rail_gpu_busy_skip.cooldown_minutes': '60',
     'findings.qa_rail_gpu_busy_skip.min_severity': 'info',
+    # A required QA rail produced no review even after the aggregate-level
+    # re-invoke, so the draft was rejected on AVAILABILITY, not content
+    # (poindexter#1012). Routed (not log_only) because each one is a burned
+    # pipeline re-run + a polluted approval-rate signal for the auto-publish
+    # ramp — the operator should see infra-rejects the day they happen.
+    # Cooldown bounds a bad night to one page per hour, not one per task.
+    'findings.qa_required_rail_unavailable.delivery': 'discord',
+    'findings.qa_required_rail_unavailable.cooldown_minutes': '60',
+    'findings.qa_required_rail_unavailable.min_severity': 'warning',
     # A media stage skipped because GPU admission refused its wait (#914 P2
     # group 2). Same reasoning as the QA-rail kind above — the design working,
     # not a fault — so log_only. Kept separate from qa_rail_gpu_busy_skip
@@ -3854,6 +3869,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_critical_floor': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_critic_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_gate_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_gate_retry_backoff_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
@@ -4183,6 +4199,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.qa_rail_gpu_busy_skip.cooldown_minutes': {'value_type': 'integer'},
     'findings.qa_rail_gpu_busy_skip.delivery': {'value_type': 'string'},
     'findings.qa_rail_gpu_busy_skip.min_severity': {'value_type': 'string'},
+    'findings.qa_required_rail_unavailable.delivery': {'value_type': 'string'},
+    'findings.qa_required_rail_unavailable.cooldown_minutes': {'value_type': 'integer'},
+    'findings.qa_required_rail_unavailable.min_severity': {'value_type': 'string'},
     'findings.quality_regression.cooldown_minutes': {'value_type': 'integer'},
     'findings.quality_regression.delivery': {'value_type': 'string'},
     'findings.quality_regression.fallback': {'value_type': 'string'},
