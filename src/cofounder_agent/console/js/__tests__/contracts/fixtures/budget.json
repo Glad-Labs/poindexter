@@ -1,16 +1,16 @@
 {
   "monthly_budget": 15,
-  "amount_spent": 3.12,
-  "amount_remaining": 11.88,
-  "percent_used": 20.8,
+  "amount_spent": 3.79,
+  "amount_remaining": 11.21,
+  "percent_used": 25.25,
   "days_in_month": 30,
-  "days_remaining": 14,
-  "daily_burn_rate": 0.195,
-  "projected_final_cost": 5.85,
+  "days_remaining": 13,
+  "daily_burn_rate": 0.2228,
+  "projected_final_cost": 6.68,
   "alerts": [],
   "status": "healthy",
-  "electricity_usd": 28.09,
+  "electricity_usd": 30.25,
   "electricity_source": "measured",
   "electricity_coverage_pct": 100,
-  "last_updated": "2026-08-16T08:21:24.659658+00:00"
+  "last_updated": "2026-08-17T08:35:45.381792+00:00"
 }
