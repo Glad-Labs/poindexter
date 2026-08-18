@@ -76,7 +76,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | image-gen server | http://localhost:9836 | Local image generation backend |
 | Postiz | http://localhost:5003 | Self-hosted social distribution hub (opt-in: `--profile postiz`). Connect X/LinkedIn/Reddit/Mastodon/TikTok/Instagram OAuth accounts here; copy integration UUIDs into `postiz_integration_id_*` app_settings. |
 
-### Key Numbers (repo-derived stats auto-synced daily by CI; DB-derived counts last refreshed 2026-08-17)
+### Key Numbers (repo-derived stats auto-synced daily by CI; DB-derived counts last refreshed 2026-08-18)
 
 > **Editing note:** `.github/workflows/sync-claude-md.yml` rewrites exactly three
 > phrases in this section by regex — `<N> Python files under
@@ -105,7 +105,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 - 1,536 app_settings keys live on prod (69 secret; drifts as keys are added). Three sources seed the table — `settings_defaults.py` 769, `0000_baseline.seeds.sql` 694 (= 692 non-secret + 2 placeholders), `brain/seed_app_settings.json` 80 free-tier — and overlapping keys must agree, enforced by `scripts/ci/settings_seed_value_drift_lint.py`.
 - `plugins/registry.py` `_SAMPLES` holds 117 core-sample plugins, of which 70 are job-type (taps + retention + memory hygiene + content surfaces); the rest are 14 stages / 9 taps / 10 topic_sources (incl. `rss` — generic RSS/Atom, one plugin + N `external_taps` rows, poindexter#1017) / 6 image / 4 llm / 1 probe / 2 video (wan21 + comfyui — hero animator picked per install via `video_generative_provider`) / 1 audio. Several jobs are dormant behind master switches, so the live scheduled count is lower. The image providers cover three `kind`s — `search` (pexels, pexels_video), `generate` (image_gen, ai_generation, flux_schnell), and `screenshot` (screenshot, poindexter#1002: renders an **allow-listed** operator surface for posts about Poindexter itself; see [`docs/architecture/screenshot-image-provider.md`](docs/architecture/screenshot-image-provider.md)).
 - 5 declarative-data-plane tables (`external_taps` / `retention_policies` / `webhook_endpoints` / `publishing_adapters` / `qa_gates`) feeding the integrations handler registry's 14 handlers across 4 handler surfaces (`tap` ×4 / `retention` ×6 / `outbound` ×2 / `publishing` ×2). `webhook_endpoints` is a declarative _table_ with no handler surface of its own — its rows are consumed by `integrations/outbound_dispatcher.py` + `operator_notify.py`. A 6th `services.declarative_config_service`-managed table, `alert_rules` (`poindexter alerts`), is CRUD'd through the same generic service but synced by the bespoke `brain/alert_sync.py` loop rather than the handler registry.
-- 70,430 embeddings across posts / issues / audit / memory / brain / claude_sessions (retention prunes claude_sessions/brain vectors, so this drifts)
+- 70,900 embeddings across posts / issues / audit / memory / brain / claude_sessions (retention prunes claude_sessions/brain vectors, so this drifts)
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
