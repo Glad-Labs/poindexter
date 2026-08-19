@@ -53,7 +53,7 @@ class AuditPublishedQualityJob:
         # preview. Previously this job re-derived word_count from the
         # 3000-char preview, which under-counted any post longer than
         # ~500 words and caused false-positive quality-regression
-        # findings — fixed alongside Glad-Labs/glad-labs-stack#484
+        # findings — fixed alongside Glad-Labs/poindexter#484
         # populating posts.word_count at INSERT + backfill.
         # LEFT JOIN pipeline_tasks so short-form templates (e.g. dev_diary)
         # can be excluded via the excluded_templates config key — they have
