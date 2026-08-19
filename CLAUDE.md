@@ -48,7 +48,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | --- | --- |
 | Public site | https://gladlabs.io (→ www.gladlabs.io) |
 | Public docs | https://gladlabs.mintlify.app |
-| Voice (LiveKit) | https://nightrider-1.taild4f626.ts.net/voice/join (tap-to-join, Tailscale Serve — tailnet-only; moved off the public Funnel 2026-06-02). **DOWN since the Pop!_OS migration** — `tailscale serve status` on this box reports "No serve config", so the Serve proxy still has to be re-established (open Matt action, see the migration memory). |
+| Voice (LiveKit) | https://nightrider-1.taild4f626.ts.net/voice/join — **PARKED OFF 2026-08-19 (deliberate, not an outage).** The feature cost more resources than it returned, so the tailnet Serve route was never re-established after the Pop!_OS migration and the `voice` profile is out of `compose_profiles`; `tailscale serve status` reporting "No serve config" is the expected state, **not** a fault to page on or an open action. Un-parking means re-adding the `voice` profile and the `tailscale serve` route (tap-to-join, tailnet-only — it moved off the public Funnel 2026-06-02). `poindexter-speaches` is unaffected and stays up: it is load-bearing for podcast/video TTS, not for phone voice. |
 | Private repo | https://github.com/Glad-Labs/glad-labs-stack |
 | Public repo | https://github.com/Glad-Labs/poindexter (auto-mirror) |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2 |
@@ -72,7 +72,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | Loki | http://localhost:3100 | Log storage (consumed via Grafana Explore — Loki datasource) |
 | Prometheus | http://localhost:9091 | Metrics storage (consumed via Grafana datasource) |
 | AlertManager | http://localhost:9093 | Alert-routing UI |
-| LiveKit (local) | ws://localhost:7880 | Local LiveKit server (the Tailscale **Serve** tailnet proxy fronts `/voice/join` → this; moved off the public Funnel 2026-06-02) |
+| LiveKit (local) | ws://localhost:7880 | Local LiveKit server — **not running while voice is parked** (`voice` profile omitted from `compose_profiles`). When on, the Tailscale **Serve** tailnet proxy fronts `/voice/join` → this; moved off the public Funnel 2026-06-02. |
 | image-gen server | http://localhost:9836 | Local image generation backend |
 | Postiz | http://localhost:5003 | Self-hosted social distribution hub (opt-in: `--profile postiz`). Connect X/LinkedIn/Reddit/Mastodon/TikTok/Instagram OAuth accounts here; copy integration UUIDs into `postiz_integration_id_*` app_settings. |
 
