@@ -140,7 +140,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             secrets_loaded = 0
             secrets_saved = 0
             for db_key, (env_var, category) in _secret_keys.items():
-                db_val = await settings_service.get(db_key)
+                # env_fallback=False: this branch decides whether the DB
+                # already holds the secret. With the fallback on, the
+                # boot-generated env value (config._auto_secret) answered
+                # for the missing row, so the persist branch below never
+                # ran and the secret regenerated on every boot.
+                db_val = await settings_service.get(db_key, env_fallback=False)
                 env_val = os.environ.get(env_var, "")
                 if db_val:
                     # DB has a value — use it (source of truth)

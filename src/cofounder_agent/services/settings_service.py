@@ -33,11 +33,22 @@ class SettingsService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def get(self, key: str, default: str | None = None) -> str | None:
+    async def get(
+        self,
+        key: str,
+        default: str | None = None,
+        *,
+        env_fallback: bool = True,
+    ) -> str | None:
         """Get a setting value, using cache.
 
         Falls back to the matching environment variable (upper-cased key) when
         the DB value is empty, so services keep working during migration.
+        Pass ``env_fallback=False`` to ask what the DB itself holds — the
+        lifespan secrets-sync needs that distinction: with the fallback on,
+        a boot-generated env secret answers for the missing DB row and the
+        persist-once branch becomes unreachable, so the secret regenerates
+        every boot instead of being saved on the first one.
 
         Whenever the env-var fallback fires the call emits a ``logger.warning``
         naming the key. Per `feedback_no_silent_defaults` an operator must
@@ -62,18 +73,24 @@ class SettingsService:
         if entry is not None and entry["value"]:
             return entry["value"]
 
+        if not env_fallback:
+            return default
+
         # Fallback: try env var (e.g. key "anthropic_api_key" -> "ANTHROPIC_API_KEY")
         env_key = key.upper()
         env_val = os.getenv(env_key)
         if env_val:
+            # Name the key and env var but NEVER the value — this path
+            # resolves secrets (jwt_secret et al.), and the old %r on the
+            # value shipped signing material to Loki in plaintext.
             logger.warning(
                 "[SETTINGS] env-var fallback fired for key=%r — using "
-                "%s=%r from environment because the DB value is empty or "
-                "missing. DB-first config means env overrides should be "
-                "rare; verify this is intentional.",
+                "%s from environment (value redacted, %d chars) because "
+                "the DB value is empty or missing. DB-first config means "
+                "env overrides should be rare; verify this is intentional.",
                 key,
                 env_key,
-                env_val,
+                len(env_val),
             )
             return env_val
 

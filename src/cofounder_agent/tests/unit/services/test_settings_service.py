@@ -111,7 +111,32 @@ class TestGet:
         msg = warnings[0].getMessage()
         assert "api_key" in msg
         assert "API_KEY" in msg
-        assert "from-env" in msg
+        # The VALUE must never appear — this path resolves secrets, and
+        # logging it shipped signing material to Loki in plaintext. The
+        # env-var NAME is enough to match back to the offending shell
+        # config; a length hint confirms which value was picked up.
+        assert "from-env" not in msg
+        assert "redacted" in msg
+
+    def test_env_fallback_opt_out_returns_default(self, caplog):
+        """`env_fallback=False` asks what the DB itself holds. The lifespan
+        secrets-sync depends on this: with the fallback on, the
+        boot-generated env secret answered for the missing DB row, the
+        persist-once branch never ran, and jwt_secret regenerated every
+        boot (re-warning forever) instead of being saved on the first."""
+        import logging
+
+        pool = _make_pool([])
+        svc = SettingsService(pool)
+        with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
+            logging.WARNING, logger="services.settings_service",
+        ):
+            result = _run(svc.get("api_key", env_fallback=False))
+
+        assert result is None
+        assert [
+            r for r in caplog.records if "env-var fallback" in r.getMessage()
+        ] == []
 
     def test_no_warning_when_db_value_present(self, caplog):
         """The warning must NOT fire on the happy path — DB row found,
