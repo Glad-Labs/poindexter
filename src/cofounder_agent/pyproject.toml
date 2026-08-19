@@ -87,7 +87,7 @@ setuptools = "<84"  # Pin to avoid pkg_resources deprecation (see: setuptools#39
 # sentry-sdk re-added 2026-04-21 — GlitchTip DSN now configured in
 # app_settings.sentry_dsn, error tracking is active for the cofounder-agent
 # project. [fastapi] extra wires the ASGI + Starlette middleware.
-sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
+sentry-sdk = { version = "^2.68.0", extras = ["fastapi"] }
 
 # OpenTelemetry exporter + FastAPI instrumentation — required when
 # app_settings.enable_tracing=true. The base opentelemetry-api / -sdk
