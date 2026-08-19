@@ -45,6 +45,9 @@ import pytest
 # wan_server_url (glad-labs-stack#2395 follow-up) is the same "bare base URL,
 # no root GET handler" bug class as chatterbox — 404s every single cycle
 # (unconditionally, not a flaky wedge) until pointed at /health.
+# stable_audio_open_server_url is that same bug class again, found
+# 2026-08-19: the bare :9839 base 404s every cycle while the container
+# reports healthy and serves /health 200.
 EXPECTED_OVERRIDE_KEYS = {
     "api_base_url",
     "cloudflare_beacon_url",
@@ -58,6 +61,7 @@ EXPECTED_OVERRIDE_KEYS = {
     "plugin.caption_provider.speaches.base_url",
     "plugin.tts_provider.chatterbox.base_url",
     "podcast_tts_base_url",
+    "stable_audio_open_server_url",
     "storage_public_url",
     "voice_agent_claude_code_host_brain_url",
     "voice_agent_stt_base_url",
@@ -216,7 +220,8 @@ def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> Non
 
 
 def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: str) -> None:
-    """chatterbox / grafana / worker API-base / wan-server overrides must probe
+    """chatterbox / grafana / worker API-base / wan-server / stable-audio
+    overrides must probe
     the compose-network service name's health endpoint, not localhost /
     host.docker.internal (glad-labs-stack#2395/#2397).
 
@@ -225,9 +230,10 @@ def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: st
     container (``RemoteProtocolError: server disconnected`` / ``ConnectError``)
     even though the backend is healthy on the compose net — this was the
     dominant operator pager-fatigue source (178 Telegram + 178 Discord
-    deliveries/24h, 2026-07-12). chatterbox's and wan-server's OpenAI-compat-
-    style base paths also have no GET handler (bare HEAD/GET 404s every
-    cycle, unconditionally — not just an intermittent wedge). Regression
+    deliveries/24h, 2026-07-12). chatterbox's, wan-server's and stable-audio's
+    base paths also have no GET handler (bare HEAD/GET 404s every
+    cycle, unconditionally — not just an intermittent wedge; stable-audio
+    false-paged this way from the migration until 2026-08-19). Regression
     guard: same shape as the data_fabric/speaches overrides above — if this
     baseline entry is ever dropped or repointed at a host-published port, the
     false-page class reopens.
@@ -239,6 +245,7 @@ def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: st
         "api_base_url": "http://worker:8002/api/health",
         "internal_api_base_url": "http://worker:8002/api/health",
         "wan_server_url": "http://wan-server:9840/health",
+        "stable_audio_open_server_url": "http://stable-audio-server:9839/health",
     }
     for key, want in expected_probe_urls.items():
         entry = overrides.get(key)
@@ -281,6 +288,7 @@ def test_overridden_surfaces_are_monitored_not_skiplisted(baseline_seeds_text: s
         "google_sitemap_ping_url",
         "indexnow_ping_url",
         "storage_public_url",
+        "stable_audio_open_server_url",
     )
     for key in monitored:
         assert key not in skip_keys, (
