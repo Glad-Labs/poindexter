@@ -51,6 +51,14 @@ _NON_OLLAMA_MODEL_KEYS = frozenset({
     "voice_bridge_stt_model",    # faster-whisper size, e.g. "base.en"
 })
 
+# Weights-file suffixes. A value ending in one of these names a checkpoint FILE
+# on a sidecar's disk (ComfyUI's `wan2.2_i2v_high_noise_14B_fp8_scaled.
+# safetensors`, `qwen_image_2512_fp8_e4m3fn.safetensors`), never an Ollama tag —
+# Ollama addresses models as `name:tag` and no tag carries a file extension.
+# Structural like the slash rule above, so a new ComfyUI checkpoint key stops
+# needing a code change to avoid a false MISSING every boot.
+_CHECKPOINT_SUFFIXES = (".safetensors", ".ckpt", ".gguf", ".pt", ".pth", ".bin")
+
 
 def _ollama_name_variants(name: str) -> set[str]:
     """Every spelling of ``name`` that refers to the same Ollama model.
@@ -81,13 +89,17 @@ def _is_ollama_model_value(key: str, value: str, *, skip_keys: frozenset[str]) -
        ``Wan-AI/Wan2.2-TI2V-5B``, ``cross-encoder/ms-marco-MiniLM-L-6-v2``).
        This replaces an allowlist of cloud prefixes that could only ever
        recognise the providers someone had already been bitten by.
-    3. Bare values are ambiguous by inspection, so the KEY decides.
+    3. A value ending in a weights-file suffix is a checkpoint file on a
+       sidecar's disk, not an Ollama tag (see ``_CHECKPOINT_SUFFIXES``).
+    4. Bare values are ambiguous by inspection, so the KEY decides.
     """
     raw = (value or "").strip()
     if not raw or raw.lower() in _MODEL_SENTINELS:
         return False
     if "/" in raw:
         return raw.lower().startswith("ollama/")
+    if raw.lower().endswith(_CHECKPOINT_SUFFIXES):
+        return False
     return key not in skip_keys
 
 

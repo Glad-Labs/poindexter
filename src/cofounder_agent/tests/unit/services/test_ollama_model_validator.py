@@ -478,6 +478,34 @@ class TestOllamaValueClassification:
             "my_custom_backend_model", "something", skip_keys=extended,
         )
 
+    def test_checkpoint_filenames_are_skipped(self):
+        """A weights-file suffix names a checkpoint on a sidecar's disk, never
+        an Ollama tag. The ComfyUI keys were the live false positives: three
+        MISSING warnings per boot against /api/tags for files that live in
+        ComfyUI's models directory."""
+        from utils.startup_manager import _is_ollama_model_value
+
+        for key, value in (
+            ("video_comfyui_high_model", "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"),
+            ("video_comfyui_low_model", "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"),
+            ("image_fanout_qwen_model", "qwen_image_2512_fp8_e4m3fn.safetensors"),
+            ("some_future_comfyui_model", "SDXL-BASE.CKPT"),  # case-insensitive
+        ):
+            assert not _is_ollama_model_value(
+                key, value, skip_keys=frozenset()
+            ), f"{key}={value} should be classified as a checkpoint file"
+
+    def test_checkpoint_rule_does_not_widen_to_tag_lookalikes(self):
+        """An Ollama tag that merely CONTAINS a dot (`llama3.2:3b`,
+        `qwen2.5-coder:14b`) must still be validated — only a terminal
+        weights-file suffix opts out."""
+        from utils.startup_manager import _is_ollama_model_value
+
+        for value in ("llama3.2:3b", "qwen2.5-coder:14b", "nomic-embed-text"):
+            assert _is_ollama_model_value(
+                "some_writer_model", value, skip_keys=frozenset()
+            ), f"{value} should still be validated"
+
 
 @pytest.mark.unit
 class TestOllamaNameVariants:
