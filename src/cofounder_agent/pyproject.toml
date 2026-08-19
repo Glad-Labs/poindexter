@@ -371,7 +371,7 @@ bandit = "^1.7"
 pre-commit = ">=4.6.1,<5"
 
 # Development Tools
-ipython = "^9.15"
+ipython = "^9.16"
 
 [project.scripts]
 api = "cofounder_agent.main:app"
