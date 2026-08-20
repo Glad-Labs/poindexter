@@ -8,10 +8,10 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260708.1",
+    "@cloudflare/workers-types": "^5.20260820.1",
     "esbuild": "^0.28.1",
     "vitest": "^3.2.6",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.124.0"
   },
   "overrides": {
     "esbuild": "$esbuild"
