@@ -117,6 +117,54 @@ class TestDetectTruncatedContent:
         assert detect_truncated_content("") == []
         assert detect_truncated_content("   \n\n  ") == []
 
+    # --- trailing Sources block must not mask a severed body (2026-08-20) ---
+
+    def test_mid_word_cut_hidden_behind_appended_sources_block(self):
+        # Verbatim shape of the Qwen 3.8 draft that passed at Q:100: the
+        # prose is guillotined, then the citation step appended a tidy
+        # Sources list whose last line looked finished.
+        content = (
+            "## What this means for your pipeline\n\n"
+            "Test vision and reasoning workloads separately. When we looked "
+            "at nvidia's LocateA\n\n"
+            "## Sources\n"
+            "- <https://huggingface.co/Qwen/Qwen3.8-27B/discussions/97>\n"
+        )
+        reasons = detect_truncated_content(content)
+        assert reasons, "severed prose above a Sources block must be detected"
+        assert "LocateA" in reasons[0]
+
+    def test_complete_body_with_sources_block_is_clean(self):
+        content = (
+            "## Closing\n\n"
+            "Build for that, and the market-size slide takes care of itself.\n\n"
+            "## Sources\n"
+            "- <https://example.com/a>\n"
+            "- <https://example.com/b>\n"
+        )
+        assert detect_truncated_content(content) == []
+
+    def test_references_heading_variants_are_peeled(self):
+        for heading in ("## References", "### Further Reading", "## Sources:"):
+            content = f"A sentence cut off at th\n\n{heading}\n1. <https://x.y/z>\n"
+            assert detect_truncated_content(content), heading
+
+    def test_sources_heading_with_no_items_is_not_peeled(self):
+        # A bare trailing heading is itself a truncation shape and must
+        # keep firing as "ends on a heading with no body".
+        reasons = detect_truncated_content("Done here.\n\n## Sources")
+        assert reasons and "heading" in reasons[0]
+
+    def test_ordinary_trailing_list_is_not_peeled(self):
+        # A list under a normal heading is body content — judged as before.
+        # (Items end punctuated — an unpunctuated last item has always
+        # flagged; what this pins is that the heading is NOT peeled, so a
+        # severed item under a non-sources heading still reaches the check.)
+        content = "## Steps\n- First do this.\n- Then do that."
+        assert detect_truncated_content(content) == []
+        severed = "## Steps\n- First do this.\n- Then the script will"
+        assert detect_truncated_content(severed)
+
 
 @pytest.mark.unit
 class TestValidateContentTruncationRule:

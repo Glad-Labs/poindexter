@@ -1135,6 +1135,15 @@ _TRUNCATION_HEADING_RE = re.compile(r"^#{1,6}(\s|$)")
 _TRUNCATION_OPEN_LINK_URL_RE = re.compile(r"!?\[[^\]]*\]\([^)]*$")
 _TRUNCATION_OPEN_LINK_TEXT_RE = re.compile(r"!?\[[^\]]*$")
 _TRUNCATION_OPEN_HTML_TAG_RE = re.compile(r"<[^>]*$")
+# A trailing "## Sources" / "## References" block is appended AFTER the prose
+# (by the writer prompt or the citation reconciler), so its tidy last line
+# (`- <https://…>`) masks a body that was guillotined two lines above it.
+# The detector peels this block off and judges the prose tail underneath.
+_TRUNCATION_TRAILING_SOURCES_HEADING_RE = re.compile(
+    r"^#{1,6}\s*(?:sources?|references?|further\s+reading|citations?)\s*:?\s*$",
+    re.IGNORECASE,
+)
+_TRUNCATION_SOURCES_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\S")
 # Characters that legitimately end finished prose or a closed markdown/HTML
 # structure. ``>`` matters: published posts routinely end on a source list of
 # autolinks ("- <https://…>") — the closing angle bracket is exactly what
@@ -1144,6 +1153,30 @@ _TRUNCATION_OPEN_HTML_TAG_RE = re.compile(r"<[^>]*$")
 # lesson — "*Read more on X.*" is finished, "*the migration script will*"
 # is a cutoff inside emphasis and must still fire).
 _TRUNCATION_TERMINAL_CHARS = frozenset(".!?…\"'”’»)]}`|~>")
+
+
+def _strip_trailing_sources_block(lines: list[str]) -> list[str]:
+    """Drop a trailing Sources/References block so the PROSE tail is judged.
+
+    2026-08-20: a 2,900-word draft was severed mid-word ("...nvidia's
+    LocateA") but the citation step had already appended ``## Sources`` +
+    one ``- <url>`` line beneath it, so the detector's last-line check saw
+    a finished list item and passed a Q:100 on a broken article. Only a
+    block shaped exactly like an appended source list is peeled — a
+    heading from the recognised set followed solely by list items — so an
+    article that legitimately ENDS on a Sources section still gets its
+    body tail inspected, and anything else is left alone.
+    """
+    i = len(lines)
+    # Walk back over list items.
+    while i > 0 and _TRUNCATION_SOURCES_ITEM_RE.match(lines[i - 1]):
+        i -= 1
+    # They must hang off a sources-style heading to count as the block.
+    if i < len(lines) and i > 0 and _TRUNCATION_TRAILING_SOURCES_HEADING_RE.match(
+        lines[i - 1].strip()
+    ):
+        return lines[: i - 1]
+    return lines
 
 
 def detect_truncated_content(content: str) -> list[str]:
@@ -1168,6 +1201,9 @@ def detect_truncated_content(content: str) -> list[str]:
         reasons.append("unclosed code fence")
 
     non_empty = [ln for ln in text.splitlines() if ln.strip()]
+    non_empty = _strip_trailing_sources_block(non_empty)
+    if not non_empty:
+        return reasons
     last = non_empty[-1].strip()
 
     if _TRUNCATION_HEADING_RE.match(last):
