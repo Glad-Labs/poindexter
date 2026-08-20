@@ -7,6 +7,7 @@
   "license": "Apache-2.0",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "scripts": {
+    "prebuild": "node scripts/prebuild-cache-guard.mjs",
     "build": "next build",
     "dev": "cross-env PORT=3000 next dev",
     "lint": "eslint .",
