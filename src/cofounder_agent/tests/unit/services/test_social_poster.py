@@ -361,6 +361,37 @@ class TestPolishSocialCopy:
     def test_empty_text_stays_empty(self):
         assert _polish_social_copy("   ", post_url=self.URL, char_limit=280) == ""
 
+    def test_inline_url_survives_when_trailing_hashtags_overrun_limit(self):
+        # The 2026-08-16 Cosine-Similarity draft: model emitted the URL
+        # inline with hashtags after it, prose+URL+tags > limit, and the old
+        # inline branch's end-trim dropped the URL — leaving a mid-sentence
+        # fragment with no link. The link must survive; the trim comes out
+        # of prose.
+        prose = "Cosine similarity is the default in almost every vector database " * 3
+        text = f"{prose.strip()} {self.URL} #RAG #vectors"
+        assert len(text) > 200
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=200)
+        assert len(result) <= 200
+        assert result.endswith(self.URL)
+        assert result.count(self.URL) == 1
+
+    def test_inline_url_mid_text_is_moved_last_and_kept(self):
+        text = f"Read this {self.URL} it changes how you think about RAG " + "filler " * 40
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=120)
+        assert len(result) <= 120
+        assert result.endswith(self.URL)
+        assert result.count(self.URL) == 1
+
+    def test_exact_boundary_cut_does_not_drop_the_link(self):
+        # Regression for the arithmetic that bit production: prose + 1 + URL
+        # == limit exactly, followed by one more token.
+        limit = 280
+        prose = "x" * (limit - len(self.URL) - 1)
+        text = f"{prose} {self.URL} #tag"
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=limit)
+        assert result.endswith(self.URL)
+        assert len(result) <= limit
+
 
 # ---------------------------------------------------------------------------
 # generate_social_posts (public API)

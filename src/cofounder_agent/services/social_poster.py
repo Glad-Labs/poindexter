@@ -291,13 +291,23 @@ def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
         return text
 
     url = post_url.strip()
-    if url.startswith(("http://", "https://")) and url not in text:
-        # Reserve room for " {url}" and trim the (URL-free) prose to fit, then
-        # append the link last so it can never be truncated mid-URL.
-        text = _fit_prose(text, char_limit - len(url) - 1)
-        text = f"{text} {url}".strip() if text else url
+    if url.startswith(("http://", "https://")):
+        # Protect the link on BOTH paths. The model is handed the exact URL
+        # and usually emits it inline — often with hashtags AFTER it — so the
+        # old "URL already inline → just _fit_prose(text, limit)" branch cut
+        # from the end and dropped the link itself whenever prose+URL+tags
+        # overran the limit (Cosine-Similarity draft, 2026-08-16: 188 chars
+        # of prose + 1 + a 91-char URL = exactly 280, the word-boundary drop
+        # took the URL, and the operator saw a mid-sentence fragment with no
+        # link). Lift the URL out wherever it sits, fit the remaining prose
+        # to the reserved budget, and re-append the link LAST so it can never
+        # be truncated or dropped.
+        prose = " ".join(text.replace(url, " ").split())
+        prose = _strip_trailing_ellipsis(prose)
+        prose = _fit_prose(prose, char_limit - len(url) - 1)
+        text = f"{prose} {url}".strip() if prose else url
     else:
-        # URL already inline, or unconfigured — just enforce the platform limit.
+        # URL unconfigured/relative — just enforce the platform limit.
         text = _fit_prose(text, char_limit)
     return text
 
