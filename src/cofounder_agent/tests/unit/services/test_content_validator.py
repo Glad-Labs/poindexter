@@ -137,6 +137,23 @@ class TestCompanyFactValidation:
         assert any("claim" in i.description.lower() or "years" in i.description.lower()
                     for i in result.issues)
 
+    def test_second_person_your_revenue_is_not_a_company_claim(self):
+        # 2026-08-20: "your revenue goal" matched the unbounded ``our`` in the
+        # company_claim pattern and hard-vetoed an article addressing the
+        # reader — two rewrite cycles chasing a phantom. Advice to the reader
+        # is not a claim about the company.
+        content = (
+            "If you're running a one-person shop, your revenue goal is usually "
+            "vague on purpose. An hour of funding talk won't fix that."
+        )
+        result = validate_content("Anti-goals", content, "business", site_config=_SC)
+        assert not [i for i in result.issues if i.category == "company_claim"]
+
+    def test_first_person_our_revenue_still_caught(self):
+        content = "Last quarter our revenue tripled and our profit followed."
+        result = validate_content("Update", content, "business", site_config=_SC)
+        assert [i for i in result.issues if i.category == "company_claim"]
+
 
 class TestFabricatedQuotes:
     """Detect made-up quotes attributed to people."""

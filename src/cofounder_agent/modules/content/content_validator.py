@@ -148,14 +148,21 @@ FAKE_STAT_PATTERNS = [
     r"(?:research|data|studies)\s+(?:shows?|suggests?|indicates?|reveals?|confirms?)\s+that\s+\d",
 ]
 
-# Impossible claims about the company (uses configurable company name)
+# Impossible claims about the company (uses configurable company name).
+# The first-person alternatives are word-bounded: without ``\b``, ``our``
+# matched inside "y**our** revenue goal" and flagged an article giving the
+# READER advice as a fabricated claim about the company — a critical veto
+# that sent the Anti-Goal-of-Money draft through two full rewrite cycles
+# chasing a phantom (2026-08-20). ``\b`` on the left only — "ours" /
+# "hour" must not match, but "we" followed by whitespace is already
+# bounded on the right by the ``\s+``.
 _CN = re.escape(_COMPANY_NAME)
 COMPANY_IMPOSSIBLE = [
-    rf"(?:{_CN}|our|we)\s+(?:has|have)\s+(?:been|spent)\s+(?:\w+\s+)*(?:years?|decade)",
-    rf"(?:{_CN}|our)\s+(?:team|staff|employees|engineers|developers)\s+of\s+\d{{2,}}",
-    rf"(?:{_CN}|our)\s+(?:clients?|customers?|users?)\s+(?:include|such as|like)\s+[A-Z]",
-    rf"(?:{_CN}|we)\s+(?:processed|handled|served|generated)\s+(?:\d+\s*(?:million|billion|thousand))",
-    rf"(?:{_CN}|our)\s+(?:revenue|profit|valuation|funding)",
+    rf"(?:{_CN}|\bour|\bwe)\s+(?:has|have)\s+(?:been|spent)\s+(?:\w+\s+)*(?:years?|decade)",
+    rf"(?:{_CN}|\bour)\s+(?:team|staff|employees|engineers|developers)\s+of\s+\d{{2,}}",
+    rf"(?:{_CN}|\bour)\s+(?:clients?|customers?|users?)\s+(?:include|such as|like)\s+[A-Z]",
+    rf"(?:{_CN}|\bwe)\s+(?:processed|handled|served|generated)\s+(?:\d+\s*(?:million|billion|thousand))",
+    rf"(?:{_CN}|\bour)\s+(?:revenue|profit|valuation|funding)",
 ]
 # Back-compat alias for the pre-2026-07 operator-flavored name.
 GLAD_LABS_IMPOSSIBLE = COMPANY_IMPOSSIBLE
