@@ -81,11 +81,20 @@ _INTEGRATION_KEY: dict[str, str] = {
 # 'pending' (visible in the action inbox). EXCLUDED (not terminal-dead):
 # ``rejected_retry`` re-runs and refreshes its own drafts; ``approved`` /
 # ``awaiting_approval`` are valid and awaiting publish.
+#
+# ``failed`` IS terminal: the stale-sweep only writes it once
+# retry_count >= max_retries ("Exceeded maximum retries after stale sweep").
+# It was missing from this tuple even though the reaper's docstring claimed
+# "max-retry fail" was covered — a failed task's promos sat in 'pending' for
+# 8 days (2026-08-20). Reaping it is safe: an operator retry moves the task
+# back to 'pending', and a rejected-only key regenerates fresh copy on
+# finalize (poindexter#833 idempotency), so nothing is lost.
 _TERMINAL_REJECT_TASK_STATUSES: tuple[str, ...] = (
     "rejected_final",
     "rejected",
     "dismissed",
     "expired",
+    "failed",
 )
 
 # Statuses where the (task, platform, subreddit) key is SPOKEN FOR — a promo

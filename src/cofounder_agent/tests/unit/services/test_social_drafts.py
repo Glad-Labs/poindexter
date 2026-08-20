@@ -503,9 +503,11 @@ async def test_cancel_orphaned_targets_live_drafts_and_terminal_tasks_only():
     # rejected_retry (re-runs) and approved/awaiting_approval (awaiting publish).
     # 'expired' joined with poindexter#981: a task auto-expired past the
     # approval TTL is terminal-dead, so its speculative promos must be reaped
-    # the same as a rejected one's.
+    # the same as a rejected one's. 'failed' joined 2026-08-20: the stale
+    # sweep writes it only after max retries, so it is just as dead — its
+    # absence stranded a failed task's promos in 'pending' for 8 days.
     assert set(task_statuses) == {
-        "rejected_final", "rejected", "dismissed", "expired",
+        "rejected_final", "rejected", "dismissed", "expired", "failed",
     }
     assert "rejected_retry" not in task_statuses
     assert "approved" not in task_statuses
