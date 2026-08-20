@@ -111,6 +111,14 @@ def _print_task_one_line(t: dict) -> None:
     status = t.get("status") or "?"
     quality = t.get("quality_score")
     quality_str = f"Q:{quality:<5}" if quality is not None else "Q:-   "
+    # QA flag: qa.aggregate rejected this draft but parked it for human review
+    # instead of discarding it. The score alone hid that (a vetoed post
+    # displayed Q:100 on 2026-08-20) — name the flag and the vetoing rails.
+    meta = t.get("task_metadata") or t.get("metadata") or {}
+    if isinstance(meta, dict) and meta.get("qa_flagged"):
+        vetoed = meta.get("qa_vetoed_by") or []
+        why = f" [{', '.join(str(v) for v in vetoed)}]" if vetoed else ""
+        quality_str += f"  ⚑ QA-FLAGGED{why}"
     title = t.get("title") or t.get("task_name") or t.get("topic") or "?"
     color = color_for(TASK_STATUS, status)
     click.secho(

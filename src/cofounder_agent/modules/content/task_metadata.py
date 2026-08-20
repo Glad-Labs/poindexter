@@ -114,6 +114,11 @@ def build_task_metadata(
         # via pipeline_tasks_view.task_metadata; read by the auto-publish guard
         # from state. Defaults False (dev_diary + approved posts).
         "qa_flagged": bool(state.get("qa_flagged")),
+        # WHY it was flagged — the rails that vetoed (or
+        # "missing_required:<rail>" when a required rail produced no review).
+        # Without this the operator saw a flag with no reason and a score
+        # that looked clean (2026-08-20).
+        "qa_vetoed_by": [str(v) for v in (state.get("vetoed_by") or [])],
         "content_length": len(content_text),
         "word_count": len(content_text.split()),
         # research_context — the corpus the writer was handed (name→URL bullets

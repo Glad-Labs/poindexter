@@ -1235,6 +1235,54 @@ class TestQaAggregateAllRailVisibility:
 
 
 @pytest.mark.unit
+class TestVetoingRailDragsTheScore:
+    """2026-08-20: three flagged drafts sat in the approval queue at Q:95–100
+    beside a hard FAIL, because ``aggregate_rail_reviews`` dropped any review
+    with score 0 from the gating mean — including the non-advisory rail that
+    VETOED at 0/100. A veto's 0 is a verdict, not "didn't run" (a degraded
+    rail emits no review at all), so it must count."""
+
+    def test_non_advisory_veto_at_zero_counts_in_gating_mean(self):
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        reviews = [
+            {"reviewer": "programmatic_validator", "provider": "programmatic",
+             "approved": False, "score": 0.0, "advisory": False},
+            {"reviewer": "llm_critic", "provider": "ollama",
+             "approved": True, "score": 100.0, "advisory": False},
+        ]
+        out = aggregate_rail_reviews(reviews)
+        assert out["approved"] is False
+        assert "programmatic_validator" in out["vetoed_by"]
+        # The old behaviour promoted 100.0 here.
+        assert out["qa_final_score"] < 100.0
+
+    def test_advisory_zero_still_excluded(self):
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        reviews = [
+            {"reviewer": "deepeval_brand_fabrication", "provider": "deepeval",
+             "approved": False, "score": 0.0, "advisory": True},
+            {"reviewer": "llm_critic", "provider": "ollama",
+             "approved": True, "score": 90.0, "advisory": False},
+        ]
+        out = aggregate_rail_reviews(reviews)
+        assert out["approved"] is True
+        assert out["qa_final_score"] == pytest.approx(90.0)
+
+    def test_passing_zero_is_still_treated_as_unscored(self):
+        # approved=True with score 0 is the legacy "ran but produced no
+        # number" shape — unchanged: it neither vetoes nor drags.
+        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        reviews = [
+            {"reviewer": "url_verifier", "provider": "http_head",
+             "approved": True, "score": 0.0, "advisory": False},
+            {"reviewer": "llm_critic", "provider": "ollama",
+             "approved": True, "score": 90.0, "advisory": False},
+        ]
+        out = aggregate_rail_reviews(reviews)
+        assert out["qa_final_score"] == pytest.approx(90.0)
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 class TestQaAggregateRailReinvoke:
     """poindexter#1012: availability is not a content verdict. When the ONLY

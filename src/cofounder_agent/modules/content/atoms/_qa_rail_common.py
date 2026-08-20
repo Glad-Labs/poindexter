@@ -206,9 +206,34 @@ def aggregate_rail_reviews(
     # (2026-06 incident). Fall back to all positive-scored reviews only in the
     # degenerate case where no non-advisory rail scored, so the score stays
     # non-zero instead of collapsing to a spurious reject.
-    non_advisory_scored = [
-        r for r in reviews if _score(r) > 0 and not r.get("advisory")
+    # A non-advisory rail that VETOED counts in the gating mean even when its
+    # score is 0 — that 0 is a verdict, not "didn't run" (a degraded rail
+    # emits no review at all, per the fail-open contract). Excluding it let a
+    # draft vetoed by the programmatic validator at 0/100 promote a
+    # quality_score of 100 into the approval queue (2026-08-20: three
+    # flagged drafts displayed Q:95–100 beside a hard FAIL), so the operator
+    # had no way to tell a vetoed post from a clean one by score.
+    # Resolve vetoes FIRST so a veto the #661 web-factcheck rescue overturns
+    # is excluded from the mean too — a suppressed veto is a wrong veto, and
+    # its 0 must not reject by arithmetic what the rescue just cleared.
+    vetoed_by = [
+        r.get("reviewer") for r in reviews
+        if not r.get("approved") and not r.get("advisory")
     ]
+    rescued = known_wrong_fact_rescued(
+        reviews, vetoed_by, known_wrong_fact_only=known_wrong_fact_only,
+    )
+    if rescued:
+        vetoed_by = [v for v in vetoed_by if v != "programmatic_validator"]
+
+    def _counts(r: dict[str, Any]) -> bool:
+        if r.get("advisory"):
+            return False
+        if _score(r) > 0:
+            return True
+        return (not r.get("approved")) and r.get("reviewer") in vetoed_by
+
+    non_advisory_scored = [r for r in reviews if _counts(r)]
     scored = non_advisory_scored or [r for r in reviews if _score(r) > 0]
     if scored:
         total_w = sum(
@@ -227,20 +252,7 @@ def aggregate_rail_reviews(
     else:
         final_score = 0.0
 
-    # A non-advisory failing review vetoes the whole pass.
-    vetoed_by = [
-        r.get("reviewer") for r in reviews
-        if not r.get("approved") and not r.get("advisory")
-    ]
-
-    # #661 rescue: a known_wrong_fact-only validator veto that the web
-    # fact-check rail confirmed is suppressed (the stale regex was wrong).
-    rescued = known_wrong_fact_rescued(
-        reviews, vetoed_by, known_wrong_fact_only=known_wrong_fact_only,
-    )
-    if rescued:
-        vetoed_by = [v for v in vetoed_by if v != "programmatic_validator"]
-
+    # (vetoed_by / the #661 rescue were resolved above, before scoring.)
     all_passed = not vetoed_by
     approved = all_passed and final_score >= threshold
 

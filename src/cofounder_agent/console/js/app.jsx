@@ -2317,24 +2317,36 @@ function approvalToInbox(t) {
   const previewUrl = /^[a-f0-9]{32}$/.test(previewToken)
     ? `/preview/${previewToken}`
     : null;
+  // QA flag: qa.aggregate REJECTED this draft but parked it here for human
+  // review instead of discarding it. The score alone hid that — a draft
+  // vetoed at 0/100 by the programmatic validator displayed QUALITY 100 in
+  // this very inbox (2026-08-20) — so name the flag and the vetoing rails.
+  const qaFlagged = !!(t.metadata && t.metadata.qa_flagged);
+  const vetoedBy = (t.metadata && t.metadata.qa_vetoed_by) || [];
+  const sub = [
+    [
+      'QUALITY',
+      t.quality_score != null ? String(Math.round(t.quality_score)) : '—',
+    ],
+    ['TYPE', t.task_type || 'blog_post'],
+    ['TOPIC', t.topic || '—'],
+  ];
+  if (qaFlagged) {
+    sub.unshift(['QA', vetoedBy.length ? `vetoed: ${vetoedBy.join(', ')}` : 'flagged']);
+  }
   return {
     id: t.task_id,
     kind: 'approve',
     priority: 1,
     title: t.task_name || t.topic || `Task ${t.task_id}`,
-    sub: [
-      [
-        'QUALITY',
-        t.quality_score != null ? String(Math.round(t.quality_score)) : '—',
-      ],
-      ['TYPE', t.task_type || 'blog_post'],
-      ['TOPIC', t.topic || '—'],
-    ],
+    sub,
     age: t.created_at ? PX.ago(minsSince(t.created_at)) : '',
-    tags: [['cyan', 'READY']],
+    tags: qaFlagged ? [['amber', '⚑ QA-FLAGGED']] : [['cyan', 'READY']],
     detail: {
       excerpt: t.content_preview || '',
       quality: t.quality_score,
+      qa_flagged: qaFlagged,
+      qa_vetoed_by: vetoedBy,
       pipeline: t.status,
       topic: t.topic,
       featured_image_url: t.featured_image_url,

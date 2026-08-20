@@ -59,6 +59,7 @@ EXPECTED_METADATA_KEYS = frozenset(
         "quality_score_early_eval",
         "qa_final_score",
         "qa_flagged",
+        "qa_vetoed_by",
         "content_length",
         "word_count",
         "research_context",
@@ -262,6 +263,24 @@ def test_build_task_metadata_carries_qa_flagged():
         seo_keywords_list=[], final_quality_score=79, early_eval_score=70,
     )
     assert meta["qa_flagged"] is True
+
+
+@pytest.mark.unit
+def test_build_task_metadata_carries_veto_reasons():
+    """2026-08-20: a flag with no WHY left the operator staring at Q:100
+    beside a hard FAIL. The vetoing rails ride alongside the flag, and an
+    unflagged draft carries an empty list (never an absent key)."""
+    from modules.content.task_metadata import build_task_metadata
+
+    kw = dict(
+        preview_token="", content_text="x", seo_title="", seo_description="",
+        seo_keywords_list=[], final_quality_score=79, early_eval_score=70,
+    )
+    meta = build_task_metadata(
+        {"qa_flagged": True, "vetoed_by": ["programmatic_validator"]}, **kw
+    )
+    assert meta["qa_vetoed_by"] == ["programmatic_validator"]
+    assert build_task_metadata({}, **kw)["qa_vetoed_by"] == []
 
 
 @pytest.mark.unit
