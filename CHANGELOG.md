@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [0.124.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.124.0...v0.124.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **brain:** probe stable-audio at /health, not the bare service root ([#3277](https://github.com/Glad-Labs/glad-labs-stack/issues/3277)) ([600855d](https://github.com/Glad-Labs/glad-labs-stack/commit/600855d87eec452f0e2c181cbd70a0a3dcd1ec00))
+* **public-site:** build with webpack on Vercel — Turbopack trace manifest never lands ([#3281](https://github.com/Glad-Labs/glad-labs-stack/issues/3281)) ([2110a17](https://github.com/Glad-Labs/glad-labs-stack/commit/2110a1747a95d2557dd4ebec6f7add793288098e))
+* **public-site:** wipe .next when its cache came from a different Next version ([#3280](https://github.com/Glad-Labs/glad-labs-stack/issues/3280)) ([aabba6e](https://github.com/Glad-Labs/glad-labs-stack/commit/aabba6e57315fa64b4d65c9eb71695e666b38f66))
+* **settings:** redact env-fallback secret values from logs; make secrets-sync persist-once reachable ([#3279](https://github.com/Glad-Labs/glad-labs-stack/issues/3279)) ([67e24b4](https://github.com/Glad-Labs/glad-labs-stack/commit/67e24b4f154a154a423fed82a1b42720b090d819))
+* **startup:** stop flagging ComfyUI checkpoint files as missing Ollama models ([#3278](https://github.com/Glad-Labs/glad-labs-stack/issues/3278)) ([b5e7e52](https://github.com/Glad-Labs/glad-labs-stack/commit/b5e7e520126af12e4fa4e10dc015bb117ff7060f))
+
 ## [0.124.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.123.0...v0.124.0) (2026-08-16)
 
 
