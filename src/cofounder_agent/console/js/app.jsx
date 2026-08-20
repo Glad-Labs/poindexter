@@ -1762,6 +1762,7 @@ function App() {
 
   return (
     <div className={`app gl-atmosphere mode-${mode}`}>
+      <MockModeBanner />
       <ConnectionBanner />
       {/* Rail */}
       <nav className="rail">

@@ -86,27 +86,24 @@
     clientId: LS.getItem('px_client_id') ?? '',
     clientSecret: LS.getItem('px_client_secret') ?? '',
     scope: LS.getItem('px_scope') ?? '',
-    // LIVE is the DEFAULT when the console is served from the worker (the
-    // /console/ mount — page origin == API origin). A fresh browser profile
-    // must show real state or honest per-panel errors, never the silently
-    // ticking mock simulation: on Windows→Pop the operator's new browser had
-    // an empty localStorage and the console quietly rendered fake data as if
-    // connected (2026-07-23). Mock/demo now requires explicit opt-in —
-    // PX.api.setLive(false) (persists px_live='0'), or window.PX_API_LIVE =
-    // false, or opening the files outside the worker mount (OSS demo case:
-    // file:// or a static host serves mock by default, unchanged).
+    // A REAL BROWSER ALWAYS BOOTS LIVE. Mock/fallback data is never an
+    // acceptable render in front of an operator: it looks exactly like a
+    // working stack while showing fabricated numbers (feedback_no_dummy_data).
+    // Two incidents earned this: the 2026-07-23 fresh-profile trap (empty
+    // localStorage silently defaulted to mock), and 2026-08-20 — a persisted
+    // px_live='0' from one fat-fingered Settings toggle locked a phone into
+    // the mock simulation indefinitely. localStorage px_live is now INERT at
+    // boot (neither '0' nor '1' is read), and there is no path/origin
+    // heuristic: file:// and static hosts boot live too, and their panels
+    // error loudly instead of demoing. The ONLY mock entries left are
+    // (a) window.PX_API_LIVE = false — a page-level dev/demo seam that must
+    // be deliberately coded into the serving page and renders an unmissable
+    // banner (app.jsx), and (b) a windowless vm harness (no location), which
+    // cannot render to a human at all.
     live: (() => {
       if (window.PX_API_LIVE !== undefined && window.PX_API_LIVE !== null)
         return !!window.PX_API_LIVE;
-      const ls = LS.getItem('px_live');
-      if (ls === '1') return true;
-      if (ls === '0') return false;
-      const loc = window.location;
-      return !!(
-        loc &&
-        /^https?:$/.test(loc.protocol || '') &&
-        (loc.pathname || '').startsWith('/console')
-      );
+      return !!window.location;
     })(),
     // DEV-ONLY: simulate real-world async on the MOCK branch so we can test
     // loading / error / empty states without a backend. Ignored when live.
@@ -720,8 +717,10 @@
     promRange,
     isLive: () => cfg.live,
     setLive(on) {
+      // Runtime-only flip for dev/test harnesses. Deliberately NOT persisted:
+      // a stored px_live='0' once locked a phone into fake data indefinitely
+      // (2026-08-20), which is why boot no longer reads the key either.
       cfg.live = !!on;
-      LS.setItem('px_live', on ? '1' : '0');
       return cfg.live;
     },
     setClient(id, secret) {
@@ -2374,8 +2373,8 @@
 
   // Tiny boot hint in the console for whoever wires this up.
   if (!cfg.live) {
-    console.info(
-      '[PX.api] MOCK mode (demo data — NOT your stack). Served-from-worker pages default to live; this page is either hosted elsewhere or explicitly opted out (px_live="0"). PX.api.setClient("client_id","client_secret"); PX.api.setLive(true) to go live.'
+    console.warn(
+      '[PX.api] MOCK mode (demo data — NOT your stack). Browsers always boot live now; mock only happens via window.PX_API_LIVE=false (dev/demo page seam) or a windowless test harness. The UI shows a persistent MOCK banner in this state.'
     );
   } else if (!cfg.clientId || !cfg.clientSecret) {
     console.warn(

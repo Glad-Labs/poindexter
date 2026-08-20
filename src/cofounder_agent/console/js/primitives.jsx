@@ -362,6 +362,29 @@ function Freshness({ lastUpdatedAt, stale }) {
   );
 }
 
+/* ─── Mock-mode banner (fixed, unmissable) ──────────────────── */
+/* Rendered whenever PX.api is in mock mode. Mock is now reachable ONLY via
+   the window.PX_API_LIVE=false dev/demo page seam (browsers always boot
+   live), and this banner is the contract that fake data can never pass as a
+   working stack again — a phone spent a session on the silently ticking mock
+   simulation before this existed (2026-08-20, feedback_no_dummy_data). */
+function MockModeBanner() {
+  if (window.PX.api.isLive()) return null;
+  return (
+    <div
+      className="connbanner"
+      role="alert"
+      style={{ background: '#7c2d12', color: '#fff' }}
+    >
+      <Icon name="alert" size={13} />
+      <span>
+        MOCK DATA — this console is NOT connected to your stack. Every number
+        on this page is fabricated (dev/demo seam: window.PX_API_LIVE=false).
+      </span>
+    </div>
+  );
+}
+
 /* ─── Global connection banner (fixed, non-blocking) ────────── */
 function ConnectionBanner() {
   const [st, setSt] = useState(window.PXR.ConnectionState.getState());
@@ -396,4 +419,5 @@ Object.assign(window, {
   agoLabel,
   Freshness,
   ConnectionBanner,
+  MockModeBanner,
 });

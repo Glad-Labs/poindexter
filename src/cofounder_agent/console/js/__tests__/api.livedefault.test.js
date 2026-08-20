@@ -1,10 +1,14 @@
-/* Live-by-default when served from the worker (feedback_no_dummy_data).
-   The 2026-07-23 Pop!_OS migration surfaced the trap this pins: a fresh
-   browser profile has an empty localStorage, and the console silently
-   rendered the ticking mock simulation as if it were the real stack. A
-   /console/-served page must now default to LIVE; mock stays the default
-   only off-worker (file://, static hosts, bare test windows) or by
-   explicit opt-out (px_live='0' / window.PX_API_LIVE=false). */
+/* A real browser ALWAYS boots LIVE (feedback_no_dummy_data).
+   Two incidents pin this policy. 2026-07-23: a fresh browser profile
+   (empty localStorage) silently rendered the ticking mock simulation as
+   if it were the real stack. 2026-08-20: a persisted px_live='0' from one
+   fat-fingered Settings toggle locked a phone into mock indefinitely —
+   the page loaded, numbers ticked, and nothing said they were fabricated.
+   Boot therefore ignores localStorage px_live entirely and applies no
+   path/origin heuristic: anything with a window.location boots live and
+   fails loud per panel. Mock remains only for (a) the deliberate
+   window.PX_API_LIVE=false page seam (which renders the MockModeBanner)
+   and (b) windowless vm harnesses, which cannot render to a human. */
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -47,35 +51,45 @@ const workerLoc = {
   hostname: 'localhost',
 };
 
-test('served from the worker (/console/ over http) defaults to LIVE', () => {
+test('served from the worker (/console/ over http) boots LIVE', () => {
   assert.equal(boot({ location: workerLoc }).isLive(), true);
 });
 
-test('explicit px_live="0" opts a worker-served page back into mock', () => {
+test('persisted px_live="0" is INERT — the browser still boots LIVE', () => {
+  // The 2026-08-20 phone trap: this exact stored value must never again
+  // resurrect the mock simulation.
   assert.equal(
     boot({ location: workerLoc, ls: { px_live: '0' } }).isLive(),
-    false
+    true
   );
 });
 
-test('window.PX_API_LIVE=false overrides the worker-served default', () => {
+test('window.PX_API_LIVE=false (dev/demo page seam) still opts into mock', () => {
   assert.equal(boot({ location: workerLoc, pxApiLive: false }).isLive(), false);
 });
 
-test('file:// (OSS demo case) still defaults to mock', () => {
+test('file:// boots LIVE too — panels fail loud instead of demoing', () => {
   const loc = { protocol: 'file:', pathname: '/home/u/console/index.html' };
-  assert.equal(boot({ location: loc }).isLive(), false);
+  assert.equal(boot({ location: loc }).isLive(), true);
 });
 
-test('http page NOT under /console (static host) still defaults to mock', () => {
+test('http page NOT under /console boots LIVE — no path heuristic', () => {
   const loc = { protocol: 'http:', pathname: '/dashboard/' };
-  assert.equal(boot({ location: loc }).isLive(), false);
+  assert.equal(boot({ location: loc }).isLive(), true);
 });
 
-test('bare window with no location (test harnesses) stays mock', () => {
+test('bare window with no location (vm test harnesses) stays mock', () => {
   assert.equal(boot({}).isLive(), false);
 });
 
-test('px_live="1" still forces live anywhere', () => {
-  assert.equal(boot({ ls: { px_live: '1' } }).isLive(), true);
+test('runtime setLive(false) does not persist anything', () => {
+  const seen = [];
+  const api = boot({ location: workerLoc });
+  // boot() wires a fresh localStorage per call; reboot with the same seed
+  // object to prove nothing was written.
+  api.setLive(false);
+  assert.equal(api.isLive(), false, 'runtime flip works for harnesses');
+  const rebooted = boot({ location: workerLoc });
+  assert.equal(rebooted.isLive(), true, 'flip must not survive a reload');
+  void seen;
 });

@@ -148,7 +148,7 @@ function SettingControl({ s, onChange, disabled }) {
 /* ─── Connection panel ──────────────────────────────────────── */
 function ConnectionPanel({ onReload }) {
   const api = window.PX.api;
-  const [live, setLive] = React.useState(api.isLive());
+  const [live] = React.useState(api.isLive());
   const [base, setBase] = React.useState(api.config.base);
   const [clientId, setClientId] = React.useState(api.config.clientId);
   const [clientSecret, setClientSecret] = React.useState(
@@ -173,15 +173,6 @@ function ConnectionPanel({ onReload }) {
       setTest({ state: 'err', msg: String(e.message || e) });
     }
   };
-  const flipLive = (on) => {
-    setLive(on);
-    api.setLive(on);
-    api.setBase(base);
-    api.setClient(clientId, clientSecret);
-    api.setScope(scope);
-    setTest({ state: 'idle', msg: '' });
-    onReload();
-  };
   const changeSim = (s) => {
     setSim(s);
     api.setSim(s);
@@ -191,12 +182,15 @@ function ConnectionPanel({ onReload }) {
   return (
     <div className={`conn ${live ? 'conn--live' : ''}`}>
       <div className="conn__head">
+        {/* Status badge only — the LIVE/MOCK toggle is gone. One fat-fingered
+            flip persisted px_live='0' and locked a phone into the mock
+            simulation indefinitely (2026-08-20); browsers now always boot
+            live and mock is a page-level dev seam (window.PX_API_LIVE). */}
         <span className={`tag ${live ? 'tag--mint' : 'tag--amber'}`}>
-          {live ? '● LIVE' : '○ MOCK'}
+          {live ? '● LIVE' : '○ MOCK (dev seam)'}
         </span>
         <span className="conn__title">Worker connection</span>
         <span className="conn__spacer" />
-        <Toggle value={String(live)} onChange={(v) => flipLive(v === 'true')} />
       </div>
       <div className="conn__grid">
         <div className="field">
