@@ -8,7 +8,7 @@
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "scripts": {
     "prebuild": "node scripts/prebuild-cache-guard.mjs",
-    "build": "next build",
+    "build": "next build --webpack",
     "dev": "cross-env PORT=3000 next dev",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
