@@ -1,5 +1,967 @@
 {
-  "count": 0,
-  "events": [],
-  "server_time": "2026-08-17T08:35:45.693662+00:00"
+  "count": 50,
+  "events": [
+    {
+      "id": 395607,
+      "timestamp": "2026-08-21T08:14:01.897332+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395605,
+      "timestamp": "2026-08-21T08:14:01.896719+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 85,
+        "shot_idx": 6,
+        "duration_s": 5.8,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395604,
+      "timestamp": "2026-08-21T08:14:01.896183+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 75,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395603,
+      "timestamp": "2026-08-21T08:14:01.895632+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395602,
+      "timestamp": "2026-08-21T08:14:01.895061+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 30,
+        "shot_idx": 3,
+        "duration_s": 6,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 395601,
+      "timestamp": "2026-08-21T08:14:01.894452+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 100,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395600,
+      "timestamp": "2026-08-21T08:14:01.893859+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395599,
+      "timestamp": "2026-08-21T08:14:01.893021+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395568,
+      "timestamp": "2026-08-21T08:09:41.942981+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395566,
+      "timestamp": "2026-08-21T08:09:37.593676+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395565,
+      "timestamp": "2026-08-21T08:09:33.066572+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395564,
+      "timestamp": "2026-08-21T08:09:31.161501+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395563,
+      "timestamp": "2026-08-21T08:09:26.886303+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395562,
+      "timestamp": "2026-08-21T08:09:25.058481+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395540,
+      "timestamp": "2026-08-21T08:05:59.678473+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 11,
+        "duration_s": 18,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395539,
+      "timestamp": "2026-08-21T08:05:59.677944+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 10,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395538,
+      "timestamp": "2026-08-21T08:05:59.677506+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 9,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395537,
+      "timestamp": "2026-08-21T08:05:59.677030+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 8,
+        "duration_s": 12.4,
+        "qa_outcome": "regenerated"
+      }
+    },
+    {
+      "id": 395536,
+      "timestamp": "2026-08-21T08:05:59.676526+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395535,
+      "timestamp": "2026-08-21T08:05:59.675826+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "cli_demo",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 80,
+        "shot_idx": 6,
+        "duration_s": 6.2,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395534,
+      "timestamp": "2026-08-21T08:05:59.675099+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 5,
+        "duration_s": 18,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395533,
+      "timestamp": "2026-08-21T08:05:59.674367+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "cli_demo",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 5.72,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395532,
+      "timestamp": "2026-08-21T08:05:59.673606+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 18,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395531,
+      "timestamp": "2026-08-21T08:05:59.672871+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 2,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395530,
+      "timestamp": "2026-08-21T08:05:59.672063+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395529,
+      "timestamp": "2026-08-21T08:05:59.670654+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 92,
+        "shot_idx": 0,
+        "duration_s": 12,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395499,
+      "timestamp": "2026-08-21T08:00:28.063993+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "d5c23681-73df-4148-865a-916728b4d399",
+      "severity": "info",
+      "details": {
+        "topic": "The Hallucinated Expert",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 395486,
+      "timestamp": "2026-08-21T07:59:19.243662+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395485,
+      "timestamp": "2026-08-21T07:59:14.673702+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395484,
+      "timestamp": "2026-08-21T07:59:12.793644+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 1,
+        "attempt_scores": [
+          1
+        ]
+      }
+    },
+    {
+      "id": 395483,
+      "timestamp": "2026-08-21T07:59:10.924487+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395481,
+      "timestamp": "2026-08-21T07:59:06.406741+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395480,
+      "timestamp": "2026-08-21T07:59:04.359434+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395209,
+      "timestamp": "2026-08-21T07:12:46.668841+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_gen",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 7,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395208,
+      "timestamp": "2026-08-21T07:12:46.668070+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 85,
+        "shot_idx": 6,
+        "duration_s": 5.8,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395206,
+      "timestamp": "2026-08-21T07:12:46.667491+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 45,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 395205,
+      "timestamp": "2026-08-21T07:12:46.666311+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 98,
+        "shot_idx": 4,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395203,
+      "timestamp": "2026-08-21T07:12:46.665785+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 30,
+        "shot_idx": 3,
+        "duration_s": 6,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 395202,
+      "timestamp": "2026-08-21T07:12:46.665147+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395201,
+      "timestamp": "2026-08-21T07:12:46.664485+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 1,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395200,
+      "timestamp": "2026-08-21T07:12:46.663728+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395165,
+      "timestamp": "2026-08-21T07:07:17.527025+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395164,
+      "timestamp": "2026-08-21T07:07:13.228593+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395163,
+      "timestamp": "2026-08-21T07:07:08.815722+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395162,
+      "timestamp": "2026-08-21T07:07:06.868546+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395158,
+      "timestamp": "2026-08-21T07:07:02.556864+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395157,
+      "timestamp": "2026-08-21T07:07:00.766343+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 395153,
+      "timestamp": "2026-08-21T07:06:27.788958+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 11,
+        "duration_s": 18,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395152,
+      "timestamp": "2026-08-21T07:06:27.788192+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 10,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 395151,
+      "timestamp": "2026-08-21T07:06:27.787456+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "d7948d57-7a96-4f0c-ac44-7b93a7f24afd",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 9,
+        "duration_s": 15,
+        "qa_outcome": "accepted"
+      }
+    }
+  ],
+  "server_time": "2026-08-21T08:32:53.691565+00:00"
 }

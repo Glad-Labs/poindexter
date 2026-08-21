@@ -1,6 +1,21 @@
 {
   "ok": true,
-  "detail": "0 scheduled post(s)",
-  "rows": [],
-  "count": 0
+  "detail": "2 scheduled post(s)",
+  "rows": [
+    {
+      "post_id": "0c964ca4-47c1-4b48-8dc7-b688440f4a0f",
+      "slug": "excessive-agency-jumps-to-3-on-owasps-2026-llm-ris-b8c65125",
+      "title": "Excessive Agency Jumps to #3 on OWASP's 2026 LLM Risk List, Backed by Real Incident Data",
+      "published_at": "2026-08-21T13:00:00+00:00",
+      "status": "scheduled"
+    },
+    {
+      "post_id": "78b0c8f2-35fb-4229-8eb0-6a2083c7cedc",
+      "slug": "why-make-more-money-isnt-a-goal-its-an-antigoal-wa-8c80bcb1",
+      "title": "Why 'Make More Money' Isn't a Goal -- It's an Antigoal Waiting to Be Defined",
+      "published_at": "2026-08-21T16:00:00+00:00",
+      "status": "scheduled"
+    }
+  ],
+  "count": 2
 }
