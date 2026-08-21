@@ -60,6 +60,8 @@ EXPECTED_METADATA_KEYS = frozenset(
         "qa_final_score",
         "qa_flagged",
         "qa_vetoed_by",
+        "qa_final_verdict",
+        "qa_rail_breakdown",
         "content_length",
         "word_count",
         "research_context",

@@ -2323,6 +2323,12 @@ function approvalToInbox(t) {
   // this very inbox (2026-08-20) — so name the flag and the vetoing rails.
   const qaFlagged = !!(t.metadata && t.metadata.qa_flagged);
   const vetoedBy = (t.metadata && t.metadata.qa_vetoed_by) || [];
+  // Full per-rail QA summary for the drawer's QA REVIEW section — structured
+  // breakdown when the draft carries one, else parsed from qa_feedback so
+  // every draft already in the queue gets the same card (PXQa, qa-helpers.js).
+  const qa = window.PXQa
+    ? window.PXQa.summarize({ metadata: t.metadata || {}, qa_feedback: t.qa_feedback })
+    : null;
   const sub = [
     [
       'QUALITY',
@@ -2347,6 +2353,7 @@ function approvalToInbox(t) {
       quality: t.quality_score,
       qa_flagged: qaFlagged,
       qa_vetoed_by: vetoedBy,
+      qa,
       pipeline: t.status,
       topic: t.topic,
       featured_image_url: t.featured_image_url,

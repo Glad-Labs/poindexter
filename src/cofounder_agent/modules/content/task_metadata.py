@@ -119,6 +119,14 @@ def build_task_metadata(
         # Without this the operator saw a flag with no reason and a score
         # that looked clean (2026-08-20).
         "qa_vetoed_by": [str(v) for v in (state.get("vetoed_by") or [])],
+        # The gate's verdict + per-rail breakdown (reviewer / score / approved
+        # / advisory / feedback preview) so the approval card can show WHAT
+        # every rail concluded without a trip to the trace view. Feedback is
+        # already capped to 200 chars by aggregate_rail_reviews.
+        "qa_final_verdict": state.get("qa_final_verdict") or "",
+        "qa_rail_breakdown": [
+            dict(r) for r in (state.get("qa_rail_breakdown") or []) if isinstance(r, dict)
+        ],
         "content_length": len(content_text),
         "word_count": len(content_text.split()),
         # research_context — the corpus the writer was handed (name→URL bullets

@@ -590,6 +590,24 @@ class TestGetPendingApprovals:
         assert len(data["items"]) == 1
         assert data["items"][0]["topic"] == "Blockchain"
 
+    def test_qa_feedback_rides_on_pending_items(self):
+        """The approval card's QA REVIEW section reads qa_feedback straight
+        off the pending row (2026-08-20) — absent means a null, not a 500."""
+        row = {
+            "task_id": "p2", "id": "p2", "task_type": "blog_post",
+            "status": "awaiting_approval", "topic": "T", "title": "T",
+            "quality_score": 99, "content": "c", "featured_image_url": None,
+            "task_metadata": {"qa_flagged": True, "qa_vetoed_by": ["programmatic_validator"]},
+            "qa_feedback": "Final score: 99/100\n- programmatic_validator [programmatic] 0/100 FAIL: boom",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        mock_db = make_mock_db()
+        mock_db.get_tasks_paginated = AsyncMock(return_value=([row], 1))
+        client = TestClient(_build_app(mock_db))
+        item = client.get("/api/tasks/pending-approval").json()["items"][0]
+        assert item["qa_feedback"].startswith("Final score: 99/100")
+        assert item["metadata"]["qa_vetoed_by"] == ["programmatic_validator"]
+
     def test_pagination_defaults_are_correct(self):
         mock_db = make_mock_db()
         mock_db.get_tasks_paginated = AsyncMock(return_value=([], 0))

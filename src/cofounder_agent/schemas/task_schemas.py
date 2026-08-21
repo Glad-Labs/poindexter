@@ -418,6 +418,10 @@ class PendingApprovalItem(BaseModel):
     quality_score: float | None = None
     content_preview: str = ""
     featured_image_url: str | None = None
+    qa_feedback: str | None = Field(
+        None,
+        description="Formatted per-rail QA breakdown for the approval card's QA REVIEW section",
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

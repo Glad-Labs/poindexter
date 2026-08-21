@@ -525,6 +525,10 @@ async def get_pending_approvals(
                         else "No content available"
                     ),
                     "featured_image_url": task.get("featured_image_url"),
+                    # Formatted per-rail QA breakdown (compile_meta). The
+                    # drawer's QA REVIEW section parses it for drafts that
+                    # predate the structured task_metadata.qa_rail_breakdown.
+                    "qa_feedback": task.get("qa_feedback"),
                     "metadata": task.get(
                         "task_metadata", {}
                     ),  # task_metadata is the main JSON column

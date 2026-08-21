@@ -3,6 +3,85 @@
    Verbose readout + action footer, dispatched by entity type.
    ────────────────────────────────────────────────────────────── */
 
+/* ─── QA REVIEW — why the gate decided what it decided ──────────
+   Renders PXQa.summarize() output: the headline (veto reason first),
+   then rails grouped VETO → ADVISORY OBJECTION → PASSED, each with its
+   score and feedback preview. Passes are collapsed behind a toggle so
+   the reason for a flag is the first thing on screen. Every rail is
+   the real rail — nothing is fabricated or hidden; an empty summary
+   says so (feedback_no_dummy_data). */
+function QaRailRow({ r, tone }) {
+  const chip =
+    tone === 'veto' ? ['red', 'VETO'] : tone === 'adv' ? ['amber', 'ADVISORY'] : ['mint', 'PASS'];
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div
+        className="mono"
+        style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', gap: 8 }}
+      >
+        <span className="c-text" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span className={`tag tag--${chip[0]}`} style={{ marginRight: 6 }}>
+            {chip[1]}
+          </span>
+          {r.reviewer}
+        </span>
+        <span className="c-muted tnum">{r.score != null ? `${Math.round(r.score)}/100` : '—'}</span>
+      </div>
+      {r.feedback ? (
+        <p className="c-dim" style={{ fontSize: 11, margin: '3px 0 0', lineHeight: 1.45 }}>
+          {r.feedback}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function QaReview({ qa }) {
+  const [showPasses, setShowPasses] = React.useState(false);
+  const bad = qa.flagged || qa.vetoes.length > 0;
+  return (
+    <>
+      <div className="section-label">
+        QA review{qa.finalScore != null ? ` · gate score ${Math.round(qa.finalScore)}/100` : ''}
+      </div>
+      <p
+        className="mono"
+        style={{ fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}
+      >
+        <span className={`tag ${bad ? 'tag--red' : 'tag--mint'}`} style={{ marginRight: 6 }}>
+          {bad ? '⚑ FLAGGED' : '✓ PASSED'}
+        </span>
+        {qa.headline}
+      </p>
+      {qa.vetoes.map((r) => (
+        <QaRailRow key={r.reviewer} r={r} tone="veto" />
+      ))}
+      {qa.advisoryFails.map((r) => (
+        <QaRailRow key={r.reviewer} r={r} tone="adv" />
+      ))}
+      {qa.passes.length ? (
+        <>
+          <button
+            type="button"
+            className="mbtn"
+            style={{ fontSize: 10, padding: '2px 8px', marginBottom: 8 }}
+            onClick={() => setShowPasses((v) => !v)}
+          >
+            {showPasses ? 'Hide' : 'Show'} {qa.passes.length} passing rail
+            {qa.passes.length === 1 ? '' : 's'}
+          </button>
+          {showPasses ? qa.passes.map((r) => <QaRailRow key={r.reviewer} r={r} tone="pass" />) : null}
+        </>
+      ) : null}
+      {qa.source === 'none' ? (
+        <p className="c-dim" style={{ fontSize: 11, margin: 0 }}>
+          This draft carries no rail breakdown — open the trace for the run detail.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function DL({ rows }) {
   return (
     <dl className="dl">
@@ -294,6 +373,7 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
                   )}
                 </>
               ) : null}
+              {d.qa ? <QaReview qa={d.qa} /> : null}
               <div className="section-label">Routing</div>
               <DL
                 rows={[

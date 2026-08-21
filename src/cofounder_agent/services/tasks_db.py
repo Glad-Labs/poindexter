@@ -1083,9 +1083,13 @@ class TasksDatabase(DatabaseServiceMixin):
         # needs a content PREVIEW + a few scalars, so light=True projects just
         # those and lets Postgres prune the unused view expressions (#619).
         if light:
+            # qa_feedback rides along (a few KB of text per row): the approval
+            # card renders the per-rail QA verdicts from it, so the operator
+            # sees WHY a draft is flagged without leaving the drawer
+            # (2026-08-20). Still none of the heavy content/result blobs.
             select_cols = (
                 "id, task_id, task_type, title, topic, status, created_at, "
-                "quality_score, featured_image_url, "
+                "quality_score, featured_image_url, qa_feedback, "
                 "LEFT(content, 250) AS content, task_metadata"
             )
         else:
