@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.125.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.124.1...v0.125.0) (2026-08-21)
+
+
+### Features
+
+* **console:** QA REVIEW section on the approval card — why a draft is flagged, rail by rail ([#3292](https://github.com/Glad-Labs/glad-labs-stack/issues/3292)) ([5902fa8](https://github.com/Glad-Labs/glad-labs-stack/commit/5902fa8f72e25ab8246163985f72acd4f0554a8f))
+
+
+### Bug Fixes
+
+* **cloudflare:** bump wrangler to 4.124 — pulls undici 7.29.0 security release ([#3285](https://github.com/Glad-Labs/glad-labs-stack/issues/3285)) ([54d012a](https://github.com/Glad-Labs/glad-labs-stack/commit/54d012a92fa6eaf2f0a0f17ac84debbfd417c466))
+* **console:** browsers always boot LIVE — mock data can no longer render silently ([#3286](https://github.com/Glad-Labs/glad-labs-stack/issues/3286)) ([3d6c6f9](https://github.com/Glad-Labs/glad-labs-stack/commit/3d6c6f9131f48623610b00ca777261b3b71a124f))
+* **qa:** a vetoing rail drags the score, and the QA flag + veto reasons are surfaced in the queue ([#3291](https://github.com/Glad-Labs/glad-labs-stack/issues/3291)) ([3f3282e](https://github.com/Glad-Labs/glad-labs-stack/commit/3f3282e098133cd319fe9918a4350639ac26524c))
+* **social:** protect the post URL when the model emits it inline — trailing hashtags were deleting it ([#3288](https://github.com/Glad-Labs/glad-labs-stack/issues/3288)) ([28105f7](https://github.com/Glad-Labs/glad-labs-stack/commit/28105f7cbe470a340e03d89c7975d3ac10b71836))
+* **social:** reap promos of max-retry 'failed' tasks — the orphan reaper never covered them ([#3287](https://github.com/Glad-Labs/glad-labs-stack/issues/3287)) ([4440c38](https://github.com/Glad-Labs/glad-labs-stack/commit/4440c389dbfe6664c67794637da33ec132b43a4e))
+* **validator:** truncation detector looks past an appended Sources block ([#3290](https://github.com/Glad-Labs/glad-labs-stack/issues/3290)) ([b561466](https://github.com/Glad-Labs/glad-labs-stack/commit/b561466a712e5fda0e774f67b8c4a391abc456db))
+* **validator:** word-bound 'our'/'we' in company-claim patterns — 'your revenue' was a critical veto ([#3289](https://github.com/Glad-Labs/glad-labs-stack/issues/3289)) ([6e77585](https://github.com/Glad-Labs/glad-labs-stack/commit/6e775859b124cc25c95874caa3dd5b8e5fa6f0b2))
+
 ## [0.124.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.124.0...v0.124.1) (2026-08-20)
 
 
