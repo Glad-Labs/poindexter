@@ -1,0 +1,36 @@
+# Poindexter host Recovery Agent (:9841) — the endpoint the brain daemon
+# POSTs to for host-level recovery it cannot do from inside a container
+# (scripts/recovery-agent.py; consumers: brain/health_probes.py remediation
+# for `ollama`, brain/mcp_http_probe.py for `mcp-http`,
+# brain/compose_drift_probe.py for `compose-reapply`).
+#
+# Linux port of the Windows logon Scheduled Task + the PowerShell own-liveness
+# watchdog (2026-08-23). systemd IS the watchdog here: Restart=always brings
+# the agent back if it crashes or wedges, so the separate watchdog process
+# the Windows task needed has no Linux counterpart.
+#
+# Runs from the DEPLOY CLONE so deploy-checkout-sync keeps the script current.
+# The bearer token is read by the script from ~/.poindexter/bootstrap.toml
+# (`poindexter_recovery_token`); the brain reads the same value from
+# app_settings.mcp_http_probe_recovery_token. Binds 0.0.0.0 so the brain
+# container reaches it via host-gateway (host.docker.internal:9841).
+#
+# System-scope restarts (`ollama-primary.service`, `poindexter-mcp-http.service`)
+# run via `sudo -n systemctl restart <unit>`; grant the service user exactly
+# those (see docs/operations/self-healing.md → "Linux recovery agent").
+#
+# Operators: set User= and the paths to your login (ships generic).
+[Unit]
+Description=Poindexter host Recovery Agent (:9841)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=poindexter
+WorkingDirectory=/home/poindexter/.poindexter/deploy/glad-labs-stack
+ExecStart=/usr/bin/python3 /home/poindexter/.poindexter/deploy/glad-labs-stack/scripts/recovery-agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

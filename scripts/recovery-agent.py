@@ -29,6 +29,11 @@ key in ``~/.poindexter/bootstrap.toml``. The same token is stored in
 ``app_settings`` (currently under ``mcp_http_probe_recovery_token``) so the
 brain probes can read it.
 
+On Linux the same surfaces map to systemd units (``_LINUX_SERVICES``) and
+the agent itself runs as ``poindexter-recovery-agent.service``
+(infrastructure/systemd/) with ``Restart=always`` — the own-liveness watchdog
+the Windows Scheduled Task needed is systemd's job here.
+
 Usage:
     python recovery-agent.py
 """
@@ -58,7 +63,13 @@ logger = logging.getLogger("poindexter-recovery-agent")
 # Add a new recoverable surface = add a row here (+ register the caller on the
 # brain side). New consumers POST {"service": "<name>"}.
 # ---------------------------------------------------------------------------
-SERVICES: dict[str, dict[str, str]] = {
+# Two registries, one per host platform. The Windows one is the original
+# (Scheduled Tasks + PowerShell); the Linux one targets the systemd units the
+# Pop!_OS migration installed (infrastructure/systemd/*.service). System-scope
+# units are restarted through ``sudo -n`` — same passwordless-sudo posture
+# docker-watchdog already relies on for ``systemctl restart docker``; grant it
+# narrowly (see docs/operations/self-healing.md → Linux recovery agent).
+_WINDOWS_SERVICES: dict[str, dict[str, str]] = {
     "mcp-http": {"kind": "task", "task": "Poindexter MCP HTTP"},
     "compose-reapply": {"kind": "compose"},
     # Ollama runs as a host process (not a Docker container), so the brain
@@ -74,6 +85,17 @@ SERVICES: dict[str, dict[str, str]] = {
         ),
     },
 }
+_LINUX_SERVICES: dict[str, dict[str, str]] = {
+    "mcp-http": {"kind": "systemd", "unit": "poindexter-mcp-http.service", "scope": "system"},
+    "compose-reapply": {"kind": "compose"},
+    # The brain's ollama_models / ollama_embedding remediation. Restarts the
+    # PRIMARY (:11434, all GPUs) instance only — the vision instance (:11435)
+    # is a separate unit and is not what those probes exercise.
+    "ollama": {"kind": "systemd", "unit": "ollama-primary.service", "scope": "system"},
+}
+SERVICES: dict[str, dict[str, str]] = (
+    _WINDOWS_SERVICES if os.name == "nt" else _LINUX_SERVICES
+)
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 9841
@@ -229,6 +251,34 @@ def _restart_process(command: str) -> tuple[bool, str]:
     return False, (result.stderr or result.stdout or "unknown error").strip()[:300]
 
 
+def _restart_systemd_unit(unit: str, scope: str = "system") -> tuple[bool, str]:
+    """``systemctl restart <unit>`` — system scope via ``sudo -n`` unless root.
+
+    Waits on the restart (systemd returns once the unit is active or failed,
+    bounded by TASK_TIMEOUT_SECONDS) and reports systemd's own stderr on
+    failure, so a missing sudoers grant reads as exactly that in the brain's
+    remediation log rather than a bare "unknown error".
+    """
+    systemctl = shutil.which("systemctl") or "systemctl"
+    is_root = getattr(os, "geteuid", lambda: -1)() == 0
+    if scope == "user":
+        argv = [systemctl, "--user", "restart", unit]
+    elif is_root:
+        argv = [systemctl, "restart", unit]
+    else:
+        argv = ["sudo", "-n", systemctl, "restart", unit]
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv from the registry
+            argv, capture_output=True, text=True, timeout=TASK_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.error("systemd restart subprocess error: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
+    if result.returncode == 0:
+        return True, f"restarted {unit} ({scope})"
+    return False, (result.stderr or result.stdout or "unknown error").strip()[:300]
+
+
 def _compose_reapply() -> tuple[bool, str]:
     """Reconcile drifted containers to the compose spec via ``start-stack.sh``.
 
@@ -274,13 +324,15 @@ def dispatch_recovery(
     *,
     task_fn=_restart_task,
     compose_fn=_compose_reapply,
+    systemd_fn=_restart_systemd_unit,
+    services: dict[str, dict[str, str]] | None = None,
 ) -> tuple[int, dict]:
     """Pure dispatch from a service name to an action. Returns (http_status, body).
 
     The action runners are injectable so this is unit-testable without a real
     socket, Scheduled Task, or docker daemon.
     """
-    spec = SERVICES.get(service)
+    spec = (SERVICES if services is None else services).get(service)
     if spec is None:
         return 400, {"ok": False, "error": f"unknown service: {service!r}"}
 
@@ -291,6 +343,8 @@ def dispatch_recovery(
         ok, detail = compose_fn()
     elif kind == "process":
         ok, detail = _restart_process(spec["command"])
+    elif kind == "systemd":
+        ok, detail = systemd_fn(spec["unit"], spec.get("scope", "system"))
     else:  # registry typo — fail loud, don't silently 200
         return 400, {"ok": False, "error": f"unknown action kind: {kind!r}"}
 

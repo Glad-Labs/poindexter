@@ -323,6 +323,44 @@ host-level recovery. It runs on the host (started windowless at logon by the
   brain, was removed 2026-08-08 with its only consumer — see
   [Host scheduled-work liveness (systemd)](#host-scheduled-work-liveness-systemd).)
 
+### Linux recovery agent (Pop!_OS, 2026-08-23)
+
+On Linux the agent runs as `poindexter-recovery-agent.service`
+(`infrastructure/systemd/`, `Restart=always` — systemd is the own-liveness
+watchdog, so `recovery-agent-watchdog.ps1` has no Linux counterpart) and the
+action registry switches to `_LINUX_SERVICES`, whose surfaces are systemd units:
+
+| Service           | Kind      | Action                                                  |
+| ----------------- | --------- | ------------------------------------------------------- |
+| `ollama`          | `systemd` | `sudo -n systemctl restart ollama-primary.service`      |
+| `mcp-http`        | `systemd` | `sudo -n systemctl restart poindexter-mcp-http.service` |
+| `compose-reapply` | `compose` | `start-stack.sh up -d --no-build` (unchanged)           |
+
+Install (deploy clone on `origin/main`):
+
+```bash
+sudo install -m 644 ~/.poindexter/deploy/glad-labs-stack/infrastructure/systemd/poindexter-recovery-agent.service /etc/systemd/system/
+# edit User= / paths for your login, then:
+sudo systemctl daemon-reload && sudo systemctl enable --now poindexter-recovery-agent
+curl -s http://localhost:9841/healthz   # → 200
+```
+
+The service user needs passwordless sudo for exactly the two restarts (same
+posture as docker-watchdog's `systemctl restart docker`):
+
+```
+# /etc/sudoers.d/poindexter-recovery  (visudo -cf before installing)
+<user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart ollama-primary.service, /usr/bin/systemctl restart poindexter-mcp-http.service
+```
+
+Then point the brain at it: `poindexter settings set mcp_http_probe_recovery_url
+http://host.docker.internal:9841/recover` (the token is already shared via
+`mcp_http_probe_recovery_token` / bootstrap `poindexter_recovery_token`).
+Without the URL, every `recover_via_agent` remediation logs
+`[SELF-HEAL] FAILED — recovery agent URL/token not configured` and pages —
+which is what the operator saw for the `ollama_embedding` false positives
+before stack#3300.
+
 ### Action kinds
 
 The agent's `SERVICES` registry maps each service name to an action kind:

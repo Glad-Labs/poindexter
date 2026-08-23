@@ -62,11 +62,69 @@ def test_task_kind_invokes_task_fn_with_registered_name():
 
     status, body = agent.dispatch_recovery(
         "mcp-http", task_fn=fake_task, compose_fn=lambda: (True, "x"),
+        services=agent._WINDOWS_SERVICES,
     )
     assert status == 200 and body["ok"] is True
     # The registered Scheduled-Task name is what gets restarted — proves the
     # existing mcp-http behavior survives the action-kinds generalization.
     assert seen["name"] == "Poindexter MCP HTTP"
+
+
+def test_linux_registry_routes_to_systemd_units():
+    """Pop!_OS port: the same surfaces map to systemd units, and the ollama
+    action targets the PRIMARY instance the brain's probes exercise."""
+    seen = []
+
+    def fake_systemd(unit, scope):
+        seen.append((unit, scope))
+        return True, f"restarted {unit}"
+
+    for svc in ("ollama", "mcp-http"):
+        status, body = agent.dispatch_recovery(
+            svc, systemd_fn=fake_systemd, services=agent._LINUX_SERVICES,
+        )
+        assert status == 200 and body["ok"] is True, svc
+    assert seen == [("ollama-primary.service", "system"),
+                    ("poindexter-mcp-http.service", "system")]
+
+
+def test_linux_registry_keeps_compose_reapply():
+    status, body = agent.dispatch_recovery(
+        "compose-reapply", compose_fn=lambda: (True, "dispatched"),
+        services=agent._LINUX_SERVICES,
+    )
+    assert status == 200 and body["detail"] == "dispatched"
+
+
+def test_systemd_restart_uses_sudo_for_system_scope_when_unprivileged(monkeypatch):
+    calls = {}
+
+    class _R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **kw):
+        calls["argv"] = argv
+        return _R()
+
+    monkeypatch.setattr(agent.subprocess, "run", fake_run)
+    monkeypatch.setattr(agent.os, "geteuid", lambda: 1000, raising=False)
+    ok, detail = agent._restart_systemd_unit("ollama-primary.service", "system")
+    assert ok and "ollama-primary.service" in detail
+    assert calls["argv"][:2] == ["sudo", "-n"]
+    assert calls["argv"][-2:] == ["restart", "ollama-primary.service"]
+
+
+def test_systemd_restart_surfaces_systemd_stderr(monkeypatch):
+    class _R:
+        returncode = 1
+        stdout = ""
+        stderr = "sudo: a password is required"
+
+    monkeypatch.setattr(agent.subprocess, "run", lambda *a, **k: _R())
+    ok, detail = agent._restart_systemd_unit("ollama-primary.service", "system")
+    assert not ok and "password is required" in detail
 
 
 def test_compose_kind_invokes_compose_fn():
@@ -197,7 +255,8 @@ def test_compose_reapply_spawn_failure_is_reported(monkeypatch):
 def test_ollama_registered_as_process_kind():
     """SERVICES must declare "ollama" with kind="process" so dispatch_recovery
     routes it to _restart_process instead of the scheduled-task or compose paths."""
-    spec = agent.SERVICES.get("ollama")
+    # Windows registry (the platform-selected SERVICES is systemd on Linux CI).
+    spec = agent._WINDOWS_SERVICES.get("ollama")
     assert spec is not None, '"ollama" not found in SERVICES'
     assert spec["kind"] == "process"
     assert "command" in spec, '"ollama" SERVICES entry missing "command" key'
@@ -213,7 +272,7 @@ def test_ollama_service_runs_powershell_kill_and_start(monkeypatch):
         return True, "process restart command succeeded"
 
     monkeypatch.setattr(agent, "_restart_process", fake_restart_process)
-    status, body = agent.dispatch_recovery("ollama")
+    status, body = agent.dispatch_recovery("ollama", services=agent._WINDOWS_SERVICES)
     assert status == 200 and body["ok"] is True
     cmd = seen.get("command", "")
     assert "ollama" in cmd.lower()
