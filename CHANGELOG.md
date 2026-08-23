@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.126.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.125.0...v0.126.0) (2026-08-23)
+
+
+### Features
+
+* **recovery-agent:** Linux port — systemd actions + a systemd unit for the agent itself ([#3301](https://github.com/Glad-Labs/glad-labs-stack/issues/3301)) ([5f4a1e3](https://github.com/Glad-Labs/glad-labs-stack/commit/5f4a1e3ada58118b850088e145d19027ff973254))
+
+
+### Bug Fixes
+
+* **brain:** ollama_embedding probe defers while the GPU is held — busy is not down ([#3300](https://github.com/Glad-Labs/glad-labs-stack/issues/3300)) ([0e05038](https://github.com/Glad-Labs/glad-labs-stack/commit/0e0503896b8b8a9677ac0afdb43310cf4e30f15b))
+
 ## [0.125.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.124.1...v0.125.0) (2026-08-21)
 
 
