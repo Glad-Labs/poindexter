@@ -67,6 +67,12 @@ def set_http_client(client: httpx.AsyncClient | None) -> None:
     http_client = client
 
 
+# Statuses that mean "an anti-bot layer refused us", not "the page is gone".
+# 403 (WAF), 429 (rate limit), 999 (LinkedIn), 418 (teapot-as-WAF, e.g. some
+# nginx bot rules). 401 is deliberately absent: an auth-gated citation is a
+# bad citation for readers even when the page exists.
+_BOT_WALL_STATUSES = frozenset({403, 418, 429, 999})
+
 # Match markdown link [text](url) — capture url only. We also catch
 # bare-URL autolinks <https://...> and plain-paste https://... outside
 # markdown link syntax, since the writer occasionally emits either form.
@@ -80,7 +86,7 @@ _BARE_URL_RE = re.compile(
 @dataclass
 class CitationIssue:
     url: str
-    reason: str  # "dead", "timeout", "dns", "bad_status"
+    reason: str  # "dead", "timeout", "dns", "bad_status", "blocked"
     detail: str
     status_code: int | None = None
 
@@ -92,12 +98,24 @@ class CitationReport:
     alive: list[str] = field(default_factory=list)
     dead: list[CitationIssue] = field(default_factory=list)
     dead_ratio: float = 0.0
+    # Bot-walled URLs (403/429/999 after the GET fallback). Unverifiable is
+    # not dead: a WAF refusing our crawler UA says nothing about what a human
+    # reader gets, and counting these as dead rejected real drafts (2026-08:
+    # medium.com links vetoed at 50% "dead"). Excluded from dead_ratio; kept
+    # here so the QA feedback still names them.
+    blocked: list[CitationIssue] = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.unique_urls:
             return "No external URLs to verify"
+        blocked_note = (
+            f" ({len(self.blocked)} bot-walled, unverifiable)" if self.blocked else ""
+        )
         if not self.dead:
-            return f"All {self.unique_urls} external URL(s) verified alive"
+            return (
+                f"All {self.unique_urls - len(self.blocked)} verifiable external "
+                f"URL(s) alive{blocked_note}"
+            ) if self.blocked else f"All {self.unique_urls} external URL(s) verified alive"
         return (
             f"{len(self.dead)}/{self.unique_urls} dead "
             f"({self.dead_ratio:.0%}): "
@@ -181,8 +199,12 @@ async def _head_one(
             headers=headers,
         )
         status = resp.status_code
-        # Some servers 405 on HEAD but 200 on GET. Fall back to a lightweight GET.
-        if status == 405:
+        # Many servers reject HEAD outright — not just 405: real sites in the
+        # 2026-08 sample 404'd or 403'd HEAD while serving 200 to GET
+        # (nithinanil.com 404→200, news.ycombinator 405→200), and those
+        # verdicts hard-vetoed live drafts. ANY failing HEAD gets one
+        # lightweight GET before the URL is judged.
+        if status >= 400:
             resp = await client.get(
                 url,
                 timeout=timeout_s,
@@ -192,6 +214,16 @@ async def _head_one(
             status = resp.status_code
         if 200 <= status < 400:
             return (url, None)
+        if status in _BOT_WALL_STATUSES:
+            # A WAF refusing our (honest) crawler UA is unverifiable, not
+            # dead — a human reader may load it fine. Reported separately;
+            # never counted toward the dead ratio.
+            return (url, CitationIssue(
+                url=url,
+                reason="blocked",
+                detail=f"HTTP {status} (bot wall — unverifiable via crawler UA)",
+                status_code=status,
+            ))
         return (url, CitationIssue(
             url=url,
             reason="bad_status",
@@ -281,19 +313,28 @@ class CitationVerifier:
 
         alive: list[str] = []
         dead: list[CitationIssue] = []
+        blocked: list[CitationIssue] = []
         for url, issue in results:
             if issue is None:
                 alive.append(url)
+            elif issue.reason == "blocked":
+                blocked.append(issue)
             else:
                 dead.append(issue)
 
         unique = len(urls)
+        # Bot-walled URLs are excluded from the ratio's DENOMINATOR too —
+        # otherwise a draft with 1 alive + 1 blocked link would read as 0%
+        # dead while 1 dead + 1 blocked read as 50%, grading the same
+        # unverifiable link differently depending on its neighbours.
+        verifiable = unique - len(blocked)
         return CitationReport(
             total_urls=unique,
             unique_urls=unique,
             alive=alive,
             dead=dead,
-            dead_ratio=(len(dead) / unique) if unique else 0.0,
+            blocked=blocked,
+            dead_ratio=(len(dead) / verifiable) if verifiable else 0.0,
         )
 
 
