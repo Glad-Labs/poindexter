@@ -82,7 +82,57 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     content_text, hero_subject = extract_hero_subject(content_text)
     content_text = number_inline_markers(content_text, max_inline)
 
-    # VRAM guard: unload writer LLM before image-gen may load.
+    # Check for existing markers.
+    placeholders = _PLACEHOLDER_RE.findall(content_text)
+    stages = state.get("stages") or {}
+
+    if not placeholders:
+        # Ask the Image Decision Agent to plan + inject. This runs BEFORE the
+        # VRAM guard below: the guard unloads the local LLM to make room for
+        # image-gen, but the decision agent IS a local-LLM call — with both
+        # pinned to the same 31B model, the old order forced a full 17 GB
+        # reload right before the call, which under ComfyUI/image-gen VRAM
+        # contention blew the 300 s provider timeout on every run for a week.
+        from modules.content.atoms._image_helpers import plan_and_inject_placeholders
+        content_text, plan = await plan_and_inject_placeholders(
+            content_text, topic, category, site_config=site_config,
+        )
+        if plan is not None and plan.get("agent_error"):
+            stages["2c_image_agent_error"] = plan["agent_error"]
+            # Loud, not silent: zero inline images because the planner
+            # FAILED is a pipeline defect the operator must see (Findings
+            # board / Discord), not an editorial choice. Every canonical_blog
+            # post 2026-08-17→23 shipped image-less this way, unflagged.
+            try:
+                from utils.findings import emit_finding
+                _tid = str(state.get("task_id") or "")
+                emit_finding(
+                    source="content.plan_image_markers",
+                    kind="inline_images_skipped",
+                    title="Inline images skipped — image decision agent failed",
+                    body=(
+                        f"Task {_tid[:8]}: the Image Decision Agent returned no "
+                        f"plan, so this draft ships with no inline images. "
+                        f"Reason: {plan['agent_error']}"
+                    ),
+                    severity="warn",
+                    dedup_key=f"inline_images_skipped:{_tid}",
+                    extra={"task_id": _tid or None, "error": plan["agent_error"]},
+                )
+            except Exception as _fexc:  # noqa: BLE001 — telemetry never blocks the graph
+                logger.warning("[content.plan_image_markers] finding emit failed: %s", _fexc)
+        if plan is not None and plan.get("featured_image_plan"):
+            # Surface featured image plan as a side-output for downstream.
+            # We return it here so the state seam preserves it.
+            result_extra = {"featured_image_plan": plan["featured_image_plan"]}
+        else:
+            result_extra: dict[str, Any] = {}  # type: ignore[no-redef]
+        placeholders = _PLACEHOLDER_RE.findall(content_text)
+    else:
+        result_extra = {}
+
+    # VRAM guard: unload the local writer/planner LLM before image-gen (the
+    # next node) may load. Deliberately AFTER the decision agent — see above.
     try:
         from services.llm_providers.ollama_unload import maybe_unload_writer_before_image_gen
         await maybe_unload_writer_before_image_gen(
@@ -95,28 +145,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # alongside it; the SDXL VRAM gate downstream is what actually
         # refuses to over-subscribe, and it fails loudly on its own.
         logger.debug("[content.plan_image_markers] VRAM guard skipped: %s", exc)
-
-    # Check for existing markers.
-    placeholders = _PLACEHOLDER_RE.findall(content_text)
-    stages = state.get("stages") or {}
-
-    if not placeholders:
-        # Ask the Image Decision Agent to plan + inject.
-        from modules.content.atoms._image_helpers import plan_and_inject_placeholders
-        content_text, plan = await plan_and_inject_placeholders(
-            content_text, topic, category, site_config=site_config,
-        )
-        if plan is not None and plan.get("agent_error"):
-            stages["2c_image_agent_error"] = plan["agent_error"]
-        if plan is not None and plan.get("featured_image_plan"):
-            # Surface featured image plan as a side-output for downstream.
-            # We return it here so the state seam preserves it.
-            result_extra = {"featured_image_plan": plan["featured_image_plan"]}
-        else:
-            result_extra: dict[str, Any] = {}  # type: ignore[no-redef]
-        placeholders = _PLACEHOLDER_RE.findall(content_text)
-    else:
-        result_extra = {}
 
     # Split the `screenshot:` prefix back out of the description (see
     # _writer_markers). Plans carrying a screenshot_target are routed to the

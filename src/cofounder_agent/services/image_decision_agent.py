@@ -63,6 +63,13 @@ class ImagePlanResult:
     images: list[ImagePlan] = field(default_factory=list)
     featured_image: ImagePlan | None = None
     raw_response: str = ""
+    # Why the plan is empty when it is empty. ``plan_images`` catches its own
+    # failures (a planning hiccup must never fail the post), but an empty
+    # plan from a TIMEOUT and an empty plan from "this article needs no
+    # images" looked identical to the caller — which is how every
+    # canonical_blog post shipped with zero inline images for a week
+    # (2026-08-17→23) without a single finding. Callers record + surface it.
+    error: str = ""
 
 
 def _extract_sections(content: str, *, body_chars: int) -> list[dict]:
@@ -197,12 +204,17 @@ async def plan_images(
         # implementation details specific to the raw httpx path; the
         # provider layer handles connectivity and retries internally.
         messages = [{"role": "user", "content": prompt}]
+        # JSON-shaped planning task: disable the model's reasoning phase. A
+        # thinking model otherwise spends the 800-token budget (and minutes)
+        # deliberating before emitting the plan — under VRAM contention that
+        # alone pushed a 31B planner past the 300 s provider timeout.
         completion = await dispatch_complete(
             pool=pool,
             messages=messages,
             model=model,
             tier="budget",
             phase="image_decision_agent",
+            think=False,
             options={"num_predict": 800, "temperature": 0.7},
         )
         raw = (getattr(completion, "text", "") or "").strip()
@@ -298,7 +310,7 @@ async def plan_images(
     except json.JSONDecodeError as e:
         logger.warning("[IMAGE_AGENT] Failed to parse LLM response as JSON: %s", e)
         logger.debug("[IMAGE_AGENT] Raw response: %s", raw[:500])
-        return ImagePlanResult(raw_response=raw)
+        return ImagePlanResult(raw_response=raw, error=f"unparseable plan: {e}")
     except Exception as e:
         logger.warning("[IMAGE_AGENT] Image planning failed: %s", e)
-        return ImagePlanResult()
+        return ImagePlanResult(error=f"{type(e).__name__}: {str(e)[:300]}")

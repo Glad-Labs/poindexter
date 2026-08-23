@@ -249,7 +249,11 @@ async def _plan_and_inject_placeholders(
         return content_text, {"agent_error": str(agent_err)}
 
     if not plan.images:
-        return content_text, None
+        # Empty plan: honest "no images" (None) vs a failed planner, which the
+        # atom records as 2c_image_agent_error + a finding. Identical before
+        # 2026-08-23, so a week of planner timeouts read as "no images".
+        err = getattr(plan, "error", "")
+        return content_text, ({"agent_error": err} if err else None)
 
     info: dict[str, Any] = {}
     if plan.featured_image:

@@ -125,6 +125,83 @@ class TestPlanImageMarkersVramGuard:
 
 
 # ---------------------------------------------------------------------------
+# Decision-agent failure is LOUD, and the VRAM guard runs AFTER planning
+# (2026-08-23: a week of zero inline images, unflagged)
+# ---------------------------------------------------------------------------
+
+
+class TestPlanImageMarkersAgentFailure:
+    @pytest.mark.asyncio
+    async def test_agent_error_is_recorded_and_emits_a_finding(self):
+        """A planner that FAILED (timeout) must not look like "no images
+        needed": the error lands in stages['2c_image_agent_error'] and an
+        inline_images_skipped finding is emitted."""
+        sc = _site_config()
+        findings = []
+
+        async def fake_plan(content, topic, category, *, site_config):
+            return content, {"agent_error": "Timeout: 300 s"}
+
+        with patch(
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            new=fake_plan,
+        ), patch(
+            "utils.findings.emit_finding",
+            new=lambda **kw: findings.append(kw),
+        ):
+            result = await content_plan_image_markers.run({
+                "content": "## A\n\nbody text\n\n## B\n\nmore",
+                "topic": "Cats",
+                "task_id": "abcdef12-0000",
+                "site_config": sc,
+            })
+
+        assert result["image_plans"] == []
+        assert result["stages"]["2c_image_agent_error"] == "Timeout: 300 s"
+        assert len(findings) == 1
+        f = findings[0]
+        assert f["kind"] == "inline_images_skipped"
+        assert f["severity"] == "warn"
+        assert "Timeout: 300 s" in f["body"]
+        assert f["dedup_key"] == "inline_images_skipped:abcdef12-0000"
+
+    @pytest.mark.asyncio
+    async def test_vram_guard_runs_after_the_decision_agent(self):
+        """The guard unloads the local LLM to make room for image-gen; the
+        decision agent IS a local-LLM call. Unloading first forced a 17 GB
+        reload before every plan — the timeout that killed inline images.
+        Pin the order: plan, THEN unload."""
+        order = []
+
+        async def fake_unload(**kw):
+            order.append("unload")
+            return []
+
+        async def fake_plan(content, topic, category, *, site_config):
+            order.append("plan")
+            return content + "\n\n[IMAGE-1: a cat]\n", None
+
+        with patch(
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            new=fake_unload,
+        ), patch(
+            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            new=fake_plan,
+        ):
+            result = await content_plan_image_markers.run({
+                "content": "## A\n\nbody text",
+                "topic": "Cats",
+                "site_config": _site_config(),
+            })
+
+        assert order == ["plan", "unload"]
+        assert result["image_plans"] == [{"num": "1", "desc": "a cat"}]
+
+
+# ---------------------------------------------------------------------------
 # media_assets producer hook + task_id — content.generate_images
 # ---------------------------------------------------------------------------
 
