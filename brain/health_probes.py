@@ -321,6 +321,18 @@ async def probe_ollama_embedding(_pool) -> dict:
     Uses ``nomic-embed-text`` — the model baked into the embeddings table schema.
     The model should be CPU-pinned (``num_gpu 0`` Modelfile) so it doesn't
     compete for VRAM with the writer or image-gen during inference.
+
+    **Busy is not down.** This probe hits the SAME Ollama instance the
+    pipeline drives with 200–300 s gemma-31B QA calls; with the writer, the
+    vision model and image-gen resident, the embedder is evicted and the
+    embed request queues behind the generation. Every ``timed out`` failure
+    on 2026-08-22/23 (25 pages) sat inside such a hold, while the pipeline's
+    own embeds never failed once — and the rule's remediation (restart
+    Ollama) would have killed the very generation in flight. So, like
+    ``probe_content_gen``, the probe first takes the cross-process GPU
+    advisory lock NON-BLOCKINGLY: held → non-alerting ``skipped_gpu_busy``;
+    free → the embed path is exercised for real, so a genuine embed outage
+    is still caught the moment the GPU is idle.
     """
     model = "nomic-embed-text"
 
@@ -332,7 +344,36 @@ async def probe_ollama_embedding(_pool) -> dict:
             timeout=30,  # CPU-only embedding may be slow on first call
         )
 
-    ok, result = await asyncio.to_thread(_call_embed)
+    async with _pool.acquire() as conn:
+        acquired = bool(
+            await conn.fetchval(
+                "SELECT pg_try_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY
+            )
+        )
+        if not acquired:
+            logger.info(
+                "[ollama_embedding] GPU advisory lock (key=%d) is held — a "
+                "pipeline generation or render is using Ollama; the embed "
+                "request would queue behind it and time out. Deferred this "
+                "cycle (NOT an embed outage).",
+                GPU_ADVISORY_LOCK_KEY,
+            )
+            return {
+                "ok": True,
+                "status": "skipped_gpu_busy",
+                "model": model,
+                "detail": (
+                    "skipped — GPU busy (advisory lock held by an active "
+                    "pipeline generation or render); embed probe deferred to "
+                    "the next cycle — not an embed outage"
+                ),
+            }
+        try:
+            ok, result = await asyncio.to_thread(_call_embed)
+        finally:
+            await conn.execute(
+                "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
+            )
     if not ok:
         return {
             "ok": False,

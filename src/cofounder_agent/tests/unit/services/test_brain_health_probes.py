@@ -1186,6 +1186,35 @@ class TestOllamaEmbeddingProbe:
         assert r["ok"] is False
         assert "detail" in r
 
+    async def test_gpu_busy_is_a_non_alerting_skip_not_an_outage(self):
+        """2026-08-22/23: 25 'embed endpoint failed: timed out' pages, every
+        one inside a 200–300 s gemma QA hold on the same Ollama, with the
+        pipeline's own embeds never failing. Lock held → skip, ok=True, and
+        the embed request is never even sent (it would only queue)."""
+        p = _make_pool()
+        p._lock_conn.fetchval = AsyncMock(return_value=False)
+        with patch("urllib" + ".request.urlopen") as urlopen:
+            r = await hp.probe_ollama_embedding(p)
+        assert r["ok"] is True
+        assert r["status"] == "skipped_gpu_busy"
+        urlopen.assert_not_called()
+        assert not [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ], "never acquired → must not release someone else's lock"
+
+    async def test_lock_is_released_after_a_real_probe(self):
+        p = _make_pool()  # lock free
+        resp = MagicMock()
+        resp.read.return_value = b'{"embeddings": [[0.1, 0.2]]}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_ollama_embedding(p)
+        assert r["ok"] is True
+        assert [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ], "lock taken for the probe must be released"
+
     async def test_empty_embeddings_list_returns_not_ok(self):
         # Ollama may return {"embeddings": []} if the model is not loaded.
         resp = MagicMock()
