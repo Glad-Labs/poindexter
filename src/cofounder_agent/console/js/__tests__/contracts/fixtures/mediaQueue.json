@@ -1,31 +1,6 @@
 {
-  "items": [
-    {
-      "post_id": "78b0c8f2-35fb-4229-8eb0-6a2083c7cedc",
-      "medium": "video",
-      "title": "Why 'Make More Money' Isn't a Goal -- It's an Antigoal Waiting to Be Defined",
-      "slug": "why-make-more-money-isnt-a-goal-its-an-antigoal-wa-8c80bcb1",
-      "quality_score": 100,
-      "created_at": "2026-08-21T06:48:08.542333Z"
-    },
-    {
-      "post_id": "78b0c8f2-35fb-4229-8eb0-6a2083c7cedc",
-      "medium": "podcast",
-      "title": "Why 'Make More Money' Isn't a Goal -- It's an Antigoal Waiting to Be Defined",
-      "slug": "why-make-more-money-isnt-a-goal-its-an-antigoal-wa-8c80bcb1",
-      "quality_score": 100,
-      "created_at": "2026-08-21T02:54:01.975888Z"
-    },
-    {
-      "post_id": "a5b8b266-6e36-4890-a7c2-b427f923aede",
-      "medium": "podcast",
-      "title": "Why Cosine Similarity Quietly Throws Away Information Your RAG Pipeline Needs",
-      "slug": "why-cosine-similarity-quietly-throws-away-informat-d7948d57",
-      "quality_score": 100,
-      "created_at": "2026-08-21T02:34:01.905350Z"
-    }
-  ],
-  "total": 3,
+  "items": [],
+  "total": 0,
   "limit": 50,
   "offset": 0
 }

@@ -1,43 +1,5 @@
 {
-  "count": 3,
-  "events": [
-    {
-      "id": 404572,
-      "timestamp": "2026-08-22T08:08:55.752937+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-      "severity": "info",
-      "details": {
-        "style": "cyberpunk neon style",
-        "topic": "Measuring benchmark optimization in speech recognition"
-      }
-    },
-    {
-      "id": 404539,
-      "timestamp": "2026-08-22T08:02:51.444780+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
-      }
-    },
-    {
-      "id": 404527,
-      "timestamp": "2026-08-22T08:00:07.616758+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-      "severity": "info",
-      "details": {
-        "topic": "Measuring benchmark optimization in speech recognition",
-        "template_slug": "canonical_blog"
-      }
-    }
-  ],
-  "server_time": "2026-08-22T08:21:25.209888+00:00"
+  "count": 0,
+  "events": [],
+  "server_time": "2026-08-24T08:40:20.868703+00:00"
 }
