@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## [0.126.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.126.0...v0.126.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **images:** inline images vanished — decision agent timed out every run, silently ([#3305](https://github.com/Glad-Labs/glad-labs-stack/issues/3305)) ([7689581](https://github.com/Glad-Labs/glad-labs-stack/commit/76895810031c956e0844a6188310e4bc8b5bccdc))
+* **qa:** citation verifier — GET-fallback for HEAD-hostile servers; bot walls are unverifiable, not dead ([#3306](https://github.com/Glad-Labs/glad-labs-stack/issues/3306)) ([060aebd](https://github.com/Glad-Labs/glad-labs-stack/commit/060aebd944f4da92a1d5c2625289ba1e257ed9d4))
+
 ## [0.126.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.125.0...v0.126.0) (2026-08-23)
 
 
