@@ -160,6 +160,11 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # healthy baseline is <0.01.
     "host_memory_available_warning_gb": "4",
     "host_memory_psi_full_stall_critical_ratio": "0.25",
+    # Swap-free floor for PoindexterHostSwapExhausted (poindexter#1021 —
+    # the 2026-08-24 OOM/thrash ran 24h+ with swap at zero free and neither
+    # host-memory rule fired early: MemAvailable stayed above its floor
+    # while dormant model servers quietly consumed the whole swap file).
+    "host_memory_swap_free_warning_percent": "5",
     # Mains supply quality (Glad-Labs/poindexter#924). Watches
     # psu_line_voltage_volts — true outlet voltage from the Shelly wall-plug
     # meter (see docs/operations/wall-power-metering.md), NOT a PSU-internal
@@ -1373,6 +1378,49 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "heavy pipeline work (image/video generation). If this recurs, the "
             "host is structurally oversubscribed — reduce resident load or move "
             "the container tier onto separate hardware."
+        ),
+    },
+    "PoindexterHostSwapExhausted": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        # The CHRONIC third leg of the host-memory family (poindexter#1021):
+        # MemoryLow watches RAM headroom and Thrashing watches acute stall,
+        # but on 2026-08-24 the box sat with swap at ZERO free for 24+ hours
+        # while MemAvailable looked fine (dormant TTS/audio model servers
+        # had quietly consumed the entire swap file) — then one model-load
+        # burst tipped it into global-OOM thrash faster than the acute rules
+        # could page. Swap-FULLNESS is a level, not a page-out rate, so the
+        # zram false-positive audit that killed the pswpout calibration
+        # (2026-07-25) does not apply here.
+        #
+        # A host with no swap configured never fires: SwapTotal=0 makes the
+        # division NaN (dropped by the comparison); the explicit
+        # `SwapTotal > 0` conjunct documents that intent.
+        "expr": (
+            "(100 * node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes "
+            "< {threshold.host_memory_swap_free_warning_percent}) "
+            "and (node_memory_SwapTotal_bytes > 0)"
+        ),
+        # 2h: swap legitimately fills during a heavy render window; only a
+        # SUSTAINED hold means the resident set has outgrown RAM+swap.
+        # node_exporter is host-side, so the long pending clock is safe on a
+        # raw read (restart-gap policy: worker deploys can't blank it).
+        "for": "2h",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Host swap has been effectively full for hours",
+        "description": (
+            "Swap free has been under "
+            "prometheus.threshold.host_memory_swap_free_warning_percent% "
+            "for 2h ({{ $value | humanize }}% free). The host is living "
+            "beyond RAM+swap — dormant model servers (TTS/audio sidecars) "
+            "park themselves in swap, and any model-load burst can tip the "
+            "box into global-OOM thrash before the acute rules can page "
+            "(2026-08-24 incident, poindexter#1021). Check "
+            "container_memory_swap by container on the Hardware & Power "
+            "board; unload or restart the biggest dormant model sidecars, "
+            "and consider whether the resident fleet has outgrown the box."
         ),
     },
     # Postgres connection-pool saturation. Previously static in

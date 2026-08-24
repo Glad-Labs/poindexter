@@ -9,6 +9,13 @@ services:
     image: pgvector/pgvector:pg16
     container_name: poindexter-postgres-local
     restart: unless-stopped
+    # OOM-kill priority (poindexter#1021, 2026-08-24 incident): under global
+    # memory exhaustion the kernel picked a 180MB desktop app while postgres —
+    # the one process whose death risks data — sat at default priority.
+    # Negative = protected; the sacrificial +400 lives on the stateless model
+    # sidecars (image-gen / wan / stable-audio / comfyui / speaches /
+    # chatterbox), which restart clean and reload their weights.
+    oom_score_adj: -500
     ports:
       # Host publish for host-side tools only (poindexter CLI, start-stack token
       # helpers). In-container services reach the DB at postgres-local:5432 and are
@@ -1186,6 +1193,10 @@ services:
       dockerfile: Dockerfile.image-gen
     container_name: poindexter-image-gen-server
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021): stateless model server —
+    # killed-and-restarted beats the whole host thrashing. Pair of the
+    # postgres-local -500.
+    oom_score_adj: 400
     ports:
       - "9836:9836"
     environment:
@@ -1236,6 +1247,8 @@ services:
       dockerfile: Dockerfile.wan
     container_name: poindexter-wan-server
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "9840:9840"
     environment:
@@ -1296,6 +1309,8 @@ services:
       dockerfile: Dockerfile.stable-audio
     container_name: poindexter-stable-audio
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "9839:9839"
     environment:
@@ -1357,6 +1372,9 @@ services:
       dockerfile: Dockerfile.comfyui
     container_name: poindexter-comfyui
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server; the
+    # 2026-08-24 incident's biggest RAM holder (~29GB RSS+swap).
+    oom_score_adj: 400
     command: ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188",
               "--reserve-vram", "${COMFYUI_RESERVE_VRAM_GB:-1.5}"]
     ports:
@@ -1404,6 +1422,8 @@ services:
     image: ghcr.io/speaches-ai/speaches@sha256:6ec12ebf890a17e0d4b242a8ba9e0eb1fb836e60e8a3c857aea9838d541579ac
     container_name: poindexter-speaches
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "8001:8000"
     environment:
@@ -1440,6 +1460,8 @@ services:
       dockerfile: Dockerfile.chatterbox
     container_name: poindexter-chatterbox
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "8011:8000"
     environment:

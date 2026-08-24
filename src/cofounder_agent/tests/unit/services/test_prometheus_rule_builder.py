@@ -1077,6 +1077,10 @@ class TestRestartGapBridging:
             # would be cargo-cult: it would imply a restart hazard that does
             # not exist for host-side series.
             "PoindexterSystemdTimerStale",
+            # node_memory_* is the same host-side node_exporter as the timer
+            # rule above — a worker deploy cannot blank it, so its 2h pending
+            # clock is safe on a raw read (poindexter#1021 swap alert).
+            "PoindexterHostSwapExhausted",
         }
         for name, rule in rb.DEFAULT_RULES.items():
             m = re.fullmatch(r"(\d+)([mh])", str(rule["for"]))
@@ -1564,3 +1568,47 @@ class TestCpuTemperatureRules:
         out = await rb.build_current(pool)
         block = out.split("alert: CpuTemperatureHigh")[1].split("alert:", 1)[0]
         assert "> 95" in block
+
+
+# ---------------------------------------------------------------------------
+# PoindexterHostSwapExhausted (poindexter#1021 — the 2026-08-24 OOM/thrash ran
+# 24h+ with swap at zero free while MemAvailable looked fine, so neither
+# existing host-memory rule fired early)
+# ---------------------------------------------------------------------------
+
+class TestHostSwapExhaustedRule:
+    """The chronic third leg of the host-memory family: MemoryLow watches
+    RAM headroom, Thrashing watches acute PSI stall, this one watches the
+    swap file quietly filling with dormant model servers days ahead."""
+
+    def test_is_a_sustained_warning_not_a_page(self):
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapExhausted"]
+        assert rule["severity"] == "warning"
+        # 2h: swap legitimately fills during a render window; only the
+        # sustained hold is the incident precursor.
+        assert rule["for"] == "2h"
+        assert (
+            "{threshold.host_memory_swap_free_warning_percent}" in rule["expr"]
+        )
+
+    def test_no_swap_host_never_fires(self):
+        """SwapTotal=0 → NaN division (dropped by the comparison); the
+        explicit conjunct documents that a swapless OSS install stays
+        silent by design."""
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapExhausted"]
+        assert "node_memory_SwapTotal_bytes > 0" in rule["expr"]
+
+    def test_threshold_is_seeded_and_tunable(self):
+        assert (
+            rb.DEFAULT_THRESHOLDS["host_memory_swap_free_warning_percent"]
+            == "5"
+        )
+
+    @pytest.mark.asyncio
+    async def test_renders_with_defaults_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        section = out.split("alert: PoindexterHostSwapExhausted")[1].split(
+            "alert:", 1
+        )[0]
+        assert "{threshold." not in section
+        assert "< 5" in section

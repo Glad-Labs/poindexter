@@ -52,6 +52,10 @@ services:
     image: pgvector/pgvector:pg16
     container_name: poindexter-postgres-local
     restart: unless-stopped
+    # OOM-kill priority (poindexter#1021): protect the database under global
+    # memory exhaustion; the sacrificial +400 lives on the stateless model
+    # sidecars, which restart clean. Mirrors docker-compose.local.yml.
+    oom_score_adj: -500
     ports:
       # Override via POSTGRES_HOST_PORT if 5433 is reserved on your
       # machine (Windows Hyper-V dynamically reserves TCP ranges that
@@ -751,6 +755,8 @@ services:
       dockerfile: Dockerfile.image-gen
     container_name: poindexter-image-gen-server
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "9836:9836"
     environment:
@@ -790,6 +796,8 @@ services:
       dockerfile: Dockerfile.chatterbox
     container_name: poindexter-chatterbox
     restart: unless-stopped
+    # Preferred OOM victim (poindexter#1021) — stateless model server.
+    oom_score_adj: 400
     ports:
       - "8011:8000"
     environment:
