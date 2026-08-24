@@ -661,6 +661,14 @@ DEFAULTS: dict[str, str] = {
     'hero_fallback_probe_enabled': 'true',
     'hero_fallback_window_hours': '24',
     'hero_fallback_min_count': '3',
+    # Render-loop escalation (poindexter#1021): per-attempt render_failed
+    # warns are Discord-routine; the SAME task failing repeatedly means a
+    # broken frozen input on a daily cap-reset re-arm loop — that churn
+    # helped OOM the host 2026-08-24, so it pages critical → Telegram.
+    # Window spans two cap-reset days; 6 ≈ 1.5 wedge cycles × both lanes.
+    'media_render_loop_probe_enabled': 'true',
+    'media_render_loop_window_hours': '48',
+    'media_render_loop_min_failures': '6',
     # Narration-lane escalation (2026-08-15): per-render TTS failures are
     # Discord-routine and scrolled past for two days while silent videos
     # shipped; this pages critical → Telegram on a cluster, or on the live
@@ -2092,6 +2100,12 @@ DEFAULTS: dict[str, str] = {
     # the same media_drift forever with no recovery path.
     'media_redispatch_cap_reset_enabled': 'true',
     'media_redispatch_cap_reset_cooldown_hours': '24',
+    # Lifetime bound on the cap-reset self-heal (poindexter#1021): the daily
+    # re-arm turned one permanently-failing render into five days of
+    # model-load churn. After N lifetime resets the task wedges permanently
+    # with a media_redispatch_cap_exhausted finding; the operator re-arms by
+    # zeroing media_pipeline_cap_reset_count after fixing the input.
+    'media_redispatch_cap_reset_max_resets': '5',
     # In-flight grace (poindexter#971): a dispatch marker stamped within this
     # many minutes means the render is (likely) STILL RUNNING — the watchdog's
     # ~15-min cycle is shorter than a hero render (20-30 min), so
@@ -3856,6 +3870,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'hero_fallback_probe_enabled': {'owner': 'probe_hero_fallback', 'value_type': 'boolean'},
     'hero_fallback_window_hours': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
     'hero_fallback_min_count': {'owner': 'probe_hero_fallback', 'value_type': 'integer'},
+    'media_render_loop_probe_enabled': {'owner': 'probe_media_render_loop', 'value_type': 'boolean'},
+    'media_render_loop_window_hours': {'owner': 'probe_media_render_loop', 'value_type': 'integer'},
+    'media_render_loop_min_failures': {'owner': 'probe_media_render_loop', 'value_type': 'integer'},
     'video_image_gen_ready_wait_s': {'owner': 'media_render', 'value_type': 'float'},
     'video_hero_evict_ollama': {'owner': 'media_render', 'value_type': 'boolean'},
     'audio_gen_ambient_prompt_template': {'owner': 'media_scripts', 'value_type': 'string'},
@@ -4018,6 +4035,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_tts_gate_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_enabled': {'owner': 'media_reconciliation', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
+    'media_redispatch_cap_reset_max_resets': {'owner': 'media_reconciliation', 'value_type': 'integer'},
     'media_redispatch_inflight_grace_minutes': {'owner': 'media_reconciliation', 'value_type': 'integer'},
 
     # ----- R2 media orphan-reaper (design 2026-07-11) -----

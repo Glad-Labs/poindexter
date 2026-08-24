@@ -857,11 +857,13 @@ class TestVideoRedispatch:
 
     class _RedispatchPool:
         """Minimal pool double for _redispatch_video: fetchrow resolves the task
-        row; execute returns a command tag."""
+        row; execute returns a command tag; fetchval serves the lifetime
+        cap-reset counter probe (#1021, defaults below the budget)."""
 
-        def __init__(self, task_row, exec_tag="UPDATE 1"):
+        def __init__(self, task_row, exec_tag="UPDATE 1", reset_count=1):
             self._task_row = task_row
             self.execute = AsyncMock(return_value=exec_tag)
+            self.fetchval = AsyncMock(return_value=reset_count)
 
         async def fetchrow(self, *_args):
             return self._task_row
@@ -1086,6 +1088,43 @@ class TestVideoCapReset:
         assert "media_pipeline_redispatch_count >= $2" in sql
         assert "media_pipeline_cap_reset_at IS NULL" in sql
         assert "make_interval(hours => $3)" in sql
+
+    def test_cap_reset_sql_is_lifetime_bounded(self):
+        """poindexter#1021: the daily re-arm must be finite. Each reset
+        increments the lifetime counter and the WHERE refuses past the
+        budget — without this, a permanently-failing render loops forever
+        one cooldown-day at a time (the 2026-08-24 OOM's amplifier)."""
+        sql = MediaReconciliationJob._CAP_RESET_SQL
+        assert (
+            "media_pipeline_cap_reset_count = media_pipeline_cap_reset_count + 1"
+            in sql
+        )
+        assert "media_pipeline_cap_reset_count < $5" in sql
+
+    async def test_reset_budget_exhausted_pages_and_stays_wedged(self):
+        """A task whose lifetime reset budget is spent gets NO re-arm and a
+        terminal media_redispatch_cap_exhausted finding — a render that
+        failed across max_resets separate healthy-infra days is broken on
+        its own inputs, and retrying is damage, not healing."""
+        job = self._job()
+        pool = TestVideoRedispatch._RedispatchPool(
+            dict(self._AT_CAP_ROW), exec_tag="UPDATE 0", reset_count=5,
+        )
+        emit = MagicMock()
+        with patch(
+            "services.media_infra_health.check_media_infra_health",
+            self._health(True, "ok"),
+        ), patch(
+            "services.jobs.media_reconciliation.emit_finding", emit,
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        assert emit.call_count == 1
+        kw = emit.call_args.kwargs
+        assert kw["kind"] == "media_redispatch_cap_exhausted"
+        assert kw["severity"] == "warn"
+        assert "t1" in kw["body"]  # the re-arm SQL names the task
+        assert kw["extra"]["max_resets"] == 5
 
     def test_watchdog_rearm_refunds_the_unclaim_budget(self):
         """poindexter#995: both watchdog re-arm paths reset

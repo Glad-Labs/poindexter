@@ -145,8 +145,23 @@ class StableAudioOpenProvider:
         # Resolve / create output_path. The inference server can either
         # stream bytes back or write to disk; we always end up with a
         # local file the caller can mux into video/podcast.
+        #
+        # Precedence: explicit output_path → output_dir+output_stem (durable;
+        # the provider owns the extension since it resolves the format) →
+        # tempfile. The tempfile rung is for ad-hoc callers ONLY: a tempfile
+        # lives in per-container-private /tmp, so a path that outlives the
+        # run (anything frozen into task_metadata) must come from one of the
+        # first two rungs (poindexter#1021).
         output_path = str(config.get("output_path", "") or "")
         cleanup_on_failure = False
+        if not output_path:
+            out_dir = str(config.get("output_dir", "") or "")
+            out_stem = str(config.get("output_stem", "") or "")
+            if out_dir and out_stem:
+                os.makedirs(out_dir, exist_ok=True)
+                output_path = os.path.join(
+                    out_dir, f"{out_stem}.{output_format}",
+                )
         if not output_path:
             with tempfile.NamedTemporaryFile(
                 suffix=f".{output_format}", delete=False,

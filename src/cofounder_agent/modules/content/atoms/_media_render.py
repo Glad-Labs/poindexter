@@ -34,6 +34,7 @@ What it does:
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from typing import Any
 
@@ -174,6 +175,41 @@ async def render_from_state(
 
     narration = state.get(narration_key) or ""
     ambient = state.get("video_ambient_audio_path") or None
+    # The ambient bed is OPTIONAL and its path is frozen at Stage 1 —
+    # historically as a per-container /tmp tempfile, so at render time (other
+    # container, often days later) the file can be permanently gone. Passing a
+    # dead path to the compositor fails its preflight, and because nothing
+    # classified that as permanent, the re-dispatch loop re-rendered the same
+    # doomed piece for five days straight and helped melt the host on
+    # 2026-08-24 (poindexter#1021). A missing OPTIONAL input degrades soft:
+    # drop the bed, say so loudly, render the video.
+    if ambient and not os.path.exists(ambient):
+        logger.warning(
+            "[media.render] %s: ambient bed missing at %s — rendering "
+            "without the music bed", output_key, ambient,
+        )
+        emit_finding(
+            source="media.render_video",
+            kind="render_input_missing",
+            title=f"{output_key}: frozen ambient bed path is gone — rendered without music",
+            body=(
+                f"task {task_id}: video_ambient_audio_path points at "
+                f"{ambient!r}, which does not exist in the render container. "
+                f"The video renders without its music bed instead of failing. "
+                f"Frozen /tmp paths from before poindexter#1021 are the usual "
+                f"cause; re-generate a bed to the durable dir and jsonb_set "
+                f"the latest pipeline_versions row to restore music on the "
+                f"next re-render."
+            ),
+            severity="warn",
+            dedup_key=f"render_input_missing:{task_id}:ambient",
+            extra={
+                "task_id": str(task_id or ""),
+                "output_key": output_key,
+                "missing_path": str(ambient),
+            },
+        )
+        ambient = None
     # SRT caption track produced by media.transcribe_narration (per-lane #689).
     # Empty-string is the atom's no-op sentinel, so `or None` maps it to None —
     # no track to burn.

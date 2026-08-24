@@ -371,6 +371,41 @@ class TestStableAudioOpenGenerate:
         assert os.path.exists(result.file_path)
         os.remove(result.file_path)  # cleanup
 
+    async def test_output_dir_and_stem_build_durable_path(self, tmp_path):
+        """poindexter#1021: output_dir + output_stem is the durable middle
+        rung — the provider owns the extension (it resolves the format) and
+        creates the directory. Callers whose path outlives the run use this
+        instead of the tempfile fallback."""
+        out_dir = tmp_path / "video"  # does not exist yet — provider mkdirs
+        with _mock_httpx_post(_audio_response(content=b"RIFFdurable")):
+            result = await StableAudioOpenProvider().generate(
+                "warm pad",
+                "ambient",
+                {"output_dir": str(out_dir), "output_stem": "task-1_ambient"},
+            )
+
+        assert result is not None
+        assert result.file_path == str(out_dir / "task-1_ambient.wav")
+        assert (out_dir / "task-1_ambient.wav").read_bytes() == b"RIFFdurable"
+
+    async def test_explicit_output_path_beats_dir_and_stem(self, tmp_path):
+        """Precedence: an explicit output_path wins over dir+stem."""
+        explicit = tmp_path / "explicit.wav"
+        with _mock_httpx_post(_audio_response(content=b"RIFFx")):
+            result = await StableAudioOpenProvider().generate(
+                "warm pad",
+                "ambient",
+                {
+                    "output_path": str(explicit),
+                    "output_dir": str(tmp_path / "ignored"),
+                    "output_stem": "ignored",
+                },
+            )
+
+        assert result is not None
+        assert result.file_path == str(explicit)
+        assert not (tmp_path / "ignored").exists()
+
     async def test_duration_forwarded_to_server(self, tmp_path):
         captured: dict = {}
 

@@ -66,6 +66,14 @@ cooldown); what it no longer does is permanently wedge tasks whose attempts
 were burned by an outage window (``feedback_self_heal_not_suppress``).
 Disable via ``media_redispatch_cap_reset_enabled=false``.
 
+The re-arm is additionally LIFETIME-bounded (poindexter#1021): each reset
+increments ``pipeline_tasks.media_pipeline_cap_reset_count``, and a task at
+``media_redispatch_cap_reset_max_resets`` (default 5) stays wedged with a
+``media_redispatch_cap_exhausted`` finding instead of being re-armed — a
+render that failed across five separate healthy-infra days is broken on its
+own inputs, and the daily re-arm was the amplifier that let one frozen /tmp
+path melt the host on 2026-08-24.
+
 ## Approval-gate seeding (self-healing)
 
 Both passes route every stamped asset through ``_record_media_asset`` →
@@ -1092,20 +1100,30 @@ class MediaReconciliationJob:
     # reset and Stage-2 re-armed — at most once per cooldown, enforced
     # atomically via the ``media_pipeline_cap_reset_at`` stamp. The counter
     # restarts at 1 because this reset IS the first re-dispatch of the fresh
-    # budget. Command tag 'UPDATE 0' = cooldown not elapsed (or a concurrent
-    # cycle won the race).
+    # budget. Command tag 'UPDATE 0' = cooldown not elapsed, lifetime reset
+    # budget exhausted, or a concurrent cycle won the race.
     # The in-flight grace applies here too (poindexter#971): a capped task
     # whose marker was stamped minutes ago is mid-render right now — resetting
     # would clear the marker under the live flow, the exact duplicate-render
     # bug the grace exists to stop. Marker-NULL rows pass (nothing in flight).
+    #
+    # LIFETIME budget ($5, poindexter#1021): the per-24h cooldown bounds the
+    # loop per DAY but not across days — a permanently-failing render (frozen
+    # /tmp bed path) re-wedged and got re-armed daily for five straight days,
+    # and the resulting model-load churn helped melt the host on 2026-08-24.
+    # ``media_pipeline_cap_reset_count`` counts resets forever; at
+    # ``media_redispatch_cap_reset_max_resets`` the task wedges permanently
+    # and only operator action (fix the input, reset the counter) re-arms it.
     _CAP_RESET_SQL = """
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
                media_pipeline_redispatch_count = 1,
                media_pipeline_unclaim_count = 0,
-               media_pipeline_cap_reset_at = NOW()
+               media_pipeline_cap_reset_at = NOW(),
+               media_pipeline_cap_reset_count = media_pipeline_cap_reset_count + 1
          WHERE task_id = $1
            AND media_pipeline_redispatch_count >= $2
+           AND media_pipeline_cap_reset_count < $5
            AND (media_pipeline_cap_reset_at IS NULL
                 OR media_pipeline_cap_reset_at < NOW() - make_interval(hours => $3))
            AND (media_pipeline_dispatched_at IS NULL
@@ -1173,7 +1191,11 @@ class MediaReconciliationJob:
         healthy again, reset the counter and re-arm Stage-2 — at most once per
         ``media_redispatch_cap_reset_cooldown_hours`` per task, enforced
         atomically by the ``media_pipeline_cap_reset_at`` stamp in
-        ``_CAP_RESET_SQL``. Returns True iff this call performed the reset.
+        ``_CAP_RESET_SQL``, and at most
+        ``media_redispatch_cap_reset_max_resets`` times EVER per task
+        (poindexter#1021 — the daily re-arm turned a permanently-failing
+        render into an unbounded multi-day loop). Returns True iff this call
+        performed the reset.
         """
         sc = getattr(self, "_site_config", None)
         if sc is None or not sc.get_bool("media_redispatch_cap_reset_enabled", True):
@@ -1187,11 +1209,61 @@ class MediaReconciliationJob:
             )
             return False
         cooldown_h = sc.get_int("media_redispatch_cap_reset_cooldown_hours", 24) or 24
+        max_resets = max(
+            1, sc.get_int("media_redispatch_cap_reset_max_resets", 5) or 5,
+        )
         result = await pool.execute(
             self._CAP_RESET_SQL, task_id, cap, cooldown_h, grace_minutes,
+            max_resets,
         )
         if not str(result).strip().endswith(" 1"):
-            return False  # cooldown not elapsed, or a concurrent cycle won
+            # Distinguish the terminal case from the benign ones: a task whose
+            # LIFETIME reset budget is spent has failed ~max_resets separate
+            # days on healthy infra — that is a permanently-broken input, not
+            # an outage, and it must be a loud persistent state rather than a
+            # quietly re-armed loop (poindexter#1021).
+            spent = await pool.fetchval(
+                "SELECT media_pipeline_cap_reset_count FROM pipeline_tasks"
+                " WHERE task_id = $1",
+                task_id,
+            )
+            if spent is not None and int(spent) >= max_resets:
+                logger.warning(
+                    "media_reconciliation: post %s (task %s) exhausted its "
+                    "lifetime cap-reset budget (%d) — renders keep failing on "
+                    "healthy infra; permanently wedged pending operator triage",
+                    post_id, task_id, max_resets,
+                )
+                emit_finding(
+                    source="media_reconciliation",
+                    kind="media_redispatch_cap_exhausted",
+                    severity="warn",
+                    title=(
+                        f"Post {post_id} permanently wedged — video render "
+                        f"failed across {max_resets} cap-reset cycles"
+                    ),
+                    body=(
+                        f"Task {task_id} burned its re-dispatch cap ({cap}) and "
+                        f"its lifetime cap-reset budget ({max_resets}) with "
+                        "render infra probing healthy each time — the render is "
+                        "failing on its own inputs, not on an outage, and "
+                        "retrying cannot fix it. The 2026-08-24 instance of "
+                        "this was a frozen /tmp ambient-bed path "
+                        "(poindexter#1021). Fix the frozen inputs, then re-arm "
+                        "with: UPDATE pipeline_tasks SET "
+                        "media_pipeline_cap_reset_count = 0, "
+                        "media_pipeline_redispatch_count = 0 WHERE task_id = "
+                        f"'{task_id}'."  # nosec B608 - operator-instruction TEXT in a finding body, never executed
+                    ),
+                    dedup_key=f"media_redispatch_cap_exhausted:{task_id}",
+                    extra={
+                        "post_id": str(post_id),
+                        "task_id": str(task_id),
+                        "cap": cap,
+                        "max_resets": max_resets,
+                    },
+                )
+            return False  # cooldown/budget not available, or a concurrent cycle won
         logger.warning(
             "media_reconciliation: reset video re-dispatch cap for post %s "
             "(task %s) — render infra healthy again; re-armed Stage-2 "

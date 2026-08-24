@@ -399,6 +399,82 @@ async def test_ambient_path_returned_via_context_updates():
     assert result.context_updates.get("video_ambient_audio_path") == "/tmp/ambient.wav"
 
 
+@pytest.mark.asyncio
+async def test_ambient_and_sting_outputs_are_durable_not_tempfiles(tmp_path):
+    """poindexter#1021: these paths are frozen into task_metadata and consumed
+    by later graphs in a DIFFERENT container, often days later — so
+    generate_audio must be pointed at the shared durable dirs with a
+    deterministic per-task stem. A provider-picked tempfile lives in
+    per-container /tmp and is permanently gone at render time, which is what
+    fed the 2026-08-24 render-fail loop."""
+    from modules.content.stages import generate_media_scripts as gms
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    scene_text = "1. a cinematic wide shot of mountains\n\nSHORT:\nsummary text"
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(
+        return_value=SimpleNamespace(text=scene_text)
+    )
+    calls: list[tuple[str, dict]] = []
+
+    async def mock_generate_audio(prompt, kind, *, site_config, **kw):
+        calls.append((kind, kw))
+        return SimpleNamespace(file_path=f"{kw.get('output_dir', '')}/out.wav")
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="P" * 600)), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=True), \
+         patch.object(gms, "VIDEO_DIR", tmp_path / "video"), \
+         patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"), \
+         patch("modules.content.stages.generate_media_scripts.generate_audio",
+               new=mock_generate_audio):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    by_kind = dict(calls)
+    assert by_kind["ambient"]["output_dir"] == str(tmp_path / "video")
+    assert by_kind["ambient"]["output_stem"] == "t-mediascripts_ambient"
+    assert by_kind["intro"]["output_dir"] == str(tmp_path / "podcast")
+    assert by_kind["intro"]["output_stem"] == "t-mediascripts_intro"
+
+
+@pytest.mark.asyncio
+async def test_tts_output_path_is_durable(tmp_path):
+    """Same contract for the podcast TTS narration: an explicit durable
+    output path under PODCAST_DIR with the task stem, never a tempfile."""
+    from modules.content.stages import generate_media_scripts as gms
+
+    gpu = SimpleNamespace(lock=_fake_lock)
+    seen: dict[str, str] = {}
+
+    async def mock_synthesize_speech(text, *, site_config, output_path=None):
+        seen["path"] = output_path
+        return b"RIFF_fake_wav"
+
+    ctx = _ctx()
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch("services.podcast_service._build_script_with_llm",
+               new=AsyncMock(return_value="E" * 500)), \
+         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+               return_value=True), \
+         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+               new=mock_synthesize_speech), \
+         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+               return_value=False), \
+         patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"):
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok
+    path = seen["path"]
+    assert path.startswith(str(tmp_path / "podcast"))
+    assert "t-mediascripts_tts." in path
+    assert (tmp_path / "podcast").is_dir()  # mkdir'd before synth
+    assert result.context_updates.get("podcast_audio_path") == path
+
+
 # ---------------------------------------------------------------------------
 # Podcast audio paths via context_updates (poindexter#690) — the podcast-audio
 # twin of the #679 ambient discard. The TTS narration + intro sting were
@@ -408,23 +484,18 @@ async def test_ambient_path_returned_via_context_updates():
 # they are built before the video-scenes call.
 # ---------------------------------------------------------------------------
 
-class _FakeNamedTmp:
-    """Stand-in for tempfile.NamedTemporaryFile so the test never touches disk
-    (and dodges the ``:`` -in-suffix Windows footgun from the mock site_config).
-    """
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __enter__(self) -> _FakeNamedTmp:
-        return self
-
-    def __exit__(self, *_a: Any) -> bool:
-        return False
+# (_FakeNamedTmp removed with #1021 — the stage no longer creates tempfiles;
+# audio outputs go to the durable PODCAST_DIR/VIDEO_DIR, patched to tmp_path
+# in the tests above.)
 
 
 @pytest.mark.asyncio
-async def test_podcast_audio_path_returned_via_context_updates():
+async def test_podcast_audio_path_returned_via_context_updates(tmp_path):
+    """The TTS narration path lands in context_updates — since #1021 as a
+    durable per-task path under PODCAST_DIR, never a tempfile (the frozen
+    path is consumed by another container, possibly days later)."""
+    from modules.content.stages import generate_media_scripts as gms
+
     gpu = SimpleNamespace(lock=_fake_lock)
     ctx = _ctx()  # no platform → scene call skipped, only the TTS block runs
 
@@ -440,12 +511,13 @@ async def test_podcast_audio_path_returned_via_context_updates():
                new=_mock_tts), \
          patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=False), \
-         patch("tempfile.NamedTemporaryFile",
-               return_value=_FakeNamedTmp("/tmp/podcast_tts.wav")):
+         patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     assert result.ok
-    assert result.context_updates.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
+    path = result.context_updates.get("podcast_audio_path")
+    assert path.startswith(str(tmp_path / "podcast"))
+    assert "t-mediascripts_tts." in path
 
 
 @pytest.mark.asyncio
@@ -469,7 +541,7 @@ async def test_intro_sting_path_returned_via_context_updates():
 
 
 @pytest.mark.asyncio
-async def test_podcast_audio_paths_preserved_on_scene_failure():
+async def test_podcast_audio_paths_preserved_on_scene_failure(tmp_path):
     """TTS + intro sting are built before the video-scenes call. A later
     scene-parse failure must NOT discard them (same preservation contract as
     podcast_script)."""
@@ -483,6 +555,8 @@ async def test_podcast_audio_paths_preserved_on_scene_failure():
     async def _mock_tts(text, *, site_config, output_path=None):
         return b"RIFF_fake_wav"
 
+    from modules.content.stages import generate_media_scripts as gms
+
     with patch("services.gpu_scheduler.gpu", gpu), \
          patch("services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="R" * 600)), \
@@ -494,15 +568,14 @@ async def test_podcast_audio_paths_preserved_on_scene_failure():
                return_value=True), \
          patch("modules.content.stages.generate_media_scripts.generate_audio",
                new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))), \
-         patch("tempfile.NamedTemporaryFile",
-               return_value=_FakeNamedTmp("/tmp/podcast_tts.wav")), \
+         patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"), \
          patch("modules.content.stages.generate_media_scripts._parse_scene_output",
                side_effect=RuntimeError("podcast_service requires a site_config")):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     # Scene parse raised, but the audio built beforehand must survive.
     assert result.context_updates.get("podcast_script") == "R" * 600
-    assert result.context_updates.get("podcast_audio_path") == "/tmp/podcast_tts.wav"
+    assert "t-mediascripts_tts." in result.context_updates.get("podcast_audio_path")
     assert result.context_updates.get("podcast_intro_audio_path") == "/tmp/intro.wav"
 
 

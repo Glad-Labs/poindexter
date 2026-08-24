@@ -159,12 +159,16 @@ class TestRenderFromStateHelper:
         assert kwargs["height"] == 1920
 
     @pytest.mark.asyncio
-    async def test_narration_and_ambient_threaded(self):
+    async def test_narration_and_ambient_threaded(self, tmp_path):
+        # The ambient bed must EXIST to be threaded (poindexter#1021 — a dead
+        # frozen path is dropped, tested below), so give it a real file.
+        amb = tmp_path / "amb.wav"
+        amb.write_bytes(b"RIFF")
         state = {
             "task_id": "t-1",
             "video_shot_list": _LONG_SHOT_LIST,
             "podcast_audio_path": "/tmp/narration.mp3",
-            "video_ambient_audio_path": "/tmp/amb.wav",
+            "video_ambient_audio_path": str(amb),
         }
         mock_render = AsyncMock(return_value=_ok_result())
         with patch.object(_media_render, "render_shot_list", mock_render):
@@ -173,7 +177,57 @@ class TestRenderFromStateHelper:
             )
         kwargs = mock_render.await_args.kwargs
         assert kwargs["audio_path"] == "/tmp/narration.mp3"
-        assert kwargs["ambient_path"] == "/tmp/amb.wav"
+        assert kwargs["ambient_path"] == str(amb)
+
+    @pytest.mark.asyncio
+    async def test_missing_ambient_drops_bed_flags_and_renders(self, tmp_path):
+        """poindexter#1021: a frozen bed path that no longer exists (the
+        pre-#1021 per-container /tmp tempfile) must never reach the
+        compositor — its preflight fails PERMANENTLY there, and the
+        re-dispatch machinery retried that exact failure for five days. The
+        bed is optional: drop it, say so via render_input_missing, render."""
+        gone = tmp_path / "gone.wav"  # never created
+        state = {
+            "task_id": "t-1",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "video_ambient_audio_path": str(gone),
+        }
+        mock_render = AsyncMock(return_value=_ok_result(output_path="/tmp/out.mp4"))
+        findings: list[dict] = []
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", lambda **kw: findings.append(kw)
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        # the render proceeded — WITHOUT the dead bed
+        assert out == {"long_video_path": "/tmp/out.mp4"}
+        assert mock_render.await_args.kwargs["ambient_path"] is None
+        # and the degradation is loud, not silent
+        assert [f["kind"] for f in findings] == ["render_input_missing"]
+        assert findings[0]["severity"] == "warn"
+        assert str(gone) in findings[0]["body"]
+        assert findings[0]["extra"]["missing_path"] == str(gone)
+
+    @pytest.mark.asyncio
+    async def test_empty_ambient_is_not_flagged(self):
+        """No bed configured (empty string sentinel) is the normal no-music
+        case — it must not emit a render_input_missing finding."""
+        state = {
+            "task_id": "t-1",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "video_ambient_audio_path": "",
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        findings: list[dict] = []
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", lambda **kw: findings.append(kw)
+        ):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert mock_render.await_args.kwargs["ambient_path"] is None
+        assert findings == []
 
     @pytest.mark.asyncio
     async def test_caption_srt_path_threaded_to_renderer(self):

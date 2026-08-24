@@ -848,6 +848,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the latter because the media_tts_gate turns an outage into silent
         # deferral, so failure findings alone go quiet exactly then.
         ("jobs", "services.jobs.probe_narration_failure", "ProbeNarrationFailureJob"),
+        # ProbeMediaRenderLoopJob — pages critical when the SAME task keeps
+        # failing its render: a repeat cluster means a broken frozen input
+        # (not an outage), and the daily cap-reset re-arm turns it into
+        # multi-day model-load churn — the 2026-08-24 OOM's amplifier
+        # (poindexter#1021).
+        ("jobs", "services.jobs.probe_media_render_loop", "ProbeMediaRenderLoopJob"),
         # BackfillVideoShotListsJob — recovery for pieces whose Stage-1
         # director was skipped on a busy GPU, leaving video_shot_list = {}.
         # Those pieces were dispatched once, produced nothing, and kept their

@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import uuid
 from typing import Any
 
 from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
@@ -31,7 +32,9 @@ from plugins.stage import StageResult
 from services.audio_gen_service import generate_audio, is_audio_gen_enabled
 from services.gpu_admission import GpuBusyError
 from services.gpu_scheduler import media_wait_budget_s
+from services.podcast_service import PODCAST_DIR
 from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
+from services.video_service import VIDEO_DIR
 from utils.findings import emit_finding
 
 _INTRO_PROMPT_FALLBACK = (
@@ -204,17 +207,22 @@ class GenerateMediaScriptsStage:
                     )
                     podcast_script = ""
 
+            # Durable output stem for every generated-audio path below
+            # (poindexter#1021): these paths are frozen into task_metadata and
+            # consumed by later graphs — in a DIFFERENT container (Stage-1 runs
+            # in prefect-worker, renders in poindexter-worker; neither mounts
+            # /tmp) and often days later. A tempfile path is therefore never
+            # valid downstream; every output goes to the shared durable dirs.
+            media_stem = str(context.get("task_id") or "") or uuid.uuid4().hex[:12]
+
             # TTS narration — synthesize the podcast script to audio via Speaches.
             # Non-critical: failure logs a warning, pipeline continues.
             # Enable with app_settings: podcast_tts_enabled=true.
             if podcast_script and is_tts_enabled(sc):
                 try:
-                    import tempfile
                     suffix = resolve_tts_format(sc)
-                    with tempfile.NamedTemporaryFile(
-                        suffix=f".{suffix}", delete=False,
-                    ) as tmp:
-                        tts_path = tmp.name
+                    PODCAST_DIR.mkdir(parents=True, exist_ok=True)
+                    tts_path = str(PODCAST_DIR / f"{media_stem}_tts.{suffix}")
                     audio_bytes = await synthesize_speech(
                         podcast_script,
                         site_config=sc,
@@ -226,7 +234,7 @@ class GenerateMediaScriptsStage:
                             "[MEDIA] Podcast TTS audio: %d bytes → %s",
                             len(audio_bytes), tts_path,
                         )
-                    else:
+                    elif os.path.exists(tts_path):
                         os.unlink(tts_path)
                 except Exception as tts_exc:
                     logger.warning("[MEDIA] podcast TTS failed: %s", tts_exc)
@@ -275,6 +283,8 @@ class GenerateMediaScriptsStage:
                         prompt_template,
                         "intro",
                         site_config=sc,
+                        output_dir=str(PODCAST_DIR),
+                        output_stem=f"{media_stem}_intro",
                         duration_s=sting_duration,
                     )
                     if intro_result is not None:
@@ -533,6 +543,11 @@ class GenerateMediaScriptsStage:
                         ambient_prompt,
                         "ambient",
                         site_config=sc,
+                        # Durable + deterministic (poindexter#1021): this path
+                        # is frozen into task_metadata and read by the render
+                        # graph in another container, possibly days later.
+                        output_dir=str(VIDEO_DIR),
+                        output_stem=f"{media_stem}_ambient",
                         # Model max (~47s): the compositor loops the bed under
                         # the whole video, so the longest clip = fewest audible
                         # loop seams (provider default 5s is sting-sized).

@@ -88,6 +88,8 @@ async def generate_audio(
     *,
     site_config: Any,
     output_path: str | None = None,
+    output_dir: str | None = None,
+    output_stem: str | None = None,
     duration_s: float | None = None,
 ) -> AudioGenResult | None:
     """Generate one audio clip via the active provider.
@@ -104,6 +106,14 @@ async def generate_audio(
         site_config: SiteConfig instance (DI — Phase H, GH#95).
         output_path: Optional explicit output path. When ``None`` the
             provider picks a tempfile.
+        output_dir: Optional durable directory for the output file. Paired
+            with ``output_stem``; the provider appends its own resolved
+            format extension. Callers whose result path outlives the run
+            (anything frozen into ``task_metadata``) MUST pass this — a
+            tempfile path is per-container-private ``/tmp`` and dies on
+            restart, which is how the 2026-08-24 permanent render-fail loop
+            happened (poindexter#1021).
+        output_stem: Filename stem (no extension) inside ``output_dir``.
         duration_s: Optional duration override. When ``None`` the
             provider's ``default_duration_s`` config wins.
     """
@@ -120,6 +130,10 @@ async def generate_audio(
     config: dict[str, Any] = {"_site_config": site_config}
     if output_path:
         config["output_path"] = output_path
+    if output_dir:
+        config["output_dir"] = output_dir
+    if output_stem:
+        config["output_stem"] = output_stem
     if duration_s is not None:
         config["duration_s"] = duration_s
 
