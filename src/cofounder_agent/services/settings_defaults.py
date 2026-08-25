@@ -2294,6 +2294,20 @@ DEFAULTS: dict[str, str] = {
     # render boundary — it can't corrupt body words like "audio". Add niche
     # TLDs as needed, e.g. '{"io": "eye oh", "ai": "A I", "gg": "G G"}'.
     'tts_domain_tld_pronunciations': '{"io": "eye oh"}',
+    # Contextual digit-dash handling at the TTS render boundary
+    # (podcast_service._normalize_dashes). Chatterbox has no text-norm front
+    # end: measured 2026-08-24 via TTS→STT round-trip, it silently DROPPED
+    # the minus in "-5"/"-500" and MERGED digit ranges into one wrong number
+    # ("9-5 job" → "ninety-five job", "8-16 GB" → "816 GB"); ISO dates came
+    # out garbled. The pass rewrites digit-dash-digit → "9 to 5", a dash
+    # glued to a leading digit → "negative 5", and YYYY-MM-DD → "May 4,
+    # 2026". Word-word compounds ("state-of-the-art") are untouched.
+    'tts_dash_normalization_enabled': 'true',
+    # Spoken word for a glued leading minus: "negative 5". Operators who
+    # prefer broadcast/weather style can set "minus".
+    'tts_negative_number_word': 'negative',
+    # Spoken word for a digit range: "9 to 5". Alternative: "through".
+    'tts_number_range_word': 'to',
     # Voice selection (#689 Plan 7). Rotation is OPT-IN: when
     # tts_voice_rotation_enabled is false (the default), narration uses the
     # single `podcast_tts_voice`; when true it hash-rotates the pool

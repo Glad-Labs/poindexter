@@ -40,6 +40,7 @@ RULES:
 - Replace "as shown above" with "as we discussed"
 - Don't read section headings as-is — weave transitions naturally ("Let's now turn to..." or "Next, let's explore...")
 - Expand abbreviations: "e.g." → "for example", "i.e." → "that is", "etc." → "and so on"
+- Write numbers the way a narrator says them: "9 to 5" not "9-5", "10 to 20 percent" not "10-20%", "negative 5" not "-5", "May 4, 2026" not "2026-05-04"
 - Spell out acronyms on first use if not commonly known
 - Don't include any markdown formatting, asterisks, brackets, or special characters
 - Keep the same depth, arguments, and structure — don't summarize or shorten

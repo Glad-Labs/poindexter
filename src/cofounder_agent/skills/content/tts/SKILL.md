@@ -88,6 +88,35 @@ hardcoded fallback**. If `tts_pronunciations` is empty, those substitutions do n
 
 ---
 
+### Digit-adjacent dashes (`tts_dash_normalization_enabled`)
+
+A dash whose meaning lives in its digit context is spoken wrongly in ways a
+listener can't detect — measured against the live Chatterbox engine
+(2026-08-24 TTS→STT round-trip): `-5 degrees` was spoken "5 degrees" (minus
+silently dropped, meaning inverted), `9-5 job` became "ninety-five job" and
+`8-16 GB` "816 GB" (range merged into one wrong number), and `2026-05-04`
+came out garbled. The render boundary therefore rewrites, in order:
+
+1. ISO dates: `2026-05-04` → "May 4, 2026" (implausible month/day values are
+   left for the range rule — a version triple is not a date).
+2. Digit-dash-digit → "9 to 5": ranges, scores, spans, times. ASCII `-`
+   converts spaced or unspaced; en/em dashes convert only **unspaced**
+   (`2024–2026`) — a _spaced_ en/em dash between numbers is an aside and
+   still becomes a pause.
+3. A dash glued to a leading digit (nothing word-like before it) → "negative
+   5", including through a currency symbol (`-$3 million`).
+
+Word-word compounds (`state-of-the-art`, `self-hosted`) round-trip correctly
+and are untouched, as are letter-digit hyphens (`COVID-19`, `top-10`).
+
+| Key                              | Default    | Meaning                                                                      |
+| -------------------------------- | ---------- | ---------------------------------------------------------------------------- |
+| `tts_dash_normalization_enabled` | `true`     | Master switch for the three rules above.                                     |
+| `tts_number_range_word`          | `to`       | Spoken word for a digit range ("through" is the common alternative).         |
+| `tts_negative_number_word`       | `negative` | Spoken word for a glued leading minus ("minus" for broadcast/weather style). |
+
+---
+
 ### `tts_acronym_replacements`
 
 JSON object of uppercase acronym → plain-English expansion. Applied with

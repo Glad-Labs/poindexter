@@ -394,6 +394,78 @@ def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
     return pattern.sub(_repl, text)
 
 
+# Contextual digit-dash handling. Chatterbox has no text-normalization front
+# end, and a dash whose meaning lives in its digit context comes out wrong in
+# ways a listener can't detect — measured 2026-08-24 via a TTS→STT round-trip
+# against the live sidecar: "-5 degrees" was spoken "5 degrees" and "-500"
+# "500" (minus silently dropped, meaning inverted), "9-5 job" was spoken
+# "ninety-five job" and "8-16 GB" "816 GB" (range merged into one wrong
+# number), and "2026-05-04" came out garbled. Word-word compounds
+# ("state-of-the-art") round-tripped verbatim, so these rules fire ONLY on
+# digit-adjacent dashes:
+#
+# - ISO dates first (YYYY-MM-DD → "May 4, 2026"), before the range rule can
+#   read the same token as two nested ranges.
+# - digit-dash-digit → "9 to 5" — ranges, scores, spans, times. ASCII hyphen
+#   (and the U+2212 minus sign) convert spaced or unspaced; en/em dashes
+#   convert only UNSPACED ("2024–2026" range typography) — a SPACED en/em
+#   dash between numbers ("in 2024 — 12 people came") is an aside and must
+#   stay a pause, which `_normalize_for_script` gives it downstream.
+# - a dash glued to a leading digit (no word character before it) → "negative
+#   5". Runs after the range pass, so the "5" in "9-5" can never read as
+#   negative. An optional currency symbol may sit between ("-$3 million").
+#
+# Letter-digit hyphens ("COVID-19", "top-10", "RTX 5090-class") are left
+# alone — engines speak those acceptably. A model pin like "wan2.1-14B" WOULD
+# trip the range rule, which is one more reason model identifiers belong in
+# `tts_model_name_families` (that pass runs first and collapses them).
+#
+# The spoken words are DB-tunable (`tts_number_range_word` default "to",
+# `tts_negative_number_word` default "negative" — "through"/"minus" for
+# operators who prefer them); `tts_dash_normalization_enabled` (default true)
+# is the master switch. Runs at the TTS render boundary only — stored scripts
+# keep the written forms, per the 2026-08-01 generation/speech split.
+_ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_RANGE_ASCII_DASH_RE = re.compile(r"(?<=\d)\s*[-−]\s*(?=\d)")
+_RANGE_TYPOGRAPHIC_DASH_RE = re.compile(r"(?<=\d)[–—](?=\d)")
+_NEGATIVE_NUMBER_RE = re.compile(r"(?<![\w.,\-−–—])[-−](?=[$€£]?\d)")
+
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June", "July",
+    "August", "September", "October", "November", "December",
+)
+
+
+def _spoken_iso_date(m: "re.Match[str]") -> str:
+    """Rewrite one YYYY-MM-DD match as a spoken date, or leave it untouched.
+
+    An implausible month/day means the token only LOOKS like a date (a
+    version triple, an ID) — return it unchanged so the range rules give it
+    their generic "to" reading instead of a fabricated month name.
+    """
+    year, month, day = m.group(1), int(m.group(2)), int(m.group(3))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return m.group(0)
+    return f"{_MONTH_NAMES[month - 1]} {day}, {year}"
+
+
+def _normalize_dashes(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Give digit-adjacent dashes their spoken meaning (see the rules above)."""
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_dash_normalization_enabled", "") or "").strip().lower()
+    # '' is the app_settings unset sentinel — unset means the default (on).
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+    range_word = str(_sc.get("tts_number_range_word", "") or "").strip() or "to"
+    negative_word = str(_sc.get("tts_negative_number_word", "") or "").strip() or "negative"
+
+    text = _ISO_DATE_RE.sub(_spoken_iso_date, text)
+    text = _RANGE_ASCII_DASH_RE.sub(f" {range_word} ", text)
+    text = _RANGE_TYPOGRAPHIC_DASH_RE.sub(f" {range_word} ", text)
+    text = _NEGATIVE_NUMBER_RE.sub(f"{negative_word} ", text)
+    return text
+
+
 # Emoji / pictograph ranges — models decorate short-form scripts with these
 # (clock/laptop/rocket pictographs observed frozen into a short, then read
 # into the render); TTS either skips them or names them aloud, and captions
@@ -461,6 +533,11 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # 31B" BEFORE the pronunciation map, so the split-off family still gets its
     # spoken form (glm → G L M) instead of being stranded in a config token.
     text = _normalize_model_names(text, families=_get_model_families(site_config=site_config))
+    # Digit-adjacent dashes next: after the model pass (so a pin's version
+    # tail is already collapsed, not read as a range) and before the
+    # replacement/structural passes (whose " - " → ", " and em-dash → pause
+    # rules would otherwise turn a spaced digit range into a comma).
+    text = _normalize_dashes(text, site_config=site_config)
     # Simple replacements (DB-configurable via tts_pronunciations).
     for written, spoken in _get_tts_replacements(site_config=site_config):
         text = _apply_spoken_replacement(text, written, spoken)

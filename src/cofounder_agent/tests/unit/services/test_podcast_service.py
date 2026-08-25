@@ -1739,3 +1739,145 @@ class TestNormalizerSplit:
         assert "$1.65 trillion" in out
         assert "$159 billion" in out
         assert "$400" in out
+
+
+# ---------------------------------------------------------------------------
+# Digit-adjacent dash handling (_normalize_dashes).
+#
+# Every "spoken" expectation below is grounded in a 2026-08-24 TTS→STT
+# round-trip against the live Chatterbox sidecar: the engine silently DROPPED
+# the minus in "-5"/"-500" (meaning inverted) and MERGED digit ranges into one
+# wrong number ("9-5 job" → "ninety-five job", "8-16 GB" → "816 GB"); ISO
+# dates came out garbled; word-word compounds round-tripped verbatim.
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeDashes:
+    # -- the four confirmed live failures ----------------------------------
+    @pytest.mark.parametrize("text,expected", [
+        ("The temperature dropped to -5 degrees overnight.",
+         "The temperature dropped to negative 5 degrees overnight."),
+        ("We set the priority to -500 for the database.",
+         "We set the priority to negative 500 for the database."),
+        ("Most people work a 9-5 job.", "Most people work a 9 to 5 job."),
+        ("The card needs 8-16 GB of VRAM.", "The card needs 8 to 16 GB of VRAM."),
+    ])
+    def test_confirmed_failure_modes(self, text, expected):
+        from services.podcast_service import _normalize_dashes
+        assert _normalize_dashes(text, site_config=_TEST_SC) == expected
+
+    # -- range readings -----------------------------------------------------
+    @pytest.mark.parametrize("text,expected", [
+        ("expect 10-20% savings", "expect 10 to 20% savings"),
+        ("ran from 2024-2026", "ran from 2024 to 2026"),
+        ("the final score was 3-2", "the final score was 3 to 2"),
+        ("open 9:00-17:30 daily", "open 9:00 to 17:30 daily"),
+        ("a 1.5-2.0 ratio", "a 1.5 to 2.0 ratio"),
+        ("costs $5-10 per month", "costs $5 to 10 per month"),
+        # Spaced ASCII hyphen between digits is a range, not a pause.
+        ("takes 5 - 10 minutes", "takes 5 to 10 minutes"),
+        # Unspaced en dash is range typography.
+        ("the 2024–2026 roadmap", "the 2024 to 2026 roadmap"),
+    ])
+    def test_ranges_become_to(self, text, expected):
+        from services.podcast_service import _normalize_dashes
+        assert _normalize_dashes(text, site_config=_TEST_SC) == expected
+
+    # -- negative readings --------------------------------------------------
+    @pytest.mark.parametrize("text,expected", [
+        ("(-40 dB threshold)", "(negative 40 dB threshold)"),
+        ("scored -0.1 on the gate", "scored negative 0.1 on the gate"),
+        ("a swing of -$3 million", "a swing of negative $3 million"),
+        # U+2212 real minus sign reads the same as ASCII.
+        ("it hit −5 overnight", "it hit negative 5 overnight"),
+    ])
+    def test_negative_numbers(self, text, expected):
+        from services.podcast_service import _normalize_dashes
+        assert _normalize_dashes(text, site_config=_TEST_SC) == expected
+
+    # -- ISO dates ----------------------------------------------------------
+    def test_iso_date_spoken(self):
+        from services.podcast_service import _normalize_dashes
+        out = _normalize_dashes("It shipped on 2026-05-04, on schedule.", site_config=_TEST_SC)
+        assert out == "It shipped on May 4, 2026, on schedule."
+
+    def test_pseudo_date_falls_through_to_range(self):
+        """A month of 99 is not a date — the generic range reading applies
+        rather than a fabricated month name."""
+        from services.podcast_service import _normalize_dashes
+        out = _normalize_dashes("build 2026-99-01 failed", site_config=_TEST_SC)
+        assert "May" not in out
+        assert out == "build 2026 to 99 to 01 failed"
+
+    # -- what must NOT change -----------------------------------------------
+    @pytest.mark.parametrize("text", [
+        # Word-word compounds round-tripped verbatim on the live engine.
+        "It was a state-of-the-art, self-hosted setup.",
+        # Letter-digit hyphens are spoken acceptably; leave them.
+        "the COVID-19 era",
+        "a top-10 list",
+        "an RTX 5090-class GPU",
+        # A dash after a word character is never a minus.
+        "the pre-2026 baseline",
+    ])
+    def test_untouched_forms(self, text):
+        from services.podcast_service import _normalize_dashes
+        assert _normalize_dashes(text, site_config=_TEST_SC) == text
+
+    def test_spaced_em_dash_between_numbers_stays_a_pause(self):
+        """'in 2024 — 12 people came' is an aside, not a range: the dash pass
+        leaves it, and the structural pass downstream turns it into a comma."""
+        from services.podcast_service import _normalize_dashes
+        text = "in 2024 — 12 people came"
+        assert _normalize_dashes(text, site_config=_TEST_SC) == text
+        full = _normalize_for_speech(text, site_config=_TEST_SC)
+        assert " to " not in full
+        assert "," in full
+
+    # -- config surface -----------------------------------------------------
+    def test_disabled_flag_leaves_text_alone(self):
+        from services.podcast_service import _normalize_dashes
+        sc = SiteConfig(initial_config={"tts_dash_normalization_enabled": "false"})
+        text = "a 9-5 job at -5 degrees on 2026-05-04"
+        assert _normalize_dashes(text, site_config=sc) == text
+
+    def test_custom_words(self):
+        from services.podcast_service import _normalize_dashes
+        sc = SiteConfig(initial_config={
+            "tts_negative_number_word": "minus",
+            "tts_number_range_word": "through",
+        })
+        out = _normalize_dashes("9-5 at -5 degrees", site_config=sc)
+        assert out == "9 through 5 at minus 5 degrees"
+
+    # -- placement in the chain --------------------------------------------
+    def test_speech_pass_applies_dash_rules_end_to_end(self):
+        """The full render-boundary pass must produce the spoken forms — the
+        raw dash tokens were what the engine mangled."""
+        out = _normalize_for_speech(
+            "A 9-5 job at -5 degrees, shipped 2026-05-04.", site_config=_TEST_SC
+        )
+        assert "9 to 5" in out
+        assert "negative 5 degrees" in out
+        assert "May 4, 2026" in out
+
+    def test_stored_script_keeps_written_forms(self):
+        """Dash readings are speech opinions: the generation-side pass keeps
+        the written forms in the stored script (2026-08-01 split)."""
+        out = _normalize_for_script("a 9-5 job at -5 degrees", site_config=_TEST_SC)
+        assert "9-5" in out
+        assert "-5 degrees" in out
+
+    def test_model_names_collapse_before_dash_rules(self):
+        """gemma-4-31B is a model pin, not two ranges — the model-name pass
+        runs first and removes its dashes before the range rule can fire."""
+        out = _normalize_for_speech("we run gemma-4-31B locally", site_config=_TEST_SC)
+        assert "gemma 4 31B" in out
+        assert " to " not in out
+
+    def test_idempotent_on_already_spoken_forms(self):
+        from services.podcast_service import _normalize_dashes
+        once = _normalize_dashes(
+            "9-5 at -5 degrees on 2026-05-04", site_config=_TEST_SC
+        )
+        assert _normalize_dashes(once, site_config=_TEST_SC) == once
