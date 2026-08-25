@@ -39,6 +39,20 @@ Config (``plugin.media_compositor.ffmpeg_local`` in app_settings):
   normalized intermediates and final mux.
 - ``loglevel`` (str, default ``"error"``) — ``-loglevel``. Bump to
   ``"warning"`` or ``"info"`` for debugging.
+- ``caption_font_height_pct`` (float, default 4.5) — caption glyph height
+  as a percent of frame height. Resolution-independent: 4.5 renders
+  ≈86px lines on a 1080×1920 short and ≈49px on 16:9 1080p.
+- ``caption_position_portrait`` / ``caption_position_landscape``
+  (``"top"``/``"middle"``/``"bottom"``, defaults ``"middle"`` /
+  ``"bottom"``) — per-orientation caption placement.
+- ``caption_position`` (legacy, default unset) — when explicitly set,
+  overrides BOTH orientations (the pre-2026-08 single knob).
+- ``caption_font_size`` (legacy, default unset) — raw ASS FontSize units
+  (PlayResY=288 space); when explicitly set it wins over
+  ``caption_font_height_pct``. Kept for operator backcompat only.
+- ``caption_force_style_extra`` (str, default ``""``) — raw ASS
+  ``Key=Value`` overrides appended after the built style (later
+  assignments win in libass), e.g. ``"Bold=0,PrimaryColour=&H0000FFFF"``.
 """
 
 from __future__ import annotations
@@ -47,6 +61,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess  # noqa: S404 — local ffmpeg, argv-list call, no shell
 import tempfile
@@ -88,12 +103,27 @@ _DEFAULT_KEN_BURNS_ZOOM_PER_S = 0.012  # 1.2%/s — a 10s shot sweeps 12%,
 # plugin.media_compositor.ffmpeg_local.narration_tail_pad_s.
 _DEFAULT_NARRATION_TAIL_PAD_S = 0.5
 
-# Caption styling. ffmpeg's ``subtitles`` filter accepts ASS-style
-# overrides via ``force_style``. Defaults match what Matt wanted on
-# the V0 sample: vertically centered, large enough to read at thumb-
-# scrolling distance on mobile.
-_DEFAULT_CAPTION_POSITION = "middle"  # "top" | "middle" | "bottom"
-_DEFAULT_CAPTION_FONT_SIZE = 28
+# Caption styling. ffmpeg's ``subtitles`` filter accepts ASS-style overrides
+# via ``force_style``. SIZE SEMANTICS (the non-obvious part): the filter
+# converts SRT → ASS with libavcodec's default script header — PlayResX=384,
+# PlayResY=288 — and libass scales every ASS unit by (frame_height / 288).
+# ``FontSize`` is therefore a FRACTION OF FRAME HEIGHT (size/288 per line),
+# never pixels: the old fixed ``FontSize=28`` burned ~10% of frame height per
+# line — ~105px on the 16:9 lane but ~187px on the 1080×1920 short, where one
+# sentence-length cue wrapped into a frame-filling text wall (2026-08-24
+# operator report). Caption size is therefore configured as a PERCENT of
+# frame height — resolution-independent by construction — and converted to
+# ASS units at build time: ass_units = 288 × pct / 100. The legacy
+# ``caption_font_size`` key (raw ASS units) still wins when explicitly set.
+_ASS_PLAYRES_Y = 288
+_DEFAULT_CAPTION_FONT_HEIGHT_PCT = 4.5  # ≈86px/line on a 1920-tall short, ≈49px on 1080p
+_DEFAULT_CAPTION_POSITION = "middle"  # "top" | "middle" | "bottom" (builder fallback)
+# Per-orientation position defaults, resolved by ``_resolve_caption_style``:
+# portrait shorts wear feed-native centered captions; 16:9 long-form wears a
+# conventional bottom subtitle band (middle-of-frame text over landscape
+# footage covers the content it narrates).
+_DEFAULT_CAPTION_POSITION_PORTRAIT = "middle"
+_DEFAULT_CAPTION_POSITION_LANDSCAPE = "bottom"
 # force_style uses the OLD SSA alignment convention (not the ASS v4+ numpad layout).
 # When ffmpeg's ``subtitles`` filter converts SRT → ASS it keeps the old-SSA
 # style header, so libass interprets ``Alignment`` as:
@@ -109,6 +139,22 @@ _CAPTION_ALIGNMENT: dict[str, int] = {
     "middle": 10,  # old-SSA middle-center (NOT 5, which is top-left here)
     "bottom": 2,   # bottom-center (same in old-SSA and ASS v4+)
 }
+
+
+def _ass_font_size_from_pct(pct: float) -> int:
+    """Percent-of-frame-height → ASS ``FontSize`` units (PlayResY=288 space)."""
+    return max(1, round(_ASS_PLAYRES_Y * float(pct) / 100.0))
+
+
+# ``force_style`` is injected inside single quotes in the filtergraph string,
+# so operator-supplied extra overrides are reduced to the charset ASS
+# ``Key=Value`` pairs actually need — a quote/bracket/backslash would
+# terminate the quoting and break the whole ``-vf`` expression.
+_FORCE_STYLE_SAFE = re.compile(r"[^A-Za-z0-9 _.,=&+\-]")
+
+
+def _sanitize_force_style_extra(extra: str) -> str:
+    return _FORCE_STYLE_SAFE.sub("", extra or "").strip().strip(",")
 
 # Per-scene Ken Burns motion presets — rotated by scene_idx so adjacent
 # scenes aren't all zooming the same way. Each entry is a (start_x_expr,
@@ -514,7 +560,8 @@ def _build_burn_captions_cmd(
     hwaccel: str,
     output_path: str,
     caption_position: str = _DEFAULT_CAPTION_POSITION,
-    caption_font_size: int = _DEFAULT_CAPTION_FONT_SIZE,
+    caption_font_size: int | None = None,
+    force_style_extra: str = "",
 ) -> list[str]:
     """Burn an .srt/.vtt sidecar into the visual stream.
 
@@ -524,9 +571,15 @@ def _build_burn_captions_cmd(
     %s/%c rather than f-string interpolation of an unsanitized path.
 
     Styling — ``force_style`` injects ASS overrides. ``Alignment``
-    controls vertical/horizontal placement (numpad layout); a thick
-    outline + drop shadow keeps captions readable over busy stock
-    photos and Ken Burns motion.
+    controls vertical/horizontal placement (old-SSA layout, see
+    ``_CAPTION_ALIGNMENT``); a bold face with an outline + drop shadow
+    keeps captions readable over busy stock footage and Ken Burns
+    motion. ``caption_font_size`` is in ASS units — a fraction of frame
+    height, size/288 per line, per the PlayResY note atop this module —
+    and ``None`` derives it from ``_DEFAULT_CAPTION_FONT_HEIGHT_PCT``.
+    ``force_style_extra`` is appended last: libass applies force_style
+    assignments in order, so operator overrides win over every built-in
+    field (including ``Bold``).
     """
     # ``subtitles`` filter requires forward slashes and backslash-escaped
     # colons even on Windows — and the path itself goes inside a
@@ -534,22 +587,32 @@ def _build_burn_captions_cmd(
     # outer comma parser.
     safe = caption_path.replace("\\", "/").replace(":", r"\:")
     alignment = _CAPTION_ALIGNMENT.get(caption_position, _CAPTION_ALIGNMENT["middle"])
+    size = (
+        int(caption_font_size)
+        if caption_font_size and caption_font_size > 0
+        else _ass_font_size_from_pct(_DEFAULT_CAPTION_FONT_HEIGHT_PCT)
+    )
     # ASS force_style is a comma-list of ``Key=Value`` pairs; backslash
     # in front of commas inside the value is unnecessary because we
     # only set scalar values.
-    force_style = (
-        f"Alignment={alignment},"
-        f"FontSize={caption_font_size},"
-        f"PrimaryColour=&H00FFFFFF,"   # white
-        f"OutlineColour=&H00000000,"   # black outline
-        f"BackColour=&H80000000,"      # 50% black box behind text
-        f"Outline=2,"
-        f"Shadow=1,"
-        f"BorderStyle=1,"              # 1=outline+shadow, 3=opaque box
-        f"MarginL=20,"                 # keep text off the left edge
-        f"MarginR=20,"                 # keep text off the right edge
-        f"MarginV=40"
-    )
+    style_parts = [
+        f"Alignment={alignment}",
+        f"FontSize={size}",
+        "Bold=1",                       # heavier weight survives busy footage
+        "PrimaryColour=&H00FFFFFF",     # white
+        "OutlineColour=&H00000000",     # black outline
+        "BackColour=&H80000000",        # 50% black drop shadow (BorderStyle=1)
+        f"Outline={max(1, round(size * 0.08))}",  # ~8% of glyph height, tracks size
+        "Shadow=1",
+        "BorderStyle=1",                # 1=outline+shadow, 3=opaque box
+        "MarginL=20",                   # keep text off the left edge
+        "MarginR=20",                   # keep text off the right edge
+        "MarginV=40",
+    ]
+    extra = _sanitize_force_style_extra(force_style_extra)
+    if extra:
+        style_parts.append(extra)
+    force_style = ",".join(style_parts)
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
     if hwaccel:
         cmd.extend(["-hwaccel", hwaccel])
@@ -673,6 +736,70 @@ class FFmpegLocalCompositor:
             default,
         )
 
+    def _resolve_caption_style(self, *, width: int, height: int) -> dict[str, Any]:
+        """Resolve caption burn styling for this render's orientation.
+
+        Position: the legacy ``caption_position`` key overrides BOTH
+        orientations when explicitly set; otherwise portrait
+        (height > width) and landscape each resolve their own
+        ``caption_position_{portrait,landscape}`` key and default.
+        Font: the legacy ``caption_font_size`` key (raw ASS units) wins
+        when explicitly set; otherwise ``caption_font_height_pct`` —
+        percent of frame height, resolution-independent by construction
+        (see the PlayResY note atop this module). Settings values arrive
+        as strings from app_settings; ``''`` means unset per the
+        NOT-NULL convention.
+        """
+        portrait = height > width
+        raw_pos = str(self._get("caption_position", "") or "").strip().lower()
+        if raw_pos in _CAPTION_ALIGNMENT:
+            position = raw_pos
+        else:
+            orient_key = (
+                "caption_position_portrait" if portrait
+                else "caption_position_landscape"
+            )
+            orient_default = (
+                _DEFAULT_CAPTION_POSITION_PORTRAIT if portrait
+                else _DEFAULT_CAPTION_POSITION_LANDSCAPE
+            )
+            position = str(
+                self._get(orient_key, orient_default) or orient_default
+            ).strip().lower()
+            if position not in _CAPTION_ALIGNMENT:
+                position = orient_default
+
+        font_size: int | None = None
+        legacy_raw = self._get("caption_font_size", None)
+        if legacy_raw not in (None, ""):
+            try:
+                legacy = int(legacy_raw)
+            except (TypeError, ValueError):
+                legacy = 0
+            if legacy > 0:
+                font_size = legacy
+        if font_size is None:
+            try:
+                pct = float(
+                    self._get(
+                        "caption_font_height_pct",
+                        _DEFAULT_CAPTION_FONT_HEIGHT_PCT,
+                    )
+                    or _DEFAULT_CAPTION_FONT_HEIGHT_PCT
+                )
+            except (TypeError, ValueError):
+                pct = _DEFAULT_CAPTION_FONT_HEIGHT_PCT
+            # Clamp: a typo'd 45 (meant 4.5) would reproduce the text wall
+            # this percent semantics exists to prevent.
+            pct = min(max(pct, 1.0), 15.0)
+            font_size = _ass_font_size_from_pct(pct)
+
+        return {
+            "position": position,
+            "font_size": font_size,
+            "extra": str(self._get("caption_force_style_extra", "") or ""),
+        }
+
     def _build_cost_guard(self, kwargs: dict[str, Any]) -> CostGuard:
         injected = kwargs.get("_cost_guard")
         if isinstance(injected, CostGuard):
@@ -749,19 +876,9 @@ class FFmpegLocalCompositor:
             )
         except (TypeError, ValueError):
             ken_burns_zoom_per_s = _DEFAULT_KEN_BURNS_ZOOM_PER_S
-        caption_position = str(
-            self._get("caption_position", _DEFAULT_CAPTION_POSITION)
-            or _DEFAULT_CAPTION_POSITION,
-        ).lower()
-        if caption_position not in _CAPTION_ALIGNMENT:
-            caption_position = _DEFAULT_CAPTION_POSITION
-        try:
-            caption_font_size = int(
-                self._get("caption_font_size", _DEFAULT_CAPTION_FONT_SIZE)
-                or _DEFAULT_CAPTION_FONT_SIZE,
-            )
-        except (TypeError, ValueError):
-            caption_font_size = _DEFAULT_CAPTION_FONT_SIZE
+        caption_style = self._resolve_caption_style(
+            width=request.width, height=request.height,
+        )
         encoder = _ENCODER_FOR_CODEC[request.codec]
 
         cost_guard = self._build_cost_guard(kwargs)
@@ -936,8 +1053,9 @@ class FFmpegLocalCompositor:
                             loglevel=loglevel,
                             hwaccel=hwaccel,
                             output_path=request.output_path,
-                            caption_position=caption_position,
-                            caption_font_size=caption_font_size,
+                            caption_position=caption_style["position"],
+                            caption_font_size=caption_style["font_size"],
+                            force_style_extra=caption_style["extra"],
                         )
                         rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
                         if rc != 0:

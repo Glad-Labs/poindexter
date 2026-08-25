@@ -2452,6 +2452,40 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # kept — a bad alignment smears script text across wrong timings, which is
     # worse than a homophone.
     'media.caption.alignment_min_ratio': '0.5',
+    # Display-cue word budgets (2026-08-24): whisper segments are
+    # sentence-sized (10-15 words is routine); burned whole into a 9:16 frame
+    # they wrapped into a frame-filling text wall. Segments over the budget are
+    # re-cut into short cues with timings interpolated inside the parent
+    # segment (caption_align.split_segments_for_display). Short-form
+    # convention is 3-8 words on screen at once; the 16:9 long lane wears
+    # conventional ~two-line subtitles, hence the larger budget. 0 disables
+    # splitting for that lane.
+    'media.caption.short_max_cue_words': '5',
+    'media.caption.long_max_cue_words': '14',
+    # Floor for one display cue's on-screen window: the splitter reduces a
+    # segment's chunk count rather than emit a cue shorter than this
+    # (sub-second flashing text is worse than an over-full cue).
+    'media.caption.min_cue_seconds': '0.6',
+    # Caption burn styling (FFmpegLocalCompositor). Glyph height as a PERCENT
+    # of frame height — resolution-independent: 4.5 ⇒ ≈86px lines on a
+    # 1080×1920 short, ≈49px on 16:9 1080p. (ffmpeg's subtitles filter
+    # interprets ASS FontSize in the 288-line PlayRes space, so the old raw
+    # FontSize=28 default rendered ~10% of frame height per line — the
+    # 2026-08-24 giant-caption report; the legacy
+    # plugin.media_compositor.ffmpeg_local.caption_font_size key still wins
+    # when explicitly set.)
+    'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': '4.5',
+    # Per-orientation caption placement (top | middle | bottom): portrait
+    # shorts wear feed-native centered captions; 16:9 long-form wears a
+    # conventional bottom subtitle band. The legacy single
+    # plugin.media_compositor.ffmpeg_local.caption_position key, when
+    # explicitly set, overrides BOTH orientations.
+    'plugin.media_compositor.ffmpeg_local.caption_position_portrait': 'middle',
+    'plugin.media_compositor.ffmpeg_local.caption_position_landscape': 'bottom',
+    # Raw ASS Key=Value overrides appended AFTER the built force_style —
+    # libass applies assignments in order, so anything here wins (e.g.
+    # 'Bold=0,PrimaryColour=&H0000FFFF'). '' = no extra overrides.
+    'plugin.media_compositor.ffmpeg_local.caption_force_style_extra': '',
     # Gate for the Stage-2 media QA frame human-detection check
     # (media.qa, Plan 6 #1193). When 'true', a midpoint frame of each
     # rendered video is vision-checked for a photorealistic human (policy
@@ -4466,6 +4500,21 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.caption.fidelity_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
     'media.caption.script_alignment_enabled': {'owner': 'media_transcribe_narration', 'value_type': 'boolean'},
     'media.caption.alignment_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
+    'media.caption.short_max_cue_words': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
+    'media.caption.long_max_cue_words': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
+    'media.caption.min_cue_seconds': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
+    'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': {
+        'owner': 'media_compositors', 'value_type': 'float',
+    },
+    'plugin.media_compositor.ffmpeg_local.caption_position_portrait': {
+        'owner': 'media_compositors', 'value_type': 'string',
+    },
+    'plugin.media_compositor.ffmpeg_local.caption_position_landscape': {
+        'owner': 'media_compositors', 'value_type': 'string',
+    },
+    'plugin.media_compositor.ffmpeg_local.caption_force_style_extra': {
+        'owner': 'media_compositors', 'value_type': 'string',
+    },
     'media.cta.podcast': {'value_type': 'string'},
     'media.cta.video': {'value_type': 'string'},
     'media.cta.video_short': {'value_type': 'string'},

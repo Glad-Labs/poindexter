@@ -358,3 +358,120 @@ async def test_alignment_low_match_falls_back_to_asr(tmp_path, monkeypatch):
     )
     content = open(srt_path, encoding="utf-8").read()
     assert "unrelated audio" in content  # ASR kept — bad alignment never burned
+
+# ---------------------------------------------------------------------------
+# Display chunking (2026-08-24): sentence-sized whisper segments are re-cut
+# into short cues before the SRT is written, so the burn never renders a
+# frame-filling text wall on the 9:16 short.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_short_lane_chunks_long_segment_into_display_cues(tmp_path, monkeypatch):
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    text = (
+        "one two three four five six seven eight "
+        "nine ten eleven twelve thirteen fourteen fifteen sixteen"
+    )
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=8.0, text=text),
+    ])
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script=text,
+        caption_text="",  # no alignment — chunking applies to raw ASR text too
+        task_id="t-chunk-short", label="short", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    # 16 words at the short lane's default 5-word budget → 4 cues of 4 words.
+    assert "\n4\n" in content
+    assert "\n5\n" not in content
+    cue_lines = [
+        block.splitlines()[2]
+        for block in content.strip().split("\n\n")
+    ]
+    assert all(len(line.split()) <= 5 for line in cue_lines)
+    assert " ".join(cue_lines) == text
+
+
+@pytest.mark.asyncio
+async def test_long_lane_budget_tolerates_subtitle_sized_cues(tmp_path, monkeypatch):
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    text = "one two three four five six seven eight nine ten eleven twelve"
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=6.0, text=text),
+    ])
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script=text,
+        caption_text="",
+        task_id="t-chunk-long", label="long", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    # 12 words fit the long lane's default 14-word budget — one cue, untouched.
+    assert "\n2\n" not in content
+    assert text in content
+
+
+@pytest.mark.asyncio
+async def test_chunking_disabled_via_zero_budget(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    text = (
+        "one two three four five six seven eight "
+        "nine ten eleven twelve thirteen fourteen fifteen sixteen"
+    )
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(start_s=0.0, end_s=8.0, text=text),
+    ])
+    sc = SimpleNamespace(
+        get=lambda key, default=None: (
+            0 if key == "media.caption.short_max_cue_words" else default
+        ),
+        get_bool=lambda key, default=True: default,
+    )
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script=text,
+        caption_text="",
+        task_id="t-chunk-off", label="short", site_config=sc,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    assert "\n2\n" not in content  # single provider cue preserved verbatim
+
+
+@pytest.mark.asyncio
+async def test_chunking_composes_with_alignment(tmp_path, monkeypatch):
+    from plugins.caption_provider import CaptionSegment
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    # ASR heard phonetic junk; the aligner rewrites the text from the clean
+    # script, THEN the splitter cuts the aligned text into display cues.
+    _aligned_provider(monkeypatch, [
+        CaptionSegment(
+            start_s=0.0, end_s=8.0,
+            text="the PHY 4 model guards the gait against errors in production loads today",
+        ),
+    ])
+    script = "the Phi-4 model guards the gate against errors in production loads today"
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio),
+        script=script,
+        caption_text=script,
+        task_id="t-chunk-align", label="short", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    assert "Phi-4" in content and "PHY" not in content
+    assert "gate" in content and "gait" not in content
+    assert "\n3\n" in content  # 13 words / 5-word budget → 3 cues

@@ -748,11 +748,124 @@ class TestBuildBurnCaptionsCmd:
         vf = cmd[cmd.index("-vf") + 1]
         assert "FontSize=42" in vf
 
-    def test_force_style_default_font_size(self):
-        # The default _DEFAULT_CAPTION_FONT_SIZE is 28.
+    def test_force_style_default_font_size_is_percent_derived(self):
+        # ASS FontSize is a fraction of frame height (size/288 per line — see
+        # the PlayResY note in ffmpeg_local). The default derives from
+        # _DEFAULT_CAPTION_FONT_HEIGHT_PCT (4.5% ⇒ round(288*0.045) = 13),
+        # NOT the legacy 28 (~10% of frame height — the frame-filling wall).
         cmd = _build_burn_captions_cmd(**self._kwargs())
         vf = cmd[cmd.index("-vf") + 1]
-        assert "FontSize=28" in vf
+        assert "FontSize=13" in vf
+        assert "FontSize=28" not in vf
+
+    def test_force_style_bold_on_by_default(self):
+        cmd = _build_burn_captions_cmd(**self._kwargs())
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "Bold=1" in vf
+
+    def test_outline_tracks_font_size(self):
+        # Outline is ~8% of the glyph height so a smaller face doesn't wear
+        # the old fixed Outline=2 (which reads ~15% at FontSize=13).
+        cmd = _build_burn_captions_cmd(**self._kwargs())  # size 13 → outline 1
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "Outline=1," in vf
+
+        cmd = _build_burn_captions_cmd(**self._kwargs(caption_font_size=42))
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "Outline=3," in vf  # round(42 * 0.08) = 3
+
+    def test_force_style_extra_appended_last(self):
+        # libass applies force_style assignments in order — appending the
+        # operator extra LAST is what lets it override any built-in field.
+        cmd = _build_burn_captions_cmd(**self._kwargs(
+            force_style_extra="Bold=0,PrimaryColour=&H0000FFFF",
+        ))
+        vf = cmd[cmd.index("-vf") + 1]
+        style = vf.split("force_style='")[1].rstrip("'")
+        assert style.endswith("Bold=0,PrimaryColour=&H0000FFFF")
+        assert style.index("Bold=1") < style.index("Bold=0")
+
+    def test_force_style_extra_sanitized(self):
+        # The extra rides inside the -vf single-quoted filtergraph string —
+        # quotes/brackets/backslashes would terminate the quoting.
+        cmd = _build_burn_captions_cmd(**self._kwargs(
+            force_style_extra="Bold=0'; rm -rf /tmp[x]\\",
+        ))
+        vf = cmd[cmd.index("-vf") + 1]
+        assert "'" not in vf.split("force_style='")[1].rstrip("'")
+        assert "[x]" not in vf
+        assert "\\" not in vf.split("force_style='")[1]
+        assert "Bold=0" in vf
+
+    def test_blank_extra_leaves_style_unterminated_by_comma(self):
+        cmd = _build_burn_captions_cmd(**self._kwargs(force_style_extra="  "))
+        vf = cmd[cmd.index("-vf") + 1]
+        style = vf.split("force_style='")[1].rstrip("'")
+        assert not style.endswith(",")
+
+
+# ---------------------------------------------------------------------------
+# _resolve_caption_style — orientation-aware settings resolution
+# ---------------------------------------------------------------------------
+
+
+class TestResolveCaptionStyle:
+    def test_portrait_defaults_middle_percent_font(self):
+        style = _make_compositor()._resolve_caption_style(width=1080, height=1920)
+        assert style["position"] == "middle"
+        assert style["font_size"] == 13  # round(288 * 4.5 / 100)
+        assert style["extra"] == ""
+
+    def test_landscape_defaults_bottom(self):
+        style = _make_compositor()._resolve_caption_style(width=1920, height=1080)
+        assert style["position"] == "bottom"
+        assert style["font_size"] == 13
+
+    def test_legacy_position_overrides_both_orientations(self):
+        c = _make_compositor({"caption_position": "top"})
+        assert c._resolve_caption_style(width=1080, height=1920)["position"] == "top"
+        assert c._resolve_caption_style(width=1920, height=1080)["position"] == "top"
+
+    def test_per_orientation_position_keys(self):
+        c = _make_compositor({
+            "caption_position_portrait": "bottom",
+            "caption_position_landscape": "middle",
+        })
+        assert c._resolve_caption_style(width=1080, height=1920)["position"] == "bottom"
+        assert c._resolve_caption_style(width=1920, height=1080)["position"] == "middle"
+
+    def test_invalid_orientation_value_falls_back(self):
+        c = _make_compositor({"caption_position_portrait": "diagonal"})
+        assert c._resolve_caption_style(width=1080, height=1920)["position"] == "middle"
+
+    def test_legacy_font_size_wins_when_set(self):
+        # DB values arrive as strings; the legacy key is raw ASS units.
+        c = _make_compositor({"caption_font_size": "42"})
+        assert c._resolve_caption_style(width=1080, height=1920)["font_size"] == 42
+
+    def test_empty_legacy_font_size_means_unset(self):
+        # '' = unset per the app_settings NOT-NULL convention → percent path.
+        c = _make_compositor({"caption_font_size": ""})
+        assert c._resolve_caption_style(width=1080, height=1920)["font_size"] == 13
+
+    def test_percent_key_string_value(self):
+        # 9.7% reproduces the legacy 28-unit look (round(288*0.097) = 28) —
+        # the escape hatch for an operator who wants the old size back.
+        c = _make_compositor({"caption_font_height_pct": "9.7"})
+        assert c._resolve_caption_style(width=1080, height=1920)["font_size"] == 28
+
+    def test_percent_clamped_against_typos(self):
+        # A typo'd 45 (meant 4.5) would reproduce the text wall — clamp to 15%.
+        c = _make_compositor({"caption_font_height_pct": "45"})
+        assert c._resolve_caption_style(width=1080, height=1920)["font_size"] == 43
+
+    def test_unparseable_percent_falls_back(self):
+        c = _make_compositor({"caption_font_height_pct": "big"})
+        assert c._resolve_caption_style(width=1080, height=1920)["font_size"] == 13
+
+    def test_extra_passthrough(self):
+        c = _make_compositor({"caption_force_style_extra": "Bold=0"})
+        assert c._resolve_caption_style(width=1080, height=1920)["extra"] == "Bold=0"
 
 
 # ---------------------------------------------------------------------------

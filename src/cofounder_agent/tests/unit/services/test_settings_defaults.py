@@ -973,3 +973,41 @@ def test_boot_reconcile_restamps_only_wrong_categories(monkeypatch):
     }
     # the already-correct row is NOT rewritten
     assert "qa_pass_threshold" not in updates
+
+
+def test_caption_display_defaults_seeded():
+    """Caption sizing/chunking knobs (2026-08-24 giant-caption fix).
+
+    Size is a PERCENT of frame height (resolution-independent — the legacy
+    raw-ASS ``caption_font_size`` rendered ~10% of frame height per line on
+    the 9:16 short); cues are word-budgeted per lane before the SRT is
+    written. All of it must be operator-tunable from the DB.
+    """
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["media.caption.short_max_cue_words"] == "5"
+    assert DEFAULTS["media.caption.long_max_cue_words"] == "14"
+    assert DEFAULTS["media.caption.min_cue_seconds"] == "0.6"
+    assert DEFAULTS[
+        "plugin.media_compositor.ffmpeg_local.caption_font_height_pct"
+    ] == "4.5"
+    assert DEFAULTS[
+        "plugin.media_compositor.ffmpeg_local.caption_position_portrait"
+    ] == "middle"
+    assert DEFAULTS[
+        "plugin.media_compositor.ffmpeg_local.caption_position_landscape"
+    ] == "bottom"
+    assert DEFAULTS[
+        "plugin.media_compositor.ffmpeg_local.caption_force_style_extra"
+    ] == ""
+
+    assert METADATA["media.caption.short_max_cue_words"]["value_type"] == "integer"
+    assert METADATA["media.caption.min_cue_seconds"]["value_type"] == "float"
+    assert METADATA[
+        "plugin.media_compositor.ffmpeg_local.caption_font_height_pct"
+    ]["value_type"] == "float"
+    # The legacy raw-ASS-unit + single-position keys stay UNSEEDED: '' /
+    # absent means unset, and the compositor only honors them when an
+    # operator explicitly set them pre-2026-08.
+    assert "plugin.media_compositor.ffmpeg_local.caption_font_size" not in DEFAULTS
+    assert "plugin.media_compositor.ffmpeg_local.caption_position" not in DEFAULTS

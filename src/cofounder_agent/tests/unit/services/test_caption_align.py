@@ -9,7 +9,11 @@ exactly that error class plus the fail-open quality gate.
 from __future__ import annotations
 
 from plugins.caption_provider import CaptionSegment
-from services.caption_align import align_script_to_segments, segments_to_srt
+from services.caption_align import (
+    align_script_to_segments,
+    segments_to_srt,
+    split_segments_for_display,
+)
 
 
 def _seg(start: float, end: float, text: str) -> CaptionSegment:
@@ -89,3 +93,88 @@ class TestSrt:
 
     def test_empty_returns_empty(self):
         assert segments_to_srt([]) == ""
+
+
+class TestSplitSegmentsForDisplay:
+    """Display-cue chunking (2026-08-24 giant-caption report).
+
+    Whisper segments are sentence-sized; burned whole into a 9:16 frame they
+    wrap into a frame-filling text wall. The splitter re-cuts them into short
+    cues with timings interpolated inside the parent segment.
+    """
+
+    def test_short_segment_untouched(self):
+        segs = [_seg(0.0, 2.0, "four words stay put")]
+        assert split_segments_for_display(segs, max_words=5) == segs
+
+    def test_long_segment_split_balanced(self):
+        # 13 words at max 5 → 3 chunks sized 5/4/4 — never an orphan tail.
+        text = "one two three four five six seven eight nine ten eleven twelve thirteen"
+        out = split_segments_for_display([_seg(0.0, 6.5, text)], max_words=5)
+        sizes = [len(c.text.split()) for c in out]
+        assert sizes == [5, 4, 4]
+        assert " ".join(c.text for c in out) == text
+
+    def test_timings_contiguous_and_exact_tail(self):
+        text = "one two three four five six seven eight nine ten eleven twelve thirteen"
+        out = split_segments_for_display([_seg(1.0, 7.5, text)], max_words=5)
+        assert out[0].start_s == 1.0
+        assert out[-1].end_s == 7.5
+        for a, b in zip(out, out[1:], strict=False):
+            assert a.end_s == b.start_s
+            assert a.end_s > a.start_s
+        assert out[-1].end_s > out[-1].start_s
+
+    def test_char_weighted_timing(self):
+        # Chunk windows track text length: a chunk with much longer words
+        # gets a longer window than an equal-word-count short-word chunk.
+        text = "hi ok go extraordinarily incomprehensibilities internationalization"
+        out = split_segments_for_display([_seg(0.0, 6.0, text)], max_words=3)
+        assert len(out) == 2
+        short_window = out[0].end_s - out[0].start_s
+        long_window = out[1].end_s - out[1].start_s
+        assert long_window > short_window
+
+    def test_min_cue_seconds_caps_chunk_count(self):
+        # A 1.2s segment can hold at most two 0.6s cues no matter the words.
+        text = "one two three four five six seven eight nine ten eleven twelve"
+        out = split_segments_for_display(
+            [_seg(0.0, 1.2, text)], max_words=3, min_cue_seconds=0.6,
+        )
+        assert len(out) == 2
+
+    def test_disabled_via_nonpositive_budget(self):
+        segs = [_seg(0.0, 6.0, "a very long segment that would otherwise be split")]
+        assert split_segments_for_display(segs, max_words=0) is segs
+
+    def test_multiple_segments_processed_independently(self):
+        segs = [
+            _seg(0.0, 2.0, "short one"),
+            _seg(2.0, 8.0, "one two three four five six seven eight nine ten"),
+        ]
+        out = split_segments_for_display(segs, max_words=5)
+        assert out[0] == segs[0]
+        assert len(out) == 3  # 1 untouched + 2 chunks
+        assert out[1].start_s == 2.0
+        assert out[-1].end_s == 8.0
+
+    def test_speaker_and_confidence_carry_through(self):
+        seg = CaptionSegment(
+            start_s=0.0, end_s=6.0,
+            text="one two three four five six seven eight nine ten",
+            speaker="narrator", confidence=0.9,
+        )
+        out = split_segments_for_display([seg], max_words=5)
+        assert all(c.speaker == "narrator" and c.confidence == 0.9 for c in out)
+
+    def test_empty_text_segment_untouched(self):
+        segs = [_seg(0.0, 2.0, "")]
+        assert split_segments_for_display(segs, max_words=5) == segs
+
+    def test_srt_roundtrip_of_split_cues(self):
+        text = "one two three four five six seven eight nine ten"
+        out = split_segments_for_display([_seg(0.0, 5.0, text)], max_words=5)
+        srt = segments_to_srt(out)
+        assert "1\n00:00:00,000 --> " in srt
+        assert "one two three four five" in srt
+        assert "six seven eight nine ten" in srt

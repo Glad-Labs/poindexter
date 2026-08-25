@@ -152,7 +152,7 @@ Per shot, the renderer:
 1. **Selects a source** — `slideshow` (Ken Burns over a stylized image-gen still) · `stock` (Pexels B-roll) · `generative` (Wan2.1, future #669). Resolved from `shot.source_hint` + a **per-niche source policy in `app_settings`** (e.g. tech → stylized image-gen; real-world/human subjects → Pexels, honoring the no-photoreal-humans rule, #675).
 2. **Produces the visual** — image-gen stylized render, or Pexels fetch.
 3. **Composes** via `FFmpegLocalCompositor`: shots concat + transitions → narration layered at each shot's `narration_offset_s` (#517) → **ambient bed mixed under** (#679, finally consumed) → **captions burned in** (#676).
-4. **Output profiles** (DB-config): long = 16:9 1080p; short = 9:16 1080×1920, ≤60s, punchier pacing + larger captions.
+4. **Output profiles** (DB-config): long = 16:9 1080p; short = 9:16 1080×1920, ≤60s, punchier pacing.
 
 The legacy host `:9837` slideshow path is replaced by the compositor for the live path (the compositor already supports caption burn-in and per-shot audio).
 
@@ -174,9 +174,21 @@ The legacy host `:9837` slideshow path is replaced by the compositor for the liv
 - **One ASR pass _per lane_** (`media.transcribe_narration`) over that lane's
   own narration audio does double duty:
   - **(a) Captions** — emits the lane's `.srt` (`long_caption_srt_path` /
-    `short_caption_srt_path`) burned in by that lane's render (#676).
+    `short_caption_srt_path`) burned in by that lane's render (#676). Caption
+    TEXT is the clean script force-aligned onto the ASR timings
+    (`caption_align`, 2026-08-03), then re-cut into short **display cues**
+    (2026-08-24: `media.caption.{short,long}_max_cue_words`, defaults 5 / 14 —
+    whisper's sentence-sized segments burned whole wrapped into a
+    frame-filling text wall on the 9:16 short). Burn styling is
+    resolution-normalized: `caption_font_height_pct` expresses glyph height
+    as a percent of frame height (ASS FontSize is a fraction of PlayResY=288,
+    so raw units silently doubled between the 16:9 and 9:16 lanes), and
+    position resolves per orientation (portrait → middle, landscape →
+    bottom) — see the `FFmpegLocalCompositor` module docstring for the knobs.
   - **(b) Fidelity QA** — diff the lane's ASR transcript against that lane's
     source script to catch TTS dropouts / mispronunciations / truncation.
+    (The fidelity reference is built from the provider's original segments —
+    display chunking never affects QA.)
 - **`qa.audio` atom (#1193, dual-lane #689)** — runs the deterministic
   ffprobe/ffmpeg checks (silence / volume / duration-vs-script) on **each**
   narration lane, nesting the results under `audio_qa_result['long']` /

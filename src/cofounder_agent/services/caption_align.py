@@ -27,6 +27,7 @@ Approach (segment-level, provider-agnostic — needs no word timestamps):
 from __future__ import annotations
 
 import difflib
+import math
 import re
 from dataclasses import replace
 
@@ -114,6 +115,74 @@ def align_script_to_segments(
     return out, fraction
 
 
+def split_segments_for_display(
+    segments: list[CaptionSegment],
+    *,
+    max_words: int,
+    min_cue_seconds: float = 0.6,
+) -> list[CaptionSegment]:
+    """Re-cut sentence-sized ASR segments into short display cues.
+
+    Whisper emits segments at sentence/phrase scale — 10-15 words is routine.
+    Burned into a 9:16 frame at mobile-readable size, one such cue wraps into
+    a frame-filling wall of text (2026-08-24 operator report). Short-form
+    captioning convention is 3-8 words on screen at a time, so each segment
+    over ``max_words`` is split into near-equal word chunks (sizes differ by
+    at most one — never an orphan one-word tail), and each chunk's window is
+    interpolated inside its parent segment proportional to text length.
+
+    TTS narration is continuous speech with no mid-segment silences, so
+    linear interpolation stays within ~±200ms of the true word timing —
+    imperceptible on a caption. (The caption provider's ``granularity="word"``
+    request would give exact word timestamps if this ever needs to tighten.)
+
+    ``min_cue_seconds`` caps how finely a segment may be cut: the chunk count
+    is reduced so no cue's window falls below it (a flashing sub-second cue is
+    worse than an over-full one). ``max_words <= 0`` disables splitting.
+    Timings never overlap, chunk boundaries are contiguous, and the last
+    chunk ends exactly at the parent segment's ``end_s``. ``speaker`` /
+    ``confidence`` carry through unchanged.
+    """
+    if max_words <= 0:
+        return segments
+
+    out: list[CaptionSegment] = []
+    for seg in segments:
+        words = (seg.text or "").split()
+        duration = max(0.0, float(seg.end_s) - float(seg.start_s))
+        n_chunks = math.ceil(len(words) / max_words) if words else 1
+        if min_cue_seconds > 0 and duration > 0:
+            n_chunks = min(n_chunks, max(1, int(duration / min_cue_seconds)))
+        if n_chunks <= 1:
+            out.append(seg)
+            continue
+
+        # Balanced sizes: base words per chunk, the first ``rem`` get one more.
+        base, rem = divmod(len(words), n_chunks)
+        chunks: list[list[str]] = []
+        idx = 0
+        for i in range(n_chunks):
+            size = base + (1 if i < rem else 0)
+            chunks.append(words[idx : idx + size])
+            idx += size
+
+        # Char-weighted timing: longer text ≈ longer speech, better than a
+        # flat per-word share ("a big" vs "extraordinarily").
+        weights = [sum(len(w) + 1 for w in chunk) for chunk in chunks]
+        total_weight = sum(weights) or 1
+        cursor = float(seg.start_s)
+        consumed = 0
+        for i, (chunk, weight) in enumerate(zip(chunks, weights, strict=True)):
+            consumed += weight
+            if i == len(chunks) - 1:
+                end = float(seg.end_s)  # exact — no float drift on the tail
+            else:
+                end = float(seg.start_s) + duration * consumed / total_weight
+            out.append(replace(seg, start_s=cursor, end_s=end, text=" ".join(chunk)))
+            cursor = end
+    return out
+
+
 def segments_to_srt(segments: list[CaptionSegment]) -> str:
     """SRT document from segments — same format the caption providers emit."""
     if not segments:
@@ -135,4 +204,8 @@ def segments_to_srt(segments: list[CaptionSegment]) -> str:
     return "\n".join(blocks)
 
 
-__all__ = ["align_script_to_segments", "segments_to_srt"]
+__all__ = [
+    "align_script_to_segments",
+    "segments_to_srt",
+    "split_segments_for_display",
+]

@@ -54,6 +54,41 @@ logger = logging.getLogger(__name__)
 # truncation). Tunable via app_settings ``media.caption.fidelity_min_ratio``.
 _DEFAULT_FIDELITY_MIN_RATIO = 0.80
 
+# Display-cue word budgets per lane (2026-08-24): whisper segments are
+# sentence-sized (10-15 words is routine), and burned whole they wrap into a
+# frame-filling text wall — worst on the 9:16 short, where the portrait frame
+# fits ~2-4 words per line at mobile-readable size. Segments over the budget
+# are re-cut into short cues with interpolated timings
+# (``caption_align.split_segments_for_display``). Short-form convention is
+# 3-8 words on screen; the 16:9 long lane wears conventional two-line
+# subtitles, hence the larger budget. Tunable per lane via app_settings
+# ``media.caption.{short,long}_max_cue_words``; 0 disables splitting.
+_DEFAULT_MAX_CUE_WORDS = {"short": 5, "long": 14}
+_DEFAULT_MIN_CUE_SECONDS = 0.6
+
+
+def _resolve_max_cue_words(site_config: Any, label: str) -> int:
+    """Per-lane display-cue word budget (``media.caption.<lane>_max_cue_words``)."""
+    default = _DEFAULT_MAX_CUE_WORDS.get(label, 0)
+    if site_config is None:
+        return default
+    try:
+        return int(site_config.get(f"media.caption.{label}_max_cue_words", default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_min_cue_seconds(site_config: Any) -> float:
+    """Floor a display cue's window (``media.caption.min_cue_seconds``)."""
+    if site_config is None:
+        return _DEFAULT_MIN_CUE_SECONDS
+    try:
+        return float(
+            site_config.get("media.caption.min_cue_seconds", _DEFAULT_MIN_CUE_SECONDS)
+        )
+    except (TypeError, ValueError):
+        return _DEFAULT_MIN_CUE_SECONDS
+
 
 ATOM_META = AtomMeta(
     name="media.transcribe_narration",
@@ -202,6 +237,7 @@ async def _transcribe_one(
     # alignment quality: a poor match (heavy TTS dropout, wrong audio) keeps
     # the ASR captions rather than smearing script text across wrong timings.
     srt_text = result.srt_text
+    display_segments = list(result.segments or [])
     align_enabled = True
     min_ratio = 0.5
     if site_config is not None:
@@ -227,6 +263,7 @@ async def _transcribe_one(
             rebuilt = segments_to_srt(aligned)
             if rebuilt:
                 srt_text = rebuilt
+                display_segments = aligned
                 logger.info(
                     "[media.transcribe_narration] task=%s lane=%s captions "
                     "aligned to script (match %.2f, %d segments)",
@@ -238,6 +275,35 @@ async def _transcribe_one(
                 "%.2f < %.2f — keeping ASR captions",
                 task_id, label, fraction, min_ratio,
             )
+
+    # Display chunking (2026-08-24): re-cut sentence-sized segments into short
+    # cues so the burn never renders a frame-filling text wall. Applies to the
+    # aligned segments when alignment ran (their text is the clean script) and
+    # to the raw ASR segments otherwise. Runs AFTER fidelity references are
+    # captured — ``asr_transcript`` above is built from the provider's original
+    # segments, so QA compares speech, not display formatting.
+    max_cue_words = _resolve_max_cue_words(site_config, label)
+    if max_cue_words > 0 and display_segments:
+        from services.caption_align import (
+            segments_to_srt,
+            split_segments_for_display,
+        )
+
+        chunked = split_segments_for_display(
+            display_segments,
+            max_words=max_cue_words,
+            min_cue_seconds=_resolve_min_cue_seconds(site_config),
+        )
+        if len(chunked) != len(display_segments):
+            rebuilt = segments_to_srt(chunked)
+            if rebuilt:
+                srt_text = rebuilt
+                logger.info(
+                    "[media.transcribe_narration] task=%s lane=%s split %d "
+                    "segment(s) into %d display cue(s) (max %d words/cue)",
+                    task_id, label, len(display_segments), len(chunked),
+                    max_cue_words,
+                )
 
     srt_path = f"{tempfile.gettempdir()}/captions_{task_id}_{label}.srt"
     try:
