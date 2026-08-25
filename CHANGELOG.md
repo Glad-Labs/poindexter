@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.127.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.126.1...v0.127.0) (2026-08-25)
+
+
+### Features
+
+* **cli:** retire `poindexter premium` — license activation never gated anything ([#3321](https://github.com/Glad-Labs/glad-labs-stack/issues/3321)) ([0e403fa](https://github.com/Glad-Labs/glad-labs-stack/commit/0e403fa73406dff2f974a8571b4f2a26def24b59))
+* **infra:** swap-exhaustion alert + OOM-kill priorities (2026-08-24 incident hardening) ([#3319](https://github.com/Glad-Labs/glad-labs-stack/issues/3319)) ([945f3bc](https://github.com/Glad-Labs/glad-labs-stack/commit/945f3bc893244e75b182cf2e6ca40b88d5376630))
+* **pro:** poindexter pro apply — one-command, safe-by-default seed adoption ([#3322](https://github.com/Glad-Labs/glad-labs-stack/issues/3322)) ([79307b2](https://github.com/Glad-Labs/glad-labs-stack/commit/79307b2941cbadfa36b2e85d1614f6f17c218d08))
+
+
+### Bug Fixes
+
+* **image:** free ComfyUI after fan-out + judge budget — the 8-day silent-503 window ([#3320](https://github.com/Glad-Labs/glad-labs-stack/issues/3320)) ([40b07b9](https://github.com/Glad-Labs/glad-labs-stack/commit/40b07b9ece94e324b5d9ee3e66e0e7954c5148ad))
+* **media:** durable audio paths, missing-bed soft-degrade, bounded cap-reset, render-loop probe (poindexter[#1021](https://github.com/Glad-Labs/glad-labs-stack/issues/1021)) ([#3318](https://github.com/Glad-Labs/glad-labs-stack/issues/3318)) ([fa29f3c](https://github.com/Glad-Labs/glad-labs-stack/commit/fa29f3c2cb1280dab44d9cca90d0cfbe90b7b9ec))
+* **media:** resolution-normalized caption sizing + short display cues — end the 9:16 text wall ([#3326](https://github.com/Glad-Labs/glad-labs-stack/issues/3326)) ([b00d044](https://github.com/Glad-Labs/glad-labs-stack/commit/b00d0443397d12a4a4603330bf3ebbe159876c2e))
+* **qa:** re-wire the placeholder-poisoning scrub into qa.rewrite (poindexter[#1023](https://github.com/Glad-Labs/glad-labs-stack/issues/1023)) ([#3327](https://github.com/Glad-Labs/glad-labs-stack/issues/3327)) ([6a4a984](https://github.com/Glad-Labs/glad-labs-stack/commit/6a4a9848fc653842d996329ad331f6fa12ef0999))
+* **tts:** give digit-adjacent dashes their spoken meaning at the render boundary ([#3329](https://github.com/Glad-Labs/glad-labs-stack/issues/3329)) ([4637a8d](https://github.com/Glad-Labs/glad-labs-stack/commit/4637a8d2ec4bfae0b062473750b6a942c587bc47))
+
 ## [0.126.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.126.0...v0.126.1) (2026-08-24)
 
 
