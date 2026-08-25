@@ -351,3 +351,64 @@ class TestQaRewriteTruncationGuard:
         })
         await qa_rewrite.run({**self._STATE, "content": "draft.", "site_config": sc})
         assert seen["max_tokens"] == 9000
+
+
+@pytest.mark.unit
+class TestQaRewritePlaceholderScrub:
+    """poindexter#1023 — the deterministic placeholder net on the rescue loop.
+
+    The reviser can re-emit ``[posts/<identifier>]`` placeholders the resolver
+    stage already cleaned; the rescue cycle resumes at qa.programmatic (never
+    back through the resolver), so unscrubbed placeholders re-fail validation
+    every pass. The prompt-level "never placeholders" instruction is advisory —
+    these pin the code-level strip that backs it.
+    """
+
+    def _state(self):
+        return {
+            "task_id": "t-scrub",
+            "content": "# Draft\n\nweak body.\n",
+            "qa_rewrite_attempts": 0,
+            "site_config": _site_config(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak intro"},
+            ],
+        }
+
+    async def test_reemitted_placeholder_is_scrubbed(self, monkeypatch):
+        async def _fake_chat(prompt, **kw):
+            return (
+                "# Revised\n\nSee [posts/older-article] for background. "
+                "Also read [posts/kept-link](/posts/kept-link) here.\n"
+            )
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        out = await qa_rewrite.run(self._state())
+        # The bare placeholder is stripped…
+        assert "[posts/older-article]" not in out["content"]
+        # …while a REAL markdown link keeps its bracket text (negative
+        # lookahead: ``[posts/x](…)`` is a resolved link, not a placeholder).
+        assert "[posts/kept-link](/posts/kept-link)" in out["content"]
+        # And the revision still lands as a normal successful rewrite.
+        assert out["qa_rewrite_attempts"] == 1
+        assert out["qa_rail_reviews"] == [{"__reset__": True}]
+
+    async def test_all_placeholder_revision_degrades_to_reject(self, monkeypatch):
+        findings: list[dict] = []
+
+        def _fake_emit(**kw):
+            findings.append(kw)
+
+        async def _fake_chat(prompt, **kw):
+            return "[posts/one] [posts/two]"
+
+        monkeypatch.setattr("services.llm_text.ollama_chat_text", _fake_chat)
+        monkeypatch.setattr("utils.findings.emit_finding", _fake_emit)
+        out = await qa_rewrite.run(self._state())
+        # Nothing but placeholders scrubs down to empty — same degrade path as
+        # an empty revision: prior draft kept, attempt burned, reviews reset.
+        assert "content" not in out
+        assert out["qa_rewrite_attempts"] == 1
+        assert out["qa_rail_reviews"] == [{"__reset__": True}]
+        assert [f["kind"] for f in findings] == ["qa_rewrite_empty_revision"]

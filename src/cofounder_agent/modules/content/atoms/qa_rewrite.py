@@ -9,7 +9,11 @@ instead of halting.
 This atom:
   1. Reads ``content`` + the failing critic feedback from ``qa_rail_reviews``.
   2. Calls the writer model with a targeted "revise to fix these issues" prompt.
-  3. Returns the revised ``content``, increments ``qa_rewrite_attempts``, and
+  3. Scrubs any ``[posts/<identifier>]`` placeholders the reviser re-emitted
+     (services.internal_link_placeholders — the rescue loop never re-enters
+     the resolver stage, so an unscrubbed placeholder re-fails validation
+     every pass; poindexter#1023).
+  4. Returns the revised ``content``, increments ``qa_rewrite_attempts``, and
      emits the ``qa_rail_reviews`` reset sentinel ``[{"__reset__": True}]`` so
      the second QA pass starts from an empty review list (the _merge_rail_reviews
      reducer honors the sentinel). Without the reset, the stale first-pass veto
@@ -42,7 +46,7 @@ logger = logging.getLogger(__name__)
 ATOM_META = AtomMeta(
     name="qa.rewrite",
     type="atom",
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "One bounded revision pass for a critic-vetoed draft; resets the QA "
         "review channel and increments the durable rescue-attempt counter."
@@ -309,6 +313,32 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "qa_rewrite_attempts": attempts + 1,
             "qa_rail_reviews": list(_REVIEW_RESET),
         }
+
+    # Placeholder-poisoning guard (poindexter#1023): the reviser can re-emit
+    # ``[posts/<uuid>]`` placeholders the resolver already cleaned, and this
+    # loop resumes at qa.programmatic — never back through the resolver — so
+    # each poisoned pass re-fails validation until the attempt budget burns
+    # out. The prompt's "never placeholders" instruction is advisory; this
+    # strip is the deterministic net (originally in the deleted
+    # cross_model_qa stage, lost in the atom-cutover #355).
+    from services.internal_link_placeholders import scrub_unresolved_placeholders
+
+    revised, stripped_placeholders = scrub_unresolved_placeholders(revised)
+    if stripped_placeholders:
+        logger.warning(
+            "[qa.rewrite] scrubbed %d unresolved [posts/...] placeholder(s) "
+            "re-emitted by the reviser (task=%s)",
+            stripped_placeholders, str(task_id or "?")[:8],
+        )
+        revised = revised.strip()
+        if not revised:
+            # Pathological: the "revision" was nothing but placeholders.
+            # Same degrade-to-reject path as an empty revision.
+            _emit_empty_finding(model)
+            return {
+                "qa_rewrite_attempts": attempts + 1,
+                "qa_rail_reviews": list(_REVIEW_RESET),
+            }
 
     logger.info(
         "[qa.rewrite] revised draft for task=%s (attempt %d) — %d chars",

@@ -68,45 +68,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# The validator's PLACEHOLDER_MARKER_PATTERNS catches more shapes than
-# this stage attempts to resolve. We focus on the productive shape —
-# ``[posts/<identifier>]`` not followed by ``(``. The validator also
-# flags ``[posts/<uuid>]`` and ``[posts/{slug}]``; those resolve through
-# the same path (the captured group is the identifier).
-#
-# Regex grammar:
-#   - ``\[posts/`` literal prefix
-#   - ``([a-zA-Z0-9_-]+)`` — slug or hyphenated id (no slashes, no spaces)
-#   - ``\]`` close bracket
-#   - negative lookahead ``(?!\()`` — must NOT be followed by ``(``, to
-#     avoid touching real markdown links like ``[posts/foo](/posts/foo)``.
-_PLACEHOLDER_RE = re.compile(r"\[posts/([a-zA-Z0-9_-]+)\](?!\()")
-
-
-def scrub_unresolved_placeholders(content: str) -> tuple[str, int]:
-    """Strip ``[posts/<identifier>]`` placeholders without a DB lookup.
-
-    Returns ``(new_content, stripped_count)``. Idempotent.
-
-    Designed as the **safety net** for callers that can't afford the
-    DB roundtrip (or already missed the resolver stage). The primary
-    resolution path is still ``ResolveInternalLinkPlaceholdersStage``,
-    which preserves legitimate internal links by looking up the
-    identifier in ``posts`` first. Use this helper where preserving a
-    cross-link matters less than avoiding a downstream
-    ``unresolved_placeholder`` critical — most notably after a
-    QA-rewriter LLM call, where re-introduced placeholders would
-    otherwise loop the rewrite cycle until ``qa_max_rewrites`` burns
-    out.
-
-    Why the regex matches the resolver stage above: any change to one
-    must change the other in lockstep, otherwise the safety net and
-    the primary path drift and the validator's
-    ``unresolved_placeholder`` rule starts firing on shapes only one
-    side knows about.
-    """
-    new_content, n = _PLACEHOLDER_RE.subn("", content)
-    return new_content, n
+# The ``[posts/<identifier>]`` grammar + the no-DB scrub live in
+# ``services/internal_link_placeholders.py`` — one definition shared with
+# the qa.rewrite safety net (an atom must not import a stage, so the shared
+# home sits in services/; poindexter#1023). The old names stay importable
+# from here for existing callers/tests.
+from services.internal_link_placeholders import (  # noqa: E402
+    PLACEHOLDER_RE as _PLACEHOLDER_RE,
+)
+from services.internal_link_placeholders import (  # noqa: E402, F401
+    scrub_unresolved_placeholders,
+)
 
 
 @dataclass

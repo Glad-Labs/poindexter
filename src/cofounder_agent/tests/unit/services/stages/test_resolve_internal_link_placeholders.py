@@ -27,10 +27,12 @@ from modules.content.stages.resolve_internal_link_placeholders import (
 # already cleaned, looping the rewrite cycle until qa_max_rewrites
 # burns out and the post is rejected with score=0. The helper strips
 # placeholders without a DB lookup so the rewrite loop can sanitize
-# rewriter output before re-running validation. NOTE: its production
-# caller (the deleted cross_model_qa stage) is gone and qa.rewrite does
-# NOT call it today — re-wiring vs deleting is poindexter#1023; these
-# tests keep the helper's contract pinned until that lands.
+# rewriter output before re-running validation. The helper now lives in
+# ``services/internal_link_placeholders.py`` and is wired into
+# ``qa.rewrite`` (poindexter#1023 — the guard's original caller, the
+# cross_model_qa stage, was deleted in the atom-cutover). Importing it
+# from the STAGE path here is deliberate: it pins the backcompat
+# re-export alongside the contract.
 
 
 def test_scrub_strips_uuid_placeholder_from_prose():
