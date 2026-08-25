@@ -45,6 +45,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -719,16 +720,205 @@ async def cli_status(pool: Any, site_config: Any, *, limit: int = 50) -> dict[st
     }
 
 
+# ---------------------------------------------------------------------------
+# buyer-side seed apply — `poindexter pro apply` (#3216 follow-up)
+#
+# The Pro deliverable's seed is a REFERENCE tuning, not a drop-in: many values
+# are tuned to the seller's hardware and model fleet. So apply is a
+# diff-and-adopt, safe by default: dry-run unless told otherwise, and even
+# then it only overwrites values still sitting at the OSS default — an
+# operator's own tuning is never clobbered without an explicit flag.
+# ---------------------------------------------------------------------------
+
+# Key families held back for manual review even when adoptable: a model pin
+# or GPU/VRAM number tuned on the seller's rig is the classic value that
+# "applies clean" and then breaks a smaller machine at 2am.
+_HARDWARE_KEY_HINTS = ("gpu", "vram", "num_ctx")
+
+
+@dataclass
+class SeedPlan:
+    """Result of diffing a Pro seed against the live app_settings."""
+
+    seed_path: str
+    adoptable: dict[str, tuple[str, str]] = field(default_factory=dict)
+    review: dict[str, tuple[str, str]] = field(default_factory=dict)
+    conflicts: dict[str, tuple[str, str]] = field(default_factory=dict)
+    identical: int = 0
+    unknown_keys: list[str] = field(default_factory=list)
+    secret_skipped: list[str] = field(default_factory=list)
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "adoptable": len(self.adoptable),
+            "review_held": len(self.review),
+            "conflicts_kept": len(self.conflicts),
+            "identical": self.identical,
+            "unknown_to_this_engine": len(self.unknown_keys),
+            "secret_skipped": len(self.secret_skipped),
+        }
+
+
+def resolve_seed_path(seed_ref: str | None) -> Path:
+    """Resolve a seed reference to the seed JSON file, loudly.
+
+    Accepts a direct path to ``seed-settings.json``, a pro-repo checkout
+    directory, or nothing — in which case the two conventional locations
+    (./ and ~/poindexter-pro) are tried. Raises ValueError naming every
+    location tried; guessing silently is how a buyer applies the wrong file.
+    """
+    candidates: list[Path] = []
+    if seed_ref:
+        p = Path(seed_ref).expanduser()
+        candidates = [p] if p.suffix == ".json" else [
+            p / "config" / "seed-settings.json"
+        ]
+    else:
+        candidates = [
+            Path("config/seed-settings.json"),
+            Path.home() / "poindexter-pro" / "config" / "seed-settings.json",
+        ]
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    raise ValueError(
+        "no seed-settings.json found — tried: "
+        + "; ".join(str(c) for c in candidates)
+        + ". Pass the path to your poindexter-pro checkout (git clone the "
+        "repo your Pro invite granted, then `poindexter pro apply <path>`)."
+    )
+
+
+def _is_review_held(key: str, metadata: dict[str, Any]) -> bool:
+    meta = metadata.get(key) or {}
+    if meta.get("value_type") == "model":
+        return True
+    return any(hint in key for hint in _HARDWARE_KEY_HINTS)
+
+
+def classify_seed(
+    seed: dict[str, str],
+    current: dict[str, tuple[str, bool]],
+    defaults: dict[str, str],
+    metadata: dict[str, Any],
+    *,
+    seed_path: str = "",
+) -> SeedPlan:
+    """Bucket every seed key by what applying it would mean here.
+
+    ``current`` maps key -> (value, is_secret) from the live table. A key
+    with no live row is effectively at its OSS default (the seeder is lazy),
+    so it classifies exactly like a stock row.
+    """
+    plan = SeedPlan(seed_path=seed_path)
+    for key in sorted(seed):
+        seed_val = seed[key]
+        if key not in defaults:
+            plan.unknown_keys.append(key)
+            continue
+        row = current.get(key)
+        if row is not None and row[1]:
+            plan.secret_skipped.append(key)
+            continue
+        effective = row[0] if row is not None else defaults[key]
+        if effective == seed_val:
+            plan.identical += 1
+            continue
+        pair = (effective, seed_val)
+        if effective == defaults[key]:
+            if _is_review_held(key, metadata):
+                plan.review[key] = pair
+            else:
+                plan.adoptable[key] = pair
+        else:
+            plan.conflicts[key] = pair
+    return plan
+
+
+async def cli_apply(
+    pool: Any,
+    seed_ref: str | None,
+    *,
+    apply: bool = False,
+    include_models: bool = False,
+    overwrite_conflicts: bool = False,
+    defaults: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Diff a Pro seed against live settings; optionally adopt it.
+
+    Dry-run unless ``apply``. The default apply set is the adoptable bucket
+    only; ``include_models`` adds the review-held model/hardware keys and
+    ``overwrite_conflicts`` adds keys the operator had customized — both
+    opt-in, never implied.
+    """
+    if defaults is None or metadata is None:
+        from services.settings_defaults import DEFAULTS, METADATA
+
+        defaults = DEFAULTS if defaults is None else defaults
+        metadata = METADATA if metadata is None else metadata
+
+    path = resolve_seed_path(seed_ref)
+    try:
+        seed_raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read seed {path}: {exc}") from exc
+    if not isinstance(seed_raw, dict):
+        raise ValueError(f"{path} is not a JSON object of key -> value")
+    seed = {str(k): str(v) for k, v in seed_raw.items()}
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT key, value, is_secret FROM app_settings")
+        current = {r["key"]: (r["value"], bool(r["is_secret"])) for r in rows}
+        plan = classify_seed(
+            seed, current, defaults, metadata, seed_path=str(path)
+        )
+
+        to_write: dict[str, str] = {}
+        if apply:
+            to_write.update({k: v for k, (_, v) in plan.adoptable.items()})
+            if include_models:
+                to_write.update({k: v for k, (_, v) in plan.review.items()})
+            if overwrite_conflicts:
+                to_write.update({k: v for k, (_, v) in plan.conflicts.items()})
+            # Same proven upsert shape as the rest of the CLI settings path.
+            for key, value in to_write.items():
+                await conn.execute(
+                    "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
+                    "ON CONFLICT (key) DO UPDATE "
+                    "SET value = EXCLUDED.value, updated_at = NOW()",
+                    key,
+                    value,
+                )
+
+    return {
+        "seed_path": str(path),
+        "dry_run": not apply,
+        "counts": plan.counts(),
+        "adoptable": plan.adoptable,
+        "review_held": plan.review,
+        "conflicts_kept": {
+            k: v for k, v in plan.conflicts.items() if k not in to_write
+        },
+        "unknown_keys": plan.unknown_keys,
+        "applied": sorted(to_write),
+    }
+
+
 __all__ = [
     "ACCESS_STATUSES",
     "REVOKE_STATUSES",
     "ProDeliveryConfigError",
     "ProDeliveryService",
+    "SeedPlan",
     "SyncOutcome",
+    "classify_seed",
+    "cli_apply",
     "cli_link",
     "cli_status",
     "cli_unlink",
     "normalize_github_username",
+    "resolve_seed_path",
     "resolve_subscription",
     "run_sync",
 ]

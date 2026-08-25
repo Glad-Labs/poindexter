@@ -195,4 +195,103 @@ async def _run_unlink(subscription: str, as_json: bool) -> None:
     )
 
 
+@pro_group.command("apply")
+@click.argument("seed", required=False)
+@click.option(
+    "--apply", "do_apply", is_flag=True,
+    help="Write the adoptable values. Without this flag the command is a "
+         "dry-run report.",
+)
+@click.option(
+    "--include-models", is_flag=True,
+    help="Also adopt model-pin / GPU / VRAM keys (held for review by default "
+         "— they're tuned to the seller's hardware).",
+)
+@click.option(
+    "--overwrite-conflicts", is_flag=True,
+    help="Also overwrite keys YOU have customized with the seed's values. "
+         "Off by default: your tuning wins.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON for LLM/script consumers.")
+def cmd_apply(
+    seed: str | None, do_apply: bool, include_models: bool,
+    overwrite_conflicts: bool, as_json: bool,
+) -> None:
+    """Diff the Pro seed against your live settings; adopt it safely.
+
+    SEED is your poindexter-pro checkout (directory or the
+    seed-settings.json itself). Omitted, ./ and ~/poindexter-pro are tried.
+    Dry-run by default; --apply only overwrites values still at their OSS
+    defaults, so your own tuning is never clobbered without
+    --overwrite-conflicts.
+    """
+    if (include_models or overwrite_conflicts) and not do_apply:
+        raise click.ClickException(
+            "--include-models / --overwrite-conflicts only mean something "
+            "with --apply (the default run is a dry-run report)."
+        )
+    asyncio.run(_run_apply(seed, do_apply, include_models, overwrite_conflicts, as_json))
+
+
+async def _run_apply(
+    seed: str | None, do_apply: bool, include_models: bool,
+    overwrite_conflicts: bool, as_json: bool,
+) -> None:
+    pool, _site_config = await _open_ctx()
+    try:
+        from services.pro_delivery import cli_apply
+
+        try:
+            payload = await cli_apply(
+                pool, seed,
+                apply=do_apply,
+                include_models=include_models,
+                overwrite_conflicts=overwrite_conflicts,
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+    finally:
+        await pool.close()
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    counts = payload["counts"]
+    click.echo(f"seed: {payload['seed_path']}")
+    click.echo(
+        f"{'DRY RUN — ' if payload['dry_run'] else ''}"
+        f"adoptable {counts['adoptable']}, held for review {counts['review_held']}, "
+        f"conflicts kept {counts['conflicts_kept']}, identical {counts['identical']}, "
+        f"unknown to this engine {counts['unknown_to_this_engine']}"
+    )
+
+    def _show(title: str, bucket: dict, hint: str) -> None:
+        if not bucket:
+            return
+        click.echo()
+        click.echo(f"{title} ({len(bucket)}):{'' if not hint else '  # ' + hint}")
+        for key, (cur, new) in list(bucket.items())[:20]:
+            click.echo(f"  {key}: {cur!r} -> {new!r}")
+        if len(bucket) > 20:
+            click.echo(f"  … and {len(bucket) - 20} more (use --json for all)")
+
+    _show("Adoptable (you're on stock values)", payload["adoptable"],
+          "" if not payload["dry_run"] else "apply with --apply")
+    _show("Held for review (model/GPU keys)", payload["review_held"],
+          "seller-hardware-tuned; --apply --include-models to adopt")
+    _show("Conflicts kept (your tuning wins)", payload["conflicts_kept"],
+          "--apply --overwrite-conflicts to take the seed's values")
+
+    if payload["applied"]:
+        click.echo()
+        click.echo(
+            f"applied {len(payload['applied'])} value(s) — live within ~1 min "
+            "(reload_site_config), no restart needed."
+        )
+    elif payload["dry_run"] and counts["adoptable"]:
+        click.echo()
+        click.echo(f"re-run with --apply to adopt the {counts['adoptable']} value(s) above.")
+
+
 __all__ = ["pro_group"]

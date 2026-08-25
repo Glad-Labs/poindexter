@@ -270,6 +270,51 @@ def verify_outputs(paths: list[Path], base: Path) -> list[str]:
     return violations
 
 
+def build_config_readme(seed_count: int, drops: dict[str, int], generated: str) -> str:
+    """Regenerate config/README.md so its counts and instructions track the
+    build instead of rotting (the June README still said 307 keys in August,
+    and taught a one-key-at-a-time apply that predates `poindexter pro apply`).
+    """
+    dropped_total = sum(drops.values())
+    return f"""# Config seed
+
+`seed-settings.json` is the **live, operator-tuned** `app_settings` values
+running the seller's production content business — {seed_count} non-secret
+keys covering quality thresholds, QA-rail toggles, cadence, routing, and the
+rest of the DB-driven config plane. Regenerated weekly from the live system
+(last: {generated}); {dropped_total} keys are withheld per rebuild
+(secrets, operator identity, and operator-specific values — the CHANGELOG
+entry itemizes each class).
+
+## Applying it — one command, safe by default
+
+```bash
+poindexter pro apply /path/to/this/checkout
+```
+
+That is a **dry-run report**: it diffs the seed against your live settings
+and buckets every key. Then:
+
+```bash
+poindexter pro apply /path/to/this/checkout --apply
+```
+
+adopts ONLY the keys where you are still on stock OSS defaults — your own
+tuning is never overwritten. Two opt-in escalations:
+
+- `--include-models` also adopts model-pin / GPU / VRAM keys, which are held
+  for review by default because they are tuned to the seller's hardware.
+- `--overwrite-conflicts` takes the seed's value even where you customized.
+
+Changes go live within about a minute (the settings reload job); no restart.
+
+## What's deliberately absent
+
+All secrets (`*_api_key`, `*_secret`, tokens, passwords) — those are yours
+to set via the `poindexter` secret flow, never from a shared file.
+"""
+
+
 def prepend_changelog(changelog: Path, entry: str) -> None:
     existing = changelog.read_text(encoding="utf-8") if changelog.exists() else "# Changelog\n"
     lines = existing.splitlines(keepends=True)
@@ -363,6 +408,12 @@ def main() -> int:
     )
     log.info("seed: %d keys shipped, drops=%s", len(seed), drops)
 
+    readme_path = CLONE_DIR / "config" / "README.md"
+    readme_path.write_text(
+        build_config_readme(len(seed), drops, _dt.date.today().isoformat()),
+        encoding="utf-8",
+    )
+
     prompt_entries = build_prompts(skills_root, CLONE_DIR / "prompts")
     manifest = {
         "generated_from": "src/cofounder_agent/skills/*/*/SKILL.md",
@@ -380,7 +431,7 @@ def main() -> int:
 
     book_drift = scan_book(CLONE_DIR / "book") if (CLONE_DIR / "book").exists() else []
 
-    outputs = [seed_path, CLONE_DIR / "prompts" / "manifest.json"]
+    outputs = [seed_path, readme_path, CLONE_DIR / "prompts" / "manifest.json"]
     outputs += sorted((CLONE_DIR / "prompts").glob("*.prompt.md"))
     outputs += [CLONE_DIR / "dashboards" / f"{n}.json" for n in copied]
     violations = verify_outputs(outputs, CLONE_DIR)

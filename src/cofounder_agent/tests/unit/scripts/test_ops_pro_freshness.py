@@ -192,3 +192,15 @@ def test_prepend_changelog_keeps_header_and_prior_entries(tmp_path):
     text = changelog.read_text()
     assert text.startswith("# Changelog\n")
     assert text.index("2026-08-15") < text.index("v0.1.0")
+
+
+def test_build_config_readme_tracks_counts_and_teaches_apply():
+    readme = pf.build_config_readme(
+        949, {"not_in_oss": 432, "scrub": 2}, "2026-08-24"
+    )
+    assert "949 non-secret" in readme
+    assert "434 keys are withheld" in readme
+    assert "2026-08-24" in readme
+    assert "poindexter pro apply" in readme
+    assert "--include-models" in readme
+    assert pf.scan_text(readme, source="config/README.md") == []

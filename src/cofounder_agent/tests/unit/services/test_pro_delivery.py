@@ -11,6 +11,7 @@ passes.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -70,6 +71,11 @@ class FakeConn:
             return []
         if "ORDER BY last_seen_at" in query:
             return []
+        if "SELECT key, value, is_secret FROM app_settings" in query:
+            return [
+                {"key": k, "value": v, "is_secret": s}
+                for k, (v, s) in self.db.settings.items()
+            ]
         raise AssertionError(f"unexpected fetch: {query}")
 
     async def execute(self, query: str, *args: Any) -> str:
@@ -131,6 +137,11 @@ class FakeConn:
             if row["github_invited_at"] is not None:
                 row["github_revoked_at"] = "now"
             return "UPDATE 1"
+        if "INSERT INTO app_settings" in query:
+            key, value = args[0], args[1]
+            prior = self.db.settings.get(key)
+            self.db.settings[key] = (value, prior[1] if prior else False)
+            return "INSERT 0 1"
         raise AssertionError(f"unexpected execute: {query}")
 
 
@@ -149,6 +160,7 @@ class FakeDb:
     def __init__(self) -> None:
         self.subs: dict[str, dict[str, Any]] = {}
         self.revenue: list[dict[str, Any]] = []
+        self.settings: dict[str, tuple[str, bool]] = {}  # key -> (value, is_secret)
         self._conn = FakeConn(self)
 
     def acquire(self) -> _Acquire:
@@ -500,3 +512,119 @@ async def test_cli_link_rejects_invalid_username(site_config):
     }
     with pytest.raises(ValueError, match="not a valid GitHub username"):
         await cli_link(db, site_config, "101", "in--valid")
+
+
+# ---------------------------------------------------------------------------
+# pro apply — buyer-side seed diff/adopt
+# ---------------------------------------------------------------------------
+
+_APPLY_DEFAULTS = {
+    "qa_overall_score_threshold": "70",
+    "writer_temperature": "0.7",
+    "writer_model": "llama3",
+    "gpu_max_parallel": "1",
+    "social_drafts_enabled": "false",
+    "secret_thing": "",
+}
+_APPLY_METADATA = {"writer_model": {"value_type": "model"}}
+
+_APPLY_SEED = {
+    "qa_overall_score_threshold": "78",   # buyer on stock -> adoptable
+    "writer_temperature": "0.8",          # buyer customized -> conflict
+    "writer_model": "claude-sonnet-5",    # model pin -> review-held
+    "gpu_max_parallel": "2",              # hardware hint -> review-held
+    "social_drafts_enabled": "false",     # matches default (no live row) -> identical
+    "mystery_overlay_key": "x",           # engine doesn't know it
+    "secret_thing": "v",                  # live row is secret -> skipped
+}
+
+
+def _apply_db() -> FakeDb:
+    db = FakeDb()
+    db.settings = {
+        "qa_overall_score_threshold": ("70", False),  # stock
+        "writer_temperature": ("0.9", False),         # customized
+        "secret_thing": ("enc:v1:x", True),
+        # writer_model / gpu_max_parallel / social_drafts_enabled have no
+        # live rows — the lazy seeder hasn't touched them, so their
+        # effective value is the OSS default.
+    }
+    return db
+
+
+def test_classify_seed_buckets_every_case():
+    plan = pro_delivery.classify_seed(
+        _APPLY_SEED, _apply_db().settings, _APPLY_DEFAULTS, _APPLY_METADATA
+    )
+    assert set(plan.adoptable) == {"qa_overall_score_threshold"}
+    assert plan.adoptable["qa_overall_score_threshold"] == ("70", "78")
+    assert set(plan.review) == {"writer_model", "gpu_max_parallel"}
+    assert set(plan.conflicts) == {"writer_temperature"}
+    assert plan.conflicts["writer_temperature"] == ("0.9", "0.8")
+    assert plan.identical == 1
+    assert plan.unknown_keys == ["mystery_overlay_key"]
+    assert plan.secret_skipped == ["secret_thing"]
+
+
+def test_resolve_seed_path_accepts_dir_and_file_and_fails_loud(tmp_path):
+    repo = tmp_path / "poindexter-pro"
+    (repo / "config").mkdir(parents=True)
+    seed_file = repo / "config" / "seed-settings.json"
+    seed_file.write_text("{}")
+
+    assert pro_delivery.resolve_seed_path(str(repo)) == seed_file
+    assert pro_delivery.resolve_seed_path(str(seed_file)) == seed_file
+    with pytest.raises(ValueError, match="tried:.*nowhere"):
+        pro_delivery.resolve_seed_path(str(tmp_path / "nowhere"))
+
+
+def _write_seed(tmp_path) -> str:
+    seed_file = tmp_path / "seed-settings.json"
+    seed_file.write_text(json.dumps(_APPLY_SEED))
+    return str(seed_file)
+
+
+async def test_cli_apply_dry_run_writes_nothing(tmp_path):
+    db = _apply_db()
+    before = dict(db.settings)
+    payload = await pro_delivery.cli_apply(
+        db, _write_seed(tmp_path),
+        defaults=_APPLY_DEFAULTS, metadata=_APPLY_METADATA,
+    )
+    assert payload["dry_run"] is True
+    assert payload["applied"] == []
+    assert db.settings == before
+    assert payload["counts"]["adoptable"] == 1
+    assert payload["counts"]["review_held"] == 2
+    assert payload["counts"]["conflicts_kept"] == 1
+
+
+async def test_cli_apply_default_adopts_only_stock_keys(tmp_path):
+    db = _apply_db()
+    payload = await pro_delivery.cli_apply(
+        db, _write_seed(tmp_path), apply=True,
+        defaults=_APPLY_DEFAULTS, metadata=_APPLY_METADATA,
+    )
+    assert payload["applied"] == ["qa_overall_score_threshold"]
+    assert db.settings["qa_overall_score_threshold"] == ("78", False)
+    # The operator's own tuning and the hardware-tuned pins are untouched.
+    assert db.settings["writer_temperature"] == ("0.9", False)
+    assert "writer_model" not in db.settings
+
+
+async def test_cli_apply_escalation_flags_widen_the_write_set(tmp_path):
+    db = _apply_db()
+    payload = await pro_delivery.cli_apply(
+        db, _write_seed(tmp_path), apply=True,
+        include_models=True, overwrite_conflicts=True,
+        defaults=_APPLY_DEFAULTS, metadata=_APPLY_METADATA,
+    )
+    assert set(payload["applied"]) == {
+        "qa_overall_score_threshold", "writer_model", "gpu_max_parallel",
+        "writer_temperature",
+    }
+    assert db.settings["writer_model"] == ("claude-sonnet-5", False)
+    assert db.settings["writer_temperature"] == ("0.8", False)
+    # Secrets and unknown keys are never written, even at full escalation.
+    assert db.settings["secret_thing"] == ("enc:v1:x", True)
+    assert "mystery_overlay_key" not in db.settings
