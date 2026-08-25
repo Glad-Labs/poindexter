@@ -10,7 +10,7 @@ Usage:
     Any log line emitted during a request will automatically include the
     request_id field, enabling log correlation across all service layers:
 
-        [request_id=abc-123] task_executor: starting pipeline
+        [request_id=abc-123] content_generation_flow: starting pipeline
         [request_id=abc-123] content_agent: calling LLM
         [request_id=abc-123] database_service: writing result
 
@@ -18,7 +18,8 @@ Usage:
     an existing trace ID (e.g., from an API gateway or frontend).
 
 Background task usage:
-    Long-lived asyncio tasks (e.g., task_executor.py) run outside any HTTP
+    Long-lived background work (e.g., the Prefect content flow or
+    scheduler jobs) runs outside any HTTP
     request context. To enable log correlation for background processing, bind
     a synthetic trace ID for the lifetime of each unit of work:
 

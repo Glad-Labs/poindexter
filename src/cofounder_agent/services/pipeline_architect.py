@@ -124,9 +124,10 @@ def _span_wrap(
     return _spanned
 
 
-# Prompt key in UnifiedPromptManager + prompt_templates table. The
-# default lives at skills/content/atoms/SKILL.md; runtime overrides come
-# from the prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+# Prompt key in UnifiedPromptManager. The authoritative body lives at
+# skills/content/atoms/SKILL.md (the prompt_templates table is retired,
+# poindexter#47 Phase 2; live overrides exist only behind
+# ``langfuse_prompt_overrides_enabled``). Edits land in the SKILL.md pack.
 # The {site_name} placeholder is rendered from the run-bound site_config by
 # _resolve_system_prompt (single .format pass).
 _PROMPT_KEY = "atoms.pipeline_architect.system_prompt"

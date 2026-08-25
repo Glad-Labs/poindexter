@@ -19,11 +19,13 @@ deleted in the 2026-05-09 services audit. Prefect's flow didn't re-wire
 the write, so the gap went silent for ~19 hours before the overnight
 A/B batch surfaced it.
 
-Fix: ``finalize_task.py`` (awaiting_approval path) and
-``cross_model_qa.py`` (rejection path) now both call ``upsert_version``
-right after their respective ``update_task`` status transitions. These
-tests pin both call sites — if a future edit silently removes the
-``upsert_version`` call again, this suite breaks.
+Fix (as shipped in 2026-05): ``finalize_task.py`` (awaiting_approval
+path) and ``cross_model_qa.py`` (rejection path) both call
+``upsert_version`` right after their respective ``update_task`` status
+transitions. The rejection-path call site has since moved to
+``atoms/_qa_persist.py`` with the atom-cutover (#355) — see the class
+docstrings below. These tests pin both call sites — if a future edit
+silently removes the ``upsert_version`` call again, this suite breaks.
 """
 
 from __future__ import annotations

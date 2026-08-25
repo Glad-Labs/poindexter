@@ -59,10 +59,10 @@ logger = get_logger(__name__)
 _CHARS_PER_TOKEN = 4
 
 
-# Prompt key in UnifiedPromptManager + prompt_templates table. The default
-# body lives at skills/ops/triage/SKILL.md::ops.triage.system_prompt; runtime
-# overrides come from a Langfuse ``production`` label or a prompt_templates DB
-# row. Per feedback_prompts_must_be_db_configurable.
+# Prompt key in UnifiedPromptManager. The authoritative body lives at
+# skills/ops/triage/SKILL.md::ops.triage.system_prompt (the prompt_templates
+# table is retired, poindexter#47 Phase 2); a Langfuse ``production`` label
+# can override only behind ``langfuse_prompt_overrides_enabled``.
 _PROMPT_KEY = "ops.triage.system_prompt"
 
 
@@ -481,8 +481,9 @@ def _resolve_system_prompt() -> str:
     ``skills/ops/triage/SKILL.md`` default. The pre-#485
     ``app_settings.ops_triage_system_prompt`` override key was retired
     (poindexter#485 follow-up) in favour of that stack — operators now tune
-    the prompt via Langfuse (tier 1) or the SKILL.md / ``prompt_templates``
-    row (tier 2), per ``docs/architecture/prompt-management.md``.
+    the prompt via the SKILL.md pack (authoritative; PR-managed) with
+    Langfuse overrides only behind ``langfuse_prompt_overrides_enabled``,
+    per ``docs/architecture/prompt-management.md``.
 
     ``_FALLBACK_SYSTEM_PROMPT`` is the last-resort fallback for the case
     where ``get_prompt_manager()`` itself fails (DB pool not yet wired

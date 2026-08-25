@@ -1413,10 +1413,13 @@ class TopicBatchService:
                 "angle": angle,
                 "summary": winner.summary,
                 "source": "topic_batch",
-                # discovered_by mirrors source — task_executor's off-brand
-                # gate exempts a tuple of discovered_by values (url_seed,
-                # url_list, operator_telegram, operator_cli, topic_batch).
-                # Without this field set, an operator-resolved batch would
+                # discovered_by mirrors source — write-only provenance now.
+                # The deleted task_executor's off-brand gate used to exempt
+                # a tuple of discovered_by values (url_seed, url_list,
+                # operator_telegram, operator_cli, topic_batch); no code
+                # reads the field today (verified 2026-08-24), but the
+                # stamp keeps operator-resolved batches attributable.
+                # Historically, without this field set such a batch would
                 # hit the keyword whitelist and get rejected even though
                 # the operator vetted the topic via rank-batch + resolve-
                 # batch. See Glad-Labs/poindexter#351.

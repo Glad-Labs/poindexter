@@ -25,9 +25,12 @@ from modules.content.stages.resolve_internal_link_placeholders import (
 # Pins the rewrite-loop-poisoning fix captured 2026-05-25 — the QA
 # rewriter LLM can re-emit ``[posts/<uuid>]`` patterns the resolver
 # already cleaned, looping the rewrite cycle until qa_max_rewrites
-# burns out and the post is rejected with score=0. This helper strips
-# placeholders without a DB lookup so cross_model_qa can sanitize the
-# rewriter output before re-running validation.
+# burns out and the post is rejected with score=0. The helper strips
+# placeholders without a DB lookup so the rewrite loop can sanitize
+# rewriter output before re-running validation. NOTE: its production
+# caller (the deleted cross_model_qa stage) is gone and qa.rewrite does
+# NOT call it today — re-wiring vs deleting is poindexter#1023; these
+# tests keep the helper's contract pinned until that lands.
 
 
 def test_scrub_strips_uuid_placeholder_from_prose():
@@ -71,9 +74,10 @@ def test_scrub_preserves_legitimate_markdown_links():
 
 def test_scrub_is_idempotent():
     """Running the scrub twice on already-clean content is a no-op.
-    Important because cross_model_qa calls this on every rewrite-loop
-    iteration; without idempotency the second iteration could regress
-    surrounding whitespace cumulatively."""
+    Important because the rewrite loop would call this on every
+    iteration (per-iteration use is the poindexter#1023 re-wire shape);
+    without idempotency the second iteration could regress surrounding
+    whitespace cumulatively."""
     src = "Some prose [posts/uuid-here] more prose."
     once, n1 = scrub_unresolved_placeholders(src)
     twice, n2 = scrub_unresolved_placeholders(once)

@@ -224,10 +224,11 @@ class ApprovalGateStage:
 
         # 5. Halt the workflow. The runner stops here. Resume is
         # operator-driven via `poindexter approve <task_id>` (CLI),
-        # MCP `approve`, or the future REST endpoint — all of which
-        # call services.approval_service.approve(), which clears the
-        # gate columns + inserts a pipeline_events row that wakes the
-        # runner to pick up the next Stage.
+        # MCP `approve`, or the REST endpoint — all of which call
+        # services.approval_service.approve(), which clears the gate
+        # columns + records a pipeline_gate_history row, then the
+        # graph resumes from its LangGraph checkpoint
+        # (runner.run(resume=True), poindexter#363).
         halt_status = (config or {}).get("halt_status", "in_progress")
         return StageResult(
             ok=True,

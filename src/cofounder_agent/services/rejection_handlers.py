@@ -33,7 +33,9 @@ extra action" (today's behavior). Override by calling
   artifact, pool, site_config).
 - Decides what side effects to fire — usually one of:
   * insert a row into ``brain_knowledge``,
-  * insert a row into ``pipeline_events`` with a regen event type,
+  * insert a row into ``pipeline_gate_history`` (the typed gate-event
+    side-table that replaced the dropped ``pipeline_events`` sink,
+    poindexter#366),
   * insert a row into ``audit_log`` with a richer payload.
 
 Retry caps are enforced *here*: each handler that triggers a regen

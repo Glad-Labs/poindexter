@@ -5,7 +5,7 @@ Atom-cutover Plan 3 (#355). Wraps MultiModelQA._review_with_cloud_model
 is DB-driven via ``qa_gates.llm_critic.required_to_pass`` (True in prod
 → hard gate that vetoes in qa.aggregate; False → advisory, operator-
 configurable via poindexter#454 lever). Title is sourced from seo_title
-(falling back to title), mirroring the cross_model_qa stage.
+(falling back to title), mirroring the deleted cross_model_qa stage.
 """
 
 from __future__ import annotations

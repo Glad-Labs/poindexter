@@ -154,7 +154,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 async with self.pool.acquire() as conn:
                     # Add query timeout to prevent blocking
                     rows = await asyncio.wait_for(conn.fetch(sql, *params), timeout=QUERY_TIMEOUT)
-                    # Convert to dicts for backward compatibility with task_executor
+                    # Convert to dicts — the shape route/CLI consumers expect
+                    # (originally for the deleted services/task_executor.py)
                     result = []
                     for row in rows:
                         task_response = ModelConverter.to_task_response(row)

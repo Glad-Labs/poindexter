@@ -23,7 +23,9 @@
 # Retention: 7 daily / 4 weekly / 6 monthly snapshots. 128GB USB holds ~6 months
 # comfortably; prune runs after every backup.
 #
-# Scheduled via Windows Task Scheduler — see register-task.ps1 in this dir.
+# Scheduled via systemd — infrastructure/systemd/poindexter-dr-backup.timer
+# (daily) + poindexter-dr-backup-hourly.timer (pg-only), which set the DR_*
+# env overrides for the Linux host (restic on PATH, /mnt/dr-usb repo).
 # Fails loud (set -euo pipefail) — no try/except style swallowing.
 #
 # Failure notification: any non-zero exit fires a Telegram alert via the
@@ -52,8 +54,8 @@ LOG_FILE="${LOG_DIR}/dr-backup.log"
 
 mkdir -p "${LOG_DIR}"
 
-# Tee all stdout+stderr into a log for audit/debugging. Task Scheduler
-# also captures its own copy; this log is the durable one.
+# Tee all stdout+stderr into a log for audit/debugging. journald keeps
+# the systemd unit's copy; this log is the durable one.
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
 # Notify Telegram on any non-zero exit. The trap fires AFTER the last

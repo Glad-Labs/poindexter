@@ -3426,7 +3426,8 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
 
     # ----- MCP HTTP probe recovery (brain/mcp_http_probe.py) -----
     # Empty = HTTP recovery disabled. Set to http://host.docker.internal:9841/recover
-    # once the Recovery Agent Task Scheduler task is running on the host.
+    # once the host Recovery Agent is running (systemd
+    # poindexter-recovery-agent.service since the Pop!_OS migration).
     'mcp_http_probe_recovery_url': '',
     # Consecutive probe failures required before paging. Default 3 suppresses
     # transient single-shot misses (fast restart, momentary load) while still

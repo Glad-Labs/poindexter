@@ -2058,8 +2058,8 @@ def validate_content(
     instance. Threaded down to internal readers
     (``_check_code_block_density`` + ``is_validator_enabled`` rule
     enable/scope checks). Callers thread the run-bound instance
-    (pipeline ``url_validation`` / ``cross_model_qa`` stages →
-    ``context.get("site_config")``).
+    (the ``url_validation`` stage and the ``qa.*`` rails via
+    ``multi_model_qa`` → ``context.get("site_config")``).
 
     tags (GH-83 part b): optional list of the post's topic tags. When
     provided, the hallucinated-reference rule uses them to detect

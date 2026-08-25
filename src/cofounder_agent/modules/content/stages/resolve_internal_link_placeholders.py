@@ -52,10 +52,10 @@ a no-op because all placeholders are already resolved.
 
 ## Placement
 
-Runs in the canonical_blog template AFTER ``generate_content`` and
+Runs in the canonical_blog graph AFTER ``content.generate_draft`` and
 ``writer_self_review`` (so any review-pass rewrites also get resolved)
-but BEFORE ``cross_model_qa`` and ``finalize_task`` (so validators see
-clean text).
+but BEFORE the ``qa.*`` rail block and the finalize block (so
+validators see clean text).
 """
 
 from __future__ import annotations

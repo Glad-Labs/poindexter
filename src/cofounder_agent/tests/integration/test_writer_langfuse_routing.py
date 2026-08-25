@@ -1,8 +1,9 @@
 """Writer-pipeline → Langfuse routing smoke test (Glad-Labs/poindexter#407).
 
-Confirms that `dispatch_complete` (now the only LLM trip point in
-`services/ai_content_generator.py` + `services/stages/script_for_video.py`
-+ `services/stages/cross_model_qa.py`) routes through LiteLLM when the
+Confirms that `dispatch_complete` — the only LLM trip point in the writer
+paths (today `modules/content/ai_content_generator.py`; the #407-era
+wiring also covered the since-deleted `script_for_video` /
+`cross_model_qa` stages) — routes through LiteLLM when the
 operator has flipped `plugin.llm_provider.primary.standard='litellm'`
 (migration 0160's seeded default), and that the LiteLLM provider
 fires its `langfuse_otel` success callback so the Langfuse host

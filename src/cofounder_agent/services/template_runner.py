@@ -1061,7 +1061,7 @@ def make_stage_node(
         updates = dict(result.context_updates or {})
 
         # Halt-on-success: a stage may set continue_workflow=False (e.g.
-        # cross_model_qa rejecting a post). LangGraph doesn't have a
+        # qa.aggregate rejecting a post). LangGraph doesn't have a
         # "halt the graph" primitive at the node level; we surface this
         # via the record + a state flag the template can read on its
         # conditional edges.

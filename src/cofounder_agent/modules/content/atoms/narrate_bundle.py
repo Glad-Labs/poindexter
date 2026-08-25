@@ -110,11 +110,12 @@ _FOOTER = (
 )
 
 
-# Prompt key in UnifiedPromptManager + prompt_templates table. The
-# default lives at skills/content/atoms/SKILL.md; runtime overrides come
-# from the prompt_templates DB row with the matching key. Per
-# feedback_prompts_must_be_db_configurable: every prompt is
-# DB-configurable; inline constants are tech debt.
+# Prompt key in UnifiedPromptManager. The authoritative body lives at
+# skills/content/atoms/SKILL.md (the prompt_templates table is retired,
+# poindexter#47 Phase 2; Langfuse mirrors the packs read-only, and live
+# overrides exist only behind ``langfuse_prompt_overrides_enabled``).
+# Per the prompt-SoT policy: edits land in the SKILL.md pack via PR;
+# inline constants are tech debt.
 _PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
 
 
@@ -774,8 +775,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "model_used": model,
         "_narrate_bundle_ran": True,
         # Deterministic quality_score for downstream finalize_task +
-        # auto_publish_gate. The dev_diary template skips the legacy
-        # quality_evaluation / cross_model_qa stages because the post
+        # auto_publish_gate. The dev_diary graph has no
+        # quality_evaluation scorer and no qa.* rails because the post
         # is fact-narration grounded in real bundle data — but the
         # gate still needs SOMETHING to score against. This computes
         # a calculated score from bundle integrity + citation rate +

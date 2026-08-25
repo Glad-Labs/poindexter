@@ -5,7 +5,9 @@ Single source of truth for creating a published post from a completed content ta
 Called by:
   1. /approve endpoint (auto_publish=True)  - task_publishing_routes.py
   2. /publish endpoint                       - task_publishing_routes.py
-  3. _auto_publish_task in TaskExecutor       - task_executor.py
+  3. the auto-publish path                   - modules/content/auto_publish.py
+     (ported there from the deleted services/task_executor.py at the
+     Prefect cutover, #410)
 
 This eliminates three divergent copy-paste blocks that were drifting apart.
 """

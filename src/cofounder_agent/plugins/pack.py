@@ -4,11 +4,13 @@ Unlike the other five plugin types, a Pack is *data*, not code. It
 ships as a pypi package that drops its contents into the Poindexter DB
 on install:
 
-- ``prompt_templates`` table — individual prompts keyed by name +
-  version
 - ``writing_styles`` app_setting — JSON array of voice configurations
 - ``image_styles`` app_setting — JSON array of image-gen style prompts
-- ``qa_workflow_*`` app_settings — Reviewer chain configurations
+- ``qa_gates`` rows — reviewer-rail gate configuration
+
+(Prompt bodies are NOT DB data — they ship as SKILL.md packs in the
+repo; the ``prompt_templates`` table this design originally targeted
+was retired in poindexter#47 Phase 2.)
 
 Distribution:
 
@@ -75,12 +77,13 @@ class Pack(Protocol):
 
         Implementations should:
 
-        - Upsert into ``prompt_templates`` using
-          ``(name, version) ON CONFLICT DO UPDATE``
         - Upsert JSON-blob app_settings (``writing_styles``,
-          ``image_styles``, ``qa_workflow_*``) using a "newer-wins"
+          ``image_styles``) and ``qa_gates`` rows using a "newer-wins"
           strategy based on the Pack's ``version``
         - Be idempotent — safe to call on every worker boot
+
+        (Prompt bodies are not applied here — they ship as SKILL.md
+        packs in the repo, not DB rows.)
         """
         ...
 

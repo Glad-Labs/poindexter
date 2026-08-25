@@ -11,11 +11,16 @@ decryptable. See Glad-Labs/poindexter#891 for why that distinction matters.
 
 ## Layout
 
-| file                | what                                                    |
-| ------------------- | ------------------------------------------------------- |
-| `run-backup.sh`     | daily full run — host trees + `pg_dump`, tag `dr-daily` |
-| `run-hourly-pg.sh`  | hourly `pg_dump` only, tag `pg-hourly`                  |
-| `register-task.ps1` | registers the daily run as a Windows Task Scheduler job |
+| file               | what                                                    |
+| ------------------ | ------------------------------------------------------- |
+| `run-backup.sh`    | daily full run — host trees + `pg_dump`, tag `dr-daily` |
+| `run-hourly-pg.sh` | hourly `pg_dump` only, tag `pg-hourly`                  |
+
+Scheduling lives in `infrastructure/systemd/` — `poindexter-dr-backup.timer`
+(daily full run) + `poindexter-dr-backup-hourly.timer` (hourly pg), which set
+the `DR_*` env overrides for the Linux host. (The Windows-era
+`register-task.ps1` Task Scheduler registration was retired with the Pop!_OS
+migration.)
 
 The two tags are independent: each run's `forget` is tag-scoped, so the daily
 prune never touches hourly snapshots and vice versa. A third tag added later

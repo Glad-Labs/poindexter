@@ -1684,10 +1684,12 @@ class TestCitationsThresholdReads:
 
 @pytest.mark.unit
 class TestGuardrailsBrandGate:
-    """``_check_guardrails_brand`` wraps the guardrails-ai brand validator.
+    """``_check_guardrails_brand`` runs the native brand rail.
 
     Sub-issue 3 of #329 — same regex patterns as content_validator +
-    deepeval_brand but routed through guardrails-ai. Cross-framework
+    deepeval_brand, originally routed through guardrails-ai and
+    reimplemented dep-free in ``services/guardrails_rails.py`` after the
+    dependency was dropped for CVE-2026-45758 (#996). Cross-framework
     parallel signal.
     """
 

@@ -24,8 +24,11 @@ Consequently the Docker stack (vmmem / com.docker), anything with a live parent,
 anything outside the allowlist, and your live Claude Code sessions are never
 touched.
 
-Cadence is owned by Windows Task Scheduler (see prune-mcp-orphans.ps1) — this
-script is a one-shot: it sweeps once and exits. Default is ENFORCE; pass
+Cadence: UNSCHEDULED since the Pop!_OS migration — the Windows Task Scheduler
+job (prune-mcp-orphans.ps1) died with the Windows host and no systemd timer
+replaced it (the migration design deferred these ports as YAGNI; see the
+ps1-fleet triage issue). The script itself is cross-platform psutil and still
+works as a manual one-shot: it sweeps once and exits. Default is ENFORCE; pass
 --dry-run to log would-be kills without killing anything.
 
 Usage:
