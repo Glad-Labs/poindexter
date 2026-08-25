@@ -24,12 +24,13 @@ Consequently the Docker stack (vmmem / com.docker), anything with a live parent,
 anything outside the allowlist, and your live Claude Code sessions are never
 touched.
 
-Cadence: UNSCHEDULED since the Pop!_OS migration — the Windows Task Scheduler
-job (prune-mcp-orphans.ps1) died with the Windows host and no systemd timer
-replaced it (the migration design deferred these ports as YAGNI; see the
-ps1-fleet triage issue). The script itself is cross-platform psutil and still
-works as a manual one-shot: it sweeps once and exits. Default is ENFORCE; pass
---dry-run to log would-be kills without killing anything.
+Cadence: on Windows installs, prune-mcp-orphans.ps1 registers this as a Task
+Scheduler job (the .ps1 fleet is kept deliberately for Windows users —
+glad-labs-stack#3324). On this Linux host it is UNSCHEDULED since the Pop!_OS
+migration; the script is cross-platform psutil and works as a manual one-shot
+(add a user systemd timer if regular sweeps are wanted). It sweeps once and
+exits. Default is ENFORCE; pass --dry-run to log would-be kills without
+killing anything.
 
 Usage:
     python  scripts/prune_mcp_orphans.py --dry-run   # log only, kill nothing

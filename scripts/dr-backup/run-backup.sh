@@ -25,7 +25,9 @@
 #
 # Scheduled via systemd — infrastructure/systemd/poindexter-dr-backup.timer
 # (daily) + poindexter-dr-backup-hourly.timer (pg-only), which set the DR_*
-# env overrides for the Linux host (restic on PATH, /mnt/dr-usb repo).
+# env overrides for the Linux host (restic on PATH, /mnt/dr-usb repo). On a
+# Windows install, register-task.ps1 in this dir registers the equivalent
+# Task Scheduler job instead.
 # Fails loud (set -euo pipefail) — no try/except style swallowing.
 #
 # Failure notification: any non-zero exit fires a Telegram alert via the
