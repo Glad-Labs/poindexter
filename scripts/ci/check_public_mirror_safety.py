@@ -169,7 +169,6 @@ _STRIP_FILES = (
     "scripts/claude-sessions.ps1",
     "scripts/background-services.ps1",
     "scripts/run-claude-session.cmd",
-    "scripts/sync-premium-prompts.py",
     "scripts/kuma_bootstrap.py",
     "scripts/settings_defaults_extract.json",
     "scripts/settings_secret_keys.json",

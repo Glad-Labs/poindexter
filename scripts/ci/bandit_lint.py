@@ -91,7 +91,6 @@ PRIVATE_OVERLAY_FILES = frozenset(
         "src/cofounder_agent/services/taps/claude_code_sessions.py",
         "scripts/kuma_bootstrap.py",
         "scripts/glitchtip_audit.py",
-        "scripts/sync-premium-prompts.py",
         "scripts/migrate-poindexter-rename.sh",
         "scripts/ci/check_public_mirror_safety.py",
         "scripts/regen-app-settings-doc.py",
