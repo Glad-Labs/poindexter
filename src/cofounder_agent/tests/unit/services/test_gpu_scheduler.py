@@ -648,10 +648,14 @@ class TestPrepareMode:
         scheduler = GPUScheduler()
         scheduler._unload_ollama_models = AsyncMock()
         scheduler._unload_image_gen = AsyncMock()
+        scheduler._unload_comfyui = AsyncMock()
 
         await scheduler.prepare_mode("image_gen")
         scheduler._unload_ollama_models.assert_awaited_once()
         scheduler._unload_image_gen.assert_not_awaited()
+        # 2026-08-24: a resident ComfyUI (no idle unload) starved z-image's
+        # server-side load for 8 days — image_gen mode must evict it too.
+        scheduler._unload_comfyui.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_ollama_mode_unloads_image_gen(self):

@@ -10,7 +10,7 @@ silent-test-network-hazard shape).
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -137,7 +137,13 @@ def zimage_file(tmp_path):
 
 @pytest.fixture
 def no_gpu_unload():
-    with patch("services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()) as m:
+    # Stubs BOTH gpu rungs the fan-out touches. The post-fanout comfyui free
+    # (2026-08-24 fix) otherwise fires a REAL GET /queue at the live sidecar
+    # on the operator-box runner — the egress guard (poindexter#1011) caught
+    # exactly that when this fixture only stubbed image-gen. Tests asserting
+    # either rung re-patch locally; the innermost patch wins.
+    with patch("services.gpu_scheduler.gpu._unload_image_gen", AsyncMock()) as m, \
+         patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
         yield m
 
 
@@ -291,3 +297,95 @@ class TestAuditSchema:
             ],
         })
         assert out["winner"] == "qwen"
+
+
+class TestVramFixAndDatasetCompleteness:
+    """2026-08-24 fixes: post-fanout ComfyUI free (the 8-day silent-503
+    starvation), judge token budget as a setting, and zimage-absence reasons
+    in the audit row (24/32 early rows recorded absence with no why)."""
+
+    @pytest.mark.asyncio
+    async def test_comfy_freed_after_fanout_with_comfy_candidates(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        qwen_file = tmp_path / "q.png"
+        qwen_file.write_bytes(b"P")
+
+        async def render(name, graph, **kw):
+            return (str(qwen_file), {"model": name}) if name == "qwen" \
+                else (None, {"failure": "skip"})
+
+        async def score(candidate, **kw):
+            candidate.score = 50.0
+
+        free = AsyncMock()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", score), \
+             patch("services.gpu_scheduler.gpu._unload_comfyui", free):
+            out = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=_pool(), task_id="t",
+            )
+        assert out is not None
+        free.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_comfy_candidates_no_free(self, zimage_file, no_gpu_unload):
+        free = AsyncMock()
+        with patch("services.gpu_scheduler.gpu._unload_comfyui", free):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={},
+                site_config=_sc(image_fanout_candidates="zimage"),
+                pool=_pool(), task_id="t",
+            )
+        free.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_zimage_absence_reason_recorded(
+        self, tmp_path, no_gpu_unload,
+    ):
+        schnell_file = tmp_path / "s.png"
+        schnell_file.write_bytes(b"P")
+
+        async def render(name, graph, **kw):
+            return (str(schnell_file), {"model": name}) if name == "schnell" \
+                else (None, {"failure": "skip"})
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=None,
+                zimage_meta={"transient": True, "failure": "HTTP 503"},
+                site_config=_sc(), pool=pool, task_id="t",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        assert details["zimage_absent_reason"] == "HTTP 503"
+
+    @pytest.mark.asyncio
+    async def test_judge_token_budget_reads_setting(self, tmp_path):
+        cand = FanoutCandidate(name="qwen", path=str(tmp_path / "c.png"))
+        (tmp_path / "c.png").write_bytes(b"P")
+        captured = {}
+
+        async def fake_dispatch(pool, messages, model, **kw):
+            captured.update(kw)
+            return MagicMock(text='{"score": 70, "reason": "ok"}')
+
+        prompt_mgr = MagicMock()
+        prompt_mgr.get_prompt = MagicMock(return_value="judge prompt")
+        with patch("services.llm_providers.dispatcher.dispatch_complete",
+                   fake_dispatch), \
+             patch("services.prompt_manager.get_prompt_manager",
+                   MagicMock(return_value=prompt_mgr)):
+            await image_fanout._score_candidate(
+                cand, brief="b",
+                site_config=_FakeSiteConfig({
+                    "qa_vision_model": "qwen3-vl:30b",
+                    "image_fanout_judge_max_tokens": "3000",
+                }),
+                pool=MagicMock(),
+            )
+        assert captured["max_tokens"] == 3000
+        assert cand.score == 70.0

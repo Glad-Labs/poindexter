@@ -1517,7 +1517,18 @@ class GPUScheduler:
         """
         if mode == "image_gen":
             await self._unload_ollama_models()
-            logger.info("[GPU] Prepared for image_gen — Ollama models unloaded")
+            # ComfyUI holds the fan-out image models (~17-28GB) between posts
+            # and has NO idle unload — measured 2026-08-16..24: 36 silent
+            # image-gen 503s in 8 days because z-image could not load beside
+            # a resident Qwen, so the zimage candidate vanished from 24/32
+            # fan-outs and inline images degraded. The rung declines while a
+            # ComfyUI render is in flight and no-ops when the sidecar is
+            # absent, so this is safe on every install.
+            await self._unload_comfyui()
+            logger.info(
+                "[GPU] Prepared for image_gen — Ollama models + ComfyUI "
+                "unloaded",
+            )
         elif mode == "ollama":
             await self._unload_image_gen()
             logger.info("[GPU] Prepared for Ollama — image-gen unloaded")

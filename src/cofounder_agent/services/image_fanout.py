@@ -373,13 +373,18 @@ async def _score_candidate(
              "image_url": {"url": f"data:image/png;base64,{b64}"}},
         ],
     }]
+    # qwen3-vl's <think> trace shares this budget with the JSON answer; at
+    # 1024 the answer was starved out of ~30% of live judge calls in the
+    # first 8 days ("unparseable vision response" on 19/72 candidate scores).
+    max_tokens = int(_sc_num(
+        site_config, "image_fanout_judge_max_tokens", 2048))
     try:
         completion = await dispatch_complete(
             pool, messages, model,  # type: ignore[arg-type]  # multimodal
             # content list — same shape shot_vision_qa ships; the dispatcher
             # signature types the simple text case only.
             tier="standard", phase="image_fanout_judge",
-            temperature=0.2, max_tokens=1024, timeout_s=150.0,
+            temperature=0.2, max_tokens=max_tokens, timeout_s=150.0,
         )
         text = (getattr(completion, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001
@@ -416,7 +421,7 @@ def _pick_winner(
 async def _record_outcome(
     pool: Any, *, task_id: str | None, brief: str,
     candidates: list[FanoutCandidate], winner: FanoutCandidate,
-    judge_ran: bool,
+    judge_ran: bool, zimage_absent_reason: str = "",
 ) -> None:
     """Write the ``image_fanout_judged`` audit row — the Phase-2 router's
     training data AND the Pipeline-board win-rate panel's source. Best-effort:
@@ -425,7 +430,7 @@ async def _record_outcome(
         return
     from services.audit_event_schemas import validate_event_details
 
-    details = validate_event_details("image_fanout_judged", {
+    payload: dict[str, Any] = {
         "winner": winner.name,
         "judge_ran": judge_ran,
         "brief": brief[:300],
@@ -434,7 +439,10 @@ async def _record_outcome(
              "elapsed_s": c.meta.get("elapsed_s")}
             for c in candidates
         ],
-    })
+    }
+    if zimage_absent_reason:
+        payload["zimage_absent_reason"] = zimage_absent_reason
+    details = validate_event_details("image_fanout_judged", payload)
     try:
         await pool.execute(
             "INSERT INTO audit_log (timestamp, event_type, source, task_id, "
@@ -536,15 +544,48 @@ async def run_featured_fanout(
         judge_ran = any(c.score is not None for c in candidates)
 
     winner = _pick_winner(candidates, priority)
+    # Router-dataset completeness: when the production model never made it
+    # into the fan-out, record WHY (the stage's failure meta rides in via
+    # zimage_meta) — 24/32 early rows were zimage-less with the reason
+    # unrecorded, which made the absence look like a preference.
+    zimage_absent_reason = ""
+    if "zimage" in wanted and not any(c.name == "zimage" for c in candidates):
+        zmeta = zimage_meta or {}
+        zimage_absent_reason = str(
+            zmeta.get("failure")
+            or ("ocr_gate_rejected" if zmeta.get("ocr_gate_rejected") else "")
+            or "render returned nothing",
+        )[:200]
     await _record_outcome(
         pool, task_id=task_id, brief=prompt, candidates=candidates,
         winner=winner, judge_ran=judge_ran,
+        zimage_absent_reason=zimage_absent_reason,
     )
     logger.info(
         "[IMAGE_FANOUT] winner=%s (judge_ran=%s) scores=%s",
         winner.name, judge_ran,
         {c.name: c.score for c in candidates},
     )
+
+    # Free the ComfyUI models before the post moves on (fix for the 8-day
+    # silent-503 window, 2026-08-16..24): with no idle unload, a resident
+    # Qwen (~28GB) starved the NEXT post's z-image load server-side —
+    # image-gen answered 503 twice and the production candidate quietly
+    # vanished from 24/32 fan-outs (inline images degraded the same way).
+    # The rung declines while a ComfyUI render is queued and no-ops when the
+    # sidecar is down. Cost: the next fan-out pays the model reload inside
+    # its own per-candidate budget — correctness over warm-cache speed.
+    if comfy_wanted:
+        try:
+            from services.gpu_scheduler import gpu
+
+            await gpu._unload_comfyui()
+        except Exception as exc:  # noqa: BLE001  # silent-ok: freeing is an
+            # optimisation for the NEXT render; failing to free reverts to
+            # the pre-fix odds and prepare_mode("image_gen") retries it.
+            logger.warning(
+                "[IMAGE_FANOUT] post-fanout comfyui free failed (%s)", exc,
+            )
 
     meta = dict(winner.meta)
     meta["fanout"] = {

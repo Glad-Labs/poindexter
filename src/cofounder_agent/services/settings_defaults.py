@@ -1877,6 +1877,10 @@ DEFAULTS: dict[str, str] = {
     'image_fanout_qwen_cfg': '2.5',
     # ModelSamplingAuraFlow shift — official Qwen-Image template value.
     'image_fanout_qwen_shift': '3.1',
+    # Judge output budget. qwen3-vl's <think> trace shares it with the
+    # JSON answer; 1024 starved the answer out of ~30% of live calls in
+    # the first 8 days (unparseable-response fail-softs).
+    'image_fanout_judge_max_tokens': '2048',
     # Per-call HTTP timeout (seconds) for a local image inference server
     # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
     # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
@@ -4422,6 +4426,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_qwen_steps': {'value_type': 'integer'},
     'image_fanout_qwen_cfg': {'value_type': 'float'},
     'image_fanout_qwen_shift': {'value_type': 'float'},
+    'image_fanout_judge_max_tokens': {'value_type': 'integer'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
     'image_ocr_gate_enforce': {'value_type': 'boolean'},
     'image_ocr_gate_fail_closed_when_unavailable': {'value_type': 'boolean'},
