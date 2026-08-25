@@ -14,16 +14,18 @@ Distribution:
 
 - **Free (community):** ``poindexter-pack-community`` on public pypi,
   Apache-2.0.
-- **Premium:** ``glad-labs-pack`` on private pypi, license-gated by
-  Lemon Squeezy activation.
+- **Premium:** delivered to Pro subscribers through the private
+  ``poindexter-pro`` repo (GitHub collaborator invite,
+  glad-labs-stack#3216 — the earlier Lemon Squeezy license-key
+  activation flow is retired).
 
 Installation flow:
 
-1. ``pip install poindexter-pack-community`` (or premium via license)
+1. ``pip install poindexter-pack-community`` (Pro packs arrive via the
+   ``poindexter-pro`` repo instead)
 2. Package exposes an entry_point under ``poindexter.packs``
 3. On worker boot, each registered Pack's ``apply()`` is called with
    an idempotent ``INSERT ... ON CONFLICT`` so re-runs are safe
-4. Operator can list installed Packs via ``poindexter premium status``
 
 Register a Pack via ``pyproject.toml``:
 

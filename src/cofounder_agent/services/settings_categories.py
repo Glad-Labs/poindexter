@@ -60,7 +60,6 @@ _OVERRIDES: dict[str, str] = {
     "environment": "infrastructure",
     "development_mode": "infrastructure",
     "app_version": "infrastructure",
-    "premium_active": "identity",
     "privacy_email": "identity",
     "enforce_niche_allowlist": "content",
     "hn_min_score": "content",

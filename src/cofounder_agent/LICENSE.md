@@ -41,10 +41,11 @@ DeepEval, sentence-transformers, asyncpg, OpenTelemetry, boto3 — all Apache 2.
 The engine itself is permissively licensed and free. Poindexter Pro
 ($19/mo or $180/yr) is a separate **convenience subscription** that includes
 premium prompts, premium seeding scripts, and VIP Discord access. Pro is
-delivered out-of-band (license-key-gated download); it does not affect
-the Apache 2.0 license terms of this repository.
+delivered out-of-band (collaborator access to a private GitHub repository
+for active subscribers); it does not affect the Apache 2.0 license terms
+of this repository.
 
-For Pro details: https://gladlabs.ai
+For Pro details: https://gladlabs.io
 
 ---
 

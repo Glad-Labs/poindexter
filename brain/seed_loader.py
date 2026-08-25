@@ -6,9 +6,10 @@ boot-critical keys aren't present), we load the core seed from
 `brain/seed_app_settings.json` using `INSERT ... ON CONFLICT DO NOTHING` so
 any human-applied edits win over the seed.
 
-The core seed is the free-tier starter pack. `poindexter premium activate
-<license-key>` records the license (`premium_*` keys) but does NOT apply a
-settings overlay. Operator-specific model pins are applied separately by
+The core seed is the free-tier starter pack. The Pro tier's tuned seed
+ships through the private `poindexter-pro` repo (GitHub collaborator
+invite, glad-labs-stack#3216) and is applied by that repo's own scripts,
+never by this loader. Operator-specific model pins are applied separately by
 `settings_defaults.apply_operator_model_overrides` from the mirror-stripped
 `services/operator_overrides.py` — see `project-oss-vs-operator-model-defaults`.
 

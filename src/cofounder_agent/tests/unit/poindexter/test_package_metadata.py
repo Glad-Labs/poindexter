@@ -134,7 +134,7 @@ def test_poindexter_package_importable() -> None:
         "settings",
         "costs",
         "vercel",
-        "premium",
+        "pro",
     }
     assert expected_groups.issubset(set(main.commands)), (
         f"missing CLI subcommands: {expected_groups - set(main.commands)}"

@@ -29,7 +29,6 @@ from .migrate import migrate_group
 from .model_eval import model_eval_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
-from .premium import premium_group
 from .pro import pro_group
 from .publish_approval import PUBLISH_FLAT_ALIASES
 from .publishers import publishers_group
@@ -113,7 +112,6 @@ main.add_command(settings_group, name="settings")
 main.add_command(logs_command, name="logs")
 main.add_command(costs_group, name="costs")
 main.add_command(vercel_group, name="vercel")
-main.add_command(premium_group, name="premium")
 main.add_command(pro_group, name="pro")
 main.add_command(skills_group, name="skills")
 main.add_command(topics_group, name="topics")
@@ -171,6 +169,30 @@ main.add_command(pipeline_group, name="pipeline")
 # stderr and delegates to its grouped command.
 for _flat_alias in (*APPROVAL_FLAT_ALIASES, *PUBLISH_FLAT_ALIASES, *SCHEDULE_FLAT_ALIASES):
     main.add_command(_flat_alias)
+
+
+# Backcompat stub (one release, added 2026-08-24 — remove next minor):
+# `poindexter premium` was the Lemon Squeezy license-key activation group.
+# It stamped premium_* rows into app_settings that no code ever read (the
+# premium prompt gating died with the prompt_templates table, poindexter#47
+# Phase 2), and Pro is now delivered as GitHub collaborator access to the
+# private poindexter-pro repo (glad-labs-stack#3216) — nothing to activate
+# machine-side. Unlike the flat aliases above there is no command to
+# delegate to, so this is the CLI equivalent of 410 Gone: name the
+# replacement, exit non-zero.
+@main.command("premium", hidden=True)
+@click.argument("_args", nargs=-1)
+def premium_retired(_args: tuple[str, ...]) -> None:
+    """Retired: license activation is gone — see `poindexter pro`."""
+    click.echo(
+        "`poindexter premium` was retired: license-key activation never gated "
+        "anything, and Poindexter Pro is now delivered via GitHub collaborator "
+        "invite to the private poindexter-pro repo (glad-labs-stack#3216).\n"
+        "Operate the Pro delivery chain with `poindexter pro` "
+        "(status / sync / link / unlink).",
+        err=True,
+    )
+    raise SystemExit(2)
 
 # Module-contributed CLI groups (Module v1 Phase 5). Each registered module
 # mounts its own subcommands via register_cli, so a private module's CLI

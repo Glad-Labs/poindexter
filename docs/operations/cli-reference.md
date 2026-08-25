@@ -23,7 +23,7 @@ consolidated reference.
 | `settings`    | Read and write `app_settings` (DB-first config)                                                                        |
 | `costs`       | Pipeline spending and operational metrics                                                                              |
 | `vercel`      | Vercel deployment status via the REST API                                                                              |
-| `premium`     | Manage Poindexter Pro subscription license                                                                             |
+| `pro`         | Operate the Pro delivery chain — subscription status, reconcile sync, GitHub access link/unlink                        |
 | `schedule`    | Scheduled-publish queue (batch/list/show/shift/clear/at) + publish-approval gate (approve/reject/pending/show-pending) |
 | `topics`      | Topic-decision approval queue (list/show/approve/reject/propose)                                                       |
 | `gates`       | HITL pipeline gates — approve/reject/pending/show + list/set toggles                                                   |
@@ -402,33 +402,56 @@ poindexter vercel domains              # Linked domains
 
 ---
 
-## `premium`
+## `pro`
 
-Manage your Poindexter Pro subscription license.
+Operate the Poindexter Pro pay→deliver chain (glad-labs-stack#3216):
+Lemon Squeezy subscriptions in, GitHub collaborator access to the private
+`poindexter-pro` repo out. The scheduled sync handles the steady state;
+these commands are for status checks and the manual username-link path.
 
-### `premium activate <license_key>`
+> `poindexter premium` (machine-side license-key activation) was retired
+> 2026-08-24 — it stamped `premium_*` settings that nothing read. There is
+> no license key to activate anymore; buying Pro gets you a GitHub invite.
+> The old name survives one release as a hidden stub that prints this
+> pointer and exits non-zero.
+
+### `pro status`
 
 ```bash
-poindexter premium activate lmsqueezy_license_key_here
+poindexter pro status
+poindexter pro status --limit 10 --json
 ```
 
-Activates a Lemon Squeezy license and unlocks premium content
-(prompts, additional dashboards, book chapters).
+Shows delivery config presence, subscription counts, and recent
+subscription rows.
 
-### `premium deactivate`
+### `pro sync`
 
-Frees your activation slot (useful when moving to a new machine).
+Runs one reconcile pass NOW (ignores `pro_delivery_enabled` — invoking
+the command is the operator intent).
 
 ```bash
-poindexter premium deactivate
+poindexter pro sync
 ```
 
-### `premium status`
+### `pro link <sub> <github-username>`
 
-Shows the current license state, expiration, and activation count.
+Attaches a buyer's GitHub username and delivers access immediately.
+`<sub>` is a subscription id, id prefix, or customer email — this is the
+manual half of delivery when Lemon Squeezy doesn't hand the sync a
+username (the `pro_delivery_action_needed` finding names the exact
+command to run).
 
 ```bash
-poindexter premium status
+poindexter pro link 8f3a buyer-github-handle
+```
+
+### `pro unlink <sub>`
+
+Revokes repo access and detaches the GitHub account.
+
+```bash
+poindexter pro unlink 8f3a
 ```
 
 ---

@@ -338,10 +338,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
-        # Load prompt templates from DB (overrides YAML files). Pass
-        # site_config so the Pro tier (internal tracker) can read
-        # ``premium_active`` live on every ``get_prompt`` call without
-        # restarting the worker after license activation.
+        # Prompt-manager startup hook. Despite the name, no DB prompt rows
+        # load anymore (prompt_templates retired, poindexter#47 Phase 2) —
+        # this captures site_config for the Langfuse client init path and
+        # pre-fetches the Langfuse secret; see load_from_db's docstring.
         try:
             from services.prompt_manager import get_prompt_manager
             pm = get_prompt_manager()
