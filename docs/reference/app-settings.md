@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-08-19.**  
+> **Auto-generated from live `app_settings` table on 2026-08-24.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 679 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -38,7 +38,7 @@ The worker re-reads on every poll; no restart needed.
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
 - [cost](#cost) (5 keys)
-- [experiments](#experiments) (4 keys)
+- [experiments](#experiments) (3 keys)
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [general](#general) (307 keys)
@@ -232,7 +232,6 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `active_pipeline_experiment_key` | `` |  | Experiment key the content pipeline routes through (matches experiments.key in the experiments table). Empty = disabl... |
 | `experiment_weighted_selection_enabled` | `false` |  | When true, experiment_runner.pick_variant allocates proportional to experiment_variants.weight (the column the #361 f... |
-| `premium_active` | `false` |  | When 'true', UnifiedPromptManager loads prompt_templates rows where source='premium' on top of source='default'. When... |
 | `router_feedback_alpha` | `0.2` |  | EWMA damping for the outcome→experiment-variant-weight feedback loop (#361). new_weight = (1 - alpha) * old + alpha *... |
 
 ## features
