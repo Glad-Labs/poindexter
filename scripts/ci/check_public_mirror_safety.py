@@ -218,6 +218,11 @@ _STRIP_FILES = (
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
+    # Added 2026-08-25: shipped for 16 days after #3147 introduced it, turning
+    # every mirror unit-tests run red — its module-level _load_script() asserts
+    # the stripped doc generator exists. check_stripped_script_test_references()
+    # now blocks this class at PR time.
+    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
     # Dashboards are not feature-gated for Poindexter Pro — Pro is a wholly
     # separate, out-of-tree private repo (Glad-Labs/poindexter-pro) that ships
@@ -295,6 +300,64 @@ def check_strip_coherence() -> list[str]:
     """
     strip_set = set(_STRIP_FILES)
     return [f for f in _SHIPS_TO_PUBLIC if f in strip_set]
+
+
+def _stripped_python_script_basenames() -> dict[str, str]:
+    """Map basename → strip-list entry for stripped ``scripts/**/*.py`` files.
+
+    Only ``.py`` scripts matter here: they're the only strip-list entries a
+    test can load via ``spec_from_file_location`` at collection time, and the
+    ``.py``-only scope is what keeps ``check_stripped_script_test_references``
+    at zero false positives (shipping tests DO mention stripped ``.sh``/``.ps1``
+    files in comments — e.g. sync-to-github.sh in test_misc_silent_failures.py).
+    Globbed entries are skipped: none cover scripts today, and a glob has no
+    single basename to match on.
+    """
+    out: dict[str, str] = {}
+    for entry in _STRIP_FILES:
+        if "*" in entry:
+            continue
+        if entry.startswith("scripts/") and entry.endswith(".py"):
+            out[Path(entry).name] = entry
+    return out
+
+
+def check_stripped_script_test_references(repo_root: Path) -> list[tuple[str, str]]:
+    """Return (shipping test file, stripped script) pairs that would break the mirror.
+
+    A test that loads a ``scripts/*.py`` helper by path (the
+    ``spec_from_file_location`` pattern) collection-errors on the public mirror
+    when the script is stripped but the test still ships — the mirror's whole
+    unit-tests run dies at collection, not just that file. This exact miss has
+    turned the mirror red twice: the sentry-dsn leak-guard test (#2906) and
+    test_regen_app_settings_doc_guard.py (#3147 — red for 16 days, invisible
+    because the mirror's checks gate nothing).
+
+    Matching on the stripped script's BASENAME anywhere in the test's content
+    is deliberately blunt: the load pattern varies (path-join fragments,
+    docstring references), and a shipping test has no business referencing an
+    operator-only script even in prose. If a legitimate mention ever appears,
+    the fix is to strip that test too or reword the mention.
+    """
+    basenames = _stripped_python_script_basenames()
+    if not basenames:
+        return []
+    violations: list[tuple[str, str]] = []
+    for rel in _list_tracked_files(repo_root):
+        if not rel.startswith("src/cofounder_agent/tests/"):
+            continue
+        if not rel.endswith(".py"):
+            continue
+        if not would_ship(rel):
+            continue
+        try:
+            text = (repo_root / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for base, entry in basenames.items():
+            if base in text:
+                violations.append((rel, entry))
+    return violations
 
 
 # Line-level rewrites the sync filter applies to specific files (the
@@ -821,6 +884,20 @@ def main() -> int:
         print()
         print("Fix: remove the file from _STRIP_FILES so scan() examines it, "
               "OR remove it from _SHIPS_TO_PUBLIC if it was stripped intentionally.")
+        return 1
+    stale_refs = check_stripped_script_test_references(repo_root)
+    if stale_refs:
+        print("[public-mirror-safety] FAIL — shipping test references a "
+              "stripped script:")
+        for test_file, script in sorted(stale_refs):
+            print(f"  {test_file} references {script!r}, "
+                  "which sync-to-github.sh strips from the public mirror.")
+        print()
+        print("On the mirror the script is absent, so a path-load at import time")
+        print("collection-errors the mirror's ENTIRE unit-tests run (this turned")
+        print("the mirror red twice: #2906, #3147). Either add the test to")
+        print("_STRIP_FILES AND scripts/sync-to-github.sh (operator-only tooling")
+        print("stays together), or make the test skip when the script is absent.")
         return 1
     hits = scan(repo_root)
     if not hits:

@@ -693,3 +693,95 @@ def test_every_dashboard_strip_entry_exists_on_disk() -> None:
         "filename (if the leak content moved with it) or remove the stale "
         "entry (if the leak content is gone, as happened 2026-07-13)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Path-load guard (2026-08-25, stack#3147 fallout) — a shipping test that
+# loads a stripped ``scripts/*.py`` BY PATH kills mirror collection.
+#
+# test_regen_app_settings_doc_guard.py landed in #3147 with a module-level
+# ``_load_script()`` that asserts scripts/regen-app-settings-doc.py exists.
+# The script is stripped; the new test was added to none of the strip lists
+# (only its older sibling test_regen_app_settings_doc.py was), so the mirror's
+# unit-tests job died at COLLECTION on every push for 16 days. Neither
+# existing guard could see it: the import-based sweep above only parses
+# ``import`` statements (a path-load isn't one), and the filename-glob sweep
+# only covers the test_check_public_mirror_safety_* family. The new
+# ``check_stripped_script_test_references()`` in the leak-guard script closes
+# the gap by content-matching stripped scripts/*.py basenames across every
+# SHIPPING test file — the third occurrence of this class (#2662, #2407,
+# #3147), so it now gets the general check the first two earned piecemeal.
+# ---------------------------------------------------------------------------
+
+_REGEN_GUARD_TEST = (
+    "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py"
+)
+
+
+def test_regen_guard_test_is_stripped() -> None:
+    """The #3147 guard test must be stripped — it path-loads a stripped script."""
+    assert _REGEN_GUARD_TEST in CHECK._STRIP_FILES, (
+        f"{_REGEN_GUARD_TEST} is not in _STRIP_FILES. Its module-level "
+        "_load_script() asserts scripts/regen-app-settings-doc.py exists, and "
+        "that script is stripped — shipping this test collection-errors the "
+        "mirror's ENTIRE unit-tests run. Add it here AND in "
+        "scripts/sync-to-github.sh's mirror-tooling block."
+    )
+    assert not CHECK.would_ship(_REGEN_GUARD_TEST), (
+        f"would_ship({_REGEN_GUARD_TEST!r}) is True — verify the _STRIP_FILES "
+        "entry and that no _LEAK_GUARD_ALLOW entry re-exempts it."
+    )
+
+
+def test_stripped_python_script_basenames_scope() -> None:
+    """The path-load guard covers stripped .py scripts and ONLY those.
+
+    ``.sh``/``.ps1``/``.json`` strips are deliberately out of scope: they
+    cannot be import-loaded at collection time, and shipping tests DO mention
+    them in comments (sync-to-github.sh in test_misc_silent_failures.py,
+    claude-sessions.ps1 in test_ops_sessions_wiring.py) — including them
+    would turn those legitimate mentions into false positives.
+    """
+    basenames = CHECK._stripped_python_script_basenames()
+    assert "regen-app-settings-doc.py" in basenames
+    assert "check_public_mirror_safety.py" in basenames
+    assert "sync-to-github.sh" not in basenames
+    assert "bootstrap.sh" not in basenames
+    assert "claude-sessions.ps1" not in basenames
+
+
+def test_no_shipping_test_references_a_stripped_script() -> None:
+    """No test that ships to the mirror may reference a stripped scripts/*.py.
+
+    Mirrors the check the leak-guard script runs in CI
+    (``check_stripped_script_test_references``); running it here too means a
+    violation fails the unit suite even before the public-mirror-safety
+    workflow runs.
+    """
+    violations = CHECK.check_stripped_script_test_references(_repo_root())
+    assert not violations, (
+        "Shipping test files reference stripped scripts — on the mirror the "
+        "script is absent, so a path-load at import time collection-errors "
+        f"the whole unit-tests run: {violations}. Either strip the test "
+        "(add to _STRIP_FILES AND scripts/sync-to-github.sh) or make it skip "
+        "when the script is absent."
+    )
+
+
+def test_stripped_script_reference_check_catches_planted_violation(
+    tmp_path, monkeypatch
+) -> None:
+    """The path-load guard actually fires on the #3147 shape, not just passes."""
+    rel = "src/cofounder_agent/tests/unit/scripts/test_planted_example.py"
+    planted = tmp_path / rel
+    planted.parent.mkdir(parents=True)
+    planted.write_text(
+        "# path-loads scripts/regen-app-settings-doc.py at module scope\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(CHECK, "_list_tracked_files", lambda root: [rel])
+    violations = CHECK.check_stripped_script_test_references(tmp_path)
+    assert violations == [(rel, "scripts/regen-app-settings-doc.py")], (
+        f"Expected the planted reference to be flagged, got: {violations}. "
+        "The guard would miss the exact shape that broke the mirror in #3147."
+    )
