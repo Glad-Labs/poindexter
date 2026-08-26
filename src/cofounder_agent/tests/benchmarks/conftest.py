@@ -10,9 +10,8 @@ Run:
     poetry run pytest tests/benchmarks/ --benchmark-json=benchmark_results.json
 
 Baseline SLA targets:
-    - List endpoints (GET /api/tasks, GET /api/agents):    <500ms p99
+    - List endpoints (GET /api/tasks, GET /api/posts):     <500ms p99
     - Health / lightweight endpoints:                      <100ms p99
-    - Create endpoints (POST /api/tasks):                  <2000ms p99
 """
 
 import os
@@ -33,9 +32,16 @@ def app():
     Requires a reachable database — the app startup connects during lifespan.
     If the app fails to start (no DB, missing deps), skip all benchmarks.
     """
-    # Set required env vars so the app can import without crashing
+    # Set required env vars so the app can import without crashing.
     os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
     os.environ.setdefault("SECRET_KEY", "benchmark-secret-key")
+    # Benchmark the mode the API actually runs in production. main.py defaults
+    # to "coordinator", which mounts only the 4 public-site routers — every
+    # task/approval benchmark then measures the 404 handler, which is exactly
+    # what kept the nightly benchmarks workflow red for its entire life
+    # (0 green runs in 71). setdefault, not overwrite: an explicit
+    # DEPLOYMENT_MODE in the environment still wins.
+    os.environ.setdefault("DEPLOYMENT_MODE", "worker")
 
     try:
         from main import app as _app

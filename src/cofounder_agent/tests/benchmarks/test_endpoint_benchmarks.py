@@ -4,11 +4,19 @@ API Endpoint Performance Benchmarks
 Measures latency baselines for critical API endpoints.
 Uses FastAPI's in-process TestClient so no live server is required.
 
+The conftest boots the app in DEPLOYMENT_MODE=worker — the mode the API
+actually runs in production. Coordinator mode mounts only the 4 public-site
+routers, so benchmarking it turns every task/approval endpoint into a 404:
+that exact mismatch (plus three /api/agents/* tests for endpoints deleted in
+the May 2026 cleanup) kept the nightly benchmarks workflow red for its entire
+life — 0 green runs in 71 — measuring the exception handler instead of real
+handlers. Status asserts here are deliberately TIGHT (no 404 tolerance): a
+benchmark of a dead endpoint is worse than a failing one, because the JSON
+artifact quietly stops describing anything real.
+
 SLA Targets:
     - Health checks:           <100ms
     - List endpoints:          <500ms
-    - Agent registry:          <200ms (in-memory)
-    - Service registry:        <200ms (in-memory)
 
 Run all benchmarks:
     poetry run pytest tests/benchmarks/ --benchmark-only -v
@@ -39,37 +47,33 @@ def test_health_endpoint_latency(benchmark, client):
 
 
 # ---------------------------------------------------------------------------
-# Agent registry (SLA: <200ms — in-memory, no DB)
+# CMS posts list (SLA: <500ms) — the public-site read path. Vercel's ISR
+# revalidation fetches this endpoint on every cache refresh, so its latency
+# is directly user-facing.
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.benchmark(group="agents", min_rounds=10)
-def test_agent_registry_latency(benchmark, client):
-    """Agent registry listing should respond in <200ms."""
-    result = benchmark(client.get, "/api/agents/registry", headers=AUTH_HEADERS)
-    assert result.status_code in (200, 401, 403)
+@pytest.mark.benchmark(group="posts")
+def test_posts_list_latency(benchmark, client):
+    """Public posts listing should respond in <500ms.
 
-
-@pytest.mark.benchmark(group="agents", min_rounds=10)
-def test_agent_list_latency(benchmark, client):
-    """Agent name listing should respond in <200ms."""
-    result = benchmark(client.get, "/api/agents/list", headers=AUTH_HEADERS)
-    assert result.status_code in (200, 401, 403)
-
-
-@pytest.mark.benchmark(group="agents", min_rounds=10)
-def test_agent_search_latency(benchmark, client):
-    """Agent search should respond in <200ms."""
-    result = benchmark(
+    Uses ``pedantic`` with a fixed round count: /api/posts sits behind a
+    60/minute slowapi limit, and auto-calibration would blow past it and
+    benchmark the 429 handler instead of the query path.
+    """
+    result = benchmark.pedantic(
         client.get,
-        "/api/agents/search?category=content",
-        headers=AUTH_HEADERS,
+        args=("/api/posts?limit=10&offset=0",),
+        rounds=30,
+        warmup_rounds=2,
     )
-    assert result.status_code in (200, 401, 403)
+    assert result.status_code == 200
 
 
 # ---------------------------------------------------------------------------
-# Task endpoints (SLA: <500ms for list)
+# Task endpoints (SLA: <500ms for list) — worker-mode routes. An invalid
+# bearer token is fine (401 measures the real auth + routing path); a 404
+# is not, because it means the route no longer exists.
 # ---------------------------------------------------------------------------
 
 
@@ -82,7 +86,7 @@ def test_task_list_latency(benchmark, client):
         headers=AUTH_HEADERS,
     )
     # Accept auth failures — latency still measured
-    assert result.status_code in (200, 401, 403, 422)
+    assert result.status_code in (200, 401, 403)
 
 
 @pytest.mark.benchmark(group="tasks", min_rounds=5)
@@ -93,19 +97,7 @@ def test_task_pending_approval_latency(benchmark, client):
         "/api/tasks/pending-approval",
         headers=AUTH_HEADERS,
     )
-    assert result.status_code in (200, 401, 403, 404)
-
-
-# ---------------------------------------------------------------------------
-# Service registry (SLA: <200ms — in-memory)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.benchmark(group="registry", min_rounds=10)
-def test_service_registry_latency(benchmark, client):
-    """Service registry endpoint should respond in <200ms."""
-    result = benchmark(client.get, "/api/registry", headers=AUTH_HEADERS)
-    assert result.status_code in (200, 401, 403, 404)
+    assert result.status_code in (200, 401, 403)
 
 
 # ---------------------------------------------------------------------------
