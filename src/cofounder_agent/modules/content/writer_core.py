@@ -60,6 +60,7 @@ import re
 from typing import Any
 
 from plugins.stage import StageResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -561,7 +562,7 @@ class GenerateContentStage:
                 kind="task_research_context_read_failed",
                 title="Caller research context unreadable — post written without it",
                 body=(
-                    f"get_task raised {type(e).__name__}: {e}. The writer proceeds "
+                    f"get_task raised {describe_exception(e)}. The writer proceeds "
                     "with ResearchService + RAG layers only; anything the caller "
                     "attached to the task is missing from the prompt."
                 ),
@@ -1156,7 +1157,7 @@ def _build_real_slug_allowlist(content_generator: Any) -> set[str]:
             kind="real_slug_allowlist_build_failed",
             title="Writer real-slug allowlist build failed — link scrub runs wide open",
             body=(
-                f"Reading _internal_links_cache raised {type(exc).__name__}: {exc}. "
+                f"Reading _internal_links_cache raised {describe_exception(exc)}. "
                 "scrub_fabricated_links will run with an EMPTY allowlist, so it "
                 "may delete legitimate internal links from this post."
             ),
@@ -1202,7 +1203,7 @@ async def _snapshot_initial_draft(
             kind="content_revisions_snapshot_failed",
             title="Initial-draft snapshot failed — revision diffs lose their baseline",
             body=(
-                f"log_revision raised {type(exc).__name__}: {exc}. The task's "
+                f"log_revision raised {describe_exception(exc)}. The task's "
                 "first-pass draft was not recorded, so the content_revisions "
                 "feedback loop has no baseline to diff later versions against."
             ),

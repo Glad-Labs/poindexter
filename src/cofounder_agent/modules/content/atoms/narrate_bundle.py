@@ -30,6 +30,7 @@ import re
 from typing import Any
 
 from services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -891,7 +892,7 @@ async def _load_bundle_from_db(pool: Any, task_id: Any) -> dict[str, Any]:
             kind="dev_diary_bundle_read_failed",
             title="dev-diary bundle read failed — narration runs without it",
             body=(
-                f"bundle read failed for task {task_id}: {exc}. Returns an empty "
+                f"bundle read failed for task {task_id}: {describe_exception(exc)}. Returns an empty "
                 "dict so narration proceeds without the structured dev-diary "
                 "context bundle."
             ),

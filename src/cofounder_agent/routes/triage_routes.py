@@ -63,6 +63,7 @@ from middleware.api_token_auth import verify_api_token
 from services.firefighter_service import build_triage_context, run_triage
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -298,7 +299,7 @@ async def _cost_guard_check(site_config: SiteConfig) -> None:
             kind="cost_guard_module_unavailable",
             title="cost_guard module unavailable — ops_triage spend check skipped",
             body=(
-                f"_cost_guard_check: {exc}. Deliberately fails open (a "
+                f"_cost_guard_check: {describe_exception(exc)}. Deliberately fails open (a "
                 "broken cost_guard must never block triage), but this "
                 "means NO spend-limit check ran for this call — worth "
                 "knowing if ops_triage ever points at a paid tier."

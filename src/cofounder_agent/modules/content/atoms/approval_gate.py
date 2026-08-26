@@ -71,6 +71,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -476,7 +477,7 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
             kind="approval_gate_read_failed",
             title="approval-gate decision check failed — re-pausing for review",
             body=(
-                f"gate-decision check failed: {exc}. Fail-safe: returns None so "
+                f"gate-decision check failed: {describe_exception(exc)}. Fail-safe: returns None so "
                 "the task re-pauses for review rather than passing unreviewed "
                 "content forward."
             ),
@@ -528,7 +529,7 @@ async def _graduation_status(
             kind="approval_gate_read_failed",
             title="graduation streak check failed — pausing for review",
             body=(
-                f"count_trailing_clean_approvals({gate_name!r}) failed: {exc}. "
+                f"count_trailing_clean_approvals({gate_name!r}) failed: {describe_exception(exc)}. "
                 "Fail-safe: the gate pauses for operator review instead of "
                 "auto-approving on unknown trust."
             ),
@@ -584,7 +585,7 @@ async def _record_graduated_pass(
             title="graduated pass could not be recorded — pausing for review",
             body=(
                 f"auto_approved history insert failed for task {task_id} at "
-                f"gate {gate_name!r}: {exc}. The gate pauses instead of "
+                f"gate {gate_name!r}: {describe_exception(exc)}. The gate pauses instead of "
                 "passing unrecorded."
             ),
             dedup_key="approval_gate_read_failed:graduation_record",
@@ -671,7 +672,7 @@ async def _pending_regen(pool: Any, task_id: str) -> str | None:
             kind="approval_gate_read_failed",
             title="pending-regen check failed — treating as no regen",
             body=(
-                f"pending-regen check failed: {exc}. Returns None (normal pause). "
+                f"pending-regen check failed: {describe_exception(exc)}. Returns None (normal pause). "
                 "If this persists an operator regen request may be silently "
                 "dropped (e.g. pre-migration columns absent)."
             ),

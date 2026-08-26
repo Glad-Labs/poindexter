@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             kind="affiliate_links_read_failed",
             title="affiliate list_active read failed — no links injected this run",
             body=(
-                f"list_active failed: {exc}. The atom passes the content through "
+                f"list_active failed: {describe_exception(exc)}. The atom passes the content through "
                 "unmodified (no affiliate links injected for this post)."
             ),
             dedup_key="affiliate_links_read_failed:list_active",

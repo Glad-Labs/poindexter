@@ -47,6 +47,7 @@ from typing import Any
 import httpx
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -148,7 +149,7 @@ def _resolve_site_config() -> Any | None:
             kind="notify_site_config_resolve_failed",
             title="notify_operator's get_site_config() raised",
             body=(
-                f"_resolve_site_config: {exc}. Operator notifications on "
+                f"_resolve_site_config: {describe_exception(exc)}. Operator notifications on "
                 "this path will short-circuit at secret_resolver — the "
                 "same failure mode the shared_context import-failure "
                 "branch above already warns loudly about."

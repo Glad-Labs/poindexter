@@ -57,6 +57,7 @@ from plugins.config import PluginConfig
 from plugins.registry import get_all_llm_providers
 from services.gpu_scheduler import gpu
 from services.task_context import current_task_id
+from utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
     from services.vram_budget import ModelArch
@@ -966,7 +967,7 @@ async def _record_dispatch_cost(
             title="dispatch cost_logs auto-write failed",
             body=(
                 f"Writing the cost_logs row after a {model} dispatch "
-                f"(phase={phase}, task={task_id}) raised {type(e).__name__}: {e}. "
+                f"(phase={phase}, task={task_id}) raised {describe_exception(e)}. "
                 f"For non-writer LLM dispatches this is the only cost_logs writer, "
                 f"and the budget cap sums cost_logs.cost_usd — a persistent failure "
                 f"silently undercounts spend tracking and the spend cap."

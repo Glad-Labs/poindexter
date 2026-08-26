@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -449,7 +451,7 @@ async def fetch_recent_titles(
             title="Recent-title lookup failed — title variety guidance skipped",
             body=(
                 f"Reading recent published titles raised {type(exc).__name__}: "
-                f"{exc}. The title prompt carries no variety guidance, so this "
+                f"{describe_exception(exc)}. The title prompt carries no variety guidance, so this "
                 f"post's title was chosen without the diversity check."
             ),
             severity="info",
@@ -661,7 +663,7 @@ async def fetch_taken_titles(
             title="Taken-title lookup failed — internal duplicate check skipped",
             body=(
                 f"Reading already-used titles raised {type(exc).__name__}: "
-                f"{exc}. This post's title was not compared against our own "
+                f"{describe_exception(exc)}. This post's title was not compared against our own "
                 f"corpus, so a near-duplicate can ship unnoticed."
             ),
             severity="info",

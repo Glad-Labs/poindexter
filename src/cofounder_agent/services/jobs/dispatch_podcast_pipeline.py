@@ -144,7 +144,7 @@ class DispatchPodcastPipelineJob:
                     title=f"podcast_pipeline run failed for task {task_id}",
                     body=(
                         f"The Stage-3 podcast_pipeline run raised for task {task_id}: "
-                        f"{exc}. The piece is marked dispatched; the "
+                        f"{describe_exception(exc)}. The piece is marked dispatched; the "
                         "media_reconciliation watchdog re-dispatches."
                     ),
                     severity="warn",

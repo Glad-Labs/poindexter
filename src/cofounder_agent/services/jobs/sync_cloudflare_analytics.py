@@ -141,7 +141,7 @@ class SyncCloudflareAnalyticsJob:
                 title="page_views ingest degraded — CF Analytics token read failed",
                 body=(
                     "Reading the secret `cloudflare_analytics_api_token` "
-                    f"raised: {e}. The CF Analytics Engine → page_views "
+                    f"raised: {describe_exception(e)}. The CF Analytics Engine → page_views "
                     "ingest cannot run until the secret is readable; "
                     "first-party page-view data is not being collected."
                 ),
@@ -288,7 +288,7 @@ class SyncCloudflareAnalyticsJob:
                     title="Cloudflare API unreachable (transient network fault)",
                     body=(
                         f"Connect still failing after {transient_retries} "
-                        f"retries: {e}. Deferred to the next cycle — the "
+                        f"retries: {describe_exception(e)}. Deferred to the next cycle — the "
                         "sync high-water mark is untouched, so no data is "
                         "skipped. A sustained fault repeats this finding "
                         "under one dedup key across every CF consumer."

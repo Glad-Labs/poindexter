@@ -25,6 +25,7 @@ from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -392,7 +393,7 @@ async def send_post_newsletter(
             title="Newsletter From address is unparseable — campaign skipped",
             body=(
                 f"`newsletter_from_email` could not be parsed into an RFC "
-                f"5322 mailbox: {e}\n\nSet it to a bare address "
+                f"5322 mailbox: {describe_exception(e)}\n\nSet it to a bare address "
                 f"(`news@example.com`) or `Name <news@example.com>`. "
                 f"Post affected: `{slug}`."
             ),

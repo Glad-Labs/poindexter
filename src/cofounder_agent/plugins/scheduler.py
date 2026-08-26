@@ -32,9 +32,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from services import live_activity
+
 # Dep-free (json/logging only), so importing it here doesn't break the lean
 # images that this module already guards apscheduler for.
-from services import live_activity
+from utils.exception_format import describe_exception
 
 # apscheduler is only needed by the worker that actually RUNS the scheduler.
 # Gate the import so lean images (the voice agent) can still ``import plugins``
@@ -435,7 +437,7 @@ class PluginScheduler:
                 kind="scheduler_last_run_lookup_failed",
                 title=f"Last-run lookup failed for job {job_name!r}",
                 body=(
-                    f"_persisted_last_run_epoch: {e}. Treated as 'never "
+                    f"_persisted_last_run_epoch: {describe_exception(e)}. Treated as 'never "
                     "run' — this job's first-fire timing resets to the "
                     "staggered startup delay instead of anchoring off its "
                     "actual last run, even though it has run before."

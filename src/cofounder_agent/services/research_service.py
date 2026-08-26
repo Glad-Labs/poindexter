@@ -21,6 +21,7 @@ import re
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -315,7 +316,7 @@ class ResearchService:
                 kind="internal_link_search_failed",
                 title=f"Internal link search failed for topic {topic[:50]!r}",
                 body=(
-                    f"_find_internal_links: {e}. The writer got zero "
+                    f"_find_internal_links: {describe_exception(e)}. The writer got zero "
                     "internal-link candidates for this topic from this "
                     "path (a DB error, not 'no matches found')."
                 ),
@@ -354,7 +355,7 @@ class ResearchService:
                 kind="web_search_failed",
                 title=f"Web search failed for topic {topic[:50]!r}",
                 body=(
-                    f"_web_search: {e}. The writer got zero external "
+                    f"_web_search: {describe_exception(e)}. The writer got zero external "
                     "sources for this topic — no sourced facts/numbers "
                     "to draw on, just the pipeline's own knowledge."
                 ),

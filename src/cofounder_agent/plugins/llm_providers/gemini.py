@@ -53,6 +53,7 @@ from plugins.llm_resilience import (
 )
 from services.cost_guard import CostGuard, CostGuardExhausted
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -215,7 +216,7 @@ class GeminiProvider:
                 kind="gemini_enabled_flag_read_failed",
                 title="Could not read plugin.llm_provider.gemini.enabled",
                 body=(
-                    f"_is_enabled: {e}. Gemini reads as disabled for this "
+                    f"_is_enabled: {describe_exception(e)}. Gemini reads as disabled for this "
                     "call even if the operator actually enabled it — a "
                     "SiteConfig cache read failure, not a real opt-out."
                 ),

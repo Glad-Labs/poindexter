@@ -60,6 +60,7 @@ from prometheus_client import Histogram
 from services import live_activity
 from services.live_activity_content import content_step_pct
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively via constructor DI (#272
 # Phase-2f). The module-level ``site_config`` global + ``set_site_config``
@@ -1207,7 +1208,7 @@ async def _record_capability_outcomes(
             kind="capability_outcomes_write_failed",
             title="Router-feedback (capability_outcomes) write failed",
             body=(
-                f"record_run raised {type(exc).__name__}: {exc}. This run's "
+                f"record_run raised {describe_exception(exc)}. This run's "
                 "(atom, tier, model) outcomes were not recorded, so the model "
                 "router loses this datapoint; a persistent failure silently "
                 "stops the router learning."
@@ -1252,7 +1253,7 @@ async def _capture_atom_runs(
             kind="atom_runs_capture_failed",
             title="atom_runs composition capture failed",
             body=(
-                f"persist_atom_runs raised {type(exc).__name__}: {exc}. The "
+                f"persist_atom_runs raised {describe_exception(exc)}. The "
                 "per-invocation composition→outcome rows for this run were not "
                 "written, so the atom-runs substrate is missing this run."
             ),
@@ -2100,7 +2101,7 @@ class TemplateRunner:
                 kind="postgres_checkpointer_flag_read_failed",
                 title="Could not read template_runner_use_postgres_checkpointer",
                 body=(
-                    f"_postgres_enabled: {exc}. Defaulted to MemorySaver "
+                    f"_postgres_enabled: {describe_exception(exc)}. Defaulted to MemorySaver "
                     "for this run — if the operator actually enabled "
                     "Postgres-backed checkpointing, this run silently "
                     "used the non-persistent in-process saver instead, "

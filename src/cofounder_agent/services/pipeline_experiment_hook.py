@@ -46,6 +46,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +81,7 @@ async def _resolve_active_experiment_key(database_service: Any) -> str | None:
             kind="experiment_active_key_read_failed",
             title="Could not read active_pipeline_experiment_key from app_settings",
             body=(
-                f"_resolve_active_experiment_key: {e}. This task ran with "
+                f"_resolve_active_experiment_key: {describe_exception(e)}. This task ran with "
                 "no experiment assigned even if one is actually configured "
                 "active — indistinguishable at this call site from the "
                 "normal 'no experiment running' case."
@@ -124,7 +126,7 @@ async def _get_variant_config(
             kind="experiment_variant_config_load_failed",
             title=f"Could not load Langfuse dataset for experiment {experiment_key!r}",
             body=(
-                f"_get_variant_config: {e}. The task was already assigned "
+                f"_get_variant_config: {describe_exception(e)}. The task was already assigned "
                 "a variant (recorded in Langfuse), but its config — "
                 "including any writer_model override — never applied, so "
                 "it ran on default config instead of its arm's config. "
@@ -199,7 +201,7 @@ async def assign_pipeline_variant(
             kind="experiment_service_import_failed",
             title="LangfuseExperimentService import failed",
             body=(
-                f"assign_pipeline_variant: {e}. An experiment is active "
+                f"assign_pipeline_variant: {describe_exception(e)}. An experiment is active "
                 "(active_pipeline_experiment_key is set) but no task can "
                 "be assigned to a variant — every task runs unassigned "
                 "until this import works again."
@@ -298,7 +300,7 @@ async def record_pipeline_outcome(
             kind="experiment_service_import_failed",
             title="LangfuseExperimentService import failed",
             body=(
-                f"record_pipeline_outcome: {e}. Task {task_id} was assigned "
+                f"record_pipeline_outcome: {describe_exception(e)}. Task {task_id} was assigned "
                 f"to experiment {experiment_key!r} but its outcome metrics "
                 "were never recorded — this run is invisible to the "
                 "experiment's scoring."

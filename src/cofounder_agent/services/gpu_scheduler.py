@@ -79,6 +79,7 @@ GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 from services.llm_providers.ollama_unload import unload_loaded_ollama_models
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -980,7 +981,7 @@ class GPUScheduler:
                             body=(
                                 f"Recording the gpu_task_sessions row for task "
                                 f"{task_id} (phase {phase or owner}, model {model}) "
-                                f"raised {type(exc).__name__}: {exc}. The GPU lock "
+                                f"raised {describe_exception(exc)}. The GPU lock "
                                 "released normally; only the per-task compute/power "
                                 "economics sample was lost."
                             ),

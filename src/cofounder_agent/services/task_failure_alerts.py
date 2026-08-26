@@ -33,6 +33,7 @@ from collections import OrderedDict
 from typing import Any
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -159,7 +160,7 @@ async def _persistent_check_and_record(
             kind="task_failure_dedup_check_failed",
             title=f"Alert-dedup check failed for task {task_id}",
             body=(
-                f"_persistent_check_and_record: {e}. Fails open (lets the alert "
+                f"_persistent_check_and_record: {describe_exception(e)}. Fails open (lets the alert "
                 "through) — the immediate consequence is a possible "
                 "duplicate notification, not a suppressed one, but a "
                 "sustained failure here means the dedup window stops "

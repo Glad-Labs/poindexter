@@ -147,7 +147,7 @@ async def render_from_state(
                 f"render time — sometimes weeks later — so this usually means a "
                 f"schema change landed without a backcompat shim for the rows "
                 f"already frozen (see schemas/video_shot_list.py "
-                f"_DEPRECATED_SOURCES for the established shape). Errors: {exc}"
+                f"_DEPRECATED_SOURCES for the established shape). Errors: {describe_exception(exc)}"
             ),
             severity="warn",
             dedup_key=f"shot_list_invalid:{task_id}:{output_key}",

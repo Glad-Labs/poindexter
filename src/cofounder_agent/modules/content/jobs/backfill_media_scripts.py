@@ -40,6 +40,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ class BackfillMediaScriptsJob:
             rows = await pool.fetch(_STRANDED_SQL, batch)
         except Exception as exc:  # noqa: BLE001 — never crash the scheduler
             logger.warning("[SCRIPTS_BACKFILL] stranded query failed: %s", exc)
-            return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         if not rows:
             return JobResult(

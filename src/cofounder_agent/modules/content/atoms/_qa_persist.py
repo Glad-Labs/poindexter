@@ -37,6 +37,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,7 @@ async def persist_qa_reject(
             title="QA reject: rejected draft not archived",
             body=(
                 f"persist_qa_reject could not write the rejected draft for task "
-                f"{task_id[:8]} to pipeline_versions: {type(exc).__name__}: {exc}. "
+                f"{task_id[:8]} to pipeline_versions: {describe_exception(exc)}. "
                 f"The reject still applied (status=rejected), but the draft + QA "
                 f"feedback were not saved for review/learning."
             ),
@@ -253,7 +254,7 @@ async def persist_qa_reject(
             title="QA reject never reached the router's learning signal",
             body=(
                 f"mark_model_performance_outcome raised {type(exc).__name__}: "
-                f"{exc} for task {task_id[:8]}. The reject applied, but the "
+                f"{describe_exception(exc)} for task {task_id[:8]}. The reject applied, but the "
                 f"model that produced the draft keeps its prior score and can "
                 f"be selected again for the same work."
             ),
@@ -331,7 +332,7 @@ async def persist_qa_approved_snapshot(
             body=(
                 f"persist_qa_approved_snapshot could not write the approved "
                 f"draft for task {task_id[:8]} to pipeline_versions: "
-                f"{type(exc).__name__}: {exc}. The approve still proceeds, but "
+                f"{describe_exception(exc)}. The approve still proceeds, but "
                 f"a crash before content.persist_task would lose this draft to "
                 f"a from-scratch re-run (the 2026-07-03 last-run-wins class)."
             ),

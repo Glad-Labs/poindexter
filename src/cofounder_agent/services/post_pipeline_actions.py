@@ -70,6 +70,8 @@ import logging
 import re
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 from .webhook_delivery_service import emit_webhook_event
 
 logger = logging.getLogger(__name__)
@@ -610,7 +612,7 @@ async def _maybe_run_preview_qa(
             title="preview QA verdict not persisted",
             body=(
                 f"Persisting the visual-QA verdict onto content_tasks.metadata "
-                f"for task {task_id} raised {type(exc).__name__}: {exc}. The "
+                f"for task {task_id} raised {describe_exception(exc)}. The "
                 f"preview gate and console read preview_qa_score / "
                 f"preview_qa_approved from that row, so a persistent failure "
                 f"leaves them blind to every visual-QA result."

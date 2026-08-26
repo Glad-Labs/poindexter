@@ -48,6 +48,7 @@ from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 # Reuse subprocess helpers from the audit-era QA service — they handle
 # asyncio subprocess lifecycle and ffprobe/ffmpeg argv composition.
 from services.media_quality_service import _probe_duration, _run_argv
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,7 @@ async def _detect_silences(
             kind="audio_qa_measurement_failed",
             title="Audio QA silencedetect measurement failed",
             body=(
-                f"ffmpeg silencedetect failed for {audio_path!r}: {exc}. The "
+                f"ffmpeg silencedetect failed for {audio_path!r}: {describe_exception(exc)}. The "
                 "silence check is recorded as unavailable (non-blocking)."
             ),
             dedup_key="audio_qa_measurement_failed:silencedetect",
@@ -248,7 +249,7 @@ async def _measure_volume(audio_path: str) -> dict[str, float] | None:
             kind="audio_qa_measurement_failed",
             title="Audio QA volumedetect measurement failed",
             body=(
-                f"ffmpeg volumedetect failed for {audio_path!r}: {exc}. The "
+                f"ffmpeg volumedetect failed for {audio_path!r}: {describe_exception(exc)}. The "
                 "volume check is recorded as unavailable (non-blocking)."
             ),
             dedup_key="audio_qa_measurement_failed:volumedetect",

@@ -35,6 +35,7 @@ from typing import Any
 from uuid import UUID
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -133,7 +134,7 @@ async def load_enabled_publishers(
             kind="publishing_adapters_lookup_failed",
             title="publishing_adapters lookup failed — distribution disabled",
             body=(
-                f"load_enabled_publishers(surface={surface!r}): {exc}. "
+                f"load_enabled_publishers(surface={surface!r}): {describe_exception(exc)}. "
                 "Zero adapters loaded for this run — social/newsletter/"
                 "other distribution surfaces got nothing to publish to. "
                 "Benign on a fresh install before migrations create the "

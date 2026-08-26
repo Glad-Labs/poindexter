@@ -277,7 +277,7 @@ class IngestBenchmarkResultsJob:
                     title="GitHub API unreachable (transient network fault)",
                     body=(
                         f"Connect still failing after {transient_retries} "
-                        f"retries: {e}. Deferred to the next cycle — ingest "
+                        f"retries: {describe_exception(e)}. Deferred to the next cycle — ingest "
                         "is DB-idempotent, so nothing is skipped."
                     ),
                     dedup_key="network_unreachable:github",

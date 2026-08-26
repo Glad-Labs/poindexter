@@ -50,6 +50,7 @@ import re
 from typing import Any
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -189,7 +190,7 @@ def _resolve_competitors(site_config: Any) -> list[str]:
                 title="Guardrails competitor-list read failed — rail open",
                 body=(
                     f"site_config.get('guardrails_competitor_list') raised "
-                    f"{type(e).__name__}: {e}. The competitor-mention "
+                    f"{describe_exception(e)}. The competitor-mention "
                     "rail is effectively disabled until this is fixed. "
                     "Investigate SiteConfig wiring."
                 ),

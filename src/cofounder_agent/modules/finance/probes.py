@@ -50,6 +50,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger("finance.poll_staleness_probe")
 
 
@@ -166,7 +168,7 @@ async def _default_egress_ip_fetch(pool: Any) -> str | None:
             kind="finance_egress_ip_lookup_failed",
             title="Could not determine worker's public egress IP",
             body=(
-                f"_default_egress_ip_fetch: {exc}. The auth-lost page falls "
+                f"_default_egress_ip_fetch: {describe_exception(exc)}. The auth-lost page falls "
                 "back to a manual IP hint instead of the actual address "
                 "Mercury's token allowlist sees."
             ),

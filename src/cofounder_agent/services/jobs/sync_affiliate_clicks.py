@@ -267,7 +267,7 @@ class SyncAffiliateClicksJob:
                     title="Cloudflare API unreachable (transient network fault)",
                     body=(
                         f"Connect still failing after {transient_retries} "
-                        f"retries: {e}. Deferred to the next cycle — the "
+                        f"retries: {describe_exception(e)}. Deferred to the next cycle — the "
                         "click high-water mark is untouched, so no data is "
                         "skipped."
                     ),

@@ -26,6 +26,7 @@ from typing import Any
 from services.logger_config import get_logger
 from services.media_policy import resolve_media_to_generate
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 from utils.text_utils import extract_title_from_content, strip_title_label
 
 # #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
@@ -430,7 +431,7 @@ async def _sync_published_post(post_id: str) -> None:
                 title=f"Cloud DB sync raised {type(e).__name__} for post {post_id}",
                 body=(
                     f"Post {post_id} published locally but cloud sync "
-                    f"failed: {type(e).__name__}: {e}. Recurring "
+                    f"failed: {describe_exception(e)}. Recurring "
                     "failures here mean the cloud read path is stale; "
                     "investigate sync_service network + auth."
                 ),
@@ -546,7 +547,7 @@ async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteC
                 title=f"RAG embedding failed for post {post_id_for_log}",
                 body=(
                     f"Post {post_id_for_log} published but its embedding "
-                    f"failed: {type(e).__name__}: {e}. RAG retrieval "
+                    f"failed: {describe_exception(e)}. RAG retrieval "
                     "for future posts won't include this content until "
                     "the embedding succeeds. Common causes: ollama "
                     "unreachable, embedding model unloaded, "
@@ -1392,7 +1393,7 @@ async def _record_edit_distance_metrics(
             title=f"Edit-distance metrics not recorded for task {task_id}",
             body=(
                 f"_record_edit_distance_metrics raised "
-                f"{type(exc).__name__}: {exc}. The publish itself "
+                f"{describe_exception(exc)}. The publish itself "
                 "succeeded, but no row was written to "
                 "published_post_edit_metrics — the auto-publish gate's "
                 "edit-distance training signal is starving. See "
@@ -1459,7 +1460,7 @@ async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> No
                 title="post.published webhook emit failed",
                 body=(
                     f"Emitting the post.published event for task {task_id} "
-                    f"raised {type(e).__name__}: {e}. External webhook "
+                    f"raised {describe_exception(e)}. External webhook "
                     "subscribers were not notified that the post went live."
                 ),
                 dedup_key="post_published_webhook_emit_failed",

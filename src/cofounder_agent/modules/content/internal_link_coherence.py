@@ -39,6 +39,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -167,7 +169,7 @@ async def get_tag_slugs_for_post(
             kind="link_coherence_tag_lookup_failed",
             title="Tag lookup failed for internal-link coherence filter",
             body=(
-                f"_tags_for_post(post_id={post_id!r}, slug={slug!r}): {exc}. "
+                f"_tags_for_post(post_id={post_id!r}, slug={slug!r}): {describe_exception(exc)}. "
                 "Treated as 'no tags known' for this post — the coherence "
                 "filter can't verify whether a candidate link actually "
                 "matches this post's topic."
@@ -220,7 +222,7 @@ async def count_inbound_links_to_slug(pool, slug: str) -> int:
             kind="inbound_link_count_failed",
             title="Inbound-link count failed — single-target cap not enforced",
             body=(
-                f"count_inbound_links_to_slug failed for {slug!r}: {exc}. "
+                f"count_inbound_links_to_slug failed for {slug!r}: {describe_exception(exc)}. "
                 "Returns 0, so the single-target recommendation cap can't "
                 "see this slug's existing inbound links this run (may "
                 "under-cap, i.e. recommend it more than intended)."

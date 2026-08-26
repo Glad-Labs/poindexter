@@ -47,6 +47,7 @@ from typing import Any
 import httpx
 
 from services.image_prompt_sanitizer import clean_image_prompt
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -363,7 +364,7 @@ async def _record_inline_image_asset(
             title="media_asset_recorder import failed — inline image not recorded",
             body=(
                 "Deferred import of services.media_asset_recorder failed: "
-                f"{exc}. The inline image is not tracked in media_assets "
+                f"{describe_exception(exc)}. The inline image is not tracked in media_assets "
                 "(cleanup / retention / cost-attribution can't see it); the "
                 "rendered-HTML backfill is the fallback."
             ),

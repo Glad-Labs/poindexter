@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             title="normalize_draft could not build the real-slug allowlist",
             body=(
                 f"Reading the internal-links cache raised {type(exc).__name__}: "
-                f"{exc}. The allowlist is empty, so scrub_fabricated_links will "
+                f"{describe_exception(exc)}. The allowlist is empty, so scrub_fabricated_links will "
                 f"treat every internal link in this post as fabricated and "
                 f"remove it — including legitimate ones."
             ),

@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     f"The auto-publish gate evaluation failed for task "
                     f"{task_id}. The pipeline fell through to the default "
                     f"observe-only decision (no unsafe publish), but the gate "
-                    f"is not evaluating. Error: {_gate_err!r}. Investigate "
+                    f"is not evaluating. Error: {describe_exception(_gate_err)}. Investigate "
                     f"modules/content/auto_publish_gate.evaluate."
                 ),
                 dedup_key=f"auto_publish_gate_eval_failed_{type(_gate_err).__name__}",

@@ -25,6 +25,7 @@ from schemas.model_converter import ModelConverter
 from services.logger_config import get_logger
 from services.settings_categories import resolve_category
 from services.settings_read_sink import record_read
+from utils.exception_format import describe_exception
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -85,7 +86,7 @@ async def _mirror_model_performance(conn: Any, cost_log: dict[str, Any]) -> None
             title="model_performance mirror write failed in log_cost",
             body=(
                 f"The additive model_performance mirror write raised "
-                f"{type(mp_err).__name__}: {mp_err}. The primary cost_logs row "
+                f"{describe_exception(mp_err)}. The primary cost_logs row "
                 f"was written (accounting is intact), but the router-learning "
                 f"mirror row was dropped. A persistent failure here silently "
                 f"degrades the model-performance feedback signal. Likely causes: "
@@ -142,7 +143,7 @@ async def _mirror_routing_outcome(conn: Any, cost_log: dict[str, Any]) -> None:
             title="routing_outcomes mirror write failed in log_cost",
             body=(
                 f"The additive routing_outcomes mirror write raised "
-                f"{type(ro_err).__name__}: {ro_err}. The primary cost_logs row "
+                f"{describe_exception(ro_err)}. The primary cost_logs row "
                 f"was written, but the ML-gateway routing-outcome row was "
                 f"dropped. A persistent failure here silently starves the "
                 f"(task_type, model) -> outcome learning signal. Likely causes: "
@@ -312,7 +313,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 body=(
                     f"Updating the outcome columns (human_approved/post_published) "
                     f"on model_performance for task {task_id} raised "
-                    f"{type(e).__name__}: {e}. This is the downstream approval/"
+                    f"{describe_exception(e)}. This is the downstream approval/"
                     f"publish signal the model router learns from; a persistent "
                     f"failure means the router never sees which models produced "
                     f"approved, published content."

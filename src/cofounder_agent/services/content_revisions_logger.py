@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,7 +83,7 @@ async def log_revision(
             kind="content_revision_log_failed",
             title=f"Failed to log a content revision for task {task_id}",
             body=(
-                f"log_revision: {e}. This revision is missing from "
+                f"log_revision: {describe_exception(e)}. This revision is missing from "
                 "content_revisions — the edit-distance auto-publish gate "
                 "reads this history, so a gap here can skew its "
                 "trailing-N clean-run calculation."

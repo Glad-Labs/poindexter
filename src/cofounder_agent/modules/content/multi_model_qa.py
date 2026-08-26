@@ -33,6 +33,7 @@ from services.langfuse_shim import observe  # type: ignore[attr-defined]
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.qa_gates_db import load_qa_gate_chain
+from utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
     import httpx
@@ -2860,7 +2861,7 @@ class MultiModelQA:
                 kind="preview_screenshot_service_unavailable",
                 title="Preview-screenshot service import failed — vision QA skipped",
                 body=(
-                    f"services.preview_screenshot import failed: {e}. Preview "
+                    f"services.preview_screenshot import failed: {describe_exception(e)}. Preview "
                     "screenshot QA is skipped for this task (returns None, "
                     "non-blocking)."
                 ),

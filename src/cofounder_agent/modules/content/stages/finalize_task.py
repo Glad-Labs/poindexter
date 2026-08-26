@@ -33,6 +33,7 @@ import logging
 from typing import Any
 
 from plugins.stage import StageResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def _maybe_append_sources_section(content_text: str, platform: Any) -> str:
             title="Sources-section auto-append failed at finalize",
             body=(
                 f"Appending the Sources section raised {type(_sources_err).__name__}: "
-                f"{_sources_err}. The post finalizes with its inline citations intact "
+                f"{describe_exception(_sources_err)}. The post finalizes with its inline citations intact "
                 f"but WITHOUT the appended Sources footer. A persistent failure ships "
                 f"every citing post without its sources list, and QA runs before "
                 f"finalize so nothing else flags it. Investigate "
@@ -137,7 +138,7 @@ async def _snapshot_final_revision(
             title="content_revisions final snapshot failed at finalize",
             body=(
                 f"log_revision(change_type='finalized') raised "
-                f"{type(rev_err).__name__}: {rev_err} for task {task_id}. The post "
+                f"{describe_exception(rev_err)} for task {task_id}. The post "
                 f"finalizes, but its terminal content_revisions row is missing — the "
                 f"feedback-loop diff chain (initial draft + QA rewrites + this final "
                 f"row) is incomplete for this task. A persistent failure silently "
@@ -511,7 +512,7 @@ class FinalizeTaskStage:
                         f"The auto-publish gate evaluation failed for task "
                         f"{task_id}. The pipeline fell through to the default "
                         f"observe-only decision (no unsafe publish), but the "
-                        f"gate is not evaluating. Error: {_gate_err!r}. "
+                        f"gate is not evaluating. Error: {describe_exception(_gate_err)}. "
                         f"Investigate modules/content/auto_publish_gate.evaluate."
                     ),
                     dedup_key=f"auto_publish_gate_eval_failed_{type(_gate_err).__name__}",

@@ -723,7 +723,7 @@ async def _record_featured_image_asset(
             title="media_asset_recorder import failed — featured image not recorded",
             body=(
                 "Deferred import of services.media_asset_recorder failed: "
-                f"{exc}. The featured image is not tracked in media_assets "
+                f"{describe_exception(exc)}. The featured image is not tracked in media_assets "
                 "(cleanup / retention / cost-attribution can't see it)."
             ),
             dedup_key="media_asset_recorder_unavailable",
@@ -1151,7 +1151,7 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
             kind="image_styles_setting_malformed",
             title="image_styles setting is not valid JSON — custom styles ignored",
             body=(
-                f"json.loads(image_styles) raised {type(exc).__name__}: {exc}. "
+                f"json.loads(image_styles) raised {describe_exception(exc)}. "
                 "The featured-image rotation falls back to the built-in styles; "
                 "the operator's configured styles are not in effect until the "
                 "app_settings.image_styles JSON is fixed."
@@ -1249,7 +1249,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
             title="Recent-styles read failed — cross-post image-style rotation disabled",
             body=(
                 f"Both the pooled and raw-connect reads of recent published "
-                f"image styles failed ({type(exc).__name__}: {exc}). Rotation "
+                f"image styles failed ({describe_exception(exc)}). Rotation "
                 "falls back to no history, so it cannot avoid repeating a style "
                 "already used on a recent post."
             ),

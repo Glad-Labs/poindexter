@@ -202,7 +202,7 @@ class CrosspostToDevtoJob:
                 title="devto_syndicate_min_quality is not a number — syndication paused",
                 body=(
                     f"Value {(sc.get('devto_syndicate_min_quality') if sc else None)!r} "
-                    f"is unparseable ({e}); no posts syndicated this tick. Fix the "
+                    f"is unparseable ({describe_exception(e)}); no posts syndicated this tick. Fix the "
                     "app_settings value to resume Dev.to syndication."
                 ),
                 dedup_key="devto_min_quality_unparseable",

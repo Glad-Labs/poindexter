@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             kind="final_revision_snapshot_failed",
             title="persist_task could not write the finalized revision",
             body=(
-                f"log_revision raised {type(rev_err).__name__}: {rev_err} for "
+                f"log_revision raised {describe_exception(rev_err)} for "
                 f"task {str(task_id)[:8]}. The task itself persisted, but "
                 f"content_revisions has no 'finalized' row for it, so its "
                 f"revision history ends at the previous snapshot."

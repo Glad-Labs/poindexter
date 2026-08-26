@@ -41,6 +41,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -304,7 +305,7 @@ async def auto_publish_task(
             body=(
                 f"Task {task_id} published as post {result.post_id} "
                 f"({result.post_slug}) but the pipeline_gate_history + "
-                f"distribution write failed: {exc!r}. The content_tasks view "
+                f"distribution write failed: {describe_exception(exc)}. The content_tasks view "
                 f"resolves approval_status / post_id / post_slug from these "
                 f"rows, so they read NULL until backfilled."
             ),
@@ -335,7 +336,7 @@ async def auto_publish_task(
             title=f"Auto-publish learning-signal write failed for task {task_id}",
             body=(
                 f"mark_model_performance_outcome failed for task {task_id} "
-                f"after a successful auto-publish: {exc!r}. The router's "
+                f"after a successful auto-publish: {describe_exception(exc)}. The router's "
                 f"quality feedback loop (poindexter#271) is missing this "
                 f"outcome."
             ),

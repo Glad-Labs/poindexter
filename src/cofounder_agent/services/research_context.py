@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -244,7 +246,7 @@ async def build_rag_context(
             kind="rag_context_build_failed",
             title=f"RAG context build failed for topic {topic[:50]!r}",
             body=(
-                f"build_rag_context: {e}. The writer got zero related-"
+                f"build_rag_context: {describe_exception(e)}. The writer got zero related-"
                 "posts context for this topic — no internal-linking "
                 "candidates at all this run."
             ),

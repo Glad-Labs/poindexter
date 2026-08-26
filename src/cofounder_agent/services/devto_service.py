@@ -29,6 +29,7 @@ from typing import Any, Literal
 import httpx
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -290,7 +291,7 @@ class DevToCrossPostService:
                     title="devto_publish_immediately read failed — defaulting to auto-publish",
                     body=(
                         f"Could not read app_settings.devto_publish_immediately: "
-                        f"{type(e).__name__}: {e}. Falling back to auto_publish="
+                        f"{describe_exception(e)}. Falling back to auto_publish="
                         f"{auto_publish}. If you intended to hold posts for "
                         "review, the next cross-post may go live without you "
                         "seeing it. Investigate DB connectivity / pool state."

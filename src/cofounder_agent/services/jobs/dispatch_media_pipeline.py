@@ -609,7 +609,7 @@ class DispatchMediaPipelineJob:
                     title=f"media_pipeline run failed for task {task_id}",
                     body=(
                         f"The Stage-2 media_pipeline run raised for approved task "
-                        f"{task_id}: {exc}. The piece is marked dispatched; the "
+                        f"{task_id}: {describe_exception(exc)}. The piece is marked dispatched; the "
                         "media_reconciliation watchdog (Plan 8) owns retry."
                     ),
                     severity="warn",

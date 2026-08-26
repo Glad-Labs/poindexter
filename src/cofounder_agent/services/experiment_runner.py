@@ -66,6 +66,8 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,7 +182,7 @@ async def _weighted_selection_enabled(conn: Any) -> bool:
             kind="weighted_selection_flag_read_failed",
             title="Could not read experiment_weighted_selection_enabled",
             body=(
-                f"_weighted_selection_enabled: {exc}. Defaulted to "
+                f"_weighted_selection_enabled: {describe_exception(exc)}. Defaulted to "
                 "uniform allocation — if the operator actually opted "
                 "into weighted selection, this run silently used "
                 "Phase-1 uniform behavior instead."

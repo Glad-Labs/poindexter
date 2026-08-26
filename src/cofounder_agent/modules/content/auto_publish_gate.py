@@ -75,6 +75,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,7 +114,7 @@ async def _backfill_atom_run_outcome(
             kind="atom_runs_outcome_backfill_failed",
             title="atom_runs approve-outcome backfill failed",
             body=(
-                f"record_atom_run_outcome raised {type(exc).__name__}: {exc} "
+                f"record_atom_run_outcome raised {describe_exception(exc)} "
                 f"while backfilling the 'approved' outcome (edit_distance="
                 f"{edit_distance}) for task {task_id}. The primary edit-metrics "
                 f"row was written, but the atom_runs (composition -> outcome) "
@@ -509,7 +511,7 @@ async def _lookup_latest_capability_outcome(
             kind="capability_outcomes_lookup_failed",
             title="capability_outcomes lookup failed at approve time",
             body=(
-                f"lookup failed for task {task_id}: {exc}. The approve-time "
+                f"lookup failed for task {task_id}: {describe_exception(exc)}. The approve-time "
                 "edit metric row won't be cross-stamped with the writer's "
                 "model/prompt-template provenance (lab-view attribution gap "
                 "for this one approval; non-blocking)."

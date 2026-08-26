@@ -208,7 +208,7 @@ class CheckMemoryStalenessJob:
                     kind="memory_stale_notify_failed",
                     title=f"Stale-memory alert for '{writer}' could not reach Discord",
                     body=(
-                        f"notify_operator raised {type(e).__name__}: {e}. Writer "
+                        f"notify_operator raised {describe_exception(e)}. Writer "
                         f"'{writer}' is stale ({age_seconds // 3600}h, threshold "
                         f"{threshold // 3600}h) but the operator was not notified "
                         "via Discord."
@@ -240,7 +240,7 @@ class CheckMemoryStalenessJob:
                     title="Stale-memory alert cooldown state was not persisted",
                     body=(
                         f"Writing memory_stale_last_alerts raised "
-                        f"{type(e).__name__}: {e}. The alert-cooldown map is not "
+                        f"{describe_exception(e)}. The alert-cooldown map is not "
                         "saved, so the next run may re-send alerts already fired "
                         "or lose track of the cooldown window."
                     ),

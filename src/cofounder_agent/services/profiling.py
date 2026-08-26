@@ -36,6 +36,7 @@ import logging
 from typing import Any
 
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def setup_pyroscope(
                 kind="pyroscope_site_config_import_failed",
                 title=f"SiteConfig import failed while configuring Pyroscope for {service_name}",
                 body=(
-                    f"setup_pyroscope: {e}. Continuous profiling is "
+                    f"setup_pyroscope: {describe_exception(e)}. Continuous profiling is "
                     f"disabled for this process ({service_name}) — no "
                     "flame graphs will ship to Pyroscope."
                 ),

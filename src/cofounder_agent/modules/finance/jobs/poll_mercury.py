@@ -32,6 +32,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +240,7 @@ class PollMercuryJob:
                 )
                 return JobResult(
                     ok=False,
-                    detail=f"Mercury auth: {e}",
+                    detail=f"Mercury auth: {describe_exception(e)}",
                     changes_made=0,
                     metrics={"auth_failed": 1},
                 )
@@ -252,7 +253,7 @@ class PollMercuryJob:
                 )
                 return JobResult(
                     ok=False,
-                    detail=f"Mercury API: {e}",
+                    detail=f"Mercury API: {describe_exception(e)}",
                     changes_made=0,
                     metrics={"api_error": 1},
                 )
@@ -265,7 +266,7 @@ class PollMercuryJob:
                 )
                 return JobResult(
                     ok=False,
-                    detail=f"unexpected: {type(e).__name__}: {e}",
+                    detail=f"unexpected: {describe_exception(e)}",
                     changes_made=0,
                     metrics={"exception": 1},
                 )

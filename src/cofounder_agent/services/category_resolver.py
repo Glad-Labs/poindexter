@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from services.database_service import DatabaseService
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ async def select_category_for_topic(
                     kind="explicit_category_lookup_failed",
                     severity="warning",
                     title=f"Explicit category lookup failed for {requested_category!r}",
-                    body=f"DB error while resolving requested category {requested_category!r}: {e!r}. Falling back to keyword match.",
+                    body=f"DB error while resolving requested category {requested_category!r}: {describe_exception(e)}. Falling back to keyword match.",
                     dedup_key=f"category_resolver_lookup_failed_{type(e).__name__}",
                 )
             except Exception:

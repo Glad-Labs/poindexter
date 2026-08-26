@@ -25,6 +25,7 @@ from pathlib import Path
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -89,7 +90,7 @@ def _convert_to_webp(
             kind="webp_conversion_fallback",
             title=f"WebP conversion fell back to original for {path.name}",
             body=(
-                f"Pillow WebP conversion failed for {path.name}: {exc}. Uploaded "
+                f"Pillow WebP conversion failed for {path.name}: {describe_exception(exc)}. Uploaded "
                 "the original file instead — non-blocking, but a systematic "
                 "failure means every image ships un-optimised."
             ),
@@ -570,7 +571,7 @@ class R2UploadService:
                 body=(
                     f"Stamping the public URL onto media_assets for post "
                     f"{post_id} (type={asset_type}, path={storage_path}) raised "
-                    f"{type(exc).__name__}: {exc}. The upload itself succeeded, "
+                    f"{describe_exception(exc)}. The upload itself succeeded, "
                     f"so the asset row keeps a stale/absent url and the rendered "
                     f"page can show a broken or outdated image."
                 ),

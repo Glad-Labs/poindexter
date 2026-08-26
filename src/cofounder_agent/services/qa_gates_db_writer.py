@@ -33,6 +33,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -226,7 +227,7 @@ async def record_chain_run(
             title="qa_gates counter update failed",
             body=(
                 f"Bumping qa_gates counters for {len(runs)} gate(s) raised "
-                f"{type(exc).__name__}: {exc}. total_runs / total_rejections / "
+                f"{describe_exception(exc)}. total_runs / total_rejections / "
                 f"last_run_status feed the QA Rails dashboard, so a persistent "
                 f"failure makes it under-report every chain run."
             ),

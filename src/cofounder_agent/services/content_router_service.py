@@ -81,6 +81,7 @@ from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 from .audit_log import audit_log_bg
 from .database_service import DatabaseService
@@ -139,7 +140,7 @@ async def _record_experiment_outcome(
             kind="experiment_outcome_record_failed",
             title="Experiment outcome attribution failed",
             body=(
-                f"record_pipeline_outcome raised {type(_exc).__name__}: {_exc} for "
+                f"record_pipeline_outcome raised {describe_exception(_exc)} for "
                 f"task {task_id}. The pipeline run itself succeeded, but its outcome "
                 f"was not attributed to the experiment-assignment row — a persistent "
                 f"failure silently starves the A/B Lab's (variant -> outcome) data."

@@ -21,6 +21,7 @@ from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 from utils.json_encoder import safe_json_load
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
@@ -914,7 +915,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 kind="task_heartbeat_failed",
                 title=f"Heartbeat update failed for task {task_id}",
                 body=(
-                    f"heartbeat_task: {e}. updated_at wasn't refreshed — "
+                    f"heartbeat_task: {describe_exception(e)}. updated_at wasn't refreshed — "
                     "if this keeps failing, the stale-run sweep "
                     "(reclaim_stale_inprogress_tasks) may wrongly reclaim "
                     "a task that's actually still healthy and running."

@@ -22,6 +22,7 @@ from typing import Any
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from services.media_asset_recorder import record_media_asset
 from services.podcast_service import PODCAST_DIR
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -135,7 +136,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             title="podcast: rendered audio could not be moved to durable storage",
             body=(
                 f"The podcast audio for task {task_id} rendered successfully but "
-                f"could not be moved from {src} to {durable}: {exc}. No "
+                f"could not be moved from {src} to {durable}: {describe_exception(exc)}. No "
                 f"media_asset row was written, so the podcast does not exist as "
                 f"far as the DB is concerned and media_reconciliation will "
                 f"re-dispatch it — re-paying the TTS render — until the "

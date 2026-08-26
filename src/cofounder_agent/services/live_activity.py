@@ -12,6 +12,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +50,7 @@ async def begin(
             title=f"live_activity row could not be created for {kind}/{ref_id}",
             body=(
                 f"begin(kind={kind!r}, ref_id={ref_id!r}, title={title!r}): "
-                f"{exc}. This job/render will not appear in the live pulse "
+                f"{describe_exception(exc)}. This job/render will not appear in the live pulse "
                 "at all — no row exists to later show as stale."
             ),
             dedup_key="live_activity_begin_failed",
@@ -194,7 +196,7 @@ async def reap_stale(pool: Any, *, reaper_seconds: int) -> int:
             kind="live_activity_reap_stale_failed",
             title="live_activity stale-row reaper failed",
             body=(
-                f"reap_stale: {exc}. Orphaned rows from dead producers "
+                f"reap_stale: {describe_exception(exc)}. Orphaned rows from dead producers "
                 "keep showing as 'running' in the live pulse until this "
                 "sweep succeeds again."
             ),
