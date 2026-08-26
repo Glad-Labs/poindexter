@@ -70,7 +70,7 @@ class FlagMissingSeoJob:
                     excluded_templates,
                 )
         except Exception as e:
-            logger.exception("FlagMissingSeoJob: query failed: %s", e)
+            logger.exception("FlagMissingSeoJob: query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:

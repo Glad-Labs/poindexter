@@ -132,7 +132,7 @@ class SyncCloudflareAnalyticsJob:
             logger.warning(
                 "[SYNC_CF_AE] get_secret(cloudflare_analytics_api_token) "
                 "failed: %s",
-                e,
+                describe_exception(e),
             )
             emit_finding(
                 source="sync_cloudflare_analytics",
@@ -220,7 +220,7 @@ class SyncCloudflareAnalyticsJob:
                     "SELECT value FROM app_settings WHERE key = 'cloudflare_analytics_last_sync'"
                 )
         except Exception as e:
-            logger.warning("[SYNC_CF_AE] DB precheck failed: %s", e)
+            logger.warning("[SYNC_CF_AE] DB precheck failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"db precheck failed: {describe_exception(e)}", changes_made=0)
 
         last_sync_raw = (row["value"] if row and row["value"] else "").strip()
@@ -279,7 +279,7 @@ class SyncCloudflareAnalyticsJob:
                 logger.warning(
                     "[SYNC_CF_AE] transient network failure after %d connect "
                     "retries — deferring to next cycle: %s",
-                    transient_retries, e,
+                    transient_retries, describe_exception(e),
                 )
                 emit_finding(
                     source="sync_cloudflare_analytics",
@@ -300,7 +300,7 @@ class SyncCloudflareAnalyticsJob:
                     detail=f"deferred: transient network failure ({describe_exception(e)})",
                     changes_made=0,
                 )
-            logger.warning("[SYNC_CF_AE] CF SQL API request failed: %s", e)
+            logger.warning("[SYNC_CF_AE] CF SQL API request failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"cf api request failed: {describe_exception(e)}", changes_made=0)
 
         if resp.status_code != 200:
@@ -318,7 +318,7 @@ class SyncCloudflareAnalyticsJob:
         try:
             payload = resp.json()
         except Exception as e:
-            logger.warning("[SYNC_CF_AE] CF SQL API JSON decode failed: %s", e)
+            logger.warning("[SYNC_CF_AE] CF SQL API JSON decode failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"cf api json failed: {describe_exception(e)}", changes_made=0)
 
         # CF AE SQL HTTP API returns ``{"meta": [...], "data": [...rows], ...}``
@@ -437,7 +437,7 @@ class SyncCloudflareAnalyticsJob:
                 },
             )
         except Exception as e:
-            logger.exception("[SYNC_CF_AE] insert pass failed: %s", e)
+            logger.exception("[SYNC_CF_AE] insert pass failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
     async def _update_high_water_mark(self, pool: Any, value: str) -> None:
@@ -472,5 +472,5 @@ class SyncCloudflareAnalyticsJob:
             logger.warning(
                 "[SYNC_CF_AE] failed to update high-water mark (%s): %s",
                 value,
-                e,
+                describe_exception(e),
             )

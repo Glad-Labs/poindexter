@@ -105,7 +105,7 @@ class RenderAlertmanagerConfigJob:
             template = template_path.read_text(encoding="utf-8")
         except OSError as e:
             logger.exception(
-                "render_alertmanager_config: template read failed: %s", e
+                "render_alertmanager_config: template read failed: %s", describe_exception(e)
             )
             return JobResult(
                 ok=False, detail=f"template read failed: {describe_exception(e)}", changes_made=0
@@ -121,7 +121,7 @@ class RenderAlertmanagerConfigJob:
             logger.warning(
                 "render_alertmanager_config: could not read %s: %s",
                 output_path,
-                e,
+                describe_exception(e),
             )
 
         if existing == rendered:
@@ -165,7 +165,7 @@ class RenderAlertmanagerConfigJob:
                     pass
                 raise
         except OSError as e:
-            logger.exception("render_alertmanager_config: write failed: %s", e)
+            logger.exception("render_alertmanager_config: write failed: %s", describe_exception(e))
             return JobResult(
                 ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0
             )
@@ -205,5 +205,5 @@ async def _reload_alertmanager(base_url: str) -> tuple[bool, str]:
         )
         return False, f"reload returned {resp.status_code} (config NOT live)"
     except httpx.HTTPError as e:
-        logger.warning("render_alertmanager_config: reload failed: %s", e)
+        logger.warning("render_alertmanager_config: reload failed: %s", describe_exception(e))
         return False, f"reload failed: {e} (config NOT live)"

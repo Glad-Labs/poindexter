@@ -70,7 +70,7 @@ class BackfillMissingSocialDraftsJob:
                 pool, site_config, lookback_days
             )
         except Exception as exc:
-            logger.error("[BackfillMissingSocialDraftsJob] reconcile failed: %s", exc)
+            logger.error("[BackfillMissingSocialDraftsJob] reconcile failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc))
 
         if result["errors"]:

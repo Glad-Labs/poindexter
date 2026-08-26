@@ -58,7 +58,7 @@ class IngestCorsairCsvJob:
                 pool, site_config=site_config, only_names=[_TAP_NAME],
             )
         except Exception as exc:  # noqa: BLE001 — a job must not kill the cycle
-            logger.exception("IngestCorsairCsvJob failed: %s", exc)
+            logger.exception("IngestCorsairCsvJob failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         if summary.total_failed:

@@ -96,7 +96,7 @@ class EvaluateEarnedAutonomyGate2Job:
         try:
             combos = await pool.fetch(_PENDING_COMBOS_SQL)
         except Exception as exc:
-            logger.warning("[GATE2_EVAL] pending-combos query failed: %s", exc)
+            logger.warning("[GATE2_EVAL] pending-combos query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         if not combos:
@@ -112,7 +112,7 @@ class EvaluateEarnedAutonomyGate2Job:
                 except Exception as exc:
                     logger.warning(
                         "[GATE2_EVAL] eligibility check failed niche=%s medium=%s: %s",
-                        niche_slug, medium, exc,
+                        niche_slug, medium, describe_exception(exc),
                     )
                     continue
 
@@ -127,7 +127,7 @@ class EvaluateEarnedAutonomyGate2Job:
                 except Exception as exc:
                     logger.warning(
                         "[GATE2_EVAL] promote failed niche=%s medium=%s: %s",
-                        niche_slug, medium, exc,
+                        niche_slug, medium, describe_exception(exc),
                     )
                     continue
 

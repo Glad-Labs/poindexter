@@ -26,6 +26,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.media_approval_service import record_dispatched, record_pending
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ async def _deliver_podcast(pool: Any, site_config: Any, row: dict[str, Any]) -> 
         r2_svc = R2UploadService(site_config=site_config)
         url = await r2_svc.upload_to_r2(storage_path, key, "audio/mpeg")
     except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
-        logger.warning("[PODCAST_DISTRIBUTE] R2 upload failed for post %s: %s", post_id, exc)
+        logger.warning("[PODCAST_DISTRIBUTE] R2 upload failed for post %s: %s", post_id, describe_exception(exc))
         return False
     if not url:
         return False
@@ -149,7 +150,7 @@ async def _deliver_podcast(pool: Any, site_config: Any, row: dict[str, Any]) -> 
         await pool.execute(_STAMP_URL_SQL, url, post_id)
         await record_dispatched(pool, post_id, "podcast", success=True)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[PODCAST_DISTRIBUTE] stamp/dispatch failed for post %s: %s", post_id, exc)
+        logger.warning("[PODCAST_DISTRIBUTE] stamp/dispatch failed for post %s: %s", post_id, describe_exception(exc))
         return False
     logger.info("[PODCAST_DISTRIBUTE] delivered podcast for post %s → %s", post_id, url)
     return True
@@ -200,7 +201,7 @@ class PodcastDistributeJob:
         try:
             unlinked = await pool.fetch(_UNLINKED_PODCAST_SQL, limit)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[PODCAST_DISTRIBUTE] unlinked query failed: %s", exc)
+            logger.warning("[PODCAST_DISTRIBUTE] unlinked query failed: %s", describe_exception(exc))
             unlinked = []
         for row in unlinked or []:
             asset_id = row["id"]
@@ -219,7 +220,7 @@ class PodcastDistributeJob:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "[PODCAST_DISTRIBUTE] existing-asset check failed for post %s: %s",
-                        post_id, exc,
+                        post_id, describe_exception(exc),
                     )
                     already = None
                 if already:
@@ -233,7 +234,7 @@ class PodcastDistributeJob:
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "[PODCAST_DISTRIBUTE] orphan prune failed for asset %s: %s",
-                            asset_id, exc,
+                            asset_id, describe_exception(exc),
                         )
                     emit_finding(
                         source="podcast_distribute",
@@ -259,13 +260,13 @@ class PodcastDistributeJob:
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] linked asset %s → post %s + seeded", asset_id, post_id)
             except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
-                logger.warning("[PODCAST_DISTRIBUTE] link/seed failed for %s: %s", row.get("id"), exc)
+                logger.warning("[PODCAST_DISTRIBUTE] link/seed failed for %s: %s", row.get("id"), describe_exception(exc))
 
         # Pass 2: heal the backlog — seed any linked-but-unapproved podcast asset.
         try:
             unapproved = await pool.fetch(_UNAPPROVED_LINKED_SQL, limit)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[PODCAST_DISTRIBUTE] backlog query failed: %s", exc)
+            logger.warning("[PODCAST_DISTRIBUTE] backlog query failed: %s", describe_exception(exc))
             unapproved = []
         for row in unapproved or []:
             try:
@@ -277,14 +278,14 @@ class PodcastDistributeJob:
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] backlog-seeded podcast approval for post %s", row["post_id"])
             except Exception as exc:  # noqa: BLE001
-                logger.warning("[PODCAST_DISTRIBUTE] backlog seed failed for %s: %s", row.get("post_id"), exc)
+                logger.warning("[PODCAST_DISTRIBUTE] backlog seed failed for %s: %s", row.get("post_id"), describe_exception(exc))
 
         # Pass 3: deliver approved, undispatched assets → R2 + feed rebuild.
         dispatched = 0
         try:
             approved = await pool.fetch(_APPROVED_UNDISPATCHED_SQL, limit)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[PODCAST_DISTRIBUTE] approved query failed: %s", exc)
+            logger.warning("[PODCAST_DISTRIBUTE] approved query failed: %s", describe_exception(exc))
             approved = []
         for row in approved or []:
             if await _deliver_podcast(pool, sc, row):

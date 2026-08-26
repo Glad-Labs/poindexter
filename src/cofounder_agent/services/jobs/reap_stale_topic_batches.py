@@ -91,6 +91,7 @@ from uuid import UUID
 
 from plugins.job import JobResult
 from services.settings_read_sink import record_read
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ class ReapStaleTopicBatchesJob:
                     logger.error(
                         "[reap_stale_topic_batches] reject_batch failed for "
                         "batch=%s niche=%s: %s",
-                        batch_id, row["niche_slug"], exc, exc_info=True,
+                        batch_id, row["niche_slug"], describe_exception(exc), exc_info=True,
                     )
 
             emit_finding(

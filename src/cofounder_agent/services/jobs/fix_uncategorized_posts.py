@@ -89,10 +89,10 @@ class FixUncategorizedPostsJob:
                     except Exception as e:
                         logger.warning(
                             "FixUncategorizedPostsJob: update failed for %s: %s",
-                            post.get("id"), e,
+                            post.get("id"), describe_exception(e),
                         )
         except Exception as e:
-            logger.exception("FixUncategorizedPostsJob: query failed: %s", e)
+            logger.exception("FixUncategorizedPostsJob: query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if fixed and file_issue:

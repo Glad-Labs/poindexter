@@ -94,7 +94,7 @@ class VerifyPublishedPostsJob:
                     window_hours, batch_size,
                 )
         except Exception as e:
-            logger.exception("VerifyPublishedPostsJob: fetch failed: %s", e)
+            logger.exception("VerifyPublishedPostsJob: fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
@@ -167,7 +167,7 @@ class VerifyPublishedPostsJob:
                 audit_write_failures += 1
                 logger.debug(
                     "VerifyPublishedPostsJob: audit_log insert failed for %s: %s",
-                    f.get("slug"), e,
+                    f.get("slug"), describe_exception(e),
                 )
 
         # Record edge-challenges under a DISTINCT event type so they never
@@ -187,7 +187,7 @@ class VerifyPublishedPostsJob:
                 audit_write_failures += 1
                 logger.debug(
                     "VerifyPublishedPostsJob: edge audit_log insert failed for %s: %s",
-                    f.get("slug"), e,
+                    f.get("slug"), describe_exception(e),
                 )
 
         if audit_write_failures:

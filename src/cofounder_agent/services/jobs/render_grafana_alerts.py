@@ -62,7 +62,7 @@ class RenderGrafanaAlertsJob:
         try:
             rendered = await build_current(pool, template_path)
         except Exception as e:
-            logger.exception("render_grafana_alerts: build failed: %s", e)
+            logger.exception("render_grafana_alerts: build failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"build failed: {describe_exception(e)}", changes_made=0)
 
         existing: str | None = None
@@ -71,7 +71,7 @@ class RenderGrafanaAlertsJob:
                 existing = output_path.read_text(encoding="utf-8")
         except OSError as e:
             logger.warning(
-                "render_grafana_alerts: could not read %s: %s", output_path, e
+                "render_grafana_alerts: could not read %s: %s", output_path, describe_exception(e)
             )
 
         if existing == rendered:
@@ -86,7 +86,7 @@ class RenderGrafanaAlertsJob:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(rendered, encoding="utf-8")
         except OSError as e:
-            logger.exception("render_grafana_alerts: write failed: %s", e)
+            logger.exception("render_grafana_alerts: write failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0)
 
         reload_ok = True
@@ -115,7 +115,7 @@ async def _get_grafana_token(pool: Any) -> str:
         if row and row["value"]:
             return str(row["value"]).strip()
     except Exception as e:
-        logger.debug("render_grafana_alerts: could not read grafana_api_token: %s", e)
+        logger.debug("render_grafana_alerts: could not read grafana_api_token: %s", describe_exception(e))
     return ""
 
 
@@ -131,5 +131,5 @@ async def _reload_grafana(base_url: str, api_token: str) -> tuple[bool, str]:
             return True, "grafana alerting reloaded"
         return False, f"reload returned {resp.status_code}"
     except httpx.HTTPError as e:
-        logger.warning("render_grafana_alerts: reload failed: %s", e)
+        logger.warning("render_grafana_alerts: reload failed: %s", describe_exception(e))
         return False, f"reload failed: {e}"

@@ -105,6 +105,7 @@ from services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob
 from services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob
 from services.jobs.fix_missing_seo import FixMissingSeoJob
 from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -317,7 +318,7 @@ async def _dispatch_auto_fix(
     except Exception as exc:  # job protocol says don't raise, but be safe
         logger.warning(
             "[findings_alert_router] auto_fix job %s raised for "
-            "audit_log.id=%s: %s", kind, finding.get("id"), exc,
+            "audit_log.id=%s: %s", kind, finding.get("id"), describe_exception(exc),
         )
         return False
     emit_finding(
@@ -754,7 +755,7 @@ class FindingsAlertRouterJob:
                     first_failed_id = int(r["id"])
                 logger.warning(
                     "[findings_alert_router] delivery=%s failed for "
-                    "audit_log.id=%s: %s", delivery, r.get("id"), exc,
+                    "audit_log.id=%s: %s", delivery, r.get("id"), describe_exception(exc),
                 )
                 continue  # do NOT advance the watermark past this row
             max_id = max(max_id, int(r["id"]))

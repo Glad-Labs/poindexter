@@ -80,7 +80,7 @@ class ExpireStaleSeoRefreshGatesJob:
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[expire_stale_seo_refresh_gates] stale query failed: %s",
-                e, exc_info=True,
+                describe_exception(e), exc_info=True,
             )
             return JobResult(
                 ok=False, detail=f"stale query failed: {describe_exception(e)}"
@@ -109,7 +109,7 @@ class ExpireStaleSeoRefreshGatesJob:
             except Exception as e:  # noqa: BLE001 — one contested row (e.g. approved mid-sweep) never aborts the run
                 logger.warning(
                     "[expire_stale_seo_refresh_gates] expire failed for %s: %s",
-                    task_id, e,
+                    task_id, describe_exception(e),
                 )
 
         if expired:

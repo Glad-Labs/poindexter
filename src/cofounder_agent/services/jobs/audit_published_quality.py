@@ -82,7 +82,7 @@ class AuditPublishedQualityJob:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(query, cooldown_days, batch_size, excluded_templates)
         except Exception as e:
-            logger.exception("AuditPublishedQualityJob: fetch failed: %s", e)
+            logger.exception("AuditPublishedQualityJob: fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
@@ -128,7 +128,7 @@ class AuditPublishedQualityJob:
                 # verify_published_posts), so this adds no new blind spot.
                 logger.debug(
                     "AuditPublishedQualityJob: audit_log insert failed for %s: %s",
-                    row.get("id"), e,
+                    row.get("id"), describe_exception(e),
                 )
 
         if issues and file_issue:

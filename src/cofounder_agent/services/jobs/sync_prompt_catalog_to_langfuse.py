@@ -192,7 +192,7 @@ class SyncPromptCatalogToLangfuseJob:
         try:
             catalog = _repo_prompt_catalog()
         except Exception as e:  # noqa: BLE001 — a sync job must never crash a cycle
-            logger.warning("[sync_prompt_catalog] catalog load failed: %s", e)
+            logger.warning("[sync_prompt_catalog] catalog load failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"catalog load failed: {describe_exception(e)}", changes_made=0)
 
         import httpx
@@ -228,7 +228,7 @@ class SyncPromptCatalogToLangfuseJob:
                     )
                     (hand_edits_replaced if hand_edit else updated).append(key)
         except Exception as e:  # noqa: BLE001 — a sync job must never crash a cycle
-            logger.warning("[sync_prompt_catalog] langfuse sync failed: %s", e)
+            logger.warning("[sync_prompt_catalog] langfuse sync failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"langfuse sync failed: {describe_exception(e)}", changes_made=0)
 
         orphans = sorted(langfuse_names - set(catalog))

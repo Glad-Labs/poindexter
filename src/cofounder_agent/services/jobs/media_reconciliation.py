@@ -162,7 +162,7 @@ async def _resolve_r2_public_base(pool: Any, config: dict[str, Any]) -> str | No
             return base
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            "media_reconciliation: storage_public_url lookup failed: %s", e,
+            "media_reconciliation: storage_public_url lookup failed: %s", describe_exception(e),
         )
     return None
 _HTTP_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
@@ -202,7 +202,7 @@ async def _resolve_exclude_slug_prefixes(
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "media_reconciliation: exclude-prefix lookup failed: %s — "
-            "falling back to defaults", e,
+            "falling back to defaults", describe_exception(e),
         )
         return list(_DEFAULT_EXCLUDE_SLUG_PREFIXES)
     if row is None or not row["value"]:
@@ -260,7 +260,7 @@ async def _read_last_drift_fingerprint(pool: Any) -> str:
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "media_reconciliation: drift-fingerprint read failed: %s — "
-            "treating as changed (emit)", e,
+            "treating as changed (emit)", describe_exception(e),
         )
         return ""
     value = str(row["value"]) if row and row["value"] else ""
@@ -291,7 +291,7 @@ async def _write_last_drift_fingerprint(pool: Any, fingerprint: str) -> None:
             )
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            "media_reconciliation: drift-fingerprint write failed: %s", e,
+            "media_reconciliation: drift-fingerprint write failed: %s", describe_exception(e),
         )
 
 
@@ -439,7 +439,7 @@ class MediaReconciliationJob:
                     else []
                 )
         except Exception as e:
-            logger.exception("media_reconciliation: DB query failed: %s", e)
+            logger.exception("media_reconciliation: DB query failed: %s", describe_exception(e))
             return JobResult(
                 ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
@@ -588,7 +588,7 @@ class MediaReconciliationJob:
             except Exception as e:  # noqa: BLE001
                 logger.exception(
                     "media_reconciliation: podcast re-dispatch for %s raised: %s",
-                    r["id"], e,
+                    r["id"], describe_exception(e),
                 )
         podcast_unresolved = podcast_attempts - redispatched_podcast
 
@@ -608,7 +608,7 @@ class MediaReconciliationJob:
             except Exception as e:  # noqa: BLE001
                 logger.exception(
                     "media_reconciliation: podcast re-deliver for %s raised: %s",
-                    r["id"], e,
+                    r["id"], describe_exception(e),
                 )
 
         # Video re-dispatch (bounded per cycle by video_cap). _redispatch_video
@@ -625,7 +625,7 @@ class MediaReconciliationJob:
             except Exception as e:  # noqa: BLE001
                 logger.exception(
                     "media_reconciliation: video re-dispatch for %s raised: %s",
-                    r["id"], e,
+                    r["id"], describe_exception(e),
                 )
         redispatch_unresolved = redispatch_attempts - redispatched_video
 
@@ -869,7 +869,7 @@ class MediaReconciliationJob:
         except Exception as e:
             logger.warning(
                 "media_reconciliation: media_assets stamp failed for "
-                "post=%s type=%s: %s", post_id, asset_type, e,
+                "post=%s type=%s: %s", post_id, asset_type, describe_exception(e),
             )
             # Stamp failed → the asset row may not exist; don't seed a gate
             # for an asset we couldn't record.
@@ -924,7 +924,7 @@ class MediaReconciliationJob:
             logger.warning(
                 "media_reconciliation: approval-gate seed failed for "
                 "post=%s medium=%s: %s — asset is stamped, gate is additive",
-                post_id, asset_type, e,
+                post_id, asset_type, describe_exception(e),
             )
 
     # Which (post_id, type) media_assets rows exist for the scanned posts, with
@@ -1040,7 +1040,7 @@ class MediaReconciliationJob:
         except Exception as e:  # noqa: BLE001 — upload failure → re-dispatch fallback
             logger.warning(
                 "media_reconciliation: podcast re-deliver upload failed for "
-                "%s: %s", post_id, e,
+                "%s: %s", post_id, describe_exception(e),
             )
             return False
         if not url:

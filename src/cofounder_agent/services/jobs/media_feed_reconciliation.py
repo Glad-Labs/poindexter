@@ -56,6 +56,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.media_feed_rebuild import RECONCILABLE_MEDIA, reconcile_feed
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ class MediaFeedReconciliationJob:
                 res = await reconcile_feed(sc, medium)
             except Exception as exc:  # noqa: BLE001 — one medium must not halt the pass
                 logger.warning(
-                    "[MEDIA_FEED_RECONCILE] %s reconcile raised: %s", medium, exc,
+                    "[MEDIA_FEED_RECONCILE] %s reconcile raised: %s", medium, describe_exception(exc),
                 )
                 details.append(f"{medium}: error")
                 continue

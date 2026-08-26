@@ -82,7 +82,7 @@ class SyncPostizDeliveryStateJob:
                     _STATE_PUBLISHED,
                 )
         except Exception as exc:
-            logger.error("[SyncPostizDeliveryState] DB query failed: %s", exc)
+            logger.error("[SyncPostizDeliveryState] DB query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc))
 
         if not rows:
@@ -105,7 +105,7 @@ class SyncPostizDeliveryStateJob:
                 start.strftime(iso), end.strftime(iso)
             )
         except Exception as exc:
-            logger.error("[SyncPostizDeliveryState] Postiz list failed: %s", exc)
+            logger.error("[SyncPostizDeliveryState] Postiz list failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=f"Postiz unreachable: {describe_exception(exc)}")
 
         by_id: dict[str, dict[str, Any]] = {

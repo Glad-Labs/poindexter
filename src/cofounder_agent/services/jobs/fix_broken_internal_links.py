@@ -89,7 +89,7 @@ class FixBrokenInternalLinksJob:
                     "WHERE status = 'published' AND content LIKE '%/posts/%'"
                 )
         except Exception as e:
-            logger.exception("FixBrokenInternalLinksJob: fetch failed: %s", e)
+            logger.exception("FixBrokenInternalLinksJob: fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not candidates:
@@ -121,7 +121,7 @@ class FixBrokenInternalLinksJob:
                 except Exception as e:
                     logger.warning(
                         "FixBrokenInternalLinksJob: update failed for %s: %s",
-                        row.get("id"), e,
+                        row.get("id"), describe_exception(e),
                     )
 
         if fixed and file_issue:

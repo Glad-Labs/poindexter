@@ -53,7 +53,7 @@ class RunTapsJob:
         try:
             summary = await tap_runner.run_all(pool, site_config=site_config)
         except Exception as exc:
-            logger.exception("RunTapsJob failed: %s", exc)
+            logger.exception("RunTapsJob failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         # Deferrals are reported but never flip `ok`. A tap declined by GPU

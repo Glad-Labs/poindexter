@@ -55,7 +55,7 @@ class CancelOrphanedSocialDraftsJob:
             )
         except Exception as exc:
             logger.error(
-                "[CancelOrphanedSocialDraftsJob] cancel query failed: %s", exc
+                "[CancelOrphanedSocialDraftsJob] cancel query failed: %s", describe_exception(exc)
             )
             return JobResult(ok=False, detail=describe_exception(exc))
 

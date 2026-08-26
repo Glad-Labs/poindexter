@@ -57,7 +57,7 @@ class RenderPrometheusRulesJob:
         try:
             rendered = await build_current(pool)
         except Exception as e:
-            logger.exception("render_prometheus_rules: build failed: %s", e)
+            logger.exception("render_prometheus_rules: build failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"build failed: {describe_exception(e)}", changes_made=0)
 
         existing: str | None = None
@@ -65,7 +65,7 @@ class RenderPrometheusRulesJob:
             if output_path.is_file():
                 existing = output_path.read_text(encoding="utf-8")
         except OSError as e:
-            logger.warning("render_prometheus_rules: could not read %s: %s", output_path, e)
+            logger.warning("render_prometheus_rules: could not read %s: %s", output_path, describe_exception(e))
 
         changed = existing != rendered
 
@@ -74,7 +74,7 @@ class RenderPrometheusRulesJob:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_text(rendered, encoding="utf-8")
             except OSError as e:
-                logger.exception("render_prometheus_rules: write failed: %s", e)
+                logger.exception("render_prometheus_rules: write failed: %s", describe_exception(e))
                 return JobResult(
                     ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0
                 )
@@ -170,7 +170,7 @@ async def _prometheus_reload_healthy(base_url: str) -> bool | None:
         return float(result[0]["value"][1]) == 1.0
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as e:
         logger.warning(
-            "render_prometheus_rules: reload-health query failed: %s", e
+            "render_prometheus_rules: reload-health query failed: %s", describe_exception(e)
         )
         return None
 
@@ -191,5 +191,5 @@ async def _reload_prometheus(base_url: str) -> tuple[bool, str]:
         # 403 means --web.enable-lifecycle is not set on prometheus.
         return False, f"reload returned {resp.status_code}"
     except httpx.HTTPError as e:
-        logger.warning("render_prometheus_rules: reload failed: %s", e)
+        logger.warning("render_prometheus_rules: reload failed: %s", describe_exception(e))
         return False, f"reload failed: {e}"

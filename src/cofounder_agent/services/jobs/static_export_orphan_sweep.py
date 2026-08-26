@@ -85,7 +85,7 @@ class StaticExportOrphanSweepJob:
                 )
         except Exception as e:  # noqa: BLE001
             logger.exception(
-                "static_export_orphan_sweep: published-slug query failed: %s", e,
+                "static_export_orphan_sweep: published-slug query failed: %s", describe_exception(e),
             )
             return JobResult(
                 ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
@@ -126,7 +126,7 @@ class StaticExportOrphanSweepJob:
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "static_export_orphan_sweep: retire failed for %s: %s",
-                    slug, e,
+                    slug, describe_exception(e),
                 )
 
         detail = f"retired {retired} orphaned post JSON(s)"

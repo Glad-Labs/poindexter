@@ -161,10 +161,10 @@ class ClassifyContentTypesJob:
                         logger.warning(
                             "classify_content_types: %s failed (%s) — leaving "
                             "unlabeled for the next run",
-                            row["id"], exc,
+                            row["id"], describe_exception(exc),
                         )
         except Exception as e:  # noqa: BLE001 — report as a failed JobResult
-            logger.exception("ClassifyContentTypesJob failed: %s", e)
+            logger.exception("ClassifyContentTypesJob failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"failed: {describe_exception(e)}", changes_made=0)
 
         detail = f"labeled {labeled} of {len(rows)} post(s)"

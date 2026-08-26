@@ -33,6 +33,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class WarmPinnedLlmEndpointsJob:
                     resident = _resident_models(resp.json())
                 except Exception as exc:
                     logger.warning(
-                        "[warm_pinned] %s unreachable at %s: %s", tag, endpoint, exc,
+                        "[warm_pinned] %s unreachable at %s: %s", tag, endpoint, describe_exception(exc),
                     )
                     failed.append(tag)
                     continue
@@ -141,7 +142,7 @@ class WarmPinnedLlmEndpointsJob:
                     warm.raise_for_status()
                 except Exception as exc:
                     logger.warning(
-                        "[warm_pinned] failed to warm %s at %s: %s", tag, endpoint, exc,
+                        "[warm_pinned] failed to warm %s at %s: %s", tag, endpoint, describe_exception(exc),
                     )
                     failed.append(tag)
                     continue

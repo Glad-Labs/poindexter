@@ -59,7 +59,7 @@ class DetectDuplicatePostsJob:
                     "WHERE status = 'published' ORDER BY title",
                 )
         except Exception as e:
-            logger.exception("DetectDuplicatePostsJob: query failed: %s", e)
+            logger.exception("DetectDuplicatePostsJob: query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if len(posts) < 2:

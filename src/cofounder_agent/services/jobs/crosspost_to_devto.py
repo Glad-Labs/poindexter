@@ -163,7 +163,7 @@ class CrosspostToDevtoJob:
         try:
             api_key = await svc._get_api_key()
         except Exception as e:
-            logger.exception("CrosspostToDevtoJob: api key lookup failed: %s", e)
+            logger.exception("CrosspostToDevtoJob: api key lookup failed: %s", describe_exception(e))
             return JobResult(
                 ok=False, detail=f"api key lookup failed: {describe_exception(e)}", changes_made=0,
             )
@@ -225,7 +225,7 @@ class CrosspostToDevtoJob:
                     ) or 0
                 )
         except Exception as e:
-            logger.exception("CrosspostToDevtoJob: candidate fetch failed: %s", e)
+            logger.exception("CrosspostToDevtoJob: candidate fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         skipped = max(0, gate_universe - gate_eligible)

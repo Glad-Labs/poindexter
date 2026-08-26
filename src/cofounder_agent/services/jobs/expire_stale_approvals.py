@@ -46,7 +46,7 @@ class ExpireStaleApprovalsJob:
             except Exception as e:
                 logger.warning(
                     "ExpireStaleApprovalsJob: legacy app_settings lookup failed "
-                    "(continuing with default TTL): %s", e,
+                    "(continuing with default TTL): %s", describe_exception(e),
                 )
         if not ttl_days:
             ttl_days = 7
@@ -79,5 +79,5 @@ class ExpireStaleApprovalsJob:
                 changes_made=len(expired),
             )
         except Exception as e:
-            logger.exception("ExpireStaleApprovalsJob failed: %s", e)
+            logger.exception("ExpireStaleApprovalsJob failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=describe_exception(e), changes_made=0)

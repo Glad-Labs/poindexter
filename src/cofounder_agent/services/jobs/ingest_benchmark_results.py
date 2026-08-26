@@ -268,7 +268,7 @@ class IngestBenchmarkResultsJob:
                     "[BENCH_INGEST] transient network failure after %d "
                     "connect retries — deferring to next cycle: %s",
                     transient_retries,
-                    e,
+                    describe_exception(e),
                 )
                 emit_finding(
                     source="ingest_benchmark_results",
@@ -287,7 +287,7 @@ class IngestBenchmarkResultsJob:
                     detail=f"deferred: transient network failure ({describe_exception(e)})",
                     changes_made=0,
                 )
-            logger.exception("[BENCH_INGEST] ingest pass failed: %s", e)
+            logger.exception("[BENCH_INGEST] ingest pass failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
         return JobResult(
@@ -315,7 +315,7 @@ class IngestBenchmarkResultsJob:
                 value = await get_secret(conn, "gh_token")
             return (value or "").strip()
         except Exception as exc:
-            logger.warning("[BENCH_INGEST] gh_token read failed: %s", exc)
+            logger.warning("[BENCH_INGEST] gh_token read failed: %s", describe_exception(exc))
             return ""
 
     async def _fetch_artifact_payload(
@@ -380,7 +380,7 @@ class IngestBenchmarkResultsJob:
             logger.warning(
                 "[BENCH_INGEST] run %s artifact unzip/parse failed: %s",
                 run_id,
-                e,
+                describe_exception(e),
             )
             return None
 

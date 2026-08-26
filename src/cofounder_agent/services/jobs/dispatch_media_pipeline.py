@@ -303,8 +303,8 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
         except Exception as exc:  # noqa: BLE001 — best-effort by contract
             logger.warning(
                 "[DISPATCH_MEDIA] VRAM reclaim lever %r failed (continuing "
-                "with the rest): %s: %s",
-                name, type(exc).__name__, exc,
+                "with the rest): %s",
+                name, describe_exception(exc),
             )
 
 
@@ -398,7 +398,7 @@ class DispatchMediaPipelineJob:
         try:
             rows = await pool.fetch(_ELIGIBLE_SQL, limit)
         except Exception as exc:  # noqa: BLE001 — a query failure must not crash the scheduler
-            logger.warning("[DISPATCH_MEDIA] eligible-task query failed: %s", exc)
+            logger.warning("[DISPATCH_MEDIA] eligible-task query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         # Publishable pieces that CANNOT render for want of a shot list. Kept
@@ -416,7 +416,7 @@ class DispatchMediaPipelineJob:
                 )
         except Exception as exc:  # noqa: BLE001
             # silent-ok: an observability count must never break dispatch.
-            logger.debug("[DISPATCH_MEDIA] stranded-count query failed: %s", exc)
+            logger.debug("[DISPATCH_MEDIA] stranded-count query failed: %s", describe_exception(exc))
 
         # Health-gate the cycle (2026-07-03): a dispatch fired into a
         # wan/image-gen/DNS outage fast-fails, and the failure path burns one of
@@ -505,7 +505,7 @@ class DispatchMediaPipelineJob:
                 claim = await pool.execute(_CLAIM_SQL, task_id)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "[DISPATCH_MEDIA] claim failed for %s: %s", task_id, exc
+                    "[DISPATCH_MEDIA] claim failed for %s: %s", task_id, describe_exception(exc)
                 )
                 continue
             if not str(claim).strip().endswith(" 1"):
@@ -532,7 +532,7 @@ class DispatchMediaPipelineJob:
             except Exception as exc:  # noqa: BLE001 — one failure must not halt the job
                 logger.warning(
                     "[DISPATCH_MEDIA] media_pipeline run failed for %s: %s",
-                    task_id, exc,
+                    task_id, describe_exception(exc),
                 )
                 # Re-probe: if the infra died mid-cycle (or the pre-dispatch
                 # probe raced a crash), this failure is an outage fast-fail,

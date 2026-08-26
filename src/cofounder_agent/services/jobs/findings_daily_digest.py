@@ -104,7 +104,7 @@ class FindingsDailyDigestJob:
         try:
             data = await _gather_findings_data(pool, lookback_hours)
         except Exception as exc:  # noqa: BLE001 — gather is best-effort
-            logger.exception("[findings_daily_digest] data gather failed: %s", exc)
+            logger.exception("[findings_daily_digest] data gather failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False, detail=f"data gather failed: {describe_exception(exc)}", changes_made=0,
             )
@@ -114,7 +114,7 @@ class FindingsDailyDigestJob:
         try:
             await notify_operator(message)
         except Exception as exc:  # noqa: BLE001 — surface but don't crash
-            logger.exception("[findings_daily_digest] Discord send failed: %s", exc)
+            logger.exception("[findings_daily_digest] Discord send failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False, detail=f"Discord send failed: {describe_exception(exc)}", changes_made=0,
             )
@@ -148,7 +148,7 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     try:
         val = await get_secret(pool, key)
     except Exception as exc:  # noqa: BLE001 — best-effort; degrade to default
-        logger.debug("[findings_daily_digest] setting %s fetch failed: %s", key, exc)
+        logger.debug("[findings_daily_digest] setting %s fetch failed: %s", key, describe_exception(exc))
         return default
     return str(val) if val not in (None, "") else default
 

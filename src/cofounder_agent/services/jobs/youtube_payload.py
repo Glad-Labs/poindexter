@@ -15,6 +15,8 @@ import logging
 import re
 from typing import Any
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 _YOUTUBE_DESCRIPTION_BUDGET = 4800
@@ -91,7 +93,7 @@ def _build_youtube_description(
         except Exception as exc:  # noqa: BLE001
             logger.info(
                 "[YOUTUBE_PAYLOAD] site_url unavailable — omitting "
-                "YouTube back-link: %s", exc,
+                "YouTube back-link: %s", describe_exception(exc),
             )
             site_url = ""
     if site_url and slug:

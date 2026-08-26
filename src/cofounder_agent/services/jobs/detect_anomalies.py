@@ -36,6 +36,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.cost_ledger import API_AXIS_PREDICATE, ELECTRICITY_AXIS_PREDICATE
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ class DetectAnomaliesJob:
                 # this metric — surface it (WARNING, not DEBUG) and mark
                 # the run degraded so "all normal" can't mask lost coverage.
                 failed_metrics.append(name)
-                logger.warning("[ANOMALY] check failed for %s: %s", name, e)
+                logger.warning("[ANOMALY] check failed for %s: %s", name, describe_exception(e))
 
         if not anomalies:
             if failed_metrics:
@@ -203,7 +204,7 @@ class DetectAnomaliesJob:
                 json.dumps(anomalies), "warning",
             )
         except Exception as e:
-            logger.warning("[ANOMALY] audit_log insert failed: %s", e)
+            logger.warning("[ANOMALY] audit_log insert failed: %s", describe_exception(e))
 
         # Emit a finding when enough anomalies are present (avoid noise).
         if len(anomalies) >= issue_threshold:

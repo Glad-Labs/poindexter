@@ -148,7 +148,7 @@ class RunDevDiaryPostJob:
                 confidence_floor=confidence,
             )
         except Exception as exc:
-            logger.exception("[dev-diary] gather_context failed: %s", exc)
+            logger.exception("[dev-diary] gather_context failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False,
                 detail=f"gather_context failed: {describe_exception(exc)}",
@@ -201,7 +201,7 @@ class RunDevDiaryPostJob:
         try:
             task_id = await _create_dev_diary_task(pool, ctx, gates)
         except Exception as exc:
-            logger.exception("[dev-diary] task creation failed: %s", exc)
+            logger.exception("[dev-diary] task creation failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False,
                 detail=f"task creation failed: {describe_exception(exc)}",
@@ -254,7 +254,7 @@ async def _get_last_run_date(pool: Any) -> str | None:
             _LAST_RUN_KEY,
         )
     except Exception as exc:
-        logger.debug("[dev-diary] last-run-date fetch failed: %s", exc)
+        logger.debug("[dev-diary] last-run-date fetch failed: %s", describe_exception(exc))
         from utils.findings import emit_finding
 
         emit_finding(
@@ -286,7 +286,7 @@ async def _set_last_run_date(pool: Any, date_str: str) -> None:
             "Idempotency marker — the job no-ops if this matches today.",
         )
     except Exception as exc:
-        logger.warning("[dev-diary] last-run-date upsert failed: %s", exc)
+        logger.warning("[dev-diary] last-run-date upsert failed: %s", describe_exception(exc))
 
 
 async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
@@ -429,4 +429,4 @@ async def _notify_operator(message: str) -> None:
         from services.integrations.operator_notify import notify_operator
         await notify_operator(message, critical=False)
     except Exception as e:  # noqa: BLE001 — operator notify must never crash the job
-        logger.warning("[dev-diary] no notification path available: %s", e)
+        logger.warning("[dev-diary] no notification path available: %s", describe_exception(e))

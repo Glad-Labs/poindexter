@@ -58,8 +58,8 @@ async def _get_setting(pool: Any, key: str, default: str) -> str:
         # the fallback to `default` is traceable.
         logger.warning(
             "[check_memory_staleness] failed to read app_setting %s "
-            "(%s: %s) — falling back to default %r",
-            key, type(exc).__name__, exc, default,
+            "(%s) — falling back to default %r",
+            key, describe_exception(exc), default,
         )
     return default
 
@@ -182,7 +182,7 @@ class CheckMemoryStalenessJob:
                 # Discord notify below (whose own failure IS surfaced as a
                 # finding); only the audit-trail row is lost here, and audit_log_bg
                 # is itself fire-and-forget background telemetry.
-                logger.debug("[MEMORY_STALE] audit event failed: %s", e)
+                logger.debug("[MEMORY_STALE] audit event failed: %s", describe_exception(e))
 
             # Discord ops-channel notification.
             try:

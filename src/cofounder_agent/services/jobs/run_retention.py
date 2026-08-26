@@ -38,7 +38,7 @@ class RunRetentionJob:
         try:
             summary = await retention_runner.run_all(pool, site_config=site_config)
         except Exception as exc:
-            logger.exception("RunRetentionJob failed: %s", exc)
+            logger.exception("RunRetentionJob failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         if summary.total_failed:

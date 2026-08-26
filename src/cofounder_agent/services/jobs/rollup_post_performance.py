@@ -221,7 +221,7 @@ class RollupPostPerformanceJob:
         except Exception as e:
             logger.warning(
                 "[rollup_post_performance] rollup failed (non-fatal): %s",
-                e, exc_info=True,
+                describe_exception(e), exc_info=True,
             )
             return JobResult(
                 ok=False, detail=f"rollup failed: {describe_exception(e)}",

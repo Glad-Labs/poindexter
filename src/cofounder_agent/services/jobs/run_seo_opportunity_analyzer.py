@@ -109,7 +109,7 @@ class RunSeoOpportunityAnalyzerJob:
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[run_seo_opportunity_analyzer] failed (non-fatal): %s",
-                e,
+                describe_exception(e),
                 exc_info=True,
             )
             return JobResult(

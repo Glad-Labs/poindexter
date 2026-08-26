@@ -101,7 +101,7 @@ class FixBrokenExternalLinksJob:
                     sample_size,
                 )
         except Exception as e:
-            logger.exception("FixBrokenExternalLinksJob: fetch failed: %s", e)
+            logger.exception("FixBrokenExternalLinksJob: fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
@@ -159,7 +159,7 @@ class FixBrokenExternalLinksJob:
                     except Exception as e:
                         logger.warning(
                             "FixBrokenExternalLinksJob: update failed for %s: %s",
-                            row.get("id"), e,
+                            row.get("id"), describe_exception(e),
                         )
 
         if posts_fixed and file_issue:

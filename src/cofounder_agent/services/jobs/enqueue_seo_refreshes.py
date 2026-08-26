@@ -80,7 +80,7 @@ class EnqueueSeoRefreshesJob:
                 )
         except Exception as e:  # noqa: BLE001
             logger.warning(
-                "[enqueue_seo_refreshes] candidate query failed: %s", e, exc_info=True
+                "[enqueue_seo_refreshes] candidate query failed: %s", describe_exception(e), exc_info=True
             )
             return JobResult(
                 ok=False, detail=f"candidate query failed: {describe_exception(e)}"
@@ -114,7 +114,7 @@ class EnqueueSeoRefreshesJob:
                 )
             except Exception as e:  # noqa: BLE001 — one bad candidate never aborts the run
                 logger.warning(
-                    "[enqueue_seo_refreshes] enqueue failed for %s: %s", r["slug"], e
+                    "[enqueue_seo_refreshes] enqueue failed for %s: %s", r["slug"], describe_exception(e)
                 )
 
         if queued:

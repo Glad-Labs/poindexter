@@ -114,7 +114,7 @@ class FlushSettingsReadTelemetryJob:
                     restamp_seconds,
                 )
         except Exception as e:  # noqa: BLE001 — telemetry must never crash a cycle
-            logger.warning("[flush_settings_read_telemetry] UPDATE failed: %s", e)
+            logger.warning("[flush_settings_read_telemetry] UPDATE failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"update failed: {describe_exception(e)}", changes_made=0)
 
         updated = _affected_rows(status)

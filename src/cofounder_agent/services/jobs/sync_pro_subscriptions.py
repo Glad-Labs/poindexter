@@ -67,7 +67,7 @@ class SyncProSubscriptionsJob:
             return JobResult(ok=False, detail=describe_exception(exc))
         except Exception as exc:
             logger.error(
-                "[SyncProSubscriptionsJob] sync pass failed: %s", exc, exc_info=True
+                "[SyncProSubscriptionsJob] sync pass failed: %s", describe_exception(exc), exc_info=True
             )
             emit_finding(
                 source="pro_delivery",

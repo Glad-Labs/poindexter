@@ -118,7 +118,7 @@ class DispatchPodcastPipelineJob:
         try:
             rows = await pool.fetch(_ELIGIBLE_SQL, limit)
         except Exception as exc:  # noqa: BLE001 — a query failure must not crash the scheduler
-            logger.warning("[DISPATCH_PODCAST] eligible-task query failed: %s", exc)
+            logger.warning("[DISPATCH_PODCAST] eligible-task query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         dispatched = 0
@@ -127,7 +127,7 @@ class DispatchPodcastPipelineJob:
             try:
                 claim = await pool.execute(_CLAIM_SQL, task_id)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("[DISPATCH_PODCAST] claim failed for %s: %s", task_id, exc)
+                logger.warning("[DISPATCH_PODCAST] claim failed for %s: %s", task_id, describe_exception(exc))
                 continue
             if not str(claim).strip().endswith(" 1"):
                 continue
@@ -137,7 +137,7 @@ class DispatchPodcastPipelineJob:
                 dispatched += 1
                 logger.info("[DISPATCH_PODCAST] podcast_pipeline dispatched for task %s", task_id)
             except Exception as exc:  # noqa: BLE001 — one failure must not halt the job
-                logger.warning("[DISPATCH_PODCAST] podcast_pipeline run failed for %s: %s", task_id, exc)
+                logger.warning("[DISPATCH_PODCAST] podcast_pipeline run failed for %s: %s", task_id, describe_exception(exc))
                 emit_finding(
                     source="dispatch_podcast_pipeline",
                     kind="podcast_dispatch_failed",

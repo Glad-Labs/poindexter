@@ -200,13 +200,13 @@ async def _dispatch_asset(
     try:
         load_all()  # idempotent — ensures publishing_youtube is registered
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[MEDIA_DISTRIBUTE] handler load failed: %s", exc)
+        logger.warning("[MEDIA_DISTRIBUTE] handler load failed: %s", describe_exception(exc))
         return []
 
     try:
         adapters = await pool.fetch(_ADAPTERS_SQL, list(_VIDEO_PLATFORMS))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[MEDIA_DISTRIBUTE] adapter lookup failed: %s", exc)
+        logger.warning("[MEDIA_DISTRIBUTE] adapter lookup failed: %s", describe_exception(exc))
         return []
     if not adapters:
         logger.debug("[MEDIA_DISTRIBUTE] no enabled video adapters — skipping")
@@ -272,7 +272,7 @@ async def _dispatch_asset(
             )
             logger.warning(
                 "[MEDIA_DISTRIBUTE] %s upload raised for post %s: %s",
-                platform, row["post_id"], exc,
+                platform, row["post_id"], describe_exception(exc),
             )
     return results
 
@@ -347,7 +347,7 @@ class MediaDistributeJob:
         try:
             rows = await pool.fetch(_UNLINKED_SQL, list(_TYPE_TO_MEDIUM.keys()), limit)
         except Exception as exc:  # noqa: BLE001 — a query failure must not crash the scheduler
-            logger.warning("[MEDIA_DISTRIBUTE] unlinked-asset query failed: %s", exc)
+            logger.warning("[MEDIA_DISTRIBUTE] unlinked-asset query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         linked = 0
@@ -363,7 +363,7 @@ class MediaDistributeJob:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] post resolve failed for task %s: %s",
-                    task_id, exc,
+                    task_id, describe_exception(exc),
                 )
                 continue
             if not post_id:
@@ -376,7 +376,7 @@ class MediaDistributeJob:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] existing-asset check failed for post %s: %s",
-                    post_id, exc,
+                    post_id, describe_exception(exc),
                 )
                 already = None
             if already:
@@ -393,7 +393,7 @@ class MediaDistributeJob:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "[MEDIA_DISTRIBUTE] orphan prune failed for asset %s: %s",
-                        asset_id, exc,
+                        asset_id, describe_exception(exc),
                     )
                 emit_finding(
                     source="media_distribute",
@@ -426,7 +426,7 @@ class MediaDistributeJob:
             except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] link/seed failed for asset %s → post %s: %s",
-                    asset_id, post_id, exc,
+                    asset_id, post_id, describe_exception(exc),
                 )
 
         # --- Dispatch pass: deliver approved, undispatched assets ------------
@@ -443,7 +443,7 @@ class MediaDistributeJob:
                 limit,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[MEDIA_DISTRIBUTE] approved-undispatched query failed: %s", exc)
+            logger.warning("[MEDIA_DISTRIBUTE] approved-undispatched query failed: %s", describe_exception(exc))
             drows = []
 
         for row in drows or []:
@@ -465,7 +465,7 @@ class MediaDistributeJob:
             except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
-                    row["post_id"], medium, exc,
+                    row["post_id"], medium, describe_exception(exc),
                 )
                 results = []
             ok = any(r.success for r in results)
@@ -485,7 +485,7 @@ class MediaDistributeJob:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] record dispatch outcome failed for post %s (%s): %s",
-                    row["post_id"], medium, exc,
+                    row["post_id"], medium, describe_exception(exc),
                 )
             if ok:
                 dispatched += 1

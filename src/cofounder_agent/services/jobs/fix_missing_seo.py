@@ -71,7 +71,7 @@ class FixMissingSeoJob:
                     excluded_templates,
                 )
         except Exception as e:
-            logger.exception("FixMissingSeoJob: query failed: %s", e)
+            logger.exception("FixMissingSeoJob: query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
@@ -113,7 +113,7 @@ class FixMissingSeoJob:
             except Exception as e:
                 logger.warning(
                     "FixMissingSeoJob: update failed for %s: %s",
-                    row.get("id"), e,
+                    row.get("id"), describe_exception(e),
                 )
 
         if fixed and file_issue:

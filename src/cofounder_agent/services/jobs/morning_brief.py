@@ -94,7 +94,7 @@ class MorningBriefJob:
         try:
             data = await _gather_brief_data(pool, lookback_hours)
         except Exception as exc:  # noqa: BLE001 — gather is best-effort
-            logger.exception("[morning_brief] data gather failed: %s", exc)
+            logger.exception("[morning_brief] data gather failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False, detail=f"data gather failed: {describe_exception(exc)}", changes_made=0,
             )
@@ -112,7 +112,7 @@ class MorningBriefJob:
         try:
             await notify_operator(message)
         except Exception as exc:  # noqa: BLE001 — surface but don't crash
-            logger.exception("[morning_brief] Discord send failed: %s", exc)
+            logger.exception("[morning_brief] Discord send failed: %s", describe_exception(exc))
             return JobResult(
                 ok=False, detail=f"Discord send failed: {describe_exception(exc)}", changes_made=0,
             )
@@ -131,7 +131,7 @@ class MorningBriefJob:
                 )
                 telegram_pinged = True
             except Exception as exc:  # noqa: BLE001
-                logger.warning("[morning_brief] Telegram ping failed: %s", exc)
+                logger.warning("[morning_brief] Telegram ping failed: %s", describe_exception(exc))
 
         return JobResult(
             ok=True,
@@ -172,7 +172,7 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     try:
         val = await get_secret(pool, key)
     except Exception as exc:  # noqa: BLE001 — best-effort; degrade to default
-        logger.debug("[morning_brief] setting %s fetch failed: %s", key, exc)
+        logger.debug("[morning_brief] setting %s fetch failed: %s", key, describe_exception(exc))
         return default
     return str(val) if val not in (None, "") else default
 
@@ -417,7 +417,7 @@ async def _gather_open_prs() -> list[dict[str, Any]]:
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[morning_brief] gh subprocess failed: %s", exc)
+        logger.warning("[morning_brief] gh subprocess failed: %s", describe_exception(exc))
         return []
 
     if proc.returncode != 0:
@@ -430,7 +430,7 @@ async def _gather_open_prs() -> list[dict[str, Any]]:
     try:
         prs = json.loads(stdout.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
-        logger.warning("[morning_brief] gh JSON parse failed: %s", exc)
+        logger.warning("[morning_brief] gh JSON parse failed: %s", describe_exception(exc))
         return []
 
     cutoff = datetime.now(timezone.utc).timestamp() - 24 * 3600

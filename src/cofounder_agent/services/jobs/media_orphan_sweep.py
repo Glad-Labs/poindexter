@@ -132,7 +132,7 @@ class MediaOrphanSweepJob:
                 post_rows = [dict(r) for r in await conn.fetch(self._POSTS_SQL)]
                 ma_rows = [dict(r) for r in await conn.fetch(self._MEDIA_ASSETS_SQL)]
         except Exception as e:  # noqa: BLE001
-            logger.exception("media_orphan_sweep: keep-set query failed: %s", e)
+            logger.exception("media_orphan_sweep: keep-set query failed: %s", describe_exception(e))
             return JobResult(
                 ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )

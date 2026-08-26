@@ -74,7 +74,7 @@ class ScheduleSocialDraftsJob:
             # A broken auto-slot pass must not block firing drafts that are
             # already queued — those are a live commitment with a time on them.
             logger.error(
-                "[ScheduleSocialDraftsJob] auto-schedule pass raised: %s", exc
+                "[ScheduleSocialDraftsJob] auto-schedule pass raised: %s", describe_exception(exc)
             )
             auto = {"scheduled": 0, "detail": f"auto-schedule failed: {exc}"}
 
@@ -86,7 +86,7 @@ class ScheduleSocialDraftsJob:
                 limit=int(fire_limit) if fire_limit is not None else None,
             )
         except Exception as exc:
-            logger.error("[ScheduleSocialDraftsJob] fire pass raised: %s", exc)
+            logger.error("[ScheduleSocialDraftsJob] fire pass raised: %s", describe_exception(exc))
             return JobResult(
                 ok=False,
                 detail=f"auto-scheduled {auto['scheduled']}; fire failed: {describe_exception(exc)}",

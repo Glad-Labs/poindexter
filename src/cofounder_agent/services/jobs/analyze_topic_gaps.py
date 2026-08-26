@@ -71,7 +71,7 @@ class AnalyzeTopicGapsJob:
                     stale_days,
                 )
         except Exception as e:
-            logger.exception("AnalyzeTopicGapsJob: query failed: %s", e)
+            logger.exception("AnalyzeTopicGapsJob: query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         empty = [r["name"] for r in categories if r["posts"] == 0]
@@ -237,10 +237,10 @@ async def _upsert_topic_gap_rows(
                 except Exception as e:  # noqa: BLE001 — best-effort per-row
                     logger.warning(
                         "AnalyzeTopicGapsJob: brain_knowledge upsert "
-                        "failed for entity=%s: %s", entity, e,
+                        "failed for entity=%s: %s", entity, describe_exception(e),
                     )
     except Exception as e:  # noqa: BLE001 — connection-level failure
         logger.warning(
-            "AnalyzeTopicGapsJob: brain_knowledge upsert pool failure: %s", e,
+            "AnalyzeTopicGapsJob: brain_knowledge upsert pool failure: %s", describe_exception(e),
         )
     return written

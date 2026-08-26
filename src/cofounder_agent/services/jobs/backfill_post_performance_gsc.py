@@ -150,7 +150,7 @@ class BackfillPostPerformanceGscJob:
         except Exception as e:
             logger.warning(
                 "[backfill_post_performance_gsc] backfill failed (non-fatal): %s",
-                e, exc_info=True,
+                describe_exception(e), exc_info=True,
             )
             return JobResult(
                 ok=False,

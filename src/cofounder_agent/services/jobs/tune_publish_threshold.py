@@ -100,7 +100,7 @@ class TunePublishThresholdJob:
                     window_days,
                 )
         except Exception as e:
-            logger.exception("TunePublishThresholdJob: stats fetch failed: %s", e)
+            logger.exception("TunePublishThresholdJob: stats fetch failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"stats fetch failed: {describe_exception(e)}", changes_made=0)
 
         total = int(stats["total"]) if stats and stats["total"] is not None else 0
@@ -124,7 +124,7 @@ class TunePublishThresholdJob:
                     "SELECT value FROM app_settings WHERE key = 'auto_publish_threshold'"
                 )
         except Exception as e:
-            logger.exception("TunePublishThresholdJob: current-threshold fetch failed: %s", e)
+            logger.exception("TunePublishThresholdJob: current-threshold fetch failed: %s", describe_exception(e))
             return JobResult(
                 ok=False,
                 detail=f"current-threshold fetch failed: {describe_exception(e)}",
@@ -157,7 +157,7 @@ class TunePublishThresholdJob:
                         str(new_threshold),
                     )
             except Exception as e:
-                logger.exception("TunePublishThresholdJob: threshold UPDATE failed: %s", e)
+                logger.exception("TunePublishThresholdJob: threshold UPDATE failed: %s", describe_exception(e))
                 return JobResult(
                     ok=False,
                     detail=f"threshold UPDATE failed: {describe_exception(e)}",
@@ -189,7 +189,7 @@ class TunePublishThresholdJob:
                     )
             except Exception as e:
                 logger.warning(
-                    "TunePublishThresholdJob: audit_log insert failed: %s", e,
+                    "TunePublishThresholdJob: audit_log insert failed: %s", describe_exception(e),
                 )
 
             logger.info(

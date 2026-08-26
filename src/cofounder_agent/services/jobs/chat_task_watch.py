@@ -70,7 +70,7 @@ class ChatTaskWatchJob:
                 list(TERMINAL_STATUSES), batch_size,
             )
         except Exception as exc:  # noqa: BLE001 — job surface, report + retry next tick
-            logger.error("[ChatTaskWatchJob] sweep query failed: %s", exc)
+            logger.error("[ChatTaskWatchJob] sweep query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc))
 
         if not rows:

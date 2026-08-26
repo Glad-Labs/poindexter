@@ -72,7 +72,7 @@ async def _resolve_manifest_url(pool: Any, config: dict[str, Any]) -> str | None
             return f"{base}{_MANIFEST_PATH_SUFFIX}"
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            "static_export_reconciliation: storage_public_url lookup failed: %s", e,
+            "static_export_reconciliation: storage_public_url lookup failed: %s", describe_exception(e),
         )
     return None
 
@@ -134,7 +134,7 @@ class StaticExportReconciliationJob:
                     """,
                 )
         except Exception as e:
-            logger.exception("static_export_reconciliation: DB query failed: %s", e)
+            logger.exception("static_export_reconciliation: DB query failed: %s", describe_exception(e))
             return JobResult(
                 ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
@@ -230,7 +230,7 @@ class StaticExportReconciliationJob:
             rebuild_ok = bool(rebuild_result.get("success"))
         except Exception as e:
             logger.exception(
-                "static_export_reconciliation: rebuild raised: %s", e,
+                "static_export_reconciliation: rebuild raised: %s", describe_exception(e),
             )
             rebuild_ok = False
             rebuild_result = {"success": False, "error": str(e)}

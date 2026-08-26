@@ -48,6 +48,7 @@ from uuid import UUID
 
 from plugins.job import JobResult
 from services.settings_read_sink import record_read
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ class TopicAutoResolveJob:
             # row insertion has its own conflict.
             logger.warning(
                 "[topic_auto_resolve] queue throttle check failed: %s — proceeding anyway",
-                exc,
+                describe_exception(exc),
             )
 
         max_per_cycle = int(
@@ -310,8 +311,8 @@ class TopicAutoResolveJob:
                 logger.warning(
                     "[topic_auto_resolve] batch=%s niche=%s winner failed "
                     "handoff gate (%s) — expiring batch instead of "
-                    "retrying: %s",
-                    batch_id, batch["niche_slug"], type(exc).__name__, exc,
+                    "retrying",
+                    batch_id, batch["niche_slug"], describe_exception(exc),
                 )
                 try:
                     await svc.reject_batch(
@@ -348,7 +349,7 @@ class TopicAutoResolveJob:
                 )
                 logger.error(
                     "[topic_auto_resolve] resolve failed for batch=%s: %s",
-                    batch_id, exc, exc_info=True,
+                    batch_id, describe_exception(exc), exc_info=True,
                 )
 
         if errors and resolved_count == 0 and expired_count == 0:

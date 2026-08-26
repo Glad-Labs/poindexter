@@ -176,7 +176,7 @@ class SyncAffiliateClicksJob:
         try:
             api_token = (await sc.get_secret("cloudflare_analytics_api_token", "")).strip()
         except Exception as e:
-            logger.warning("[SYNC_AFFILIATE] get_secret failed: %s", e)
+            logger.warning("[SYNC_AFFILIATE] get_secret failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"get_secret failed: {describe_exception(e)}", changes_made=0)
         if not api_token:
             # Opt-in feature: a missing token on a fresh install is benign (no
@@ -205,7 +205,7 @@ class SyncAffiliateClicksJob:
                     "SELECT value FROM app_settings WHERE key = $1", _WATERMARK_KEY
                 )
         except Exception as e:
-            logger.warning("[SYNC_AFFILIATE] watermark read failed: %s", e)
+            logger.warning("[SYNC_AFFILIATE] watermark read failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"watermark read failed: {describe_exception(e)}", changes_made=0)
 
         last = (row["value"] if row and row["value"] else "").strip()
@@ -258,7 +258,7 @@ class SyncAffiliateClicksJob:
                 logger.warning(
                     "[SYNC_AFFILIATE] transient network failure after %d "
                     "connect retries — deferring to next cycle: %s",
-                    transient_retries, e,
+                    transient_retries, describe_exception(e),
                 )
                 emit_finding(
                     source="sync_affiliate_clicks",
@@ -278,7 +278,7 @@ class SyncAffiliateClicksJob:
                     detail=f"deferred: transient network failure ({describe_exception(e)})",
                     changes_made=0,
                 )
-            logger.warning("[SYNC_AFFILIATE] CF SQL API request failed: %s", e)
+            logger.warning("[SYNC_AFFILIATE] CF SQL API request failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"cf api request failed: {describe_exception(e)}", changes_made=0)
 
         if resp.status_code != 200:
@@ -294,7 +294,7 @@ class SyncAffiliateClicksJob:
         try:
             payload = resp.json()
         except Exception as e:
-            logger.warning("[SYNC_AFFILIATE] CF SQL API JSON decode failed: %s", e)
+            logger.warning("[SYNC_AFFILIATE] CF SQL API JSON decode failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"cf api json failed: {describe_exception(e)}", changes_made=0)
 
         rows = payload.get("data") or []
@@ -402,7 +402,7 @@ class SyncAffiliateClicksJob:
                 },
             )
         except Exception as e:
-            logger.exception("[SYNC_AFFILIATE] insert pass failed: %s", e)
+            logger.exception("[SYNC_AFFILIATE] insert pass failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
     async def _rollup_clicks(self, pool: Any) -> None:
@@ -431,7 +431,7 @@ class SyncAffiliateClicksJob:
                     "SELECT 1 FROM affiliate_link_clicks_human h WHERE h.code = a.code)"
                 )
         except Exception as e:  # noqa: BLE001 — rollup is best-effort
-            logger.warning("[SYNC_AFFILIATE] click rollup failed: %s", e)
+            logger.warning("[SYNC_AFFILIATE] click rollup failed: %s", describe_exception(e))
 
     async def _update_high_water_mark(self, pool: Any, value: str) -> None:
         """Persist the new high-water mark. Wrapped so a write hiccup doesn't
@@ -456,7 +456,7 @@ class SyncAffiliateClicksJob:
                 )
         except Exception as e:
             logger.warning(
-                "[SYNC_AFFILIATE] failed to update high-water mark (%s): %s", value, e
+                "[SYNC_AFFILIATE] failed to update high-water mark (%s): %s", value, describe_exception(e)
             )
 
 

@@ -37,6 +37,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def _load_gpu_tdp_map(site_config: Any = None) -> dict[str, int]:
         if isinstance(override, dict):
             return {str(k): int(v) for k, v in override.items()}
     except (json.JSONDecodeError, TypeError, ValueError) as e:
-        logger.warning("UpdateUtilityRatesJob: invalid gpu_tdp_map in site_config: %s", e)
+        logger.warning("UpdateUtilityRatesJob: invalid gpu_tdp_map in site_config: %s", describe_exception(e))
     return DEFAULT_GPU_TDP_MAP
 
 
@@ -228,7 +229,7 @@ class UpdateUtilityRatesJob:
                 if change:
                     changes["electricity_rate_kwh"] = change
             except Exception as e:
-                logger.warning("UpdateUtilityRatesJob: EIA fetch failed: %s", e)
+                logger.warning("UpdateUtilityRatesJob: EIA fetch failed: %s", describe_exception(e))
 
         if not skip_gpu:
             try:
@@ -241,9 +242,9 @@ class UpdateUtilityRatesJob:
                 # cloud box or any host without an NVIDIA GPU, so it must not
                 # warn. A genuine detect failure is caught by the broad
                 # `except Exception` immediately below, which does warn.
-                logger.debug("UpdateUtilityRatesJob: GPU detect skipped (%s)", e)
+                logger.debug("UpdateUtilityRatesJob: GPU detect skipped (%s)", describe_exception(e))
             except Exception as e:
-                logger.warning("UpdateUtilityRatesJob: GPU detect failed: %s", e)
+                logger.warning("UpdateUtilityRatesJob: GPU detect failed: %s", describe_exception(e))
 
         # audit_log insert (best-effort)
         if changes:
@@ -266,7 +267,7 @@ class UpdateUtilityRatesJob:
                 # "when/why it changed" breadcrumb.
                 logger.warning(
                     "UpdateUtilityRatesJob: audit_log breadcrumb insert failed "
-                    "(the rate change itself was already applied): %s", e,
+                    "(the rate change itself was already applied): %s", describe_exception(e),
                 )
 
         detail = (

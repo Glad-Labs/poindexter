@@ -118,7 +118,7 @@ class ProbeZeroReaderSettingsJob:
             async with pool.acquire() as conn:
                 rows = [dict(r) for r in await conn.fetch(_ORPHAN_QUERY, grace_days, limit)]
         except Exception as e:  # noqa: BLE001 — a probe must never crash a cycle
-            logger.warning("[probe_zero_reader_settings] query failed: %s", e)
+            logger.warning("[probe_zero_reader_settings] query failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:

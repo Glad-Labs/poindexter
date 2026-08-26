@@ -59,7 +59,7 @@ class RetryFailedSocialDraftsJob:
                     batch_size,
                 )
         except Exception as exc:
-            logger.error("[RetryFailedSocialDraftsJob] DB query failed: %s", exc)
+            logger.error("[RetryFailedSocialDraftsJob] DB query failed: %s", describe_exception(exc))
             return JobResult(ok=False, detail=describe_exception(exc))
 
         if not rows:
@@ -90,7 +90,7 @@ class RetryFailedSocialDraftsJob:
             except Exception as exc:
                 failed += 1
                 logger.error(
-                    "[RetryFailedSocialDraftsJob] retry %s raised: %s", draft_id[:8], exc,
+                    "[RetryFailedSocialDraftsJob] retry %s raised: %s", draft_id[:8], describe_exception(exc),
                 )
 
         msg = f"retried {len(rows)} drafts: {succeeded} posted, {failed} still failed"

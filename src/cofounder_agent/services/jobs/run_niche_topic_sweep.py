@@ -37,6 +37,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class RunNicheTopicSweepJob:
                 # and keep going so other niches still get their chance.
                 logger.exception(
                     "[niche-topic-sweep] run_sweep failed for niche=%s (%s): %s",
-                    niche.slug, niche.id, exc,
+                    niche.slug, niche.id, describe_exception(exc),
                 )
                 errors += 1
                 continue
@@ -168,4 +169,4 @@ async def _send_to_operator_channels(pool: Any, message: str) -> None:
         from services.integrations.operator_notify import notify_operator
         await notify_operator(message, critical=False)
     except Exception as e:
-        logger.warning("[niche-topic-sweep] no notification path available: %s", e)
+        logger.warning("[niche-topic-sweep] no notification path available: %s", describe_exception(e))

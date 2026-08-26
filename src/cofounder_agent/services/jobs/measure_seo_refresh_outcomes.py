@@ -112,11 +112,11 @@ class MeasureSeoRefreshOutcomesJob:
                         logger.warning(
                             "[measure_seo_refresh_outcomes] failed for %s: %s",
                             r["slug"],
-                            e,
+                            describe_exception(e),
                         )
         except Exception as e:  # noqa: BLE001
             logger.warning(
-                "[measure_seo_refresh_outcomes] due query failed: %s", e, exc_info=True
+                "[measure_seo_refresh_outcomes] due query failed: %s", describe_exception(e), exc_info=True
             )
             return JobResult(
                 ok=False, detail=f"due query failed: {describe_exception(e)}"

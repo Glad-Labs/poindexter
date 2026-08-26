@@ -176,7 +176,7 @@ class FlagBotPageViewsJob:
 
                     await conn.execute(_RECOMPUTE_VIEW_COUNT)
         except Exception as e:  # noqa: BLE001 — surface as a failed JobResult, not a crash
-            logger.exception("[FLAG_BOT_PV] sweep failed: %s", e)
+            logger.exception("[FLAG_BOT_PV] sweep failed: %s", describe_exception(e))
             return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
         return JobResult(
