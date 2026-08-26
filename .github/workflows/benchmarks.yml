@@ -13,8 +13,10 @@
 #
 # Not a per-PR gate — benchmark latencies vary by runner load and a hard
 # threshold would cause spurious failures. The JSON artifact is the signal:
-# open it to spot regressions (e.g. "health endpoint was 12ms, now 300ms").
-# A --benchmark-compare gate can be added once a stable baseline exists.
+# IngestBenchmarkResultsJob (worker, every 6h) pulls it into the
+# benchmark_results table for the Observability board's "CI Endpoint
+# Benchmarks" row — see docs/architecture/ci-benchmark-ingest.md. A
+# --benchmark-compare gate can be added once a stable baseline exists.
 name: benchmarks
 
 on:

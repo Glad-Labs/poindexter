@@ -3424,6 +3424,19 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         '"state": "all", "max_issues_per_repo": 0, "max_body_chars": 20000}}'
     ),
 
+    # CI benchmark ingest (glad-labs-stack#3337 follow-up). The nightly
+    # `benchmarks` GitHub Actions workflow measures endpoint latency on a
+    # HOSTED runner (no Tailnet), so IngestBenchmarkResultsJob pulls its
+    # benchmark_results.json artifacts down via the GitHub API into the
+    # benchmark_results table for the Observability board's "CI Endpoint
+    # Benchmarks" panel. Ships EMPTY for the same reason the github_issues
+    # `repos` does: whose CI to ingest is per-install, and a default naming
+    # anyone's repo would point fresh installs at a stranger's Actions
+    # history. Empty = the job skips quietly. Pair with the `gh_token`
+    # secret (actions:read) once set — repo-set + token-empty fails loud.
+    # The Glad Labs value lives in services/operator_overrides.py.
+    'benchmark_ingest_repo': '',
+
     # HelloTap (plugins/samples/hello_tap.py) is a reference implementation for
     # third-party Tap authors — the smallest possible Tap. It yields one static
     # Document ("hello from the HelloTap sample plugin"), which lands in

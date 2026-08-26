@@ -105,6 +105,10 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
         '"config": {"repos": "Glad-Labs/poindexter,Glad-Labs/glad-labs-stack", '
         '"state": "all", "max_issues_per_repo": 0, "max_body_chars": 20000}}'
     ),
+    # CI benchmark ingest — the nightly `benchmarks` workflow runs on
+    # glad-labs-stack (OSS seed ships '' = unconfigured; same per-install
+    # rationale as the github_issues repos above). Needs the gh_token secret.
+    "benchmark_ingest_repo": "Glad-Labs/glad-labs-stack",
     "voice_agent_system_prompt": _VOICE_AGENT_SYSTEM_PROMPT,
     "gpu_model": "NVIDIA RTX 5090 (32GB VRAM)",
     "company_founder_name": "Matt",

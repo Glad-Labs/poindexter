@@ -1370,6 +1370,172 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 238,
+      "type": "row",
+      "title": "CI Endpoint Benchmarks (nightly, hosted runner)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 174
+      },
+      "panels": []
+    },
+    {
+      "id": 239,
+      "type": "timeseries",
+      "title": "Mean endpoint latency per benchmark (CI)",
+      "description": "pytest-benchmark means from the nightly benchmarks workflow, ingested from its GitHub Actions artifacts by IngestBenchmarkResultsJob (the hosted runner can't reach this DB). In-process TestClient on a shared hosted runner: the signal is the RELATIVE trend (a handler suddenly 10x slower), not absolute production latency. History starts 2026-08-26 — the workflow's first valid results (stack#3337).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 15,
+        "x": 0,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 2,
+            "pointSize": 6,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "always",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT run_started_at AS time, benchmark_name AS metric, mean_seconds * 1000 AS value FROM benchmark_results WHERE $__timeFilter(run_started_at) ORDER BY 1;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 240,
+      "type": "table",
+      "title": "Latest nightly run",
+      "description": "Per-benchmark stats from the most recent ingested benchmarks-workflow run. Empty until IngestBenchmarkResultsJob has ingested a run (needs benchmark_ingest_repo + the gh_token secret).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 15,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT benchmark_name AS \"benchmark\", group_name AS \"group\", round((mean_seconds * 1000)::numeric, 2) AS \"mean ms\", round((stddev_seconds * 1000)::numeric, 2) AS \"stddev ms\", rounds, left(commit_sha, 9) AS \"commit\" FROM benchmark_results WHERE workflow_run_id = (SELECT max(workflow_run_id) FROM benchmark_results) ORDER BY mean_seconds DESC;",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

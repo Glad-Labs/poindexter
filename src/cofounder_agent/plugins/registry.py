@@ -666,6 +666,17 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.sync_affiliate_clicks",
             "SyncAffiliateClicksJob",
         ),
+        # CI benchmark ingest (glad-labs-stack#3337 follow-up). The nightly
+        # benchmarks workflow measures endpoint latency on a HOSTED runner
+        # that can't reach this DB, so this job pulls its
+        # benchmark_results.json artifacts via the GitHub API into
+        # benchmark_results for the Observability board. Skips quietly until
+        # benchmark_ingest_repo is set (fresh-install posture).
+        (
+            "jobs",
+            "services.jobs.ingest_benchmark_results",
+            "IngestBenchmarkResultsJob",
+        ),
         # Stealth-bot sweep for the ingested page_views (the sync job above drops
         # only DECLARED crawler UAs; browser-UA scrapers slip through and inflate
         # the beacon KPI ~10x). Windowed (user_agent, path) flood-cap flags them
