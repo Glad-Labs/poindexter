@@ -38,6 +38,15 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
   Routes specific models to a different endpoint (glad-labs-stack#2051:
   a GPU-pinned second Ollama instance so vision QA never gets evicted
   by the writer). Overrides still pass the paid-endpoint policy.
+- ``coldload_reclaim_enabled`` (default true) / ``coldload_reclaim_min_gb``
+  (default 8) — the cold-load VRAM guard: before a local Ollama model at
+  least ``min_gb`` big that is NOT currently resident gets requested (and
+  would therefore cold-load onto the render GPU), run the media VRAM
+  reclaim ladder so idle sidecars (ComfyUI / image-gen / wan / …) release
+  the room first. 2026-08-25: an ~18 GB ``structured_extraction_model``
+  cold-load beside a 7.4 GB idle ComfyUI CUDA-OOM'd the render GPU and
+  took the desktop's Chrome + Claude Desktop down with it. See
+  ``services/llm_providers/coldload_guard.py``.
 - ``cloud_max_tokens`` (default 8192) — completion budget applied to
   CLOUD model calls when the caller didn't pass ``max_tokens``. LiteLLM
   defaults ``anthropic/*`` to 4096, and adaptive-thinking Claude models
@@ -94,6 +103,7 @@ from typing import Any
 
 from plugins.llm_provider import Completion, Token
 from services.cost_guard import is_local_base_url
+from services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
 from services.llm_providers.ollama_timings import (
     extract_timings as extract_ollama_timings,
 )
@@ -751,6 +761,12 @@ class LiteLLMProvider:
         # per-install via the flat
         # ``plugin.llm_provider.litellm.anthropic_prompt_caching`` row.
         self._anthropic_prompt_caching = True
+        # Cold-load VRAM guard (2026-08-25 desktop-crash incident): before a
+        # big local model cold-loads onto the render GPU, evict idle media
+        # sidecars via the shared reclaim ladder. Tunables live on the plugin
+        # config row; see services/llm_providers/coldload_guard.py.
+        self._coldload_reclaim_enabled = True
+        self._coldload_reclaim_min_gb = 8.0
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -831,6 +847,24 @@ class LiteLLMProvider:
                     "[litellm_provider] cloud_max_tokens=%r is not an "
                     "integer — keeping %d",
                     raw_cloud_max, self._cloud_max_tokens,
+                )
+        # Cold-load VRAM guard tunables — re-read per call, same contract as
+        # the other rows above (a config flip takes effect on the next
+        # dispatch, no worker restart).
+        self._coldload_reclaim_enabled = _coerce_bool(
+            provider_config.get(
+                "coldload_reclaim_enabled", self._coldload_reclaim_enabled
+            )
+        )
+        raw_min_gb = provider_config.get("coldload_reclaim_min_gb")
+        if raw_min_gb not in (None, ""):
+            try:
+                self._coldload_reclaim_min_gb = float(str(raw_min_gb).strip())
+            except (TypeError, ValueError):
+                logger.warning(
+                    "[litellm_provider] coldload_reclaim_min_gb=%r is not a "
+                    "number — keeping %s",
+                    raw_min_gb, self._coldload_reclaim_min_gb,
                 )
         if not self._configured:
             self._apply_global_litellm_config()
@@ -1070,6 +1104,16 @@ class LiteLLMProvider:
             and self._api_base_applies(resolved_model)
         ):
             completion_kwargs["api_base"] = effective_base
+            # Cold-load VRAM guard: no-op unless a ≥min_gb local model is
+            # about to cold-load beside idle media sidecars (2026-08-25
+            # desktop-crash incident — see coldload_guard's module docstring).
+            # Internally catches everything, so it can never break the call.
+            await maybe_reclaim_before_coldload(
+                resolved_model=resolved_model,
+                api_base=str(effective_base),
+                enabled=self._coldload_reclaim_enabled,
+                min_gb=self._coldload_reclaim_min_gb,
+            )
         # ``response_format`` forwarding (2026-05-28): the topic_ranking +
         # writer-RAG JSON callers need to force structured-JSON output. The
         # OpenAI convention is ``response_format={"type": "json_object"}``;
@@ -1278,6 +1322,13 @@ class LiteLLMProvider:
             and self._api_base_applies(resolved_model)
         ):
             completion_kwargs["api_base"] = effective_base
+            # Cold-load VRAM guard — mirrors complete() (see the note there).
+            await maybe_reclaim_before_coldload(
+                resolved_model=resolved_model,
+                api_base=str(effective_base),
+                enabled=self._coldload_reclaim_enabled,
+                min_gb=self._coldload_reclaim_min_gb,
+            )
         for key in ("temperature", "max_tokens", "top_p"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]

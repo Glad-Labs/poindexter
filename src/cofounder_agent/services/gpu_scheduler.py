@@ -1505,6 +1505,54 @@ class GPUScheduler:
                     host or "primary", exc,
                 )
 
+    async def reclaim_render_vram(self, *, include_ollama: bool = True) -> None:
+        """Run the render-GPU VRAM reclaim ladder — every idle media sidecar.
+
+        One ladder, shared by every caller that needs render-GPU headroom:
+        the media dispatch free-VRAM gate
+        (``dispatch_media_pipeline._attempt_vram_reclaim``), the LLM
+        cold-load guard (``services.llm_providers.coldload_guard`` —
+        2026-08-25: an ~18 GB ``structured_extraction_model`` cold-load hit
+        the render GPU where ComfyUI idle-squatted 7.4 GB between renders;
+        the CUDA OOM storm crashed Chrome + Claude Desktop, whose GPU
+        processes render on that same card), and
+        ``prepare_mode('ollama'/'idle')``. Divergent per-caller lever lists
+        are how stable-audio sat unreachable while "the ladder" dutifully
+        evicted services holding almost nothing (poindexter#999) — add new
+        rungs HERE, not at a call site.
+
+        ``include_ollama=False`` is the LLM-side variant: it clears the
+        media sidecars to make room FOR an Ollama load, where evicting
+        Ollama's own models is pointless (its scheduler already evicts per
+        ``OLLAMA_MAX_LOADED_MODELS``).
+
+        Rung isolation: the callees are best-effort and catch internally,
+        but that makes "never raises" an incidental property of their
+        current implementations rather than a guarantee of this ladder. An
+        exception escaping an early lever must not skip the later ones.
+        """
+        levers: list[tuple[str, Callable[[], Any]]] = []
+        if include_ollama:
+            levers.append(("ollama", self._unload_ollama_models))
+        levers.extend((
+            ("image-gen", lambda: self._unload_image_gen(hard=True)),
+            ("chatterbox", self._unload_chatterbox),
+            ("wan", lambda: self._unload_wan(hard=True)),
+            ("stable-audio", lambda: self._unload_stable_audio(hard=True)),
+            ("comfyui", lambda: self._unload_comfyui(hard=True)),
+        ))
+        for name, call in levers:
+            try:
+                await call()
+            except Exception as exc:  # noqa: BLE001 — best-effort by contract
+                from utils.exception_format import describe_exception
+
+                logger.warning(
+                    "[GPU] VRAM reclaim lever %r failed (continuing with "
+                    "the rest): %s",
+                    name, describe_exception(exc),
+                )
+
     async def prepare_mode(self, mode: str):
         """Actively prepare GPU for a specific workload mode.
 
@@ -1512,7 +1560,8 @@ class GPUScheduler:
         The pipeline knows what's coming next — no idle timeouts needed.
 
         Modes:
-            "ollama"    — unload image_gen, Ollama auto-loads on next request
+            "ollama"    — clear every idle media sidecar; Ollama auto-loads
+                          on the next request
             "image_gen" — unload Ollama models, image-gen server loads on next /generate
             "idle"      — unload everything, free all VRAM
         """
@@ -1531,11 +1580,13 @@ class GPUScheduler:
                 "unloaded",
             )
         elif mode == "ollama":
-            await self._unload_image_gen()
-            logger.info("[GPU] Prepared for Ollama — image-gen unloaded")
+            # The 2026-08-25 cold-load OOM went straight through the old
+            # image-gen-only variant of this mode: ComfyUI (not image-gen)
+            # was the squatter. "Room for Ollama" means every media rung.
+            await self.reclaim_render_vram(include_ollama=False)
+            logger.info("[GPU] Prepared for Ollama — media sidecars unloaded")
         elif mode == "idle":
-            await self._unload_ollama_models()
-            await self._unload_image_gen()
+            await self.reclaim_render_vram(include_ollama=True)
             logger.info("[GPU] All models unloaded — VRAM freed")
 
     async def _unload_image_gen(self, hard: bool = False):

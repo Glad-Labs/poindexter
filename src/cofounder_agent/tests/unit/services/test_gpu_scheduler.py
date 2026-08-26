@@ -638,17 +638,84 @@ class TestUnloadComfyui:
             await scheduler._unload_comfyui()  # must not raise
 
 
-class TestPrepareMode:
+def _mock_all_rungs(scheduler):
+    """AsyncMock every reclaim rung — a partially-stubbed scheduler runs
+    REAL sidecar HTTP from a unit test (the partial-probe-stub trap)."""
+    from unittest.mock import AsyncMock
+
+    scheduler._unload_ollama_models = AsyncMock()
+    scheduler._unload_image_gen = AsyncMock()
+    scheduler._unload_chatterbox = AsyncMock()
+    scheduler._unload_wan = AsyncMock()
+    scheduler._unload_stable_audio = AsyncMock()
+    scheduler._unload_comfyui = AsyncMock()
+
+
+class TestReclaimRenderVram:
+    """The shared reclaim ladder (2026-08-25). One lever list for the media
+    dispatch gate, the LLM cold-load guard, and prepare_mode — poindexter#999
+    showed that a rung missing from a hand-copied ladder is invisible
+    precisely when it matters."""
+
     @pytest.mark.asyncio
-    async def test_image_gen_mode_unloads_ollama(self):
+    async def test_full_ladder_runs_every_rung_hard(self):
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        _mock_all_rungs(scheduler)
+
+        await scheduler.reclaim_render_vram(include_ollama=True)
+
+        scheduler._unload_ollama_models.assert_awaited_once_with()
+        scheduler._unload_image_gen.assert_awaited_once_with(hard=True)
+        scheduler._unload_chatterbox.assert_awaited_once_with()
+        scheduler._unload_wan.assert_awaited_once_with(hard=True)
+        scheduler._unload_stable_audio.assert_awaited_once_with(hard=True)
+        scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
+
+    @pytest.mark.asyncio
+    async def test_include_ollama_false_skips_only_the_ollama_rung(self):
+        # The LLM-side variant: clearing room FOR an Ollama load must not
+        # evict Ollama's own models.
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        _mock_all_rungs(scheduler)
+
+        await scheduler.reclaim_render_vram(include_ollama=False)
+
+        scheduler._unload_ollama_models.assert_not_awaited()
+        scheduler._unload_image_gen.assert_awaited_once_with(hard=True)
+        scheduler._unload_chatterbox.assert_awaited_once_with()
+        scheduler._unload_wan.assert_awaited_once_with(hard=True)
+        scheduler._unload_stable_audio.assert_awaited_once_with(hard=True)
+        scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
+
+    @pytest.mark.asyncio
+    async def test_exception_in_early_lever_does_not_skip_later_ones(self):
         from unittest.mock import AsyncMock
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_image_gen = AsyncMock()
-        scheduler._unload_comfyui = AsyncMock()
+        _mock_all_rungs(scheduler)
+        scheduler._unload_ollama_models = AsyncMock(
+            side_effect=RuntimeError("boom"),
+        )
+
+        await scheduler.reclaim_render_vram(include_ollama=True)  # no raise
+
+        scheduler._unload_image_gen.assert_awaited_once_with(hard=True)
+        scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
+
+
+class TestPrepareMode:
+    @pytest.mark.asyncio
+    async def test_image_gen_mode_unloads_ollama(self):
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        _mock_all_rungs(scheduler)
 
         await scheduler.prepare_mode("image_gen")
         scheduler._unload_ollama_models.assert_awaited_once()
@@ -658,42 +725,41 @@ class TestPrepareMode:
         scheduler._unload_comfyui.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_ollama_mode_unloads_image_gen(self):
-        from unittest.mock import AsyncMock
-
+    async def test_ollama_mode_clears_every_media_sidecar(self):
+        # 2026-08-25: the old image-gen-only variant let an ~18 GB cold-load
+        # OOM beside an idle ComfyUI — "room for Ollama" means every media
+        # rung, but never Ollama's own models.
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_image_gen = AsyncMock()
+        _mock_all_rungs(scheduler)
 
         await scheduler.prepare_mode("ollama")
-        scheduler._unload_image_gen.assert_awaited_once()
         scheduler._unload_ollama_models.assert_not_awaited()
+        scheduler._unload_image_gen.assert_awaited_once_with(hard=True)
+        scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
+        scheduler._unload_wan.assert_awaited_once_with(hard=True)
+        scheduler._unload_stable_audio.assert_awaited_once_with(hard=True)
+        scheduler._unload_chatterbox.assert_awaited_once_with()
 
     @pytest.mark.asyncio
-    async def test_idle_mode_unloads_both(self):
-        from unittest.mock import AsyncMock
-
+    async def test_idle_mode_unloads_everything(self):
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_image_gen = AsyncMock()
+        _mock_all_rungs(scheduler)
 
         await scheduler.prepare_mode("idle")
         scheduler._unload_ollama_models.assert_awaited_once()
-        scheduler._unload_image_gen.assert_awaited_once()
+        scheduler._unload_image_gen.assert_awaited_once_with(hard=True)
+        scheduler._unload_comfyui.assert_awaited_once_with(hard=True)
 
     @pytest.mark.asyncio
     async def test_unknown_mode_no_op(self):
-        from unittest.mock import AsyncMock
-
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_image_gen = AsyncMock()
+        _mock_all_rungs(scheduler)
 
         await scheduler.prepare_mode("unknown")
         scheduler._unload_ollama_models.assert_not_awaited()
@@ -748,8 +814,10 @@ class TestUnloadImageGen:
 
     @pytest.mark.asyncio
     async def test_default_call_posts_no_hard_body(self):
-        """The pre-existing (soft) callers — prepare_mode('ollama'/'idle') —
-        must keep getting the pre-existing no-body POST; hard is opt-in."""
+        """A default (soft) call must keep the pre-existing no-body POST;
+        hard stays opt-in. (prepare_mode('ollama'/'idle') moved onto the
+        hard reclaim ladder 2026-08-25, so soft is now the direct-call
+        contract only.)"""
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler

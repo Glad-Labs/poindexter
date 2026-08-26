@@ -55,6 +55,7 @@ _NON_PROVIDER_MODULES: set[str] = {
     "thinking_models",  # services/llm_providers/thinking_models.py — model-class detection helpers
     "ollama_unload",  # services/llm_providers/ollama_unload.py — VRAM-guard helper (no provider class)
     "ollama_timings",  # services/llm_providers/ollama_timings.py — decode/prefill timing-capture seam (no provider class)
+    "coldload_guard",  # services/llm_providers/coldload_guard.py — cold-load VRAM-guard helper (no provider class)
 }
 
 

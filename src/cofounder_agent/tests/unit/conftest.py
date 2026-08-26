@@ -36,6 +36,17 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
+# ``import litellm`` fetches its model-cost map from raw.githubusercontent.com
+# AT IMPORT TIME unless this is set (litellm reads the env var during module
+# init, so it must be set before the first import anywhere in the process).
+# Full-suite runs got lucky — collection-time import chains pulled litellm in
+# before the egress guard patched sockets — but any subset run whose first
+# ``import litellm`` happens inside a test tripped the guard with a
+# ``raw.githubusercontent.com:443`` offender (surfaced by the 2026-08-25
+# cold-load-guard tests). The bundled local map is what unit tests should be
+# priced against anyway; setdefault so an operator override still wins.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 # ---------------------------------------------------------------------------
 # Repo-root discovery (poindexter#722)
 # ---------------------------------------------------------------------------
@@ -453,6 +464,46 @@ def _isolate_gpu_ollama_unload():
         patcher.start()
     except (ImportError, AttributeError, ModuleNotFoundError):
         # gpu_scheduler unimportable in a minimal env — don't gate the suite.
+        patcher = None
+    try:
+        yield
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_coldload_reclaim_guard():
+    """Keep unit tests off the real host Ollama via the cold-load guard.
+
+    ``LiteLLMProvider.complete()``/``stream()`` call
+    ``maybe_reclaim_before_coldload`` whenever a local api_base attaches —
+    which is most provider tests, since they configure
+    ``host.docker.internal:11434``. The real guard probes ``/api/ps`` +
+    ``/api/tags`` and, for a big non-resident model, fires the media VRAM
+    reclaim ladder — on a dev/CI box with live sidecars that would hard-unload
+    REAL render servers from a unit test (the partial-probe-stub trap, and an
+    egress-guard offender besides).
+
+    Same posture as ``_isolate_gpu_ollama_unload`` above: default the
+    provider's imported reference to an inert no-op; the guard's own unit
+    tests exercise the real function via ``services.llm_providers.
+    coldload_guard`` directly, and wiring tests re-patch this symbol inside
+    their own ``with patch(...)``, which wins for that block.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    try:
+        patcher = patch(
+            "services.llm_providers.litellm_provider."
+            "maybe_reclaim_before_coldload",
+            new=AsyncMock(return_value=False),
+        )
+        patcher.start()
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        # Provider unimportable in a minimal env (no litellm SDK) — the
+        # module's own find_spec guard raises ImportError, and there is then
+        # nothing to isolate.
         patcher = None
     try:
         yield

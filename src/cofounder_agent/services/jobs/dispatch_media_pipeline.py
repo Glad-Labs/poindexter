@@ -272,40 +272,17 @@ async def _attempt_vram_reclaim(site_config: Any) -> None:
     ``vram_reclaim_ineffective`` kept firing while this ladder dutifully
     evicted four services that between them held almost nothing.
 
-    Each lever is isolated: the callees are best-effort and catch internally,
-    but that made "never raises" an incidental property of their current
-    implementations rather than a guarantee of this one. An exception
-    escaping an early lever must not skip the later ones — a stray error in
-    the Ollama evict would otherwise silently cost us the wan lever this
-    reclaim was extended to gain. Isolating here keeps that contract true no
-    matter how the callees evolve.
+    The lever list itself moved to
+    ``GPUScheduler.reclaim_render_vram`` (2026-08-25) when the LLM
+    cold-load guard became its second caller — #999's lesson was that a
+    rung missing from "the ladder" is invisible precisely when it matters,
+    and two hand-maintained lever lists would recreate that failure shape
+    between the media gate and the LLM guard. Rung isolation (an exception
+    in an early lever must not skip the later ones) lives there too.
     """
     from services.gpu_scheduler import gpu
 
-    # Callables, NOT pre-built coroutines: building all four up front would
-    # leave the un-awaited ones raising "coroutine was never awaited" the
-    # moment anyone adds a break/continue to this loop.
-    levers: tuple[tuple[str, Any], ...] = (
-        ("ollama", gpu._unload_ollama_models),
-        ("image-gen", lambda: gpu._unload_image_gen(hard=True)),
-        ("chatterbox", gpu._unload_chatterbox),
-        ("wan", lambda: gpu._unload_wan(hard=True)),
-        ("stable-audio", lambda: gpu._unload_stable_audio(hard=True)),
-        # ComfyUI (2026-08-15): holds loaded Wan 14B experts between renders
-        # like every other sidecar. Its rung declines while a render is
-        # queued/in flight (#3094 posture) and no-ops when the profile-gated
-        # sidecar isn't running, so the lever is safe on wan21 installs.
-        ("comfyui", lambda: gpu._unload_comfyui(hard=True)),
-    )
-    for name, call in levers:
-        try:
-            await call()
-        except Exception as exc:  # noqa: BLE001 — best-effort by contract
-            logger.warning(
-                "[DISPATCH_MEDIA] VRAM reclaim lever %r failed (continuing "
-                "with the rest): %s",
-                name, describe_exception(exc),
-            )
+    await gpu.reclaim_render_vram(include_ollama=True)
 
 
 # Wall-clock of the last reclaim that ran and left the gate still unhealthy.
