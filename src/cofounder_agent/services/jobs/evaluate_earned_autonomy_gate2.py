@@ -34,6 +34,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.media_approval_service import _earned_autonomy_check
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class EvaluateEarnedAutonomyGate2Job:
             combos = await pool.fetch(_PENDING_COMBOS_SQL)
         except Exception as exc:
             logger.warning("[GATE2_EVAL] pending-combos query failed: %s", exc)
-            return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         if not combos:
             return JobResult(ok=True, detail="no pending Gate-2 rows", changes_made=0)

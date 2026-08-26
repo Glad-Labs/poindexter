@@ -42,6 +42,7 @@ import httpx
 
 from plugins.topic_source import DiscoveredTopic
 from utils.crawler_ua import build_crawler_ua
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _emit_context_source_failed(source_name: str, exc: Exception) -> None:
         source="dev_diary_source",
         kind="dev_diary_context_source_failed",
         title=f"Dev-diary context source '{source_name}' failed",
-        body=f"{source_name} fetch failed: {exc}",
+        body=f"{source_name} fetch failed: {describe_exception(exc)}",
         dedup_key=f"dev_diary_context_source_failed:{source_name}",
     )
 

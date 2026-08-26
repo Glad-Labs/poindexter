@@ -38,6 +38,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,6 @@ class BackfillPostPerformanceGscJob:
             )
             return JobResult(
                 ok=False,
-                detail=f"backfill failed: {type(e).__name__}: {e}",
+                detail=f"backfill failed: {describe_exception(e)}",
                 changes_made=0,
             )

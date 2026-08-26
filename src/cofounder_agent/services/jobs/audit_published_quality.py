@@ -26,6 +26,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class AuditPublishedQualityJob:
                 rows = await conn.fetch(query, cooldown_days, batch_size, excluded_templates)
         except Exception as e:
             logger.exception("AuditPublishedQualityJob: fetch failed: %s", e)
-            return JobResult(ok=False, detail=f"fetch failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
             return JobResult(

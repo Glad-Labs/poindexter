@@ -23,6 +23,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -59,11 +60,11 @@ class SyncProSubscriptionsJob:
                 source="pro_delivery",
                 kind="pro_delivery_error",
                 title="Pro delivery is enabled but not configured",
-                body=str(exc),
+                body=describe_exception(exc),
                 severity="error",
                 dedup_key="pro_delivery_misconfigured",
             )
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
         except Exception as exc:
             logger.error(
                 "[SyncProSubscriptionsJob] sync pass failed: %s", exc, exc_info=True
@@ -72,11 +73,11 @@ class SyncProSubscriptionsJob:
                 source="pro_delivery",
                 kind="pro_delivery_error",
                 title="Pro delivery sync pass failed",
-                body=str(exc),
+                body=describe_exception(exc),
                 severity="warn",
                 dedup_key="pro_delivery_sync_failed",
             )
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
 
         changes = len(outcome.invited) + len(outcome.revoked) + outcome.revenue_rows
         detail = (

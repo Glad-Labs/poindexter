@@ -35,6 +35,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.settings_read_sink import record_read
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class CheckMemoryStalenessJob:
             async with MemoryClient() as mem:
                 stats = await mem.stats()
         except Exception as e:
-            return JobResult(ok=False, detail=f"stats fetch failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"stats fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not stats or "by_writer" not in stats:
             return JobResult(ok=True, detail="no stats data", changes_made=0)

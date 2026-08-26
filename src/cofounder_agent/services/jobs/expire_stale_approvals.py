@@ -16,6 +16,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.settings_read_sink import record_read
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -79,4 +80,4 @@ class ExpireStaleApprovalsJob:
             )
         except Exception as e:
             logger.exception("ExpireStaleApprovalsJob failed: %s", e)
-            return JobResult(ok=False, detail=str(e), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(e), changes_made=0)

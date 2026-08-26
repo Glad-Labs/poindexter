@@ -72,6 +72,7 @@ from services.image_prompt_sanitizer import (
     clean_image_prompt,
     subject_fallback_prompt,
 )
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -138,19 +139,10 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 3.0
 DEFAULT_STAGE_OVERHEAD_SECONDS = 360
 
 
-def describe_exception(exc: BaseException) -> str:
-    """Render an exception as something an operator can act on.
-
-    ``str()`` on the exceptions this stage actually hits is the EMPTY STRING —
-    ``httpx.ReadTimeout``, ``asyncio.TimeoutError`` and friends carry their
-    meaning in the type, not the message. So the long-standing
-    ``"image-gen featured render failed (%s)"`` log rendered as ``failed ()``
-    and the routed finding said the same: a warn-level alert that named no
-    cause, fired for weeks, and told nobody the renders were timing out
-    (poindexter#3229). Always prefer the type name over an empty message.
-    """
-    message = str(exc).strip()
-    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+# describe_exception moved to utils.exception_format (2026-08-26 audit): the
+# empty-str(exc) trap it fixes (poindexter#3229) kept recurring outside this
+# stage, so the helper is shared now. Imported above; re-exported here for the
+# existing importers of this module.
 
 
 def _render_timeout_seconds(site_config: Any) -> int:

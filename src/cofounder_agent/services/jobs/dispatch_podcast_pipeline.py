@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ class DispatchPodcastPipelineJob:
             rows = await pool.fetch(_ELIGIBLE_SQL, limit)
         except Exception as exc:  # noqa: BLE001 — a query failure must not crash the scheduler
             logger.warning("[DISPATCH_PODCAST] eligible-task query failed: %s", exc)
-            return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         dispatched = 0
         for row in rows or []:

@@ -21,6 +21,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.tasks_db import TasksDatabase
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class EnqueueSeoRefreshesJob:
                 "[enqueue_seo_refreshes] candidate query failed: %s", e, exc_info=True
             )
             return JobResult(
-                ok=False, detail=f"candidate query failed: {type(e).__name__}: {e}"
+                ok=False, detail=f"candidate query failed: {describe_exception(e)}"
             )
 
         tasks_db = TasksDatabase(pool)

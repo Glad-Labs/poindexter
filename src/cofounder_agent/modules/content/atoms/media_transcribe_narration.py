@@ -45,6 +45,7 @@ from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from services.caption_providers import get_caption_provider
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ async def _transcribe_one(
             source="media.transcribe_narration",
             kind="caption_failed",
             title=f"ASR transcription raised an exception ({label})",
-            body=f"provider.transcribe raised for task {task_id} lane {label}: {exc}",
+            body=f"provider.transcribe raised for task {task_id} lane {label}: {describe_exception(exc)}",
             severity="warn",
             dedup_key=f"caption_failed:{task_id}:{label}",
             extra={"task_id": str(task_id or ""), "lane": label, "error": str(exc)},
@@ -318,7 +319,7 @@ async def _transcribe_one(
             source="media.transcribe_narration",
             kind="caption_failed",
             title=f"Failed to write caption SRT to disk ({label})",
-            body=f"writing {srt_path} for task {task_id} lane {label} raised: {exc}",
+            body=f"writing {srt_path} for task {task_id} lane {label} raised: {describe_exception(exc)}",
             severity="warn",
             dedup_key=f"caption_failed:{task_id}:{label}",
             extra={"task_id": str(task_id or ""), "lane": label, "error": str(exc)},

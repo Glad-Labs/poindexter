@@ -18,6 +18,8 @@ from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TZ = "UTC"
@@ -55,7 +57,7 @@ def _warn_invalid_tz(name: str, exc: Exception) -> None:
             source="services.clock",
             kind="invalid_timezone",
             title="operator_timezone is not a valid IANA name",
-            body=f"operator_timezone={name!r} did not resolve ({exc}); using UTC until fixed.",
+            body=f"operator_timezone={name!r} did not resolve ({describe_exception(exc)}); using UTC until fixed.",
             severity="warn",
             dedup_key=f"invalid-operator-timezone:{name}",
         )

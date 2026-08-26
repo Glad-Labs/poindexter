@@ -23,6 +23,7 @@ from plugins.job import JobResult
 from services.chat_watch import TERMINAL_STATUSES
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -70,7 +71,7 @@ class ChatTaskWatchJob:
             )
         except Exception as exc:  # noqa: BLE001 — job surface, report + retry next tick
             logger.error("[ChatTaskWatchJob] sweep query failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
 
         if not rows:
             return JobResult(ok=True, detail="no newly-terminal linked runs")

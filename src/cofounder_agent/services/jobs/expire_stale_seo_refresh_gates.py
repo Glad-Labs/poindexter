@@ -35,6 +35,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.approval_service import reject as reject_gate
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class ExpireStaleSeoRefreshGatesJob:
                 e, exc_info=True,
             )
             return JobResult(
-                ok=False, detail=f"stale query failed: {type(e).__name__}: {e}"
+                ok=False, detail=f"stale query failed: {describe_exception(e)}"
             )
 
         expired: list[dict[str, Any]] = []

@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ class ReloadSiteConfigJob:
             #                                     and returns 0 itself, but
             #                                     belt-and-suspenders here
             logger.warning("[reload_site_config] reload failed: %s", e)
-            return JobResult(ok=False, detail=f"reload failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"reload failed: {describe_exception(e)}", changes_made=0)
 
         logger.debug("[reload_site_config] reloaded %d keys", count)
         changed = {

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class DbBackupJob:
                     changes_made=0,
                 )
         except Exception as e:
-            return JobResult(ok=False, detail=f"spawn failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"spawn failed: {describe_exception(e)}", changes_made=0)
 
         if proc.returncode != 0:
             err = (stderr or b"").decode("utf-8", errors="replace")

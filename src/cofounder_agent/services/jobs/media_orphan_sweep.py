@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ class MediaOrphanSweepJob:
         except Exception as e:  # noqa: BLE001
             logger.exception("media_orphan_sweep: keep-set query failed: %s", e)
             return JobResult(
-                ok=False, detail=f"DB query failed: {e}", changes_made=0,
+                ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
 
         from services.r2_upload_service import R2UploadService

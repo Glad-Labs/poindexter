@@ -41,6 +41,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class StaticExportOrphanSweepJob:
                 "static_export_orphan_sweep: published-slug query failed: %s", e,
             )
             return JobResult(
-                ok=False, detail=f"DB query failed: {e}", changes_made=0,
+                ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
 
         published = {r["slug"] for r in rows if r["slug"]}

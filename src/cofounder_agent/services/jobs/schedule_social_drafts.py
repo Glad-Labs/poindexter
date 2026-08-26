@@ -36,6 +36,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class ScheduleSocialDraftsJob:
             logger.error("[ScheduleSocialDraftsJob] fire pass raised: %s", exc)
             return JobResult(
                 ok=False,
-                detail=f"auto-scheduled {auto['scheduled']}; fire failed: {exc}",
+                detail=f"auto-scheduled {auto['scheduled']}; fire failed: {describe_exception(exc)}",
             )
 
         detail = (

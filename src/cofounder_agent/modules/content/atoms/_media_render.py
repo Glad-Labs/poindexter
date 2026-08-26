@@ -44,6 +44,7 @@ from schemas.video_shot_list import VideoShotList
 from services import live_activity
 from services.gpu_scheduler import gpu
 from services.video_renderers.shot_list_renderer import render_shot_list
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -317,7 +318,7 @@ async def render_from_state(
             source="media.render_video",
             kind="render_failed",
             title=f"{output_key}: render raised an exception",
-            body=f"render_shot_list raised for task {task_id}: {exc}",
+            body=f"render_shot_list raised for task {task_id}: {describe_exception(exc)}",
             severity="warn",
             dedup_key=f"render_failed:{task_id}:{output_key}",
             extra={"task_id": str(task_id or ""), "output_key": output_key},

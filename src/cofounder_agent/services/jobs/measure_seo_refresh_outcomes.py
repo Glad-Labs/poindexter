@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ class MeasureSeoRefreshOutcomesJob:
                 "[measure_seo_refresh_outcomes] due query failed: %s", e, exc_info=True
             )
             return JobResult(
-                ok=False, detail=f"due query failed: {type(e).__name__}: {e}"
+                ok=False, detail=f"due query failed: {describe_exception(e)}"
             )
 
         if measured:

@@ -30,6 +30,7 @@ from typing import Any
 from plugins.job import JobResult
 from services.integrations.operator_notify import notify_operator
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class BackfillMissingSocialDraftsJob:
             )
         except Exception as exc:
             logger.error("[BackfillMissingSocialDraftsJob] reconcile failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
 
         if result["errors"]:
             await notify_operator(

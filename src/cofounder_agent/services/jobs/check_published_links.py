@@ -47,6 +47,7 @@ import httpx
 from plugins.job import JobResult
 from utils.crawler_ua import build_crawler_ua
 from utils.edge_challenge import is_edge_challenge
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ class CheckPublishedLinksJob:
                 )
         except Exception as e:
             logger.exception("CheckPublishedLinksJob: fetch failed: %s", e)
-            return JobResult(ok=False, detail=f"fetch failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
             return JobResult(ok=True, detail="no published posts to check", changes_made=0)

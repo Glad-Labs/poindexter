@@ -51,6 +51,7 @@ from services.jobs.dispatch_handles import (
     persist_platform_handles,
 )
 from services.media_approval_service import record_dispatched, record_pending
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -347,7 +348,7 @@ class MediaDistributeJob:
             rows = await pool.fetch(_UNLINKED_SQL, list(_TYPE_TO_MEDIUM.keys()), limit)
         except Exception as exc:  # noqa: BLE001 — a query failure must not crash the scheduler
             logger.warning("[MEDIA_DISTRIBUTE] unlinked-asset query failed: %s", exc)
-            return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         linked = 0
         for row in rows or []:

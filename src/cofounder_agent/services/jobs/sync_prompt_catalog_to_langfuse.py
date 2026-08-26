@@ -33,6 +33,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -192,7 +193,7 @@ class SyncPromptCatalogToLangfuseJob:
             catalog = _repo_prompt_catalog()
         except Exception as e:  # noqa: BLE001 — a sync job must never crash a cycle
             logger.warning("[sync_prompt_catalog] catalog load failed: %s", e)
-            return JobResult(ok=False, detail=f"catalog load failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"catalog load failed: {describe_exception(e)}", changes_made=0)
 
         import httpx
 
@@ -228,7 +229,7 @@ class SyncPromptCatalogToLangfuseJob:
                     (hand_edits_replaced if hand_edit else updated).append(key)
         except Exception as e:  # noqa: BLE001 — a sync job must never crash a cycle
             logger.warning("[sync_prompt_catalog] langfuse sync failed: %s", e)
-            return JobResult(ok=False, detail=f"langfuse sync failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"langfuse sync failed: {describe_exception(e)}", changes_made=0)
 
         orphans = sorted(langfuse_names - set(catalog))
         if orphans:

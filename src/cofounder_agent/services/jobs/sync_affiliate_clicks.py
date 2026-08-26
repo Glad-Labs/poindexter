@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ class SyncAffiliateClicksJob:
             api_token = (await sc.get_secret("cloudflare_analytics_api_token", "")).strip()
         except Exception as e:
             logger.warning("[SYNC_AFFILIATE] get_secret failed: %s", e)
-            return JobResult(ok=False, detail=f"get_secret failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"get_secret failed: {describe_exception(e)}", changes_made=0)
         if not api_token:
             # Opt-in feature: a missing token on a fresh install is benign (no
             # /go links exist → no clicks). Skip quietly — do NOT fail loud or
@@ -205,7 +206,7 @@ class SyncAffiliateClicksJob:
                 )
         except Exception as e:
             logger.warning("[SYNC_AFFILIATE] watermark read failed: %s", e)
-            return JobResult(ok=False, detail=f"watermark read failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"watermark read failed: {describe_exception(e)}", changes_made=0)
 
         last = (row["value"] if row and row["value"] else "").strip()
         since: datetime | None = None
@@ -274,11 +275,11 @@ class SyncAffiliateClicksJob:
                 )
                 return JobResult(
                     ok=True,
-                    detail=f"deferred: transient network failure ({e})",
+                    detail=f"deferred: transient network failure ({describe_exception(e)})",
                     changes_made=0,
                 )
             logger.warning("[SYNC_AFFILIATE] CF SQL API request failed: %s", e)
-            return JobResult(ok=False, detail=f"cf api request failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"cf api request failed: {describe_exception(e)}", changes_made=0)
 
         if resp.status_code != 200:
             logger.warning(
@@ -294,7 +295,7 @@ class SyncAffiliateClicksJob:
             payload = resp.json()
         except Exception as e:
             logger.warning("[SYNC_AFFILIATE] CF SQL API JSON decode failed: %s", e)
-            return JobResult(ok=False, detail=f"cf api json failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"cf api json failed: {describe_exception(e)}", changes_made=0)
 
         rows = payload.get("data") or []
         if not rows:
@@ -402,7 +403,7 @@ class SyncAffiliateClicksJob:
             )
         except Exception as e:
             logger.exception("[SYNC_AFFILIATE] insert pass failed: %s", e)
-            return JobResult(ok=False, detail=str(e), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
     async def _rollup_clicks(self, pool: Any) -> None:
         """Recompute affiliate_links.clicks from affiliate_link_clicks.

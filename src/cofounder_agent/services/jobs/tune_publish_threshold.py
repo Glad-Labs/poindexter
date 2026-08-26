@@ -38,6 +38,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class TunePublishThresholdJob:
                 )
         except Exception as e:
             logger.exception("TunePublishThresholdJob: stats fetch failed: %s", e)
-            return JobResult(ok=False, detail=f"stats fetch failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"stats fetch failed: {describe_exception(e)}", changes_made=0)
 
         total = int(stats["total"]) if stats and stats["total"] is not None else 0
         if total < min_samples:
@@ -126,7 +127,7 @@ class TunePublishThresholdJob:
             logger.exception("TunePublishThresholdJob: current-threshold fetch failed: %s", e)
             return JobResult(
                 ok=False,
-                detail=f"current-threshold fetch failed: {e}",
+                detail=f"current-threshold fetch failed: {describe_exception(e)}",
                 changes_made=0,
             )
         current_threshold = int(current_raw) if current_raw else 75
@@ -159,7 +160,7 @@ class TunePublishThresholdJob:
                 logger.exception("TunePublishThresholdJob: threshold UPDATE failed: %s", e)
                 return JobResult(
                     ok=False,
-                    detail=f"threshold UPDATE failed: {e}",
+                    detail=f"threshold UPDATE failed: {describe_exception(e)}",
                     changes_made=0,
                 )
 

@@ -34,6 +34,7 @@ import httpx
 
 from plugins.job import JobResult
 from services.prometheus_rule_builder import build_current
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class RenderPrometheusRulesJob:
             rendered = await build_current(pool)
         except Exception as e:
             logger.exception("render_prometheus_rules: build failed: %s", e)
-            return JobResult(ok=False, detail=f"build failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"build failed: {describe_exception(e)}", changes_made=0)
 
         existing: str | None = None
         try:
@@ -75,7 +76,7 @@ class RenderPrometheusRulesJob:
             except OSError as e:
                 logger.exception("render_prometheus_rules: write failed: %s", e)
                 return JobResult(
-                    ok=False, detail=f"write failed: {e}", changes_made=0
+                    ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0
                 )
 
         # Reloading disabled → we're only responsible for the on-disk file;

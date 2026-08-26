@@ -36,6 +36,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class FlagBotPageViewsJob:
                     await conn.execute(_RECOMPUTE_VIEW_COUNT)
         except Exception as e:  # noqa: BLE001 — surface as a failed JobResult, not a crash
             logger.exception("[FLAG_BOT_PV] sweep failed: %s", e)
-            return JobResult(ok=False, detail=str(e), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
         return JobResult(
             ok=True,

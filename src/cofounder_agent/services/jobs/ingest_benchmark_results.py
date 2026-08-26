@@ -40,6 +40,7 @@ from datetime import datetime
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -283,11 +284,11 @@ class IngestBenchmarkResultsJob:
                 )
                 return JobResult(
                     ok=True,
-                    detail=f"deferred: transient network failure ({e})",
+                    detail=f"deferred: transient network failure ({describe_exception(e)})",
                     changes_made=0,
                 )
             logger.exception("[BENCH_INGEST] ingest pass failed: %s", e)
-            return JobResult(ok=False, detail=str(e), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(e), changes_made=0)
 
         return JobResult(
             ok=True,

@@ -125,6 +125,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
@@ -440,7 +441,7 @@ class MediaReconciliationJob:
         except Exception as e:
             logger.exception("media_reconciliation: DB query failed: %s", e)
             return JobResult(
-                ok=False, detail=f"DB query failed: {e}", changes_made=0,
+                ok=False, detail=f"DB query failed: {describe_exception(e)}", changes_made=0,
             )
 
         # Set of (post_id, asset_type) pairs that already have a row. Post-#1460

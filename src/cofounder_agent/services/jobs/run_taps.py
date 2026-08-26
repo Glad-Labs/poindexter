@@ -33,6 +33,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class RunTapsJob:
             summary = await tap_runner.run_all(pool, site_config=site_config)
         except Exception as exc:
             logger.exception("RunTapsJob failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         # Deferrals are reported but never flip `ok`. A tap declined by GPU
         # admission (game_mode) is the scheduler working, not an outage, and

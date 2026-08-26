@@ -75,6 +75,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -223,5 +224,5 @@ class RollupPostPerformanceJob:
                 e, exc_info=True,
             )
             return JobResult(
-                ok=False, detail=f"rollup failed: {type(e).__name__}: {e}",
+                ok=False, detail=f"rollup failed: {describe_exception(e)}",
             )

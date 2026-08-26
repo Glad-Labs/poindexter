@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class RunRetentionJob:
             summary = await retention_runner.run_all(pool, site_config=site_config)
         except Exception as exc:
             logger.exception("RunRetentionJob failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         if summary.total_failed:
             return JobResult(

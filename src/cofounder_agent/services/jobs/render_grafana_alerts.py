@@ -30,6 +30,7 @@ import httpx
 
 from plugins.job import JobResult
 from services.grafana_alert_builder import build_current
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class RenderGrafanaAlertsJob:
             rendered = await build_current(pool, template_path)
         except Exception as e:
             logger.exception("render_grafana_alerts: build failed: %s", e)
-            return JobResult(ok=False, detail=f"build failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"build failed: {describe_exception(e)}", changes_made=0)
 
         existing: str | None = None
         try:
@@ -86,7 +87,7 @@ class RenderGrafanaAlertsJob:
             output_path.write_text(rendered, encoding="utf-8")
         except OSError as e:
             logger.exception("render_grafana_alerts: write failed: %s", e)
-            return JobResult(ok=False, detail=f"write failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0)
 
         reload_ok = True
         reload_detail = "written (reload skipped)"

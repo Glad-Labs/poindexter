@@ -36,6 +36,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class IngestCorsairCsvJob:
             )
         except Exception as exc:  # noqa: BLE001 — a job must not kill the cycle
             logger.exception("IngestCorsairCsvJob failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc), changes_made=0)
+            return JobResult(ok=False, detail=describe_exception(exc), changes_made=0)
 
         if summary.total_failed:
             failed_errors = "; ".join(

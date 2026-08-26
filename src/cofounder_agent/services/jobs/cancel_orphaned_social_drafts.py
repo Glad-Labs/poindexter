@@ -24,6 +24,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class CancelOrphanedSocialDraftsJob:
             logger.error(
                 "[CancelOrphanedSocialDraftsJob] cancel query failed: %s", exc
             )
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
 
         if cancelled:
             logger.info(

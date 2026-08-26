@@ -37,6 +37,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class SyncPostizDeliveryStateJob:
                 )
         except Exception as exc:
             logger.error("[SyncPostizDeliveryState] DB query failed: %s", exc)
-            return JobResult(ok=False, detail=str(exc))
+            return JobResult(ok=False, detail=describe_exception(exc))
 
         if not rows:
             return JobResult(ok=True, detail="no unverified posted drafts in window")
@@ -105,7 +106,7 @@ class SyncPostizDeliveryStateJob:
             )
         except Exception as exc:
             logger.error("[SyncPostizDeliveryState] Postiz list failed: %s", exc)
-            return JobResult(ok=False, detail=f"Postiz unreachable: {exc}")
+            return JobResult(ok=False, detail=f"Postiz unreachable: {describe_exception(exc)}")
 
         by_id: dict[str, dict[str, Any]] = {
             str(p.get("id")): p for p in postiz_posts if p.get("id")

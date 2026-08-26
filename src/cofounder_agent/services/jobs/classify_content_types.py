@@ -36,6 +36,7 @@ from plugins.job import JobResult
 from services.jobs._content_type_classify import parse_labels_csv, validate_labels
 from services.llm_text import ollama_chat_text, resolve_structured_model
 from services.prompt_manager import get_prompt_manager
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ class ClassifyContentTypesJob:
                         )
         except Exception as e:  # noqa: BLE001 — report as a failed JobResult
             logger.exception("ClassifyContentTypesJob failed: %s", e)
-            return JobResult(ok=False, detail=f"failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"failed: {describe_exception(e)}", changes_made=0)
 
         detail = f"labeled {labeled} of {len(rows)} post(s)"
         if failed:

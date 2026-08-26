@@ -68,6 +68,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ class RunDevDiaryPostJob:
             logger.exception("[dev-diary] gather_context failed: %s", exc)
             return JobResult(
                 ok=False,
-                detail=f"gather_context failed: {exc}",
+                detail=f"gather_context failed: {describe_exception(exc)}",
                 changes_made=0,
             )
 
@@ -203,7 +204,7 @@ class RunDevDiaryPostJob:
             logger.exception("[dev-diary] task creation failed: %s", exc)
             return JobResult(
                 ok=False,
-                detail=f"task creation failed: {exc}",
+                detail=f"task creation failed: {describe_exception(exc)}",
                 changes_made=0,
             )
 

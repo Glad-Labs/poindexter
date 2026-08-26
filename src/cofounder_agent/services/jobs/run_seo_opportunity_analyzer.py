@@ -18,6 +18,7 @@ from services.seo.striking_distance import (
     analyze,
     upsert_opportunities,
 )
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -112,5 +113,5 @@ class RunSeoOpportunityAnalyzerJob:
                 exc_info=True,
             )
             return JobResult(
-                ok=False, detail=f"analyzer failed: {type(e).__name__}: {e}"
+                ok=False, detail=f"analyzer failed: {describe_exception(e)}"
             )

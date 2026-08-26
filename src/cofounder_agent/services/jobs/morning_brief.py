@@ -29,6 +29,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.integrations.operator_notify import notify_operator
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ class MorningBriefJob:
         except Exception as exc:  # noqa: BLE001 — gather is best-effort
             logger.exception("[morning_brief] data gather failed: %s", exc)
             return JobResult(
-                ok=False, detail=f"data gather failed: {exc}", changes_made=0,
+                ok=False, detail=f"data gather failed: {describe_exception(exc)}", changes_made=0,
             )
 
         # Open PRs come from a subprocess and are entirely optional.
@@ -113,7 +114,7 @@ class MorningBriefJob:
         except Exception as exc:  # noqa: BLE001 — surface but don't crash
             logger.exception("[morning_brief] Discord send failed: %s", exc)
             return JobResult(
-                ok=False, detail=f"Discord send failed: {exc}", changes_made=0,
+                ok=False, detail=f"Discord send failed: {describe_exception(exc)}", changes_made=0,
             )
 
         # ---- Telegram tag rule ----

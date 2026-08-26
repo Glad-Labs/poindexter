@@ -26,6 +26,7 @@ from typing import Any
 
 from plugins.job import JobResult
 from services import settings_read_sink
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class FlushSettingsReadTelemetryJob:
                 )
         except Exception as e:  # noqa: BLE001 — telemetry must never crash a cycle
             logger.warning("[flush_settings_read_telemetry] UPDATE failed: %s", e)
-            return JobResult(ok=False, detail=f"update failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"update failed: {describe_exception(e)}", changes_made=0)
 
         updated = _affected_rows(status)
         logger.debug(

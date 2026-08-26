@@ -27,6 +27,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class DetectDuplicatePostsJob:
                 )
         except Exception as e:
             logger.exception("DetectDuplicatePostsJob: query failed: %s", e)
-            return JobResult(ok=False, detail=f"query failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if len(posts) < 2:
             return JobResult(

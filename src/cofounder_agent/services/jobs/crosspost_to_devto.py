@@ -55,6 +55,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ class CrosspostToDevtoJob:
         except Exception as e:
             logger.exception("CrosspostToDevtoJob: api key lookup failed: %s", e)
             return JobResult(
-                ok=False, detail=f"api key lookup failed: {e}", changes_made=0,
+                ok=False, detail=f"api key lookup failed: {describe_exception(e)}", changes_made=0,
             )
 
         if not api_key:
@@ -207,7 +208,7 @@ class CrosspostToDevtoJob:
                 dedup_key="devto_min_quality_unparseable",
             )
             return JobResult(
-                ok=True, detail=f"min_quality unparseable: {e}", changes_made=0,
+                ok=True, detail=f"min_quality unparseable: {describe_exception(e)}", changes_made=0,
             )
 
         try:
@@ -225,7 +226,7 @@ class CrosspostToDevtoJob:
                 )
         except Exception as e:
             logger.exception("CrosspostToDevtoJob: candidate fetch failed: %s", e)
-            return JobResult(ok=False, detail=f"fetch failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"fetch failed: {describe_exception(e)}", changes_made=0)
 
         skipped = max(0, gate_universe - gate_eligible)
         gate_metrics = {

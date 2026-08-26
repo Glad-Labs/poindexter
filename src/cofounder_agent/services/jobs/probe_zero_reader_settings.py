@@ -28,6 +28,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -118,7 +119,7 @@ class ProbeZeroReaderSettingsJob:
                 rows = [dict(r) for r in await conn.fetch(_ORPHAN_QUERY, grace_days, limit)]
         except Exception as e:  # noqa: BLE001 — a probe must never crash a cycle
             logger.warning("[probe_zero_reader_settings] query failed: %s", e)
-            return JobResult(ok=False, detail=f"query failed: {e}", changes_made=0)
+            return JobResult(ok=False, detail=f"query failed: {describe_exception(e)}", changes_made=0)
 
         if not rows:
             return JobResult(

@@ -42,6 +42,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ class RenderAlertmanagerConfigJob:
                 "render_alertmanager_config: template read failed: %s", e
             )
             return JobResult(
-                ok=False, detail=f"template read failed: {e}", changes_made=0
+                ok=False, detail=f"template read failed: {describe_exception(e)}", changes_made=0
             )
 
         rendered = render_template(template, chat_id)
@@ -166,7 +167,7 @@ class RenderAlertmanagerConfigJob:
         except OSError as e:
             logger.exception("render_alertmanager_config: write failed: %s", e)
             return JobResult(
-                ok=False, detail=f"write failed: {e}", changes_made=0
+                ok=False, detail=f"write failed: {describe_exception(e)}", changes_made=0
             )
 
         reload_ok = True

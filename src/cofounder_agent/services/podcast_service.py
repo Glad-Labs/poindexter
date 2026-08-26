@@ -37,6 +37,7 @@ from typing import Any
 from services.image_markers import strip_unresolved_image_markers
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively (#272 Phase-2f). The
 # module-level ``site_config`` global + ``set_site_config`` setter were
@@ -1664,7 +1665,7 @@ class PodcastService:
                 source="podcast_service",
                 kind="media_asset_recorder_unavailable",
                 title="media_asset_recorder unavailable — podcast asset not recorded",
-                body=f"_record_episode_asset: {exc}. This podcast episode's media row was never persisted.",
+                body=f"_record_episode_asset: {describe_exception(exc)}. This podcast episode's media row was never persisted.",
                 dedup_key="media_asset_recorder_unavailable",
             )
             return
