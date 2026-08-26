@@ -131,7 +131,7 @@ _TWITTER_PROMPT_FALLBACK = (
     "2. Add one sentence on what the article shows or why that detail matters.\n"
     "3. Close with the exact URL.\n\n"
     "Rules:\n"
-    "- The tweet MUST be under {char_limit} characters including the URL and any hashtags.\n"
+    "- The tweet MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.\n"
     "- Include the exact URL below — do not shorten or modify it.\n"
     "- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.\n"
     "- Vary the opener across posts — a detail, a claim, or a scene. Stock openers (“Stop guessing…”, “Ever wondered…?”) read as spam.\n"
@@ -152,7 +152,7 @@ _LINKEDIN_PROMPT_FALLBACK = (
     "2. Follow with two or three short sentences on what the article shows and who it helps.\n"
     "3. Invite the click in one plain sentence, then the exact URL.\n\n"
     "Rules:\n"
-    "- The post MUST be under {char_limit} characters including the URL and any hashtags.\n"
+    "- The post MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.\n"
     "- Include the exact URL below — do not shorten or modify it.\n"
     "- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.\n"
     "- Hashtags: at most two from the suggested list, placed at the very end, only when they read naturally.\n"
@@ -192,11 +192,19 @@ def _build_twitter_prompt(
     _sc = site_config
     post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
+    char_limit = _twitter_char_limit(site_config=_sc)
     return _resolve_social_prompt(
         "social.twitter_promote",
         fallback=_TWITTER_PROMPT_FALLBACK,
         company_name=_sc.get("company_name", ""),
-        char_limit=_twitter_char_limit(site_config=_sc),
+        char_limit=char_limit,
+        # Slugged post URLs run ~90 chars — a third of the tweet budget — and
+        # models are bad at deriving that subtraction themselves, so the
+        # prompt hands them the prose budget _polish_social_copy will
+        # actually enforce (limit − URL − 1 joining space). Before this,
+        # roughly half of all drafts overran and got trimmed.
+        url_chars=len(post_url),
+        prose_budget=max(char_limit - len(post_url) - 1, 0),
         title=title,
         excerpt=excerpt,
         post_url=post_url,
@@ -215,11 +223,15 @@ def _build_linkedin_prompt(
     _sc = site_config
     post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
+    char_limit = _linkedin_char_limit(site_config=_sc)
     return _resolve_social_prompt(
         "social.linkedin_promote",
         fallback=_LINKEDIN_PROMPT_FALLBACK,
         company_name=_sc.get("company_name", ""),
-        char_limit=_linkedin_char_limit(site_config=_sc),
+        char_limit=char_limit,
+        # Same prose-budget arithmetic as the twitter prompt — see there.
+        url_chars=len(post_url),
+        prose_budget=max(char_limit - len(post_url) - 1, 0),
         title=title,
         excerpt=excerpt,
         post_url=post_url,
@@ -241,6 +253,13 @@ def _build_linkedin_prompt(
 # the end of the copy — filler the model appends when it runs out of thought.
 _TRAILING_ELLIPSIS_RE = re.compile(r"\s*(?:\.{2,}|…)+\s*$")
 
+# A sentence terminator (. ! ?), optionally wrapped by a closing quote or
+# paren, followed by whitespace or end-of-text. The whitespace lookahead is
+# what keeps decimals ("1.4 shipped") and dotted names (".map files",
+# "Bun.WebView") from counting as sentence ends: their period has a non-space
+# character on at least one side.
+_SENTENCE_END_RE = re.compile(r"[.!?][\"'）)’”]*(?=\s|$)")
+
 
 def _strip_trailing_ellipsis(text: str) -> str:
     """Drop a dangling ellipsis / dot-run trail-off from the end of *text*."""
@@ -248,17 +267,27 @@ def _strip_trailing_ellipsis(text: str) -> str:
 
 
 def _fit_prose(text: str, limit: int) -> str:
-    """Trim *text* to <= *limit* chars at a word boundary — no trail-off marker.
+    """Trim *text* to <= *limit* chars, preferring a sentence boundary.
 
-    Unlike the old truncation net (which appended ``"..."`` and so manufactured
-    the very trail-off we now strip), this cuts cleanly at the last whole word
-    and re-strips any ellipsis the cut exposed, so shortening copy never trades
-    one trail-off for another.
+    An over-limit draft is cut at the last sentence terminator that fits, so
+    the survivor reads as finished copy — a complete short post beats a longer
+    fragment ("…larger memories automatically create <URL>" is the 2026-08-26
+    truncated-drafts report this exists to prevent). Only when no whole
+    sentence fits (one long unbroken sentence) does it fall back to the last
+    whole word, re-stripping any ellipsis the cut exposed so shortening copy
+    never manufactures a trail-off.
     """
     if limit <= 0:
         return ""
     if len(text) <= limit:
         return text
+    sentence_end = 0
+    for m in _SENTENCE_END_RE.finditer(text):
+        if m.end() > limit:
+            break
+        sentence_end = m.end()
+    if sentence_end:
+        return _strip_trailing_ellipsis(text[:sentence_end].rstrip())
     cut = text[:limit].rstrip()
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0]
@@ -277,7 +306,9 @@ def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
        appending here keeps the pre-approval preview honest and protects the
        link from step 3.
     3. Fit to ``char_limit`` by trimming PROSE, never the URL — a long draft
-       loses filler, not its link.
+       loses filler, not its link. The trim prefers a sentence boundary
+       (``_fit_prose``), so an overrunning draft loses its last sentence
+       whole rather than surfacing a mid-clause fragment.
 
     ``post_url`` is honored only when absolute (``http(s)://``); an empty or
     relative value (``site_url`` unset -> ``/posts/slug``) is treated as

@@ -6,6 +6,7 @@ tests (generate_and_distribute / _notify / _distribute_to_adapters / adapter
 counters) were removed 2026-06-29 with that path.
 """
 
+import re
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -112,6 +113,15 @@ class TestBuildTwitterPrompt:
         prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert str(TWITTER_CHAR_LIMIT) in prompt
 
+    def test_states_prose_budget_for_the_actual_url(self):
+        # Slugged URLs eat ~a third of the tweet budget; the prompt must hand
+        # the model the subtraction (limit − URL − 1 joining space) instead of
+        # asking it to derive character arithmetic it reliably gets wrong.
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
+        url = re.search(r"URL: (\S+)", prompt).group(1)
+        assert f"The URL alone is {len(url)} characters" in prompt
+        assert f"must fit in {TWITTER_CHAR_LIMIT - len(url) - 1}" in prompt
+
     def test_empty_keywords(self):
         prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, [], site_config=_TEST_SC)
         assert "Suggested hashtags:" in prompt
@@ -132,6 +142,12 @@ class TestBuildLinkedInPrompt:
     def test_mentions_char_limit(self):
         prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
         assert str(LINKEDIN_CHAR_LIMIT) in prompt
+
+    def test_states_prose_budget_for_the_actual_url(self):
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
+        url = re.search(r"URL: (\S+)", prompt).group(1)
+        assert f"The URL alone is {len(url)} characters" in prompt
+        assert f"must fit in {LINKEDIN_CHAR_LIMIT - len(url) - 1}" in prompt
 
     def test_mentions_professional_tone(self):
         prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, site_config=_TEST_SC)
@@ -298,10 +314,43 @@ class TestStripTrailingEllipsis:
 
 
 class TestFitProse:
-    """Word-boundary trimming with no manufactured trail-off."""
+    """Sentence-boundary-first trimming with no manufactured trail-off."""
 
     def test_under_limit_unchanged(self):
         assert _fit_prose("short copy", 280) == "short copy"
+
+    def test_trims_at_last_sentence_boundary(self):
+        # The 2026-08-26 truncated-drafts shape: two sentences, the second
+        # overruns the budget. The cut drops the partial sentence whole so
+        # the survivor reads as finished copy.
+        text = (
+            "IBM tested eight models and found more context made things worse. "
+            "The results challenge the assumption that larger memories create better agents."
+        )
+        result = _fit_prose(text, len(text) - 10)
+        assert result == "IBM tested eight models and found more context made things worse."
+
+    def test_keeps_every_sentence_that_fits(self):
+        text = "One. Two. Three. Four four four four four"
+        result = _fit_prose(text, 17)
+        assert result == "One. Two. Three."
+
+    def test_sentence_boundary_with_closing_quote(self):
+        text = 'She said "ship it." Then a very long tail that overruns the limit'
+        result = _fit_prose(text, 30)
+        assert result == 'She said "ship it."'
+
+    def test_exclamation_and_question_terminate_sentences(self):
+        text = "Does it scale? Absolutely not! And here is a long explanation why"
+        result = _fit_prose(text, 35)
+        assert result == "Does it scale? Absolutely not!"
+
+    def test_decimals_and_dotted_names_are_not_boundaries(self):
+        # "1.4" and ".map"/"Bun.WebView" periods have a non-space neighbor, so
+        # only word-boundary trimming applies to a sentence built around them.
+        text = "Bun 1.4 renders .map files via Bun.WebView on every platform today"
+        result = _fit_prose(text, 40)
+        assert result == "Bun 1.4 renders .map files via"
 
     def test_trims_at_word_boundary(self):
         result = _fit_prose("word " * 100, 50)
@@ -391,6 +440,20 @@ class TestPolishSocialCopy:
         result = _polish_social_copy(text, post_url=self.URL, char_limit=limit)
         assert result.endswith(self.URL)
         assert len(result) <= limit
+
+    def test_over_limit_copy_is_cut_at_a_sentence_not_mid_clause(self):
+        # The 2026-08-26 truncated-drafts report: a 90-char slugged URL leaves
+        # ~189 chars of prose budget, the model writes slightly more, and the
+        # old word-boundary cut shipped "…larger memories automatically create
+        # <URL>" to the operator. The trim must drop the overrunning sentence
+        # whole, leaving finished copy + the link.
+        first = "IBM tested eight models on agent memory and found that dumping more context actually made performance worse."
+        second = "The results challenge the assumption that larger memories automatically create better agents."
+        url = "https://www.gladlabs.io/posts/ibm-tested-eight-models-on-agent-memory-dumping-mo-fca93be5"
+        text = f"{first} {second} {url}"
+        result = _polish_social_copy(text, post_url=url, char_limit=280)
+        assert len(result) <= 280
+        assert result == f"{first} {url}"
 
 
 # ---------------------------------------------------------------------------

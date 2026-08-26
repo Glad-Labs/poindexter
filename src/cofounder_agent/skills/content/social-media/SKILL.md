@@ -63,7 +63,7 @@ Method:
 3. Close with the exact URL.
 
 Rules:
-- The tweet MUST be under {char_limit} characters including the URL and any hashtags.
+- The tweet MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.
 - Include the exact URL below — do not shorten or modify it.
 - Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.
 - Vary the opener across posts — a detail, a claim, or a scene. Stock openers (“Stop guessing…”, “Ever wondered…?”) read as spam.
@@ -89,7 +89,7 @@ Method:
 3. Invite the click in one plain sentence, then the exact URL.
 
 Rules:
-- The post MUST be under {char_limit} characters including the URL and any hashtags.
+- The post MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.
 - Include the exact URL below — do not shorten or modify it.
 - Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.
 - Hashtags: at most two from the suggested list, placed at the very end, only when they read naturally.

@@ -73,7 +73,8 @@ def _social_twitter():
 
     return m._resolve_social_prompt(
         "social.twitter_promote", fallback=m._TWITTER_PROMPT_FALLBACK,
-        company_name="Glad Labs", char_limit=280, title="T", excerpt="E",
+        company_name="Glad Labs", char_limit=280, url_chars=23,
+        prose_budget=256, title="T", excerpt="E",
         post_url="https://gladlabs.io/p/x", hashtags="#a #b",
     )
 
@@ -83,7 +84,8 @@ def _social_linkedin():
 
     return m._resolve_social_prompt(
         "social.linkedin_promote", fallback=m._LINKEDIN_PROMPT_FALLBACK,
-        company_name="Glad Labs", char_limit=3000, title="T", excerpt="E",
+        company_name="Glad Labs", char_limit=3000, url_chars=23,
+        prose_budget=2976, title="T", excerpt="E",
         post_url="https://gladlabs.io/p/x", hashtags="#a #b",
     )
 

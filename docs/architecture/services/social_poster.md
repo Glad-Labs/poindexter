@@ -89,9 +89,21 @@ subreddit)`** (poindexter#833). Finalize re-runs (preview_gate regen loops,
 - **`think=False` + `<think>` stripping.** Social copy is short, so the
   reasoning phase is disabled and any residual `<think>...</think>` block is
   stripped — the draft must never surface the model's analysis.
-- **Hard truncation safety net.** If the LLM exceeds the char limit, the text
-  is cut at the last whitespace before the limit and `...` appended (warns).
-  Wrapping straight quotes the model adds are stripped before counting.
+- **Deterministic copy repair (`_polish_social_copy`).** Every generated
+  draft passes through a repair net before it becomes a row: strip a dangling
+  ellipsis trail-off, lift the post URL out of the text and re-append it LAST
+  (so a trim can never eat the link — the 2026-08-16 Cosine-Similarity
+  regression), then fit the prose to `char_limit − len(url) − 1`. The fit
+  prefers the **last sentence boundary** that fits and only falls back to a
+  word-boundary cut when no whole sentence fits — an overrunning draft loses
+  its final sentence whole instead of shipping a mid-clause fragment
+  ("…larger memories automatically create <URL>", the 2026-08-26
+  truncated-drafts report). Wrapping straight quotes the model adds are
+  stripped before counting. The prompts also hand the model the prose budget
+  explicitly (`{url_chars}` / `{prose_budget}`): slugged URLs run ~90 chars —
+  a third of a tweet — and models reliably fail to derive that subtraction
+  from "under 280 including the URL" (roughly half of all drafts overran
+  before the budget was spelled out).
 
 ## Configuration
 

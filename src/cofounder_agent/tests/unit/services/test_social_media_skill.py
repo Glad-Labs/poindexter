@@ -58,6 +58,8 @@ def test_social_templates_carry_expected_placeholders() -> None:
     for placeholder in (
         "{company_name}",
         "{char_limit}",
+        "{url_chars}",
+        "{prose_budget}",
         "{title}",
         "{excerpt}",
         "{post_url}",
@@ -70,6 +72,8 @@ def test_social_templates_carry_expected_placeholders() -> None:
     for placeholder in (
         "{company_name}",
         "{char_limit}",
+        "{url_chars}",
+        "{prose_budget}",
         "{title}",
         "{excerpt}",
         "{post_url}",
@@ -112,6 +116,8 @@ def test_social_promo_templates_render_with_caller_kwargs() -> None:
         "social.twitter_promote",
         company_name="Acme",
         char_limit=280,
+        url_chars=28,
+        prose_budget=251,
         title="Title",
         excerpt="Excerpt",
         post_url="https://example.test/posts/x",
@@ -119,4 +125,5 @@ def test_social_promo_templates_render_with_caller_kwargs() -> None:
     )
     assert "Acme" in rendered
     assert "280 characters" in rendered
+    assert "fit in 251" in rendered
     assert rendered.endswith("\n")
