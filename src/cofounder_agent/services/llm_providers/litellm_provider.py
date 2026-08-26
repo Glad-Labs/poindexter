@@ -94,6 +94,9 @@ from typing import Any
 
 from plugins.llm_provider import Completion, Token
 from services.cost_guard import is_local_base_url
+from services.llm_providers.ollama_timings import (
+    extract_timings as extract_ollama_timings,
+)
 from services.llm_providers.thinking_models import strip_reasoning_artifacts
 
 # Refuse to import when the backing SDK is absent, so ``plugins.registry``
@@ -1041,6 +1044,10 @@ class LiteLLMProvider:
 
         import litellm
 
+        from services.llm_providers.ollama_timings import install_ollama_timing_capture
+
+        install_ollama_timing_capture()
+
         resolved_model = self._resolve_model(model)
         self._enforce_paid_endpoint_policy(resolved_model)
         # Anthropic prompt caching: annotate the system prefix with an
@@ -1224,6 +1231,14 @@ class LiteLLMProvider:
         if cache_read or cache_creation:
             raw["cache_read_input_tokens"] = cache_read
             raw["cache_creation_input_tokens"] = cache_creation
+
+        # Ollama decode/prefill split recovered by services.llm_providers.
+        # ollama_timings (LiteLLM drops the durations natively). None for
+        # cloud providers — the dispatcher persists NULL, never 0.
+        decode_ms, prefill_ms = extract_ollama_timings(response)
+        if decode_ms is not None:
+            raw["decode_duration_ms"] = decode_ms
+            raw["prefill_duration_ms"] = prefill_ms
 
         return Completion(
             text=text,

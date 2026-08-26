@@ -77,10 +77,12 @@ class _FakeProvider:
 
 
 class _FakeCompletionResult:
-    def __init__(self, prompt_tokens=0, completion_tokens=0, finish_reason=""):
+    def __init__(self, prompt_tokens=0, completion_tokens=0, finish_reason="", raw=None):
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens
         self.finish_reason = finish_reason
+        if raw is not None:
+            self.raw = raw
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +551,36 @@ class TestDispatchCompleteAutoLog:
         assert args[10] is True   # success
         assert args[11] == pytest.approx(0.001)   # electricity_kwh
         assert args[12] is None   # error_message
+        # No ollama timing split on the result → NULL, never 0.
+        assert args[13] is None   # decode_duration_ms
+        assert args[14] is None   # prefill_duration_ms
+
+    async def test_ollama_timing_split_persisted_when_reported(self):
+        """result.raw decode/prefill (stamped by litellm_provider via
+        services.llm_providers.ollama_timings) lands in the cost row."""
+        pool, executions = _make_logging_pool()
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult(
+            prompt_tokens=10, completion_tokens=200,
+            raw={"decode_duration_ms": 1817, "prefill_duration_ms": 4210},
+        )
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.001
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="ollama/qwen2.5:7b",
+                task_id="task-tps",
+                phase="atom.qa",
+            )
+        cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
+        assert len(cost_inserts) == 1, executions
+        query, args = cost_inserts[0]
+        assert "decode_duration_ms" in query and "prefill_duration_ms" in query
+        assert args[13] == 1817
+        assert args[14] == 4210
 
     async def test_local_phantom_response_cost_is_zeroed_to_electricity(self):
         """A LOCAL call must NOT record LiteLLM's phantom hosted price.

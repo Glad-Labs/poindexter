@@ -36,17 +36,20 @@ async def _seed_call(
     duration_ms,
     cost_type="inference",
     success=True,
+    decode_duration_ms=None,
 ):
     await conn.execute(
         "INSERT INTO cost_logs (phase, model, provider, input_tokens, "
-        "output_tokens, total_tokens, duration_ms, cost_type, success) "
-        "VALUES ('test', $1, 'litellm', 10, $2, $3, $4, $5, $6)",
+        "output_tokens, total_tokens, duration_ms, cost_type, success, "
+        "decode_duration_ms) "
+        "VALUES ('test', $1, 'litellm', 10, $2, $3, $4, $5, $6, $7)",
         model,
         output_tokens,
         10 + output_tokens,
         duration_ms,
         cost_type,
         success,
+        decode_duration_ms,
     )
 
 
@@ -88,6 +91,41 @@ async def test_speed_series_merges_ollama_prefix_and_gaps(db_pool):
         vals = [v for _, v in pts if v is not None]
         assert vals == [15.0]
         assert any(v is None for _, v in pts)  # empty buckets → null gap
+    finally:
+        async with db_pool.acquire() as conn:
+            await _reset(conn)
+
+
+async def test_decode_metric_uses_split_and_skips_unreported_rows(db_pool):
+    async with db_pool.acquire() as conn:
+        await _reset(conn)
+        # Local row: 200 tok decoded in 1s of eval time → 200 tok/s decode,
+        # while wall-clock is 10s (20 tok/s effective) — the gap is the point.
+        await _seed_call(
+            conn, model="qwen2.5:7b", output_tokens=200, duration_ms=10_000,
+            decode_duration_ms=1_000,
+        )
+        # Cloud row (no split) — must not appear in decode series values and
+        # must not dilute the local model's rate.
+        await _seed_call(
+            conn, model="anthropic/claude-sonnet-5", output_tokens=999,
+            duration_ms=5_000,
+        )
+    try:
+        out = await get_llm_throughput_trend(
+            db_pool, range_seconds=3600, step_seconds=900, metric="decode"
+        )
+        assert out["metric"] == "decode"
+        by_label = {s["label"]: s for s in out["series"]}
+        qwen_vals = [v for _, v in by_label["qwen2.5:7b"]["points"] if v is not None]
+        assert qwen_vals == [200.0]
+        # Cloud model gets a series slot (it ranks in top-N by volume) but
+        # every decode point is null — reported-nothing, never fabricated.
+        cloud_vals = [
+            v for _, v in by_label["anthropic/claude-sonnet-5"]["points"]
+            if v is not None
+        ]
+        assert cloud_vals == []
     finally:
         async with db_pool.acquire() as conn:
             await _reset(conn)

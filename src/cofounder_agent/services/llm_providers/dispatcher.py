@@ -875,6 +875,19 @@ async def _record_dispatch_cost(
         completion_tokens = int(getattr(result, "completion_tokens", 0) or 0) if result is not None else 0
         total_tokens = int(getattr(result, "total_tokens", 0) or 0) if result is not None else 0
 
+        # Ollama decode/prefill split (services.llm_providers.ollama_timings →
+        # litellm_provider stamps result.raw). NULL when the provider didn't
+        # report one (cloud models) — never 0 (feedback_no_dummy_data).
+        def _raw_ms(key: str) -> int | None:
+            v = raw.get(key) if isinstance(raw, dict) else None
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        decode_duration_ms = _raw_ms("decode_duration_ms")
+        prefill_duration_ms = _raw_ms("prefill_duration_ms")
+
         # Local calls cost $0 in API terms — discard any phantom response_cost.
         # A bare local tag like "llama3.2:3b" collides with a *hosted* llama
         # price in litellm.model_cost, so LiteLLM stamps ~$0.0135/call on free
@@ -917,16 +930,20 @@ async def _record_dispatch_cost(
                     task_id, phase, model, provider,
                     input_tokens, output_tokens, total_tokens,
                     cost_usd, cost_type, duration_ms, success,
-                    electricity_kwh, error_message, created_at, updated_at
+                    electricity_kwh, error_message,
+                    decode_duration_ms, prefill_duration_ms,
+                    created_at, updated_at
                 )
                 VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                    $14, $15, NOW(), NOW()
                 )
                 """,
                 task_id, phase, model, provider_name,
                 prompt_tokens, completion_tokens, total_tokens,
                 cost_usd, "inference", duration_ms, success,
                 electricity_kwh, error,
+                decode_duration_ms, prefill_duration_ms,
             )
     except Exception as e:
         # Demote the per-call line to debug so we don't pollute logs on every

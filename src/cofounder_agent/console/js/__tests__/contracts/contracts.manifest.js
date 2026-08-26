@@ -704,6 +704,15 @@ module.exports = [
     },
   },
   {
+    name: 'llmDecodeSeries',
+    invoke: (api) => api.llmDecodeSeries('1h'),
+    request: {
+      method: 'GET',
+      path: '/api/metrics/llm-throughput/trend',
+      query: { metric: 'decode', range_seconds: 3600, step_seconds: 15 },
+    },
+  },
+  {
     name: 'llmTokenVolumeSeries',
     invoke: (api) => api.llmTokenVolumeSeries('1h'),
     request: {

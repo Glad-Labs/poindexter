@@ -73,8 +73,9 @@ async def llm_throughput_trend(
     step_seconds: int = Query(90, ge=15),
 ) -> dict[str, Any]:
     """Per-model LLM throughput series over ``cost_logs`` for the console
-    History panel — ``metric=speed`` (effective output tok/s) or
-    ``metric=volume`` (output tok/min). Thin adapter over
+    History panel — ``metric=speed`` (effective output tok/s, wall-clock),
+    ``metric=decode`` (true decode tok/s from Ollama's eval_duration split),
+    or ``metric=volume`` (output tok/min). Thin adapter over
     ``services.llm_throughput`` (adapter-purity ADR: no inline SQL here)."""
     if metric not in VALID_METRICS:
         raise HTTPException(

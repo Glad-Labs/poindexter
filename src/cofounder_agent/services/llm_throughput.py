@@ -9,6 +9,12 @@ returns one series per model:
   wall-clock call time — prompt processing and any in-call queueing are
   included, so short-output QA verdict calls read slower than raw decode
   speed. That is the throughput the pipeline actually experiences.
+- ``metric="decode"`` → TRUE decode tokens/sec from Ollama's reported
+  ``eval_duration`` split (``cost_logs.decode_duration_ms``, recovered by
+  ``services.llm_providers.ollama_timings``). Numerator and denominator are
+  FILTER-paired to rows that actually carry a split — cloud models and
+  pre-migration rows report none, so their buckets stay ``None`` rather
+  than diluting the rate.
 - ``metric="volume"`` → output tokens/min generated per bucket (rate, so the
   number is comparable across range presets whose bucket widths differ).
 
@@ -42,7 +48,7 @@ MAX_RANGE_SECONDS = 7 * 86400
 MAX_BUCKETS = 1000
 MAX_MODELS_CEILING = 20
 
-VALID_METRICS = ("speed", "volume")
+VALID_METRICS = ("speed", "decode", "volume")
 
 
 def _clamp(range_seconds: int, step_seconds: int) -> tuple[int, int]:
@@ -80,7 +86,8 @@ async def get_llm_throughput_trend(
             SELECT floor(extract(epoch FROM created_at) / $2) * $2 AS bucket,
                    regexp_replace(model, '^ollama(_chat)?/', '') AS model,
                    output_tokens,
-                   duration_ms
+                   duration_ms,
+                   decode_duration_ms
             FROM cost_logs
             WHERE created_at > NOW() - ($1 * INTERVAL '1 second')
               AND cost_type = 'inference'
@@ -98,12 +105,19 @@ async def get_llm_throughput_trend(
         agg AS (
             SELECT bucket, model,
                    SUM(output_tokens) AS out_tok,
-                   SUM(duration_ms) AS dur_ms
+                   SUM(duration_ms) AS dur_ms,
+                   -- decode pair: numerator restricted to the same rows the
+                   -- denominator sums, so cloud/pre-migration rows (NULL
+                   -- split) never dilute the decode rate.
+                   SUM(output_tokens)
+                       FILTER (WHERE decode_duration_ms > 0) AS decode_out_tok,
+                   SUM(decode_duration_ms) AS decode_ms
             FROM calls
             GROUP BY bucket, model
         )
         SELECT g.bucket AS bucket, tm.model AS model,
-               a.out_tok AS out_tok, a.dur_ms AS dur_ms
+               a.out_tok AS out_tok, a.dur_ms AS dur_ms,
+               a.decode_out_tok AS decode_out_tok, a.decode_ms AS decode_ms
         FROM grid g
         CROSS JOIN top_models tm
         LEFT JOIN agg a ON a.bucket = g.bucket AND a.model = tm.model
@@ -123,7 +137,12 @@ async def get_llm_throughput_trend(
         value: float | None = None
         out_tok = row["out_tok"]
         dur_ms = row["dur_ms"]
-        if out_tok is not None:
+        if metric == "decode":
+            decode_out = row["decode_out_tok"]
+            decode_ms = row["decode_ms"]
+            if decode_out is not None and decode_ms:
+                value = round(float(decode_out) / (float(decode_ms) / 1000.0), 1)
+        elif out_tok is not None:
             if metric == "speed":
                 if dur_ms:
                     value = round(float(out_tok) / (float(dur_ms) / 1000.0), 1)
