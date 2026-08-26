@@ -23,9 +23,12 @@ waits that poison the average. An empty bucket is ``None`` — a line break, nev
 Series are capped to the top ``max_models`` models by output-token volume in
 the window (DB-tunable via ``llm_throughput_trend_max_models``) so the chart
 stays legible; the Grafana Model Throughput row on Cost & Analytics carries
-the uncapped breakdown. The ``ollama/`` consumer prefix is stripped for
-grouping — ``ollama/phi4:14b`` and ``phi4:14b`` are the same engine reached
-through different dispatch paths (see reference_ollama_prefix_is_per_consumer).
+the uncapped breakdown. The ``ollama/`` and ``ollama_chat/`` consumer
+prefixes are stripped for grouping — ``ollama/phi4:14b``,
+``ollama_chat/phi4:14b`` and ``phi4:14b`` are the same engine reached through
+different dispatch paths (see reference_ollama_prefix_is_per_consumer); cloud
+prefixes (``anthropic/``, ``gemini/``, ``openai/``) are real provenance and
+stay.
 
 SQL lives here, not in the route (adapter-purity ADR).
 """
@@ -75,8 +78,7 @@ async def get_llm_throughput_trend(
         ),
         calls AS (
             SELECT floor(extract(epoch FROM created_at) / $2) * $2 AS bucket,
-                   CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8)
-                        ELSE model END AS model,
+                   regexp_replace(model, '^ollama(_chat)?/', '') AS model,
                    output_tokens,
                    duration_ms
             FROM cost_logs

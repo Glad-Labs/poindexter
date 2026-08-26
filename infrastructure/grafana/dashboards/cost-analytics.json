@@ -1477,7 +1477,7 @@
       "type": "timeseries",
       "id": 221,
       "title": "Output tok/s by model (effective — wall-clock)",
-      "description": "Effective generation speed: SUM(output_tokens)/SUM(duration_ms) per bucket, per model. Wall-clock call time, so prompt processing and in-call queueing count — short-output QA verdict calls read slower than raw decode speed. This is the throughput the pipeline experiences. ollama/-prefixed and bare spellings of the same model are merged. Console mirror: History → Model throughput (tok/s).",
+      "description": "Effective generation speed: SUM(output_tokens)/SUM(duration_ms) per bucket, per model. Wall-clock call time, so prompt processing and in-call queueing count — short-output QA verdict calls read slower than raw decode speed. This is the throughput the pipeline experiences. ollama/- and ollama_chat/-prefixed and bare spellings of the same model are merged. Console mirror: History → Model throughput (tok/s).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1513,7 +1513,7 @@
             "uid": "local-brain-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS metric, SUM(output_tokens)::float / NULLIF(SUM(duration_ms) / 1000.0, 0) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, regexp_replace(model, '^ollama(_chat)?/', '') AS metric, SUM(output_tokens)::float / NULLIF(SUM(duration_ms) / 1000.0, 0) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ]
@@ -1558,7 +1558,7 @@
             "uid": "local-brain-db"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS metric, SUM(output_tokens) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, regexp_replace(model, '^ollama(_chat)?/', '') AS metric, SUM(output_tokens) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
         }
       ]
@@ -1755,7 +1755,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS \"Model\", COUNT(*) AS \"Calls\", SUM(output_tokens) AS \"Out tok\", ROUND(AVG(duration_ms) / 1000.0, 1) AS \"Avg s\", ROUND((percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) / 1000.0)::numeric, 1) AS \"p95 s\", ROUND(SUM(output_tokens)::numeric / NULLIF(SUM(duration_ms) / 1000.0, 0), 1) AS \"Eff tok/s\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1 ORDER BY 3 DESC",
+          "rawSql": "SELECT regexp_replace(model, '^ollama(_chat)?/', '') AS \"Model\", COUNT(*) AS \"Calls\", SUM(output_tokens) AS \"Out tok\", ROUND(AVG(duration_ms) / 1000.0, 1) AS \"Avg s\", ROUND((percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) / 1000.0)::numeric, 1) AS \"p95 s\", ROUND(SUM(output_tokens)::numeric / NULLIF(SUM(duration_ms) / 1000.0, 0), 1) AS \"Eff tok/s\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1 ORDER BY 3 DESC",
           "refId": "A"
         }
       ]

@@ -57,11 +57,15 @@ async def _reset(conn):
 async def test_speed_series_merges_ollama_prefix_and_gaps(db_pool):
     async with db_pool.acquire() as conn:
         await _reset(conn)
-        # Same engine, two dispatch-path spellings → ONE merged series.
-        # 100 tok in 10s + 200 tok in 10s = 300 tok / 20s = 15.0 tok/s.
+        # Same engine, three dispatch-path spellings → ONE merged series.
+        # 100 tok in 10s + 200 tok in 10s + 150 tok in 10s = 450 tok / 30s
+        # = 15.0 tok/s.
         await _seed_call(conn, model="phi4:14b", output_tokens=100, duration_ms=10_000)
         await _seed_call(
             conn, model="ollama/phi4:14b", output_tokens=200, duration_ms=10_000
+        )
+        await _seed_call(
+            conn, model="ollama_chat/phi4:14b", output_tokens=150, duration_ms=10_000
         )
         # Excluded rows: non-LLM (zero OUTPUT tokens — the seed helper still
         # gives it input tokens, proving input-only rows can't leak in),
