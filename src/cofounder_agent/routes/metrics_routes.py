@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from middleware.api_token_auth import verify_api_token
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
+from services.llm_throughput import VALID_METRICS, get_llm_throughput_trend
 from services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 # Create metrics router
@@ -60,6 +61,42 @@ async def get_budget_status(
     except Exception as e:
         logger.error("Error getting budget status: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred") from e
+
+
+@metrics_router.get("/llm-throughput/trend", response_model=dict[str, Any])
+async def llm_throughput_trend(
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+    metric: str = Query("speed"),
+    range_seconds: int = Query(21600, ge=60, le=604800),
+    step_seconds: int = Query(90, ge=15),
+) -> dict[str, Any]:
+    """Per-model LLM throughput series over ``cost_logs`` for the console
+    History panel — ``metric=speed`` (effective output tok/s) or
+    ``metric=volume`` (output tok/min). Thin adapter over
+    ``services.llm_throughput`` (adapter-purity ADR: no inline SQL here)."""
+    if metric not in VALID_METRICS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"metric must be one of {list(VALID_METRICS)}",
+        )
+    max_models = 6
+    try:
+        if site_config is not None:
+            max_models = int(site_config.get("llm_throughput_trend_max_models", "6") or 6)
+    except (TypeError, ValueError):
+        logger.warning(
+            "[llm_throughput_trend] llm_throughput_trend_max_models is not an "
+            "integer; using 6"
+        )
+    return await get_llm_throughput_trend(
+        db_service.pool,
+        range_seconds=range_seconds,
+        step_seconds=step_seconds,
+        metric=metric,
+        max_models=max_models,
+    )
 
 
 @metrics_router.get(

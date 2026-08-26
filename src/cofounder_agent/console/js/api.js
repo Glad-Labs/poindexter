@@ -2113,6 +2113,33 @@
         () => ({ series: [] })
       );
     },
+    // Per-model LLM throughput over cost_logs (worker; services/llm_throughput.py).
+    // speed = effective output tok/s (wall-clock call time, so prompt
+    // processing counts — the throughput the pipeline actually experiences);
+    // volume = output tok/min. One line per model, top-N capped server-side
+    // (app_settings.llm_throughput_trend_max_models).
+    llmThroughputSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          http(
+            'GET',
+            `/api/metrics/llm-throughput/trend?metric=speed&range_seconds=${o.rangeSeconds}&step_seconds=${o.stepSeconds}`
+          ),
+        () => ({ series: [] })
+      );
+    },
+    llmTokenVolumeSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          http(
+            'GET',
+            `/api/metrics/llm-throughput/trend?metric=volume&range_seconds=${o.rangeSeconds}&step_seconds=${o.stepSeconds}`
+          ),
+        () => ({ series: [] })
+      );
+    },
 
     // ── Cofounder chat (poindexter#948; backend P1 = #947) ────
     // Live shapes mirror routes/chat_routes.py exactly; mock rides

@@ -96,6 +96,11 @@ DEFAULTS: dict[str, str] = {
     # compact so the SYSTEM PULSE band stays a glance, not a scrolling log — the
     # trail is the band's height driver when the live columns are idle.
     "live_activity_recent_limit": "8",
+    # Series cap for the console's Model-throughput History cards
+    # (GET /api/metrics/llm-throughput/trend): only the top-N models by
+    # output-token volume in the window get a line, keeping the chart a
+    # glance. The Grafana Model Throughput row carries the uncapped table.
+    "llm_throughput_trend_max_models": "6",
     # ----- Cofounder console chat (poindexter#947 P1) -----
     # Master switch for the /api/chat conversation surface. Ships off; the
     # operator flips it once a tool-capable provider is configured for the
@@ -4506,6 +4511,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'live_activity_heartbeat_seconds': {'value_type': 'integer'},
     'live_activity_reaper_seconds': {'owner': 'reap_stale_activity', 'value_type': 'integer'},
     'live_activity_recent_limit': {'owner': 'activity_routes', 'value_type': 'integer'},
+    'llm_throughput_trend_max_models': {'owner': 'metrics_routes', 'value_type': 'integer'},
     'local_llm_api_url': {'value_type': 'url'},
     'max_approval_queue': {'owner': 'pipeline_throttle', 'value_type': 'integer'},
     'max_log_backup_count': {'value_type': 'integer'},

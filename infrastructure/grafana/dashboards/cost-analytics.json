@@ -1459,6 +1459,306 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "id": 220,
+      "title": "Model Throughput — tokens & speed",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 120
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 221,
+      "title": "Output tok/s by model (effective — wall-clock)",
+      "description": "Effective generation speed: SUM(output_tokens)/SUM(duration_ms) per bucket, per model. Wall-clock call time, so prompt processing and in-call queueing count — short-output QA verdict calls read slower than raw decode speed. This is the throughput the pipeline experiences. ollama/-prefixed and bare spellings of the same model are merged. Console mirror: History → Model throughput (tok/s).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 121
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS metric, SUM(output_tokens)::float / NULLIF(SUM(duration_ms) / 1000.0, 0) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 222,
+      "title": "Output tokens by model (hourly)",
+      "description": "Generation volume: output tokens produced per hour, per model — how much LLM work the pipeline is actually doing, and which model is doing it.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 121
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["mean", "lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS metric, SUM(output_tokens) AS value FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 223,
+      "title": "Eff tok/s (window)",
+      "description": "All-model effective output tokens/sec across the dashboard window (total output tokens / total call seconds).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 0,
+        "y": 130
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-blue",
+            "mode": "fixed"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT ROUND(SUM(output_tokens)::numeric / NULLIF(SUM(duration_ms) / 1000.0, 0), 1) AS \"tok/s\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 224,
+      "title": "Output tokens (window)",
+      "description": "Total output tokens generated in the dashboard window (successful LLM inference calls).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 4,
+        "y": 130
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-blue",
+            "mode": "fixed"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(output_tokens), 0) AS \"tokens\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 225,
+      "title": "LLM calls (window)",
+      "description": "Successful LLM inference calls in the dashboard window (token-bearing cost_logs rows; media/publish rows excluded).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 8,
+        "y": 130
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "dark-blue",
+            "mode": "fixed"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"calls\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "id": 226,
+      "title": "Model throughput detail (window)",
+      "description": "Uncapped per-model breakdown: call count, output-token volume, avg + p95 wall-clock call seconds, and effective output tok/s. The console History cards cap to the top-N models (app_settings.llm_throughput_trend_max_models); this table is the full list.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 130
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN model LIKE 'ollama/%' THEN substr(model, 8) ELSE model END AS \"Model\", COUNT(*) AS \"Calls\", SUM(output_tokens) AS \"Out tok\", ROUND(AVG(duration_ms) / 1000.0, 1) AS \"Avg s\", ROUND((percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) / 1000.0)::numeric, 1) AS \"p95 s\", ROUND(SUM(output_tokens)::numeric / NULLIF(SUM(duration_ms) / 1000.0, 0), 1) AS \"Eff tok/s\" FROM cost_logs WHERE $__timeFilter(created_at) AND cost_type = 'inference' AND output_tokens > 0 AND duration_ms > 0 AND success GROUP BY 1 ORDER BY 3 DESC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "5m",

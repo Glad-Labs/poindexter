@@ -694,4 +694,22 @@ module.exports = [
       query: { range_seconds: 3600, step_seconds: 15 },
     },
   },
+  {
+    name: 'llmThroughputSeries',
+    invoke: (api) => api.llmThroughputSeries('1h'),
+    request: {
+      method: 'GET',
+      path: '/api/metrics/llm-throughput/trend',
+      query: { metric: 'speed', range_seconds: 3600, step_seconds: 15 },
+    },
+  },
+  {
+    name: 'llmTokenVolumeSeries',
+    invoke: (api) => api.llmTokenVolumeSeries('1h'),
+    request: {
+      method: 'GET',
+      path: '/api/metrics/llm-throughput/trend',
+      query: { metric: 'volume', range_seconds: 3600, step_seconds: 15 },
+    },
+  },
 ];
