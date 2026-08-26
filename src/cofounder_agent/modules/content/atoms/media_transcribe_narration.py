@@ -91,6 +91,23 @@ def _resolve_min_cue_seconds(site_config: Any) -> float:
         return _DEFAULT_MIN_CUE_SECONDS
 
 
+# How far a cue's on-screen start LEADS its first word's speech onset.
+# Captions appearing exactly at word onset read late; conventional subtitling
+# leads by ~100-200ms. Applied only on the word-timestamp retiming path.
+_DEFAULT_CUE_LEAD_MS = 120
+
+
+def _resolve_cue_lead_s(site_config: Any) -> float:
+    """Cue display lead in seconds (``media.caption.cue_lead_ms``, clamped)."""
+    ms = _DEFAULT_CUE_LEAD_MS
+    if site_config is not None:
+        try:
+            ms = int(site_config.get("media.caption.cue_lead_ms", _DEFAULT_CUE_LEAD_MS))
+        except (TypeError, ValueError):
+            ms = _DEFAULT_CUE_LEAD_MS
+    return min(max(ms, 0), 1000) / 1000.0
+
+
 ATOM_META = AtomMeta(
     name="media.transcribe_narration",
     type="atom",
@@ -188,7 +205,13 @@ async def _transcribe_one(
 
     try:
         provider = get_caption_provider(site_config)
-        result = await provider.transcribe(audio_path=audio_path, task_id=task_id)
+        # granularity="word": word-level timestamps are the ground truth the
+        # display-cue retiming anchors to (2026-08-26 — interpolated cue
+        # windows lagged the voice). Providers that ignore the kwarg simply
+        # return no words and everything stays segment-timed.
+        result = await provider.transcribe(
+            audio_path=audio_path, task_id=task_id, granularity="word",
+        )
     except Exception as exc:  # noqa: BLE001 — a caption failure must not halt the graph
         logger.exception(
             "[media.transcribe_narration] task=%s lane=%s transcribe raised: %s",
@@ -285,10 +308,7 @@ async def _transcribe_one(
     # segments, so QA compares speech, not display formatting.
     max_cue_words = _resolve_max_cue_words(site_config, label)
     if max_cue_words > 0 and display_segments:
-        from services.caption_align import (
-            segments_to_srt,
-            split_segments_for_display,
-        )
+        from services.caption_align import split_segments_for_display
 
         chunked = split_segments_for_display(
             display_segments,
@@ -296,15 +316,39 @@ async def _transcribe_one(
             min_cue_seconds=_resolve_min_cue_seconds(site_config),
         )
         if len(chunked) != len(display_segments):
-            rebuilt = segments_to_srt(chunked)
-            if rebuilt:
-                srt_text = rebuilt
-                logger.info(
-                    "[media.transcribe_narration] task=%s lane=%s split %d "
-                    "segment(s) into %d display cue(s) (max %d words/cue)",
-                    task_id, label, len(display_segments), len(chunked),
-                    max_cue_words,
-                )
+            logger.info(
+                "[media.transcribe_narration] task=%s lane=%s split %d "
+                "segment(s) into %d display cue(s) (max %d words/cue)",
+                task_id, label, len(display_segments), len(chunked),
+                max_cue_words,
+            )
+        display_segments = chunked
+
+    # Word-timestamp retiming (2026-08-26): the chunked cues carry the right
+    # text but interpolated windows — the voice ran ahead of the text. When
+    # the ASR returned word timings, snap every cue's window to its first
+    # matched word's onset (minus the display lead) / last matched word's
+    # offset. Text and chunking are untouched; only WHEN each cue shows.
+    if result.words and display_segments:
+        from services.caption_align import retime_cues_to_words
+
+        display_segments = retime_cues_to_words(
+            display_segments,
+            list(result.words),
+            lead_s=_resolve_cue_lead_s(site_config),
+        )
+        logger.info(
+            "[media.transcribe_narration] task=%s lane=%s retimed %d cue(s) "
+            "onto %d word timestamps",
+            task_id, label, len(display_segments), len(result.words),
+        )
+
+    if display_segments:
+        from services.caption_align import segments_to_srt
+
+        rebuilt = segments_to_srt(display_segments)
+        if rebuilt:
+            srt_text = rebuilt
 
     srt_path = f"{tempfile.gettempdir()}/captions_{task_id}_{label}.srt"
     try:

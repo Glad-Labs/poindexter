@@ -896,6 +896,13 @@ class FFmpegLocalCompositor:
                 normalized_paths: list[str] = []
                 for idx, scene in enumerate(request.scenes):
                     norm_path = os.path.join(tmpdir, f"scene_{idx:04d}.mp4")
+                    # Per-scene Ken Burns override wins over the global switch
+                    # — the end-card pins itself to a locked-off hold
+                    # (getattr: older scene doubles predate the field).
+                    scene_kb = getattr(scene, "ken_burns", None)
+                    scene_kb_enabled = (
+                        scene_kb if scene_kb is not None else ken_burns_enabled
+                    )
                     cmd = _build_normalize_cmd(
                         binary=binary,
                         scene=scene,
@@ -909,7 +916,7 @@ class FFmpegLocalCompositor:
                         audio_bitrate=audio_bitrate,
                         loglevel=loglevel,
                         hwaccel=hwaccel,
-                        ken_burns_enabled=ken_burns_enabled,
+                        ken_burns_enabled=scene_kb_enabled,
                         ken_burns_zoom=ken_burns_zoom,
                         ken_burns_zoom_per_s=ken_burns_zoom_per_s,
                         scene_idx=idx,

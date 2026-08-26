@@ -64,6 +64,23 @@ class CaptionSegment:
 
 
 @dataclass
+class CaptionWord:
+    """One word with its exact speech window (2026-08-26).
+
+    Word-level timestamps are the ground truth the display-cue retiming
+    rides on: chunked cues interpolated inside segment windows drifted
+    enough that the voice ran ahead of the text (operator report). A
+    provider that can't produce word timings simply leaves
+    :attr:`CaptionResult.words` empty and callers keep segment-level
+    behavior.
+    """
+
+    start_s: float
+    end_s: float
+    text: str
+
+
+@dataclass
 class CaptionResult:
     """Outcome of one transcription job.
 
@@ -94,6 +111,10 @@ class CaptionResult:
 
     success: bool
     segments: list[CaptionSegment] = field(default_factory=list)
+    # Word-level timings when the provider was asked for (and honors)
+    # granularity="word"; empty otherwise. Segments stay populated either
+    # way — words AUGMENT, never replace.
+    words: list[CaptionWord] = field(default_factory=list)
     language: str = ""
     srt_text: str = ""
     vtt_text: str = ""

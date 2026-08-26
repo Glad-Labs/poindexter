@@ -63,12 +63,20 @@ class CompositionScene:
             caption during this scene. Use a CaptionProvider for
             full SRT/VTT timing — this field is for one-off
             overlays.
+        ken_burns: Per-scene Ken Burns override for still images.
+            ``None`` (default) follows the compositor's global
+            ``ken_burns_enabled`` setting; ``False`` forces a
+            locked-off static hold (the branded end-card — a
+            drifting brand frame reads as a mistake, 2026-08-26
+            operator feedback); ``True`` forces motion on even
+            when the global is off.
     """
 
     clip_path: str
     narration_path: str | None = None
     duration_s: float = 0.0
     caption_text: str = ""
+    ken_burns: bool | None = None
 
 
 @dataclass

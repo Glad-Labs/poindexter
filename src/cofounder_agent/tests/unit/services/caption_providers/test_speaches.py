@@ -343,3 +343,35 @@ class TestSrtHelpers:
         from services.caption_providers.speaches import _segments_to_srt
 
         assert _segments_to_srt([]) == ""
+
+
+class TestWordTimestamps:
+    """Word-granularity parsing (2026-08-26): words AUGMENT segments."""
+
+    def test_parse_words_alongside_segments(self):
+        from services.caption_providers.speaches import _parse_verbose_json
+
+        segments, words, language = _parse_verbose_json({
+            "language": "en",
+            "segments": [{"start": 0.0, "end": 2.0, "text": "hello world"}],
+            "words": [
+                {"word": "hello", "start": 0.1, "end": 0.5},
+                {"word": "world", "start": 0.5, "end": 0.9},
+                {"word": "", "start": 1.0, "end": 1.2},        # dropped: empty
+                {"word": "late", "start": 2.0},                 # dropped: no end
+            ],
+        })
+        assert len(segments) == 1
+        assert [(w.text, w.start_s, w.end_s) for w in words] == [
+            ("hello", 0.1, 0.5), ("world", 0.5, 0.9),
+        ]
+        assert language == "en"
+
+    def test_missing_words_key_yields_empty(self):
+        from services.caption_providers.speaches import _parse_verbose_json
+
+        segments, words, _ = _parse_verbose_json({
+            "segments": [{"start": 0.0, "end": 1.0, "text": "hi"}],
+        })
+        assert len(segments) == 1
+        assert words == []

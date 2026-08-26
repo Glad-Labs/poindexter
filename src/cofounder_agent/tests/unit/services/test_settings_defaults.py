@@ -988,6 +988,7 @@ def test_caption_display_defaults_seeded():
     assert DEFAULTS["media.caption.short_max_cue_words"] == "5"
     assert DEFAULTS["media.caption.long_max_cue_words"] == "14"
     assert DEFAULTS["media.caption.min_cue_seconds"] == "0.6"
+    assert DEFAULTS["media.caption.cue_lead_ms"] == "120"
     assert DEFAULTS[
         "plugin.media_compositor.ffmpeg_local.caption_font_height_pct"
     ] == "4.5"
@@ -1003,6 +1004,7 @@ def test_caption_display_defaults_seeded():
 
     assert METADATA["media.caption.short_max_cue_words"]["value_type"] == "integer"
     assert METADATA["media.caption.min_cue_seconds"]["value_type"] == "float"
+    assert METADATA["media.caption.cue_lead_ms"]["value_type"] == "integer"
     assert METADATA[
         "plugin.media_compositor.ffmpeg_local.caption_font_height_pct"
     ]["value_type"] == "float"

@@ -38,7 +38,7 @@ from typing import Any, Literal
 
 import httpx
 
-from plugins.caption_provider import CaptionResult, CaptionSegment
+from plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
 from services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)
@@ -78,12 +78,17 @@ def _segments_to_srt(segments: list[CaptionSegment]) -> str:
     return "\n".join(blocks)
 
 
-def _parse_verbose_json(payload: dict[str, Any]) -> tuple[list[CaptionSegment], str]:
-    """Parse an OpenAI ``verbose_json`` transcription into segments.
+def _parse_verbose_json(
+    payload: dict[str, Any],
+) -> tuple[list[CaptionSegment], list[CaptionWord], str]:
+    """Parse an OpenAI ``verbose_json`` transcription into segments + words.
 
     faster-whisper / Speaches emit ``{"language", "segments": [{"start",
-    "end", "text"}, ...]}`` with float seconds. Zero/negative-duration and
-    empty-text segments are dropped per the Protocol contract.
+    "end", "text"}, ...]}`` with float seconds, plus a top-level ``words``
+    list (``{"word", "start", "end"}``) when word granularity was requested.
+    Zero/negative-duration and empty-text entries are dropped per the
+    Protocol contract; a missing/empty ``words`` list simply yields ``[]``
+    (segment-only providers and older Speaches builds keep working).
     """
     language = str(payload.get("language") or "")
     segments: list[CaptionSegment] = []
@@ -100,7 +105,19 @@ def _parse_verbose_json(payload: dict[str, Any]) -> tuple[list[CaptionSegment], 
         if not text:
             continue
         segments.append(CaptionSegment(start_s=start_s, end_s=end_s, text=text))
-    return segments, language
+    words: list[CaptionWord] = []
+    for entry in payload.get("words") or []:
+        start = entry.get("start")
+        end = entry.get("end")
+        text = (entry.get("word") or entry.get("text") or "").strip()
+        if start is None or end is None or not text:
+            continue
+        start_s = float(start)
+        end_s = float(end)
+        if end_s < start_s:
+            continue
+        words.append(CaptionWord(start_s=start_s, end_s=end_s, text=text))
+    return segments, words, language
 
 
 class SpeachesCaptionProvider:
@@ -163,12 +180,16 @@ class SpeachesCaptionProvider:
         timeout = float(self._get("timeout_seconds", _DEFAULT_TIMEOUT) or _DEFAULT_TIMEOUT)
         url = f"{base_url}/audio/transcriptions"
 
-        data: dict[str, str] = {"model": model, "response_format": "verbose_json"}
+        data: dict[str, Any] = {"model": model, "response_format": "verbose_json"}
         if language_hint:
             data["language"] = language_hint
         if granularity == "word":
-            # OpenAI-compatible word timestamps; Speaches honours the list form.
-            data["timestamp_granularities[]"] = "word"
+            # OpenAI-compatible word timestamps; Speaches honours the list
+            # form, and httpx encodes the list as repeated keys. Ask for BOTH
+            # granularities — words AUGMENT segments (the OpenAI contract
+            # only includes `segments` when segment granularity is asked
+            # for, and every downstream consumer still reads segments).
+            data["timestamp_granularities[]"] = ["word", "segment"]
 
         # Bias the decoder toward brand / proper-noun vocabulary. Speaches
         # forwards ``prompt`` as faster-whisper's ``initial_prompt`` — a soft
@@ -190,6 +211,7 @@ class SpeachesCaptionProvider:
         success = True
         error: str | None = None
         segments: list[CaptionSegment] = []
+        words: list[CaptionWord] = []
         language = ""
         srt_text = ""
 
@@ -208,7 +230,7 @@ class SpeachesCaptionProvider:
                 )
             else:
                 payload = resp.json()
-                segments, language = _parse_verbose_json(payload)
+                segments, words, language = _parse_verbose_json(payload)
                 srt_text = _segments_to_srt(segments)
                 if not segments:
                     success = False
@@ -239,6 +261,7 @@ class SpeachesCaptionProvider:
         return CaptionResult(
             success=success,
             segments=segments,
+            words=words,
             language=language,
             srt_text=srt_text,
             vtt_text="",

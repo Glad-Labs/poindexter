@@ -66,7 +66,12 @@ async def test_transcribe_one_writes_lane_srt():
     assert srt and os.path.exists(srt)
     assert srt.endswith("captions_t-success_long.srt")
     with open(srt, encoding="utf-8") as f:
-        assert f.read() == "SRT-DOC"
+        content = f.read()
+    # The SRT is rebuilt from the (aligned/chunked/retimed) display segments
+    # since 2026-08-26 — identical formatting to the provider document, so
+    # assert the cue content rather than byte-equality with the stub string.
+    assert "hello" in content and "world" in content
+    assert "00:00:00,000 --> 00:00:01,000" in content
     assert provider.transcribe.await_args.kwargs["audio_path"] == "/tmp/narration.wav"
 
 
@@ -283,7 +288,7 @@ def _aligned_provider(monkeypatch, segments):
     )
 
     class _P:
-        async def transcribe(self, *, audio_path, task_id):
+        async def transcribe(self, *, audio_path, task_id, **kwargs):
             return result
 
     monkeypatch.setattr(
@@ -475,3 +480,46 @@ async def test_chunking_composes_with_alignment(tmp_path, monkeypatch):
     assert "Phi-4" in content and "PHY" not in content
     assert "gate" in content and "gait" not in content
     assert "\n3\n" in content  # 13 words / 5-word budget → 3 cues
+
+
+@pytest.mark.asyncio
+async def test_word_timestamps_retime_display_cues(tmp_path, monkeypatch):
+    """Word timings snap cue starts to real speech (2026-08-26 lag report):
+    the provider's segment says the text spans 0-8s, but the words start at
+    2.0 — the burned cue must start at the word onset minus the lead, not at
+    the interpolated segment position."""
+    from plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
+
+    audio = tmp_path / "narration.mp3"
+    audio.write_bytes(b"x")
+    text = "one two three four five six seven eight nine ten"
+    result = CaptionResult(
+        success=True,
+        segments=[CaptionSegment(start_s=0.0, end_s=8.0, text=text)],
+        words=[
+            CaptionWord(start_s=2.0 + i * 0.5, end_s=2.4 + i * 0.5, text=w)
+            for i, w in enumerate(text.split())
+        ],
+        srt_text="1\n00:00:00,000 --> 00:00:08,000\n" + text + "\n",
+    )
+
+    class _P:
+        async def transcribe(self, *, audio_path, task_id, **kwargs):
+            assert kwargs.get("granularity") == "word"
+            return result
+
+    monkeypatch.setattr(
+        media_transcribe_narration, "get_caption_provider", lambda sc: _P(),
+    )
+    srt_path = await media_transcribe_narration._transcribe_one(
+        audio_path=str(audio), script=text, caption_text="",
+        task_id="t-retime", label="short", site_config=None,
+    )
+    content = open(srt_path, encoding="utf-8").read()
+    # 10 words → 2 cues of 5; cue 1 starts at word onset 2.0 − 0.12 lead.
+    assert "00:00:01,880 --> " in content
+    # Cue 2's first word ("six") starts at 4.5 → 4.38 with lead, but cue 1
+    # ends at word-5's offset 4.40 and the lead never eats the previous cue.
+    assert "00:00:04,400 --> " in content
+    # The interpolated 0.0 start is gone.
+    assert "00:00:00,000 --> " not in content

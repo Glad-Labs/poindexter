@@ -11,6 +11,7 @@ from __future__ import annotations
 from plugins.caption_provider import CaptionSegment
 from services.caption_align import (
     align_script_to_segments,
+    retime_cues_to_words,
     segments_to_srt,
     split_segments_for_display,
 )
@@ -178,3 +179,70 @@ class TestSplitSegmentsForDisplay:
         assert "1\n00:00:00,000 --> " in srt
         assert "one two three four five" in srt
         assert "six seven eight nine ten" in srt
+
+
+class TestRetimeCuesToWords:
+    """Word-timestamp retiming (2026-08-26): cue windows snap to real speech
+    onsets so the voice never runs ahead of the text."""
+
+    class _W:
+        def __init__(self, start, end, text):
+            self.start_s, self.end_s, self.text = start, end, text
+
+    def _words(self, spec):
+        # spec: [(start, end, "word"), ...]
+        return [self._W(*w) for w in spec]
+
+    def test_cues_snap_to_word_onsets_with_lead(self):
+        cues = [
+            _seg(0.0, 2.5, "hello there world"),
+            _seg(2.5, 5.0, "second cue here"),
+        ]
+        words = self._words([
+            (0.4, 0.8, "hello"), (0.8, 1.2, "there"), (1.2, 1.6, "world"),
+            (3.0, 3.4, "second"), (3.4, 3.8, "cue"), (3.8, 4.2, "here"),
+        ])
+        out = retime_cues_to_words(cues, words, lead_s=0.12)
+        assert out[0].start_s == 0.28  # 0.4 − 0.12 lead
+        assert out[0].end_s == 1.6
+        assert out[1].start_s == 2.88  # 3.0 − 0.12 — the interpolated 2.5 lag fixed
+        assert out[1].end_s == 4.2
+
+    def test_lead_never_eats_previous_cue(self):
+        cues = [_seg(0.0, 1.0, "one"), _seg(1.0, 2.0, "two")]
+        words = self._words([(0.5, 1.4, "one"), (1.45, 2.0, "two")])
+        out = retime_cues_to_words(cues, words, lead_s=0.5)
+        assert out[1].start_s >= out[0].end_s  # clamped to previous end
+
+    def test_homophone_asr_still_anchors(self):
+        # Cue text is the clean script ("gate"); ASR word is "gait" — the
+        # normalized matcher won't pair those two tokens, but the cue's other
+        # words anchor it.
+        cues = [_seg(0.0, 3.0, "the gate holds fast")]
+        words = self._words([
+            (1.0, 1.2, "the"), (1.2, 1.5, "gait"),
+            (1.5, 1.9, "holds"), (1.9, 2.3, "fast"),
+        ])
+        out = retime_cues_to_words(cues, words, lead_s=0.0)
+        assert out[0].start_s == 1.0
+        assert out[0].end_s == 2.3
+
+    def test_unmatched_cue_keeps_window_monotone(self):
+        cues = [
+            _seg(0.0, 2.0, "alpha beta"),
+            _seg(2.0, 4.0, "completely different text"),
+        ]
+        words = self._words([(0.5, 1.0, "alpha"), (1.0, 1.5, "beta")])
+        out = retime_cues_to_words(cues, words, lead_s=0.1)
+        assert out[1].start_s >= out[0].end_s
+        assert out[1].end_s > out[1].start_s
+
+    def test_no_words_returns_cues_unchanged(self):
+        cues = [_seg(0.0, 2.0, "hello")]
+        assert retime_cues_to_words(cues, [], lead_s=0.12) is cues
+
+    def test_minimum_window_enforced(self):
+        cues = [_seg(0.0, 5.0, "quick")]
+        words = self._words([(1.0, 1.05, "quick")])
+        out = retime_cues_to_words(cues, words, lead_s=0.0)
+        assert out[0].end_s - out[0].start_s >= 0.3

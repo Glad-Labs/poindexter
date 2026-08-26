@@ -2510,6 +2510,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # segment's chunk count rather than emit a cue shorter than this
     # (sub-second flashing text is worse than an over-full cue).
     'media.caption.min_cue_seconds': '0.6',
+    # How far a cue's on-screen start LEADS its first word's speech onset
+    # (word-timestamp retiming path, 2026-08-26 — interpolated cue windows
+    # lagged the voice). Conventional subtitling leads by ~100-200ms; text
+    # appearing exactly at word onset still reads late. 0 disables the lead.
+    'media.caption.cue_lead_ms': '120',
     # Caption burn styling (FFmpegLocalCompositor). Glyph height as a PERCENT
     # of frame height — resolution-independent: 4.5 ⇒ ≈86px lines on a
     # 1080×1920 short, ≈49px on 16:9 1080p. (ffmpeg's subtitles filter
@@ -4574,6 +4579,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.caption.short_max_cue_words': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
     'media.caption.long_max_cue_words': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
     'media.caption.min_cue_seconds': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
+    'media.caption.cue_lead_ms': {'owner': 'media_transcribe_narration', 'value_type': 'integer'},
     'plugin.media_compositor.ffmpeg_local.caption_font_height_pct': {
         'owner': 'media_compositors', 'value_type': 'float',
     },

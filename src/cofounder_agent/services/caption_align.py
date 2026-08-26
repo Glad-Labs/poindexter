@@ -30,6 +30,7 @@ import difflib
 import math
 import re
 from dataclasses import replace
+from typing import Any
 
 from plugins.caption_provider import CaptionSegment
 
@@ -183,6 +184,70 @@ def split_segments_for_display(
     return out
 
 
+def retime_cues_to_words(
+    cues: list[CaptionSegment],
+    words: list[Any],
+    *,
+    lead_s: float = 0.12,
+) -> list[CaptionSegment]:
+    """Snap display-cue windows onto real word-level speech timings.
+
+    The display cues carry the right TEXT (aligned script, chunked short) but
+    their windows were interpolated inside Whisper segment spans — and
+    interpolation drifted enough that the voice ran ahead of the text
+    (2026-08-26 operator report). When the ASR provider returns word-level
+    timestamps, each cue's window is re-anchored to reality: start = its
+    first matched word's onset minus ``lead_s`` (captions conventionally
+    LEAD speech by a beat — text appearing exactly at the word's onset still
+    reads late), end = its last matched word's offset.
+
+    Matching is the same normalized-token SequenceMatcher the aligner uses,
+    so homophones/phonetic ASR spellings still anchor. A cue with no matched
+    token keeps its interpolated window. Output windows are clamped
+    monotone + non-overlapping (a lead never eats the previous cue), and
+    every cue keeps a minimum visible window. ``words`` items need
+    ``start_s`` / ``end_s`` / ``text`` attributes (``CaptionWord``); an
+    empty list returns the cues untouched.
+    """
+    if not cues or not words:
+        return cues
+
+    cue_tokens: list[str] = []
+    cue_spans: list[tuple[int, int]] = []  # [start, end) into cue_tokens per cue
+    for cue in cues:
+        start = len(cue_tokens)
+        cue_tokens.extend(_norm_token(t) for t in (cue.text or "").split())
+        cue_spans.append((start, len(cue_tokens)))
+    word_tokens = [_norm_token(getattr(w, "text", "") or "") for w in words]
+    if not cue_tokens or not word_tokens:
+        return cues
+
+    matcher = difflib.SequenceMatcher(
+        None, cue_tokens, word_tokens, autojunk=False,
+    )
+    # cue-token index → word index, exact inside matching blocks.
+    token_to_word: dict[int, int] = {}
+    for block in matcher.get_matching_blocks():
+        for offset in range(block.size):
+            token_to_word[block.a + offset] = block.b + offset
+
+    out: list[CaptionSegment] = []
+    prev_end = 0.0
+    min_window_s = 0.3
+    for (a, b), cue in zip(cue_spans, cues, strict=True):
+        matched = [token_to_word[i] for i in range(a, b) if i in token_to_word]
+        if matched:
+            start = float(words[matched[0]].start_s) - max(0.0, lead_s)
+            end = float(words[matched[-1]].end_s)
+        else:
+            start, end = float(cue.start_s), float(cue.end_s)
+        start = max(prev_end, start, 0.0)
+        end = max(end, start + min_window_s)
+        out.append(replace(cue, start_s=round(start, 3), end_s=round(end, 3)))
+        prev_end = end
+    return out
+
+
 def segments_to_srt(segments: list[CaptionSegment]) -> str:
     """SRT document from segments — same format the caption providers emit."""
     if not segments:
@@ -206,6 +271,7 @@ def segments_to_srt(segments: list[CaptionSegment]) -> str:
 
 __all__ = [
     "align_script_to_segments",
+    "retime_cues_to_words",
     "segments_to_srt",
     "split_segments_for_display",
 ]

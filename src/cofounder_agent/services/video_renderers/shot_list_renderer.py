@@ -2771,6 +2771,10 @@ async def render_shot_list(
                             clip_path=card_path,
                             narration_path=None,
                             duration_s=card_s,
+                            # A locked-off brand frame — a Ken Burns drift on
+                            # the logo reads as a mistake (operator feedback
+                            # 2026-08-26).
+                            ken_burns=False,
                         )
                         logger.info(
                             "[SHOT_LIST] end-card: content fitted to %.1fs, "
