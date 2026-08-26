@@ -54,6 +54,11 @@ DATABASE_SERVICE_AVAILABLE = True
 
 logger = get_logger(__name__)
 
+# Strong references to lifespan fire-and-forget tasks (reranker warmup).
+# asyncio holds tasks only weakly; without this a pending task can be
+# garbage-collected before it runs (RUF006 / asyncio.create_task docs).
+_LIFESPAN_TASKS: set = set()
+
 
 # ============================================================================
 # LIFESPAN: Application Startup and Shutdown
@@ -745,7 +750,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                             "[LIFESPAN] Cross-encoder warmup failed (non-critical): %s",
                             warm_err,
                         )
-                asyncio.create_task(_warm_reranker())
+                warm_task = asyncio.create_task(_warm_reranker())
+                _LIFESPAN_TASKS.add(warm_task)
+                warm_task.add_done_callback(_LIFESPAN_TASKS.discard)
         except Exception as e:
             logger.warning("[LIFESPAN] reranker warmup dispatch failed: %s", e)
 

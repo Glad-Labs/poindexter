@@ -99,6 +99,13 @@ DEFAULT_NEGATIVE = (
 )
 
 
+# Strong references to in-flight style-audit tasks. asyncio holds tasks only
+# weakly; without this set a pending fire-and-forget audit write can be
+# garbage-collected before it runs (RUF006 /
+# https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task).
+_AUDIT_TASKS: set[asyncio.Task] = set()
+
+
 # ---------------------------------------------------------------------------
 # Render budget — the node timeout MUST be able to contain it
 # ---------------------------------------------------------------------------
@@ -436,10 +443,14 @@ class SourceFeaturedImageStage:
                 # The downstream API expects a sync callable. Schedule the
                 # audit_log emit as a fire-and-forget asyncio task so the
                 # render path stays non-blocking.
-                import asyncio
                 updates["image_style"] = s
                 try:
-                    asyncio.create_task(_on_style(s))
+                    task = asyncio.create_task(_on_style(s))
+                    # Strong ref until done: the stage frame may return
+                    # before the audit write lands, and a bare create_task
+                    # is only weakly referenced by the loop (RUF006).
+                    _AUDIT_TASKS.add(task)
+                    task.add_done_callback(_AUDIT_TASKS.discard)
                 except RuntimeError:
                     # silent-ok: no running event loop (tests / bootstrap) — the
                     # style is already recorded in updates[]; only the async
