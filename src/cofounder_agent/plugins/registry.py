@@ -795,6 +795,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.schedule_social_drafts",
             "ScheduleSocialDraftsJob",
         ),
+        # Postiz accepts an enqueue (HTTP 200) before the platform publish
+        # actually runs — a draft can sit 'posted' on our side while the
+        # tweet never existed (X 402 credits-depleted, 2026-08-26). This job
+        # closes the loop: ERROR → demote to failed + finding; PUBLISHED →
+        # stamp the permalink.
+        (
+            "jobs",
+            "services.jobs.sync_postiz_delivery_state",
+            "SyncPostizDeliveryStateJob",
+        ),
         # SyncProSubscriptionsJob — pay→deliver chain (glad-labs-stack#3216):
         # polls Lemon Squeezy and reconciles GitHub collaborator access on
         # the Pro deliverable repo. No-op until pro_delivery_enabled=true.

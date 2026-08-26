@@ -211,5 +211,16 @@ or a missed am/pm, and posting immediately is the wrong recovery from a typo.
 - `services/social_drafts.py` — the service every surface delegates to
 - `services/jobs/schedule_social_drafts.py` — the sweep
 - [`social_poster.md`](services/social_poster.md) — how the copy is generated
+- `services/jobs/sync_postiz_delivery_state.py` — the delivery-state loop
+  closer. A draft goes `posted` when Postiz ACCEPTS the enqueue, but the
+  platform publish runs async and can still fail (X 402 credits-depleted,
+  2026-08-26: five tweets never existed while our rows read `posted`).
+  Every 15 min this job re-reads Postiz state for recent `posted` drafts:
+  `ERROR` → demote to `failed` + a `social_post_delivery_failed`
+  finding (Discord); `PUBLISHED` → stamp the platform permalink into
+  `platform_config.release_url` and stop re-checking.
 - `brain/postiz_queue_watch.py` — detects Postiz's own Temporal queue wedging
-  after we hand a post off
+  after we hand a post off. **QUEUE-stuck only**: a restart heals a wedged
+  queue, but a terminal `ERROR` (platform rejection) survives any restart —
+  those belong to the sync job above. The pre-split probe counted ERROR too
+  and spent 2026-08-21→26 in a permanent escalate loop against five 402s.

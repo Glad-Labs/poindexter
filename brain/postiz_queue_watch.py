@@ -9,10 +9,13 @@ failure mode was "notice days later that nothing went out".
 
 Detection is Postiz-side (the DB can't see it): each cycle queries
 ``GET {postiz_api_url}/public/v1/posts?startDate=...&endDate=...`` and counts
-posts whose ``state`` is ``QUEUE`` or ``ERROR`` with a ``publishDate`` more
-than ``postiz_queue_overdue_minutes`` in the past. An unreachable API while
+posts whose ``state`` is ``QUEUE`` with a ``publishDate`` more than
+``postiz_queue_overdue_minutes`` in the past. An unreachable API while
 ``postiz_api_key`` IS configured counts as wedged too (container down /
-hung) — same restart fixes both.
+hung) — same restart fixes both. Terminal ``ERROR`` posts (platform
+rejections, e.g. an X 402 credits-depleted) are deliberately NOT wedge
+signals — a restart can't heal them; the worker's
+``SyncPostizDeliveryStateJob`` owns those (see ``_STUCK_STATES``).
 
 Per cycle (mirrors ``brain/auto_embed_watch.py``):
 1. ``postiz_api_key`` unset => ``unconfigured`` no-op (consumer installs and
@@ -78,8 +81,18 @@ _API_TIMEOUT_SECONDS = 15
 _SCAN_WINDOW_DAYS = 7
 PROBE_INTERVAL_SECONDS = 300
 
-# Postiz post states that mean "accepted but not out the door".
-_STUCK_STATES = frozenset({"QUEUE", "ERROR"})
+# Postiz post states that mean "accepted but not out the door" AND that a
+# container restart can heal. That is QUEUE only: ERROR is a TERMINAL
+# platform rejection (Postiz records a nonRetryable ApplicationFailure — the
+# post never leaves ERROR no matter how many restarts), so counting it as
+# "wedged" put the probe in a permanent escalate loop: five X 402
+# credits-depleted rejections kept the postiz_queue_wedged alert firing from
+# 2026-08-21 to 08-26, wrote an escalate audit row every 5 minutes, and
+# bounced the Postiz container twice per brain restart — none of which could
+# ever clear a 402. Terminal ERROR outcomes are owned by the worker's
+# SyncPostizDeliveryStateJob (demotes the draft to failed + emits a
+# social_post_delivery_failed finding).
+_STUCK_STATES = frozenset({"QUEUE"})
 
 # Module-level retry counter — persists across cycles so escalation fires
 # cumulatively, exactly like auto_embed_watch's _retry_count.
@@ -202,6 +215,20 @@ async def _overdue_queue_posts(
 
     posts = data.get("posts", []) if isinstance(data, dict) else []
     cutoff = now - timedelta(minutes=overdue_minutes)
+    overdue = _overdue_from_posts(posts, cutoff)
+    return {"overdue": len(overdue), "sample": overdue[:5]}
+
+
+def _overdue_from_posts(
+    posts: list[dict[str, Any]], cutoff: datetime
+) -> list[dict[str, Any]]:
+    """Filter a Postiz posts list down to restart-healable wedge candidates.
+
+    Pure so the state-classification is unit-testable: only ``_STUCK_STATES``
+    (QUEUE) past *cutoff* count — a terminal ``ERROR`` must never register as
+    a wedge (see the ``_STUCK_STATES`` comment for the 2026-08-21..26
+    escalate-loop that rule earned).
+    """
     overdue: list[dict[str, Any]] = []
     for p in posts:
         state = (p.get("state") or "").upper()
@@ -220,7 +247,7 @@ async def _overdue_queue_posts(
                 or integration.get("name"),
             }
         )
-    return {"overdue": len(overdue), "sample": overdue[:5]}
+    return overdue
 
 
 def _restart_postiz_container(container: str) -> tuple[bool, str]:
@@ -503,10 +530,10 @@ class PostizQueueWatchProbe:
 
     name: str = "postiz_queue_watch"
     description: str = (
-        "Watches Postiz for posts stuck in QUEUE/ERROR past their "
-        "publishDate (the Temporal-restart wedge); `docker restart`s "
-        "poindexter-postiz before paging, and emits postiz_queue_wedged "
-        "on escalate."
+        "Watches Postiz for posts stuck in QUEUE past their publishDate "
+        "(the Temporal-restart wedge); `docker restart`s poindexter-postiz "
+        "before paging, and emits postiz_queue_wedged on escalate. Terminal "
+        "ERROR posts belong to SyncPostizDeliveryStateJob, not this probe."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 

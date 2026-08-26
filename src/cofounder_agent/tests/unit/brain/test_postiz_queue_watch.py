@@ -250,6 +250,30 @@ def test_publish_date_parser_handles_postiz_iso_z():
     assert pz._parse_publish_date(None) is None
 
 
+def test_terminal_error_posts_are_not_wedge_signals():
+    """ERROR is a terminal platform rejection (e.g. X 402 credits depleted) —
+    a container restart can never heal it, so it must not count as wedged.
+    Counting it did exactly that from 2026-08-21 to 08-26: a permanently
+    firing postiz_queue_wedged alert, an escalate audit row every 5 minutes,
+    and pointless Postiz restarts. Only restart-healable QUEUE counts."""
+    from datetime import UTC, datetime, timedelta
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=30)
+    stale = (datetime.now(UTC) - timedelta(hours=3)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z"
+    )
+    posts = [
+        {"id": "err1", "state": "ERROR", "publishDate": stale,
+         "integration": {"providerIdentifier": "x"}},
+        {"id": "q1", "state": "QUEUE", "publishDate": stale,
+         "integration": {"providerIdentifier": "bluesky"}},
+        {"id": "pub1", "state": "PUBLISHED", "publishDate": stale,
+         "integration": {"providerIdentifier": "bluesky"}},
+    ]
+    overdue = pz._overdue_from_posts(posts, cutoff)
+    assert [p["id"] for p in overdue] == ["q1"]
+
+
 def test_escalate_detail_includes_sample_json():
     """The firing alert's description should name the stuck posts."""
     executed = []

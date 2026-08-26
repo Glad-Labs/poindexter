@@ -2804,6 +2804,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.pro_delivery_error.fallback': 'discord',
     'findings.pro_delivery_error.cooldown_minutes': '120',
     'findings.pro_delivery_error.min_severity': 'warn',
+    # A social promo whose Postiz enqueue was accepted but whose platform
+    # publish failed (SyncPostizDeliveryStateJob demotion). Routine-ops →
+    # Discord per feedback_telegram_vs_discord; cooldown 6h since a broken
+    # platform (e.g. X credits depleted) fails every fire until fixed.
+    'findings.social_post_delivery_failed.delivery': 'discord',
+    'findings.social_post_delivery_failed.fallback': 'log_only',
+    'findings.social_post_delivery_failed.cooldown_minutes': '360',
+    'findings.social_post_delivery_failed.min_severity': 'warn',
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',

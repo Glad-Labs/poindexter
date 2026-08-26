@@ -97,6 +97,30 @@ class PostizClient:
             logger.error("[PostizClient] create_post failed: %s", err)
             return {"success": False, "post_id": None, "error": err}
 
+    async def list_posts(self, start_iso: str, end_iso: str) -> list[dict[str, Any]]:
+        """List Postiz posts whose publishDate falls in [start, end].
+
+        ``GET /public/v1/posts`` — each entry carries ``id``, ``state``
+        (``QUEUE`` | ``PUBLISHED`` | ``ERROR`` | ``DRAFT``), ``releaseURL``,
+        ``content``, ``publishDate``, and ``integration``. This is the only
+        public read surface for delivery state (there is no single-post GET),
+        so callers window the query and match by id. Raises on HTTP failure
+        (callers surface the error; a delivery-state sync must not silently
+        report "all fine" on an unreachable Postiz — fail loud per
+        feedback_no_silent_defaults).
+        """
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(
+                f"{self._base}/public/v1/posts",
+                params={"startDate": start_iso, "endDate": end_iso},
+                headers=self._headers,
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            posts = data.get("posts", []) if isinstance(data, dict) else data
+            return posts if isinstance(posts, list) else []
+
     async def upload_from_url(self, video_url: str) -> str:
         """Upload a video from a URL to Postiz and return the upload ID.
 
