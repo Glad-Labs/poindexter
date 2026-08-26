@@ -16,6 +16,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 test.describe('Author Page', () => {
   test.beforeAll(async ({ request }) => {
+    // The gate protects LOCAL runs only: a dev-server page render fetches from
+    // the backend per request, so a half-up local stack would fail every test
+    // here for the wrong reason. Against an external already-running target
+    // (SKIP_SERVER_START — the weekly scheduled run against production) the
+    // pages are served by that target itself and the operator backend is not
+    // publicly reachable, so gating on localhost:8000 skipped the entire spec
+    // on every scheduled fire. There, an unreachable TARGET should fail loud.
+    if (process.env.SKIP_SERVER_START) return;
     try {
       const resp = await request.get(`${API_URL}/api/health`);
       if (!resp.ok()) test.skip(true, 'Backend API unavailable');
@@ -56,8 +64,14 @@ test.describe('Author Page', () => {
   }) => {
     await page.goto(`/author/${KNOWN_AUTHOR_ID}`);
     const articles = await page.locator('article').count();
+    // .first(): the empty-state copy ("NO ARTICLES YET" badge + "hasn't
+    // published anything yet" body) matches TWICE, and strict-mode
+    // isVisible() then THROWS — which the .catch turned into false, failing
+    // the test against a correctly-rendering page. The regex also names the
+    // page's real copy; the old one only knew phrasings the page never used.
     const hasEmptyState = await page
-      .locator('text=/no posts|no articles|check back/i')
+      .locator("text=/no posts|no articles|check back|hasn't published/i")
+      .first()
       .isVisible()
       .catch(() => false);
     expect(articles > 0 || hasEmptyState).toBeTruthy();

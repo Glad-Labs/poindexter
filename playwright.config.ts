@@ -40,6 +40,15 @@ const outputDir =
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
 
+// True when the target stack is already running (the weekly scheduled run
+// points at production; workflow_dispatch at an operator stack). The
+// webServer block must then be OMITTED entirely — an empty `command` is not
+// enough: Playwright still port-checks `url`, and with reuseExistingServer
+// false under CI it hard-errors "<url> is already used" the moment the
+// target responds. That error killed every scheduled run this workflow ever
+// had (11/11 failures back to 2026-06-15).
+const skipServerStart = !!process.env.SKIP_SERVER_START;
+
 export default defineConfig({
   // ========================
   // Test Discovery
@@ -251,16 +260,18 @@ export default defineConfig({
   // Web Server Setup
   // ========================
 
-  webServer: [
-    {
-      command: process.env.SKIP_SERVER_START ? '' : 'npm run dev:public',
-      url: baseURL,
-      reuseExistingServer: !isCI,
-      stdout: 'ignore',
-      stderr: 'pipe',
-      timeout: 120000,
-    },
-  ],
+  webServer: skipServerStart
+    ? undefined
+    : [
+        {
+          command: 'npm run dev:public',
+          url: baseURL,
+          reuseExistingServer: !isCI,
+          stdout: 'ignore',
+          stderr: 'pipe',
+          timeout: 120000,
+        },
+      ],
 
   // ========================
   // Setup/Teardown Hooks

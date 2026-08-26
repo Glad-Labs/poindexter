@@ -22,9 +22,11 @@
 # manual-publish-pipeline / workflow-capability / integration-tests /
 # fixtures-validation / tag) are STAGED behind a separate job that sets
 # SKIP_SERVER_START=true and points PLAYWRIGHT_TEST_BASE_URL at
-# www.gladlabs.io (production). The scheduled weekly run exercises the
-# read-only backend-dependent specs against production; the full suite
-# (including write-heavy manual-publish-pipeline) is workflow_dispatch-only.
+# www.gladlabs.io (production). The scheduled weekly run renders the two
+# PUBLIC-SURFACE specs (author + tag) against production — the API-dependent
+# specs can't reach the Tailnet-only backend from a hosted runner, so they
+# run only via workflow_dispatch against an operator stack (including the
+# write-heavy manual-publish-pipeline).
 # (glad-labs-stack#1291 — backend-e2e was never dispatched until this change.)
 #
 # Third-party actions are pinned by SHA (repo convention — see
@@ -82,7 +84,7 @@ jobs:
     timeout-minutes: 25
 
     env:
-      CI: "true"
+      CI: 'true'
       # Only install + drive Chromium to keep the run lean — the
       # frontend-only specs don't need the full browser matrix in CI.
       PLAYWRIGHT_BROWSERS: chromium
@@ -90,7 +92,7 @@ jobs:
       # for production builds (Vercel sets this; CI must too). The site reads
       # content from the R2 static fallback baked into lib/posts.ts, so this
       # value is only the vestigial plumbing the build validation insists on.
-      NEXT_PUBLIC_API_BASE_URL: "https://www.gladlabs.io"
+      NEXT_PUBLIC_API_BASE_URL: 'https://www.gladlabs.io'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 as of 2026-05-12
@@ -98,8 +100,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
-          cache: "npm"
+          node-version: '24'
+          cache: 'npm'
 
       - name: Install workspace dependencies
         # `npm ci` at the repo root installs every workspace (including
@@ -170,10 +172,10 @@ jobs:
     timeout-minutes: 30
 
     env:
-      CI: "true"
+      CI: 'true'
       # Don't boot a local Next.js server — point at an already-running stack.
       # For the scheduled run this is www.gladlabs.io (production).
-      SKIP_SERVER_START: "true"
+      SKIP_SERVER_START: 'true'
       # Scheduled run: target production. workflow_dispatch: operator overrides
       # via env inputs to point at a local/staging stack for write-heavy specs.
       PLAYWRIGHT_TEST_BASE_URL: ${{ github.event_name == 'schedule' && 'https://www.gladlabs.io' || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}
@@ -184,8 +186,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
-          cache: "npm"
+          node-version: '24'
+          cache: 'npm'
 
       - name: Install workspace dependencies
         # Fall back to npm install on pre-existing root-lock drift.
@@ -194,19 +196,24 @@ jobs:
       - name: Install Playwright browsers (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run read-only backend specs against production (scheduled)
-        # Scheduled weekly run: exercises the read-only backend-dependent specs
-        # against https://www.gladlabs.io. No task creation; no dev-token auth.
-        # Covers: auth resilience / author rendering / integration health /
-        # fixtures sanity / tag archive pages.
+      - name: Run public-surface specs against production (scheduled)
+        # Scheduled weekly run: renders the public prod surface
+        # (https://www.gladlabs.io) — author pages + tag archives, real prod
+        # data, no writes. ONLY these two specs are viable here: the backend
+        # API is Tailnet-only (never publicly exposed), so the API-dependent
+        # specs (auth / integration-tests / fixtures-validation) structurally
+        # cannot pass from a hosted runner — they sat in this list through 11
+        # straight scheduled failures (2026-06-15 → 2026-08-24, 0 green ever)
+        # and still belong to the workflow_dispatch lane below, where the
+        # operator points PLAYWRIGHT_TEST_BASE_URL at a Tailnet stack. The
+        # specs' localhost API-health skip-gate is bypassed when
+        # SKIP_SERVER_START is set, so an unreachable production fails LOUD
+        # here instead of silently skipping 14 tests.
         if: ${{ github.event_name == 'schedule' }}
         run: >
           npx playwright test
           --project=chromium
-          web/public-site/e2e/auth.spec.ts
           web/public-site/e2e/author.spec.ts
-          web/public-site/e2e/integration-tests.spec.ts
-          web/public-site/e2e/fixtures-validation.spec.ts
           web/public-site/e2e/tag.spec.ts
 
       - name: Run full backend-dependent specs (manual dispatch)
