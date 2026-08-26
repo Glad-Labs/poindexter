@@ -1011,3 +1011,19 @@ def test_caption_display_defaults_seeded():
     # operator explicitly set them pre-2026-08.
     assert "plugin.media_compositor.ffmpeg_local.caption_font_size" not in DEFAULTS
     assert "plugin.media_compositor.ffmpeg_local.caption_position" not in DEFAULTS
+
+
+def test_video_endcard_defaults_seeded():
+    """Branded CTA end-card knobs (2026-08-25): the CTA tail renders over the
+    pure-PIL brand card instead of a leftover stock clip."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["video_endcard_enabled"] == "true"
+    assert DEFAULTS["video_endcard_min_seconds"] == "2.5"
+    assert DEFAULTS["video_endcard_max_seconds"] == "8"
+    assert DEFAULTS["video_endcard_tagline"] == ""
+    assert METADATA["video_endcard_enabled"]["value_type"] == "boolean"
+    assert METADATA["video_endcard_min_seconds"]["value_type"] == "float"
+    assert METADATA["video_endcard_max_seconds"]["value_type"] == "float"
+    assert METADATA["video_endcard_tagline"]["value_type"] == "string"
+    assert METADATA["video_endcard_enabled"]["owner"] == "media_render"

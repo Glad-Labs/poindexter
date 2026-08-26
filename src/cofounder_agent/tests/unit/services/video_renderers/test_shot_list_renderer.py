@@ -2808,3 +2808,335 @@ class TestGenerativeProviderSelection:
             )
         assert not ok
         wan_inst.fetch.assert_awaited_once()
+
+
+class TestEndcardPlanning:
+    """Pure end-card planning (2026-08-25): SRT parsing, CTA-start detection,
+    and the content/card window split. The invariant under test everywhere:
+    ``content_target + card_s == narration + hold`` — the card absorbs the
+    trailing hold so media.qa's Check A total never moves."""
+
+    _SRT = (
+        "1\n00:00:00,000 --> 00:00:25,000\nthe body of the video runs here\n\n"
+        "2\n00:00:25,000 --> 00:00:50,000\nmore body content before the outro\n\n"
+        "3\n00:00:50,000 --> 00:00:52,000\nFollow for more —\n\n"
+        "4\n00:00:52,000 --> 00:00:54,000\nlike and subscribe.\n"
+    )
+    _CTA = "Follow for more — like and subscribe."
+
+    def test_parse_srt_cues(self):
+        from services.video_renderers.shot_list_renderer import _parse_srt_cues
+
+        cues = _parse_srt_cues(self._SRT)
+        assert len(cues) == 4
+        assert cues[2] == (50.0, 52.0, "Follow for more —")
+
+    def test_parse_srt_tolerates_junk_blocks(self):
+        from services.video_renderers.shot_list_renderer import _parse_srt_cues
+
+        assert _parse_srt_cues("") == []
+        assert _parse_srt_cues("not\nan srt\n\nat all") == []
+
+    def test_detect_cta_start_exact_tail(self):
+        from services.video_renderers.shot_list_renderer import (
+            _detect_cta_start_s,
+            _parse_srt_cues,
+        )
+
+        start = _detect_cta_start_s(_parse_srt_cues(self._SRT), self._CTA)
+        assert start == 50.0
+
+    def test_detect_cta_anchored_at_end_ignores_body_echo(self):
+        # The CTA phrase appearing in the BODY must not pull the card early —
+        # detection accumulates from the END only.
+        from services.video_renderers.shot_list_renderer import (
+            _detect_cta_start_s,
+            _parse_srt_cues,
+        )
+
+        srt = (
+            "1\n00:00:00,000 --> 00:00:10,000\nfollow for more like and subscribe early echo\n\n"
+            "2\n00:00:10,000 --> 00:00:50,000\nbody content continues at length here\n\n"
+            "3\n00:00:50,000 --> 00:00:54,000\nFollow for more — like and subscribe.\n"
+        )
+        assert _detect_cta_start_s(_parse_srt_cues(srt), self._CTA) == 50.0
+
+    def test_detect_cta_fuzzy_asr_text(self):
+        # Raw-ASR fallback captions mishear a word — still above the 0.7 floor.
+        from services.video_renderers.shot_list_renderer import (
+            _detect_cta_start_s,
+            _parse_srt_cues,
+        )
+
+        srt = (
+            "1\n00:00:00,000 --> 00:00:50,000\nbody\n\n"
+            "2\n00:00:50,000 --> 00:00:54,000\nfollow four more like and subscribe\n"
+        )
+        assert _detect_cta_start_s(_parse_srt_cues(srt), self._CTA) == 50.0
+
+    def test_detect_cta_no_match_returns_none(self):
+        from services.video_renderers.shot_list_renderer import (
+            _detect_cta_start_s,
+            _parse_srt_cues,
+        )
+
+        srt = "1\n00:00:50,000 --> 00:00:54,000\ncompletely unrelated closing words here\n"
+        assert _detect_cta_start_s(_parse_srt_cues(srt), self._CTA) is None
+        assert _detect_cta_start_s([], self._CTA) is None
+        assert _detect_cta_start_s(_parse_srt_cues(srt), "") is None
+
+    def test_plan_srt_timed_window(self):
+        from services.video_renderers.shot_list_renderer import _plan_endcard
+
+        plan = _plan_endcard(
+            narration_s=54.0, hold_s=3.0, cta_text=self._CTA,
+            srt_text=self._SRT, min_card_s=2.5, max_card_s=8.0,
+        )
+        assert plan is not None
+        content, card = plan
+        assert card == 7.0  # (54 + 3) − 50
+        assert content == 50.0
+        assert abs((content + card) - 57.0) < 1e-6
+
+    def test_plan_rate_estimate_fallback(self):
+        from services.video_renderers.shot_list_renderer import _plan_endcard
+
+        plan = _plan_endcard(
+            narration_s=54.0, hold_s=3.0, cta_text="six words in this cta here",
+            srt_text="", min_card_s=2.5, max_card_s=8.0,
+        )
+        assert plan is not None
+        content, card = plan
+        # 6 words / 2.5 wps = 2.4s of CTA + 3s hold = 5.4s card.
+        assert abs(card - 5.4) < 0.05
+        assert abs((content + card) - 57.0) < 1e-6
+
+    def test_plan_clamps_to_max(self):
+        from services.video_renderers.shot_list_renderer import _plan_endcard
+
+        srt = (
+            "1\n00:00:00,000 --> 00:00:40,000\nbody\n\n"
+            "2\n00:00:40,000 --> 00:00:54,000\nFollow for more — like and subscribe.\n"
+        )
+        plan = _plan_endcard(
+            narration_s=54.0, hold_s=3.0, cta_text=self._CTA,
+            srt_text=srt, min_card_s=2.5, max_card_s=8.0,
+        )
+        assert plan is not None
+        content, card = plan
+        assert card == 8.0  # raw 17s window clamped to max
+        assert content == 49.0  # invariant holds
+
+    def test_plan_skips_when_no_cta(self):
+        from services.video_renderers.shot_list_renderer import _plan_endcard
+
+        assert _plan_endcard(
+            narration_s=54.0, hold_s=3.0, cta_text="  ",
+            srt_text=self._SRT, min_card_s=2.5, max_card_s=8.0,
+        ) is None
+
+    def test_plan_skips_tiny_video(self):
+        # total/3 cap would shrink the card below min → skip, not flash.
+        from services.video_renderers.shot_list_renderer import _plan_endcard
+
+        assert _plan_endcard(
+            narration_s=5.0, hold_s=1.0, cta_text=self._CTA,
+            srt_text="", min_card_s=2.5, max_card_s=8.0,
+        ) is None
+
+    def test_tagline_resolution(self):
+        from services.video_renderers.shot_list_renderer import (
+            _resolve_endcard_tagline,
+        )
+
+        class _SC:
+            def __init__(self, values):
+                self._v = values
+
+            def get(self, key, default=None):
+                return self._v.get(key, default)
+
+        assert _resolve_endcard_tagline(None) == ""
+        assert _resolve_endcard_tagline(
+            _SC({"video_endcard_tagline": "watch more at gladlabs.io"}),
+        ) == "watch more at gladlabs.io"
+        # Unset ⇒ derive from site_domain.
+        assert _resolve_endcard_tagline(
+            _SC({"site_domain": "gladlabs.io"}),
+        ) == "gladlabs.io"
+        # Whitespace-only = explicit wordmark-only opt-out, no derivation.
+        assert _resolve_endcard_tagline(
+            _SC({"video_endcard_tagline": " ", "site_domain": "gladlabs.io"}),
+        ) == ""
+
+    def test_brand_card_tagline_and_placement(self, tmp_path):
+        # Portrait end-card: wordmark centered in the UPPER third (y_frac
+        # 0.30) so the middle-centered burned captions never cover it, with
+        # the tagline line below. Verified by pixel bands: cyan-ish pixels in
+        # the upper band, none dead-center.
+        from PIL import Image
+
+        from services.video_renderers.shot_list_renderer import _render_brand_card
+
+        out = str(tmp_path / "endcard.png")
+        ok = _render_brand_card(
+            output_path=out, width=540, height=960, wordmark="Glad Labs",
+            tagline="gladlabs.io", wordmark_y_frac=0.30,
+        )
+        assert ok
+        img = Image.open(out)
+        px = img.load()
+
+        def band_has_text(y0, y1):
+            for y in range(y0, y1, 3):
+                for x in range(0, 540, 5):
+                    r, g, b = px[x, y][:3]
+                    if g > 120 and b > 120:  # cyan wordmark / slate tagline
+                        return True
+            return False
+
+        assert band_has_text(int(960 * 0.2), int(960 * 0.45))  # wordmark+tagline
+        assert not band_has_text(int(960 * 0.55), int(960 * 0.75))  # clear center
+
+
+class TestRenderShotListEndcard:
+    """Integration: ``render_shot_list`` appends the branded card as a SCENE
+    covering the CTA window — content fitted to end where the card begins,
+    ``shots_*`` counters untouched (the card is never a fallback failure)."""
+
+    _CTA = "Follow for more — like and subscribe."
+
+    def _image_gen_shots(self, durations: list[float]) -> VideoShotList:
+        shots = [
+            Shot(
+                idx=i,
+                duration_s=d,
+                intent=f"still {i}",
+                source="image_kenburns" if i % 2 == 0 else "image_gen",
+                prompt=f"a clean abstract gradient backdrop variant {i}",
+                kenburns_zoom=(1.0, 1.15) if i % 2 == 0 else None,
+                narration_offset_s=float(sum(durations[:i])),
+            )
+            for i, d in enumerate(durations)
+        ]
+        return _build_shot_list(shots)
+
+    async def _render(self, tmp_path, monkeypatch, *, cta_text, srt_text=None,
+                      endcard_off=False):
+        from services.video_renderers import shot_list_renderer as slr
+
+        shot_list = self._image_gen_shots([15.0, 15.0, 15.0])
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        caption_path = None
+        if srt_text is not None:
+            caption_path = str(tmp_path / "caps.srt")
+            with open(caption_path, "w", encoding="utf-8") as f:
+                f.write(srt_text)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png"}
+        mock_resp.content = b"fake-png-bytes"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        captured: dict = {}
+
+        class _MockCompositor:
+            def __init__(self, site_config=None):
+                pass
+
+            async def compose(self, request, **kwargs):
+                captured["scenes"] = [
+                    (s.clip_path, s.duration_s) for s in request.scenes
+                ]
+                with open(request.output_path, "wb") as fh:
+                    fh.write(b"fake mp4")
+                return MagicMock(
+                    success=True, output_path=request.output_path,
+                    file_size_bytes=8, duration_s=57.0,
+                )
+
+        async def _fake_probe(path, *, ffprobe="ffprobe"):
+            return 54.0
+
+        monkeypatch.setattr(slr, "_probe_duration_s", _fake_probe, raising=False)
+        if endcard_off:
+            monkeypatch.setattr(slr, "_endcard_enabled", lambda sc: False)
+
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            _MockCompositor,
+        ):
+            result = await slr.render_shot_list(
+                post_id="post-endcard",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=str(tmp_path / "final.mp4"),
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=lambda *a, **k: mock_client,
+                narration_fit=True,
+                narration_fit_max_shot_s=20.0,
+                narration_fit_min_shot_s=2.0,
+                narration_fit_hold_s=3.0,
+                caption_path=caption_path,
+                endcard_cta_text=cta_text,
+            )
+        return result, captured.get("scenes", [])
+
+    @pytest.mark.asyncio
+    async def test_endcard_scene_appended_with_srt_timing(self, tmp_path, monkeypatch):
+        srt = (
+            "1\n00:00:00,000 --> 00:00:25,000\nbody one\n\n"
+            "2\n00:00:25,000 --> 00:00:50,000\nbody two\n\n"
+            "3\n00:00:50,000 --> 00:00:52,000\nFollow for more —\n\n"
+            "4\n00:00:52,000 --> 00:00:54,000\nlike and subscribe.\n"
+        )
+        result, scenes = await self._render(
+            tmp_path, monkeypatch, cta_text=self._CTA, srt_text=srt,
+        )
+        assert result.success is True
+        assert len(scenes) == 4  # 3 content + 1 card
+        clip, dur = scenes[-1]
+        assert clip.endswith("endcard.png")
+        assert abs(dur - 7.0) < 0.01  # (54 + 3) − 50
+        assert abs(sum(d for _, d in scenes) - 57.0) < 0.1  # narration + hold
+        assert abs(sum(d for _, d in scenes[:-1]) - 50.0) < 0.1
+        # The deliberate card is a SCENE, never a shot: the real-source ship
+        # gate's counters must not see it.
+        assert result.shots_total == 3
+        assert result.shots_carded == 0
+
+    @pytest.mark.asyncio
+    async def test_endcard_disabled_keeps_layout(self, tmp_path, monkeypatch):
+        result, scenes = await self._render(
+            tmp_path, monkeypatch, cta_text=self._CTA, endcard_off=True,
+        )
+        assert result.success is True
+        assert len(scenes) == 3
+        assert not any(c.endswith("endcard.png") for c, _ in scenes)
+
+    @pytest.mark.asyncio
+    async def test_empty_cta_keeps_layout(self, tmp_path, monkeypatch):
+        result, scenes = await self._render(tmp_path, monkeypatch, cta_text="")
+        assert result.success is True
+        assert len(scenes) == 3
+        assert not any(c.endswith("endcard.png") for c, _ in scenes)
+
+    @pytest.mark.asyncio
+    async def test_rate_estimate_without_srt(self, tmp_path, monkeypatch):
+        # No caption track: the card window comes from the speech-rate
+        # estimate — still appended, invariant still holds.
+        result, scenes = await self._render(
+            tmp_path, monkeypatch, cta_text=self._CTA, srt_text=None,
+        )
+        assert result.success is True
+        assert len(scenes) == 4
+        assert scenes[-1][0].endswith("endcard.png")
+        assert abs(sum(d for _, d in scenes) - 57.0) < 0.1

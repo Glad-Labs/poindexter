@@ -151,7 +151,7 @@ Per shot, the renderer:
 
 1. **Selects a source** — `slideshow` (Ken Burns over a stylized image-gen still) · `stock` (Pexels B-roll) · `generative` (Wan2.1, future #669). Resolved from `shot.source_hint` + a **per-niche source policy in `app_settings`** (e.g. tech → stylized image-gen; real-world/human subjects → Pexels, honoring the no-photoreal-humans rule, #675).
 2. **Produces the visual** — image-gen stylized render, or Pexels fetch.
-3. **Composes** via `FFmpegLocalCompositor`: shots concat + transitions → narration layered at each shot's `narration_offset_s` (#517) → **ambient bed mixed under** (#679, finally consumed) → **captions burned in** (#676).
+3. **Composes** via `FFmpegLocalCompositor`: shots concat + transitions → narration layered at each shot's `narration_offset_s` (#517) → **ambient bed mixed under** (#679, finally consumed) → **captions burned in** (#676). The CTA tail renders over a **branded end-card scene** (2026-08-25, `video_endcard_*` settings): the spoken outro's window is detected from the caption SRT (speech-rate estimate as fallback), the content scenes are fitted to end where the card begins (total stays narration + hold), and the pure-PIL brand card (wordmark + tagline, upper-third on portrait so centered captions never collide) covers it — every video ends on brand instead of on a leftover stock clip. The card is a scene, never a shot: `shots_carded` / the real-source ship gate only count fallback-ladder failures.
 4. **Output profiles** (DB-config): long = 16:9 1080p; short = 9:16 1080×1920, ≤60s, punchier pacing.
 
 The legacy host `:9837` slideshow path is replaced by the compositor for the live path (the compositor already supports caption burn-in and per-shot audio).

@@ -578,6 +578,22 @@ DEFAULTS: dict[str, str] = {
     # from any real source is filled with a branded card so the timeline stays
     # whole (never drop a shot). false ⇒ legacy behaviour (the shot drops).
     'video_fallback_card_enabled': 'true',
+    # Branded CTA end-card (2026-08-25): the narration always ends on the
+    # per-lane CTA outro, but the shot list only plans the CONTENT — the
+    # spoken CTA played over whatever stock clip sat last. When enabled, the
+    # renderer carves the CTA window out of the narration-fit target and
+    # renders it over the pure-PIL branded card (wordmark + tagline), so
+    # every video ends on brand. Window detected from the aligned caption
+    # SRT (speech-rate estimate as fallback), clamped to [min, max] below
+    # and never more than a third of the video.
+    'video_endcard_enabled': 'true',
+    'video_endcard_min_seconds': '2.5',
+    'video_endcard_max_seconds': '8',
+    # Text under the wordmark on the end-card. '' (unset) derives from
+    # site_domain — the card's job is sending viewers somewhere, and the
+    # domain is the somewhere. Set explicitly to override or to ' ' (a
+    # single space trims to empty per-render) for a wordmark-only card.
+    'video_endcard_tagline': '',
     # Real-source ratio ship gate (2026-07-15). The fraction of a video's shots
     # that must come from a REAL source — primary/holdover render or a
     # cross-family Pexels substitute — vs. rung-3 branded-card fill:
@@ -3919,6 +3935,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_fallback_card_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_endcard_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_endcard_min_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_endcard_max_seconds': {'owner': 'media_render', 'value_type': 'float'},
+    'video_endcard_tagline': {'owner': 'media_render', 'value_type': 'string'},
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},

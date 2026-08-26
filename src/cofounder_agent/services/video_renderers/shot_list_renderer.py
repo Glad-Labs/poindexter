@@ -38,9 +38,11 @@ succeeded without grepping container logs.
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -1080,17 +1082,27 @@ def _load_card_font(size: int) -> Any:
         return ImageFont.load_default()
 
 
+_CARD_TAGLINE_RGB = (203, 213, 225)  # #CBD5E1 slate — quieter than the wordmark
+
+
 def _render_brand_card(
     *, output_path: str, width: int, height: int, wordmark: str,
+    tagline: str = "", wordmark_y_frac: float = 0.5,
+    wordmark_px: int | None = None,
 ) -> bool:
-    """Rung-3 of the fallback ladder: a guaranteed branded still card.
+    """A guaranteed branded still card (fallback-ladder rung 3 + the end-card).
 
     Pure PIL — no network, no GPU, no ffmpeg — so a shot slot is never empty
     even in a total image-gen + Pexels outage. Returns a PNG the compositor
-    consumes like any image-gen still. Two-tier: a centered wordmark when a
-    font + draw succeed, else a text-less solid navy field (the draw is wrapped
-    so a decoration failure never breaks the save). Returns True when a PNG is
-    on disk.
+    consumes like any image-gen still. Two-tier: a wordmark (plus optional
+    ``tagline`` line below it) when a font + draw succeed, else a text-less
+    solid navy field (the draw is wrapped so a decoration failure never breaks
+    the save). ``wordmark_y_frac`` places the wordmark's vertical center — the
+    end-card uses the upper third on portrait so the middle-centered burned
+    captions never sit on top of it. ``wordmark_px`` overrides the glyph size
+    (the ladder's mid-video fallback stays subtle at width/18; the end-card
+    passes ~width/9 — there the brand mark IS the shot). Returns True when a
+    PNG is on disk.
     """
     from PIL import Image, ImageDraw
 
@@ -1099,13 +1111,27 @@ def _render_brand_card(
         text = (wordmark or "").strip()
         if text:
             draw = ImageDraw.Draw(img)
-            font = _load_card_font(size=max(24, width // 18))
+            font = _load_card_font(size=wordmark_px or max(24, width // 18))
             bbox = draw.textbbox((0, 0), text, font=font)
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            y_frac = min(max(wordmark_y_frac, 0.1), 0.9)
+            wm_top = height * y_frac - th / 2
             draw.text(
-                ((width - tw) / 2, (height - th) / 2),
+                ((width - tw) / 2, wm_top),
                 text, fill=_CARD_WORDMARK_RGB, font=font,
             )
+            sub = (tagline or "").strip()
+            if sub:
+                # Tagline tracks the wordmark at ~40% of its size.
+                sub_font = _load_card_font(
+                    size=max(18, int((wordmark_px or max(24, width // 18)) * 0.4)),
+                )
+                sbox = draw.textbbox((0, 0), sub, font=sub_font)
+                sw = sbox[2] - sbox[0]
+                draw.text(
+                    ((width - sw) / 2, wm_top + th * 1.9),
+                    sub, fill=_CARD_TAGLINE_RGB, font=sub_font,
+                )
     except Exception as exc:  # noqa: BLE001 — decoration must not break the floor
         # silent-ok: the wordmark is pure decoration; on any draw failure the
         # solid navy card still saves below (the never-fail floor), so the card's
@@ -1129,6 +1155,182 @@ def _card_enabled(site_config: Any) -> bool:
     return str(
         site_config.get("video_fallback_card_enabled", "true") or "true",
     ).strip().lower() in ("true", "1", "yes")
+
+
+# --- End-card (2026-08-25): brand the CTA tail ------------------------------
+# The narration always ends on the per-lane CTA outro (media.cta.video /
+# media.cta.video_short, appended by ``compose_narration_text``), but the shot
+# list only plans the CONTENT — so the spoken CTA played over whatever clip
+# happened to sit last (a random stock tail; the operator report's example was
+# a neon-triangle stock clip under "Full article at Glad Labs"). When enabled,
+# the render gives the CTA window its own scene: the same pure-PIL branded
+# card the fallback ladder already guarantees, so every video ends on brand.
+#
+# Timing: the aligned caption SRT contains the CTA text verbatim on ASR
+# timings, so the CTA's start is detected by matching the caption tail against
+# the CTA tokens; a words-per-second estimate (derived from the SRT itself
+# when present) is the fallback. The card window is clamped to
+# [video_endcard_min_seconds, video_endcard_max_seconds] and the CONTENT
+# scenes are fitted to end exactly where the card begins — total stays
+# narration + hold, the same invariant media.qa's Check A audits. The card is
+# appended as a SCENE, never a shot: ``shots_carded`` counts fallback-ladder
+# failures for the real-source ship gate, and a deliberate end-card must not
+# erode that ratio.
+
+_ENDCARD_FALLBACK_WPS = 2.5  # ≈150 wpm — conversational TTS pace
+_ENDCARD_MATCH_MIN = 0.7  # min CTA-token match fraction for SRT-based timing
+
+_SRT_TS = re.compile(
+    r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)"
+)
+_ENDCARD_TOKEN_NORM = re.compile(r"[^\w]+")
+
+
+def _parse_srt_cues(srt_text: str) -> list[tuple[float, float, str]]:
+    """Parse an SRT document into ``(start_s, end_s, text)`` cues.
+
+    Tolerant by design — malformed blocks are skipped, never raised on. The
+    input is our own ``segments_to_srt`` output in production, so this stays
+    minimal (no VTT styling, no multi-hour edge polish).
+    """
+    cues: list[tuple[float, float, str]] = []
+    for block in (srt_text or "").strip().split("\n\n"):
+        lines = [ln for ln in block.strip().splitlines() if ln.strip()]
+        if len(lines) < 2:
+            continue
+        ts_line = lines[1] if _SRT_TS.match(lines[1]) else lines[0]
+        m = _SRT_TS.match(ts_line)
+        if not m:
+            continue
+        g = [int(x) for x in m.groups()]
+        start = g[0] * 3600 + g[1] * 60 + g[2] + g[3] / 1000.0
+        end = g[4] * 3600 + g[5] * 60 + g[6] + g[7] / 1000.0
+        text_lines = lines[2:] if ts_line is lines[1] else lines[1:]
+        text = " ".join(text_lines).strip()
+        if end > start and text:
+            cues.append((start, end, text))
+    return cues
+
+
+def _endcard_tokens(text: str) -> list[str]:
+    return [
+        t for t in (
+            _ENDCARD_TOKEN_NORM.sub("", w.lower()) for w in (text or "").split()
+        ) if t
+    ]
+
+
+def _detect_cta_start_s(
+    cues: list[tuple[float, float, str]], cta_text: str,
+) -> float | None:
+    """Start time of the CTA outro in the caption stream, or None.
+
+    Walks cues from the END, accumulating just enough of the tail to cover the
+    CTA's token count (anchoring at the end means a CTA phrase echoed in the
+    body can never mislead it), then fuzzy-matches the accumulated tail against
+    the CTA tokens — the captions are usually the aligned clean script (CTA
+    verbatim ⇒ near-1.0), but a raw-ASR fallback track still clears the 0.7
+    floor on anything but a heavy mistranscription.
+    """
+    cta = _endcard_tokens(cta_text)
+    if not cta or not cues:
+        return None
+    acc: list[str] = []
+    start_idx = 0
+    for i in range(len(cues) - 1, -1, -1):
+        acc = _endcard_tokens(cues[i][2]) + acc
+        start_idx = i
+        if len(acc) >= len(cta):
+            break
+    matcher = difflib.SequenceMatcher(None, acc, cta, autojunk=False)
+    matched = sum(b.size for b in matcher.get_matching_blocks())
+    if matched / len(cta) < _ENDCARD_MATCH_MIN:
+        return None
+    return float(cues[start_idx][0])
+
+
+def _plan_endcard(
+    *,
+    narration_s: float,
+    hold_s: float,
+    cta_text: str,
+    srt_text: str,
+    min_card_s: float,
+    max_card_s: float,
+) -> tuple[float, float] | None:
+    """Split the render window into (content_target_s, card_s), or None.
+
+    ``content_target_s + card_s == narration_s + hold_s`` always — the card
+    absorbs the trailing hold, so the voice speaks the CTA over the card and
+    the card holds one beat after it. Clamps keep a mis-detected CTA from
+    branding half the video: the card never exceeds ``max_card_s`` nor a third
+    of the total window, and never leaves under ~1s of content. None ⇒ render
+    exactly as before (no CTA configured, or the window is too small).
+    """
+    cta = (cta_text or "").strip()
+    if narration_s <= 0 or not cta:
+        return None
+    if min_card_s > max_card_s:
+        min_card_s, max_card_s = max_card_s, min_card_s
+    total = narration_s + max(0.0, hold_s)
+    cues = _parse_srt_cues(srt_text) if srt_text else []
+    cta_start = _detect_cta_start_s(cues, cta)
+    if cta_start is None or cta_start >= narration_s:
+        # Estimate from speech rate — derived from the SRT itself when
+        # present (self-calibrating to the actual voice), else the
+        # conversational-pace constant.
+        words = sum(len(text.split()) for _, _, text in cues)
+        wps = words / narration_s if words else _ENDCARD_FALLBACK_WPS
+        cta_start = narration_s - len(cta.split()) / max(1.0, wps)
+    card_s = total - cta_start
+    card_s = min(max(card_s, min_card_s), max_card_s, total / 3.0)
+    content_target = total - card_s
+    if card_s < min_card_s or content_target <= 1.0:
+        # The window is too small to brand (a sub-minimum card is a flash,
+        # not an outro) — render exactly as before.
+        return None
+    return round(content_target, 3), round(card_s, 3)
+
+
+def _endcard_enabled(site_config: Any) -> bool:
+    """Master switch for the CTA end-card scene (default on)."""
+    if site_config is None:
+        return True
+    return str(
+        site_config.get("video_endcard_enabled", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes")
+
+
+def _endcard_bounds(site_config: Any) -> tuple[float, float]:
+    """(min, max) seconds the end-card may hold the frame."""
+    if site_config is None:
+        return 2.5, 8.0
+    try:
+        lo = float(site_config.get("video_endcard_min_seconds", 2.5) or 2.5)
+    except (TypeError, ValueError):
+        lo = 2.5
+    try:
+        hi = float(site_config.get("video_endcard_max_seconds", 8.0) or 8.0)
+    except (TypeError, ValueError):
+        hi = 8.0
+    return lo, hi
+
+
+def _resolve_endcard_tagline(site_config: Any) -> str:
+    """Tagline under the wordmark: ``video_endcard_tagline``, deriving from
+    ``site_domain`` when unset ('' per the NOT-NULL convention) — the card's
+    job is sending viewers somewhere, and the domain is the somewhere. A
+    whitespace-only value (e.g. ``' '``) is the explicit wordmark-only
+    opt-out: set but blank ⇒ no tagline, no derivation."""
+    if site_config is None:
+        return ""
+    raw = str(site_config.get("video_endcard_tagline", "") or "")
+    if raw and not raw.strip():
+        return ""
+    tagline = raw.strip()
+    if tagline:
+        return tagline
+    return str(site_config.get("site_domain", "") or "").strip()
 
 
 def _emit_shot_fallback_finding(*, shot: Shot, post_id: str, rung: str) -> None:
@@ -2323,6 +2525,7 @@ async def render_shot_list(
     narration_fit_max_shot_s: float = 9.0,
     narration_fit_min_shot_s: float = 0.0,
     narration_fit_hold_s: float | None = None,
+    endcard_cta_text: str = "",
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -2383,6 +2586,14 @@ async def render_shot_list(
         narration_fit_hold_s: How long the visuals may outlive the voice before
             the fit compresses them (and the outro beat it compresses TO).
             ``None`` disables compression (stretch-only, the pre-fix contract).
+        endcard_cta_text: The per-lane spoken CTA outro (the atoms resolve
+            ``media.cta.video`` / ``media.cta.video_short``). Non-empty + the
+            ``video_endcard_enabled`` switch ⇒ the CTA window renders over a
+            branded end-card scene instead of the last content clip (see the
+            end-card section above ``_plan_endcard``). ``""`` (the default,
+            and every legacy caller) changes nothing. Only consulted when
+            ``narration_fit`` is active — the card's timing rides the same
+            probed narration duration the fit uses.
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -2488,15 +2699,72 @@ async def render_shot_list(
     # narration already fits. Cycling repeats a clip_path — free, no re-render.
     shot_durs = [float(r.duration_s) for r in rendered]
     scene_plan: list[tuple[int, float]] = list(enumerate(shot_durs))
+    endcard_scene: CompositionScene | None = None
     if narration_fit and audio_path:
         narration_dur = await _probe_duration_s(audio_path)
         if narration_dur:
+            # End-card: carve the CTA window out of the fit target BEFORE
+            # fitting, so the content scenes end exactly where the card
+            # begins and the total stays narration + hold. The card PNG is
+            # rendered FIRST — if it somehow fails (PIL floor, so nearly
+            # never), the fit falls back to the plain full-window layout
+            # rather than leaving a hole where the card would have been.
+            fit_target = narration_dur
+            fit_hold = narration_fit_hold_s
+            if _endcard_enabled(site_config) and (endcard_cta_text or "").strip():
+                srt_text = ""
+                if caption_path and os.path.exists(caption_path):
+                    try:
+                        with open(caption_path, encoding="utf-8") as fh:
+                            srt_text = fh.read()
+                    except OSError:
+                        srt_text = ""
+                min_card_s, max_card_s = _endcard_bounds(site_config)
+                plan = _plan_endcard(
+                    narration_s=narration_dur,
+                    hold_s=narration_fit_hold_s or 0.0,
+                    cta_text=endcard_cta_text,
+                    srt_text=srt_text,
+                    min_card_s=min_card_s,
+                    max_card_s=max_card_s,
+                )
+                if plan:
+                    content_target, card_s = plan
+                    card_path = str(work_dir / "endcard.png")
+                    card_ok = _render_brand_card(
+                        output_path=card_path,
+                        width=width,
+                        height=height,
+                        wordmark=wordmark,
+                        tagline=_resolve_endcard_tagline(site_config),
+                        # Portrait captions burn middle-center — keep the
+                        # wordmark in the upper third so they never collide;
+                        # landscape captions sit in the bottom band, so the
+                        # wordmark rides just above true center. On the
+                        # end-card the brand mark IS the shot — width/9 vs
+                        # the ladder card's subtle width/18.
+                        wordmark_y_frac=0.30 if height > width else 0.44,
+                        wordmark_px=max(48, width // 9),
+                    )
+                    if card_ok:
+                        fit_target = content_target
+                        fit_hold = 0.0  # content must END where the card begins
+                        endcard_scene = CompositionScene(
+                            clip_path=card_path,
+                            narration_path=None,
+                            duration_s=card_s,
+                        )
+                        logger.info(
+                            "[SHOT_LIST] end-card: content fitted to %.1fs, "
+                            "%.1fs branded card covers the CTA tail",
+                            content_target, card_s,
+                        )
             scene_plan = _fit_scene_durations(
                 shot_durs,
-                narration_dur,
+                fit_target,
                 max_shot_s=narration_fit_max_shot_s,
                 min_shot_s=narration_fit_min_shot_s,
-                shortfall_hold_s=narration_fit_hold_s,
+                shortfall_hold_s=fit_hold,
             )
             logger.info(
                 "[SHOT_LIST] narration-fit: %d shots (%.1fs) -> %d scenes "
@@ -2520,6 +2788,11 @@ async def render_shot_list(
         )
         for idx, dur in scene_plan
     ]
+    if endcard_scene is not None:
+        # A SCENE, not a shot: shots_total / shots_carded stay untouched, so
+        # the real-source ship gate never counts the deliberate end-card as a
+        # fallback failure.
+        scenes.append(endcard_scene)
 
     request = CompositionRequest(
         scenes=scenes,

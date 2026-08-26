@@ -818,3 +818,75 @@ class TestNarrationFitPlumbing:
                 narration_fit=True,
             )
         assert mock_render.await_args.kwargs["narration_fit"] is False
+
+
+class TestEndcardCtaThreading:
+    """The per-lane spoken CTA (media.cta.video / media.cta.video_short) rides
+    into ``render_shot_list(endcard_cta_text=...)`` so the renderer can time
+    the branded end-card to the spoken outro (2026-08-25)."""
+
+    class _SC:
+        def __init__(self, values):
+            self._v = dict(values)
+
+        def get(self, key, default=None):
+            return self._v.get(key, default)
+
+        def get_bool(self, key, default=False):
+            v = str(self._v.get(key, default)).lower()
+            return v in ("true", "1", "yes", "on")
+
+        def get_float(self, key, default=0.0):
+            try:
+                return float(self._v.get(key, default))
+            except (TypeError, ValueError):
+                return default
+
+    @pytest.mark.asyncio
+    async def test_long_lane_reads_video_cta(self):
+        sc = self._SC({
+            "media.cta.video": "If this helped, subscribe.",
+            "media.cta.video_short": "Follow for more.",
+        })
+        state = {
+            "task_id": "t-cta-long",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "site_config": sc,
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert (
+            mock_render.await_args.kwargs["endcard_cta_text"]
+            == "If this helped, subscribe."
+        )
+
+    @pytest.mark.asyncio
+    async def test_short_lane_reads_video_short_cta(self):
+        sc = self._SC({
+            "media.cta.video": "If this helped, subscribe.",
+            "media.cta.video_short": "Follow for more.",
+        })
+        state = {
+            "task_id": "t-cta-short",
+            "short_shot_list": _SHORT_SHOT_LIST,
+            "site_config": sc,
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="short_shot_list", output_key="short_video_path"
+            )
+        assert mock_render.await_args.kwargs["endcard_cta_text"] == "Follow for more."
+
+    @pytest.mark.asyncio
+    async def test_no_site_config_passes_empty(self):
+        state = {"task_id": "t-cta-none", "video_shot_list": _LONG_SHOT_LIST}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert mock_render.await_args.kwargs["endcard_cta_text"] == ""

@@ -248,6 +248,16 @@ async def render_from_state(
     # console pulse's "In Production" column, with real per-shot progress. The
     # ledger never affects the render (swallow-on-error; None id ⇒ silent no-op).
     lane = output_key.replace("_video_path", "") or output_key  # "long" / "short"
+    # End-card CTA text: the SAME per-lane CTA the narration voiced
+    # (``compose_narration_text`` appends media.cta.video / media.cta.video_short
+    # to the script), so the renderer can time the branded card to the spoken
+    # outro. Empty ⇒ the renderer skips the end-card entirely.
+    endcard_cta_key = "media.cta.video_short" if lane == "short" else "media.cta.video"
+    endcard_cta_text = (
+        str(site_config.get(endcard_cta_key, "") or "").strip()
+        if site_config is not None
+        else ""
+    )
     total_shots = len(shot_list.shots)
     try:
         async with live_activity.track(
@@ -297,6 +307,7 @@ async def render_from_state(
                     narration_fit_max_shot_s=fit_max_shot_s,
                     narration_fit_min_shot_s=fit_min_shot_s,
                     narration_fit_hold_s=fit_hold_s,
+                    endcard_cta_text=endcard_cta_text,
                 )
             if not result.success:
                 act.fail()
