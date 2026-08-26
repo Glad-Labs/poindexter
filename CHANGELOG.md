@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.128.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.127.0...v0.128.0) (2026-08-26)
+
+
+### Features
+
+* **media:** branded CTA end-card — every video ends on brand, not on a leftover stock clip ([#3342](https://github.com/Glad-Labs/glad-labs-stack/issues/3342)) ([f416780](https://github.com/Glad-Labs/glad-labs-stack/commit/f4167808391e3a11680739190c923470586518a4))
+* **observability:** ingest nightly CI benchmark artifacts into Grafana ([#3341](https://github.com/Glad-Labs/glad-labs-stack/issues/3341)) ([0cbc0c5](https://github.com/Glad-Labs/glad-labs-stack/commit/0cbc0c524a66e67c529c8c37f1896877a6d67e79))
+* **observability:** per-model LLM throughput — console cards + Grafana row ([#3340](https://github.com/Glad-Labs/glad-labs-stack/issues/3340)) ([37fa5c4](https://github.com/Glad-Labs/glad-labs-stack/commit/37fa5c4d44f29b168920d03b1ae578298ad99b66))
+* **observability:** true decode speed — recover Ollama eval_duration through LiteLLM ([#3345](https://github.com/Glad-Labs/glad-labs-stack/issues/3345)) ([68d4d09](https://github.com/Glad-Labs/glad-labs-stack/commit/68d4d0902cd350e02d012b3c24343ed6176035b5))
+
+
+### Bug Fixes
+
+* **benchmarks:** benchmark worker mode + live endpoints — 0 green runs in 71 ([#3337](https://github.com/Glad-Labs/glad-labs-stack/issues/3337)) ([f7a9100](https://github.com/Glad-Labs/glad-labs-stack/commit/f7a91003c7c52a521b6660bc451adebe90c32945))
+* **e2e:** SKIP_SERVER_START must omit webServer, not blank its command ([#3338](https://github.com/Glad-Labs/glad-labs-stack/issues/3338)) ([7a4ae7d](https://github.com/Glad-Labs/glad-labs-stack/commit/7a4ae7d371fb8ced2d923f0b3aef5299acd37c5a))
+* **mirror:** strip test_regen_app_settings_doc_guard.py — red mirror since [#3147](https://github.com/Glad-Labs/glad-labs-stack/issues/3147) ([#3336](https://github.com/Glad-Labs/glad-labs-stack/issues/3336)) ([05e4eea](https://github.com/Glad-Labs/glad-labs-stack/commit/05e4eead7003ac42bfbc7fceba09fbd6ab44d2a9))
+* **observability:** merge ollama_chat/ model-name spelling in throughput views ([#3343](https://github.com/Glad-Labs/glad-labs-stack/issues/3343)) ([591021a](https://github.com/Glad-Labs/glad-labs-stack/commit/591021aae57a95ed29579636f113f36f8ecb42ba))
+
 ## [0.127.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.126.1...v0.127.0) (2026-08-25)
 
 
