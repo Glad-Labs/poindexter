@@ -1027,3 +1027,8 @@ def test_video_endcard_defaults_seeded():
     assert METADATA["video_endcard_max_seconds"]["value_type"] == "float"
     assert METADATA["video_endcard_tagline"]["value_type"] == "string"
     assert METADATA["video_endcard_enabled"]["owner"] == "media_render"
+    # On-theme card (2026-08-26): operator logo path — a worker-container
+    # FILE path (never a repo asset; branding must not reach the public
+    # mirror). '' = no logo.
+    assert DEFAULTS["video_endcard_logo_path"] == ""
+    assert METADATA["video_endcard_logo_path"]["value_type"] == "string"

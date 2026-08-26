@@ -2731,21 +2731,39 @@ async def render_shot_list(
                 if plan:
                     content_target, card_s = plan
                     card_path = str(work_dir / "endcard.png")
-                    card_ok = _render_brand_card(
+                    # On-theme card first (site gradient + flow motif + brand
+                    # fonts + operator logo, 2026-08-26); the plain brand card
+                    # stays the guaranteed floor when it declines.
+                    from services.video_renderers.brand_endcard import (
+                        render_endcard,
+                    )
+
+                    card_ok = render_endcard(
                         output_path=card_path,
                         width=width,
                         height=height,
                         wordmark=wordmark,
                         tagline=_resolve_endcard_tagline(site_config),
-                        # Portrait captions burn middle-center — keep the
-                        # wordmark in the upper third so they never collide;
-                        # landscape captions sit in the bottom band, so the
-                        # wordmark rides just above true center. On the
-                        # end-card the brand mark IS the shot — width/9 vs
-                        # the ladder card's subtle width/18.
-                        wordmark_y_frac=0.30 if height > width else 0.44,
-                        wordmark_px=max(48, width // 9),
+                        logo_path=str(
+                            site_config.get("video_endcard_logo_path", "") or ""
+                        ).strip() if site_config is not None else "",
                     )
+                    if not card_ok:
+                        card_ok = _render_brand_card(
+                            output_path=card_path,
+                            width=width,
+                            height=height,
+                            wordmark=wordmark,
+                            tagline=_resolve_endcard_tagline(site_config),
+                            # Portrait captions burn middle-center — keep the
+                            # wordmark in the upper third so they never
+                            # collide; landscape captions sit in the bottom
+                            # band, so the wordmark rides just above true
+                            # center. On the end-card the brand mark IS the
+                            # shot — width/9 vs the ladder card's width/18.
+                            wordmark_y_frac=0.30 if height > width else 0.44,
+                            wordmark_px=max(48, width // 9),
+                        )
                     if card_ok:
                         fit_target = content_target
                         fit_hold = 0.0  # content must END where the card begins

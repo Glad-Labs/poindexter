@@ -594,6 +594,15 @@ DEFAULTS: dict[str, str] = {
     # domain is the somewhere. Set explicitly to override or to ' ' (a
     # single space trims to empty per-render) for a wordmark-only card.
     'video_endcard_tagline': '',
+    # Operator logo image composited above the wordmark on the on-theme
+    # end-card (brand_endcard.py). A WORKER-container path — the durable
+    # media dir is the natural home (e.g.
+    # /home/appuser/.poindexter/branding/logo.png). Deliberately a file
+    # path, not a repo asset: operator branding must never reach the public
+    # mirror. RGB logos on a white background are auto-keyed (corner
+    # flood-fill — interior white details survive). '' = no logo; the card
+    # renders its typographic lockup alone.
+    'video_endcard_logo_path': '',
     # Real-source ratio ship gate (2026-07-15). The fraction of a video's shots
     # that must come from a REAL source — primary/holdover render or a
     # cross-family Pexels substitute — vs. rung-3 branded-card fill:
@@ -3947,6 +3956,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_endcard_min_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_endcard_max_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_endcard_tagline': {'owner': 'media_render', 'value_type': 'string'},
+    'video_endcard_logo_path': {'owner': 'media_render', 'value_type': 'string'},
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
