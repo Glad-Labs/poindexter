@@ -32,14 +32,15 @@
     "1": {
       "name": "CPU Temp",
       "sensor": 0,
+      "_comment": "White, not the rig amber. This row lands on the brightest, busiest part of the logo, and amber simulates to a yellow-green (228,234,91) under deuteranomaly — which collapses into the teal circuitry behind it. Measured against the actual pixels under the glyphs, white beats amber on worst-case contrast 1.86 vs 1.07 and median 8.07 vs 4.67. Magenta reads as the obvious 'opposite of cyan' and is actually worse than amber (median 2.83).",
       "textColor": {
         "red": 255,
-        "green": 184,
-        "blue": 51,
+        "green": 255,
+        "blue": 255,
         "brightness": 0,
         "position": 0,
         "temperature": 0,
-        "Hex": "#ffb833"
+        "Hex": "#ffffff"
       },
       "enabled": true
     },
