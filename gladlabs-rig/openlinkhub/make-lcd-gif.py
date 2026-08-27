@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Generate the Glad Labs coolant-loop GIF for the XC7 ELITE LCD block (480x480).
 
-Three concentric rings sweep comet heads around a dark field, coloured on the
-same thermal ramp the rest of the rig uses (mint -> amber -> orange), so the
-block reads as part of the same system as the sensor strip and the LINK RGB.
-Cool mint runs innermost and hot orange outermost, matching how the temperature
-palette is mapped everywhere else.
+The "GL" wordmark sits at centre, breathing, inside three concentric rings that
+sweep comet heads around a dark field. Rings use the same thermal ramp as the
+rest of the rig (mint -> amber -> orange), cool innermost and hot outermost,
+matching how the temperature palette is mapped everywhere else.
+
+This is a BACKGROUND: the block runs LCD mode 102, which composites three live
+readouts on top of it. With three sensors enabled OpenLinkHub centres them at
+baselines y~132 / 257 / 382 with labels at 172 / 297 / 422 (its own arithmetic:
+paddingStart = -(sensors * 125) / 2 + margin, then +125 per sensor), i.e. text
+covers nearly the whole vertical centre. The wordmark is therefore drawn as a
+glowing mark UNDER that text rather than as a solid centrepiece -- anything
+opaque here just gets buried. Re-check those numbers before changing sensor
+count or margin in lcd/animation.json.
 
 The panel is physically round, so everything stays inside the inscribed circle
 (r=240) with margin; corners are never seen. Every phase advances a whole number
@@ -19,8 +27,9 @@ at startup, so a running service needs /api/lcd/upload instead).
 import math
 import os
 import sys
+from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 # Alphanumeric only -- OpenLinkHub's upload handler rejects a hyphen or
 # underscore with "Invalid filename. Only letters and numbers allowed", and the
@@ -47,9 +56,48 @@ RINGS = (
 TRAIL_SEGS = 26  # comet tail resolution
 TRAIL_DEG = 110  # tail length in degrees
 REST_ALPHA = 34  # faint always-on ring, so the circuit reads at every phase
-GLOW_R = 54  # central sphere's outer glow radius
-CORE_R = 15  # its solid centre
 PALETTE_TILES = 8  # frames sampled to build the shared palette
+
+# Glad Labs wordmark. The brand mark is typographic -- the letters "GL" in the
+# display face, uppercase, tracked out (packages/brand/src/components/Logo.jsx).
+# Space Grotesk, the web display font, is not vendored as a TTF, so this uses
+# Sora 600 in brand cyan: the same substitution the video CTA end-card already
+# makes for raster output (services/video_renderers/brand_endcard.py), which
+# keeps the two branded motion surfaces consistent.
+LOGO_TEXT = "GL"
+LOGO_PX = 52
+LOGO_TRACKING = 0.05  # em, per the brand component
+BRAND_CYAN = (34, 211, 238)  # #22D3EE
+# Wordmark rides at 12 o'clock like the brand name on a watch dial, NOT at
+# centre: with three sensors the readouts own y~74-430, so a centred mark is
+# either buried or drowns the numbers (188px centred made "LIQUID TEMP"
+# unreadable). Ink centres on y=44 -- clear of the first glyph top at ~74, and
+# the round crop still allows +/-138px of width there.
+LOGO_Y = 46
+CORE_BLOOM_R = 92  # soft centre depth, glyph-free so numbers stay legible
+_FONT_DIR = Path(__file__).resolve().parents[2] / "src" / "cofounder_agent" / "assets" / "fonts"
+
+
+def _logo_font(size: int):
+    """Sora 600, degrading to DejaVu Bold then PIL's default."""
+    try:
+        font = ImageFont.truetype(str(_FONT_DIR / "Sora.ttf"), size=size)
+        try:
+            font.set_variation_by_axes([600])
+        except Exception:  # static-FreeType build: default instance is fine
+            pass
+        return font
+    except OSError:
+        pass
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
 
 
 def draw_frame(t: float) -> Image.Image:
@@ -105,18 +153,49 @@ def draw_frame(t: float) -> Image.Image:
                     continue
                 d.arc(box, a0, a1, fill=colour + (alpha,), width=w)
 
-    # Central sphere, breathing on the same clock. Drawn as a dense radial
-    # falloff (1px steps at supersample) rather than a few widely-spaced discs
-    # -- coarse steps read as a flat dot wearing a haze, not as a sphere.
+    # Wordmark at centre, breathing on the same clock as the ring sweep.
     pulse = 0.5 + 0.5 * math.cos(2 * math.pi * t)
-    glow_r = int(GLOW_R * (0.86 + 0.14 * pulse) * SS)
-    peak = 96 + 128 * pulse
-    for rr in range(glow_r, 0, -1):
-        a = int(peak * (1 - rr / glow_r) ** 2.2)
+
+    # Centre bloom only -- no glyphs here, so the readouts stay clean. Dense 1px
+    # steps; coarse steps read as banding.
+    bloom_r = int(CORE_BLOOM_R * (0.88 + 0.12 * pulse) * SS)
+    # Per-step alpha stays tiny because ~180 1px ellipses composite ON TOP of
+    # each other: nominal peak 48 accumulated to a measured field of 148 and
+    # swallowed the amber CPU row. Tune by measuring the field, not the constant.
+    bloom_peak = 3.2 + 3.0 * pulse
+    for rr in range(bloom_r, 0, -1):
+        a = int(bloom_peak * (1 - rr / bloom_r) ** 2.4)
         if a > 0:
-            d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=MINT + (a,))
-    core_r = int(CORE_R * (0.80 + 0.20 * pulse) * SS)
-    d.ellipse([cx - core_r, cy - core_r, cx + core_r, cy + core_r], fill=MINT + (255,))
+            d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=BRAND_CYAN + (a,))
+
+    font = _logo_font(LOGO_PX * SS)
+    tracking = int(LOGO_TRACKING * LOGO_PX * SS)
+    widths = [d.textlength(ch, font=font) for ch in LOGO_TEXT]
+    total = sum(widths) + tracking * (len(LOGO_TEXT) - 1)
+
+    # Centre on the glyphs' ink, not the advance box: the em box carries uneven
+    # side bearings, so anchoring by advance width leaves the mark visibly
+    # off-centre on a round panel where centring is the whole game.
+    box = d.textbbox((0, 0), LOGO_TEXT, font=font)
+    pen_x = cx - total / 2
+    pen_y = LOGO_Y * SS - (box[1] + box[3]) / 2
+
+    # Halo so the mark reads against the tick ring behind it. Keep the radius
+    # under LOGO_Y or it runs off the top of the canvas and the mark looks
+    # cropped -- which reads as a clipped glyph, not as a clipped glow.
+    halo_r = int(40 * (0.9 + 0.1 * pulse) * SS)
+    for rr in range(halo_r, 0, -1):
+        a = int((30 + 26 * pulse) * (1 - rr / halo_r) ** 2.6)
+        if a > 0:
+            d.ellipse(
+                [cx - rr, LOGO_Y * SS - rr, cx + rr, LOGO_Y * SS + rr],
+                fill=BRAND_CYAN + (a,),
+            )
+
+    fill_a = int(170 + 85 * pulse)
+    for ch, w in zip(LOGO_TEXT, widths):
+        d.text((pen_x, pen_y), ch, font=font, fill=BRAND_CYAN + (fill_a,))
+        pen_x += w + tracking
 
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
