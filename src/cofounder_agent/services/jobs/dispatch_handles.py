@@ -1,17 +1,25 @@
-"""Shared YouTube external-handle capture+persist for video dispatch.
+"""Shared helpers for the media/podcast dispatch lanes.
 
-``media_distribute`` (asset-keyed) delivers Gate-2-approved videos to the enabled
-``publishing_adapters`` and, on a successful upload, captures the platform's
-external handles: the video id is merged into ``media_assets.platform_video_ids``
-(a non-clobbering jsonb ``||`` merge) and a ``pipeline_distributions`` row is
-upserted (``status='published'``) for observability + re-upload dedupe. This
-module single-sources those pieces: the :class:`PlatformDispatchResult` value
-type, the two SQL statements, and the per-platform merge+insert loop
-(:func:`persist_platform_handles`).
+Two things the ``media_distribute`` and ``podcast_distribute`` jobs both need:
 
-(Originally extracted after #1584 / #1601 to de-duplicate byte-identical copies
-shared with the post-keyed ``backfill_videos`` disk-scan job; ``backfill_videos``
-was retired in #1460, leaving ``media_distribute`` the sole caller.)
+1. **Single-flight claim** (:func:`claim_media_dispatch`) — a per-``(post, medium)``
+   advisory-lock guard that serializes the recheck→upload→stamp critical section
+   so two overlapping dispatch passes can never both perform the *irreversible*
+   upload of the same asset. See that function's docstring for why this is not a
+   purely-hypothetical multi-worker concern.
+
+2. **External-handle capture+persist** (:func:`persist_platform_handles`) — on a
+   successful video upload, capture the platform's external handles: the video id
+   is merged into ``media_assets.platform_video_ids`` (a non-clobbering jsonb
+   ``||`` merge) and a ``pipeline_distributions`` row is upserted
+   (``status='published'``) for observability + re-upload dedupe. This module
+   single-sources the :class:`PlatformDispatchResult` value type, the two SQL
+   statements, and the per-platform merge+insert loop.
+
+   (The handle-capture piece was originally extracted after #1584 / #1601 to
+   de-duplicate byte-identical copies shared with the post-keyed
+   ``backfill_videos`` disk-scan job; ``backfill_videos`` was retired in #1460,
+   leaving ``media_distribute`` the sole caller.)
 
 The caller keeps its own thin ``_persist_dispatch_result`` wrapper because it
 stamps ``record_dispatched`` in its own transaction. :func:`persist_platform_handles`
@@ -21,12 +29,119 @@ owns the transaction and the dispatch stamp.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# Advisory-lock namespace for the media/podcast dispatch critical section. Two
+# dispatch passes both SELECT the same ``approved AND dispatched_at IS NULL``
+# asset and both perform the irreversible upload (a duplicate YouTube video for
+# ``media_distribute``; a wasted re-upload + double stamp for ``podcast_distribute``).
+# ``pg_try_advisory_lock(NS, hashtext("<post_id>:<medium>"))`` serializes the whole
+# recheck→upload→stamp section cluster-wide — advisory locks span connections AND
+# workers, so this holds both for a single worker (these jobs are ``idempotent``,
+# which the scheduler maps to ``max_instances=3``, so a cycle that runs past its
+# 10-min interval overlaps itself) and for the multi-worker SaaS future. A stable
+# arbitrary int32, distinct from ``gpu_scheduler.GPU_ADVISORY_LOCK_KEY`` and
+# ``social_drafts._SOCIAL_POST_LOCK_NS`` (0x50AC). Mirrors the #3370 approve_draft fix.
+_MEDIA_DISPATCH_LOCK_NS: int = 0x4D44  # "MD" — media dispatch critical section
+
+# Re-check, under the lock, that this ``(post, medium)`` is STILL eligible for
+# dispatch. The batch that surfaced the row was SELECTed BEFORE the lock was held,
+# so a concurrent pass that already dispatched it (then released the lock) leaves a
+# stale row in our batch — uploading it again would duplicate. Same "re-read inside
+# the lock" shape as ``social_drafts._approve_draft_locked``.
+_STILL_UNDISPATCHED_SQL = """
+    SELECT 1
+      FROM media_approvals
+     WHERE post_id = $1::uuid
+       AND medium = $2
+       AND status = 'approved'
+       AND dispatched_at IS NULL
+     LIMIT 1
+"""
+
+
+@contextlib.asynccontextmanager
+async def claim_media_dispatch(
+    pool: Any, *, post_id: str, medium: str,
+) -> AsyncIterator[bool]:
+    """Single-flight guard around one irreversible media dispatch.
+
+    Yields ``True`` when the caller holds an exclusive claim on this
+    ``(post_id, medium)`` and should proceed with the upload+stamp, or ``False``
+    when it must skip WITHOUT uploading — either because another pass holds the
+    lock right now (``pg_try_advisory_lock`` is non-blocking: the loser bails
+    rather than waiting on a minutes-long upload) or because a concurrent pass
+    already dispatched this asset between the batch SELECT and now (the re-check).
+
+    The advisory lock is released on ``__aexit__`` (including when the caller
+    ``continue``\\ s or raises), and a dropped connection releases it too — so a
+    crash mid-upload can't wedge the row; it stays ``dispatched_at IS NULL`` and
+    is retried next cycle, exactly as before this guard existed.
+
+    **Why this matters even single-worker.** These jobs declare
+    ``idempotent = True``, which the scheduler maps to apscheduler
+    ``max_instances=3`` (``plugins/scheduler.py``). A dispatch cycle that runs
+    past its 10-minute interval — plausible when a backlog of up to
+    ``media_distribute_max_per_cycle`` videos uploads sequentially — overlaps the
+    next fire, and without this guard both instances SELECT the same
+    ``approved AND dispatched_at IS NULL`` rows (no ``FOR UPDATE SKIP LOCKED``)
+    and both upload. Mirrors the ``approve_draft`` fix (glad-labs-stack#3370).
+
+    A mock/degraded pool whose ``pg_try_advisory_lock`` returns ``None`` (not a
+    real Postgres bool) is treated as "no lock backend — proceed", never as
+    contention: only a literal ``False`` means another session holds it.
+    """
+    lock_key = f"{post_id}:{medium}"
+    async with pool.acquire() as conn:
+        got = await conn.fetchval(
+            "SELECT pg_try_advisory_lock($1, hashtext($2))",
+            _MEDIA_DISPATCH_LOCK_NS,
+            lock_key,
+        )
+        if got is False:
+            logger.info(
+                "[MEDIA_DISPATCH] post %s (%s) already being dispatched by "
+                "another pass (lock contended) — skipping to avoid a duplicate "
+                "upload",
+                post_id, medium,
+            )
+            yield False
+            return
+        try:
+            still = await conn.fetchval(_STILL_UNDISPATCHED_SQL, post_id, medium)
+            if not still:
+                logger.info(
+                    "[MEDIA_DISPATCH] post %s (%s) already dispatched by a "
+                    "concurrent pass — skipping (re-check under lock)",
+                    post_id, medium,
+                )
+                yield False
+            else:
+                yield True
+        finally:
+            # We only reach here when the lock was acquired (got is not False),
+            # so an unlock is always owed. Best-effort — a dropped connection
+            # frees the session lock anyway, so a failure here can't wedge it.
+            try:
+                await conn.fetchval(
+                    "SELECT pg_advisory_unlock($1, hashtext($2))",
+                    _MEDIA_DISPATCH_LOCK_NS,
+                    lock_key,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[MEDIA_DISPATCH] advisory-unlock for post %s (%s) failed "
+                    "(lock frees on disconnect)",
+                    post_id, medium, exc_info=True,
+                )
 
 
 @dataclass(frozen=True)
@@ -126,7 +241,10 @@ async def persist_platform_handles(
 
 __all__ = [
     "PlatformDispatchResult",
+    "claim_media_dispatch",
     "persist_platform_handles",
+    "_MEDIA_DISPATCH_LOCK_NS",
     "_MERGE_PLATFORM_VIDEO_ID_SQL",
     "_RECORD_DISTRIBUTION_SQL",
+    "_STILL_UNDISPATCHED_SQL",
 ]

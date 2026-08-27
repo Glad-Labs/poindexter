@@ -370,7 +370,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `db_backup.py` | DbBackupJob — invoke ``scripts/db-backup-local.sh`` on a schedule. |
 | `detect_anomalies.py` | DetectAnomaliesJob — z-score outlier detection across system metrics. |
 | `detect_duplicate_posts.py` | DetectDuplicatePostsJob — flag post pairs with near-identical titles. |
-| `dispatch_handles.py` | Shared YouTube external-handle capture+persist for video dispatch. |
+| `dispatch_handles.py` | Shared helpers for the media/podcast dispatch lanes. |
 | `dispatch_media_pipeline.py` | DispatchMediaPipelineJob — the Gate-1 → Stage-2 trigger (#689 Plan 7). |
 | `dispatch_podcast_pipeline.py` | DispatchPodcastPipelineJob — the Stage-3 podcast trigger (#689 deviation). |
 | `enqueue_seo_refreshes.py` | Scheduled job: auto-enqueue seo_refresh tasks from open SEO opportunities. |

@@ -189,3 +189,122 @@ def test_approved_undispatched_query_picks_newest_render() -> None:
     sql = podcast_distribute._APPROVED_UNDISPATCHED_SQL
     assert "DISTINCT ON (ma.post_id)" in sql
     assert "created_at DESC" in sql
+
+
+# ---------------------------------------------------------------------------
+# Single-flight delivery guard — two overlapping passes deliver once (#3370 twin)
+# ---------------------------------------------------------------------------
+
+
+class _RaceConn:
+    """Shared conn modelling pg_try_advisory_lock over process-wide state (one
+    instance shared across every ``pool.acquire()``), so two concurrent Pass-3
+    delivery loops serialize on the same (post, podcast) key. Mirrors the
+    media_distribute ``_RaceConn``."""
+
+    def __init__(self, held: set) -> None:
+        self._held = held
+        self.execute = AsyncMock(return_value="UPDATE 1")
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        if "pg_try_advisory_lock" in sql:
+            key = tuple(args)
+            if key in self._held:
+                return False
+            self._held.add(key)
+            return True
+        if "pg_advisory_unlock" in sql:
+            self._held.discard(tuple(args))
+            return True
+        return 1  # _STILL_UNDISPATCHED_SQL — eligible (delivery is patched out)
+
+
+class _RacePool:
+    """Pool stand-in for the concurrency test: ``fetch`` returns the SAME
+    approved batch to both passes (Pass 1/2 empty), ``acquire`` yields the one
+    shared ``_RaceConn`` so the advisory lock is process-wide."""
+
+    def __init__(self, approved: list[dict[str, Any]]) -> None:
+        self._approved = approved
+        self.held: set = set()
+        self._conn = _RaceConn(self.held)
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
+        if "status = 'approved'" in sql:
+            return [dict(r) for r in self._approved]
+        return []  # unlinked + backlog passes: nothing
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        return None
+
+    async def execute(self, sql: str, *args: Any) -> str:
+        return "UPDATE 1"
+
+    def acquire(self):
+        conn = self._conn
+
+        class _Ctx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_delivery_passes_deliver_once() -> None:
+    """Two overlapping Pass-3 delivery loops that both SELECT the same
+    approved+undispatched podcast must call ``_deliver_podcast`` exactly ONCE.
+
+    ``idempotent=True`` → apscheduler ``max_instances=3``, so a delivery cycle
+    running long overlaps itself. Milder than the video lane (the R2 key is
+    deterministic, so a double-upload overwrites rather than duplicates) but the
+    per-(post, podcast) advisory lock still spares the wasted upload + double
+    ``record_dispatched``, and keeps the twin lanes symmetric."""
+    import asyncio
+
+    pool = _RacePool([{"post_id": "p1", "storage_path": "/ep.mp3", "url": None}])
+
+    async def _slow_deliver(*a, **k):
+        # Hold the lock across a real suspension so the racing pass hits its
+        # pg_try_advisory_lock and gets False while this one is mid-delivery.
+        await asyncio.sleep(0.05)
+        return True
+
+    deliver = AsyncMock(side_effect=_slow_deliver)
+    with patch.object(podcast_distribute, "_deliver_podcast", deliver), \
+            patch.object(podcast_distribute, "_rebuild_feed", new=AsyncMock()):
+        job = PodcastDistributeJob()
+        await asyncio.gather(job.run(pool, _cfg(True)), job.run(pool, _cfg(True)))
+
+    assert deliver.await_count == 1, "podcast delivered more than once under concurrency"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_delivery_double_delivers_without_the_guard() -> None:
+    """Mutation check: neuter the guard (always proceed, no lock) and the SAME
+    two concurrent passes deliver TWICE — proving the lock is what holds it to
+    one."""
+    import asyncio
+    import contextlib
+
+    pool = _RacePool([{"post_id": "p1", "storage_path": "/ep.mp3", "url": None}])
+
+    async def _slow_deliver(*a, **k):
+        await asyncio.sleep(0.05)
+        return True
+
+    @contextlib.asynccontextmanager
+    async def _no_guard(pool, *, post_id, medium):
+        yield True
+
+    deliver = AsyncMock(side_effect=_slow_deliver)
+    with patch.object(podcast_distribute, "_deliver_podcast", deliver), \
+            patch.object(podcast_distribute, "claim_media_dispatch", _no_guard), \
+            patch.object(podcast_distribute, "_rebuild_feed", new=AsyncMock()):
+        job = PodcastDistributeJob()
+        await asyncio.gather(job.run(pool, _cfg(True)), job.run(pool, _cfg(True)))
+
+    assert deliver.await_count == 2, "neutered guard should let both passes deliver"

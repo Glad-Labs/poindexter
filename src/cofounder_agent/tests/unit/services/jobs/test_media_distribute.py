@@ -41,10 +41,27 @@ class _FakeTxn:
 class _FakeConn:
     """Pooled-connection stand-in. ``execute`` records calls (so the persist
     pass's platform_video_ids merge + pipeline_distributions insert can be
-    asserted); ``transaction`` yields a no-op async context."""
+    asserted); ``transaction`` yields a no-op async context.
+
+    ``fetchval`` serves the single-flight dispatch guard
+    (``claim_media_dispatch``): the advisory-lock acquire returns True (lock
+    granted), the still-undispatched re-check returns 1 (row still eligible), and
+    the unlock returns True — so every dispatch test proceeds exactly as it did
+    before the guard existed. The concurrency-regression test below drives a
+    stateful pool instead, so it can model contention."""
 
     def __init__(self):
         self.execute = AsyncMock(return_value="OK")
+
+        async def _fetchval(sql, *args):
+            if "pg_try_advisory_lock" in sql:
+                return True
+            if "pg_advisory_unlock" in sql:
+                return True
+            # _STILL_UNDISPATCHED_SQL — eligible in the single-asset tests.
+            return 1
+
+        self.fetchval = AsyncMock(side_effect=_fetchval)
 
     def transaction(self):
         return _FakeTxn()
@@ -563,3 +580,145 @@ def test_approved_undispatched_sql_excludes_grandfather():
     sql = md._APPROVED_UNDISPATCHED_SQL
     assert "ma.dispatched_at IS NULL" in sql  # still gates on never-delivered
     assert "COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'" in sql
+
+
+# ---------------------------------------------------------------------------
+# Single-flight dispatch guard — two overlapping passes upload once (#3370 twin)
+# ---------------------------------------------------------------------------
+
+
+class _RaceConn:
+    """Shared conn modelling pg_try_advisory_lock over process-wide state.
+
+    One instance is shared across every ``pool.acquire()`` so the lock set is
+    process-wide, exactly like a real advisory lock (mirrors the social_drafts
+    ``_LockConn`` in test_social_drafts.py). ``fetchval`` routes on the SQL: the
+    lock/unlock calls mutate the shared ``held`` set (True on first acquire of a
+    key, False while held); the still-undispatched re-check reads the shared
+    ``dispatched`` set (None once a pass stamped it, else 1). ``execute`` is a
+    no-op stand-in for the persist writes."""
+
+    def __init__(self, held: set, dispatched: set):
+        self._held = held
+        self._dispatched = dispatched
+        self.execute = AsyncMock(return_value="OK")
+
+    def transaction(self):
+        return _FakeTxn()
+
+    async def fetchval(self, sql, *args):
+        if "pg_try_advisory_lock" in sql:
+            key = tuple(args)
+            if key in self._held:
+                return False
+            self._held.add(key)
+            return True
+        if "pg_advisory_unlock" in sql:
+            self._held.discard(tuple(args))
+            return True
+        # _STILL_UNDISPATCHED_SQL — (post_id, medium) already stamped?
+        return None if (args[0], args[1]) in self._dispatched else 1
+
+
+class _RacePool:
+    """asyncpg-pool stand-in for the concurrency test. ``fetch`` routes on the
+    SQL and returns the SAME (non-consumed) approved batch to both racing passes;
+    ``acquire`` always yields the one shared ``_RaceConn`` so the lock is
+    process-wide."""
+
+    def __init__(self, approved):
+        self._approved = approved
+        self.held: set = set()
+        self.dispatched: set = set()
+        self._conn = _RaceConn(self.held, self.dispatched)
+
+    async def fetch(self, sql, *args):
+        if "post_id IS NULL" in sql:
+            return []  # link pass: nothing unlinked
+        return [dict(r) for r in self._approved]  # dispatch pass: both see it
+
+    def acquire(self):
+        return _FakeAcquire(self._conn)
+
+
+def _approved_video_row(path):
+    return {
+        "post_id": "p1", "medium": "video", "title": "T", "content": "c",
+        "excerpt": "e", "seo_keywords": "", "slug": "s",
+        "asset_id": "a1", "task_id": "t1", "storage_path": str(path),
+    }
+
+
+@pytest.mark.asyncio
+async def test_concurrent_dispatch_passes_upload_once(tmp_path):
+    """Two overlapping dispatch passes that both SELECT the same
+    approved+undispatched asset must upload it exactly ONCE.
+
+    These jobs are ``idempotent=True`` → apscheduler ``max_instances=3``, so a
+    cycle running past its 10-min interval overlaps itself (and the multi-worker
+    future overlaps across processes). Without the per-(post,medium) advisory
+    lock both passes clear the batch read and both call ``_dispatch_asset`` — a
+    duplicate YouTube video (the media twin of the social double-post fixed in
+    glad-labs-stack#3370)."""
+    import asyncio
+
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    pool = _RacePool([_approved_video_row(f)])
+
+    async def _slow_upload(*a, **k):
+        # Hold the lock across a real suspension so the racing pass reaches its
+        # pg_try_advisory_lock and gets False while this one is mid-upload.
+        await asyncio.sleep(0.05)
+        return [md._PlatformDispatchResult(
+            platform="youtube", success=True, external_id="vid", url="u"
+        )]
+
+    async def _mark_dispatched(conn, post_id, medium, *, success):
+        if success:
+            pool.dispatched.add((post_id, medium))
+
+    disp = AsyncMock(side_effect=_slow_upload)
+    with patch.object(md, "_dispatch_asset", disp), \
+            patch.object(md, "record_dispatched", AsyncMock(side_effect=_mark_dispatched)), \
+            patch("services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
+        job = MediaDistributeJob()
+        cfg = {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        await asyncio.gather(job.run(pool, cfg), job.run(pool, cfg))
+
+    assert disp.await_count == 1, "asset uploaded more than once under concurrency"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_dispatch_double_uploads_without_the_guard(tmp_path):
+    """Mutation check: neuter the single-flight guard (always proceed, no lock)
+    and the SAME two concurrent passes upload the asset TWICE — proving the lock
+    in the test above is what holds it to one, not some incidental
+    serialization in the fake."""
+    import asyncio
+    import contextlib
+
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    pool = _RacePool([_approved_video_row(f)])
+
+    async def _slow_upload(*a, **k):
+        await asyncio.sleep(0.05)
+        return [md._PlatformDispatchResult(
+            platform="youtube", success=True, external_id="vid", url="u"
+        )]
+
+    @contextlib.asynccontextmanager
+    async def _no_guard(pool, *, post_id, medium):
+        yield True  # neutered: always proceed, no lock, no re-check
+
+    disp = AsyncMock(side_effect=_slow_upload)
+    with patch.object(md, "_dispatch_asset", disp), \
+            patch.object(md, "claim_media_dispatch", _no_guard), \
+            patch.object(md, "record_dispatched", AsyncMock()), \
+            patch("services.media_feed_rebuild.rebuild_video_feed", AsyncMock()):
+        job = MediaDistributeJob()
+        cfg = {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        await asyncio.gather(job.run(pool, cfg), job.run(pool, cfg))
+
+    assert disp.await_count == 2, "neutered guard should let both passes upload"

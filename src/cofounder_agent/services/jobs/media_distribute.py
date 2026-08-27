@@ -48,6 +48,7 @@ from typing import Any
 from plugins.job import JobResult
 from services.jobs.dispatch_handles import (
     PlatformDispatchResult,
+    claim_media_dispatch,
     persist_platform_handles,
 )
 from services.media_approval_service import record_dispatched, record_pending
@@ -460,37 +461,51 @@ class MediaDistributeJob:
                 continue
 
             shorts = medium == "video_short"
-            try:
-                results = await _dispatch_asset(pool, sc, dict(row), shorts=shorts)
-            except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
-                logger.warning(
-                    "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
-                    row["post_id"], medium, describe_exception(exc),
-                )
-                results = []
-            ok = any(r.success for r in results)
+            # Single-flight per (post, medium): claim the row under a cluster-wide
+            # advisory lock + re-check it's still undispatched BEFORE the
+            # irreversible YouTube upload, so two overlapping dispatch passes
+            # (idempotent jobs run max_instances=3, plus the multi-worker future)
+            # can never both upload the same asset → duplicate video (#3370 twin).
+            async with claim_media_dispatch(
+                pool, post_id=row["post_id"], medium=medium,
+            ) as proceed:
+                if not proceed:
+                    # Contended, or already dispatched by a concurrent pass. The
+                    # row stays approved+undispatched (unless the other pass
+                    # stamped it) so a later cycle re-attempts if needed.
+                    continue
 
-            # Stamp the dispatch + capture each platform's external id/url in one
-            # transaction (the id/url used to be discarded — the bug). asset_id /
-            # task_id come off the approved-undispatched row.
-            try:
-                await _persist_dispatch_result(
-                    pool,
-                    post_id=row["post_id"],
-                    medium=medium,
-                    asset_id=row.get("asset_id"),
-                    task_id=row.get("task_id"),
-                    results=results,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[MEDIA_DISTRIBUTE] record dispatch outcome failed for post %s (%s): %s",
-                    row["post_id"], medium, describe_exception(exc),
-                )
-            if ok:
-                dispatched += 1
-                if medium == "video":
-                    rss_dispatched += 1
+                try:
+                    results = await _dispatch_asset(pool, sc, dict(row), shorts=shorts)
+                except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
+                    logger.warning(
+                        "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
+                        row["post_id"], medium, describe_exception(exc),
+                    )
+                    results = []
+                ok = any(r.success for r in results)
+
+                # Stamp the dispatch + capture each platform's external id/url in
+                # one transaction (the id/url used to be discarded — the bug).
+                # asset_id / task_id come off the approved-undispatched row.
+                try:
+                    await _persist_dispatch_result(
+                        pool,
+                        post_id=row["post_id"],
+                        medium=medium,
+                        asset_id=row.get("asset_id"),
+                        task_id=row.get("task_id"),
+                        results=results,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "[MEDIA_DISTRIBUTE] record dispatch outcome failed for post %s (%s): %s",
+                        row["post_id"], medium, describe_exception(exc),
+                    )
+                if ok:
+                    dispatched += 1
+                    if medium == "video":
+                        rss_dispatched += 1
 
         # Refresh the public video RSS feed once per cycle when this pass put a
         # new long-form episode behind it. Podcast's twin lane has always done

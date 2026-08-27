@@ -25,6 +25,7 @@ import os
 from typing import Any
 
 from plugins.job import JobResult
+from services.jobs.dispatch_handles import claim_media_dispatch
 from services.media_approval_service import record_dispatched, record_pending
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
@@ -288,8 +289,20 @@ class PodcastDistributeJob:
             logger.warning("[PODCAST_DISTRIBUTE] approved query failed: %s", describe_exception(exc))
             approved = []
         for row in approved or []:
-            if await _deliver_podcast(pool, sc, row):
-                dispatched += 1
+            # Single-flight per (post, podcast): claim under the same cluster-wide
+            # advisory lock media_distribute uses, so two overlapping delivery
+            # passes (idempotent jobs run max_instances=3, plus the multi-worker
+            # future) can't both upload the same episode. Milder than the video
+            # lane (the R2 key is deterministic, so a double-upload overwrites
+            # rather than duplicates), but kept symmetric with the twin lane and
+            # it spares a wasted upload + double record_dispatched.
+            async with claim_media_dispatch(
+                pool, post_id=row["post_id"], medium="podcast",
+            ) as proceed:
+                if not proceed:
+                    continue
+                if await _deliver_podcast(pool, sc, row):
+                    dispatched += 1
         if dispatched:
             await _rebuild_feed(sc)
 
