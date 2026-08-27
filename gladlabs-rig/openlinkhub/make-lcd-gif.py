@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the Glad Labs coolant-loop GIF for the XC7 ELITE LCD block (480x480).
 
-The "GL" wordmark sits at centre, breathing, inside three concentric rings that
-sweep comet heads around a dark field. Rings use the same thermal ramp as the
+The Glad Labs mark -- the controller dissolving into circuit traces -- rides at
+12 o'clock, breathing, inside three concentric rings that sweep comet heads
+around a dark field. Rings use the same thermal ramp as the
 rest of the rig (mint -> amber -> orange), cool innermost and hot outermost,
 matching how the temperature palette is mapped everywhere else.
 
@@ -10,10 +11,9 @@ This is a BACKGROUND: the block runs LCD mode 102, which composites three live
 readouts on top of it. With three sensors enabled OpenLinkHub centres them at
 baselines y~132 / 257 / 382 with labels at 172 / 297 / 422 (its own arithmetic:
 paddingStart = -(sensors * 125) / 2 + margin, then +125 per sensor), i.e. text
-covers nearly the whole vertical centre. The wordmark is therefore drawn as a
-glowing mark UNDER that text rather than as a solid centrepiece -- anything
-opaque here just gets buried. Re-check those numbers before changing sensor
-count or margin in lcd/animation.json.
+covers nearly the whole vertical centre, which is why the logo sits at the top
+rather than in the middle. Re-check those numbers before changing sensor count
+or margin in lcd/animation.json.
 
 The panel is physically round, so everything stays inside the inscribed circle
 (r=240) with margin; corners are never seen. Every phase advances a whole number
@@ -27,9 +27,10 @@ at startup, so a running service needs /api/lcd/upload instead).
 import math
 import os
 import sys
+from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
 # Alphanumeric only -- OpenLinkHub's upload handler rejects a hyphen or
 # underscore with "Invalid filename. Only letters and numbers allowed", and the
@@ -58,46 +59,69 @@ TRAIL_DEG = 110  # tail length in degrees
 REST_ALPHA = 34  # faint always-on ring, so the circuit reads at every phase
 PALETTE_TILES = 8  # frames sampled to build the shared palette
 
-# Glad Labs wordmark. The brand mark is typographic -- the letters "GL" in the
-# display face, uppercase, tracked out (packages/brand/src/components/Logo.jsx).
-# Space Grotesk, the web display font, is not vendored as a TTF, so this uses
-# Sora 600 in brand cyan: the same substitution the video CTA end-card already
-# makes for raster output (services/video_renderers/brand_endcard.py), which
-# keeps the two branded motion surfaces consistent.
-LOGO_TEXT = "GL"
-LOGO_PX = 52
-LOGO_TRACKING = 0.05  # em, per the brand component
+# The Glad Labs logo: the controller-dissolving-into-circuit-traces mark from
+# the site icon. Shipped as RGB on white, so it is flood-keyed from the corners
+# the same way services/video_renderers/brand_endcard.py::_keyed_logo does --
+# corner-connected white only, which leaves the white circuit dots INSIDE the
+# artwork intact. It needs no recolouring for a dark panel: the navy body sits
+# at luminance ~35 against a ~15 field, so it stays a readable silhouette while
+# the mint traces carry the detail.
 BRAND_CYAN = (34, 211, 238)  # #22D3EE
-# Wordmark rides at 12 o'clock like the brand name on a watch dial, NOT at
-# centre: with three sensors the readouts own y~74-430, so a centred mark is
-# either buried or drowns the numbers (188px centred made "LIQUID TEMP"
-# unreadable). Ink centres on y=44 -- clear of the first glyph top at ~74, and
-# the round crop still allows +/-138px of width there.
-LOGO_Y = 46
-CORE_BLOOM_R = 92  # soft centre depth, glyph-free so numbers stay legible
-_FONT_DIR = Path(__file__).resolve().parents[2] / "src" / "cofounder_agent" / "assets" / "fonts"
+LOGO_SRC = Path(__file__).resolve().parents[2] / "web" / "public-site" / "public" / "icon-512.png"
+# Mark is centred and large. The readouts (y~74-430) land straight on top of it,
+# so LOGO_ALPHA holds it back far enough for the numbers to stay legible -- it
+# reads as a brand emboss behind the instrument rather than a competing layer.
+# 200px tall is near the ceiling: at 1.87 aspect that is 374 wide (+/-187), and
+# the round crop allows only +/-218 at the mark's top and bottom edges.
+LOGO_H = 200
+LOGO_Y = 240
+LOGO_ALPHA = 0.52
 
 
-def _logo_font(size: int):
-    """Sora 600, degrading to DejaVu Bold then PIL's default."""
-    try:
-        font = ImageFont.truetype(str(_FONT_DIR / "Sora.ttf"), size=size)
-        try:
-            font.set_variation_by_axes([600])
-        except Exception:  # static-FreeType build: default instance is fine
-            pass
-        return font
-    except OSError:
-        pass
-    for path in (
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ):
-        try:
-            return ImageFont.truetype(path, size=size)
-        except OSError:
-            continue
-    return ImageFont.load_default(size=size)
+@lru_cache(maxsize=1)
+def _logo_mark() -> Image.Image:
+    """The controller mark, white-keyed and cropped away from the wordmark.
+
+    Keyed once and cached: the flood-fill plus per-pixel sweep is ~260k pixels,
+    and redoing it per frame would dominate the render.
+    """
+    if not LOGO_SRC.exists():
+        raise SystemExit(
+            f"logo not found at {LOGO_SRC}. This path is resolved relative to "
+            "the script, so run it from its place in the repo (install.sh does)."
+        )
+    logo = Image.open(LOGO_SRC).convert("RGBA")
+    if logo.getchannel("A").getextrema()[0] < 255:
+        keyed = logo  # already transparent
+    else:
+        sentinel = (255, 0, 255, 255)
+        keyed = logo.copy()
+        w, h = keyed.size
+        for corner in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+            try:
+                ImageDraw.floodfill(keyed, corner, sentinel, thresh=45)
+            except (ValueError, RecursionError):
+                continue
+        px = keyed.load()
+        for y in range(h):
+            for x in range(w):
+                if px[x, y][:3] == sentinel[:3]:
+                    px[x, y] = (0, 0, 0, 0)
+        keyed.putalpha(keyed.getchannel("A").filter(ImageFilter.GaussianBlur(0.8)))
+
+    # The artwork stacks the controller over a "GLAD LABS" wordmark, separated
+    # by a band of empty rows. Split on that gap and keep the mark: at 60px tall
+    # the wordmark would be ~8px and unreadable, so it earns no space.
+    alpha = keyed.getchannel("A")
+    w, h = keyed.size
+    rows = [max(alpha.crop((0, y, w, y + 1)).getdata()) for y in range(h)]
+    ink = [y for y, v in enumerate(rows) if v >= 8]
+    gap_end = h
+    for y in range(ink[0], ink[-1]):
+        if rows[y] < 8 and all(rows[z] < 8 for z in range(y, min(y + 12, h))):
+            gap_end = y
+            break
+    return keyed.crop(keyed.crop((0, 0, w, gap_end)).getbbox())
 
 
 def draw_frame(t: float) -> Image.Image:
@@ -153,49 +177,46 @@ def draw_frame(t: float) -> Image.Image:
                     continue
                 d.arc(box, a0, a1, fill=colour + (alpha,), width=w)
 
-    # Wordmark at centre, breathing on the same clock as the ring sweep.
+    # Logo + bloom, breathing on the same clock as the ring sweep.
     pulse = 0.5 + 0.5 * math.cos(2 * math.pi * t)
 
-    # Centre bloom only -- no glyphs here, so the readouts stay clean. Dense 1px
-    # steps; coarse steps read as banding.
-    bloom_r = int(CORE_BLOOM_R * (0.88 + 0.12 * pulse) * SS)
-    # Per-step alpha stays tiny because ~180 1px ellipses composite ON TOP of
-    # each other: nominal peak 48 accumulated to a measured field of 148 and
-    # swallowed the amber CPU row. Tune by measuring the field, not the constant.
-    bloom_peak = 3.2 + 3.0 * pulse
-    for rr in range(bloom_r, 0, -1):
-        a = int(bloom_peak * (1 - rr / bloom_r) ** 2.4)
-        if a > 0:
-            d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=BRAND_CYAN + (a,))
+    # Dark plate first: the rings pass straight behind the logo, so at some phases
+    # a comet head sweeps through the artwork and visually cuts it. Knocking the
+    # background back here keeps the mark whole without fighting the halo.
+    plate_rx, plate_ry = 210 * SS, 118 * SS
+    for k in range(24, 0, -1):
+        f = k / 24
+        rx, ry = int(plate_rx * f), int(plate_ry * f)
+        d.ellipse(
+            [cx - rx, LOGO_Y * SS - ry, cx + rx, LOGO_Y * SS + ry],
+            fill=BASE + (16,),
+        )
 
-    font = _logo_font(LOGO_PX * SS)
-    tracking = int(LOGO_TRACKING * LOGO_PX * SS)
-    widths = [d.textlength(ch, font=font) for ch in LOGO_TEXT]
-    total = sum(widths) + tracking * (len(LOGO_TEXT) - 1)
-
-    # Centre on the glyphs' ink, not the advance box: the em box carries uneven
-    # side bearings, so anchoring by advance width leaves the mark visibly
-    # off-centre on a round panel where centring is the whole game.
-    box = d.textbbox((0, 0), LOGO_TEXT, font=font)
-    pen_x = cx - total / 2
-    pen_y = LOGO_Y * SS - (box[1] + box[3]) / 2
-
-    # Halo so the mark reads against the tick ring behind it. Keep the radius
-    # under LOGO_Y or it runs off the top of the canvas and the mark looks
-    # cropped -- which reads as a clipped glyph, not as a clipped glow.
-    halo_r = int(40 * (0.9 + 0.1 * pulse) * SS)
+    # Halo, kept deliberately weak. There is no separate centre bloom any more:
+    # the logo owns the centre, and a bright glow behind it washes out the middle
+    # readout, which lands right here. Legibility is measured as the background
+    # luminance under each text row, not eyeballed.
+    halo_r = int(96 * (0.9 + 0.1 * pulse) * SS)
     for rr in range(halo_r, 0, -1):
-        a = int((30 + 26 * pulse) * (1 - rr / halo_r) ** 2.6)
+        a = int((26 + 22 * pulse) * (1 - rr / halo_r) ** 2.6)
         if a > 0:
             d.ellipse(
                 [cx - rr, LOGO_Y * SS - rr, cx + rr, LOGO_Y * SS + rr],
                 fill=BRAND_CYAN + (a,),
             )
 
-    fill_a = int(170 + 85 * pulse)
-    for ch, w in zip(LOGO_TEXT, widths):
-        d.text((pen_x, pen_y), ch, font=font, fill=BRAND_CYAN + (fill_a,))
-        pen_x += w + tracking
+    mark = _logo_mark()
+    mh = LOGO_H * SS
+    mark = mark.resize((round(mark.width * mh / mark.height), mh), Image.LANCZOS)
+    scale = LOGO_ALPHA * (0.86 + 0.14 * pulse)
+    faded = mark.getchannel("A").point(lambda v: int(v * scale))
+    mark = mark.copy()
+    mark.putalpha(faded)
+    img.paste(
+        mark,
+        (int(cx - mark.width / 2), int(LOGO_Y * SS - mark.height / 2)),
+        mark,
+    )
 
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
