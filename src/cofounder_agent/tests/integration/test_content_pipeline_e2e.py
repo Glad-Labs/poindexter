@@ -4,69 +4,121 @@ End-to-end integration tests for the content pipeline with LOCAL Ollama.
 Unlike test_content_pipeline.py (which mocks LLM calls), these tests make
 REAL calls to the local Ollama instance to verify:
 
-1. Ollama connectivity — can we reach localhost:11434 and generate text?
+1. Ollama connectivity — can we reach the resolved Ollama and generate text?
 2. Content generation — can AIContentGenerator produce content via Ollama?
-3. QA review — can MultiModelQA review content with local gemma3:27b?
+3. QA review — can MultiModelQA review content with a local model?
 4. SEO metadata — can the pipeline generate seo_title, seo_description, seo_keywords?
 5. Thinking models — do qwen3.5/glm-4.7 return non-empty content with sufficient token budget?
 
 Requirements:
-  - Ollama must be running locally on port 11434
-  - Tests are skipped automatically if Ollama is unreachable
+  - A reachable Ollama at the URL the code under test resolves (see
+    ``_ollama_base_url`` — NOT a hardcoded localhost:11434)
+  - Tests are skipped automatically if that Ollama is unreachable
+  - The two tests that dispatch through the pipeline's own seams
+    (``test_generate_blog_post_with_ollama``,
+    ``test_qa_ollama_critic_present``) additionally need a reachable
+    Postgres — see the ``platform_stack`` fixture — and skip on their own
+    when there isn't one
   - Marked with @pytest.mark.integration (excluded from unit test suite)
 """
 
 import functools
 import json
 import re
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 import httpx
 import pytest
+from brain.docker_utils import IN_DOCKER
 
 # ---------------------------------------------------------------------------
-# Skip entire module if Ollama is not reachable
+# The one URL — the guard and the code under test must agree on it
 # ---------------------------------------------------------------------------
+
+
+def _reachable_from_here(url: str) -> str:
+    """De-containerize a URL so it resolves from *this* process.
+
+    The inverse of ``brain.docker_utils.localize_url``, which rewrites
+    ``localhost`` → ``host.docker.internal`` for code running inside a
+    container. ``app_settings.ollama_base_url`` is stored in the container
+    form (``http://host.docker.internal:11434``) because the worker is its
+    main consumer — but that hostname does not resolve from a host-side
+    pytest process, so a host run has to translate back.
+
+    No-op inside Docker, and idempotent, so applying it to a URL that is
+    already in host form is safe.
+    """
+    if IN_DOCKER:
+        return url
+    return url.replace("://host.docker.internal:", "://localhost:")
 
 
 @functools.lru_cache(maxsize=1)
-def _ollama_is_running() -> bool:
-    """Synchronous reachability check, cached so it runs at most once.
+def _ollama_base_url() -> str:
+    """The base URL the code under test will actually use, from here.
 
-    Called by the ``_require_ollama`` autouse fixture at test *setup*
-    (not import) time, so pytest collection makes no network call (#994).
+    Resolved through ``ollama_client._default_base_url`` — the SAME chain
+    the client itself reads (``ollama_base_url`` → ``ollama_host`` → the
+    baked-in default) — rather than a second hardcoded literal.
+
+    That is the entire point of this helper. The guard used to probe
+    ``http://localhost:11434`` while every client it gated resolved
+    ``http://host.docker.internal:11434``, so on the host the probe
+    succeeded, the module did NOT skip, and seven tests then died on
+    ``httpx.ConnectError: [Errno -2] Name or service not known``. Deriving
+    the probe URL from the client's own resolver makes that particular
+    divergence unrepresentable: if the resolution chain changes, the guard
+    follows it.
+    """
+    from services.ollama_client import _default_base_url
+
+    return _reachable_from_here(_default_base_url()).rstrip("/")
+
+
+@functools.lru_cache(maxsize=1)
+def _ollama_probe() -> tuple[bool, tuple[str, ...]]:
+    """``(reachable, installed_model_names)`` for the resolved URL.
+
+    One cached ``/api/tags`` call backs every reachability and
+    model-availability question in this module, fired at test *setup* (not
+    import) time so pytest collection stays offline (#994).
     """
     try:
-        r = httpx.get("http://localhost:11434/api/tags", timeout=3.0)
-        return r.status_code == 200
+        r = httpx.get(f"{_ollama_base_url()}/api/tags", timeout=3.0)
+        if r.status_code != 200:
+            return False, ()
+        models = r.json().get("models", [])
+        return True, tuple(str(m.get("name", "")) for m in models)
     except Exception:
-        return False
+        return False, ()
+
+
+def _ollama_is_running() -> bool:
+    """True when the resolved Ollama answered ``/api/tags``."""
+    return _ollama_probe()[0]
 
 
 def _ollama_has_model(model_name: str) -> bool:
     """Check if a specific model (or a model containing that substring) is available."""
-    try:
-        r = httpx.get("http://localhost:11434/api/tags", timeout=3.0)
-        if r.status_code != 200:
-            return False
-        models = r.json().get("models", [])
-        return any(model_name in m.get("name", "") for m in models)
-    except Exception:
-        return False
+    return any(model_name in name for name in _ollama_probe()[1])
 
 
 def _find_ollama_model(prefix: str) -> str | None:
     """Find the first installed Ollama model whose name contains the given prefix."""
-    try:
-        r = httpx.get("http://localhost:11434/api/tags", timeout=3.0)
-        if r.status_code != 200:
-            return None
-        models = r.json().get("models", [])
-        for m in models:
-            if prefix in m.get("name", ""):
-                return m["name"]
-        return None
-    except Exception:
-        return None
+    return next((name for name in _ollama_probe()[1] if prefix in name), None)
+
+
+def _make_client(**kwargs):
+    """An ``OllamaClient`` pinned to the URL the guard actually probed.
+
+    Every direct-client test goes through here so "the guard checked it"
+    and "the client called it" cannot drift apart again.
+    """
+    from services.ollama_client import OllamaClient
+
+    return OllamaClient(base_url=_ollama_base_url(), **kwargs)
 
 
 pytestmark = pytest.mark.integration
@@ -74,17 +126,35 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(autouse=True)
 def _require_ollama() -> None:
-    """Skip every test in this module unless Ollama is reachable.
+    """Skip every test in this module unless the resolved Ollama is reachable.
 
     Replaces the former module-level ``skipif(not _ollama_is_running())``,
     which probed the network at *import* time — so merely collecting this
-    file (e.g. a CI `pytest tests/integration/` sweep) hit localhost:11434.
+    file (e.g. a CI `pytest tests/integration/` sweep) hit the network.
     A fixture defers the probe to test setup, keeping collection offline
     while preserving the "skip the whole module when Ollama is down"
     behaviour. The probe is cached, so it fires at most once per session.
+
+    The skip names the URL, because "Ollama is down" and "we asked the
+    wrong host" look identical from the outside and only one of them is
+    an outage.
     """
     if not _ollama_is_running():
-        pytest.skip("Ollama not running on localhost:11434")
+        pytest.skip(f"Ollama not reachable at {_ollama_base_url()}")
+
+
+@pytest.fixture
+def ollama_site_config():
+    """A ``SiteConfig`` pinned to the same URL the guard probed.
+
+    Services that build their own client (``AIContentGenerator``,
+    ``ContentMetadataGenerator``) read ``ollama_base_url`` off the injected
+    SiteConfig rather than taking a ``base_url``, so seeding it here is how
+    those paths join the same agreement.
+    """
+    from services.site_config import SiteConfig
+
+    return SiteConfig(initial_config={"ollama_base_url": _ollama_base_url()})
 
 
 # ---------------------------------------------------------------------------
@@ -98,9 +168,7 @@ class TestOllamaConnectivity:
     @pytest.mark.asyncio
     async def test_health_check(self):
         """OllamaClient.check_health() returns True when server is running."""
-        from services.ollama_client import OllamaClient
-
-        client = OllamaClient()
+        client = _make_client()
         try:
             assert await client.check_health() is True
         finally:
@@ -109,9 +177,7 @@ class TestOllamaConnectivity:
     @pytest.mark.asyncio
     async def test_list_models_returns_nonempty(self):
         """At least one model should be installed locally."""
-        from services.ollama_client import OllamaClient
-
-        client = OllamaClient()
+        client = _make_client()
         try:
             models = await client.list_models()
             assert len(models) > 0, "No models installed in Ollama"
@@ -125,14 +191,12 @@ class TestOllamaConnectivity:
     async def test_generate_short_text(self):
         """Ollama can generate a short text completion.
 
-        Uses gemma3:27b explicitly to avoid thinking-model token budget issues
-        (qwen3.5 may auto-resolve as default and consume all tokens on reasoning).
+        Pins a non-thinking model explicitly to avoid token-budget issues —
+        leaving the model unset auto-resolves to the largest installed one,
+        which consumes the whole budget on a reasoning trace.
         """
-        from services.ollama_client import OllamaClient
-
-        # Use a non-thinking model for basic connectivity test
-        model = "gemma3:27b" if _ollama_has_model("gemma3:27b") else None
-        client = OllamaClient()
+        model = _require_small_model()
+        client = _make_client()
         try:
             result = await client.generate(
                 prompt="Respond with exactly one word: hello",
@@ -156,14 +220,24 @@ class TestContentGeneration:
     """Verify AIContentGenerator can produce content through Ollama."""
 
     @pytest.mark.asyncio
-    async def test_generate_blog_post_with_ollama(self):
-        """AIContentGenerator.generate_blog_post produces non-empty content via Ollama."""
+    @pytest.mark.timeout(600)
+    async def test_generate_blog_post_with_ollama(self, platform_stack):
+        """AIContentGenerator.generate_blog_post produces non-empty content via Ollama.
+
+        Takes the full ``platform_stack`` because the generator raises
+        ``RuntimeError: platform handle required for dispatch`` without a
+        handle. It used to be constructed bare and still "passed": its
+        Ollama health check failed against the unreachable container URL,
+        so it returned non-Ollama fallback content that satisfied every
+        assertion here without a model ever being called.
+        """
         from modules.content.ai_content_generator import AIContentGenerator
-        from services.site_config import SiteConfig
 
         gen = AIContentGenerator(
-            quality_threshold=2.0, site_config=SiteConfig(),
-        )  # Low threshold for speed
+            quality_threshold=2.0,  # Low threshold for speed
+            site_config=platform_stack.site_config,
+            platform=platform_stack.platform,
+        )
         content, model_used, metrics = await gen.generate_blog_post(
             topic="benefits of unit testing",
             style="technical",
@@ -183,12 +257,11 @@ class TestContentGeneration:
     async def test_ollama_client_generate_with_system_prompt(self):
         """OllamaClient.generate() works with a system prompt.
 
-        Uses gemma3:27b to avoid thinking-model empty-output issues with low token budgets.
+        Pins a non-thinking model to avoid empty-output issues with low token
+        budgets (see ``_SMALL_NON_THINKING_MODELS``).
         """
-        from services.ollama_client import OllamaClient
-
-        model = "gemma3:27b" if _ollama_has_model("gemma3:27b") else None
-        client = OllamaClient()
+        model = _require_small_model()
+        client = _make_client()
         try:
             result = await client.generate(
                 prompt="What is 2+2?",
@@ -237,17 +310,183 @@ Teams that adopt testing practices ship fewer bugs and iterate faster.
 Start with the most critical paths and expand coverage over time.
 """
 
+# Small, non-thinking, JSON-clean local models, in preference order; the first
+# one actually installed wins.
+#
+# Passing ``model=None`` to OllamaClient is NOT a safe "just pick something":
+# it auto-resolves to the LARGEST installed model, which on a real rig is a
+# thinking model — precisely what the low-token-budget tests below say they are
+# avoiding. Several of them hardcoded ``gemma3:27b`` and silently degraded to
+# that auto-resolve when it wasn't installed, so a 100-token "What is 2+2?"
+# spent its whole budget on a reasoning trace.
+_SMALL_NON_THINKING_MODELS = (
+    "gemma3:27b",
+    "qwen2.5:7b",
+    "qwen2.5-coder:7b",
+    "phi4",
+    "llama3.2",
+)
+
+
+def _small_non_thinking_model() -> str | None:
+    """The installed name of the first preferred small model, or ``None``."""
+    for candidate in _SMALL_NON_THINKING_MODELS:
+        found = _find_ollama_model(candidate)
+        if found:
+            return found
+    return None
+
+
+def _require_small_model() -> str:
+    """Like :func:`_small_non_thinking_model`, but skips when none is installed."""
+    model = _small_non_thinking_model()
+    if model is None:
+        pytest.skip(
+            "no small non-thinking model installed; tried: "
+            f"{', '.join(_SMALL_NON_THINKING_MODELS)}"
+        )
+    return model
+
+
+@contextmanager
+def _dispatcher_pinned_to_probed_ollama():
+    """Point the LLM dispatcher's ``api_base`` at the URL we probed.
+
+    ``dispatcher.get_provider_config`` reads
+    ``plugin.llm_provider.litellm.config`` straight out of ``app_settings``
+    — NOT through ``SiteConfig`` — so seeding a SiteConfig does not reach
+    it. On an operator DB that row holds the container hostname (plus
+    per-model overrides pinning the GPU-specific instances), which is
+    exactly what ``_reachable_from_here`` exists to translate.
+
+    Patching the read keeps ONE rewrite rule for the whole module and
+    never writes to the operator's database.
+    """
+    from services.llm_providers import dispatcher
+
+    real = dispatcher.get_provider_config
+
+    async def _patched(pool, provider_name):
+        config = dict(await real(pool, provider_name))
+        if config.get("api_base"):
+            config["api_base"] = _reachable_from_here(str(config["api_base"]))
+        overrides = config.get("model_api_base_overrides")
+        if isinstance(overrides, dict):
+            config["model_api_base_overrides"] = {
+                key: _reachable_from_here(str(value))
+                for key, value in overrides.items()
+            }
+        return config
+
+    dispatcher.get_provider_config = _patched
+    try:
+        yield
+    finally:
+        dispatcher.get_provider_config = real
+
+
+@dataclass
+class _PlatformStack:
+    """The DI seams production threads into content code."""
+
+    pool: object
+    site_config: object
+    settings: object
+    platform: object
+
+
+@pytest.fixture
+async def platform_stack():
+    """Build the seams production threads into content code.
+
+    Content that dispatches an LLM needs a pool AND a capability-scoped
+    ``platform`` handle, and the pipeline threads both (the ``qa.*`` atoms
+    via ``state['platform']``, the writer via the run context). Constructed
+    bare, those paths do not merely lose telemetry — they cannot dispatch:
+
+    - ``MultiModelQA._dispatch_llm`` returns ``None`` without pool +
+      platform, and with no settings service the critic-model pin resolves
+      to "no critic model". QA rails are fail-soft, so the rail silently
+      drops out of the reviewer list.
+    - ``AIContentGenerator`` raises ``RuntimeError: platform handle
+      required for dispatch``.
+
+    Both were masked while the Ollama URL was wrong: the QA rail's skip is
+    silent by design, and the generator short-circuits to non-Ollama
+    fallback content when its health check fails, so its test passed
+    without ever reaching a model.
+
+    Needs a reachable Postgres, and skips honestly when there isn't one —
+    the only DB requirement in this module.
+    """
+    import asyncpg
+    from brain.bootstrap import resolve_database_url
+
+    dsn = resolve_database_url()
+    if not dsn:
+        pytest.skip("no database URL resolved (bootstrap.toml / DATABASE_URL)")
+
+    try:
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=5)
+    except Exception as exc:
+        pytest.skip(f"Postgres unreachable: {type(exc).__name__}: {exc}")
+
+    from services.audit_log import init_global_audit_logger, reset_global_audit_logger
+    from services.di_wiring import build_platform_for_subprocess
+    from services.settings_service import SettingsService
+    from services.site_config import SiteConfig
+
+    try:
+        site_config = SiteConfig(pool=pool)
+        await site_config.load(pool)
+        # Same de-containerization the guard applied, so every layer of
+        # this stack agrees on one URL. Written straight into the loaded
+        # map because that is what ``load()`` populates; there is no
+        # public setter and this instance is local to the test.
+        site_config._config["ollama_base_url"] = _ollama_base_url()
+
+        # build_platform_for_subprocess returns None without a global
+        # AuditLogger — which is why a host-side platform build looks
+        # simply "unsupported" until this runs.
+        init_global_audit_logger(pool, quiet=True)
+        platform = build_platform_for_subprocess(pool, site_config)
+        if platform is None:
+            pytest.skip("could not build a scoped Platform handle for module 'content'")
+
+        with _dispatcher_pinned_to_probed_ollama():
+            yield _PlatformStack(
+                pool=pool,
+                site_config=site_config,
+                settings=SettingsService(pool),
+                platform=platform,
+            )
+    finally:
+        reset_global_audit_logger(pool)
+        await pool.close()
+
+
+@pytest.fixture
+def qa_with_platform(platform_stack):
+    """A ``MultiModelQA`` built the way the ``qa.*`` atoms build it."""
+    from modules.content.multi_model_qa import MultiModelQA
+
+    return MultiModelQA(
+        pool=platform_stack.pool,
+        settings_service=platform_stack.settings,
+        site_config=platform_stack.site_config,
+        platform=platform_stack.platform,
+    )
+
 
 class TestQAReview:
     """Verify MultiModelQA can review content using local Ollama."""
 
     @pytest.mark.asyncio
-    async def test_multi_model_qa_review(self):
+    async def test_multi_model_qa_review(self, ollama_site_config):
         """MultiModelQA.review() returns a scored result using Ollama."""
         from modules.content.multi_model_qa import MultiModelQA
-        from services.site_config import SiteConfig
 
-        qa = MultiModelQA(site_config=SiteConfig())
+        qa = MultiModelQA(site_config=ollama_site_config)
         result = await qa.review(
             title="Benefits of Unit Testing in Modern Software",
             content=SAMPLE_BLOG_CONTENT,
@@ -266,40 +505,55 @@ class TestQAReview:
         assert "programmatic_validator" in reviewer_names
 
     @pytest.mark.asyncio
-    async def test_qa_ollama_critic_present(self):
-        """When Ollama is running, the ollama_critic reviewer should participate."""
-        from modules.content.multi_model_qa import MultiModelQA
-        from services.site_config import SiteConfig
+    @pytest.mark.timeout(300)
+    async def test_qa_ollama_critic_present(self, qa_with_platform):
+        """The ollama_critic rail returns a real verdict from a local model.
 
-        qa = MultiModelQA(site_config=SiteConfig())
-        result = await qa.review(
+        Goes through ``critic_review_once`` — documented as delegating to
+        the exact production critic path (``_review_with_ollama``: same
+        prompt pack, review window, JSON parse, and score-over-boolean
+        approval rule) — rather than the full ``review()`` chain, so this
+        asserts the critic rail specifically instead of paying for every
+        other rail to reach it.
+
+        The model is an explicitly-chosen small one rather than the
+        operator's ``pipeline_critic_model`` pin: that pin is an 18 GB
+        model whose cold load blew a 240 s dispatch timeout on a contended
+        GPU, and *which* model the pin resolves to is already unit-covered
+        (``test_lane_b_qa_critic_migration``). What needs a real box is the
+        rail — dispatch, prompt, parse, verdict.
+        """
+        review = await qa_with_platform.critic_review_once(
             title="Benefits of Unit Testing",
             content=SAMPLE_BLOG_CONTENT,
             topic="unit testing",
+            model=f"ollama/{_require_small_model()}",
         )
 
-        reviewer_names = [r.reviewer for r in result.reviews]
-        assert "ollama_critic" in reviewer_names, (
-            f"Expected ollama_critic in reviewers, got: {reviewer_names}"
+        assert review is not None, (
+            "critic_review_once returned None — the rail dispatched but "
+            "produced no parseable verdict"
         )
-
-        # The Ollama critic should return a valid score
-        ollama_review = next(r for r in result.reviews if r.reviewer == "ollama_critic")
-        assert 0 <= ollama_review.score <= 100
-        assert ollama_review.feedback, "Ollama critic returned empty feedback"
-        assert ollama_review.provider == "ollama"
+        assert review.reviewer == "ollama_critic"
+        assert 0 <= review.score <= 100
+        assert review.feedback, "Ollama critic returned empty feedback"
+        assert review.provider == "ollama"
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        not _ollama_has_model("gemma3:27b"),
-        reason="gemma3:27b not installed in Ollama",
-    )
     async def test_qa_with_gemma3_27b(self):
-        """QA review specifically with gemma3:27b model produces valid JSON output."""
-        from services.ollama_client import OllamaClient
+        """QA review specifically with gemma3:27b model produces valid JSON output.
+
+        The availability check is in the body, not a ``skipif`` decorator:
+        a decorator argument is evaluated at *collection*, which would put
+        the ``/api/tags`` call back at import time — the exact thing #994
+        moved into a setup-time fixture.
+        """
         from services.prompt_manager import get_prompt_manager
 
-        client = OllamaClient()
+        if not _ollama_has_model("gemma3:27b"):
+            pytest.skip("gemma3:27b not installed in Ollama")
+
+        client = _make_client()
         try:
             prompt = get_prompt_manager().get_prompt(
                 "qa.review",
@@ -337,12 +591,11 @@ class TestQAReview:
 class TestSEOMetadata:
     """Verify SEO metadata generation works with real content."""
 
-    def test_seo_assets_from_content(self):
+    def test_seo_assets_from_content(self, ollama_site_config):
         """ContentMetadataGenerator produces seo_title, meta_description, meta_keywords."""
         from services.seo_content_generator import ContentMetadataGenerator
-        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator(site_config=SiteConfig())
+        gen = ContentMetadataGenerator(site_config=ollama_site_config)
         seo = gen.generate_seo_assets(
             title="Benefits of Unit Testing in Modern Software",
             content=SAMPLE_BLOG_CONTENT,
@@ -360,12 +613,11 @@ class TestSEOMetadata:
         assert seo["slug"], "slug is empty"
         assert " " not in seo["slug"], "slug contains spaces"
 
-    def test_seo_slug_generation(self):
+    def test_seo_slug_generation(self, ollama_site_config):
         """Slug is URL-friendly: lowercase, no special chars, dashes for spaces."""
         from services.seo_content_generator import ContentMetadataGenerator
-        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator(site_config=SiteConfig())
+        gen = ContentMetadataGenerator(site_config=ollama_site_config)
         seo = gen.generate_seo_assets(
             title="AI & Machine Learning: A 2026 Guide!",
             content="Some content about AI and machine learning.",
@@ -376,41 +628,35 @@ class TestSEOMetadata:
         assert slug == slug.lower(), "slug should be lowercase"
         assert re.match(r"^[a-z0-9-]+$", slug), f"slug has invalid chars: {slug}"
 
-    def test_reading_time_and_word_count(self):
+    def test_reading_time_and_word_count(self, ollama_site_config):
         """Reading time and word count calculations work correctly."""
         from services.seo_content_generator import ContentMetadataGenerator
-        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator(site_config=SiteConfig())
+        gen = ContentMetadataGenerator(site_config=ollama_site_config)
         reading_time = gen.calculate_reading_time(SAMPLE_BLOG_CONTENT)
         assert reading_time >= 1, "Reading time should be at least 1 minute"
 
-    def test_category_and_tags(self):
+    def test_category_and_tags(self, ollama_site_config):
         """Category and tag suggestions are generated from content."""
         from services.seo_content_generator import ContentMetadataGenerator
-        from services.site_config import SiteConfig
 
-        gen = ContentMetadataGenerator(site_config=SiteConfig())
+        gen = ContentMetadataGenerator(site_config=ollama_site_config)
         org = gen.generate_category_and_tags(SAMPLE_BLOG_CONTENT, "unit testing")
         assert org["category"], "category is empty"
         assert isinstance(org["tags"], list)
         assert len(org["tags"]) >= 1
 
     @pytest.mark.asyncio
-    async def test_full_seo_pipeline_with_ollama_content(self):
+    async def test_full_seo_pipeline_with_ollama_content(self, ollama_site_config):
         """Generate content via Ollama, then produce full SEO metadata.
 
-        Uses gemma3:27b (non-thinking) for reliable short-form generation.
-        Falls back to larger token budget if only thinking models are available.
+        Pins a non-thinking model for reliable short-form generation.
         """
-        from services.ollama_client import OllamaClient
         from services.seo_content_generator import ContentMetadataGenerator
-        from services.site_config import SiteConfig
 
-        model = "gemma3:27b" if _ollama_has_model("gemma3:27b") else None
-        # Thinking models need more tokens for reasoning overhead
-        max_tokens = 500 if model else 1500
-        client = OllamaClient()
+        model = _require_small_model()
+        max_tokens = 500
+        client = _make_client()
         try:
             result = await client.generate(
                 prompt=(
@@ -428,7 +674,7 @@ class TestSEOMetadata:
             title_match = re.search(r"^# (.+)$", content, re.MULTILINE)
             title = title_match.group(1) if title_match else "Continuous Integration Benefits"
 
-            gen = ContentMetadataGenerator(site_config=SiteConfig())
+            gen = ContentMetadataGenerator(site_config=ollama_site_config)
             seo = gen.generate_seo_assets(title=title, content=content, topic="CI/CD")
 
             # All SEO fields should be populated
@@ -462,13 +708,11 @@ class TestThinkingModels:
         before producing visible output. We use a generous budget (4000 tokens)
         and a simple prompt to maximize the chance of visible output.
         """
-        from services.ollama_client import OllamaClient
-
         qwen_model = _find_ollama_model("qwen3.5")
         if not qwen_model:
             pytest.skip("No qwen3.5 variant installed in Ollama")
 
-        client = OllamaClient(timeout=120)
+        client = _make_client(timeout=120)
         try:
             # Use /no_think to disable extended reasoning if supported,
             # otherwise the simple prompt should keep thinking short
@@ -498,14 +742,12 @@ class TestThinkingModels:
 
         Detects the actual installed glm-4.7 variant name (e.g. glm-4.7-5090:latest).
         """
-        from services.ollama_client import OllamaClient
-
         # Find the actual glm-4.7 model name (may have a suffix like -5090)
         glm_model = _find_ollama_model("glm-4.7")
         if not glm_model:
             pytest.skip("No glm-4.7 variant installed in Ollama")
 
-        client = OllamaClient()
+        client = _make_client()
         try:
             result = await client.generate(
                 prompt="Write 2 sentences about why code reviews matter.",
@@ -532,14 +774,13 @@ class TestThinkingModels:
         chain-of-thought reasoning consumes tokens before visible output starts.
         With complex prompts, qwen3.5 may use 4000+ tokens on reasoning alone.
         """
-        from services.ollama_client import OllamaClient
         from services.prompt_manager import get_prompt_manager
 
         qwen_model = _find_ollama_model("qwen3.5")
         if not qwen_model:
             pytest.skip("No qwen3.5 variant installed in Ollama")
 
-        client = OllamaClient(timeout=180)
+        client = _make_client(timeout=180)
         try:
             # Use a shorter content snippet to reduce thinking overhead
             short_content = (
