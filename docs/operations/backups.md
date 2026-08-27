@@ -98,8 +98,56 @@ it:
 - streams a fresh **uncompressed** `pg_dump --format=custom -Z0` straight
   into `restic backup --stdin`, stamping an `audit_log` heartbeat
   (`offsite_backup_succeeded`) on success;
+- backs up the **config surface** as a second snapshot in the same repo
+  (`--tag config`), stamping `offsite_config_backup_succeeded`;
 - once a week runs `restic check --read-data-subset=<pct>%` against the
   remote to catch **bit-rot**, stamping `offsite_backup_verified`.
+
+> **Why the config snapshot exists (poindexter#889).** Until 2026-08-27 this
+> runner shipped exactly one thing — a `pg_dump`. Everything else that is
+> irreplaceable rode **only** on the Tier 3 DR USB job: `~/.poindexter`
+> (whose `bootstrap.toml` holds `poindexter_secret_key`) and `~/.claude`
+> (the memory tree). When that USB drive was removed, every copy of the
+> secret key collapsed onto a single partition — and #889 is exactly the
+> trap that springs then: **lose that key and the encrypted `app_settings`
+> rows holding this repo's own restic password and S3 credentials cannot be
+> decrypted, so the healthy DB snapshot becomes unopenable.** The config
+> snapshot closes the partial-loss case (disk dies, credentials survive
+> off-machine). It does _not_ by itself break the #889 cycle — opening the
+> repo still requires the restic password held out-of-band, so
+> [Store the offsite credentials OFF the machine](#-store-the-offsite-credentials-off-the-machine)
+> remains mandatory, not optional. restic encrypts at rest, so shipping
+> secret-bearing config here is defensible; it is the same content the USB
+> tier already carried.
+>
+> The compose files bind `~/.poindexter` → `/config/poindexter` and
+> `~/.claude` → `/config/claude`, both **read-only**. The runner excludes the
+> derived bulk (Tier 1 dumps, rendered video/images, the deploy clone,
+> venvs, logs). A configured path that isn't mounted is skipped with a
+> warning; **all** paths missing raises a `warning` alert rather than
+> reporting an empty success. A config-backup failure is warning-level and
+> non-fatal — the DB snapshot has already succeeded by then, so prune/verify
+> still run.
+>
+> **Measured payload (2026-08-27), and the knob to turn if B2 grows:**
+>
+> | Path            | Raw    | After excludes |
+> | --------------- | ------ | -------------- |
+> | `~/.poindexter` | ~29 GB | **35 MB**      |
+> | `~/.claude`     | 340 MB | **339 MB**     |
+>
+> The `~/.claude` figure is ~329 MB of session transcripts under `projects/`;
+> the genuinely irreplaceable part (the `memory/` trees) is **2.7 MB**.
+> Transcripts are write-once, so restic dedupes them and each later snapshot
+> adds only new files — but `offsite_backup_prune_enabled` defaults to
+> `false` (append-only posture), so that lineage grows without bound. B2's
+> free tier is 10 GB and has been breached once before (2026-07-16). If the
+> repo approaches the cap, the cheapest trim is adding
+> `/config/claude/projects` to `offsite_backup_config_excludes` — a
+> single-row settings change, no deploy — which keeps `settings.json`,
+> plugins, and agent memory while dropping the transcript bulk. Note this
+> also drops the per-project `memory/` trees, so pair it with a separate
+> backup of those if you take it.
 
 > **Why an uncompressed dump, not `restic backup` of the Tier 1 files?**
 > Tier 1 writes `pg_dump --format=custom` (zlib-compressed). restic dedupes
@@ -223,26 +271,29 @@ machine.
 All Tier 2 tunables are DB-backed (seeded every boot, so they reach
 existing deployments — only the three secrets are written by the wizard):
 
-| Setting                                          | Default                | Notes                                                                                                                        |
-| ------------------------------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                                                                                 |
-| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                                                                                           |
-| `offsite_backup_source_tier`                     | `daily`                | Snapshot `--tag` only (advisory since the 2026-07 streamed-dump change; the runner dumps live, no longer reads a Tier 1 dir) |
-| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                                                                                      |
-| `offsite_backup_s3_region`                       | _(set by wizard)_      | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint   |
-| `offsite_backup_restic_host`                     | `poindexter`           | Stable `restic backup --host` — container hostnames change on recreate, which would break parent-snapshot selection          |
-| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)                                                                   |
-| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                                                                               |
-| `offsite_backup_keep_weekly`                     | `4`                    |                                                                                                                              |
-| `offsite_backup_keep_monthly`                    | `6`                    |                                                                                                                              |
-| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`                                                                    |
-| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                                                                                        |
-| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                                                                               |
-| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)                                                                     |
-| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack)                                                                |
-| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                                                                                         |
-| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation                                                                          |
-| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read                                                                   |
+| Setting                                          | Default                             | Notes                                                                                                                        |
+| ------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `offsite_backup_enabled`                         | `true`                              | Master switch for the runner                                                                                                 |
+| `offsite_backup_interval`                        | `24h`                               | Backup cadence (`<N>{s\|m\|h\|d}`)                                                                                           |
+| `offsite_backup_source_tier`                     | `daily`                             | Snapshot `--tag` only (advisory since the 2026-07 streamed-dump change; the runner dumps live, no longer reads a Tier 1 dir) |
+| `offsite_backup_repository`                      | _(set by wizard)_                   | `s3:https://<endpoint>/<bucket>/<path>`                                                                                      |
+| `offsite_backup_s3_region`                       | _(set by wizard)_                   | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint   |
+| `offsite_backup_restic_host`                     | `poindexter`                        | Stable `restic backup --host` — container hostnames change on recreate, which would break parent-snapshot selection          |
+| `offsite_backup_restic_image`                    | `restic/restic:0.16.4`              | Pinned restic image (runner + wizard use the same version)                                                                   |
+| `offsite_backup_config_enabled`                  | `true`                              | Master switch for the second (`--tag config`) snapshot — bootstrap.toml + the memory tree (poindexter#889)                   |
+| `offsite_backup_config_paths`                    | `/config/poindexter,/config/claude` | CSV of **in-container** mount points (not host paths); bound read-only by the compose files                                  |
+| `offsite_backup_config_excludes`                 | _(see defaults)_                    | CSV of restic `--exclude` patterns — the derived bulk (dumps, video, images, deploy clone, venvs, logs)                      |
+| `offsite_backup_keep_daily`                      | `7`                                 | Retention (only applied if pruning is enabled)                                                                               |
+| `offsite_backup_keep_weekly`                     | `4`                                 |                                                                                                                              |
+| `offsite_backup_keep_monthly`                    | `6`                                 |                                                                                                                              |
+| `offsite_backup_prune_enabled`                   | `false`                             | Escape hatch — re-enables delete-bearing `forget`/`prune`                                                                    |
+| `offsite_backup_verify_enabled`                  | `true`                              | Weekly `restic check`                                                                                                        |
+| `offsite_backup_verify_interval_hours`           | `168`                               | Verify cadence (168h = weekly)                                                                                               |
+| `offsite_backup_verify_read_data_subset_percent` | `5`                                 | Fraction of pack data re-read each verify (bit-rot scan)                                                                     |
+| `offsite_backup_max_age_hours`                   | `26`                                | Staleness threshold for the brain watch (24h cadence + slack)                                                                |
+| `offsite_backup_watch_enabled`                   | `true`                              | Brain auto-retry watch master switch                                                                                         |
+| `offsite_backup_watch_max_retries`               | `2`                                 | Cumulative restarts across cycles before escalation                                                                          |
+| `offsite_backup_watch_retry_delay_seconds`       | `120`                               | Wait between `docker restart` and the post-restart re-read                                                                   |
 
 The three secrets — `offsite_backup_restic_password`,
 `offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key` —
@@ -339,6 +390,42 @@ The bind mount `~/.poindexter/logs:/host-backup-logs:ro` in
 `docker-compose.local.yml` (under the `brain-daemon` service) is what
 exposes the sentinel directory inside the container. If you change
 `backup_watcher_sentinel_dir`, change the mount target to match.
+
+> **⚠️ The sentinel only covers script failures, not the script never
+> running.** A sentinel is written _by_ the dr-backup script, so anything
+> that stops the script from starting is invisible to this path. The
+> systemd units carry `RequiresMountsFor=/mnt/dr-usb`, and the fstab entry
+> carries `nofail` — so with the USB drive absent the unit fails at the
+> _dependency_ level, the script never executes, no sentinel is written, and
+> the brain sees nothing at all. This is not hypothetical: it hid a dead
+> Tier 3 for at least a week in August 2026, visible only as hourly
+> `Dependency failed` lines in `journalctl`. If you rely on Tier 3, monitor
+> the _timer_, not just the sentinel.
+
+### Tier 3 (DR USB) — PARKED 2026-08-27
+
+The DR USB timers are **deliberately disabled**, not broken: the stick was
+failing and was removed pending a replacement drive. `systemctl list-timers`
+will not show them, and that is the expected state — do not page on it.
+
+```bash
+systemctl disable --now poindexter-dr-backup.timer poindexter-dr-backup-hourly.timer
+```
+
+The unit files stay installed at `/etc/systemd/system/`, so re-arming on the
+replacement drive is one command (after adding the new UUID to `/etc/fstab`
+at `/mnt/dr-usb`):
+
+```bash
+sudo systemctl enable --now poindexter-dr-backup.timer poindexter-dr-backup-hourly.timer
+```
+
+**What parking costs you:** Tier 3 was the only tier covering `~/.poindexter`
+and `~/.claude` until the Tier 2 config snapshot above was added on the same
+day. With that in place, the config surface is still backed up off-machine
+daily — but Tier 3 remains the only _local, offline_ copy, and offline is the
+tier that survives a credential compromise or an account lockout. Treat the
+replacement drive as owed work, not optional.
 
 ### Restore test (does the dump actually restore?)
 

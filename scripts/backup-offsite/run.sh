@@ -38,6 +38,14 @@ DEFAULT_SOURCE_TIER="daily"
 DEFAULT_VERIFY_INTERVAL_HOURS="168"
 DEFAULT_VERIFY_SUBSET_PCT="5"
 DEFAULT_RESTIC_HOST="poindexter"
+# In-container mount points for the config surface (see run_config_backup).
+# These are the paths the compose file binds ~/.poindexter and ~/.claude to,
+# read-only — NOT host paths.
+DEFAULT_CONFIG_PATHS="/config/poindexter,/config/claude"
+# Everything derived, regenerable, or already covered elsewhere. Without
+# these, ~/.poindexter alone is ~29 GB (Tier-1 dumps, rendered video, images,
+# a full git clone) against ~50 KB of actual irreplaceable config.
+DEFAULT_CONFIG_EXCLUDES="/config/poindexter/backups,/config/poindexter/video,/config/poindexter/generated-images,/config/poindexter/generated-videos,/config/poindexter/podcast,/config/poindexter/demo-clips,/config/poindexter/singer-venv,/config/poindexter/deploy,/config/poindexter/build,/config/poindexter/logs,/config/poindexter/*.log,/config/poindexter/*.log.1,/config/claude/shell-snapshots,/config/claude/session-env,/config/claude/cache,/config/claude/uploads"
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
@@ -174,6 +182,106 @@ run_backup() {
     return "${rc}"
 }
 
+# Back up the machine-config surface (bootstrap.toml + the Claude memory
+# tree) as a SECOND snapshot in the same repo (poindexter#889 fix 3).
+#
+# Why this exists: until 2026-08-27 the offsite tier shipped exactly one
+# thing — a pg_dump of PG_DATABASE. Everything else that is irreplaceable
+# (`~/.poindexter/bootstrap.toml`, which holds `poindexter_secret_key`, and
+# `~/.claude/**/memory/`) was carried ONLY by the Tier-3 DR USB job
+# (scripts/dr-backup/run-backup.sh). When that stick was pulled, every copy
+# of bootstrap.toml collapsed onto one partition — and #889 is precisely the
+# trap that springs then: lose `poindexter_secret_key` and the encrypted
+# app_settings rows holding this repo's own restic password + S3 credentials
+# cannot be decrypted, so the healthy DB snapshot above becomes unopenable.
+#
+# This does NOT by itself break the #889 cycle — opening the repo still
+# needs the restic password held out-of-band. It closes the partial-loss
+# case (lose the disk, still have the credentials), which is the common one.
+# restic encrypts at rest, so shipping secret-bearing config here is
+# defensible; it is the same content the USB tier already held.
+#
+# Separate snapshot, same repo: restic selects a parent by (host, paths), and
+# these paths differ from the DB snapshot's pinned `--stdin-filename`, so the
+# two lineages stay independent without needing a separate --host. Tagged
+# `config` so `restic snapshots --tag config` isolates them.
+#
+# Failure here is warning-level and NON-fatal: the DB snapshot is the
+# critical path and has already succeeded by the time we run, so a config
+# hiccup must not suppress prune/verify. It must still alert, though — a
+# silently-skipped config backup is the exact failure mode that motivated
+# this function.
+run_config_backup() {
+    local repo="$1" restic_host="$2"
+    [[ "$(read_setting offsite_backup_config_enabled true)" == "true" ]] || {
+        log "config backup disabled (offsite_backup_config_enabled) — skipping"
+        return 0
+    }
+
+    local paths_csv excludes_csv
+    paths_csv=$(read_setting offsite_backup_config_paths "${DEFAULT_CONFIG_PATHS}")
+    excludes_csv=$(read_setting offsite_backup_config_excludes "${DEFAULT_CONFIG_EXCLUDES}")
+
+    # Only back up paths that are actually mounted. A path listed but not
+    # present is a compose/mount mistake, not a reason to fail the tick — but
+    # it is reported, because an unnoticed missing mount would silently shrink
+    # the backup set back to the state this function exists to prevent.
+    local -a present=() missing=()
+    local p
+    while IFS= read -r p; do
+        [[ -z "${p}" ]] && continue
+        if [[ -e "${p}" ]]; then present+=("${p}"); else missing+=("${p}"); fi
+        # NOTE: `printf '%s\n'` (not '%s') — without the trailing newline the
+        # final CSV element is unterminated and `while read` silently DROPS
+        # it. Caught in review: it swallowed the last exclude pattern, i.e.
+        # the list quietly did less than it read as doing.
+    done < <(printf '%s\n' "${paths_csv}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+    if [[ "${#missing[@]}" -gt 0 ]]; then
+        log "WARN: config path(s) not mounted, skipping: ${missing[*]}"
+    fi
+    if [[ "${#present[@]}" -eq 0 ]]; then
+        log "config backup: no configured paths present — skipping"
+        emit_alert "warning" \
+            "Offsite config backup found no paths" \
+            "offsite_backup_config_paths='${paths_csv}' but none exist in the container. Check the read-only volume mounts on the backup-offsite service; the DB snapshot is unaffected."
+        return 0
+    fi
+
+    local -a exclude_args=()
+    while IFS= read -r p; do
+        [[ -z "${p}" ]] && continue
+        exclude_args+=(--exclude "${p}")
+        # '%s\n' for the same reason as the path loop above — a bare '%s'
+        # drops the final exclude pattern.
+    done < <(printf '%s\n' "${excludes_csv}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+    log "restic backup (config surface) ${present[*]} → ${repo} (host=${restic_host})"
+    local rc=0 err_file
+    err_file=$(mktemp)
+    restic -r "${repo}" backup "${present[@]}" \
+        "${exclude_args[@]}" \
+        --host "${restic_host}" \
+        --tag poindexter --tag config \
+        2>"${err_file}" || rc=$?
+    [[ -s "${err_file}" ]] && cat "${err_file}" >&2
+    if [[ "${rc}" -eq 0 ]]; then
+        log "offsite config backup OK"
+        emit_heartbeat "offsite_config_backup_succeeded" \
+            "restic backup of config surface complete (${#present[@]} path(s))"
+        rm -f "${err_file}"
+        return 0
+    fi
+    local err_tail
+    err_tail=$(tail -c 600 "${err_file}" 2>/dev/null | tr '\n$' ' _')
+    rm -f "${err_file}"
+    log "offsite config backup FAILED rc=${rc}"
+    emit_alert "warning" \
+        "Offsite config backup failed (rc=${rc})" \
+        "restic backup of ${present[*]} → ${repo} returned ${rc}. The DB snapshot succeeded; bootstrap.toml + memory are NOT covered this tick. restic stderr: ${err_tail:-<none captured>}"
+    return 0
+}
+
 maybe_prune() {
     local repo="$1"
     [[ "$(read_setting offsite_backup_prune_enabled false)" == "true" ]] || return 0
@@ -236,6 +344,9 @@ tick() {
     local restic_host
     restic_host=$(read_setting offsite_backup_restic_host "${DEFAULT_RESTIC_HOST}")
     if run_backup "${repo}" "${source_tier}" "${restic_host}"; then
+        # Non-fatal by contract (see run_config_backup) — it returns 0 even on
+        # restic failure, so prune/verify still run against a good DB snapshot.
+        run_config_backup "${repo}" "${restic_host}"
         maybe_prune "${repo}"
         maybe_verify "${repo}"
     fi

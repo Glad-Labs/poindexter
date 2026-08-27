@@ -2464,6 +2464,14 @@ services:
     volumes:
       # Read-only: the offsite tier only READS the Tier 1 dumps and ships them.
       - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups:ro
+      # Config surface for the second (tag=config) snapshot — bootstrap.toml
+      # holds poindexter_secret_key, and the Claude memory tree is
+      # unreproducible. Both were carried ONLY by the Tier-3 DR USB job until
+      # 2026-08-27; see run_config_backup in scripts/backup-offsite/run.sh and
+      # poindexter#889. Read-only, and the runner excludes the derived bulk
+      # (dumps/video/images/clone) — see offsite_backup_config_excludes.
+      - ${USERPROFILE:-${HOME}}/.poindexter:/config/poindexter:ro
+      - ${USERPROFILE:-${HOME}}/.claude:/config/claude:ro
     depends_on:
       postgres-local:
         condition: service_healthy

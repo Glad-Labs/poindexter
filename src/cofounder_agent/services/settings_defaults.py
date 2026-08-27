@@ -208,6 +208,24 @@ DEFAULTS: dict[str, str] = {
     # deployments, not just fresh installs). The 3 secrets
     # (offsite_backup_restic_password / _s3_access_key_id /
     # _s3_secret_access_key) are NOT here — the wizard writes them encrypted.
+    # Second (tag=config) snapshot: the machine-config surface that the DB
+    # dump does not cover — bootstrap.toml (holds poindexter_secret_key) and
+    # the Claude memory tree. Carried ONLY by the Tier-3 DR USB job until
+    # 2026-08-27; without it, losing the disk makes this repo's own restic
+    # password undecryptable (poindexter#889). Paths are IN-CONTAINER mount
+    # points, bound read-only by the compose files.
+    'offsite_backup_config_enabled': 'true',
+    'offsite_backup_config_paths': '/config/poindexter,/config/claude',
+    'offsite_backup_config_excludes': (
+        '/config/poindexter/backups,/config/poindexter/video,'
+        '/config/poindexter/generated-images,/config/poindexter/generated-videos,'
+        '/config/poindexter/podcast,/config/poindexter/demo-clips,'
+        '/config/poindexter/singer-venv,/config/poindexter/deploy,'
+        '/config/poindexter/build,/config/poindexter/logs,'
+        '/config/poindexter/*.log,/config/poindexter/*.log.1,'
+        '/config/claude/shell-snapshots,/config/claude/session-env,'
+        '/config/claude/cache,/config/claude/uploads'
+    ),
     'offsite_backup_enabled': 'true',
     'offsite_backup_interval': '24h',
     'offsite_backup_keep_daily': '7',
@@ -4783,6 +4801,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_pool_read_per_source_limit': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'niche_top_n_per_pool': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'oauth_issuer_url': {'owner': 'oauth_routes'},
+    'offsite_backup_config_enabled': {'owner': 'backup', 'value_type': 'boolean'},
+    'offsite_backup_config_excludes': {'owner': 'backup', 'value_type': 'string'},
+    'offsite_backup_config_paths': {'owner': 'backup', 'value_type': 'string'},
     'offsite_backup_enabled': {'value_type': 'boolean'},
     'offsite_backup_interval': {'value_type': 'string'},
     'offsite_backup_keep_daily': {'value_type': 'integer'},

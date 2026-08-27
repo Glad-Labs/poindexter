@@ -224,3 +224,194 @@ def test_restic_stderr_still_visible_on_success(tmp_path):
     )
     assert "warning: retried once" in _combined(result)
     assert "ALERT" not in result.stdout
+
+
+# --------------------------------------------------------------------------
+# run_config_backup — the second (tag=config) snapshot (poindexter#889)
+#
+# Context these tests exist to protect: until 2026-08-27 the offsite tier
+# shipped ONLY a pg_dump. bootstrap.toml (holding `poindexter_secret_key`)
+# and the Claude memory tree rode exclusively on the Tier-3 DR USB job, so
+# pulling that stick collapsed every copy of the secret key onto one
+# partition — and without that key, this repo's own restic password cannot
+# be decrypted, making the healthy DB snapshot unopenable.
+# --------------------------------------------------------------------------
+
+_CONFIG_HARNESS = """
+source "${RUN_SH}"
+
+restic() {
+    echo "RESTIC_ARGS $*"
+    if [[ -n "${FAKE_RESTIC_STDERR:-}" ]]; then
+        printf '%s' "${FAKE_RESTIC_STDERR}" >&2
+    fi
+    return "${FAKE_RESTIC_RC}"
+}
+# Settings come from the env so each test can vary one key without psql.
+read_setting() {
+    local key="$1" default="$2" var
+    var="SETTING_${key}"
+    if [[ -n "${!var:-}" ]]; then printf '%s' "${!var}"; else printf '%s' "${default}"; fi
+}
+emit_heartbeat() { echo "HEARTBEAT event=$1"; }
+emit_alert() { echo "ALERT severity=$1 summary=$2 description=$3"; }
+
+rc=0
+run_config_backup "s3:example.test/repo" "poindexter" || rc=$?
+echo "CONFIG_RC=${rc}"
+"""
+
+
+def _default_setting(name: str) -> str:
+    """Read a DEFAULT_* constant out of run.sh by asking bash for it, so the
+    assertions below test the value the container actually ships rather than
+    a copy that can drift."""
+    assert _BASH is not None
+    result = subprocess.run(
+        [_BASH, "-c", f'source "$RUN_SH"; printf "%s" "${{{name}}}"'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": str(Path(_BASH).parent), "RUN_SH": _RUN_SH.as_posix()},
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def _run_config_harness(
+    tmp_path: Path,
+    restic_rc: int = 0,
+    settings: dict[str, str] | None = None,
+    make_paths: tuple[str, ...] = ("poindexter", "claude"),
+) -> subprocess.CompletedProcess:
+    assert _BASH is not None
+    root = tmp_path / "config"
+    for name in make_paths:
+        (root / name).mkdir(parents=True, exist_ok=True)
+    env = {
+        "PATH": str(Path(_BASH).parent),
+        "RUN_SH": _RUN_SH.as_posix(),
+        "BACKUP_DIR": (tmp_path / "backups").as_posix(),
+        "PGPASSWORD": "test",
+        "FAKE_RESTIC_RC": str(restic_rc),
+        # Point the default path list at the tmp tree.
+        "SETTING_offsite_backup_config_paths": ",".join(
+            (root / n).as_posix() for n in ("poindexter", "claude")
+        ),
+    }
+    for key, value in (settings or {}).items():
+        env[f"SETTING_{key}"] = value
+    return subprocess.run(
+        [_BASH, "-c", _CONFIG_HARNESS],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+
+
+def test_config_backup_tags_and_pins_host(tmp_path):
+    """The config snapshot must be tagged so `restic snapshots --tag config`
+    isolates it, and share the pinned --host so its parent lineage is stable
+    across container recreates (same reason as the DB snapshot)."""
+    result = _run_config_harness(tmp_path)
+    assert "--tag config" in result.stdout
+    assert "--host poindexter" in result.stdout
+    assert "HEARTBEAT event=offsite_config_backup_succeeded" in result.stdout
+    assert "CONFIG_RC=0" in result.stdout
+
+
+def test_config_backup_does_not_exclude_the_config_roots(tmp_path):
+    """THE regression that would silently empty this backup: an exclude
+    pattern broad enough to swallow /config/poindexter itself would keep the
+    snapshot succeeding while covering nothing — the exact silent-success
+    shape of the failure this whole feature exists to fix. The shipped
+    default excludes must all be strictly BELOW a root, never a root."""
+    from_defaults = [
+        p.strip()
+        for p in _default_setting("DEFAULT_CONFIG_EXCLUDES").split(",")
+        if p.strip()
+    ]
+    roots = [
+        p.strip()
+        for p in _default_setting("DEFAULT_CONFIG_PATHS").split(",")
+        if p.strip()
+    ]
+    assert roots, "config paths default must not be empty"
+    for root in roots:
+        assert root not in from_defaults
+        for pattern in from_defaults:
+            assert pattern.startswith(f"{root}/") or not pattern.startswith(root), (
+                f"exclude {pattern!r} is broad enough to swallow root {root!r}"
+            )
+
+
+def test_config_backup_applies_the_last_exclude_in_the_list(tmp_path):
+    """CSV parsing must not drop the final element. `printf '%s'` emits no
+    trailing newline, so `while read` discards the unterminated last field —
+    which silently dropped the last exclude pattern (found in review). The
+    list would keep reading as correct while doing less than it said."""
+    excludes = _default_setting("DEFAULT_CONFIG_EXCLUDES")
+    last = excludes.split(",")[-1].strip()
+    assert last, "excludes default must not end with a trailing comma"
+    result = _run_config_harness(
+        tmp_path, settings={"offsite_backup_config_excludes": excludes}
+    )
+    assert f"--exclude {last}" in result.stdout
+
+
+def test_config_backup_includes_the_last_configured_path(tmp_path):
+    """Same trailing-newline trap on the path list: dropping the last entry
+    would silently omit a whole config root from the backup."""
+    result = _run_config_harness(tmp_path)
+    backup_line = result.stdout.split("RESTIC_ARGS")[1]
+    assert "/config/claude" in backup_line or "claude" in backup_line
+
+
+def test_config_backup_skips_when_disabled(tmp_path):
+    """Operators must be able to turn this off without editing compose."""
+    result = _run_config_harness(
+        tmp_path, settings={"offsite_backup_config_enabled": "false"}
+    )
+    assert "RESTIC_ARGS" not in result.stdout
+    assert "HEARTBEAT" not in result.stdout
+    assert "CONFIG_RC=0" in result.stdout
+
+
+def test_config_backup_skips_missing_paths_but_backs_up_the_rest(tmp_path):
+    """A path listed but not mounted is a compose mistake, not a reason to
+    lose the paths that ARE present."""
+    result = _run_config_harness(tmp_path, make_paths=("poindexter",))
+    assert "not mounted" in result.stdout
+    assert "RESTIC_ARGS" in result.stdout
+    # Assert on the SOURCE path (the tmp tree), not "/config/claude" — that
+    # literal also appears in the --exclude args and would match either way.
+    absent_source = (tmp_path / "config" / "claude").as_posix()
+    present_source = (tmp_path / "config" / "poindexter").as_posix()
+    args = result.stdout.split("RESTIC_ARGS")[1]
+    assert present_source in args
+    assert absent_source not in args
+    assert "CONFIG_RC=0" in result.stdout
+
+
+def test_config_backup_alerts_when_no_paths_are_mounted(tmp_path):
+    """All mounts missing means the backup covers nothing. It must alert
+    rather than report a cheerful empty success — a silently-skipped config
+    backup is precisely the failure mode being fixed here."""
+    result = _run_config_harness(tmp_path, make_paths=())
+    assert "ALERT severity=warning" in result.stdout
+    assert "found no paths" in result.stdout
+    assert "RESTIC_ARGS" not in result.stdout
+
+
+def test_config_backup_failure_is_warning_and_non_fatal(tmp_path):
+    """A config-backup failure must alert (never silent) but must NOT abort
+    the tick: the DB snapshot already succeeded by this point, and swallowing
+    prune/verify over a config hiccup would be a worse trade."""
+    result = _run_config_harness(tmp_path, restic_rc=1)
+    assert "ALERT severity=warning" in result.stdout
+    assert "ALERT severity=critical" not in result.stdout
+    assert "(rc=1)" in result.stdout
+    assert "HEARTBEAT" not in result.stdout
+    # Non-fatal: returns 0 so tick() still runs prune + verify.
+    assert "CONFIG_RC=0" in result.stdout

@@ -737,6 +737,12 @@ services:
         required: false
     volumes:
       - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups:ro
+      # Config surface for the second (tag=config) snapshot — bootstrap.toml
+      # holds poindexter_secret_key. Without this the offsite repo is
+      # unopenable after a disk loss (poindexter#889). See run_config_backup
+      # in scripts/backup-offsite/run.sh.
+      - ${USERPROFILE:-${HOME}}/.poindexter:/config/poindexter:ro
+      - ${USERPROFILE:-${HOME}}/.claude:/config/claude:ro
     depends_on:
       postgres-local:
         condition: service_healthy
