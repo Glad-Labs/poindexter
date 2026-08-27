@@ -92,13 +92,31 @@ speed — no X server, no systemd, ~9s.
 - Editing OLH RGB colors later: change `openlinkhub/rgb.json` **and bump the
   profile's `version`** before copying — devices render from per-serial copies
   in `database/rgb/` that only refresh on a version mismatch (upstream #487).
+- **The `temperature` anchors on our palette colors are permanent config, not a
+  temporary workaround** — do not "clean them up" back to an upstream palette.
+  Upstream closed #487 as by-design, and `interpolateTemperatureColor()` still
+  maps purely on `Color.Temperature`, so anchor-less colors render one constant
+  50%-blend color forever with no error. `database/rgb/cluster.json` still
+  carries the unanchored upstream palette (our version bump never reached it),
+  so anything driven off the cluster profile would hit exactly that.
 
 ## Upstream issues filed from this build
 
 - jurkovic-nikola/OpenLinkHub#487 — temperature effect ignores MinTemp/MaxTemp
-  (needs `temperature` anchors on the palette colors; includes workaround)
+  (needs `temperature` anchors on the palette colors; includes workaround).
+  **CLOSED 2026-08-05 as by-design** — "You're supposed to setup temps and
+  colors on initial config, hence they are not contained in original rgb.json
+  file". Re-verified unfixed on `main` at 0.9.1: `src/rgb/temperature.go` still
+  maps on `Color.Temperature` and never reads `MinTemp`/`MaxTemp`, so the
+  `probe-temperature` profile's own `minTemp`/`maxTemp` (0/60) and the
+  per-channel `rgbMinTemp`/`rgbMaxTemp` overrides `lsh.go` computes are still
+  dead config. The stated rationale only holds for `probe-temperature` —
+  `cpu-`/`gpu-`/`liquid-temperature` all ship anchors upstream (added in
+  fd455243 for #376, the same bug class). Assume no upstream fix; keep our
+  anchors.
 - jurkovic-nikola/OpenLinkHub#488 — `/api/hub/linkAdapter` success response
-  says "Non-existing device"
+  says "Non-existing device". **FIXED in 0.9.0** (closed without comment) —
+  the success path now returns `txtLinkAdapterUpdated` with status 1.
 - pop-os/cosmic-comp#701 — Xwayland dies repeatedly and is never restarted, so
   every X11 app stays dead until the next login. Commented rather than filed
   fresh: #701 is the same bug (hybrid AMD-iGPU + nvidia), open since 2024-08-08.
