@@ -357,7 +357,9 @@ class LangfuseExperimentService:
         # Same trace_id from concurrent calls = idempotent upsert.
         trace_id = _trace_id_for(experiment_key, subject_id)
         try:
-            with client.start_as_current_span(
+            # langfuse ^4.13 renamed start_as_current_span ->
+            # start_as_current_observation (as_type defaults to "span").
+            with client.start_as_current_observation(
                 trace_context={"trace_id": trace_id},
                 name="experiment_assign",
                 metadata={
@@ -504,7 +506,8 @@ class LangfuseExperimentService:
         """
         client = await self._get_client()
         try:
-            with client.start_as_current_span(
+            # langfuse ^4.13: start_as_current_span -> start_as_current_observation.
+            with client.start_as_current_observation(
                 name="experiment_conclude",
                 metadata={
                     "experiment_key": experiment_key,

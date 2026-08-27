@@ -272,11 +272,11 @@ class TestAssign:
                 {"key": "treatment", "weight": 50, "config": {}},
             ]},
         )
-        # start_as_current_span returns a context manager.
-        client.start_as_current_span.return_value.__enter__ = MagicMock(
+        # start_as_current_observation returns a context manager.
+        client.start_as_current_observation.return_value.__enter__ = MagicMock(
             return_value=MagicMock(),
         )
-        client.start_as_current_span.return_value.__exit__ = MagicMock(
+        client.start_as_current_observation.return_value.__exit__ = MagicMock(
             return_value=False,
         )
         svc._client = client
@@ -284,7 +284,7 @@ class TestAssign:
         result = await svc.assign(experiment_key="exp1", subject_id="task-A")
         assert result in ("control", "treatment")
         # Trace was written for observability.
-        client.start_as_current_span.assert_called_once()
+        client.start_as_current_observation.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_assign_is_sticky_across_calls(self):
@@ -299,8 +299,8 @@ class TestAssign:
                 {"key": "b", "weight": 50, "config": {}},
             ]},
         )
-        client.start_as_current_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
-        client.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
+        client.start_as_current_observation.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        client.start_as_current_observation.return_value.__exit__ = MagicMock(return_value=False)
         svc._client = client
 
         first = await svc.assign(experiment_key="exp1", subject_id="task-X")
