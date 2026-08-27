@@ -107,6 +107,58 @@ def test_build_seed_drops_org_repo_values():
     assert drops["operator_value"] == 1
 
 
+def test_build_seed_drops_account_scoped_platform_urls():
+    """*.workers.dev / *.r2.dev / Spotify /show/<id> URLs are inherently some
+    specific account's property, never a sane buyer default (the beacon URL
+    shipped the operator's own worker until stack#3216). Subdomains/ids here
+    are synthetic — same shape as real, no operator identifiers."""
+    rows = [
+        ("cloudflare_beacon_url", "https://page-views-beacon.acct-1234.workers.dev"),
+        ("storage_public_url", "https://pub-00112233445566778899aabbccddeeff.r2.dev"),
+        (
+            "podcast_cover_url",
+            "https://pub-00112233445566778899aabbccddeeff.r2.dev/podcast/cover.jpg",
+        ),
+        ("podcast_spotify_url", "https://open.spotify.com/show/0Ab1Cd2Ef3Gh4Ij5Kl6Mn"),
+    ]
+    seed, drops = pf.build_seed(rows, _cat, frozenset(k for k, _ in rows))
+    assert seed == {}
+    assert drops["operator_value"] == 4
+
+
+def test_build_seed_keeps_platform_words_in_prose():
+    """The value filter matches URL shapes, not platform names — CTA prose
+    that says "Spotify" is generic and must keep shipping."""
+    seed, _ = pf.build_seed(
+        [
+            (
+                "media.cta.podcast",
+                "follow the show and leave a rating on Spotify or Apple Podcasts",
+            )
+        ],
+        _cat,
+        frozenset({"media.cta.podcast"}),
+    )
+    assert "media.cta.podcast" in seed
+
+
+def test_build_seed_drops_backup_repository_key():
+    """offsite_backup_repository is operator-only by KEY: any value is the
+    operator's own backup target, whatever hostname (or local path) it uses."""
+    seed, drops = pf.build_seed(
+        [
+            (
+                "offsite_backup_repository",
+                "s3:https://s3.us-west-000.backblazeb2.com/example-backups/repo",
+            )
+        ],
+        _cat,
+        frozenset({"offsite_backup_repository"}),
+    )
+    assert seed == {}
+    assert drops["operator_only"] == 1
+
+
 # ---------------------------------------------------------------------------
 # prompt export
 # ---------------------------------------------------------------------------

@@ -109,15 +109,36 @@ _UUID_VALUE_RE = re.compile(
 )
 
 # Operator-specific VALUES that are wrong as a buyer's starting config even
-# though they aren't PII (our URLs, our org's repos, our brand).
+# though they aren't PII (our URLs, our org's repos, our brand). Account-scoped
+# platform hostnames belong here too: a *.workers.dev worker or *.r2.dev
+# public-bucket URL is inherently some specific account's, so as a shipped
+# default it can only point the buyer's stack at OUR infrastructure (beacon
+# data pollution both ways, assets served off our bucket). Same for a Spotify
+# /show/<id> URL — the operator's own show; the word "Spotify" in CTA prose
+# stays shippable, which is why the pattern matches the URL shape.
 _OPERATOR_VALUE_RES = [
     re.compile(p, re.IGNORECASE)
-    for p in (r"gladlabs\.(io|ai)", r"\bGlad[- ]Labs\b", r"\bpoindexter-pro\b")
+    for p in (
+        r"gladlabs\.(io|ai)",
+        r"\bGlad[- ]Labs\b",
+        r"\bpoindexter-pro\b",
+        r"\.workers\.dev",
+        r"\.r2\.dev",
+        r"open\.spotify\.com/show/",
+    )
 ]
 
 # Keys that are per-operator by nature, harmless but useless to a buyer.
+# offsite_backup_repository is key-listed rather than value-matched because
+# ANY value — bucket URL today, local path tomorrow — is the operator's own
+# backup target; the key is the durable seam, not the value's hostname.
 _OPERATOR_ONLY_KEYS = frozenset(
-    {"operator_timezone", "social_x_handle", "social_x_url"}
+    {
+        "offsite_backup_repository",
+        "operator_timezone",
+        "social_x_handle",
+        "social_x_url",
+    }
 )
 # ...and per-operator key FAMILIES: Postiz integration ids are cuid row ids
 # of the operator's own connected social accounts (not UUIDs, so the value
