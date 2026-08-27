@@ -141,7 +141,7 @@ the container on a guess is worse than reporting it.
 
 A rule covers a _known_ alert shape. For an alert with **no** rule, the
 firefighter can still take a reasonable first action instead of paging blind: a
-small **local** model (`ops_firefighter_model`, default `ollama/llama3.2:3b`)
+small **local** model (`ops_firefighter_model`, default `ollama/granite4.2:3b`)
 picks one action from the registry catalog — or abstains. The selection never
 runs in the brain (which ships asyncpg/httpx/urllib only, no LLM libs): the
 brain POSTs the alert + the allowlisted catalog to the worker route
@@ -172,6 +172,58 @@ call**:
   off-list, malformed, low-confidence, or Ollama-unreachable selection degrades
   to _abstain → page_. Model quality affects the recovery _rate_, never
   _safety_.
+
+**Swapping the selector model.** `ops_firefighter_model` takes any local Ollama
+tag (carry the `ollama/` prefix — it routes through `dispatch_complete`). Two
+things constrain the choice:
+
+- **Size.** Keep it in the ~2 GB class. The selector can fire while wan +
+  image-gen are already resident, and a big pin turns an un-ruled alert into a
+  VRAM eviction. This is the same reasoning that governs its sibling
+  `ops_triage_writer_model`.
+- **Thinking mode is handled for you.** The route sends Ollama `think: false` on
+  every request, so a thinking model's reasoning channel never opens. On this
+  path that is a correctness guard, not a tidiness one. Ollama's raw `/api/chat`
+  returns reasoning in a separate `message.thinking` field, but the worker does
+  not call it raw — it goes through LiteLLM, and **LiteLLM delivers the
+  deliberation inline in `content`** (measured on `granite4.2:3b`: ~1.7–2.2 KB
+  of "We need to respond with ONLY a JSON object…" ahead of the answer, with
+  `reasoning_content` empty). The `<think>`-block stripping does _not_ rescue
+  that — there are no tags to strip. So with thinking left on, triage returns
+  deliberation as the operator's diagnosis and the selector hands the JSON
+  parser a wall of prose.
+
+The default is `ollama/granite4.2:3b` (IBM Granite, **Apache-2.0**). It replaced
+`llama3.2:3b` on 2026-08-27 because the Llama 3.2 Community License is not
+permissive and this value is a default in the open-source product — the same
+audit that moved the `scripts/ops_sessions/` pins.
+
+Selection quality was measured before the swap against 11 real un-ruled
+`alert_events` rows and the shipping two-action catalog, 5 runs each (55 trials),
+**over LiteLLM** — the transport the worker actually uses. Measure it that way if
+you re-pin: the same model and flags scored 12/20 bad picks against Ollama's raw
+`/api/chat` and 4/20 through LiteLLM, because LiteLLM applies its own sampling
+defaults. Raw-API numbers will mislead you.
+
+|                       | accuracy | wrong picks **above** the confidence gate | self-consistent | p50    |
+| --------------------- | -------- | ----------------------------------------- | --------------- | ------ |
+| `llama3.2:3b` (old)   | 23/55    | **27**                                    | 2/11            | 236 ms |
+| `granite4.2:3b` (new) | 41/55    | **1**                                     | 6/11            | 261 ms |
+
+The second column is the one that matters, because a pick below
+`ops_firefighter_min_confidence` pages instead of acting — so it counts only the
+wrong actions that would really have run. The old default produced 27 of them in
+55 trials: restarting a container in response to _"tasks stuck in_progress"_
+(4/5 runs), and restarting the wedged Postgres container that
+`db_recovery_policy` exists to protect. **The license swap incidentally fixed a
+live safety problem.** Granite's own failure mode is the opposite and the one you
+want — it over-abstains on clear restarts (Glitchtip 2/5, Alertmanager 1/5),
+which pages a human rather than acting wrongly.
+
+Two configurations were rejected on the same measurements: `granite4.2:3b` with
+thinking on plus constrained JSON decoding (34/55, 15x slower), and
+`granite4.2:8b` (best accuracy at 51/55, but 4 wrong-acting picks, 18x slower, and
+5.35 GB — too heavy for the 8-16 GB consumer target).
 
 A valid pick then runs the **same allowlist → circuit-breaker → rate-cap →
 execute → verify** machinery as a rule, recorded with `source="llm"` (plus
@@ -818,36 +870,36 @@ full incident write-up.
 
 ## Settings reference
 
-| Setting                                                       | Default                                    | Meaning                                                                                                                   |
-| ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).   |
-| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).       |
-| `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                               |
-| `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                |
-| `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                           |
-| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                              |
-| `compose_drift_active_profiles`                               | (empty)                                    | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
-| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
-| `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
-| `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
-| `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                   |
-| `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                 |
-| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
-| `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
-| `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.             |
-| `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout). |
-| `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                     |
-| `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                             |
-| `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                    |
-| `ops_firefighter_verify_after_seconds`                        | `120`                                      | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                      |
-| `ops_firefighter_max_actions_per_hour`                        | `10`                                       | Global cap on firefighter actions across all rules per hour.                                                              |
-| `ops_firefighter_action_allowlist`                            | (empty)                                    | CSV of allowed `action_name`s; empty = every registered action allowed.                                                   |
-| `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                      |
-| `ops_firefighter_model`                                       | `ollama/llama3.2:3b`                       | Local Ollama model the worker uses to pick an action for an un-ruled alert.                                               |
-| `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                         |
-| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                  |
-| `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                              |
-| `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                       |
+| Setting                                                       | Default                                    | Meaning                                                                                                                                                                                      |
+| ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brain_restart_consecutive_failures`                          | `2`                                        | Consecutive hard-down monitor cycles before `monitor_services` auto-restarts a local service (degraded never restarts).                                                                      |
+| `brain_docker_restart_timeout_seconds`                        | `90`                                       | Subprocess timeout for the brain's `docker restart` heal — must exceed the worker's graceful stop+start (~30-45 s).                                                                          |
+| `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                                                                                                  |
+| `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                                                                                   |
+| `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                              |
+| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                 |
+| `compose_drift_active_profiles`                               | (empty)                                    | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check.                                                                    |
+| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                  |
+| `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                 |
+| `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                               |
+| `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                                                                                      |
+| `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                                                                                    |
+| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                                                                                            |
+| `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                                                                                            |
+| `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.                                                                                |
+| `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout).                                                                    |
+| `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                                                                                        |
+| `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                                                                                                |
+| `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                                                                                       |
+| `ops_firefighter_verify_after_seconds`                        | `120`                                      | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                                                                                         |
+| `ops_firefighter_max_actions_per_hour`                        | `10`                                       | Global cap on firefighter actions across all rules per hour.                                                                                                                                 |
+| `ops_firefighter_action_allowlist`                            | (empty)                                    | CSV of allowed `action_name`s; empty = every registered action allowed.                                                                                                                      |
+| `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                                                                                         |
+| `ops_firefighter_model`                                       | `ollama/granite4.2:3b`                     | Local Ollama model the worker uses to pick an action for an un-ruled alert. Apache-2.0 and ~2.24 GB; a thinking model, made safe by the unconditional `think=False` on the call (see below). |
+| `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                                                                                            |
+| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                                                                                     |
+| `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                                                                                                 |
+| `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                                                                                          |
 
 ## Deploying the Recovery Agent
 

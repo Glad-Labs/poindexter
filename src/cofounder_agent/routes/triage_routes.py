@@ -215,7 +215,31 @@ class _DefaultModelRouter:
         raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,
             site_config=self._site_config, pool=self._pool,
+            # think=False is what makes a THINKING model safe to pin here, and
+            # the default (granite4.2:3b) is one. It suppresses the reasoning
+            # trace at the source rather than budgeting around it — the
+            # unconditional version of the ``ops_triage_max_diagnosis_tokens``
+            # escape hatch the setting description offers, so the operator
+            # never has to know.
+            #
+            # Do NOT reason from Ollama's raw API here. Called raw, Ollama puts
+            # the trace in a separate ``message.thinking`` field and leaves
+            # ``content`` clean. This call goes through LiteLLM, which hands the
+            # deliberation back INLINE IN ``content`` (measured with
+            # granite4.2:3b: ~1.7-2.2 KB of "We need to respond with ONLY..."
+            # ahead of the answer, ``reasoning_content`` empty). The strip below
+            # cannot rescue that — there are no <think> tags in it — so without
+            # this kwarg the operator's 400-token diagnosis is pure
+            # deliberation, truncated mid-thought. That is the exact
+            # empty-diagnosis failure glm-4.7-5090 produced here on 2026-05-26.
+            #
+            # Harmless on non-thinking models (Ollama ignores the field), so an
+            # operator who re-pins one loses nothing.
+            think=False,
         )
+        # Belt-and-braces: think=False suppresses Ollama's separate thinking
+        # channel, but a model that emits INLINE <think> blocks into content
+        # would still leak the trace into the operator's alert. Strip regardless.
         text = strip_think_blocks(raw)
         return {"text": text, "model": f"ollama/{model_name}", "tokens": 0}
 

@@ -32,7 +32,7 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     install now gets a small model (matching ``cost_tier.free.model``)."""
     from services.settings_defaults import DEFAULTS
 
-    assert DEFAULTS["ops_triage_writer_model"] == "ollama/llama3.2:3b"
+    assert DEFAULTS["ops_triage_writer_model"] == "ollama/granite4.2:3b"
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
 
 

@@ -363,3 +363,52 @@ class TestHappyPath:
         assert body["tokens"] == 128
         assert body["ms"] >= 0
         assert body["cached"] is False
+
+
+# ---------------------------------------------------------------------------
+# Default model router — thinking-channel suppression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDefaultModelRouterThinking:
+    @pytest.mark.asyncio
+    async def test_triage_disables_the_thinking_channel(self):
+        """``think=False`` on every triage call — the invariant that makes the
+        default pin safe.
+
+        ``ops_triage_writer_model`` defaults to ``ollama/granite4.2:3b``
+        (Apache-2.0, chosen when the 2026-08-27 license audit retired the
+        non-permissive llama3.2:3b), and Granite is a THINKING model. This
+        endpoint's whole failure mode is a thinking model burning its budget on
+        reasoning and returning an EMPTY operator-facing diagnosis — the exact
+        thing glm-4.7-5090 did here on 2026-05-26, and the reason the setting
+        description used to insist on a non-thinking pin.
+
+        Sending ``think: false`` is what replaced that constraint: the reasoning
+        channel never opens, so the model choice stops mattering. Drop this
+        kwarg and the endpoint keeps returning 200 with a plausible payload —
+        it just starts returning empty diagnoses on any thinking pin, which is
+        precisely how the original bug went unnoticed.
+        """
+        from unittest.mock import patch
+
+        from routes.triage_routes import _DefaultModelRouter
+
+        sc = SiteConfig(initial_config={
+            "ops_triage_writer_model": "ollama/granite4.2:3b",
+            "local_llm_api_url": "http://localhost:11434",
+        })
+
+        with patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="Pyroscope is unreachable; restart it."),
+        ) as mock_chat:
+            out = await _DefaultModelRouter(sc).invoke(
+                model_class="ops_triage", system="s", user="u",
+            )
+
+        assert mock_chat.await_args.kwargs["think"] is False
+        # The pin is still honoured (prefix stripped for the Ollama API).
+        assert mock_chat.await_args.kwargs["model"] == "granite4.2:3b"
+        assert out["model"] == "ollama/granite4.2:3b"

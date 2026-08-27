@@ -1,3 +1,5 @@
+import pytest
+
 from services.settings_defaults import DEFAULTS
 
 
@@ -18,7 +20,7 @@ def test_firefighter_llm_longtail_defaults_present_and_typed():
     """Plan B (LLM long-tail) selector knobs. The selector runs on the worker via
     dispatch_complete, so the model carries the ``ollama/`` litellm prefix like
     its sibling ``ops_triage_writer_model``."""
-    assert DEFAULTS["ops_firefighter_model"] == "ollama/llama3.2:3b"
+    assert DEFAULTS["ops_firefighter_model"] == "ollama/granite4.2:3b"
     assert DEFAULTS["ops_firefighter_min_repeats"] == "2"
     assert DEFAULTS["ops_firefighter_min_confidence"] == "0.6"
     # int / float consumers parse the string forms.
@@ -40,3 +42,36 @@ def test_firefighter_llm_longtail_engine_gate_defaults():
     # It actually matches the LLM's own substrate so those alerts stay rule-only.
     assert re.search(excl, "OllamaUnresponsive")
     assert re.search(excl, "GPUTempHigh")
+
+
+@pytest.mark.parametrize("key", ["ops_firefighter_model", "ops_triage_writer_model"])
+def test_ops_model_defaults_are_permissively_licensed(key):
+    """These two defaults ship publicly — they are the OSS product's pins.
+
+    Neither ``services/settings_defaults.py`` nor
+    ``services/migrations/0000_baseline.seeds.sql`` is stripped by
+    ``scripts/sync-to-github.sh``, so whatever is seeded here is what a fresh
+    Glad-Labs/poindexter install runs. The 2026-08-27 license audit initially
+    concluded ``scripts/ops_sessions/_common.py`` held the last non-permissive
+    default and missed both of these — the same Llama 3.2 Community License
+    (not OSI-approved, acceptable-use policy, 700M-MAU ceiling, ``gated:
+    manual`` upstream weights a downstream user cannot fetch) was still
+    shipping from app_settings. This test is the guard that would have caught
+    it, mirroring
+    ``tests/unit/scripts/test_ops_common.py::test_default_model_pins_are_permissively_licensed``.
+
+    Widen the allowlist only with an Apache-2.0/MIT model — verify with
+    ``ollama show --license <tag>`` rather than assuming, and never re-admit a
+    community license. Note the sibling size constraint documented at each key:
+    these run alongside wan + image-gen, so a permissive-but-huge pin trades a
+    licensing bug for a VRAM one.
+    """
+    from services.settings_defaults import DEFAULTS
+
+    permissive = {
+        "ollama/granite4.2:3b",  # IBM Granite 4.2 — Apache-2.0
+        "ollama/granite4.2:8b",  # Apache-2.0
+        "ollama/qwen2.5:7b",     # Qwen2.5 (7B) — Apache-2.0
+        "ollama/phi4:14b",       # MIT
+    }
+    assert DEFAULTS[key] in permissive

@@ -166,7 +166,27 @@ DEFAULTS: dict[str, str] = {
     # from the registry allowlist (or abstains). Runs on the worker via
     # dispatch_complete (the brain image has no LLM libs), so the tag carries the
     # ``ollama/`` litellm prefix like its sibling ops_triage_writer_model.
-    "ops_firefighter_model": "ollama/llama3.2:3b",
+    # granite4.2:3b (IBM Granite, Apache-2.0, ~2.24 GB) replaced llama3.2:3b on
+    # 2026-08-27: the Llama 3.2 Community License is not permissive, and this is
+    # a default shipping in the OSS product. It is a THINKING model, which is
+    # safe ONLY because remediation_routes._SelectorModelRouter passes
+    # ``think=False`` — see the comment there before re-pinning or removing it.
+    # Bake-off on 11 real un-ruled alert_events rows against the shipping
+    # two-action catalog, 5 runs each, OVER LITELLM (measure any re-pin the same
+    # way — the raw /api/chat numbers disagree badly because LiteLLM applies its
+    # own sampling defaults). Granite picked correctly 41/55 vs llama's 23/55,
+    # and — the number that matters — produced 1 wrong pick above
+    # ops_firefighter_min_confidence vs llama's 27. Only those execute; the rest
+    # page. The old default was restarting a container in response to "tasks
+    # stuck in_progress" and restarting the Postgres container that
+    # db_recovery_policy exists to protect, so this swap fixed a live safety
+    # problem as a side effect. Granite fails the other way (over-abstains on
+    # clear restarts), which pages a human instead of acting wrongly.
+    # Keep any replacement in the ~2 GB class so the selector cannot
+    # oversubscribe a GPU already holding wan + image-gen — granite4.2:8b scored
+    # better on raw accuracy (51/55) but was rejected at 5.35 GB / 18x latency /
+    # 4 wrong-acting picks.
+    "ops_firefighter_model": "ollama/granite4.2:3b",
     # Persistence gate: the LLM path engages only after an un-ruled alert has
     # repeated this many times (a one-off blip pages as usual; only a persistent
     # un-ruled alert is worth an inference call).
@@ -459,7 +479,14 @@ DEFAULTS: dict[str, str] = {
     # reloaded the writer into VRAM mid-media-render and CUDA-OOM'd the image-gen
     # server (2026-06-21). A 2 GB model coexists with wan + image-gen on a 32 GB card,
     # so triage can't oversubscribe the GPU even when un-gated.
-    'ops_triage_writer_model': 'ollama/llama3.2:3b',
+    # granite4.2:3b (IBM Granite, Apache-2.0, ~2.24 GB) replaced llama3.2:3b on
+    # 2026-08-27 — the Llama 3.2 Community License is not permissive and this
+    # default ships in the OSS product. It is a THINKING model, safe here ONLY
+    # because triage_routes._DefaultModelRouter passes ``think=False``; read
+    # that comment before re-pinning. MUST stay byte-identical to the
+    # 0000_baseline.seeds.sql row for this key or
+    # scripts/ci/settings_seed_value_drift_lint.py fails the build.
+    'ops_triage_writer_model': 'ollama/granite4.2:3b',
     # Video director + self-critique run on the writer model — scene judgment is
     # the top video-quality lever (video-quality spec §3.1). One shared key feeds
     # both the generate_video_shot_list draft pass and the review_video_shot_list

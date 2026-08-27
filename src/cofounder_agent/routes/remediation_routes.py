@@ -111,9 +111,29 @@ class _SelectorModelRouter:
         raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,
             site_config=self._site_config, pool=self._pool,
+            # think=False is what makes a THINKING model safe to pin here, and
+            # the default (granite4.2:3b) is one.
+            #
+            # Do NOT reason from Ollama's raw API here. Called raw, Ollama puts
+            # the trace in a separate ``message.thinking`` field and leaves
+            # ``content`` clean — which makes thinking look like a mere latency
+            # cost. This call does not go raw: it goes through LiteLLM, and
+            # LiteLLM hands the deliberation back INLINE IN ``content`` with
+            # ``reasoning_content`` empty. Measured on this exact selector
+            # prompt with granite4.2:3b: 1696-2202 chars of "We need to respond
+            # with ONLY a JSON object, no prose. The system says..." wrapped
+            # around the answer, versus a clean 220-char object with think=False.
+            # ``strip_think_blocks`` below cannot rescue that — the prose
+            # carries no <think> tags to strip — so _parse_selection_json is
+            # left digging a JSON span out of an essay.
+            #
+            # Harmless on non-thinking models (Ollama ignores the field), so an
+            # operator who re-pins one loses nothing.
+            think=False,
         )
-        # Defensive: a thinking model set here would leak <think> blocks into the
-        # JSON the selector must parse — strip them regardless of model.
+        # Belt-and-braces: think=False suppresses the separate thinking channel,
+        # but a model that emits INLINE <think> blocks into content would still
+        # leak them into the JSON the selector must parse. Strip regardless.
         text = strip_think_blocks(raw)
         return {"text": text, "model": f"ollama/{model_name}", "tokens": 0}
 

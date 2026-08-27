@@ -421,7 +421,12 @@ async def select_remediation_action(
     if not catalog_names:
         return abstain
 
-    model_class = site_config.get("ops_firefighter_model", "ollama/llama3.2:3b")
+    # Inline fallback mirrors settings_defaults.DEFAULTS["ops_firefighter_model"]
+    # (that module is the seed home; importing it here would be a service→seed
+    # cycle). Keep the two in step — this literal ships in the OSS product, which
+    # is how the non-permissive llama3.2:3b tag survived the 2026-08-27 license
+    # audit's first pass.
+    model_class = site_config.get("ops_firefighter_model", "ollama/granite4.2:3b")
     user_payload = json.dumps(
         {"alert": alert, "catalog": action_catalog}, default=str, ensure_ascii=False
     )

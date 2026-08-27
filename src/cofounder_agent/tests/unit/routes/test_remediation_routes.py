@@ -287,6 +287,45 @@ class TestSelectorModelRouterResolution:
         assert result["model"] == "ollama/gemma3:27b"
 
     @pytest.mark.asyncio
+    async def test_selector_disables_the_thinking_channel(self):
+        """``think=False`` on every selector call — the invariant that makes the
+        default pin safe.
+
+        ``ops_firefighter_model`` defaults to ``ollama/granite4.2:3b`` (Apache-2.0,
+        chosen when the 2026-08-27 license audit retired the non-permissive
+        llama3.2:3b), and Granite is a THINKING model.
+
+        Ollama's raw API would keep the trace out of the way in a separate
+        ``message.thinking`` field — but this call goes through LiteLLM, which
+        returns the deliberation INLINE in ``content`` (measured: 1.7-2.2 KB of
+        "We need to respond with ONLY a JSON object…" wrapping the answer). The
+        ``strip_think_blocks`` call downstream cannot help, because that prose
+        carries no ``<think>`` tags.
+
+        Drop this kwarg and nothing fails loudly: the route still 200s, and
+        ``_parse_selection_json``'s ``{...}``-span fallback often still digs the
+        object out — so the damage shows up only as degraded picks on some
+        alerts. That is exactly the kind of regression a test has to hold,
+        because neither review nor a smoke test will catch it.
+        """
+        from routes.remediation_routes import _SelectorModelRouter
+
+        sc = SiteConfig(initial_config={
+            "ops_firefighter_model": "ollama/granite4.2:3b",
+            "local_llm_api_url": "http://localhost:11434",
+        })
+
+        with patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="{}"),
+        ) as mock_chat:
+            await _SelectorModelRouter(sc).invoke(
+                model_class="ops_firefighter", system="s", user="u",
+            )
+
+        assert mock_chat.await_args.kwargs["think"] is False
+
+    @pytest.mark.asyncio
     async def test_dedicated_firefighter_model_override_still_wins(self):
         """The dedicated ``ops_firefighter_model`` pin takes precedence over the
         writer chain and is unaffected by the satellite-resolver swap."""
