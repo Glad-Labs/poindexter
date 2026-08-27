@@ -41,12 +41,13 @@ objects). Hence the relay: a ~200-line Cloudflare Worker
 ([`infrastructure/cloudflare/ls-webhook-relay`](../../infrastructure/cloudflare/ls-webhook-relay/README.md))
 receives the webhooks at the edge, verifies the HMAC signature, and parks
 `meta.custom_data` in Workers KV under `sub:<id>` / `order:<id>` keys; the
-sync reads those (outbound CF REST call) for subscriptions still missing a
-username. The relay carries the username mapping ONLY — it never writes
-`revenue_events`, so the poll stays the single revenue path and the
-webhook-vs-poll dedup question never arises. Username resolution order:
-REST attributes (dead today, self-activates if LS adds the field) → relay
-KV → manual `pro link` finding.
+sync reads those back through the Worker's own `GET /lookup/<key>` endpoint
+(outbound-only), authenticated with the **same webhook signing secret** —
+so the relay adds zero new credentials. The relay carries the username
+mapping ONLY — it never writes `revenue_events`, so the poll stays the
+single revenue path and the webhook-vs-poll dedup question never arises.
+Username resolution order: REST attributes (dead today, self-activates if
+LS adds the field) → relay lookup → manual `pro link` finding.
 
 ## Access policy
 
@@ -95,29 +96,32 @@ the short version:
 ```bash
 cd infrastructure/cloudflare/ls-webhook-relay
 npm install
-npx wrangler kv namespace create RELAY_KV     # paste id into wrangler.toml
+npx wrangler login                             # once per machine
+npx wrangler kv namespace create RELAY_KV      # uncomment block in wrangler.toml, paste id
 npx wrangler deploy                            # note the workers.dev URL
 npx wrangler secret put LS_WEBHOOK_SECRET      # = lemon_squeezy_webhook_secret
 
-poindexter settings set pro_delivery_relay_kv_token <cf-token> --secret  # CF token: Workers KV Storage Read
-poindexter settings set pro_delivery_relay_kv_namespace_id <namespace-id>
 poindexter pro relay register https://ls-webhook-relay.<you>.workers.dev
 poindexter pro relay status                    # both halves at a glance
 ```
 
 - `relay register` creates-or-updates the LS webhook via the API
   (`order_created`, `subscription_created`, `subscription_updated` — all
-  custom_data carriers; the last also refreshes KV TTL on renewals) and
+  custom_data carriers; the last also refreshes KV TTL on renewals),
+  records `pro_delivery_relay_url` — the relay's **only** setting and its
+  enable switch (reads ride the Worker's `/lookup` endpoint on the shared
+  webhook secret, so no CF API token or extra credential exists) — and
   lists any other webhooks so stale registrations are visible
   (`poindexter pro relay remove <id>` deletes one).
-- Half-set config fails loud: namespace id without the CF token (or
-  `cloudflare_account_id`) is a `pro_delivery_error` every tick, because an
-  operator who deployed the Worker believes full-auto delivery is live.
-- Steady-state cost is zero: the sync consults KV only for
+- Half-set config fails loud: `pro_delivery_relay_url` set while
+  `lemon_squeezy_webhook_secret` is missing (deleted after register ran)
+  is a `pro_delivery_error` every tick, because an operator who registered
+  the relay believes full-auto delivery is live.
+- Steady-state cost is zero: the sync consults the relay only for
   access-status subscriptions whose `github_username` column is NULL — once
-  a row is linked, no KV reads at all. Free-tier KV is orders of magnitude
-  above this traffic.
-- Relay down / KV unreachable? The lookup fails open and that buyer gets
+  a row is linked, no lookups at all. Free-tier Workers/KV is orders of
+  magnitude above this traffic.
+- Relay down / unreachable? The lookup fails open and that buyer gets
   the standard `pro_delivery_action_needed` finding — exactly the
   pre-relay behavior, never a stuck sync.
 

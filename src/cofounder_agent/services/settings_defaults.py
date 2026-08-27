@@ -3845,13 +3845,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # ls-webhook-relay). Lemon Squeezy only exposes checkout custom_data
     # (the buyer's GitHub username) in webhook payloads, never via its REST
     # API, so FULL-auto delivery needs the relay Worker parked in front of
-    # the webhooks + these keys for the sync to read its KV store. Namespace
-    # unset = relay off, delivery degrades to the manual `pro link` finding
-    # (a designed state, fine at founding scale). Namespace set without the
-    # CF token (secret pro_delivery_relay_kv_token, never seeded) fails
-    # loud. Registered relay endpoint recorded by `pro relay register`:
+    # the webhooks. This URL — recorded automatically by `pro relay
+    # register` — is the relay's ONLY setting and its enable switch: the
+    # sync reads mappings back through the Worker's /lookup endpoint,
+    # authenticated with the shared lemon_squeezy_webhook_secret, so no
+    # extra credential exists. Unset = relay off, delivery degrades to the
+    # manual `pro link` finding (a designed state, fine at founding scale).
     'pro_delivery_relay_url': '',
-    'pro_delivery_relay_kv_namespace_id': '',
     # X exposes a "made with AI" disclosure flag on each post. Glad Labs
     # content is AI-authored, so this defaults true; a future operator can
     # set it false per their content policy or jurisdiction.
@@ -4850,7 +4850,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'pro_delivery_github_repo': {'owner': 'sync_pro_subscriptions'},
     'pro_delivery_ls_product_id': {'owner': 'sync_pro_subscriptions'},
     'pro_delivery_ls_store_id': {'owner': 'sync_pro_subscriptions'},
-    'pro_delivery_relay_kv_namespace_id': {'owner': 'sync_pro_subscriptions'},
     'pro_delivery_relay_url': {'owner': 'sync_pro_subscriptions'},
     'publish_quiet_hours': {'owner': 'scheduling_service'},
     'pyroscope_server_url': {'value_type': 'url'},

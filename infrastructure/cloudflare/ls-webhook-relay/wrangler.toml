@@ -3,11 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2026-05-01"
 
 # KV namespace holding the custom_data mappings the delivery poll reads.
-# Operator creates it and fills the id here before deploying:
-#   npx wrangler kv namespace create RELAY_KV
-[[kv_namespaces]]
-binding = "RELAY_KV"
-id = "" # fill with the namespace id from `wrangler kv namespace create`
+# The block below ships COMMENTED OUT because wrangler refuses to parse a
+# config with an empty/placeholder id — even for the `kv namespace create`
+# command itself. Order of operations:
+#   npx wrangler kv namespace create RELAY_KV   # works while commented out
+# then uncomment the two lines and paste the returned id before deploying:
+#
+# [[kv_namespaces]]
+# binding = "RELAY_KV"
+# id = "<namespace id from `wrangler kv namespace create`>"
 
 # Rate limiting — 60 requests/min per IP. Lemon Squeezy sends a handful of
 # events per purchase, so this is pure abuse protection (it caps how fast

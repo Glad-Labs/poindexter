@@ -12,7 +12,9 @@ import { describe, expect, it } from 'vitest';
 import {
   extractRelayRecord,
   hexToBytes,
+  parseLookupKey,
   retentionTtlSeconds,
+  timingSafeEqualStr,
   verifySignature,
 } from './index';
 
@@ -147,5 +149,31 @@ describe('retentionTtlSeconds', () => {
     expect(retentionTtlSeconds('')).toBe(90 * 86400);
     expect(retentionTtlSeconds('-5')).toBe(90 * 86400);
     expect(retentionTtlSeconds('banana')).toBe(90 * 86400);
+  });
+});
+
+describe('parseLookupKey', () => {
+  it('accepts exactly the write-side key shapes', () => {
+    expect(parseLookupKey('/lookup/sub:2470345')).toBe('sub:2470345');
+    expect(parseLookupKey('/lookup/order:9315803')).toBe('order:9315803');
+  });
+
+  it('rejects everything else', () => {
+    expect(parseLookupKey('/lookup/')).toBeNull();
+    expect(parseLookupKey('/lookup/evil:1')).toBeNull();
+    expect(parseLookupKey('/lookup/sub:')).toBeNull();
+    expect(parseLookupKey('/lookup/sub:a/../b')).toBeNull();
+    expect(parseLookupKey('/other/sub:1')).toBeNull();
+    expect(parseLookupKey('/')).toBeNull();
+    expect(parseLookupKey(`/lookup/sub:${'a'.repeat(65)}`)).toBeNull();
+  });
+});
+
+describe('timingSafeEqualStr', () => {
+  it('matches equal strings and rejects unequal ones', async () => {
+    expect(await timingSafeEqualStr('whsec-test', 'whsec-test')).toBe(true);
+    expect(await timingSafeEqualStr('whsec-test', 'whsec-tesT')).toBe(false);
+    expect(await timingSafeEqualStr('whsec-test', '')).toBe(false);
+    expect(await timingSafeEqualStr('', 'x')).toBe(false);
   });
 });

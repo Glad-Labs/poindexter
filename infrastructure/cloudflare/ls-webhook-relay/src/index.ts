@@ -11,17 +11,24 @@
 // worker's outbound-only poll picks it up (services/pro_delivery.py).
 //
 //   LS webhook ──POST──▶ this Worker ──▶ KV {sub:<id>, order:<id> → custom_data}
-//                (HMAC verified)              ▲
-//                                             └── polled by SyncProSubscriptionsJob
+//                (HMAC verified)              │
+//   SyncProSubscriptionsJob ◀── GET /lookup/<key> (bearer = same secret)
+//
+// The read side is served by the Worker itself (GET /lookup/<key>,
+// authenticated with the SAME shared secret that signs the webhooks) so the
+// operator's poll needs NO Cloudflare API token — the webhook secret both
+// sides already hold is the only credential in the whole relay.
 //
 // Deliberately NOT a revenue pipe: the Worker stores custom_data mappings
 // only. The worker-side poll remains the single writer of revenue_events,
 // so the webhook_id-vs-order_id dedup reconciliation warned about in
 // services/pro_delivery.py never arises.
 //
-// POST / → 200 {stored} on verified payload, 200 {ignored} when the event
-// carries no custom_data, 401 bad signature, 405 non-POST, 429 rate limit,
-// 503 when LS_WEBHOOK_SECRET is unset (fail closed, never store unverified).
+// POST /            → 200 {stored} on verified payload, 200 {ignored} when
+//                     the event carries no custom_data, 401 bad signature
+// GET /lookup/<key> → 200 stored JSON, 404 unknown key, 401 bad bearer
+// anything else     → 405; both paths: 429 rate limit, 503 when
+//                     LS_WEBHOOK_SECRET is unset (fail closed).
 
 export interface Env {
   // KV namespace holding the custom_data mappings. Operator creates it
@@ -161,25 +168,83 @@ export function retentionTtlSeconds(retentionDays: string | undefined): number {
   return effective * 86400;
 }
 
+/**
+ * Parse a lookup path into a KV key, or null when it isn't one.
+ * Accepts exactly `/lookup/<key>` where key matches the write-side shape
+ * (`sub:<id>` / `order:<id>`) — anything else 404s, so the endpoint can't
+ * be used to probe arbitrary KV keys. Pure.
+ */
+export function parseLookupKey(pathname: string): string | null {
+  const m = /^\/lookup\/((?:sub|order):[A-Za-z0-9_-]{1,64})$/.exec(pathname);
+  return m === null ? null : m[1];
+}
+
+/**
+ * Constant-time string equality for the read-side bearer check, built from
+ * HMAC sign+verify so it runs identically on the Workers runtime and in
+ * vitest under Node (which lacks CF's non-standard
+ * crypto.subtle.timingSafeEqual). The dummy key only serves to route both
+ * values through subtle.verify's native constant-time comparison.
+ */
+export async function timingSafeEqualStr(
+  a: string,
+  b: string
+): Promise<boolean> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode('ls-webhook-relay-bearer-compare'),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(a));
+  return crypto.subtle.verify('HMAC', key, mac, enc.encode(b));
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    if (req.method !== 'POST') {
+    if (req.method !== 'POST' && req.method !== 'GET') {
       return new Response(null, { status: 405 });
     }
 
-    // Fail closed: without the signing secret nothing can be verified, and
-    // an unverified store would let anyone plant github usernames.
+    // Fail closed: without the signing secret nothing can be verified —
+    // neither webhook writes nor lookup reads.
     if (!env.LS_WEBHOOK_SECRET) {
       return new Response('LS_WEBHOOK_SECRET not configured', { status: 503 });
     }
 
     // Per-IP rate limit — same posture as the sibling workers. LS webhook
-    // volume is a handful of events per purchase; 60/min absorbs any burst
-    // while killing a brute-force loop against the HMAC.
+    // volume is a handful of events per purchase and the poll reads a
+    // couple of keys per tick; 60/min absorbs any burst while killing a
+    // brute-force loop against the HMAC or the bearer.
     const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
     const { success } = await env.RATE_LIMITER.limit({ key: ip });
     if (!success) {
       return new Response(null, { status: 429 });
+    }
+
+    // Read side — the delivery poll fetching a mapping back. Auth is the
+    // same shared secret that signs the webhooks (bearer, constant-time
+    // compare): both sides already hold it, so the relay needs no
+    // Cloudflare API token anywhere.
+    if (req.method === 'GET') {
+      const key = parseLookupKey(new URL(req.url).pathname);
+      if (key === null) {
+        return new Response(null, { status: 404 });
+      }
+      const auth = req.headers.get('Authorization') || '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+      if (!token || !(await timingSafeEqualStr(env.LS_WEBHOOK_SECRET, token))) {
+        return new Response(null, { status: 401 });
+      }
+      const value = await env.RELAY_KV.get(key);
+      if (value === null) {
+        return new Response(null, { status: 404 });
+      }
+      return new Response(value, {
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const rawBody = await req.text();

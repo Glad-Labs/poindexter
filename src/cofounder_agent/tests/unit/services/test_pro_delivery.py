@@ -645,7 +645,7 @@ async def test_cli_apply_escalation_flags_widen_the_write_set(tmp_path):
 
 
 class RelayRecorder(GithubRecorder):
-    """GithubRecorder + a fake Cloudflare KV values endpoint."""
+    """GithubRecorder + a fake relay-Worker /lookup endpoint."""
 
     def __init__(
         self,
@@ -660,16 +660,19 @@ class RelayRecorder(GithubRecorder):
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if url.startswith("https://api.cloudflare.com/"):
-            assert "/storage/kv/namespaces/ns123/values/" in url
-            assert request.headers["Authorization"] == "Bearer cf-kv-token"
-            key = url.rsplit("/values/", 1)[-1]
+        if url.startswith("https://relay.test/"):
+            assert "/lookup/" in url
+            # Read auth is the SHARED webhook signing secret — no CF token.
+            assert (
+                request.headers["Authorization"] == "Bearer whsec-test-secret"
+            )
+            key = url.rsplit("/lookup/", 1)[-1]
             self.kv_requests.append(key)
             if self.kv_status_override is not None:
-                return httpx.Response(self.kv_status_override, text="cf boom")
+                return httpx.Response(self.kv_status_override, text="relay boom")
             if key in self.kv:
                 return httpx.Response(200, text=self.kv[key])
-            return httpx.Response(404, json={"success": False})
+            return httpx.Response(404)
         return super().__call__(request)
 
 
@@ -677,13 +680,12 @@ class RelayRecorder(GithubRecorder):
 def relay_site_config(monkeypatch: pytest.MonkeyPatch) -> SiteConfig:
     monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
     monkeypatch.setenv("PRO_DELIVERY_GITHUB_TOKEN", "gh-test-token")
-    monkeypatch.setenv("PRO_DELIVERY_RELAY_KV_TOKEN", "cf-kv-token")
+    monkeypatch.setenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "whsec-test-secret")
     return SiteConfig(
         initial_config={
             "pro_delivery_enabled": "true",
             "pro_delivery_github_repo": "Glad-Labs/poindexter-pro",
-            "pro_delivery_relay_kv_namespace_id": "ns123",
-            "cloudflare_account_id": "acct123",
+            "pro_delivery_relay_url": "https://relay.test",
         }
     )
 
@@ -804,31 +806,31 @@ async def test_relay_not_consulted_for_revoke_status_rows(
 async def test_relay_disabled_makes_no_kv_requests(site_config, findings):
     page = make_page(ls_sub(), orders=[ls_order()])
     _outcome, recorder, _db = await _sync(page, site_config)
-    # The plain fixture has no relay keys; the recorder would assert on any
-    # api.cloudflare.com call, so reaching the finding proves no KV traffic.
+    # The plain fixture has no relay url; the recorder would assert on any
+    # relay.test call, so reaching the finding proves no lookup traffic.
     assert findings[0]["kind"] == "pro_delivery_action_needed"
 
 
 async def test_relay_halfset_config_fails_loud(monkeypatch):
+    # relay_url set but the shared webhook secret deleted afterwards —
+    # register couldn't have run without it, so this is a broken state the
+    # operator must hear about, not silently degraded delivery.
     monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
     monkeypatch.setenv("PRO_DELIVERY_GITHUB_TOKEN", "gh-test-token")
-    monkeypatch.delenv("PRO_DELIVERY_RELAY_KV_TOKEN", raising=False)
+    monkeypatch.delenv("LEMON_SQUEEZY_WEBHOOK_SECRET", raising=False)
     service = ProDeliveryService(
         pool=FakeDb(),
         site_config=SiteConfig(
             initial_config={
                 "pro_delivery_enabled": "true",
                 "pro_delivery_github_repo": "Glad-Labs/poindexter-pro",
-                "pro_delivery_relay_kv_namespace_id": "ns123",
-                # cloudflare_account_id also missing
+                "pro_delivery_relay_url": "https://relay.test",
             }
         ),
     )
     with pytest.raises(ProDeliveryConfigError) as exc:
         await service.sync()
-    msg = str(exc.value)
-    assert "pro_delivery_relay_kv_token" in msg
-    assert "cloudflare_account_id" in msg
+    assert "lemon_squeezy_webhook_secret" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1032,20 +1034,12 @@ async def test_relay_remove_deletes_and_tolerates_gone(relay_admin_site_config):
 async def test_relay_status_reports_both_halves(monkeypatch):
     monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
     monkeypatch.setenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "whsec-test-secret")
-    monkeypatch.setenv("PRO_DELIVERY_RELAY_KV_TOKEN", "cf-kv-token")
-    sc = SiteConfig(
-        initial_config={
-            "pro_delivery_relay_url": RELAY_URL,
-            "pro_delivery_relay_kv_namespace_id": "ns123",
-            "cloudflare_account_id": "acct123",
-        }
-    )
+    sc = SiteConfig(initial_config={"pro_delivery_relay_url": RELAY_URL})
     recorder = LsAdminRecorder(webhooks=[_stale_hook()])
     payload = await pro_delivery.cli_relay_status(
         FakeDb(), sc, transport=httpx.MockTransport(recorder)
     )
     assert payload["config"]["pro_delivery_relay_url"] == RELAY_URL
-    assert payload["config"]["pro_delivery_relay_kv_token_set"] is True
     assert payload["config"]["lemon_squeezy_webhook_secret_set"] is True
     [hook] = payload["ls_webhooks"]
     assert hook["id"] == "93977"
@@ -1054,7 +1048,6 @@ async def test_relay_status_reports_both_halves(monkeypatch):
 async def test_relay_status_without_ls_key_degrades(monkeypatch):
     monkeypatch.delenv("LEMON_SQUEEZY_API_KEY", raising=False)
     monkeypatch.delenv("LEMON_SQUEEZY_WEBHOOK_SECRET", raising=False)
-    monkeypatch.delenv("PRO_DELIVERY_RELAY_KV_TOKEN", raising=False)
     payload = await pro_delivery.cli_relay_status(
         FakeDb(), SiteConfig(initial_config={})
     )

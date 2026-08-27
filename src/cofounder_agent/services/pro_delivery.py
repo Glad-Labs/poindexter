@@ -46,10 +46,13 @@ field at all). So the username reaches the sync in resolution order:
    (``infrastructure/cloudflare/ls-webhook-relay``) catches LS webhooks at
    the edge, verifies the HMAC, and parks ``meta.custom_data`` in Workers
    KV under ``sub:<id>`` / ``order:<id>`` keys; ``_relay_lookup`` reads
-   those via the CF REST API (outbound-only, no ingress) for subscriptions
-   still missing a username. Optional — enabled by setting
-   ``pro_delivery_relay_kv_namespace_id`` (+ token + account id); unset
-   means the feature is off, which is a designed state, not a fallback;
+   those back through the Worker's own ``GET /lookup/<key>`` endpoint
+   (outbound-only, no ingress), authenticated with the SAME
+   ``lemon_squeezy_webhook_secret`` that signs the webhooks — so the relay
+   adds zero new credentials. Optional — enabled by
+   ``pro_delivery_relay_url`` being set, which ``pro relay register``
+   records automatically; unset means the feature is off, which is a
+   designed state, not a fallback;
 3. manual: a ``pro_delivery_action_needed`` finding pings the operator
    with ``poindexter pro link <subscription> <github-username>``.
 
@@ -76,7 +79,6 @@ logger = logging.getLogger(__name__)
 
 LS_API_BASE = "https://api.lemonsqueezy.com/v1"
 GITHUB_API_BASE = "https://api.github.com"
-CF_API_BASE = "https://api.cloudflare.com/client/v4"
 
 # Events `pro relay register` subscribes the LS webhook to. All three carry
 # meta.custom_data; subscription_updated additionally fires on every renewal,
@@ -141,20 +143,16 @@ class _Config:
     permission: str
     store_id: str
     product_id: str
-    # Webhook-relay lookup (optional). All three set → the sync consults the
-    # relay's KV store for subscriptions missing a username; namespace unset
-    # → relay off entirely (designed state for installs without the Worker).
-    relay_kv_namespace_id: str = ""
-    relay_kv_token: str = ""
-    relay_account_id: str = ""
+    # Webhook-relay lookup (optional). URL set → the sync consults the relay
+    # Worker's /lookup endpoint for subscriptions missing a username,
+    # authenticated with the shared webhook signing secret; URL unset →
+    # relay off entirely (designed state for installs without the Worker).
+    relay_url: str = ""
+    relay_secret: str = ""
 
     @property
     def relay_enabled(self) -> bool:
-        return bool(
-            self.relay_kv_namespace_id
-            and self.relay_kv_token
-            and self.relay_account_id
-        )
+        return bool(self.relay_url and self.relay_secret)
 
 
 def normalize_github_username(raw: str | None) -> str | None:
@@ -253,26 +251,21 @@ class ProDeliveryService:
             missing.append(
                 "pro_delivery_github_repo (owner/name, e.g. Glad-Labs/poindexter-pro)"
             )
-        # Relay lookup is optional (namespace unset = off), but HALF-set is a
-        # misconfiguration: an operator who deployed the Worker and set the
-        # namespace believes full-auto delivery is live, so a missing token
-        # must fail loud rather than silently degrade to manual linking.
-        relay_ns = (sc.get("pro_delivery_relay_kv_namespace_id", "") or "").strip()
-        relay_token = ""
-        relay_account = ""
-        if relay_ns:
-            relay_token = await sc.get_secret("pro_delivery_relay_kv_token", "")
-            relay_account = (sc.get("cloudflare_account_id", "") or "").strip()
-            if not relay_token:
+        # Relay lookup is optional (URL unset = off), but HALF-set is a
+        # misconfiguration: pro_delivery_relay_url set with no webhook secret
+        # means the secret was deleted after `pro relay register` ran (which
+        # requires it), and an operator who registered the relay believes
+        # full-auto delivery is live — fail loud, don't silently degrade to
+        # manual linking.
+        relay_url = (sc.get("pro_delivery_relay_url", "") or "").strip()
+        relay_secret = ""
+        if relay_url:
+            relay_secret = await sc.get_secret("lemon_squeezy_webhook_secret", "")
+            if not relay_secret:
                 missing.append(
-                    "secret pro_delivery_relay_kv_token (CF API token, Workers "
-                    "KV Storage: Read) — required because "
-                    "pro_delivery_relay_kv_namespace_id is set"
-                )
-            if not relay_account:
-                missing.append(
-                    "cloudflare_account_id — required because "
-                    "pro_delivery_relay_kv_namespace_id is set"
+                    "secret lemon_squeezy_webhook_secret (authenticates relay "
+                    "/lookup reads) — required because pro_delivery_relay_url "
+                    "is set"
                 )
 
         if missing:
@@ -287,9 +280,8 @@ class ProDeliveryService:
             permission=(sc.get("pro_delivery_github_permission", "pull") or "pull"),
             store_id=(sc.get("pro_delivery_ls_store_id", "") or "").strip(),
             product_id=(sc.get("pro_delivery_ls_product_id", "") or "").strip(),
-            relay_kv_namespace_id=relay_ns,
-            relay_kv_token=relay_token,
-            relay_account_id=relay_account,
+            relay_url=relay_url,
+            relay_secret=relay_secret,
         )
 
     # -- HTTP helpers ------------------------------------------------------
@@ -351,11 +343,12 @@ class ProDeliveryService:
         subscription_id: str,
         order_id: Any,
     ) -> str | None:
-        """Fetch the buyer's GitHub username from the webhook relay's KV store.
+        """Fetch the buyer's GitHub username from the webhook relay.
 
         The ls-webhook-relay Worker parks LS webhook ``meta.custom_data``
-        under ``sub:<subscription_id>`` / ``order:<order_id>`` keys; this
-        reads them back through the Cloudflare REST API (outbound-only).
+        under ``sub:<subscription_id>`` / ``order:<order_id>`` keys and
+        serves them back on ``GET /lookup/<key>``, authenticated with the
+        shared webhook signing secret (outbound-only; no CF API token).
         Fail-open by contract: any failure returns None and the caller
         degrades to the manual ``pro link`` finding — a relay outage must
         never take down the rest of the sync (same posture as the QA rails'
@@ -365,15 +358,11 @@ class ProDeliveryService:
         if order_id is not None:
             keys.append(f"order:{order_id}")
         for key in keys:
-            url = (
-                f"{CF_API_BASE}/accounts/{cfg.relay_account_id}"
-                f"/storage/kv/namespaces/{cfg.relay_kv_namespace_id}"
-                f"/values/{key}"
-            )
+            url = f"{cfg.relay_url.rstrip('/')}/lookup/{key}"
             try:
                 resp = await client.get(
                     url,
-                    headers={"Authorization": f"Bearer {cfg.relay_kv_token}"},
+                    headers={"Authorization": f"Bearer {cfg.relay_secret}"},
                 )
             except httpx.HTTPError as exc:
                 logger.warning(
@@ -964,13 +953,6 @@ async def cli_relay_status(
     sc = site_config
     config_state = {
         "pro_delivery_relay_url": sc.get("pro_delivery_relay_url", "") or "(unset)",
-        "pro_delivery_relay_kv_namespace_id": (
-            sc.get("pro_delivery_relay_kv_namespace_id", "") or "(unset)"
-        ),
-        "cloudflare_account_id": sc.get("cloudflare_account_id", "") or "(unset)",
-        "pro_delivery_relay_kv_token_set": bool(
-            await sc.get_secret("pro_delivery_relay_kv_token", "")
-        ),
         "lemon_squeezy_webhook_secret_set": bool(
             await sc.get_secret("lemon_squeezy_webhook_secret", "")
         ),
