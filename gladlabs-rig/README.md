@@ -10,19 +10,19 @@ Deep lore (every gotcha found while building this) lives in Claude's memory:
 
 ## What's here
 
-| Dir             | Contents                                                                                                                                                                         | Restores to                                          |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `applications/` | App-menu entry that drives `conky-strip.service` (shadows the packaged one)                                                                                                      | `~/.local/share/applications/`                       |
-| `btop/`         | btop config + deuteranomaly-safe theme                                                                                                                                           | `~/.config/btop/`                                    |
-| `conky/`        | 8.8" 1920x480 sensor-strip panel (renderer, launcher + its test, loop poller, bg generator)                                                                                      | `~/.config/conky/`                                   |
-| `openrgb/`      | OpenRGB detector config (Corsair disabled) + ARGB temp-sync daemon                                                                                                               | `~/.config/OpenRGB/`, `~/.config/openrgb-temp-sync/` |
-| `openlinkhub/`  | OLH config, gladlabs thermal RGB palette, quiet fan curves, hub/XC7 device profiles (channel assignments, adapter declaration, probe binds, LCD rotation), coolant bridge script | `/opt/OpenLinkHub/...`, `/usr/local/bin/`            |
-| `systemd-user/` | conky-strip / openrgb-server / argb-temp-sync units                                                                                                                              | `~/.config/systemd/user/`                            |
+| Dir             | Contents                                                                                                                                                                                                      | Restores to                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `applications/` | App-menu entry that drives `conky-strip.service` (shadows the packaged one)                                                                                                                                   | `~/.local/share/applications/`                       |
+| `btop/`         | btop config + deuteranomaly-safe theme                                                                                                                                                                        | `~/.config/btop/`                                    |
+| `conky/`        | 8.8" 1920x480 sensor-strip panel (renderer, launcher + its test, loop poller, bg generator)                                                                                                                   | `~/.config/conky/`                                   |
+| `openrgb/`      | OpenRGB detector config (Corsair disabled) + ARGB temp-sync daemon                                                                                                                                            | `~/.config/OpenRGB/`, `~/.config/openrgb-temp-sync/` |
+| `openlinkhub/`  | OLH config, gladlabs thermal RGB palette, quiet fan curves, hub/XC7 device profiles (channel assignments, adapter declaration, probe binds, LCD rotation), XC7 LCD animation generator, coolant bridge script | `/opt/OpenLinkHub/...`, `/usr/local/bin/`            |
+| `systemd-user/` | conky-strip / openrgb-server / argb-temp-sync units                                                                                                                                                           | `~/.config/systemd/user/`                            |
 
 ## Prereqs (install before running install.sh)
 
 - `apt: conky-all python3-pil i2c-tools` (btop ships with Pop)
-- **OpenLinkHub 0.8.9** deb — github.com/jurkovic-nikola/OpenLinkHub releases
+- **OpenLinkHub 0.9.1** deb — github.com/jurkovic-nikola/OpenLinkHub releases
   (creates the `OpenLinkHub.service` system unit)
 - **OpenRGB 1.0rc3** bookworm deb — codeberg.org/OpenRGB/OpenRGB releases
   (linked from openrgb.org; NOT in apt)
@@ -92,6 +92,17 @@ speed — no X server, no systemd, ~9s.
 - Editing OLH RGB colors later: change `openlinkhub/rgb.json` **and bump the
   profile's `version`** before copying — devices render from per-serial copies
   in `database/rgb/` that only refresh on a version mismatch (upstream #487).
+- **XC7 block LCD** runs mode 10 (`Image / GIF`) showing `gladlabsloop`, a
+  480x480 coolant-loop animation built by `openlinkhub/make-lcd-gif.py` on the
+  same mint/amber/orange ramp as everything else. The GIF is generated by
+  `install.sh`, not committed (2.6 MB). Two constraints worth knowing: OLH
+  **caches LCD images at startup**, so a file dropped in while the service runs
+  is invisible until a restart — `POST /api/lcd/upload` (multipart field
+  `animationFile`, 5 MB cap) registers one live instead; and image **filenames
+  must be alphanumeric**, so `gladlabs-loop.gif` is rejected outright. Mode +
+  image persist in `profiles/A62XT4520039MM.json` as `LCDMode`/`LCDImage`.
+  Mode 102 (`Animation`) would put the same GIF behind three live sensor
+  readouts if the plain loop ever gets boring.
 - **The `temperature` anchors on our palette colors are permanent config, not a
   temporary workaround** — do not "clean them up" back to an upstream palette.
   Upstream closed #487 as by-design, and `interpolateTemperatureColor()` still
