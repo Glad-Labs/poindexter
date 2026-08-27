@@ -19,50 +19,19 @@ v1 surface:
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
-
-
-def _read_bootstrap_value(key: str) -> str:
-    """Inline ``~/.poindexter/bootstrap.toml`` reader.
-
-    Vendored locally so we don't depend on ``brain.bootstrap`` — the
-    poindexter CLI is installed via ``pip install poindexter-backend``
-    which only ships ``cofounder_agent``. ``brain`` lives at the repo
-    root and isn't on sys.path for installed CLI invocations, so
-    ``from brain.bootstrap import ...`` fails silently and we fall
-    through to the env-var path. That's exactly what burned the
-    ``poindexter auth migrate-cli`` invocation when an env var was
-    pointing at an unreachable cloud DSN (WinError 121 timeout).
-    """
-    try:
-        if sys.version_info >= (3, 11):
-            import tomllib as _tomllib
-        else:  # pragma: no cover — tomli only on 3.10
-            import tomli as _tomllib  # type: ignore[import-not-found]
-    except Exception:  # noqa: BLE001
-        # silent-ok: `""` is the documented return for "no value recoverable"
-        # — the caller falls through to the env-var path (which is exactly
-        # what the docstring above describes). Twin of the same helper in
-        # poindexter/cli/_bootstrap.py.
-        return ""
-    path = os.path.expanduser("~/.poindexter/bootstrap.toml")
-    if not os.path.exists(path):
-        return ""
-    try:
-        with open(path, "rb") as f:
-            data = _tomllib.load(f)
-    except Exception:  # noqa: BLE001
-        # silent-ok: same documented `""` contract — an unreadable or
-        # malformed bootstrap.toml reads as absent, and the caller falls
-        # through to env vars with its own error message.
-        return ""
-    return str(data.get(key) or "").strip()
+# ``ensure_secret_key`` puts POINDEXTER_SECRET_KEY in the env before we touch
+# the issuer: bootstrap normally exports it, but CLI invocations skip the
+# worker startup path, so it is read from bootstrap.toml directly. This module
+# used to vendor its own copy of that (plus the bootstrap.toml reader beneath
+# it), predating _bootstrap.py — the reason for the vendoring, that
+# ``brain.bootstrap`` is not on sys.path for a ``pip install
+# poindexter-backend`` CLI, is exactly why _bootstrap.py exists and is
+# satisfied by importing from it.
+from poindexter.cli._bootstrap import close_cli_pool, ensure_secret_key, open_cli_pool
 
 
 def _run(coro):
@@ -73,21 +42,6 @@ async def _pool():
     """Open a small asyncpg pool — services.auth.oauth_issuer takes a
     pool, not a single connection."""
     return await open_cli_pool()
-
-
-def _bootstrap_path_for_secret_key() -> None:
-    """Make sure ``POINDEXTER_SECRET_KEY`` is in env before we touch the
-    issuer. Bootstrap normally exports it; CLI invocations skip the
-    worker startup path so we read from ``bootstrap.toml`` directly.
-
-    Uses the same vendored reader as ``_dsn`` — ``brain.bootstrap`` is
-    not on sys.path for installed CLI invocations (see
-    ``_read_bootstrap_value`` for the full why)."""
-    if os.getenv("POINDEXTER_SECRET_KEY"):
-        return
-    key = _read_bootstrap_value("poindexter_secret_key")
-    if key:
-        os.environ["POINDEXTER_SECRET_KEY"] = key
 
 
 @click.group(
@@ -146,7 +100,7 @@ def register_client(
     here once for the operator to capture; capture it now and discard the
     terminal scrollback.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
 
     requested_scopes = [s.strip() for s in scopes.split() if s.strip()]
     if not requested_scopes:
@@ -352,7 +306,7 @@ def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
     Useful for one-off ``curl -H "Authorization: Bearer …"`` tests or
     poking services before any HTTP issuer is reachable.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
 
     requested = [s.strip() for s in scopes.split() if s.strip()] or None
 
@@ -493,7 +447,7 @@ def migrate_cli(name: str, scopes: str) -> None:
     secret pair (the previous client stays registered until you
     ``revoke-client`` it). Run once per environment.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")
@@ -553,7 +507,7 @@ def migrate_mcp(name: str, scopes: str) -> None:
     Restart the stdio MCP server (Claude Code / Claude Desktop reload)
     after running this so the new creds get picked up.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")
@@ -619,7 +573,7 @@ def migrate_mcp_gladlabs(name: str, scopes: str) -> None:
     consumer — different scopes, separate audit trail, independent
     revoke. Both can be active simultaneously.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")
@@ -690,7 +644,7 @@ def migrate_openclaw(name: str, scopes: str) -> None:
     The legacy ``POINDEXTER_KEY`` static-Bearer fallback was removed in
     Phase 3 (#249).
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")
@@ -803,7 +757,7 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str, persist: bool) -> N
     ``app_settings.grafana_oauth_client_id`` / ``_client_secret``. Subsequent
     calls reuse those creds.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
 
     ttl_seconds = _parse_ttl(ttl_str)
     if ttl_seconds < 60:
@@ -1002,7 +956,7 @@ def migrate_brain(name: str, scopes: str) -> None:
     Re-running creates a fresh client + secret pair; revoke the old one
     afterwards with ``poindexter auth revoke-client --client-id ...``.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")
@@ -1143,7 +1097,7 @@ def migrate_scripts(name: str, scopes: str, no_bootstrap: bool) -> None:
     Re-running creates a fresh client + secret pair; revoke the old one
     afterwards with ``poindexter auth revoke-client --client-id ...``.
     """
-    _bootstrap_path_for_secret_key()
+    ensure_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
     if not scope_list:
         raise click.UsageError("--scopes must list at least one scope")

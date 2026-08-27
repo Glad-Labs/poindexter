@@ -118,7 +118,7 @@ class TestMigrateOpenclawHappyPath:
             auth_mod, "_provision_consumer_client",
             side_effect=_fake_provision,
         ), patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ):
             result = runner.invoke(
                 auth_mod.auth_group, ["migrate-openclaw"],

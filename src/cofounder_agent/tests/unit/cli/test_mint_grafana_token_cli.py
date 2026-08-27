@@ -163,7 +163,7 @@ class TestMintGrafanaHappyPath:
             auth_mod, "_provision_consumer_client",
             side_effect=_fake_provision,
         ), patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
@@ -215,7 +215,7 @@ class TestMintGrafanaHappyPath:
             auth_mod, "_provision_consumer_client",
             side_effect=_fake_provision,
         ), patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
@@ -248,7 +248,7 @@ class TestMintGrafanaHappyPath:
 
         runner = CliRunner()
         with patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ):
             result = runner.invoke(
                 auth_mod.auth_group, ["mint-grafana-token", "--ttl", "30s"],
@@ -261,7 +261,7 @@ class TestMintGrafanaHappyPath:
 
         runner = CliRunner()
         with patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ):
             result = runner.invoke(
                 auth_mod.auth_group, ["mint-grafana-token", "--ttl", "400d"],
@@ -274,7 +274,7 @@ class TestMintGrafanaHappyPath:
 
         runner = CliRunner()
         with patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ):
             result = runner.invoke(
                 auth_mod.auth_group,
@@ -337,7 +337,7 @@ class TestMintGrafanaPersist:
             auth_mod, "_provision_consumer_client",
             side_effect=_fake_provision,
         ), patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
@@ -400,7 +400,7 @@ class TestMintGrafanaPersist:
             auth_mod, "_provision_consumer_client",
             side_effect=_fake_provision,
         ), patch.object(
-            auth_mod, "_bootstrap_path_for_secret_key", lambda: None,
+            auth_mod, "ensure_secret_key", lambda: None,
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
