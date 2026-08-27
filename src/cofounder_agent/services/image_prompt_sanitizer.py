@@ -101,7 +101,7 @@ def subject_fallback_prompt(subject: str, style: str, style_tags: str) -> str:
     """Deterministic prompt used when the LLM gives us nothing usable.
 
     Keeps the SUBJECT. The previous fallback was
-    ``f"{style}, {style_tags}, no text, no faces"`` — style only — so every
+    ``f"{style}, {style_tags}, no text"`` — style only — so every
     degraded run produced a handsome image of nothing in particular. An
     off-topic featured image is its own defect (it has to relate to the post),
     independent of how it was produced, so a fallback that drops the subject
@@ -109,4 +109,4 @@ def subject_fallback_prompt(subject: str, style: str, style_tags: str) -> str:
     """
     subject = " ".join((subject or "").split())[:300].strip().rstrip(".")
     parts = [p for p in (subject, style, style_tags) if p]
-    return ", ".join(parts) + ", no text, no faces"
+    return ", ".join(parts) + ", no text"

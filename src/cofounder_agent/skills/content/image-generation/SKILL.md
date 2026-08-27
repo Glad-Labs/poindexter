@@ -46,7 +46,7 @@ Write a single Stable Diffusion XL image prompt for a magazine-style editorial c
 Image subject: {subject}
 Art style: {style} — {style_tags}
 
-Depict a concrete, specific subject or scene that represents the image subject above (a recognizable object, place, or visual metaphor), rendered fully in the "{style}" art style. Commit to that style's medium, palette, and composition. Do NOT default to a generic glowing-circuit board or abstract floating-data backdrop, and do not lock every image to teal/cyan — vary the focal subject, composition, and color treatment so it reads differently from a typical tech illustration. Faceless silhouettes are fine; no identifiable faces, no hands, no text or words in the image.
+Depict a concrete, specific subject or scene that represents the image subject above (a recognizable object, place, or visual metaphor), rendered fully in the "{style}" art style. Commit to that style's medium, palette, and composition. Do NOT default to a generic glowing-circuit board or abstract floating-data backdrop, and do not lock every image to teal/cyan — vary the focal subject, composition, and color treatment so it reads differently from a typical tech illustration. People are welcome when they serve the subject — keep them stylized (never photoreal) and their action simple and specific; one or two figures beat a crowd. No text or words in the image.
 
 Output ONLY the image prompt, 1-2 sentences, nothing else.
 ```
@@ -59,7 +59,7 @@ Write a single Stable Diffusion XL image prompt for a blog section illustration.
 Section subject: {search_query}
 Art style: {style}
 
-Depict a specific, concrete scene for the section subject, rendered fully in the "{style}" art style — commit to that style's medium and palette rather than a generic tech render or screenshot. No people, no identifiable faces, no hands, no text or words. Vary the composition so it doesn't look like every other section image.
+Depict a specific, concrete scene for the section subject, rendered fully in the "{style}" art style — commit to that style's medium and palette rather than a generic tech render or screenshot. People are fine when the section subject involves them — stylized, never photoreal, doing something concrete. No text or words. Vary the composition so it doesn't look like every other section image.
 
 Output ONLY the image prompt, 1 sentence, nothing else.
 ```
@@ -83,14 +83,14 @@ SECTIONS (title + a short excerpt of the actual text):
 
 AVAILABLE IMAGE SOURCES:
 - "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
+- "pexels": Stock photography. Best for: a recognisable real place, product, or event a render cannot fake, and documentary texture where the POINT is that it's real. Prefer a generated image otherwise — generic stock reads as filler.
 
 RULES:
 1. Pick {max_images} sections that would benefit most from a visual (skip sections that are mostly code)
 2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
+5. People are permitted and often clearer than a metaphor — render them STYLIZED (never photorealistic), one or two figures, doing something concrete and relevant. (This reverses an older blanket ban from when diffusion models produced melted faces and hands; re-verified 2026-08-27 against the current model.) Never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
 6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic {category} image.
 
 Output ONLY valid JSON (no markdown, no explanation):

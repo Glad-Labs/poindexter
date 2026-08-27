@@ -979,7 +979,9 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
         return (
             f"Write a Stable Diffusion XL image prompt for a {style} illustration "
             f"depicting a concrete, specific scene about: {subject}. {style_tags}. "
-            "Commit to the named art style; no people, no faces, no hands, no text. "
+            "Commit to the named art style. People are fine when the subject "
+            "involves them — stylized, never photoreal, doing something "
+            "concrete. No text or lettering. "
             "1-2 sentences. Output ONLY the prompt."
         )
 

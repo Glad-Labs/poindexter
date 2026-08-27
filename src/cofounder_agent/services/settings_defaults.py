@@ -461,6 +461,14 @@ DEFAULTS: dict[str, str] = {
     # people). 'false' restores the pre-fix behaviour: ship the off-topic
     # stock frame with a shot_quality_fallback finding.
     'video_shot_topic_escalation_enabled': 'true',
+    # May a human-subject shot be AI-rendered? Was a hard no — the ban dates
+    # to an era when diffusion models produced melted faces and six-fingered
+    # hands, making AI people the loudest slop tell. Re-tested 2026-08-27
+    # against the current image model (Z-Image-Turbo) in the house STYLIZED
+    # styles: clean faces, correct hands, on-palette. The constraint that
+    # still earns its keep is STYLE (never photoreal humans), enforced in the
+    # prompt packs. 'false' restores real-footage-only for people.
+    'video_ai_human_subjects_enabled': 'true',
     # Style-modifier pool for escalated shots (CSV). '' = the full built-in
     # rotation (flat vector illustration / cinematic illustration / isometric
     # 3d / line art / cyberpunk neon / glassmorphism / low poly / …), rotated
@@ -4030,6 +4038,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_topic_escalation_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_ai_human_subjects_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_escalation_styles': {'owner': 'video', 'value_type': 'string'},
     'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},

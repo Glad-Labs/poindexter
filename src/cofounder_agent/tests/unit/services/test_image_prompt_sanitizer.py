@@ -121,7 +121,7 @@ class TestSubjectFallbackPrompt:
         assert out.startswith("taps that ingested nothing for 17 days")
         assert "retro 16-bit pixel art style" in out
         assert "bright colors on dark background" in out
-        assert out.endswith("no text, no faces")
+        assert out.endswith("no text")
 
     def test_collapses_whitespace_and_caps_length(self):
         out = subject_fallback_prompt("a  b\n\nc " + "x" * 500, "flat vector", "cyan")
@@ -132,5 +132,5 @@ class TestSubjectFallbackPrompt:
     def test_survives_a_missing_subject(self):
         """Empty subject must not leave a leading comma."""
         assert subject_fallback_prompt("", "flat vector", "cyan") == (
-            "flat vector, cyan, no text, no faces"
+            "flat vector, cyan, no text"
         )

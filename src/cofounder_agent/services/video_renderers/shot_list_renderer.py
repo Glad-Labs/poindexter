@@ -1385,11 +1385,111 @@ _WORD_RE = re.compile(r"[a-z]+")
 
 
 def _names_human_subject(*texts: str) -> bool:
-    """True when any text names a person — the AI-escalation veto."""
+    """True when any text names a person."""
     for text in texts:
         if any(w in _HUMAN_NOUNS for w in _WORD_RE.findall((text or "").lower())):
             return True
     return False
+
+
+def _ai_humans_allowed(site_config: Any) -> bool:
+    """May a human-subject shot be rendered by the image model?
+
+    Was a hard NO: the ban dates to an era when diffusion models produced
+    melted faces and six-fingered hands, making AI people the loudest slop
+    tell. Re-tested 2026-08-27 against the current image model
+    (Z-Image-Turbo) in the house STYLIZED styles — clean faces, correct
+    hands, on-palette — so the blanket ban retired in favour of this switch
+    (default ON = AI humans permitted).
+
+    The constraint that actually earns its keep is style, not subject:
+    stylized illustration stays clean where photoreal humans still fall into
+    uncanny territory, and the STYLE POLICY already forbids photoreal. Flip
+    this off to restore the old real-footage-only behaviour for people.
+    """
+    if site_config is None:
+        return True
+    return str(
+        site_config.get("video_ai_human_subjects_enabled", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes")
+
+
+_QUERY_CLEAN_RE = re.compile(r"[^A-Za-z0-9 ]+")
+
+
+def _clean_stock_query(raw: str) -> str:
+    """Reduce an LLM reply to a bare stock-search query.
+
+    Models like to answer in a sentence or wrap the query in quotes; Pexels
+    matches literally, so punctuation and preamble poison the search. Takes
+    the first non-empty line, strips a leading label, drops punctuation, and
+    caps length at the schema's own 200-char query ceiling.
+    """
+    line = ""
+    for candidate in (raw or "").splitlines():
+        candidate = candidate.strip()
+        if candidate:
+            line = candidate
+            break
+    if ":" in line and len(line.split(":", 1)[0]) <= 12:
+        line = line.split(":", 1)[1]  # drop a "Query:" style label
+    cleaned = _QUERY_CLEAN_RE.sub(" ", line)
+    return " ".join(cleaned.split())[:200].strip()
+
+
+async def _llm_restock_query(
+    shot: Shot,
+    *,
+    all_shots: list[Shot],
+    site_config: Any,
+    pool: Any,
+) -> str:
+    """Ask the director model for a better stock query for one off-topic shot.
+
+    Context is the OTHER shots' intents — collectively they describe what the
+    video is about, which is exactly the context the original query lacked.
+    No new graph state or ATOM_META input is needed for that (the shot list is
+    already in hand), so this needs no fingerprint reseed.
+
+    Humans stay allowed here: the policy's one home for people is real
+    footage, so a re-query may absolutely name a person — it just has to make
+    what they're DOING specific to the subject. Returns ``""`` on any failure
+    (no model, no pool, empty/garbage reply) and the caller keeps what it has.
+    """
+    if site_config is None or pool is None:
+        return ""
+    model = (site_config.get("video_director_model", "") or "").strip()
+    if not model:
+        return ""
+    context = "; ".join(
+        (s.intent or "").strip() for s in all_shots
+        if s.idx != shot.idx and (s.intent or "").strip()
+    )[:600]
+
+    from services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        "video.restock_query",
+        video_context=context or "(no other shots)",
+        intent=(shot.intent or "").strip(),
+        failed_query=(shot.query or "").strip(),
+    )
+
+    from services.llm_providers.dispatcher import dispatch_complete
+
+    try:
+        completion = await dispatch_complete(
+            pool, [{"role": "user", "content": prompt}], model,
+            tier="standard", phase="video_restock_query",
+            temperature=0.4, max_tokens=64, timeout_s=90.0,
+        )
+        return _clean_stock_query(getattr(completion, "text", "") or "")
+    except Exception as exc:  # noqa: BLE001 — a re-query failure must not halt the render
+        logger.warning(
+            "[SHOT_QA] re-query call failed for shot %d: %s",
+            shot.idx, describe_exception(exc),
+        )
+        return ""
 
 
 def _select_ai_style(site_config: Any, shot_idx: int) -> str:
@@ -2271,16 +2371,23 @@ async def _escalate_offtopic_stock(
     unrelated footage at rank 2. Those shots shipped anyway (holdover or
     keep-below-threshold), which is exactly the "feels very off" symptom.
 
-    So after ``_repair_pass`` exhausts in-family retries, a stock shot still
-    under threshold is re-rendered from an intent-derived prompt as a
-    stylized Ken-Burns still — a different FAMILY, not another roll of the
-    same dice. Keep-best: the AI candidate must actually score higher, so a
-    weak substitute can never displace a better stock frame.
+    So after ``_repair_pass`` exhausts in-family retries, a still-off-topic
+    stock shot climbs two rungs, keep-best at every step (a candidate must
+    score strictly higher, so this can never make a shot worse):
 
-    HUMAN-SUBJECT POLICY (never regress): a shot naming a person keeps its
-    stock frame regardless of score. AI faces/hands are the strongest slop
-    tell and real footage is their one sanctioned home — an off-topic real
-    person beats a melted AI one.
+    1. **Re-query** — an LLM rewrites the search string with the video's
+       subject in view (the other shots' intents), and the shot re-renders as
+       stock. The clip missed because the QUERY was wrong, not because stock
+       footage was the wrong source, so the first repair fixes the search and
+       keeps real footage. **People are fine on this rung** — the policy's one
+       home for humans IS real footage (2026-08-27 operator call: "stock video
+       should be fine if it illustrates the shot").
+    2. **Cross-family** — if it's STILL off-topic, re-render as a stylized
+       Ken-Burns still built from the shot's intent.
+
+    The AI-human ban applies to rung 2 only, and stays: synthetic faces/hands
+    are the strongest slop tell, so a human-subject shot keeps its real
+    footage rather than becoming a rendered person.
 
     Returns the number of shots escalated. Gated by
     ``video_shot_topic_escalation_enabled`` (default on).
@@ -2296,15 +2403,76 @@ async def _escalate_offtopic_stock(
             return 0
 
     escalated = 0
+    all_shots = [st.shot for st in states]
     for st in states:
         if st.shot.source != "pexels":
             continue
         if st.qa is None or st.qa.score is None or st.qa.score >= qa.threshold:
             continue
-        if _names_human_subject(st.shot.query or "", st.shot.intent or ""):
+
+        # RUNG 1 — re-query stock with a better search string. The clip missed
+        # because the QUERY was wrong, not because stock footage is wrong, so
+        # the first repair keeps the source and fixes the search. Humans are
+        # explicitly fine here: real footage is the policy's one home for
+        # people (2026-08-27 operator call — "stock video should be fine if it
+        # illustrates the shot").
+        new_query = await _llm_restock_query(
+            st.shot, all_shots=all_shots, site_config=site_config, pool=pool,
+        )
+        if new_query and new_query.lower() != (st.shot.query or "").lower():
+            requeried = st.shot.model_copy(update={"query": new_query})
+            cand = await _render_one_shot(
+                requeried, prior_clip=None, attempt=0, **render_kwargs,
+            )
+            if cand.success and cand.clip_path:
+                cand_qa = await score_shot_frame(
+                    frame_path=cand.clip_path, shot=requeried,
+                    site_config=site_config, pool=pool,
+                )
+                if cand_qa.score is not None and cand_qa.score > st.qa.score:
+                    logger.info(
+                        "[SHOT_QA] shot %d re-queried %r -> %r (%.0f -> %.0f)",
+                        st.shot.idx, st.shot.query, new_query,
+                        st.qa.score, cand_qa.score,
+                    )
+                    emit_finding(
+                        source="shot_list_renderer", kind="shot_requeried",
+                        title=(
+                            f"shot {st.shot.idx}: off-topic stock query rewritten"
+                        ),
+                        body=(
+                            f"{st.shot.query!r} scored {st.qa.score:.0f} against "
+                            f"threshold {qa.threshold}; re-queried as "
+                            f"{new_query!r} and scored {cand_qa.score:.0f}. "
+                            f"Advisory — a shot that re-queries every render is "
+                            f"a director-prompt signal."
+                        ),
+                        severity="info",
+                        dedup_key=f"shot_requeried:{post_id}:{st.shot.idx}",
+                        extra={
+                            "shot_idx": st.shot.idx,
+                            "old_query": st.shot.query or "",
+                            "new_query": new_query,
+                            "old_score": st.qa.score, "new_score": cand_qa.score,
+                        },
+                    )
+                    st.result, st.qa, st.shot = cand, cand_qa, requeried
+                    escalated += 1
+                    if cand_qa.score >= qa.threshold:
+                        continue  # fixed — no need for the AI rung
+
+        # RUNG 2 — still off-topic: swap FAMILY to an on-theme AI still. This
+        # is where the AI-human ban bites (unchanged, and it should stay):
+        # synthetic faces/hands are the slop tell, so a human-subject shot
+        # keeps its real footage rather than becoming a rendered person.
+        if st.qa is None or st.qa.score is None or st.qa.score >= qa.threshold:
+            continue
+        if _names_human_subject(
+            st.shot.query or "", st.shot.intent or "",
+        ) and not _ai_humans_allowed(site_config):
             logger.info(
-                "[SHOT_QA] shot %d scored %.0f but names a human subject — "
-                "keeping real footage (policy: never AI-render people)",
+                "[SHOT_QA] shot %d still %.0f but names a human subject and "
+                "video_ai_human_subjects_enabled is off — keeping real footage",
                 st.shot.idx, st.qa.score,
             )
             continue

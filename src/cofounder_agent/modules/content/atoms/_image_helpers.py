@@ -196,7 +196,8 @@ def _build_inline_prompt_instruction(
             f"Write a Stable Diffusion XL image prompt for a {style} blog "
             f"illustration depicting a concrete, specific scene about: "
             f"{search_query}. Commit to the named art "
-            "style; no people, no faces, no hands, no text. 1 sentence. "
+            "style. People are fine when the subject involves them — "
+            "stylized, never photoreal. No text or lettering. 1 sentence. "
             "Output ONLY the prompt."
         )
 

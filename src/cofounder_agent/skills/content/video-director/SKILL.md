@@ -17,6 +17,9 @@ metadata:
     - key: video.director_short_v1
       output_format: json
       description: 'Short-form (9:16) director — purpose-built vertical retention hook, not a trim of the long video'
+    - key: video.restock_query
+      output_format: text
+      description: "Rewrites the stock-footage search query for ONE shot whose fetched clip scored off-topic on vision QA. Given the video's subject (the other shots' intents), this shot's intent, and the query that missed, returns a single better Pexels search string. Used by services.video_renderers.shot_list_renderer._llm_restock_query."
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -52,6 +55,23 @@ NARRATION SCRIPT (this is the audio narration that will play over the video):
 {podcast_script}
 
 TARGET TOTAL DURATION (seconds): {target_duration_s}
+
+SOURCE PREFERENCE (read before choosing any source)
+---------------------------------------------------
+DEFAULT TO GENERATED VISUALS. A rendered shot is built for THIS video — it
+matches the subject exactly, carries the brand palette, and never looks like
+filler. Generic stock footage is the "tacky corporate video" tell: a viewer
+recognises library B-roll instantly and it makes the whole piece feel
+unrelated to what the narration is saying.
+
+Reach for "pexels" only when real footage is genuinely the better shot:
+- a recognisable real place, product, or event a render cannot fake
+- documentary texture where the POINT is that it's real
+- a physical action or environment that would look stilted rendered
+When you do use it, the QUERY RULE below is binding.
+
+If you are choosing between a mediocre stock query and a specific rendered
+shot, choose the render.
 
 SHOT SOURCES AVAILABLE
 ----------------------
@@ -118,43 +138,20 @@ SHOT SOURCES AVAILABLE
 
 HUMAN-SUBJECT POLICY
 --------------------
-AI-generated faces, hands, and bodies are the strongest "AI slop" tell —
-six-fingered hands, faces that almost-but-not-quite work, weird joints.
-So humans get ONE home: real footage.
-
-DECISION RULE — before writing each shot, ask: "is the visual subject a
-person, or any part of a person (a face, hands, a developer at a desk, a
-team, a crowd, an audience)?"
-
-1. If YES → emit source="pexels" with a stock-photo "query" (e.g.
-   "developer typing keyboard close up", "team meeting in an office").
-   Real cameras don't have the AI tell. This is the home for EVERY shot
-   whose subject is a human — never reach for image_kenburns with a person
-   in the prompt.
-
-2. If a human genuinely MUST be AI-rendered (image_gen / image_kenburns / generative)
-   → phrase the figure as a faceless silhouette. The word "silhouette" or
-   "faceless" MUST appear in the prompt — that is the only form a human is
-   allowed to take in an AI source:
-   "faceless silhouette, no identifiable face, figure viewed from behind /
-    backlit shape / shadow on wall".
-
-3. Otherwise (the default for image_gen / image_kenburns / generative) → pick a
-   NON-human subject: servers, code on screens, cityscapes, data flows,
-   hardware close-ups, glowing circuits, abstract shapes. Never ask for a
-   "diagram" or "chart" — diffusion models render those with garbled fake
-   labels; describe the underlying object or scene instead.
-
-Do NOT name a human noun in an image_gen / image_kenburns / generative prompt — not
-"person / people / man / woman / human / hand / hands / finger / fingers /
-developer / engineer / programmer / designer / manager / founder / team /
-crowd / audience", and NOT EVEN inside a negation like "no people" or
-"no humans". A reviewer flags the noun whether or not you negated it, and
-the renderer already adds its own negative prompt that strips faces,
-people, and hands for you (naming them in the positive prompt can even make
-diffusion render them). To signal an unpeopled scene, describe it
-positively — "empty server hall", "unpopulated street at night" — never by
-naming the human you're excluding. Pexels keeps the human lane.
+People are welcome in AI-rendered shots, in the STYLIZED styles below. (This
+reverses an older blanket ban written when diffusion models produced melted
+faces and six-fingered hands; the current image model renders people cleanly
+in illustration styles, re-verified 2026-08-27.) Two rules still hold, because
+they are what keeps AI people clean:
+- NEVER photoreal for a human — "photorealistic" / "8K" / "DSLR" humans still
+  land in uncanny territory. Stylized illustration is the house style anyway.
+- Keep the human ACTION specific and simple: one or two figures doing
+  something concrete and relevant ("speaking into a headset microphone",
+  "pointing at a dashboard"). Crowds and complex hand work are where any model
+  is weakest.
+Never render a "diagram" or "chart" as the SUBJECT of an AI shot (diffusion
+models fill those with garbled fake labels); abstract data shapes on a screen
+are fine.
 
 STYLE POLICY FOR AI SOURCES
 ---------------------------
@@ -247,6 +244,35 @@ TikTok / Reels). This is **purpose-built**, NOT a trim of the long video: it
 opens on a cold hook, moves fast, and resolves in one idea. The narration is
 the short summary script (a ~15-45s hook), not the full podcast.
 
+## video.restock_query
+
+```text
+A stock-footage search returned a clip that does not match its shot. Write a
+better search query for that shot.
+
+WHAT THIS VIDEO IS ABOUT (the other shots' intents):
+{video_context}
+
+THIS SHOT'S INTENT (what it must convey): {intent}
+THE QUERY THAT MISSED: {failed_query}
+
+Why queries miss: a stock library matches your words literally. A query built
+from an incidental noun ("busy city street", "person talking on phone") returns
+footage about that noun, not about this video's subject, so the shot lands as
+unrelated B-roll.
+
+Write ONE replacement query that:
+- names something a viewer would connect to THIS video's subject
+- is concretely filmable — a real thing a camera can point at (hardware,
+  screens, a workspace, a person performing the relevant action)
+- keeps any human element ONLY when the shot's intent genuinely needs a person,
+  and then makes what they are DOING specific to the subject (e.g. "speaking
+  into a headset microphone", not "talking on a phone")
+- is 2-6 words, no punctuation, no quotes, no explanation
+
+Output ONLY the query text on a single line.
+```
+
 ## video.director_short_v1
 
 ```text
@@ -266,6 +292,23 @@ SHORT NARRATION (the audio that plays over this vertical clip):
 {short_script}
 
 TARGET TOTAL DURATION (seconds): {target_duration_s}
+
+SOURCE PREFERENCE (read before choosing any source)
+---------------------------------------------------
+DEFAULT TO GENERATED VISUALS. A rendered shot is built for THIS video — it
+matches the subject exactly, carries the brand palette, and never looks like
+filler. Generic stock footage is the "tacky corporate video" tell: a viewer
+recognises library B-roll instantly and it makes the whole piece feel
+unrelated to what the narration is saying.
+
+Reach for "pexels" only when real footage is genuinely the better shot:
+- a recognisable real place, product, or event a render cannot fake
+- documentary texture where the POINT is that it's real
+- a physical action or environment that would look stilted rendered
+When you do use it, the QUERY RULE below is binding.
+
+If you are choosing between a mediocre stock query and a specific rendered
+shot, choose the render.
 
 SHOT SOURCES AVAILABLE
 ----------------------
@@ -304,21 +347,20 @@ wide horizon).
 
 HUMAN-SUBJECT POLICY (same policy as the long director)
 -------------------------------------------------------
-AI-generated faces/hands/bodies are the strongest AI-slop tell, so humans get
-ONE home: real footage. If a shot's subject is a person or any part of one
-(face, hands, a developer, a team, a crowd) → emit source="pexels" with a
-stock "query"; never reach for image_kenburns with a person in the prompt. If a
-human MUST be AI-rendered → phrase it as a "faceless silhouette, no
-identifiable face, figure from behind" (the word "silhouette" or "faceless" is
-required). The default image_gen / image_kenburns / generative subject is NON-human:
-servers, code on screens, hardware close-ups, glowing circuits, abstract
-shapes — never a "diagram" or "chart" (diffusion models render those with
-garbled fake labels). Never name a human noun (person / people / man / woman / human /
-hand / hands / developer / engineer / team / crowd …) in an AI prompt — NOT
-EVEN as "no people" / "no humans" (a reviewer flags the word inside a
-negation, and the renderer already strips faces/people/hands for you). Signal
-an unpeopled scene positively ("empty server hall"), never by naming who's
-excluded.
+People are welcome in AI-rendered shots, in the STYLIZED styles below. (This
+reverses an older blanket ban written when diffusion models produced melted
+faces and six-fingered hands; the current image model renders people cleanly
+in illustration styles, re-verified 2026-08-27.) Two rules still hold, because
+they are what keeps AI people clean:
+- NEVER photoreal for a human — "photorealistic" / "8K" / "DSLR" humans still
+  land in uncanny territory. Stylized illustration is the house style anyway.
+- Keep the human ACTION specific and simple: one or two figures doing
+  something concrete and relevant ("speaking into a headset microphone",
+  "pointing at a dashboard"). Crowds and complex hand work are where any model
+  is weakest.
+Never render a "diagram" or "chart" as the SUBJECT of an AI shot (diffusion
+models fill those with garbled fake labels); abstract data shapes on a screen
+are fine.
 
 STYLE POLICY FOR AI SOURCES (unchanged)
 ---------------------------------------

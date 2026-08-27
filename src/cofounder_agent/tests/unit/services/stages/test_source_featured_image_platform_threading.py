@@ -15,7 +15,7 @@ writer + inline atom both receive it), but ``SourceFeaturedImageStage.execute``
 never read ``context.get("platform")`` and called ``_try_image_gen_featured(...)``
 without ``platform=``. The default ``platform=None`` then raised inside
 ``_build_image_gen_prompt`` and the stage fell back to the bare
-``{style}, {style_tags}, no text, no faces`` prompt — generic, not
+``{style}, {style_tags}, no text`` prompt — generic, not
 subject-specific.
 
 This is the #667 Seam 1 Wave 3f ("platform handle for dispatch.complete")
@@ -141,7 +141,7 @@ async def test_build_image_gen_prompt_dispatches_to_llm_when_platform_present() 
 
     platform.dispatch.complete.assert_awaited_once()
     assert prompt == "An isometric data-center scene rendered in flat vector style"
-    assert "no text, no faces" not in prompt, "fell back despite platform present"
+    assert "no text" not in prompt, "fell back despite platform present"
 
 
 @pytest.mark.asyncio
@@ -162,6 +162,6 @@ async def test_build_image_gen_prompt_falls_back_without_platform() -> None:
         platform=None,
     )
 
-    assert "no text, no faces" in prompt, (
+    assert "no text" in prompt, (
         "expected the style-only fallback shape when no platform handle is present"
     )

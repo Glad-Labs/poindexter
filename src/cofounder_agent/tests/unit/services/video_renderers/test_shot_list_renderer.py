@@ -3264,6 +3264,12 @@ class TestEscalateOfftopicStock:
 
         monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
         monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+        # Rung 1 (LLM re-query) off unless a test opts in — these cases pin
+        # rung 2 (cross-family) behaviour.
+        if not hasattr(self, "_restock"):
+            async def _no_restock(shot, **kwargs):
+                return ""
+            monkeypatch.setattr(slr, "_llm_restock_query", _no_restock)
         qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
         n = await slr._escalate_offtopic_stock(
             states, qa=qa, site_config=site_config, render_kwargs={},
@@ -3284,11 +3290,28 @@ class TestEscalateOfftopicStock:
         assert st.shot.source == "image_kenburns"
 
     @pytest.mark.asyncio
-    async def test_human_subject_never_escalates(self, monkeypatch):
+    async def test_human_subject_escalates_by_default(self, monkeypatch):
+        """2026-08-27: the blanket AI-human ban retired after the current
+        image model rendered clean faces/hands in the house stylized styles.
+        A human-subject shot now escalates like any other."""
         st = self._state(query="developer typing at a laptop")
         n, rendered = await self._run([st], monkeypatch)
+        assert n == 1
+        assert rendered[0].source == "image_kenburns"
+
+    @pytest.mark.asyncio
+    async def test_human_subject_veto_restorable_by_setting(self, monkeypatch):
+        """The old behaviour is one switch away."""
+        class _SC:
+            def get(self, key, default=None):
+                if key == "video_ai_human_subjects_enabled":
+                    return "false"
+                return default
+
+        st = self._state(query="developer typing at a laptop")
+        n, rendered = await self._run([st], monkeypatch, site_config=_SC())
         assert n == 0
-        assert rendered == []                 # no AI render even attempted
+        assert rendered == []                 # no AI render attempted
         assert st.shot.source == "pexels"     # real footage kept
 
     @pytest.mark.asyncio
@@ -3329,3 +3352,180 @@ class TestEscalateOfftopicStock:
         st = self._state()
         n, rendered = await self._run([st], monkeypatch, site_config=_SC())
         assert n == 0 and rendered == []
+
+
+class TestRestockQuery:
+    """Rung 1 — rewrite the stock query rather than abandoning stock footage.
+
+    The 2026-08-27 operator call: the AI-human ban was only ever about
+    hallucinated faces, so stock footage of people is fine when it
+    illustrates the shot. An off-topic HUMAN shot must therefore be
+    repairable by re-querying, not just vetoed.
+    """
+
+    def test_clean_stock_query_strips_model_chatter(self):
+        from services.video_renderers.shot_list_renderer import (
+            _clean_stock_query,
+        )
+
+        assert _clean_stock_query('"headset microphone closeup"') == (
+            "headset microphone closeup"
+        )
+        assert _clean_stock_query("Query: server rack lights\n") == (
+            "server rack lights"
+        )
+        assert _clean_stock_query(
+            "\n\nspeech recognition waveform screen\nextra chatter",
+        ) == "speech recognition waveform screen"
+        assert _clean_stock_query("") == ""
+        assert _clean_stock_query("   ") == ""
+        # Punctuation poisons a literal stock search — dropped.
+        assert _clean_stock_query("call-center, headset!") == "call center headset"
+
+    @pytest.mark.asyncio
+    async def test_requery_fixes_human_subject_shot(self, monkeypatch):
+        """The case that motivated this: a person shot that's off-topic gets a
+        better query and STAYS real footage (never AI-rendered)."""
+        from services.video_renderers import shot_list_renderer as slr
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        shot = Shot(
+            idx=0, duration_s=4.0,
+            intent="contrast benchmark success with real-world speech chaos",
+            source="pexels",
+            query="person talking on phone stressed city background noise",
+            narration_offset_s=0.0,
+        )
+        st = slr._ShotState(
+            shot=shot,
+            result=slr.ShotRenderResult(
+                idx=0, source="pexels", success=True,
+                clip_path="/tmp/bad.mp4", duration_s=4.0,
+            ),
+            is_reused=False,
+            qa=ShotQAResult(score=25.0, reason="unrelated b-roll"),
+        )
+
+        async def _fake_restock(shot, **kwargs):
+            return "person speaking into headset microphone"
+
+        rendered: list = []
+
+        async def _fake_render(shot, **kwargs):
+            rendered.append(shot)
+            return slr.ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path="/tmp/good.mp4", duration_s=shot.duration_s,
+            )
+
+        async def _fake_score(*, frame_path, shot, site_config, pool):
+            return ShotQAResult(score=82.0, reason="on topic")
+
+        monkeypatch.setattr(slr, "_llm_restock_query", _fake_restock)
+        monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
+        monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+
+        n = await slr._escalate_offtopic_stock(
+            [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
+            site_config=None, render_kwargs={}, pool=object(), post_id="p1",
+        )
+        assert n == 1
+        # Repaired by re-query: still pexels, new query, human intact.
+        assert st.shot.source == "pexels"
+        assert st.shot.query == "person speaking into headset microphone"
+        assert st.qa.score == 82.0
+        # Rung 2 never ran — only the one re-query render.
+        assert len(rendered) == 1
+        assert rendered[0].source == "pexels"
+
+    @pytest.mark.asyncio
+    async def test_requery_keep_best_rejects_worse(self, monkeypatch):
+        from services.video_renderers import shot_list_renderer as slr
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        shot = Shot(
+            idx=0, duration_s=4.0, intent="a human moment", source="pexels",
+            query="people laughing", narration_offset_s=0.0,
+        )
+        st = slr._ShotState(
+            shot=shot,
+            result=slr.ShotRenderResult(
+                idx=0, source="pexels", success=True,
+                clip_path="/tmp/incumbent.mp4", duration_s=4.0,
+            ),
+            is_reused=False,
+            qa=ShotQAResult(score=40.0, reason="meh"),
+        )
+
+        async def _fake_restock(shot, **kwargs):
+            return "totally different query"
+
+        async def _fake_render(shot, **kwargs):
+            return slr.ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path="/tmp/worse.mp4", duration_s=shot.duration_s,
+            )
+
+        async def _fake_score(*, frame_path, shot, site_config, pool):
+            return ShotQAResult(score=15.0, reason="worse")
+
+        monkeypatch.setattr(slr, "_llm_restock_query", _fake_restock)
+        monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
+        monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+
+        n = await slr._escalate_offtopic_stock(
+            [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
+            site_config=None, render_kwargs={}, pool=object(), post_id="p1",
+        )
+        # Worse candidate rejected on both rungs; incumbent kept.
+        assert n == 0
+        assert st.qa.score == 40.0
+        assert st.result.clip_path == "/tmp/incumbent.mp4"
+        assert st.shot.query == "people laughing"
+
+    @pytest.mark.asyncio
+    async def test_empty_restock_falls_through_to_rung_two(self, monkeypatch):
+        """No usable re-query + non-human subject ⇒ the AI still rung runs."""
+        from services.video_renderers import shot_list_renderer as slr
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        shot = Shot(
+            idx=1, duration_s=4.0, intent="abstract data drift",
+            source="pexels", query="busy street", narration_offset_s=0.0,
+        )
+        st = slr._ShotState(
+            shot=shot,
+            result=slr.ShotRenderResult(
+                idx=1, source="pexels", success=True,
+                clip_path="/tmp/bad.mp4", duration_s=4.0,
+            ),
+            is_reused=False,
+            qa=ShotQAResult(score=30.0, reason="off topic"),
+        )
+
+        async def _no_restock(shot, **kwargs):
+            return ""
+
+        rendered: list = []
+
+        async def _fake_render(shot, **kwargs):
+            rendered.append(shot)
+            return slr.ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path="/tmp/ai.png", duration_s=shot.duration_s,
+            )
+
+        async def _fake_score(*, frame_path, shot, site_config, pool):
+            return ShotQAResult(score=78.0, reason="on theme")
+
+        monkeypatch.setattr(slr, "_llm_restock_query", _no_restock)
+        monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
+        monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+
+        n = await slr._escalate_offtopic_stock(
+            [st], qa=slr._QAConfig(enabled=True, threshold=60.0, max_retries=2),
+            site_config=None, render_kwargs={}, pool=object(), post_id="p1",
+        )
+        assert n == 1
+        assert rendered[0].source == "image_kenburns"
+        assert st.shot.source == "image_kenburns"

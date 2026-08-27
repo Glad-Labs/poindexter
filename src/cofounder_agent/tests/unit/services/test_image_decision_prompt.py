@@ -55,14 +55,14 @@ SECTIONS (title + a short excerpt of the actual text):
 
 AVAILABLE IMAGE SOURCES:
 - "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
+- "pexels": Stock photography. Best for: a recognisable real place, product, or event a render cannot fake, and documentary texture where the POINT is that it's real. Prefer a generated image otherwise — generic stock reads as filler.
 
 RULES:
 1. Pick 3 sections that would benefit most from a visual (skip sections that are mostly code)
 2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
+5. People are permitted and often clearer than a metaphor — render them STYLIZED (never photorealistic), one or two figures, doing something concrete and relevant. (This reverses an older blanket ban from when diffusion models produced melted faces and hands; re-verified 2026-08-27 against the current model.) Never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
 6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic Test Category image.
 
 Output ONLY valid JSON (no markdown, no explanation):
