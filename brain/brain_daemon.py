@@ -293,6 +293,24 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_POSTIZ_QUEUE_WATCH = False
 
 try:
+    # ComfyUI host-RAM recycle watch. The render sidecar's main python
+    # accumulates RSS+swap across renders (28.6 GB observed 2026-08-26 —
+    # the host-RAM twin of the #999 VRAM ghost: POST /free returns VRAM,
+    # only a process exit returns the RAM). `docker restart`s
+    # poindexter-comfyui above a DB-tunable watermark, only with a
+    # verifiably idle /queue re-checked immediately before the restart
+    # (poindexter#3094 posture). No-ops while the opt-in `--profile
+    # comfyui` sidecar isn't up.
+    from comfyui_ram_watch import run_comfyui_ram_watch_probe
+    _HAS_COMFYUI_RAM_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.comfyui_ram_watch import run_comfyui_ram_watch_probe
+        _HAS_COMFYUI_RAM_WATCH = True
+    except ImportError:
+        _HAS_COMFYUI_RAM_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -466,6 +484,9 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Auto-embed liveness offline — a wedged/dead embedder stops embedding silently, RAG + memory go stale"),
     ("_HAS_POSTIZ_QUEUE_WATCH", "brain/postiz_queue_watch.py",
      "Postiz queue-wedge detection offline — Temporal wedge leaves 'posted' drafts unpublished silently"),
+    ("_HAS_COMFYUI_RAM_WATCH", "brain/comfyui_ram_watch.py",
+     "ComfyUI host-RAM recycle offline — the render sidecar's RSS+swap creep "
+     "goes unreclaimed until swap fills (2026-08-26 redux)"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
@@ -3056,6 +3077,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] postiz_queue_watch probe failed: %s", e)
+
+    # ComfyUI host-RAM recycle watch. Restarts the render sidecar when its
+    # main python's RSS+swap crosses comfyui_ram_recycle_watermark_gb AND
+    # /queue is verifiably idle — re-checked immediately before the restart
+    # (poindexter#3094 posture). No-ops while the profile-gated sidecar
+    # isn't up. Disabled via app_settings.comfyui_ram_recycle_enabled=false.
+    if _HAS_COMFYUI_RAM_WATCH:
+        try:
+            cr_summary = await run_comfyui_ram_watch_probe(pool)
+            probe_results["comfyui_ram_watch"] = {
+                "ok": bool(cr_summary.get("ok", False)),
+                "detail": cr_summary.get("detail", ""),
+                "summary": cr_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] comfyui_ram_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

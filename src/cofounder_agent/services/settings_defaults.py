@@ -265,6 +265,22 @@ DEFAULTS: dict[str, str] = {
     'postiz_queue_watch_max_retries': '2',
     'postiz_queue_watch_retry_delay_seconds': '180',
 
+    # ComfyUI host-RAM recycle watch (brain/comfyui_ram_watch.py) — the render
+    # sidecar's main python accumulates RSS+swap across renders (28.6 GB
+    # observed 2026-08-26, filling the box's swap; the host-RAM twin of the
+    # #999 VRAM ghost — POST /free returns VRAM, only a process exit returns
+    # the RAM). The brain `docker restart`s poindexter-comfyui when PID 1's
+    # RSS+swap crosses the watermark AND /queue is verifiably idle,
+    # re-checked immediately before the restart (poindexter#3094 posture:
+    # never while a render is running or pending). Weights lazy-reload on
+    # the next render, so a queue-idle recycle costs one cold load. The
+    # cooldown bounds restart frequency if the watermark is set below the
+    # sidecar's healthy working set. Inert while the opt-in
+    # `--profile comfyui` sidecar isn't running.
+    'comfyui_ram_recycle_enabled': 'true',
+    'comfyui_ram_recycle_watermark_gb': '20',
+    'comfyui_ram_recycle_cooldown_minutes': '60',
+
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',

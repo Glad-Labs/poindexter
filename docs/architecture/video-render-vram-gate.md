@@ -96,6 +96,25 @@ The same day supplied the reverse-direction incident the ladder had never covere
 
 > **Measured, not computed.** CPU offload was evaluated as an alternative (`enable_model_cpu_offload`): it does work now that the old ~23 GB WSL RAM ceiling is gone, cutting wan's peak to **15.5 GiB** — but at **324.8s vs 144.1s**, a 2.25× penalty. Reclaiming the ghost buys more headroom for free, so offload stays unused. Keep it in mind only for a card that genuinely cannot be cleared.
 
+### The ghost's host-RAM twin (2026-08-26, `brain/comfyui_ram_watch.py`)
+
+The #999 lesson has a second axis. On 2026-08-26 the ComfyUI sidecar's main python had accumulated a **28.6 GB host-memory footprint (13.9 GB RSS + 14.8 GB swap)** across renders, filling the box's 47 GB swap. Every lever on the ladder was useless against it by construction: `_unload_comfyui`'s `POST /free` drops the model objects and empties the CUDA allocator — that returns **VRAM** — but the process's own heap and its swapped-out pages belong to the same "only a process exit returns it" class as the VRAM ghost. A queue-idle `docker restart poindexter-comfyui` returned ~30 GB instantly, and the sidecar lazy-reloads weights on the next render, so an idle recycle costs one cold load and nothing else.
+
+The automated lever is a **brain-daemon probe**, not a worker job, because the worker container has no docker API access — the brain runs with the docker socket for exactly this class of self-heal (same home as the Postiz queue-wedge restart, whose shape it mirrors). Each 5-minute cycle, `run_comfyui_ram_watch_probe`:
+
+1. no-ops when `GET {video_comfyui_server_url}/queue` is unreachable — the profile-gated sidecar simply isn't up on most installs, and a hung-but-running sidecar is deliberately out of scope (a queue you cannot read is a queue you cannot prove idle);
+2. no-ops when anything is in `queue_running`/`queue_pending` (the poindexter#3094 posture, same as the `/free` rung: a running renderer must never be bounced by a reclaim lever);
+3. reads PID 1's `VmRSS` + `VmSwap` via `docker exec … cat /proc/1/status` — PID 1 **is** the accumulator, since the compose service runs an exec-form `command: ["python", "main.py", …]`;
+4. above the watermark, **re-checks `/queue` immediately before acting** (a render enqueued between qualify and restart defers the recycle — an unknown queue counts as busy), then `docker restart`s the container.
+
+Every recycle emits a `comfyui_ram_recycled` finding (`info` — Findings-board visibility, never pages); a failed restart emits `comfyui_ram_recycle_failed` at `warn` so a broken lever routes per the `findings.<kind>` policy instead of failing silent. The cooldown exists for one reason: a watermark set below the sidecar's healthy working set must degrade into an hourly bounce, not a bounce per 5-minute brain cycle.
+
+| Key                                    | Default | Meaning                                                                                                                    |
+| -------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `comfyui_ram_recycle_enabled`          | `true`  | Master switch for the brain-side recycle probe.                                                                            |
+| `comfyui_ram_recycle_watermark_gb`     | `20`    | PID-1 RSS+swap (GB) above which a verified-idle sidecar is restarted. Generous: only cross-render accumulation crosses it. |
+| `comfyui_ram_recycle_cooldown_minutes` | `60`    | Minimum gap between recycles (restart-loop protection). `0` disables the cooldown.                                         |
+
 ### Two-phase render order (poindexter#966, 2026-08-01)
 
 The per-clip pre-hero unload above turned out to need the render order #907 originally proposed. The render pass was sequential, so a **mid-list** hero evicted image-gen while ~24 GB of wan crowded the card — every later image-gen-family shot, and every later hero's own init still, failed deterministically into a Pexels substitute (task e68e4fe8 rendered twice, substituting the identical 4 shots both times; QA can't see it because substitutes are real footage). `_render_pass` (`shot_list_renderer.py`) now runs two VRAM-coherent phases: **still phase** — every non-hero shot plus every hero's image-gen init still, in list order, with image-gen resident throughout; **hero phase** — each pre-rendered still animated via wan (`_render_hero_still` / `_animate_hero`). The first animation's hard-unload now fires when image-gen has no work left in the pass; later heroes' unload calls no-op via the `nothing_to_reclaim` decline.
@@ -190,5 +209,5 @@ The ~8.6 GB `vmwp`/`vmmemWSL` retention only returns to the host on `wsl --shutd
 
 ## What this does and doesn't do
 
-- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.** Actively reclaims the ~7 GB image-gen slice before giving up on a cycle. Bounds the outage un-claim so a piece that fails on its own footprint stops re-rendering instead of looping on the 5-minute cron.
+- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.** Actively reclaims the ~7 GB image-gen slice before giving up on a cycle. Bounds the outage un-claim so a piece that fails on its own footprint stops re-rendering instead of looping on the 5-minute cron. Recycles the ComfyUI sidecar's **host-RAM** footprint too (PID-1 RSS+swap watermark, queue-idle verified twice) via the brain-side `comfyui_ram_watch` probe — the #999 class's second axis.
 - **Doesn't (yet):** touch the ~8.6 GB WSL2 retention — that needs the idle-only host reset, which is built but not yet enabled on this machine (supervised activation pending).
