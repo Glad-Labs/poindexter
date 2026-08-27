@@ -1,7 +1,7 @@
 """Featured-image fan-out — render N model candidates, judge, ship the best.
 
 Phase 1 of the multi-provider image plan (2026-08-15 bake-off follow-up):
-for the FEATURED image only, the same brief is rendered by up to three
+for the FEATURED image only, the same brief is rendered by up to four
 models and a vision judge picks the winner —
 
 - ``zimage`` — the production image-gen server render (OCR-gated). The
@@ -9,11 +9,19 @@ models and a vision judge picks the winner —
   and passes the file in; this service never imports stage code (services
   must not depend on ``modules/content`` — the engine never imports content).
 - ``schnell`` — FLUX.1-schnell fp8 via the ComfyUI sidecar (~3s warm).
+- ``klein`` — FLUX.2-klein-4B (distilled) via the ComfyUI sidecar. BFL's
+  flux1-schnell successor: Apache-2.0 and ungated, 4 steps at cfg 1 like
+  schnell, ~16GB of weights. (FLUX.2-dev and klein-9B are
+  ``flux-non-commercial-license`` — disqualifying for a commercial
+  publishing pipeline. Only the 4B is license-clean; do not swap the
+  ``image_fanout_klein_model`` setting onto a 9B file.)
 - ``qwen`` — Qwen-Image fp8 via the ComfyUI sidecar (~24s warm; first load
   of the ~28GB pair takes minutes — budget accordingly).
 
-Both graphs are the byte-for-byte shape proven in the 2026-08-15 bake-off
-runner. They live in-service rather than as registered ImageProvider
+The schnell and qwen graphs are the byte-for-byte shape proven in the
+2026-08-15 bake-off runner; the klein graph is the byte-for-byte shape of
+ComfyUI's own ``image_flux2_klein_text_to_image`` template (distilled
+subgraph). They live in-service rather than as registered ImageProvider
 plugins on purpose: Phase 1 is featured-only, and a registered provider
 would also surface in the inline-image dispatch, which is Phase-2 scope.
 
@@ -32,8 +40,10 @@ the default priority reproduces today's single-model behaviour exactly.
 
 VRAM choreography: the stage renders zimage FIRST (image-gen is warm from
 the inline batch); this service then hard-unloads image-gen via the gpu
-scheduler rung before the ComfyUI candidates load (schnell 17GB / qwen
-~28GB cannot coexist with a 13-25GB image-gen resident on a 32GB card).
+scheduler rung before the ComfyUI candidates load (schnell 17GB / klein
+~16GB / qwen ~28GB cannot coexist with a 13-25GB image-gen resident on a
+32GB card). The default candidate order renders the ComfyUI models
+ascending by footprint so the heaviest load lands last.
 ComfyUI swaps its own models internally and the dispatch reclaim ladder's
 ``_unload_comfyui`` rung frees it when the video render later needs the
 card. The next post's inline batch pays one image-gen cold reload (~60s) —
@@ -61,17 +71,34 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _DEFAULT_COMFY_URL = "http://comfyui:8188"
-_DEFAULT_CANDIDATES = "zimage,schnell,qwen"
-_DEFAULT_PRIORITY = "zimage,schnell,qwen"
+_DEFAULT_CANDIDATES = "zimage,schnell,klein,qwen"
+_DEFAULT_PRIORITY = "zimage,schnell,klein,qwen"
 _DEFAULT_RENDER_TIMEOUT_S = 600.0
 _DEFAULT_W = 1024
 _DEFAULT_H = 1024
 _POLL_INTERVAL_S = 3.0
 
+# Which candidate names this service renders itself (via the ComfyUI
+# sidecar) rather than receiving pre-rendered from the stage. ONE list:
+# the wanted-filter and the graph dispatch must agree, so a new candidate
+# is added here and in ``_build_candidate_graph`` — never by inlining a
+# name tuple at the filter site, which is how a graph builder can exist
+# for a candidate that the orchestrator silently never asks for.
+_COMFY_CANDIDATES = ("schnell", "klein", "qwen")
+
 _DEFAULT_SCHNELL_CKPT = "flux1-schnell-fp8.safetensors"
 _DEFAULT_QWEN_MODEL = "qwen_image_2512_fp8_e4m3fn.safetensors"
 _DEFAULT_QWEN_TE = "qwen_2.5_vl_7b_fp8_scaled.safetensors"
 _DEFAULT_QWEN_VAE = "qwen_image_vae.safetensors"
+# FLUX.2-klein-4B, Comfy-Org repackage. The DISTILLED file (guidance-baked,
+# 4 steps at cfg 1); `flux-2-klein-base-4b.safetensors` is the base variant
+# and wants ~20 steps at cfg 5 — swapping the file alone renders noise, the
+# steps/cfg settings must move with it.
+_DEFAULT_KLEIN_MODEL = "flux-2-klein-4b.safetensors"
+# Qwen3-4B — FLUX.2's text embedder is part of the architecture, not an
+# interchangeable CLIP. Loaded with CLIPLoader type "flux2".
+_DEFAULT_KLEIN_TE = "qwen_3_4b.safetensors"
+_DEFAULT_KLEIN_VAE = "flux2-vae.safetensors"
 
 # Appended to every ComfyUI candidate's positive prompt. The production
 # zimage path has a server-side OCR gate; the ComfyUI candidates have no
@@ -191,6 +218,61 @@ def qwen_graph(
     }
 
 
+def klein_graph(
+    *, prompt: str, seed: int, width: int, height: int,
+    model: str = _DEFAULT_KLEIN_MODEL, text_encoder: str = _DEFAULT_KLEIN_TE,
+    vae: str = _DEFAULT_KLEIN_VAE, steps: int = 4, cfg: float = 1.0,
+) -> dict[str, Any]:
+    """FLUX.2-klein-4B (distilled) txt2img.
+
+    Shape is ComfyUI's own ``image_flux2_klein_text_to_image`` template,
+    distilled subgraph. Three things differ from the schnell/qwen graphs
+    and all three are load-bearing:
+
+    - **Sampling runs through ``SamplerCustomAdvanced``, not ``KSampler``.**
+      FLUX.2 needs ``Flux2Scheduler``, which emits SIGMAS from
+      ``(steps, width, height)`` — resolution-aware shift is computed there
+      rather than passed as a shift knob, so there is no ``KSampler`` port
+      to hand it to.
+    - **The negative is ``ConditioningZeroOut`` of the positive**, not an
+      empty text encode. At cfg 1 the guider ignores it either way, but
+      zeroing costs no second text-encoder pass — and the encoder here is
+      an 8GB Qwen3-4B, so the saving is real.
+    - **The text encoder is a separate 8GB file** loaded with ``CLIPLoader``
+      type ``flux2``. It is part of the architecture, not swappable.
+    """
+    return {
+        "1": {"class_type": "UNETLoader", "inputs": {
+            "unet_name": model, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {
+            "clip_name": text_encoder, "type": "flux2", "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+        "4": {"class_type": "CLIPTextEncode",
+              "inputs": {"clip": ["2", 0], "text": f"{prompt}, {_NO_TEXT_CLAUSE}"}},
+        "5": {"class_type": "ConditioningZeroOut",
+              "inputs": {"conditioning": ["4", 0]}},
+        "6": {"class_type": "CFGGuider", "inputs": {
+            "model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0],
+            "cfg": cfg}},
+        "7": {"class_type": "KSamplerSelect",
+              "inputs": {"sampler_name": "euler"}},
+        "8": {"class_type": "Flux2Scheduler", "inputs": {
+            "steps": steps, "width": width, "height": height}},
+        "9": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "10": {"class_type": "EmptyFlux2LatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1}},
+        "11": {"class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["9", 0], "guider": ["6", 0], "sampler": ["7", 0],
+            "sigmas": ["8", 0], "latent_image": ["10", 0]}},
+        # SamplerCustomAdvanced returns (output, denoised_output) — slot 0
+        # is the sampled latent the template decodes.
+        "12": {"class_type": "VAEDecode",
+               "inputs": {"samples": ["11", 0], "vae": ["3", 0]}},
+        "13": {"class_type": "SaveImage",
+               "inputs": {"images": ["12", 0], "filename_prefix": "fanout_klein"}},
+    }
+
+
 def _build_candidate_graph(
     name: str, *, prompt: str, negative: str, seed: int,
     site_config: Any,
@@ -219,6 +301,19 @@ def _build_candidate_graph(
             steps=int(_sc_num(site_config, "image_fanout_qwen_steps", 20)),
             cfg=_sc_num(site_config, "image_fanout_qwen_cfg", 2.5),
             shift=_sc_num(site_config, "image_fanout_qwen_shift", 3.1),
+        )
+    if name == "klein":
+        return klein_graph(
+            prompt=prompt, seed=seed, width=width, height=height,
+            model=str(_sc_get(
+                site_config, "image_fanout_klein_model", _DEFAULT_KLEIN_MODEL)),
+            text_encoder=str(_sc_get(
+                site_config, "image_fanout_klein_text_encoder",
+                _DEFAULT_KLEIN_TE)),
+            vae=str(_sc_get(
+                site_config, "image_fanout_klein_vae", _DEFAULT_KLEIN_VAE)),
+            steps=int(_sc_num(site_config, "image_fanout_klein_steps", 4)),
+            cfg=_sc_num(site_config, "image_fanout_klein_cfg", 1.0),
         )
     return None
 
@@ -496,7 +591,7 @@ async def run_featured_fanout(
         candidates.append(FanoutCandidate(
             name="zimage", path=zimage_path, meta=zimage_meta or {}))
 
-    comfy_wanted = [n for n in wanted if n in ("schnell", "qwen")]
+    comfy_wanted = [n for n in wanted if n in _COMFY_CANDIDATES]
     if comfy_wanted:
         # image-gen must be out of VRAM before the ComfyUI models load — the
         # decline-gated hard unload is a cheap no-op when it holds nothing.
@@ -599,6 +694,7 @@ async def run_featured_fanout(
 __all__ = [
     "FanoutCandidate",
     "fanout_enabled",
+    "klein_graph",
     "run_featured_fanout",
     "schnell_graph",
     "qwen_graph",

@@ -2005,15 +2005,18 @@ DEFAULTS: dict[str, str] = {
     # the Phase-2 class→provider router is seeded from those win rates.
     # Dark-launched: everything below is inert until image_fanout_enabled.
     # Candidates: 'zimage' (production image-gen server, OCR-gated),
-    # 'schnell' + 'qwen' (ComfyUI sidecar — needs --profile comfyui up and
-    # the image weights in ~/.poindexter/comfyui/models; see
+    # 'schnell' + 'klein' + 'qwen' (ComfyUI sidecar — needs --profile comfyui
+    # up and the image weights in ~/.poindexter/comfyui/models; see
     # docs/architecture/image-fanout.md).
     'image_fanout_enabled': 'false',
-    'image_fanout_candidates': 'zimage,schnell,qwen',
+    # Render ORDER (the ComfyUI ones run in this order). Ascending by VRAM
+    # footprint — schnell 17GB, klein ~16GB, qwen ~28GB — so the heaviest
+    # load lands last and a mid-list failure doesn't strand the card full.
+    'image_fanout_candidates': 'zimage,schnell,klein,qwen',
     # Tie-break AND judge-down order — first listed wins when scores tie or
     # the judge is unavailable. zimage-first means a downed judge reproduces
     # today's single-model behaviour exactly.
-    'image_fanout_priority': 'zimage,schnell,qwen',
+    'image_fanout_priority': 'zimage,schnell,klein,qwen',
     'image_fanout_judge_enabled': 'true',
     'image_fanout_comfyui_url': 'http://comfyui:8188',
     # Per-candidate render budget. Warm renders are seconds (schnell ~3s,
@@ -2033,6 +2036,18 @@ DEFAULTS: dict[str, str] = {
     'image_fanout_qwen_cfg': '2.5',
     # ModelSamplingAuraFlow shift — official Qwen-Image template value.
     'image_fanout_qwen_shift': '3.1',
+    # FLUX.2-klein-4B (Comfy-Org repackage). Apache-2.0 and ungated — unlike
+    # FLUX.2-dev and klein-9B, which carry flux-non-commercial-license and
+    # must NOT be pointed at from here: this pipeline publishes commercially.
+    # The DISTILLED file; the `flux-2-klein-base-4b` variant wants ~20 steps
+    # at cfg 5, so the file and the steps/cfg pair below move together.
+    'image_fanout_klein_model': 'flux-2-klein-4b.safetensors',
+    # FLUX.2's text embedder is architecture, not an interchangeable CLIP —
+    # loaded via CLIPLoader type 'flux2'.
+    'image_fanout_klein_text_encoder': 'qwen_3_4b.safetensors',
+    'image_fanout_klein_vae': 'flux2-vae.safetensors',
+    'image_fanout_klein_steps': '4',
+    'image_fanout_klein_cfg': '1.0',
     # Judge output budget. qwen3-vl's <think> trace shares it with the
     # JSON answer; 1024 starved the answer out of ~30% of live calls in
     # the first 8 days (unparseable-response fail-softs).
@@ -4727,6 +4742,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_qwen_steps': {'value_type': 'integer'},
     'image_fanout_qwen_cfg': {'value_type': 'float'},
     'image_fanout_qwen_shift': {'value_type': 'float'},
+    'image_fanout_klein_model': {'value_type': 'string'},
+    'image_fanout_klein_text_encoder': {'value_type': 'string'},
+    'image_fanout_klein_vae': {'value_type': 'string'},
+    'image_fanout_klein_steps': {'value_type': 'integer'},
+    'image_fanout_klein_cfg': {'value_type': 'float'},
     'image_fanout_judge_max_tokens': {'value_type': 'integer'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
     'image_ocr_gate_enforce': {'value_type': 'boolean'},

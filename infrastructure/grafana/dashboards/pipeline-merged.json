@@ -5423,7 +5423,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "image_fanout_judged audit rows: which model's featured-image candidate shipped. Win rates here seed the Phase-2 class\u2192provider routing map. Empty until image_fanout_enabled=true.",
+      "description": "image_fanout_judged audit rows: which model's featured-image candidate shipped, and how often each was even PRESENT to compete. Win counts without a presence denominator lie \u2014 a starved candidate reads identically to a losing one (zimage's 8-day slump was 36 silent 503s, not the judge's opinion). Every configured candidate gets a row even at zero renders. Win rates seed the Phase-2 class\u2192provider routing map. Empty until image_fanout_enabled=true.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -5474,11 +5474,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  details->>'winner'                                   AS \"Winner\",\n  COUNT(*)                                             AS \"Wins\",\n  ROUND(AVG((c->>'score')::numeric), 1)                AS \"Avg winning score\"\nFROM audit_log,\n     LATERAL jsonb_array_elements(details->'candidates') AS c\nWHERE event_type = 'image_fanout_judged'\n  AND c->>'name' = details->>'winner'\n  AND $__timeFilter(timestamp)\nGROUP BY 1\nORDER BY 2 DESC",
+          "rawSql": "WITH judged AS (\n  SELECT details\n  FROM audit_log\n  WHERE event_type = 'image_fanout_judged'\n    AND $__timeFilter(timestamp)\n),\ntotal AS (SELECT COUNT(*)::numeric AS n FROM judged),\n-- Every CONFIGURED candidate, so one that rendered zero times still shows\n-- as a row. Wins alone cannot tell \"never wins\" from \"never ran\".\nexpected AS (\n  SELECT TRIM(x) AS name\n  FROM app_settings, LATERAL unnest(string_to_array(value, ',')) AS x\n  WHERE key = 'image_fanout_candidates'\n),\npresence AS (\n  SELECT c->>'name' AS name,\n         COUNT(*)::numeric AS present,\n         ROUND(AVG(NULLIF(c->>'score', '')::numeric), 1) AS avg_score\n  FROM judged, LATERAL jsonb_array_elements(details->'candidates') AS c\n  GROUP BY 1\n),\nwins AS (\n  SELECT details->>'winner' AS name, COUNT(*)::numeric AS wins\n  FROM judged GROUP BY 1\n)\nSELECT\n  e.name                                                  AS \"Candidate\",\n  COALESCE(p.present, 0)                                  AS \"Rendered\",\n  ROUND(100 * COALESCE(p.present, 0) / NULLIF(t.n, 0))    AS \"Presence %\",\n  COALESCE(w.wins, 0)                                     AS \"Wins\",\n  ROUND(100 * COALESCE(w.wins, 0) / NULLIF(p.present, 0)) AS \"Win % when present\",\n  p.avg_score                                             AS \"Avg score\"\nFROM expected e\nCROSS JOIN total t\nLEFT JOIN presence p ON p.name = e.name\nLEFT JOIN wins w ON w.name = e.name\nORDER BY 4 DESC NULLS LAST, 2 DESC",
           "refId": "A"
         }
       ],
-      "title": "Featured fan-out \u2014 wins by model",
+      "title": "Featured fan-out \u2014 wins & presence by model",
       "type": "table"
     },
     {

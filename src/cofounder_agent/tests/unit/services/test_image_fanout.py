@@ -16,10 +16,13 @@ import pytest
 
 from services import image_fanout
 from services.image_fanout import (
+    _COMFY_CANDIDATES,
     FanoutCandidate,
+    _build_candidate_graph,
     _parse_score,
     _pick_winner,
     fanout_enabled,
+    klein_graph,
     qwen_graph,
     run_featured_fanout,
     schnell_graph,
@@ -63,6 +66,67 @@ class TestGraphs:
         assert g["8"]["inputs"]["model"] == ["4", 0]
         assert g["6"]["inputs"]["text"] == "ugly"
         assert g["2"]["inputs"]["type"] == "qwen_image"
+
+    def test_klein_shape(self):
+        g = klein_graph(
+            prompt="a console", seed=7, width=1024, height=1024,
+            model="k.safetensors", text_encoder="q3.safetensors",
+            vae="v.safetensors", steps=4, cfg=1.0,
+        )
+        assert g["1"]["inputs"]["unet_name"] == "k.safetensors"
+        # FLUX.2's text encoder is its own file loaded as type "flux2" —
+        # not the checkpoint-bundled CLIP schnell uses.
+        assert g["2"]["inputs"]["type"] == "flux2"
+        assert g["2"]["inputs"]["clip_name"] == "q3.safetensors"
+        assert "a console" in g["4"]["inputs"]["text"]
+        assert "no text" in g["4"]["inputs"]["text"]
+        # Negative = zeroed positive, NOT a second (8GB-encoder) text pass.
+        assert g["5"]["class_type"] == "ConditioningZeroOut"
+        assert g["5"]["inputs"]["conditioning"] == ["4", 0]
+        assert g["6"]["inputs"]["negative"] == ["5", 0]
+        assert g["6"]["inputs"]["cfg"] == 1.0
+        # Sampling is the SamplerCustomAdvanced path: Flux2Scheduler emits
+        # the sigmas, so steps/resolution live there and NOT on a KSampler.
+        assert g["8"]["class_type"] == "Flux2Scheduler"
+        assert g["8"]["inputs"]["steps"] == 4
+        assert g["8"]["inputs"]["width"] == 1024
+        assert g["11"]["inputs"]["sigmas"] == ["8", 0]
+        assert g["11"]["inputs"]["guider"] == ["6", 0]
+        assert g["10"]["class_type"] == "EmptyFlux2LatentImage"
+        # Decode reads the sampler's slot 0, and the VAE is its own loader.
+        assert g["12"]["inputs"]["samples"] == ["11", 0]
+        assert g["12"]["inputs"]["vae"] == ["3", 0]
+        assert not any(
+            n["class_type"] == "KSampler" for n in g.values()
+        ), "FLUX.2 cannot sample through KSampler — it needs SIGMAS"
+
+    def test_every_comfy_candidate_builds_a_graph(self):
+        """The wanted-filter and the graph dispatch are two places that must
+        agree. A name in ``_COMFY_CANDIDATES`` with no builder branch would
+        be silently skipped at render time (``graph is None`` → ``continue``),
+        so the candidate would just never appear — no error, no audit row."""
+        for name in _COMFY_CANDIDATES:
+            g = _build_candidate_graph(
+                name, prompt="p", negative="n", seed=1,
+                site_config=_FakeSiteConfig(),
+            )
+            assert g is not None, f"{name} has no graph builder"
+            assert any(
+                n["class_type"] == "SaveImage" for n in g.values()
+            ), f"{name} graph never saves an image"
+
+    def test_default_candidates_are_all_renderable(self):
+        """Every name in the shipped default list is either the
+        stage-rendered zimage or has a ComfyUI builder — a typo'd default
+        would drop a candidate silently."""
+        from services.image_fanout import _DEFAULT_CANDIDATES, _DEFAULT_PRIORITY
+
+        wanted = [n.strip() for n in _DEFAULT_CANDIDATES.split(",")]
+        assert set(wanted) <= {"zimage", *_COMFY_CANDIDATES}
+        # Priority must cover every candidate, or an unlisted one ranks last
+        # on ties and in the judge-down fall-open.
+        assert set(wanted) == {n.strip() for n in _DEFAULT_PRIORITY.split(",")}
+        assert wanted[0] == "zimage", "judge-down must reproduce production"
 
 
 class TestParseScore:
@@ -262,6 +326,40 @@ class TestRunFeaturedFanout:
                 zimage_meta={}, site_config=_sc(), pool=_pool(), task_id="t1",
             )
         no_gpu_unload.assert_awaited_once_with(hard=True)
+
+    @pytest.mark.asyncio
+    async def test_klein_renders_and_can_win(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """klein is reachable end-to-end on the default candidate list, and
+        its render order sits between schnell and qwen (ascending VRAM)."""
+        klein_file = tmp_path / "klein.png"
+        klein_file.write_bytes(b"PNG4")
+        rendered: list[str] = []
+
+        async def render(name, graph, **kw):
+            rendered.append(name)
+            if name == "klein":
+                return str(klein_file), {"model": "klein", "elapsed_s": 1.0}
+            return None, {"failure": "skip"}
+
+        async def score(candidate, **kw):
+            candidate.score = 95.0 if candidate.name == "klein" else 50.0
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", score):
+            out = await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={}, site_config=_sc(), pool=pool, task_id="t1",
+            )
+        assert out is not None
+        path, meta = out
+        assert path == str(klein_file)
+        assert meta["fanout"]["winner"] == "klein"
+        assert rendered == ["schnell", "klein", "qwen"]
+        details = json.loads(pool.execute.await_args.args[4])
+        assert {c["name"] for c in details["candidates"]} == {"zimage", "klein"}
 
     @pytest.mark.asyncio
     async def test_candidates_setting_filters(self, zimage_file, no_gpu_unload):
