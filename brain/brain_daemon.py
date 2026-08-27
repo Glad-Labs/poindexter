@@ -311,6 +311,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_COMFYUI_RAM_WATCH = False
 
 try:
+    # 2026-08-27 freeze — the comfyui watch above covers ONE container, and
+    # it was not the one that filled swap. This watches the queue-less GPU
+    # sidecars (chatterbox / speaches / wan-server / stable-audio, ~29 GB
+    # parked while dormant that day) and recycles the fattest over-watermark
+    # one, gated on a free GPU scheduler lock AND an idle container CPU.
+    from sidecar_ram_watch import run_sidecar_ram_watch_probe
+    _HAS_SIDECAR_RAM_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.sidecar_ram_watch import run_sidecar_ram_watch_probe
+        _HAS_SIDECAR_RAM_WATCH = True
+    except ImportError:
+        _HAS_SIDECAR_RAM_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -487,6 +502,10 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
     ("_HAS_COMFYUI_RAM_WATCH", "brain/comfyui_ram_watch.py",
      "ComfyUI host-RAM recycle offline — the render sidecar's RSS+swap creep "
      "goes unreclaimed until swap fills (2026-08-26 redux)"),
+    ("_HAS_SIDECAR_RAM_WATCH", "brain/sidecar_ram_watch.py",
+     "Sidecar host-RAM recycle offline — the dormant TTS/audio/video model "
+     "servers re-fill swap unreclaimed, which is what hard-froze the box on "
+     "2026-08-27"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
@@ -3093,6 +3112,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] comfyui_ram_watch probe failed: %s", e)
+
+    # Sidecar host-RAM recycle watch (2026-08-27 freeze). The comfyui watch
+    # above covers one container; this covers the queue-less GPU sidecars that
+    # actually filled swap that day. Recycles at most ONE per cycle — the
+    # fattest over its watermark — and only when the GPU scheduler lock is
+    # free AND the container's CPU is idle, both re-checked immediately before
+    # the restart. Disabled via app_settings.sidecar_ram_recycle_enabled=false.
+    if _HAS_SIDECAR_RAM_WATCH:
+        try:
+            sr_summary = await run_sidecar_ram_watch_probe(pool)
+            probe_results["sidecar_ram_watch"] = {
+                "ok": bool(sr_summary.get("ok", False)),
+                "detail": sr_summary.get("detail", ""),
+                "summary": sr_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] sidecar_ram_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

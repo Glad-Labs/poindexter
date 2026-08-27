@@ -300,25 +300,3 @@ def test_watermark_reads_from_app_settings():
     )
     assert summary["status"] == "recycled"
     assert summary["watermark_gb"] == 17.5
-
-
-def test_parse_status_rss_swap_gb():
-    """VmRSS/VmSwap kB lines -> GB; missing VmSwap = 0; no VmRSS = None."""
-    blob = (
-        "Name:\tpython\n"
-        "VmPeak:\t30000000 kB\n"
-        "VmRSS:\t14574940 kB\n"
-        "VmSwap:\t15518925 kB\n"
-    )
-    parsed = cw._parse_status_rss_swap_gb(blob)
-    assert parsed is not None
-    rss_gb, swap_gb = parsed
-    assert rss_gb == pytest.approx(13.9, abs=0.01)
-    assert swap_gb == pytest.approx(14.8, abs=0.01)
-
-    swapless = cw._parse_status_rss_swap_gb("VmRSS:\t1048576 kB\n")
-    assert swapless == (1.0, 0.0)
-
-    assert cw._parse_status_rss_swap_gb("Name:\tpython\n") is None
-    assert cw._parse_status_rss_swap_gb("") is None
-    assert cw._parse_status_rss_swap_gb("VmRSS:\tgarbage kB\n") is None

@@ -281,6 +281,40 @@ DEFAULTS: dict[str, str] = {
     'comfyui_ram_recycle_watermark_gb': '20',
     'comfyui_ram_recycle_cooldown_minutes': '60',
 
+    # Sidecar host-RAM recycle (2026-08-27 hard-reboot freeze). The comfyui
+    # keys above cover ONE container and it was not the one that filled swap;
+    # these cover the queue-less GPU sidecars that did (~29 GB parked while
+    # dormant). `targets` is `container:watermark_gb` CSV — an entry with no
+    # watermark is SKIPPED rather than defaulted, so a typo disarms one
+    # sidecar loudly instead of inventing a threshold nobody chose.
+    # A recycle needs BOTH idle proofs: the GPU scheduler advisory lock free
+    # AND the container's CPU under cpu_idle_percent (measured idle draw for
+    # these four is 0.09-1.21%). See docs/operations/host-oom-protection.md.
+    'sidecar_ram_recycle_enabled': 'true',
+    'sidecar_ram_recycle_targets': (
+        'poindexter-chatterbox:6,poindexter-speaches:6,'
+        'poindexter-wan-server:6,poindexter-stable-audio:3'
+    ),
+    'sidecar_ram_recycle_cooldown_minutes': '60',
+    'sidecar_ram_recycle_cpu_idle_percent': '5',
+    # The GPU gate is global, so it blocks a chatterbox recycle while ComfyUI
+    # renders. Sampled during a busy window the lock was free only 7% of the
+    # time, so under sustained load this probe can defer for hours. It stays
+    # ON because the CPU check alone reads a CUDA-blocked sidecar as idle and
+    # would restart it mid-render. Flip to false only if the Findings board
+    # shows chronic deferral while swap climbs.
+    'sidecar_ram_recycle_require_gpu_lock_free': 'true',
+
+    # Prometheus alert thresholds are normally override-only: the renderer
+    # falls back to prometheus_rule_builder.DEFAULT_THRESHOLDS, so an unseeded
+    # key still works. This one is seeded anyway because it governs the alert
+    # that failed to fire before the 2026-08-27 freeze, and an operator tuning
+    # it should be able to FIND it in `poindexter settings` rather than know
+    # to invent the row. Value is pinned equal to DEFAULT_THRESHOLDS by
+    # tests/unit/services/test_prometheus_rule_builder.py so the two sources
+    # cannot drift.
+    'prometheus.threshold.host_memory_swap_free_warning_percent': '5',
+
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',

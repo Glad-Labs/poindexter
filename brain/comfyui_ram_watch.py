@@ -46,18 +46,60 @@ for unit tests, module-level cooldown state, Probe-Protocol wrapper.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
-import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+# Shared with sidecar_ram_watch (poindexter#3360 generalisation): both probes
+# read a container's PID-1 footprint, restart it, and record the outcome the
+# same way — only the IDLE PROOF differs, and that stays per-module.
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from docker_utils import resolve_url
+    from ram_recycle_common import (
+        coerce_bool as _coerce_bool,
+    )
+    from ram_recycle_common import (
+        coerce_float as _coerce_float,
+    )
+    from ram_recycle_common import (
+        coerce_int as _coerce_int,
+    )
+    from ram_recycle_common import (
+        emit_finding as _emit_finding_common,
+    )
+    from ram_recycle_common import (
+        read_container_main_rss_swap_gb as _read_container_main_rss_swap_gb,
+    )
+    from ram_recycle_common import (
+        read_setting as _read_setting,
+    )
+    from ram_recycle_common import (
+        restart_container as _restart_comfyui_container,
+    )
 except ImportError:  # pragma: no cover — package-qualified path for tests
     from brain.docker_utils import resolve_url
+    from brain.ram_recycle_common import (
+        coerce_bool as _coerce_bool,
+    )
+    from brain.ram_recycle_common import (
+        coerce_float as _coerce_float,
+    )
+    from brain.ram_recycle_common import (
+        coerce_int as _coerce_int,
+    )
+    from brain.ram_recycle_common import (
+        emit_finding as _emit_finding_common,
+    )
+    from brain.ram_recycle_common import (
+        read_container_main_rss_swap_gb as _read_container_main_rss_swap_gb,
+    )
+    from brain.ram_recycle_common import (
+        read_setting as _read_setting,
+    )
+    from brain.ram_recycle_common import (
+        restart_container as _restart_comfyui_container,
+    )
 
 logger = logging.getLogger("brain.comfyui_ram_watch")
 
@@ -80,8 +122,6 @@ _CONTAINER = "poindexter-comfyui"
 _SOURCE = "brain.comfyui_ram_watch"
 _RECYCLED_KIND = "comfyui_ram_recycled"
 _FAILED_KIND = "comfyui_ram_recycle_failed"
-_DOCKER_RESTART_TIMEOUT_SECONDS = 60
-_DOCKER_EXEC_TIMEOUT_SECONDS = 30
 _API_TIMEOUT_SECONDS = 10
 
 # Module-level cooldown stamp — persists across cycles so a low-set
@@ -93,46 +133,6 @@ def _reset_recycle_state() -> None:
     """Test helper — wipe the cross-cycle cooldown stamp."""
     global _last_recycle_monotonic
     _last_recycle_monotonic = None
-
-
-# --- app_settings reads (same pattern as postiz_queue_watch.py) -------------
-
-
-async def _read_setting(pool: Any, key: str, default: Any) -> Any:
-    try:
-        val = await pool.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[COMFYUI_RAM] read %s failed: %s — default %r", key, exc, default
-        )
-        return default
-    return default if val is None else val
-
-
-def _coerce_bool(val: Any, default: bool) -> bool:
-    if val is None:
-        return default
-    return str(val).strip().lower() in ("true", "1", "yes", "on")
-
-
-def _coerce_float(val: Any, default: float) -> float:
-    if val is None:
-        return default
-    try:
-        return float(str(val).strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_int(val: Any, default: int) -> int:
-    if val is None:
-        return default
-    try:
-        return int(str(val).strip())
-    except (TypeError, ValueError):
-        return default
 
 
 async def _read_config(pool: Any) -> dict[str, Any]:
@@ -191,105 +191,7 @@ async def _queue_busy(pool: Any) -> bool | None:
     )
 
 
-# --- container memory read ---------------------------------------------------
-
-
-def _kb_field(line: str) -> int | None:
-    """``VmRSS:   14234232 kB`` -> 14234232."""
-    parts = line.split()
-    if len(parts) < 2:
-        return None
-    try:
-        return int(parts[1])
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_status_rss_swap_gb(status_text: str) -> tuple[float, float] | None:
-    """Parse ``VmRSS:``/``VmSwap:`` kB lines from a /proc/<pid>/status dump.
-
-    ``VmSwap`` is absent on swapless kernels — that reads as 0, not a
-    failure. A dump with no ``VmRSS`` is unusable and returns None.
-    """
-    rss_kb: int | None = None
-    swap_kb: int | None = None
-    for line in status_text.splitlines():
-        if line.startswith("VmRSS:"):
-            rss_kb = _kb_field(line)
-        elif line.startswith("VmSwap:"):
-            swap_kb = _kb_field(line)
-    if rss_kb is None:
-        return None
-    return (rss_kb / 1024 / 1024, (swap_kb or 0) / 1024 / 1024)
-
-
-def _read_container_main_rss_swap_gb(container: str) -> tuple[float, float] | None:
-    """VmRSS + VmSwap of the container's PID 1, in GB.
-
-    PID 1 IS the accumulator: the compose service runs an exec-form
-    ``command: ["python", "main.py", ...]``, so the main ComfyUI python is
-    the container's init, and ``/proc/1/status`` inside its namespace is
-    exactly the process the 2026-08-26 incident measured. Returns None
-    when the read fails (container absent, docker CLI missing,
-    unparseable output) — the caller surfaces that as ``stats_failed``.
-    """
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": _DOCKER_EXEC_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(
-            ["docker", "exec", container, "cat", "/proc/1/status"], **kwargs
-        )
-    except FileNotFoundError:
-        logger.warning("[COMFYUI_RAM] docker CLI not on PATH — cannot read RSS")
-        return None
-    except subprocess.TimeoutExpired:
-        logger.warning("[COMFYUI_RAM] docker exec %s timed out", container)
-        return None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[COMFYUI_RAM] mem read failed: %s: %s", type(exc).__name__, exc
-        )
-        return None
-    if result.returncode != 0:
-        logger.warning(
-            "[COMFYUI_RAM] docker exec %s exit %s: %s",
-            container, result.returncode, (result.stderr or "").strip()[:200],
-        )
-        return None
-    return _parse_status_rss_swap_gb(result.stdout or "")
-
-
-# --- restart + finding emission ---------------------------------------------
-
-
-def _restart_comfyui_container(container: str) -> tuple[bool, str]:
-    """``docker restart <container>`` (shape mirrors postiz_queue_watch)."""
-    try:
-        kwargs: dict[str, Any] = {
-            "capture_output": True,
-            "text": True,
-            "timeout": _DOCKER_RESTART_TIMEOUT_SECONDS,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-        result = subprocess.run(["docker", "restart", container], **kwargs)
-        if result.returncode == 0:
-            return True, f"Restarted {container}"
-        return False, (
-            f"docker restart {container} exit {result.returncode}: "
-            f"{(result.stderr or '').strip()[:200]}"
-        )
-    except FileNotFoundError:
-        return False, "docker CLI not on PATH"
-    except subprocess.TimeoutExpired:
-        return False, f"docker restart {container} timed out"
-    except Exception as exc:  # noqa: BLE001
-        return False, f"docker restart error: {type(exc).__name__}: {str(exc)[:160]}"
+# --- finding emission --------------------------------------------------------
 
 
 async def _emit_finding(
@@ -302,32 +204,17 @@ async def _emit_finding(
     dedup_key: str,
     extra: dict[str, Any],
 ) -> None:
-    """Write an audit_log ``finding`` row (Findings board + router).
-
-    Shape mirrors ``utils/findings.py::emit_finding`` (the worker-side
-    producer) so the Findings dashboard and ``findings_alert_router``
-    treat brain findings identically: ``details={kind,title,body,
-    dedup_key,extra}`` with severity on the row. ``info`` never routes
-    (the router's severity floor) — board-visible only; ``warn`` routes
-    per the ``findings.<kind>.*`` policy quad.
-    """
-    details = {
-        "kind": kind,
-        "title": title,
-        "body": body,
-        "dedup_key": dedup_key,
-        "extra": extra,
-    }
-    try:
-        await pool.execute(
-            "INSERT INTO audit_log (event_type, source, details, severity) "
-            "VALUES ('finding', $1, $2::jsonb, $3)",
-            _SOURCE,
-            json.dumps(details),
-            severity,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[COMFYUI_RAM] finding insert (%s) failed: %s", kind, exc)
+    """Bind this module's ``source`` onto the shared finding writer."""
+    await _emit_finding_common(
+        pool,
+        source=_SOURCE,
+        kind=kind,
+        severity=severity,
+        title=title,
+        body=body,
+        dedup_key=dedup_key,
+        extra=extra,
+    )
 
 
 # --- the probe ---------------------------------------------------------------

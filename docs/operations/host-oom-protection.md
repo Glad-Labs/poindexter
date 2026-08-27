@@ -98,9 +98,72 @@ cgroups for killing, top candidates were:". **Remove the drop-in and restore
   sidecars outweigh it 20-60x, and postgres is crash-safe and restarts. Even
   the worst outcome here beats a hard power cycle, which is an unclean postgres
   shutdown _plus_ everything else dying.
-- **This treats the symptom.** The underlying problem is that dormant model
-  sidecars park ~28 GiB in swap for nothing. Capping or idle-stopping them is
-  the real headroom fix; oomd only guarantees the box stays reachable.
+- **oomd treats the symptom.** It guarantees the box stays reachable; the
+  cause-side fix is the sidecar RAM recycle below.
+
+## The cause side: sidecar RAM recycle
+
+oomd is the floor, not the fix. What actually fills swap is four **dormant**
+model sidecars, so `brain/sidecar_ram_watch.py` recycles them before it gets
+that far — the aim is that oomd never has to fire.
+
+A mechanism for this already existed and did not help: `comfyui_ram_watch.py`
+(poindexter#3360, added 2026-08-26) is hardcoded to `poindexter-comfyui`, and
+ComfyUI held ~2 GB on 2026-08-27. **The one container being watched was not the
+one filling swap.** The four that were had no watcher at all. Both probes now
+run; they differ only in how they prove idleness.
+
+|            | `comfyui_ram_watch`                | `sidecar_ram_watch`                               |
+| ---------- | ---------------------------------- | ------------------------------------------------- |
+| Targets    | `poindexter-comfyui`               | `sidecar_ram_recycle_targets` (CSV)               |
+| Idle proof | `GET /queue`                       | GPU advisory lock free **AND** container CPU idle |
+| Watermark  | `comfyui_ram_recycle_watermark_gb` | per-target, in the CSV                            |
+
+The sidecars expose only `/health` — liveness, not idleness — which is why the
+ComfyUI approach could not simply be pointed at them. The replacement gate is
+`pg_advisory_lock(7777777777)`, which every GPU session in the stack holds for
+its duration, plus a per-container CPU check to catch work that never took the
+lock.
+
+Both gates are re-checked immediately before the restart, **anything
+unprovable counts as busy**, and at most one container is recycled per cycle
+(the fattest over its watermark) to bound the blast radius. Cooldowns are
+per-container.
+
+Tuning (`app_settings`): `sidecar_ram_recycle_enabled`,
+`sidecar_ram_recycle_targets` (`container:watermark_gb`, comma-separated),
+`sidecar_ram_recycle_cooldown_minutes`, `sidecar_ram_recycle_cpu_idle_percent`,
+`sidecar_ram_recycle_require_gpu_lock_free`. An entry without a watermark is
+**skipped, not defaulted** — a typo disarms one sidecar loudly rather than
+inventing a threshold nobody chose.
+
+Every watermark must sit **below** that sidecar's real 2026-08-27 footprint,
+or the probe watches the incident it was written for and does nothing. That is
+not hypothetical: stable-audio was first written at 4 GB against a 3.9 GB
+footprint. `test_incident_footprints_would_have_tripped` now pins each one.
+
+Watch it work: `sidecar_ram_recycled` (info) on the Findings board per recycle,
+`sidecar_ram_recycle_failed` (warn) when the restart lever itself breaks.
+
+### If this probe goes quiet, check the GPU lock first
+
+The GPU gate is **global**: it blocks a chatterbox recycle while ComfyUI
+renders, even though those are unrelated. Sampled during a busy render window
+on 2026-08-27 the lock was free only **7% of the time**, so under sustained
+load — exactly when footprints grow — the probe can defer for hours. A probe
+that never fires looks identical to one with nothing to do.
+
+```bash
+# a granted=true row that never clears is a STUCK GPU session, not a quiet one
+psql -c "SELECT pid, granted FROM pg_locks WHERE locktype='advisory'"
+```
+
+If deferral is chronic while swap climbs, set
+`sidecar_ram_recycle_require_gpu_lock_free=false`. That leaves the
+per-container CPU gate doing the work alone — which is **less safe**, because a
+sidecar blocked on a CUDA sync mid-inference sits under the CPU threshold and
+looks idle. That is precisely why the gate defaults on; relax it deliberately,
+not by habit.
 
 ## Related
 

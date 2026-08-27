@@ -1630,6 +1630,22 @@ class TestHostSwapExhaustedRule:
             == "5"
         )
 
+    def test_seeded_app_setting_matches_the_code_default(self):
+        """This threshold is seeded into app_settings as well as living in
+        DEFAULT_THRESHOLDS, so an operator can find it in `poindexter
+        settings`. Two sources for one value is a drift pair — pin them.
+
+        If you change one, change both; if you'd rather not, delete the
+        app_settings row (the renderer falls back to DEFAULT_THRESHOLDS, so
+        thresholds work fine unseeded — that is the norm for the other 37).
+        """
+        from cofounder_agent.services.settings_defaults import DEFAULTS
+
+        key = "prometheus.threshold.host_memory_swap_free_warning_percent"
+        assert DEFAULTS[key] == (
+            rb.DEFAULT_THRESHOLDS["host_memory_swap_free_warning_percent"]
+        )
+
     @pytest.mark.asyncio
     async def test_renders_with_defaults_substituted(self):
         out = await rb.build_current(_FakePool([]))
