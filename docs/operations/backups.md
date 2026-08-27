@@ -129,6 +129,28 @@ it:
 > non-fatal — the DB snapshot has already succeeded by then, so prune/verify
 > still run.
 >
+> **Why `backup-offsite` runs as a different user than its siblings.** The
+> config surface is `0700`/`0600` owned by the **host** user, so the image's
+> built-in uid cannot even traverse it. `backup-offsite` therefore carries
+> `user: "${POINDEXTER_HOST_UID:-1000}:${POINDEXTER_HOST_GID:-1000}"`, and
+> `start-stack.sh` derives those from `id -u`/`id -g` so they are correct on
+> any host rather than correct by coincidence (pin them explicitly with
+> `poindexter_host_uid` / `_gid` in `bootstrap.toml` if you need to — an
+> already-set value always wins). `backup-hourly`/`backup-daily` deliberately
+> keep the image uid: their `hourly/` and `daily/` dump directories are owned
+> by it, so rebuilding the shared image with a different `HOST_UID` would
+> break Tier 1 writes. Because the host uid cannot write the image's
+> `/var/cache/restic`, this service also sets `RESTIC_CACHE_DIR=/tmp/restic-cache`
+> — a per-run index optimisation, not state.
+>
+> Get this wrong and the runner says so: a mounted-but-unreadable path raises
+> a `warning` alert and is never handed to restic. That guard matters because
+> **restic exits 3 on unreadable content but still SAVES A SNAPSHOT**
+> (`processed 0 files ... snapshot saved`, verified on 0.16.4) — so
+> `restic snapshots --tag config` would otherwise list reassuring entries
+> containing nothing. **Verify this backup with `restic ls`, never by snapshot
+> existence or exit code.**
+>
 > **Measured payload (2026-08-27), and the knob to turn if B2 grows:**
 >
 > | Path            | Raw    | After excludes |

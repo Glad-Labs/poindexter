@@ -61,6 +61,29 @@ done < "$BOOTSTRAP"
 HOST_I2C_GID="$(getent group i2c | cut -d: -f3 || true)"
 export HOST_I2C_GID="${HOST_I2C_GID:-65534}"
 
+# Host uid/gid → services that must act AS the operator rather than as an
+# image-baked account. Two consumers today: the auto-embed image's
+# EMBEDDER_UID/GID build args, and backup-offsite's `user:` (it reads the
+# config surface — ~/.poindexter is 0700 and bootstrap.toml 0600, owned by
+# the host user, so an image uid cannot traverse them; see poindexter#889 and
+# the config-snapshot notes in docs/operations/backups.md).
+#
+# The compose files carry a `:-1000` fallback so a bare `docker compose up`
+# still works, but 1000 is only a good guess — it is merely the conventional
+# first-user uid on Debian/Ubuntu. Deriving it here makes it correct by
+# construction on any host instead of correct by coincidence.
+#
+# Precedence, matching the CI-runner PEM block below: an already-exported
+# value wins, which includes `poindexter_host_uid = "..."` in bootstrap.toml
+# (the parser above uppercases every key into the environment). So an
+# operator can pin it explicitly, and everyone else gets their real uid.
+# SUDO_UID/GID before id -u: under `sudo` the latter is 0, which would hand
+# backup-offsite `user: "0:0"` and quietly run it as root. That still *works*
+# (root bypasses the permission checks this exists to satisfy), which is
+# exactly why it would go unnoticed — so prefer the invoking user's real id.
+export POINDEXTER_HOST_UID="${POINDEXTER_HOST_UID:-${SUDO_UID:-$(id -u)}}"
+export POINDEXTER_HOST_GID="${POINDEXTER_HOST_GID:-${SUDO_GID:-$(id -g)}}"
+
 # CI-runner GitHub App private key — the multiline PEM can't live in
 # bootstrap.toml (the parser above is single-line, and a PEM spans many lines),
 # so source it from a file at launch time, the same shape as the grafana /
