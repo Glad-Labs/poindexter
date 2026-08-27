@@ -2,143 +2,68 @@
   "count": 50,
   "events": [
     {
-      "id": 441387,
-      "timestamp": "2026-08-26T08:27:57.702672+00:00",
-      "event_type": "qa_pass_completed",
-      "source": "qa.aggregate",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "warning",
+      "id": 454711,
+      "timestamp": "2026-08-27T18:44:21.351333+00:00",
+      "event_type": "ragas_score",
+      "source": "ragas_eval",
+      "task_id": null,
+      "severity": "info",
       "details": {
-        "rescued": false,
-        "reviews": [
-          {
-            "score": 88,
-            "advisory": true,
-            "approved": false,
-            "provider": "citation_grounding",
-            "reviewer": "citation_grounding",
-            "feedback_preview": "2 named source(s) with no corpus match: a summary of the architecture; the breakdown of the offline/online split"
-          },
-          {
-            "score": 0,
-            "advisory": false,
-            "approved": false,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "1 critical issue(s) — first: Unlinked citation -- possible hallucinated reference: 'According to the breakdown of the offline'"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_brand_fabrication",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
-          },
-          {
-            "score": 90,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_g_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) The response aligns well with the evaluation steps. Each paragraph directly relates to the input topic, elaborating on how Hugging Face's architecture support"
-          },
-          {
-            "score": 73.3,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_faithfulness",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) The score is 0.73 because there are several contradictions between the actual output and the retrieval context. The claim incorrectly attributes the search pr"
-          },
-          {
-            "score": 72.8,
-            "advisory": true,
-            "approved": true,
-            "provider": "ragas",
-            "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.68, context_precision=0.50, faithfulness=1.00"
-          },
-          {
-            "score": 80,
-            "advisory": true,
-            "approved": true,
-            "provider": "vision_gate",
-            "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=80, overall=80. [75] v/images/featured/79f39c4a-d3a273d5.webp: Abstract digital network represents distributed data structures relevant to hybr;"
-          },
-          {
-            "score": 100,
-            "advisory": false,
-            "approved": true,
-            "provider": "http_head",
-            "reviewer": "citation_verifier",
-            "feedback_preview": "All 2 external URL(s) verified alive"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "unlinked_attribution",
-            "reviewer": "unlinked_attribution",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
-          },
-          {
-            "score": 95.7,
-            "advisory": true,
-            "approved": true,
-            "provider": "self_consistency_gate",
-            "reviewer": "self_consistency",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.957 across 3 samples (threshold=0.55) PASS"
-          },
-          {
-            "score": 17.4,
-            "advisory": true,
-            "approved": true,
-            "provider": "content_originality_gate",
-            "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) content original — nearest published post 'why-kv-cache-quantization-matters-for-long-context-ce1f7499' at worst-chunk cosine 0.83"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "title_coherence_gate",
-            "reviewer": "title_coherence",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: 110,000 Papers, One Search Bar: Inside Papers with Code's Hybrid Retrieval Stack] The title accurately reflects the article's focus on the technical i"
-          }
-        ],
-        "approved": false,
-        "terminal": true,
-        "final_score": 55.56,
-        "reviewer_count": 12,
-        "schema_version": 1,
-        "gating_rail_count": 2,
-        "qa_all_rail_score": 81.91,
-        "approval_threshold": 80,
-        "advisory_rail_count": 10,
-        "qa_rewrite_attempts": 0
+        "score": 0.8717,
+        "topic": "Agent Rollback and Checkpoint Patterns: A Reference",
+        "faithfulness": 1,
+        "metric_count": 2,
+        "answer_relevancy": 0.7434,
+        "context_precision": -1
       }
     },
     {
-      "id": 441386,
-      "timestamp": "2026-08-26T08:27:57.691284+00:00",
-      "event_type": "qa_flagged_surfaced",
-      "source": "qa.aggregate",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "warning",
+      "id": 454538,
+      "timestamp": "2026-08-27T18:17:12.322110+00:00",
+      "event_type": "image_style_picked",
+      "source": "stages.source_featured_image",
+      "task_id": "b643a498-095a-48e8-b116-104c02a0ef3a",
+      "severity": "info",
       "details": {
-        "attempts": 0,
-        "threshold": 80,
-        "vetoed_by": [
-          "programmatic_validator"
-        ],
-        "final_score": 55.56
+        "style": "dark glassmorphism UI design",
+        "topic": "Most Popular Java Frameworks in 2026"
       }
     },
     {
-      "id": 441314,
-      "timestamp": "2026-08-26T08:17:31.134323+00:00",
+      "id": 454470,
+      "timestamp": "2026-08-27T18:07:37.632046+00:00",
+      "event_type": "writer_self_review_pass",
+      "source": "content_router",
+      "task_id": "b643a498-095a-48e8-b116-104c02a0ef3a",
+      "severity": "info",
+      "details": {
+        "enabled": true,
+        "revised": false,
+        "contradictions_found": 0
+      }
+    },
+    {
+      "id": 454422,
+      "timestamp": "2026-08-27T18:00:26.815789+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "substitute",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 6,
+        "duration_s": 6,
+        "qa_outcome": "substitute"
+      }
+    },
+    {
+      "id": 454421,
+      "timestamp": "2026-08-27T18:00:26.815176+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -149,15 +74,245 @@
         "source": "pexels",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
+        "qa_score": 90,
+        "shot_idx": 5,
+        "duration_s": 6,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454420,
+      "timestamp": "2026-08-27T18:00:26.814384+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
         "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454419,
+      "timestamp": "2026-08-27T18:00:26.813517+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 3,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454418,
+      "timestamp": "2026-08-27T18:00:26.812581+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 60,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454417,
+      "timestamp": "2026-08-27T18:00:26.811627+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 85,
+        "shot_idx": 1,
+        "duration_s": 4.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454416,
+      "timestamp": "2026-08-27T18:00:26.809801+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "substitute",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "substitute"
+      }
+    },
+    {
+      "id": 454410,
+      "timestamp": "2026-08-27T18:00:15.078435+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "b643a498-095a-48e8-b116-104c02a0ef3a",
+      "severity": "info",
+      "details": {
+        "topic": "Most Popular Java Frameworks in 2026",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 454385,
+      "timestamp": "2026-08-27T17:57:43.697675+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "warning",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": false,
+        "status": "fail",
+        "attempts": 3,
+        "rejected": true,
+        "threshold": 6,
+        "text_chars": 11,
+        "attempt_scores": [
+          49,
+          11,
+          210
+        ]
+      }
+    },
+    {
+      "id": 454382,
+      "timestamp": "2026-08-27T17:57:27.835232+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 454380,
+      "timestamp": "2026-08-27T17:57:25.902950+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 454378,
+      "timestamp": "2026-08-27T17:57:20.956800+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 454377,
+      "timestamp": "2026-08-27T17:57:19.009739+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "warning",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": false,
+        "status": "fail",
+        "attempts": 3,
+        "rejected": true,
+        "threshold": 6,
+        "text_chars": 13,
+        "attempt_scores": [
+          77,
+          13,
+          40
+        ]
+      }
+    },
+    {
+      "id": 454356,
+      "timestamp": "2026-08-27T17:53:31.244850+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 90,
         "shot_idx": 11,
         "duration_s": 23.3,
         "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441313,
-      "timestamp": "2026-08-26T08:17:31.131994+00:00",
+      "id": 454355,
+      "timestamp": "2026-08-27T17:53:31.244040+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -168,15 +323,15 @@
         "source": "cli_demo",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 100,
+        "qa_score": null,
         "shot_idx": 10,
         "duration_s": 18.84,
-        "qa_outcome": "accepted"
+        "qa_outcome": "unscored"
       }
     },
     {
-      "id": 441312,
-      "timestamp": "2026-08-26T08:17:31.127809+00:00",
+      "id": 454354,
+      "timestamp": "2026-08-27T17:53:31.243478+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -194,8 +349,8 @@
       }
     },
     {
-      "id": 441311,
-      "timestamp": "2026-08-26T08:17:31.127138+00:00",
+      "id": 454353,
+      "timestamp": "2026-08-27T17:53:31.242894+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -206,15 +361,15 @@
         "source": "pexels",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 90,
+        "qa_score": 95,
         "shot_idx": 8,
         "duration_s": 20,
         "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441309,
-      "timestamp": "2026-08-26T08:17:31.126414+00:00",
+      "id": 454352,
+      "timestamp": "2026-08-27T17:53:31.242333+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -225,15 +380,15 @@
         "source": "cli_demo",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 20,
+        "qa_score": 85,
         "shot_idx": 7,
-        "duration_s": 16.8,
-        "qa_outcome": "fallback_holdover"
+        "duration_s": 16.68,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441308,
-      "timestamp": "2026-08-26T08:17:31.125372+00:00",
+      "id": 454351,
+      "timestamp": "2026-08-27T17:53:31.241840+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -244,15 +399,15 @@
         "source": "image_kenburns",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 95,
+        "qa_score": 90,
         "shot_idx": 6,
         "duration_s": 15,
         "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441307,
-      "timestamp": "2026-08-26T08:17:31.123951+00:00",
+      "id": 454350,
+      "timestamp": "2026-08-27T17:53:31.240942+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -270,8 +425,8 @@
       }
     },
     {
-      "id": 441306,
-      "timestamp": "2026-08-26T08:17:31.123356+00:00",
+      "id": 454349,
+      "timestamp": "2026-08-27T17:53:31.240338+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -282,34 +437,34 @@
         "source": "cli_demo",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 95,
+        "qa_score": 85,
         "shot_idx": 4,
         "duration_s": 5.8,
         "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441305,
-      "timestamp": "2026-08-26T08:17:31.122802+00:00",
+      "id": 454348,
+      "timestamp": "2026-08-27T17:53:31.239844+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
       "severity": "info",
       "details": {
-        "rung": "substitute",
+        "rung": "primary",
         "error": null,
         "source": "generative",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": null,
+        "qa_score": 95,
         "shot_idx": 3,
         "duration_s": 20,
-        "qa_outcome": "substitute"
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 441304,
-      "timestamp": "2026-08-26T08:17:31.122203+00:00",
+      "id": 454347,
+      "timestamp": "2026-08-27T17:53:31.239224+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -327,8 +482,8 @@
       }
     },
     {
-      "id": 441303,
-      "timestamp": "2026-08-26T08:17:31.121145+00:00",
+      "id": 454346,
+      "timestamp": "2026-08-27T17:53:31.237732+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -346,8 +501,8 @@
       }
     },
     {
-      "id": 441302,
-      "timestamp": "2026-08-26T08:17:31.119369+00:00",
+      "id": 454344,
+      "timestamp": "2026-08-27T17:53:31.236024+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -365,8 +520,8 @@
       }
     },
     {
-      "id": 441266,
-      "timestamp": "2026-08-26T08:12:18.580778+00:00",
+      "id": 454316,
+      "timestamp": "2026-08-27T17:49:51.803845+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
       "task_id": null,
@@ -378,17 +533,17 @@
         "attempts": 3,
         "rejected": true,
         "threshold": 6,
-        "text_chars": 14,
+        "text_chars": 20,
         "attempt_scores": [
-          51,
-          14,
-          43
+          35,
+          20,
+          72
         ]
       }
     },
     {
-      "id": 441265,
-      "timestamp": "2026-08-26T08:12:11.315098+00:00",
+      "id": 454315,
+      "timestamp": "2026-08-27T17:49:44.898282+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
       "task_id": null,
@@ -407,8 +562,8 @@
       }
     },
     {
-      "id": 441264,
-      "timestamp": "2026-08-26T08:12:06.359056+00:00",
+      "id": 454314,
+      "timestamp": "2026-08-27T17:49:40.224888+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
       "task_id": null,
@@ -427,30 +582,8 @@
       }
     },
     {
-      "id": 441263,
-      "timestamp": "2026-08-26T08:12:00.949836+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": null,
-      "severity": "warning",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": false,
-        "status": "fail",
-        "attempts": 3,
-        "rejected": true,
-        "threshold": 6,
-        "text_chars": 12,
-        "attempt_scores": [
-          156,
-          12,
-          28
-        ]
-      }
-    },
-    {
-      "id": 441262,
-      "timestamp": "2026-08-26T08:11:54.359081+00:00",
+      "id": 454313,
+      "timestamp": "2026-08-27T17:49:35.108689+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
       "task_id": null,
@@ -469,8 +602,8 @@
       }
     },
     {
-      "id": 441261,
-      "timestamp": "2026-08-26T08:11:49.329594+00:00",
+      "id": 454312,
+      "timestamp": "2026-08-27T17:49:33.106126+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
       "task_id": null,
@@ -489,27 +622,11 @@
       }
     },
     {
-      "id": 441214,
-      "timestamp": "2026-08-26T08:05:46.078407+00:00",
-      "event_type": "ragas_score",
-      "source": "ragas_eval",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "score": 0.7278,
-        "topic": "How Hugging Face Inference Endpoints, Jobs, and Buckets Power Search on Papers with Code",
-        "faithfulness": 1,
-        "metric_count": 3,
-        "answer_relevancy": 0.6833,
-        "context_precision": 0.5
-      }
-    },
-    {
-      "id": 441155,
-      "timestamp": "2026-08-26T07:56:43.905291+00:00",
+      "id": 454308,
+      "timestamp": "2026-08-27T17:49:28.195532+00:00",
       "event_type": "image_ocr_gate_result",
       "source": "image_gen_server",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
+      "task_id": null,
       "severity": "info",
       "details": {
         "model": "z_image_turbo",
@@ -525,512 +642,8 @@
       }
     },
     {
-      "id": 441111,
-      "timestamp": "2026-08-26T07:50:43.976847+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "style": "dramatic dark silhouette",
-        "topic": "How Hugging Face Inference Endpoints, Jobs, and Buckets Power Search on Papers with Code"
-      }
-    },
-    {
-      "id": 441110,
-      "timestamp": "2026-08-26T07:50:43.242313+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 441109,
-      "timestamp": "2026-08-26T07:50:37.716806+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 3,
-        "attempt_scores": [
-          3
-        ]
-      }
-    },
-    {
-      "id": 441108,
-      "timestamp": "2026-08-26T07:50:31.871557+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 441095,
-      "timestamp": "2026-08-26T07:47:46.403080+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
-      }
-    },
-    {
-      "id": 441067,
-      "timestamp": "2026-08-26T07:44:01.646234+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "79f39c4a-c7a3-4ed9-8065-4a1b40f0cfd4",
-      "severity": "info",
-      "details": {
-        "topic": "How Hugging Face Inference Endpoints, Jobs, and Buckets Power Search on Papers with Code",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 441066,
-      "timestamp": "2026-08-26T07:43:34.959247+00:00",
-      "event_type": "template_completed",
-      "source": "content_router",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "ok": true,
-        "records": [
-          "stage.verify_task",
-          "content.generate_draft",
-          "content.generate_title",
-          "content.check_title_originality",
-          "content.normalize_draft",
-          "atoms.approval_gate",
-          "stage.writer_self_review",
-          "stage.resolve_internal_link_placeholders",
-          "content.reconcile_citations",
-          "content.llm_reconcile_citations",
-          "content.inject_affiliate_links",
-          "stage.quality_evaluation",
-          "stage.url_validation",
-          "content.plan_image_markers",
-          "content.generate_images",
-          "content.inject_images",
-          "stage.source_featured_image",
-          "stage.caption_images",
-          "qa.programmatic",
-          "qa.critic",
-          "qa.deepeval",
-          "qa.ragas",
-          "qa.vision",
-          "qa.topic_delivery",
-          "qa.citations",
-          "qa.unlinked_attribution",
-          "qa.consistency",
-          "qa.self_consistency",
-          "qa.content_originality",
-          "qa.title_coherence",
-          "qa.self_claim",
-          "qa.web_factcheck",
-          "qa.aggregate",
-          "seo.generate_all_metadata",
-          "stage.generate_media_scripts",
-          "stage.generate_video_shot_list",
-          "stage.review_video_shot_list",
-          "stage.capture_training_data",
-          "content.compile_meta",
-          "content.persist_task",
-          "social.generate_drafts",
-          "content.record_pipeline_version",
-          "atoms.approval_gate",
-          "content.evaluate_auto_publish"
-        ],
-        "template": "canonical_blog",
-        "halted_at": null
-      }
-    },
-    {
-      "id": 441065,
-      "timestamp": "2026-08-26T07:43:34.714202+00:00",
-      "event_type": "auto_publish_gate",
-      "source": "content.evaluate_auto_publish",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "reason": "quality_score 98.0 >= 85.0, 5/5 trailing clean runs",
-        "dry_run": true,
-        "threshold": 85,
-        "gate_state": "pass",
-        "would_fire": true,
-        "quality_score": 98,
-        "required_clean_runs": 5,
-        "trailing_clean_runs": 5
-      }
-    },
-    {
-      "id": 440967,
-      "timestamp": "2026-08-26T07:29:45.369935+00:00",
-      "event_type": "qa_pass_completed",
-      "source": "qa.aggregate",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "rescued": false,
-        "reviews": [
-          {
-            "score": 95,
-            "advisory": false,
-            "approved": true,
-            "provider": "programmatic",
-            "reviewer": "programmatic_validator",
-            "feedback_preview": "clean (no fabrication); 1 warning(s)"
-          },
-          {
-            "score": 98,
-            "advisory": false,
-            "approved": true,
-            "provider": "ollama",
-            "reviewer": "ollama_critic",
-            "feedback_preview": "The article is exceptionally well-executed. It successfully bridges the gap between high-level industry data (JLL, CBRE) and actionable insights for developers. The narrative arc—moving from macro con"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_brand_fabrication",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) No fabrication patterns matched"
-          },
-          {
-            "score": 90,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_g_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) The response aligns well with the evaluation steps. Each paragraph of the actual output directly relates to and expands upon the input topic, ensuring relevan"
-          },
-          {
-            "score": 78.9,
-            "advisory": true,
-            "approved": true,
-            "provider": "deepeval",
-            "reviewer": "deepeval_faithfulness",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) The score is 0.79 because the actual output incorrectly attributes supply issues affecting prices and availability solely to cloud trends rather than data cen"
-          },
-          {
-            "score": 92.7,
-            "advisory": true,
-            "approved": true,
-            "provider": "ragas",
-            "reviewer": "ragas_eval",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) answer_relevancy=0.92, faithfulness=0.93"
-          },
-          {
-            "score": 87,
-            "advisory": true,
-            "approved": true,
-            "provider": "vision_gate",
-            "reviewer": "image_relevance",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) Vision QA avg=88, overall=87. [90] v/images/featured/bc6f5fc9-0825b8d6.webp: First image depicts a detailed data center infrastructure with servers and power;"
-          },
-          {
-            "score": 95,
-            "advisory": false,
-            "approved": true,
-            "provider": "consistency_gate",
-            "reviewer": "topic_delivery",
-            "feedback_preview": "The article faithfully delivers on the topic by providing specific, data-backed trends (vacancy rates, power bottlenecks, AI workload percentages) and predictions for 2025."
-          },
-          {
-            "score": 100,
-            "advisory": false,
-            "approved": true,
-            "provider": "http_head",
-            "reviewer": "citation_verifier",
-            "feedback_preview": "All 5 external URL(s) verified alive"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "unlinked_attribution",
-            "reviewer": "unlinked_attribution",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) All named-source attributions are linked or corpus-matched"
-          },
-          {
-            "score": 98.1,
-            "advisory": true,
-            "approved": true,
-            "provider": "self_consistency_gate",
-            "reviewer": "self_consistency",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) self-consistency: mean pairwise cosine=0.981 across 3 samples (threshold=0.55) PASS"
-          },
-          {
-            "score": 14.4,
-            "advisory": true,
-            "approved": true,
-            "provider": "content_originality_gate",
-            "reviewer": "content_originality",
-            "feedback_preview": "[advisory] (failed, not required_to_pass) content near-duplicate of published post 'database-migrations-without-downtime-a-battle-test-d52d7c36' (worst-chunk cosine 0.86 > 0.83)"
-          },
-          {
-            "score": 100,
-            "advisory": true,
-            "approved": true,
-            "provider": "title_coherence_gate",
-            "reviewer": "title_coherence",
-            "feedback_preview": "[advisory] (passed, not required_to_pass) [title: 97 Gigawatts, $3 Trillion, Zero Vacancy: Inside the 2025 Data Center Crunch] The title directly references the specific figures (97 GW and $3 trillion"
-          }
-        ],
-        "approved": true,
-        "terminal": true,
-        "final_score": 97.87,
-        "reviewer_count": 13,
-        "schema_version": 1,
-        "gating_rail_count": 4,
-        "qa_all_rail_score": 86.77,
-        "approval_threshold": 80,
-        "advisory_rail_count": 9,
-        "qa_rewrite_attempts": 0
-      }
-    },
-    {
-      "id": 440956,
-      "timestamp": "2026-08-26T07:27:05.905613+00:00",
-      "event_type": "ragas_score",
-      "source": "ragas_eval",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "score": 0.927,
-        "topic": "2025 Data Center Industry Trends & Predictions",
-        "faithfulness": 0.9302,
-        "metric_count": 2,
-        "answer_relevancy": 0.9237,
-        "context_precision": -1
-      }
-    },
-    {
-      "id": 440871,
-      "timestamp": "2026-08-26T07:16:12.424446+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 440842,
-      "timestamp": "2026-08-26T07:10:33.248071+00:00",
-      "event_type": "image_style_picked",
-      "source": "stages.source_featured_image",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "style": "dramatic dark silhouette",
-        "topic": "2025 Data Center Industry Trends & Predictions"
-      }
-    },
-    {
-      "id": 440839,
-      "timestamp": "2026-08-26T07:10:32.057524+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 440832,
-      "timestamp": "2026-08-26T07:10:26.529787+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 440831,
-      "timestamp": "2026-08-26T07:10:20.389048+00:00",
-      "event_type": "image_ocr_gate_result",
-      "source": "image_gen_server",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "model": "z_image_turbo",
-        "passed": true,
-        "status": "pass",
-        "attempts": 1,
-        "rejected": false,
-        "threshold": 6,
-        "text_chars": 0,
-        "attempt_scores": [
-          0
-        ]
-      }
-    },
-    {
-      "id": 440817,
-      "timestamp": "2026-08-26T07:07:38.208142+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "primary",
-        "error": null,
-        "source": "pexels",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": 95,
-        "shot_idx": 11,
-        "duration_s": 23.3,
-        "qa_outcome": "accepted"
-      }
-    },
-    {
-      "id": 440816,
-      "timestamp": "2026-08-26T07:07:38.207596+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "primary",
-        "error": null,
-        "source": "cli_demo",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": 90,
-        "shot_idx": 10,
-        "duration_s": 18.84,
-        "qa_outcome": "accepted"
-      }
-    },
-    {
-      "id": 440815,
-      "timestamp": "2026-08-26T07:07:38.207023+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "substitute",
-        "error": null,
-        "source": "generative",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": null,
-        "shot_idx": 9,
-        "duration_s": 20,
-        "qa_outcome": "substitute"
-      }
-    },
-    {
-      "id": 440814,
-      "timestamp": "2026-08-26T07:07:38.206277+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "primary",
-        "error": null,
-        "source": "pexels",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": 90,
-        "shot_idx": 8,
-        "duration_s": 20,
-        "qa_outcome": "accepted"
-      }
-    },
-    {
-      "id": 440812,
-      "timestamp": "2026-08-26T07:07:38.205375+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "primary",
-        "error": null,
-        "source": "cli_demo",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": 20,
-        "shot_idx": 7,
-        "duration_s": 16.8,
-        "qa_outcome": "fallback_holdover"
-      }
-    },
-    {
-      "id": 440811,
-      "timestamp": "2026-08-26T07:07:38.204348+00:00",
+      "id": 454112,
+      "timestamp": "2026-08-27T17:20:03.689418+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -1043,32 +656,248 @@
         "success": true,
         "qa_score": null,
         "shot_idx": 6,
-        "duration_s": 15,
+        "duration_s": 6,
         "qa_outcome": "substitute"
       }
     },
     {
-      "id": 440810,
-      "timestamp": "2026-08-26T07:07:38.203414+00:00",
+      "id": 454111,
+      "timestamp": "2026-08-27T17:20:03.685787+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
       "severity": "info",
       "details": {
-        "rung": "substitute",
+        "rung": "primary",
         "error": null,
-        "source": "image_gen",
+        "source": "pexels",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": null,
+        "qa_score": 95,
         "shot_idx": 5,
-        "duration_s": 20,
-        "qa_outcome": "substitute"
+        "duration_s": 6,
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 440809,
-      "timestamp": "2026-08-26T07:07:38.202364+00:00",
+      "id": 454110,
+      "timestamp": "2026-08-27T17:20:03.681989+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 4,
+        "duration_s": 5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454109,
+      "timestamp": "2026-08-27T17:20:03.678095+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": null,
+        "shot_idx": 3,
+        "duration_s": 5,
+        "qa_outcome": "unscored"
+      }
+    },
+    {
+      "id": 454108,
+      "timestamp": "2026-08-27T17:20:03.672551+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 30,
+        "shot_idx": 2,
+        "duration_s": 5,
+        "qa_outcome": "fallback_holdover"
+      }
+    },
+    {
+      "id": 454107,
+      "timestamp": "2026-08-27T17:20:03.665113+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "generative",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 1,
+        "duration_s": 4.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454106,
+      "timestamp": "2026-08-27T17:20:03.656396+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "image_kenburns",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 95,
+        "shot_idx": 0,
+        "duration_s": 2.5,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454074,
+      "timestamp": "2026-08-27T17:14:36.154163+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "warning",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": false,
+        "status": "fail",
+        "attempts": 3,
+        "rejected": true,
+        "threshold": 6,
+        "text_chars": 106,
+        "attempt_scores": [
+          106,
+          187,
+          142
+        ]
+      }
+    },
+    {
+      "id": 454068,
+      "timestamp": "2026-08-27T17:14:20.705998+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 454067,
+      "timestamp": "2026-08-27T17:14:18.815264+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 0,
+        "attempt_scores": [
+          0
+        ]
+      }
+    },
+    {
+      "id": 454066,
+      "timestamp": "2026-08-27T17:14:13.985904+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 1,
+        "attempt_scores": [
+          1
+        ]
+      }
+    },
+    {
+      "id": 454065,
+      "timestamp": "2026-08-27T17:14:12.043772+00:00",
+      "event_type": "image_ocr_gate_result",
+      "source": "image_gen_server",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "model": "z_image_turbo",
+        "passed": true,
+        "status": "pass",
+        "attempts": 1,
+        "rejected": false,
+        "threshold": 6,
+        "text_chars": 5,
+        "attempt_scores": [
+          5
+        ]
+      }
+    },
+    {
+      "id": 454038,
+      "timestamp": "2026-08-27T17:11:12.611676+00:00",
+      "event_type": "video_shot_rendered",
+      "source": "shot_list_renderer",
+      "task_id": null,
+      "severity": "info",
+      "details": {
+        "rung": "primary",
+        "error": null,
+        "source": "pexels",
+        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
+        "success": true,
+        "qa_score": 90,
+        "shot_idx": 11,
+        "duration_s": 23.3,
+        "qa_outcome": "accepted"
+      }
+    },
+    {
+      "id": 454037,
+      "timestamp": "2026-08-27T17:11:12.610401+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -1080,71 +909,33 @@
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
         "qa_score": 95,
-        "shot_idx": 4,
-        "duration_s": 5.8,
+        "shot_idx": 10,
+        "duration_s": 18.84,
         "qa_outcome": "accepted"
       }
     },
     {
-      "id": 440808,
-      "timestamp": "2026-08-26T07:07:38.201724+00:00",
+      "id": 454036,
+      "timestamp": "2026-08-27T17:11:12.608646+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
       "severity": "info",
       "details": {
-        "rung": "substitute",
+        "rung": "primary",
         "error": null,
         "source": "generative",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": null,
-        "shot_idx": 3,
+        "qa_score": 85,
+        "shot_idx": 9,
         "duration_s": 20,
-        "qa_outcome": "substitute"
+        "qa_outcome": "accepted"
       }
     },
     {
-      "id": 440807,
-      "timestamp": "2026-08-26T07:07:38.201091+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "substitute",
-        "error": null,
-        "source": "image_kenburns",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": null,
-        "shot_idx": 2,
-        "duration_s": 22,
-        "qa_outcome": "substitute"
-      }
-    },
-    {
-      "id": 440806,
-      "timestamp": "2026-08-26T07:07:38.200389+00:00",
-      "event_type": "video_shot_rendered",
-      "source": "shot_list_renderer",
-      "task_id": null,
-      "severity": "info",
-      "details": {
-        "rung": "substitute",
-        "error": null,
-        "source": "generative",
-        "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
-        "success": true,
-        "qa_score": null,
-        "shot_idx": 1,
-        "duration_s": 20,
-        "qa_outcome": "substitute"
-      }
-    },
-    {
-      "id": 440805,
-      "timestamp": "2026-08-26T07:07:38.198537+00:00",
+      "id": 454035,
+      "timestamp": "2026-08-27T17:11:12.607676+00:00",
       "event_type": "video_shot_rendered",
       "source": "shot_list_renderer",
       "task_id": null,
@@ -1155,25 +946,12 @@
         "source": "pexels",
         "post_id": "4ab9b89b-486a-444a-9894-8edd8b813331",
         "success": true,
-        "qa_score": 65,
-        "shot_idx": 0,
-        "duration_s": 15,
-        "qa_outcome": "regenerated"
-      }
-    },
-    {
-      "id": 440757,
-      "timestamp": "2026-08-26T07:01:50.545444+00:00",
-      "event_type": "writer_self_review_pass",
-      "source": "content_router",
-      "task_id": "bc6f5fc9-6ab7-44ef-8f11-cfec699f00c0",
-      "severity": "info",
-      "details": {
-        "enabled": true,
-        "revised": false,
-        "contradictions_found": 0
+        "qa_score": 95,
+        "shot_idx": 8,
+        "duration_s": 20,
+        "qa_outcome": "accepted"
       }
     }
   ],
-  "server_time": "2026-08-26T08:36:02.863844+00:00"
+  "server_time": "2026-08-27T18:44:29.156259+00:00"
 }
