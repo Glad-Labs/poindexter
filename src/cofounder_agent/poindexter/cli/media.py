@@ -33,7 +33,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import looks_like_full_uuid, resolve_uuid_prefix
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,7 @@ def _run(coro):
 
 async def _make_pool():
     """Open a tiny pool for one CLI invocation."""
-    import asyncpg
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 async def _make_site_config(pool):
@@ -101,7 +100,7 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
                 pool, medium=medium, limit=limit,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
         return rows
 
     rows = _run(_go())
@@ -241,7 +240,7 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
             )
             return resolved
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         resolved_id = _run(_go())
@@ -314,7 +313,7 @@ async def _resolve_open_path(post_id: str, medium: str) -> tuple[str, Path | Non
             pool, resolved, medium,
         )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if storage_path is None:
         return resolved, None
@@ -412,7 +411,7 @@ async def _make_bakeoff_site_config():
     try:
         return await _make_site_config(pool)
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
 
 def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str, Any]:
@@ -623,16 +622,15 @@ def cmd_demos_bake(slugs: tuple[str, ...], out_dir: str | None, timeout: int):
     async def _resolve_target() -> Path:
         if out_dir:
             return Path(out_dir)
-        import asyncpg
 
         from services.site_config import SiteConfig
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             sc = SiteConfig()
             await sc.reload(pool)
             return clip_dir(sc)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         target = _run(_resolve_target())

@@ -31,16 +31,14 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 logger = logging.getLogger(__name__)
 
 
 async def _open_ctx() -> tuple[Any, Any]:
     """Pool + a loaded SiteConfig (pool-backed so get_secret works)."""
-    import asyncpg
-
-    from ._bootstrap import resolve_dsn
-
-    pool = await asyncpg.create_pool(resolve_dsn(), min_size=1, max_size=2)
+    pool = await open_cli_pool()
     from services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
@@ -76,7 +74,7 @@ async def _run_status(limit: int, as_json: bool) -> None:
 
         payload = await cli_status(pool, site_config, limit=limit)
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -125,7 +123,7 @@ async def _run_sync_cmd(as_json: bool) -> None:
         except ProDeliveryConfigError as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(outcome.as_metrics(), indent=2))
@@ -159,7 +157,7 @@ async def _run_link(subscription: str, username: str, as_json: bool) -> None:
         except (ValueError, ProDeliveryConfigError) as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -189,7 +187,7 @@ async def _run_unlink(subscription: str, as_json: bool) -> None:
         except (ValueError, ProDeliveryConfigError) as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -226,7 +224,7 @@ async def _run_relay_status(as_json: bool) -> None:
 
         payload = await cli_relay_status(pool, site_config)
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -278,7 +276,7 @@ async def _run_relay_register(relay_url: str, as_json: bool) -> None:
         except (ValueError, ProDeliveryConfigError, RuntimeError) as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -315,7 +313,7 @@ async def _run_relay_remove(webhook_id: str, as_json: bool) -> None:
         except (ValueError, ProDeliveryConfigError, RuntimeError) as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -382,7 +380,7 @@ async def _run_apply(
         except ValueError as exc:
             raise click.ClickException(str(exc)) from exc
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))

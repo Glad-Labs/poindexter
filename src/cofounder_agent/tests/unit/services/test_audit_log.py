@@ -29,6 +29,7 @@ from services.audit_log import (
     audit_log_bg,
     get_audit_logger,
     init_global_audit_logger,
+    reset_global_audit_logger,
 )
 
 # ---------------------------------------------------------------------------
@@ -296,6 +297,55 @@ class TestGlobalAuditLogger:
             # Allow the scheduled task to run
             await asyncio.sleep(0.05)
             pool.execute.assert_awaited_once()
+        finally:
+            mod._global_audit_logger = original
+
+    def test_init_quiet_logs_at_debug_not_info(self, caplog):
+        import logging
+
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            with caplog.at_level(logging.DEBUG, logger="services.audit_log"):
+                init_global_audit_logger(_make_pool(), quiet=True)
+            infos = [r for r in caplog.records if r.levelno >= logging.INFO]
+            assert not infos, "quiet init must not log at info (CLI stderr noise)"
+        finally:
+            mod._global_audit_logger = original
+
+    def test_reset_clears_matching_pool(self):
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            pool = _make_pool()
+            init_global_audit_logger(pool)
+            assert reset_global_audit_logger(pool) is True
+            assert get_audit_logger() is None
+        finally:
+            mod._global_audit_logger = original
+
+    def test_reset_leaves_non_matching_pool(self):
+        """A teardown seam (close_cli_pool) must not clobber a logger some
+        other context re-initialised with its own pool."""
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            owner_pool = _make_pool()
+            logger = init_global_audit_logger(owner_pool)
+            assert reset_global_audit_logger(_make_pool()) is False
+            assert get_audit_logger() is logger
+        finally:
+            mod._global_audit_logger = original
+
+    def test_reset_none_is_unconditional(self):
+        import services.audit_log as mod
+        original = mod._global_audit_logger
+        try:
+            init_global_audit_logger(_make_pool())
+            assert reset_global_audit_logger() is True
+            assert get_audit_logger() is None
+            # And a second reset on an empty global is a no-op False.
+            assert reset_global_audit_logger() is False
         finally:
             mod._global_audit_logger = original
 

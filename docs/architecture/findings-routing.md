@@ -22,6 +22,32 @@ The finding persists whether or not any delivery channel works. That shape exist
 the predecessor didn't have it: the old path filed Gitea issues, Gitea was decommissioned
 2026-04-30, and every quality finding vanished silently for 8 days.
 
+## Execution contexts — who wires the writer
+
+`emit_finding` is sync fire-and-forget: it delegates to `audit_log_bg`, which needs the
+module-global `AuditLogger` plus a running event loop. Three contexts provide it:
+
+| Context                 | Who initialises the global logger                        |
+| ----------------------- | -------------------------------------------------------- |
+| Worker / scheduled jobs | `DatabaseService.initialize()` (worker lifespan)         |
+| Prefect flow subprocess | same — the flow builds its own `DatabaseService` per run |
+| `poindexter <cmd>` CLI  | `open_cli_pool()` in `poindexter/cli/_bootstrap.py`      |
+
+The CLI row is the newest (2026-08-26): CLI commands used to open bare asyncpg pools with
+no logger at all, so any CLI-invoked service that emitted a finding lost it — discovered
+when `poindexter pro sync` dropped a `pro_delivery_action_needed` warn finding during the
+first live Pro purchase. Every CLI pool now goes through `open_cli_pool` /
+`close_cli_pool`; the close side detaches the sink and **drains in-flight writes before
+closing the pool**, because a fire-and-forget write scheduled moments before teardown
+otherwise dies on `InterfaceError('pool is closing')` (the GlitchTip #863 race —
+`DatabaseService.close` drains for the same reason). Both halves are fail-soft: a broken
+audit seam never breaks the command.
+
+Still uncovered: contexts with no DB handle at all (unit tests, a CLI command that opens
+no pool, `integrations.py`'s single-connection commands — a shared bare connection can't
+safely take concurrent background writes). There a warn/critical finding drops **loudly**
+(error-level log → GlitchTip) per #303, but does not persist.
+
 ## Per-kind policy
 
 Four `app_settings` keys shape each kind, all optional:

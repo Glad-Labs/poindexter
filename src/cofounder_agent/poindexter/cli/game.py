@@ -32,20 +32,21 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 logger = logging.getLogger(__name__)
 
 _DOCKER_TIMEOUT_S = 30
 
 
 async def _open_pool() -> Any:
-    import asyncpg
 
     from ._bootstrap import resolve_dsn
 
     dsn = resolve_dsn()
     if not dsn:
         raise click.ClickException("No database_url — run `poindexter setup` first.")
-    return await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
+    return await open_cli_pool(dsn, timeout=8)
 
 
 async def _make_site_config(pool):
@@ -235,7 +236,7 @@ def game_on(hours: float | None, as_json: bool) -> None:
             )
             return payload
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         result = asyncio.run(_run())
@@ -268,7 +269,7 @@ def game_off(as_json: bool) -> None:
             status = await game_mode.disable(pool, site_config)
             return status.as_dict()
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     result = asyncio.run(_run())
     if as_json:
@@ -300,7 +301,7 @@ def game_status(as_json: bool) -> None:
             payload["configured_containers"] = list(names)
             return payload
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     result = asyncio.run(_run())
     if as_json:

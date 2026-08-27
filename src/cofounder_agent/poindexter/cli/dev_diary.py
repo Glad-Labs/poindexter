@@ -33,13 +33,14 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 logger = logging.getLogger(__name__)
 
 
 async def _open_pool() -> Any:
-    import asyncpg
 
-    from ._bootstrap import ensure_secret_key, resolve_dsn
+    from ._bootstrap import ensure_secret_key
 
     # Load POINDEXTER_SECRET_KEY from bootstrap.toml into env so any
     # downstream ``plugins.secrets.get_secret`` calls (DevDiarySource
@@ -47,7 +48,7 @@ async def _open_pool() -> Any:
     # this set at container start; bare ``poindexter <cmd>`` shells
     # don't — same fix as the finance CLI's _read_token helper.
     ensure_secret_key()
-    return await asyncpg.create_pool(resolve_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 @click.group(
@@ -101,7 +102,7 @@ async def _run_note(text: str, mood: str | None, niche: str, as_json: bool) -> N
             """,
             niche, text, mood,
         )
-    await pool.close()
+    await close_cli_pool(pool)
     payload = {
         "id": row["id"], "niche": niche, "note_date": str(row["note_date"]),
         "mood": mood, "note": text,
@@ -165,7 +166,7 @@ async def _run_notes(
                 """,
                 niche, last_n,
             )
-    await pool.close()
+    await close_cli_pool(pool)
     if as_json:
         click.echo(json.dumps([dict(r) for r in rows], indent=2, default=str))
         return
@@ -241,7 +242,7 @@ async def _run_trigger(lookback_hours: int) -> None:
                 "with 'poindexter dev-diary note \"...\"' for authentic voice."
             )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
 
 __all__ = ["dev_diary_group"]

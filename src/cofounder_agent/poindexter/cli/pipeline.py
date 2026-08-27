@@ -59,6 +59,7 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 from poindexter.cli._event_loop import (
     ensure_selector_event_loop_on_windows as _ensure_selector_event_loop_on_windows,
@@ -131,7 +132,6 @@ async def _build_resume_handles(site_config: Any) -> tuple[Any, Any]:
 
 
 async def _make_pool():
-    import asyncpg
 
     from poindexter.cli._bootstrap import ensure_secret_key
 
@@ -144,7 +144,7 @@ async def _make_pool():
     # upload + ISR revalidation silently skip, leaving a republish
     # half-propagated. Same fix as ``dev_diary._open_pool``.
     ensure_secret_key()
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 async def _make_site_config(pool):
@@ -264,7 +264,7 @@ def list_paused_command(limit: int, json_output: bool) -> None:
         try:
             return await _fetch_paused_rows(pool, limit)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         rows = _run(_impl())
@@ -314,7 +314,7 @@ def status_command(task_id: str, json_output: bool) -> None:
         try:
             return await _fetch_paused_row(pool, task_id)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         row = _run(_impl())
@@ -538,7 +538,7 @@ async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
     finally:
         if db_service is not None:
             await db_service.close()
-        await pool.close()
+        await close_cli_pool(pool)
 
 
 def _render_resume_result(result: dict[str, Any], json_output: bool) -> None:
@@ -605,7 +605,7 @@ def resume_command(
                 rows = await _fetch_paused_rows(pool, limit=None)
                 return [r["task_id"] for r in rows]
             finally:
-                await pool.close()
+                await close_cli_pool(pool)
 
         try:
             targets = _run(_resolve_all())
@@ -823,7 +823,7 @@ def regen_command(
         finally:
             if db_service is not None:
                 await db_service.close()
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         result = _run(_impl())
@@ -890,7 +890,7 @@ def qa_command(task_id: str, json_output: bool) -> None:
             feedback = await tasks_mcp.get_task_qa_feedback(pool, resolved)
             return {"task_id": resolved, "qa_feedback": feedback}
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         result = _run(_impl())

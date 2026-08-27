@@ -20,10 +20,11 @@ service that holds a resource gets a matching teardown here.
 
 Usage::
 
+    from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
     from poindexter.cli._lifecycle import container_for_cli
 
     async def _impl():
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             async with container_for_cli(pool) as container:
                 # Use container.foo_service.do_thing() once services
@@ -31,7 +32,7 @@ Usage::
                 # one fewer change to make per command.
                 ...
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 """
 
 from __future__ import annotations

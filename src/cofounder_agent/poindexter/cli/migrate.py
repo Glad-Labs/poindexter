@@ -27,6 +27,8 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -60,13 +62,12 @@ async def _make_pool():
     vars are accepted as the standard fallback inside
     ``resolve_database_url`` but no new ones are introduced.
     """
-    import asyncpg
 
     _ensure_brain_on_path()
     from brain.bootstrap import require_database_url
 
     dsn = require_database_url(source="poindexter migrate")
-    return await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    return await open_cli_pool(dsn)
 
 
 def _migrations_dir() -> Path:
@@ -182,7 +183,7 @@ def migrate_status(json_output: bool) -> None:
             await _ensure_migrations_table(pool)
             applied = await _fetch_applied(pool)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
         return applied
 
     try:
@@ -364,7 +365,7 @@ def migrate_up(to_target: str | None, json_output: bool) -> None:
                 "pending_after": pending_after,
             }
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         summary = _run(_impl())
@@ -545,7 +546,7 @@ def migrate_down(
                 "errors": errors,
             }
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         summary = _run(_impl())

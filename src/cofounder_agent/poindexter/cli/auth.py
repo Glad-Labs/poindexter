@@ -25,6 +25,8 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 
 def _read_bootstrap_value(key: str) -> str:
     """Inline ``~/.poindexter/bootstrap.toml`` reader.
@@ -63,33 +65,6 @@ def _read_bootstrap_value(key: str) -> str:
     return str(data.get(key) or "").strip()
 
 
-def _dsn() -> str:
-    """Resolve the DB DSN.
-
-    Order matches the rest of the codebase (CLAUDE.md §Configuration):
-    ``~/.poindexter/bootstrap.toml::database_url`` →
-    POINDEXTER_MEMORY_DSN → LOCAL_DATABASE_URL → DATABASE_URL.
-
-    Previously this skipped bootstrap.toml entirely and read env vars
-    directly — fine on the worker host (which exports nothing), but
-    broke for Matt locally when an env var was left pointing at an
-    unreachable cloud DSN (asyncpg → WinError 121 semaphore timeout).
-    """
-    dsn = _read_bootstrap_value("database_url") or (
-        os.getenv("POINDEXTER_MEMORY_DSN")
-        or os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
-    if not dsn:
-        raise RuntimeError(
-            "No DSN — set ~/.poindexter/bootstrap.toml::database_url "
-            "(preferred) or DATABASE_URL / LOCAL_DATABASE_URL / "
-            "POINDEXTER_MEMORY_DSN env var.",
-        )
-    return dsn
-
-
 def _run(coro):
     return asyncio.run(coro)
 
@@ -97,8 +72,7 @@ def _run(coro):
 async def _pool():
     """Open a small asyncpg pool — services.auth.oauth_issuer takes a
     pool, not a single connection."""
-    import asyncpg
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 def _bootstrap_path_for_secret_key() -> None:
@@ -229,7 +203,7 @@ def register_client(
             provider = PoindexterOAuthProvider(pool)
             await provider.register_client(client_info)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         click.echo("")
         click.echo(click.style("OAuth client registered.", fg="green", bold=True))
@@ -301,7 +275,7 @@ def list_clients(include_revoked: bool) -> None:
                     include_revoked,
                 )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         if not rows:
             click.echo("(no oauth_clients rows)")
@@ -350,7 +324,7 @@ def revoke_client(client_id: str) -> None:
                     client_id,
                 )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         # asyncpg returns a string like "UPDATE 1"
         if result.endswith("0"):
@@ -413,7 +387,7 @@ def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
             except InvalidScope as e:
                 raise click.ClickException(str(e)) from e
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         ttl = claims.expires_at - claims.issued_at
         click.echo(token)
@@ -486,7 +460,7 @@ async def _provision_consumer_client(
                 description=f"OAuth client_secret for {name} (Phase 2 #241)",
             )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     return client_id, client_secret
 
@@ -911,7 +885,7 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str, persist: bool) -> N
                         ),
                     )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         click.echo("")
         if provisioned_now:

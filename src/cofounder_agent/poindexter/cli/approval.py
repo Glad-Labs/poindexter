@@ -34,7 +34,7 @@ from typing import Any
 import click
 
 from poindexter.cli._aliases import deprecated_alias
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._prefix import fetch_prefix_candidates, looks_like_full_uuid
 
 
@@ -45,8 +45,7 @@ def _run(coro):
 async def _make_pool():
     """Open a tiny pool for one CLI invocation. Closed by the caller
     in a try/finally so we don't leak connections on errors."""
-    import asyncpg
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 async def _make_site_config(pool):
@@ -229,7 +228,7 @@ def approve_command(
                 pool=pool,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         resolved_id, result = _run(_impl())
@@ -309,7 +308,7 @@ def reject_command(
                 pool=pool,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         resolved_id, result = _run(_impl())
@@ -365,7 +364,7 @@ def list_pending_command(
         try:
             return await list_pending(pool=pool, gate_name=gate_name, limit=limit)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         rows = _run(_impl())
@@ -414,7 +413,7 @@ def show_pending_command(task_id: str, json_output: bool) -> None:
                 raise TaskNotFoundError(f"Task {task_id} not found")
             return await show_pending(pool=pool, task_id=resolved)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         row = _run(_impl())
@@ -473,7 +472,7 @@ def gates_list_command(json_output: bool) -> None:
             site_config = await _make_site_config(pool)
             return await list_gates(pool=pool, site_config=site_config)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         rows = _run(_impl())
@@ -552,7 +551,7 @@ def gates_set_command(gate_name: str, state: str, json_output: bool) -> None:
                 site_config=site_config,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         result = _run(_impl())

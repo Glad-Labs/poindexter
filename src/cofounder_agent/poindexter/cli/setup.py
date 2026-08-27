@@ -37,6 +37,8 @@ from pathlib import Path
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 
 def _import_bootstrap():
     """Ensure the repo root is on sys.path and return the bootstrap module.
@@ -99,17 +101,14 @@ async def _run_migrations(dsn: str) -> tuple[bool, str]:
     ``oauth_clients`` for step 4 OAuth provisioning).
     """
     try:
-        import asyncpg
-    except Exception as e:
-        return False, f"asyncpg not installed: {e}"
-
-    try:
         from services.migrations import run_migrations
     except Exception as e:
         return False, f"could not import migration runner: {e}"
 
     try:
-        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
+        # A missing asyncpg surfaces here too (open_cli_pool imports it),
+        # as "ModuleNotFoundError: No module named 'asyncpg'".
+        pool = await open_cli_pool(dsn, timeout=8)
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
@@ -174,7 +173,7 @@ async def _run_migrations(dsn: str) -> tuple[bool, str]:
             + seed_suffix,
         )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
 
 async def _check_migrations_status(dsn: str) -> tuple[bool, str]:
@@ -791,7 +790,6 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
     client via the matching ``poindexter auth migrate-*`` command,
     which the operator runs once per consumer.
     """
-    import asyncpg
     from mcp.shared.auth import OAuthClientInformationFull
     from pydantic import AnyUrl
 
@@ -818,7 +816,7 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
         client_name="poindexter-cli (initial)",
     )
 
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    pool = await open_cli_pool(dsn)
     try:
         provider = PoindexterOAuthProvider(pool)
         await provider.register_client(client_info)
@@ -832,7 +830,7 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
                 description="OAuth client_secret for poindexter CLI (initial setup #249)",
             )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     return client_id, client_secret
 

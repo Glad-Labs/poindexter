@@ -35,7 +35,7 @@ from typing import Any
 import click
 
 from poindexter.cli._aliases import deprecated_alias
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 from poindexter.cli.schedule import schedule_group
 
@@ -64,8 +64,7 @@ async def _resolve_post_id(pool: Any, post_id: str) -> str:
 
 
 async def _make_pool():
-    import asyncpg
-    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 async def _make_site_config(pool):
@@ -153,7 +152,7 @@ def approve_publish_command(
                 pool=pool,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         resolved_id, result = _run(_impl())
@@ -226,7 +225,7 @@ def reject_publish_command(
                 pool=pool,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         resolved_id, result = _run(_impl())
@@ -278,7 +277,7 @@ def list_pending_publish_command(
                 pool=pool, gate_name=gate_name, limit=limit,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         rows = _run(_impl())
@@ -322,7 +321,7 @@ def show_pending_publish_command(post_id: str, json_output: bool) -> None:
             resolved = await _resolve_post_id(pool, post_id)
             return await show_pending_publish(pool=pool, post_id=resolved)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         row = _run(_impl())

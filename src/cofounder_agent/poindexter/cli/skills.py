@@ -23,6 +23,7 @@ import json as _json
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 
 # ---------------------------------------------------------------------------
@@ -60,7 +61,6 @@ def import_skill_cmd(source: str, pack: str, force: bool) -> None:
     """
 
     async def _impl() -> None:
-        import asyncpg
 
         from services.skill_importer import SkillImportError, import_skill
 
@@ -68,7 +68,7 @@ def import_skill_cmd(source: str, pack: str, force: bool) -> None:
         site_config = None
         try:
             dsn = _dsn()
-            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+            pool = await open_cli_pool(dsn)
             from poindexter.cli._lifecycle import container_for_cli
 
             async with container_for_cli(pool) as container:
@@ -109,7 +109,7 @@ def import_skill_cmd(source: str, pack: str, force: bool) -> None:
             raise SystemExit(1) from exc
         finally:
             if pool is not None:
-                await pool.close()
+                await close_cli_pool(pool)
 
         action = "Updated" if result["updated"] else "Installed"
         click.echo(f"{action}: {result['name']}")
@@ -132,14 +132,13 @@ def list_skills_cmd(as_json: bool) -> None:
     """List all installed skills."""
 
     async def _impl() -> None:
-        import asyncpg
 
         from services.skill_importer import list_skills
 
         pool = None
         try:
             dsn = _dsn()
-            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+            pool = await open_cli_pool(dsn)
         except Exception as exc:  # noqa: BLE001
             # Disk-only mode is a legitimate fallback, but it answers a
             # DIFFERENT question than this command advertises: a filesystem
@@ -156,7 +155,7 @@ def list_skills_cmd(as_json: bool) -> None:
             skills = await list_skills(pool=pool)
         finally:
             if pool is not None:
-                await pool.close()
+                await close_cli_pool(pool)
 
         if as_json:
             click.echo(_json.dumps(skills, indent=2, default=str))
@@ -189,14 +188,13 @@ def remove_skill_cmd(name: str) -> None:
     """Remove an installed skill by name."""
 
     async def _impl() -> None:
-        import asyncpg
 
         from services.skill_importer import SkillImportError, remove_skill
 
         pool = None
         try:
             dsn = _dsn()
-            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+            pool = await open_cli_pool(dsn)
         except Exception as exc:  # noqa: BLE001
             # Without a pool, remove_skill unlinks the file but SKIPS the
             # catalog-row delete (guarded by `if pool is not None`), then
@@ -217,7 +215,7 @@ def remove_skill_cmd(name: str) -> None:
             raise SystemExit(1) from exc
         finally:
             if pool is not None:
-                await pool.close()
+                await close_cli_pool(pool)
 
         click.echo(f"Removed: {result['name']}")
         click.echo(f"  Path: {result['path']}")
@@ -239,7 +237,6 @@ def update_skill_cmd(name: str) -> None:
     """
 
     async def _impl() -> None:
-        import asyncpg
 
         from services.skill_importer import SkillImportError, import_skill
 
@@ -249,7 +246,7 @@ def update_skill_cmd(name: str) -> None:
             click.echo(f"Error: {exc}", err=True)
             raise SystemExit(1) from exc
 
-        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        pool = await open_cli_pool(dsn)
         try:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -295,7 +292,7 @@ def update_skill_cmd(name: str) -> None:
             click.echo(f"Error: {exc}", err=True)
             raise SystemExit(1) from exc
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
         click.echo(f"Updated: {result['name']}")
         click.echo(f"  Pack:     {result['pack']}")

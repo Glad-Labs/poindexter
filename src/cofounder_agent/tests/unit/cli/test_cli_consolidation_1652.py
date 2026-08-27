@@ -356,19 +356,22 @@ class TestScheduleStragglerRemoved:
         assert "SELECT key, value" not in src
 
     async def test_load_site_config_routes_through_settings_loader(self):
-        from poindexter.cli.schedule import _load_site_config, _SinglePool
+        # schedule.py hands _load_site_config the real shared CLI pool these
+        # days (_SinglePool was retired with the open_cli_pool audit seam);
+        # the contract under test is unchanged: settings come through
+        # SiteConfig.load's pool.fetch, not a hand-rolled query.
+        from poindexter.cli.schedule import _load_site_config
 
-        conn = MagicMock()
-        conn.fetch = AsyncMock(
+        pool = MagicMock()
+        pool.fetch = AsyncMock(
             return_value=[{"key": "publish_quiet_hours", "value": "22:00-07:00"}]
         )
-        pool = _SinglePool(conn)
 
         cfg = await _load_site_config(pool)
 
         # Loading still populates non-secret settings (behavior preserved).
         assert cfg.get("publish_quiet_hours") == "22:00-07:00"
-        conn.fetch.assert_awaited()
+        pool.fetch.assert_awaited()
 
 
 # ===========================================================================

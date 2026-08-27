@@ -59,7 +59,7 @@ import json
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from services import experiment_admin
 
 # ---------------------------------------------------------------------------
@@ -125,14 +125,13 @@ def experiments_list(
     the top.
     """
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await experiment_admin.list_experiments(
                 pool, status=status, niche=niche,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     rows = asyncio.run(_impl())
 
@@ -195,8 +194,7 @@ def experiments_create(
     - Unknown niche (caught by NicheService lookup before the INSERT).
     """
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await experiment_admin.create_experiment(
                 pool,
@@ -206,7 +204,7 @@ def experiments_create(
                 objective=objective,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         new_id = asyncio.run(_impl())
@@ -300,8 +298,7 @@ def experiments_add_variant(
         rag_config_parsed = parsed
 
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await experiment_admin.add_variant(
                 pool,
@@ -314,7 +311,7 @@ def experiments_add_variant(
                 rag_config=rag_config_parsed,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         new_id = asyncio.run(_impl())
@@ -356,12 +353,11 @@ def experiments_activate(key: str) -> None:
       an asyncpg ``UniqueViolationError`` traceback).
     """
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             await experiment_admin.activate_experiment(pool, key=key)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         asyncio.run(_impl())
@@ -408,12 +404,11 @@ def experiments_status(key: str, json_output: bool) -> None:
     you which one matters most.
     """
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await experiment_admin.get_scorecard(pool, key=key)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         exp, rows = asyncio.run(_impl())
@@ -529,14 +524,13 @@ def experiments_conclude(key: str, winner: str, note: str) -> None:
     actually promote the winning config to production.
     """
     async def _impl():
-        import asyncpg
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await experiment_admin.conclude_experiment(
                 pool, key=key, winner=winner, note=note,
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         exp, variant = asyncio.run(_impl())

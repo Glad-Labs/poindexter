@@ -106,3 +106,79 @@ def resolve_dsn() -> str:
             "DATABASE_URL env var.",
         )
     return dsn
+
+
+async def open_cli_pool(
+    dsn: str | None = None,
+    *,
+    min_size: int = 1,
+    max_size: int = 2,
+    **kwargs: object,
+):
+    """Open the CLI's asyncpg pool AND attach the global audit sink.
+
+    Every ``poindexter <cmd>`` that opens a DB pool goes through here
+    (paired with :func:`close_cli_pool`) instead of a bare
+    ``asyncpg.create_pool`` / ``pool.close()``.
+
+    Why: ``utils/findings.py::emit_finding`` → ``audit_log_bg`` writes
+    through a global ``AuditLogger`` that only ``DatabaseService`` used to
+    initialise — i.e. worker / Prefect contexts. A CLI-invoked service
+    that emitted a finding (``poindexter pro sync`` during the first live
+    Pro purchase, 2026-08-26) had no global logger, so the finding was
+    DROPPED and never reached the alert pipeline. This seam initialises a
+    minimal ``AuditLogger`` on the command's own pool so CLI-context
+    findings persist like any other.
+
+    Fail-soft by design: a broken audit attach must never block the
+    command itself (which may be the very command needed to repair the
+    system) — the pool is returned either way.
+    """
+    import asyncpg
+
+    pool = await asyncpg.create_pool(
+        dsn or resolve_dsn(), min_size=min_size, max_size=max_size, **kwargs
+    )
+    try:
+        from services.audit_log import init_global_audit_logger
+
+        # quiet=True: the info-level init line would print to stderr on
+        # every CLI invocation (logger_config attaches a stderr handler at
+        # INFO on import).
+        init_global_audit_logger(pool, quiet=True)
+    except Exception:  # noqa: BLE001
+        # silent-ok: findings are best-effort in CLI context — the command
+        # must run even when the audit seam can't attach. A finding emitted
+        # later still hits audit_log_bg's loud-drop path (#303), so the
+        # loss is visible, just not fixable from here.
+        pass
+    return pool
+
+
+async def close_cli_pool(pool) -> None:
+    """Detach the audit sink, flush in-flight finding writes, close the pool.
+
+    The drain-before-close ordering is the point: ``audit_log_bg`` writes
+    are fire-and-forget tasks, and a finding emitted moments before command
+    teardown is only *scheduled* — closing the pool first kills the write
+    with ``InterfaceError('pool is closing')`` and loses the finding (the
+    GlitchTip #863 race, same one ``DatabaseService.close`` drains for).
+
+    Reset happens before drain so no new write can target the pool once
+    teardown has begun; the conditional reset can't clobber a logger a
+    different context (e.g. ``cli/pipeline.py``'s full ``DatabaseService``)
+    re-initialised with its own pool. Fail-soft: the ``finally`` guarantees
+    the pool closes no matter what the audit teardown does.
+    """
+    try:
+        from services.audit_log import drain_pending_writes, reset_global_audit_logger
+
+        reset_global_audit_logger(pool)
+        await drain_pending_writes()
+    except Exception:  # noqa: BLE001
+        # silent-ok: teardown is best-effort — closing the pool below is
+        # the part that must always run, and a failed drain already logs
+        # loudly per-write via audit_log's #303 handlers.
+        pass
+    finally:
+        await pool.close()

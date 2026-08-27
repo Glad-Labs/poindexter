@@ -66,7 +66,12 @@ def emit_finding(
     """Emit a typed finding to ``audit_log`` for later triage.
 
     Fire-and-forget — never raises. If audit logging is uninitialised
-    (e.g. unit tests without the global logger), the call silently drops.
+    (e.g. unit tests without the global logger), the call drops — loudly
+    for warn/critical (#303). Long-lived contexts get the global logger
+    from ``DatabaseService``; ``poindexter <cmd>`` CLI contexts get it
+    from the ``open_cli_pool`` seam in ``poindexter/cli/_bootstrap.py``
+    (a ``pro sync`` finding was dropped here during the first live Pro
+    purchase, 2026-08-26, because the CLI had no logger at all).
 
     Parameters mirror what the future dispatcher will route on:
 

@@ -10,6 +10,7 @@ import asyncio
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 from services.community_drafts import (
     SubredditProfile,
@@ -31,13 +32,12 @@ from services.subreddit_import import export_csv, import_csv
 
 
 async def _connect():
-    import asyncpg
     from brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:
         raise click.ClickException("No database_url — run `poindexter setup` first.")
-    return await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
+    return await open_cli_pool(dsn, timeout=8)
 
 
 async def _make_site_config(pool):
@@ -77,7 +77,7 @@ def profiles_list(enabled_only):
         try:
             return await list_profiles(pool, enabled_only=enabled_only)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     profiles = asyncio.run(_go())
     if not profiles:
@@ -97,7 +97,7 @@ def profiles_show(subreddit):
         try:
             return await get_profile(pool, subreddit)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     p = asyncio.run(_go())
     if p is None:
@@ -141,7 +141,7 @@ def profiles_add(subreddit, content_types, post_type, self_promo, flair, min_kar
         try:
             return await add_profile(pool, profile)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException(f"Profile '{subreddit}' already exists — use `edit`.")
@@ -167,7 +167,7 @@ def profiles_edit(subreddit, content_types, post_type, self_promo, flair, min_ka
         try:
             return await edit_profile(pool, subreddit, **changes)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         asyncio.run(_go())
@@ -194,7 +194,7 @@ def _set_enabled(subreddit, enabled):
         try:
             return await set_profile_enabled(pool, subreddit, enabled)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException(f"No profile for '{subreddit}'.")
@@ -209,7 +209,7 @@ def profiles_rm(subreddit):
         try:
             return await remove_profile(pool, subreddit)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException(f"No profile for '{subreddit}'.")
@@ -226,7 +226,7 @@ def profiles_import_csv(csv_path, force):
         try:
             return await import_csv(pool, csv_path, force=force)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     report = asyncio.run(_go())
     for r in report.rows:
@@ -249,7 +249,7 @@ def profiles_export_csv(csv_path):
         try:
             return await export_csv(pool)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     text = asyncio.run(_go())
     if csv_path:
@@ -291,7 +291,7 @@ def draft_reddit(post, subreddit):
             )
             return "draft", draft
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         kind, result = asyncio.run(_run())
@@ -334,7 +334,7 @@ def drafts_list(status):
         try:
             return await list_drafts(pool, status=status)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     drafts = asyncio.run(_go())
     if not drafts:
@@ -352,7 +352,7 @@ def drafts_show(draft_id):
         try:
             return await get_draft(pool, draft_id)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     d = asyncio.run(_go())
     if d is None:
@@ -381,7 +381,7 @@ def drafts_edit(draft_id, title, body_file):
         try:
             return await edit_draft(pool, draft_id, title=title, body=body)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException("Nothing changed (pass --title and/or --body-file).")
@@ -397,7 +397,7 @@ def drafts_mark_posted(draft_id, url):
         try:
             return await mark_posted(pool, draft_id, url=url)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException(f"No draft #{draft_id}.")
@@ -412,7 +412,7 @@ def drafts_discard(draft_id):
         try:
             return await discard_draft(pool, draft_id)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     if not asyncio.run(_go()):
         raise click.ClickException(f"No draft #{draft_id}.")

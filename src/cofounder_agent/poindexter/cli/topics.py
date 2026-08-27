@@ -69,7 +69,7 @@ def _resolve_order_tokens(tokens, candidates):
 # ---------------------------------------------------------------------------
 
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Group root
@@ -107,12 +107,11 @@ def sweep(niche: str) -> None:
     or the reason a sweep was skipped (cadence floor / open batch).
     """
     async def _impl():
-        import asyncpg
 
         from services.niche_service import NicheService
         from services.topic_batch_service import TopicBatchService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             # SiteConfig constructor-DI migration PR 2 canary (design doc:
             # ``docs/architecture/2026-05-28-site-config-di-migration.md``).
@@ -220,7 +219,7 @@ def sweep(niche: str) -> None:
                     f"{snapshot.candidate_count} candidates, top: {top_title}"
                 )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -235,12 +234,11 @@ def sweep(niche: str) -> None:
 def show_batch(niche: str) -> None:
     """Show the current open batch for a niche."""
     async def _impl():
-        import asyncpg
 
         from services.niche_service import NicheService
         from services.topic_batch_service import TopicBatchService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             n = await NicheService(pool).get_by_slug(niche)
             if not n:
@@ -272,7 +270,7 @@ def show_batch(niche: str) -> None:
                     f"eff={c.effective_score:5.1f}  {c.id}  — {c.title}"
                 )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -296,12 +294,11 @@ def show_batch(niche: str) -> None:
 def rank_batch(batch_id: UUID, order: str) -> None:
     """Set operator ranking for a batch's candidates."""
     async def _impl():
-        import asyncpg
 
         from services.topic_batch_service import TopicBatchService
 
         tokens = [s.strip() for s in order.split(",") if s.strip()]
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             # #272 Phase-2d: TopicBatchService requires an explicit site_config.
             async with container_for_cli(pool) as container:
@@ -313,7 +310,7 @@ def rank_batch(batch_id: UUID, order: str) -> None:
                 )
                 click.echo(f"Ranked {len(ids)} candidates in batch {batch_id}")
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -333,11 +330,10 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
         raise click.UsageError("Provide --topic and/or --angle.")
 
     async def _impl():
-        import asyncpg
 
         from services.topic_batch_service import TopicBatchService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             # #272 Phase-2d: TopicBatchService requires an explicit site_config.
             async with container_for_cli(pool) as container:
@@ -348,7 +344,7 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
                 )
                 click.echo("Edited winner.")
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -363,11 +359,10 @@ def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
 def resolve_batch(batch_id: UUID) -> None:
     """Resolve a batch — advance the rank-1 candidate to the pipeline."""
     async def _impl():
-        import asyncpg
 
         from services.topic_batch_service import TopicBatchService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             # #272 Phase-2d: TopicBatchService requires an explicit site_config.
             async with container_for_cli(pool) as container:
@@ -376,7 +371,7 @@ def resolve_batch(batch_id: UUID) -> None:
                 ).resolve_batch(batch_id=batch_id)
                 click.echo(f"Resolved {batch_id}")
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -392,11 +387,10 @@ def resolve_batch(batch_id: UUID) -> None:
 def reject_batch(batch_id: UUID, reason: str) -> None:
     """Reject a batch — discard candidates, allow a fresh sweep."""
     async def _impl():
-        import asyncpg
 
         from services.topic_batch_service import TopicBatchService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             # #272 Phase-2d: TopicBatchService requires an explicit site_config.
             async with container_for_cli(pool) as container:
@@ -407,7 +401,7 @@ def reject_batch(batch_id: UUID, reason: str) -> None:
                 )
                 click.echo(f"Rejected {batch_id}")
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -427,16 +421,15 @@ def niche_group() -> None:
 def niche_list() -> None:
     """List every active niche."""
     async def _impl():
-        import asyncpg
 
         from services.niche_service import NicheService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             for n in await NicheService(pool).list_active():
                 click.echo(f"{n.slug:20s} {n.name:30s}")
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -446,11 +439,10 @@ def niche_list() -> None:
 def niche_show(slug: str) -> None:
     """Print full niche config (slug, goals, sources) as JSON."""
     async def _impl():
-        import asyncpg
 
         from services.niche_service import NicheService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             svc = NicheService(pool)
             n = await svc.get_by_slug(slug)
@@ -483,7 +475,7 @@ def niche_show(slug: str) -> None:
                 )
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 
@@ -499,11 +491,10 @@ def niche_set_cadence(niche: str, target: float) -> None:
     app_setting.
     """
     async def _impl():
-        import asyncpg
 
         from services.niche_service import NicheService
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             svc = NicheService(pool)
             n = await svc.get_by_slug(niche)
@@ -518,7 +509,7 @@ def niche_set_cadence(niche: str, target: float) -> None:
                 f"{updated.cadence_target_posts_per_day}/day"
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_impl())
 

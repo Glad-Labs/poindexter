@@ -31,6 +31,7 @@ from pathlib import Path
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from services.doctor import (
     ROOTS,
     DoctorReport,
@@ -71,11 +72,9 @@ def _ensure_brain_on_path() -> None:
 
 async def _make_pool():
     """Build an asyncpg pool against the bootstrap-resolved DSN."""
-    import asyncpg
 
-    from poindexter.cli._bootstrap import resolve_dsn
 
-    return await asyncpg.create_pool(resolve_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool()
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +258,7 @@ def doctor_command(json_output: bool, fix: bool) -> None:
                 report = await run_doctor(pool)
             return report
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         report = _run(_impl())

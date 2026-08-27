@@ -23,7 +23,9 @@ def test_run_service_opens_runs_and_closes_pool(monkeypatch):
         return _Pool()
 
     monkeypatch.setattr("asyncpg.create_pool", _create_pool)
-    monkeypatch.setattr(_dataplane, "_dsn", lambda: "postgresql://x")
+    monkeypatch.setattr(
+        "poindexter.cli._bootstrap.resolve_dsn", lambda: "postgresql://x"
+    )
 
     async def _factory(pool):
         events.append("ran")
@@ -45,7 +47,9 @@ def test_run_service_closes_pool_even_on_error(monkeypatch):
         return _Pool()
 
     monkeypatch.setattr("asyncpg.create_pool", _create_pool)
-    monkeypatch.setattr(_dataplane, "_dsn", lambda: "postgresql://x")
+    monkeypatch.setattr(
+        "poindexter.cli._bootstrap.resolve_dsn", lambda: "postgresql://x"
+    )
 
     async def _boom(pool):
         raise RuntimeError("boom")

@@ -25,7 +25,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
 _DEFAULT_SLOT = "rag_rerank_model"
 
@@ -92,9 +92,8 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
         raise click.UsageError("--challenger is required for the reranker slot.")
 
     async def _impl() -> tuple[Any, Any]:
-        import asyncpg
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             cfg = await _load_cfg(pool)
             if slot == "critic":
@@ -123,7 +122,7 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
                 pool=pool, site_config=cfg, challengers=list(challengers)
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     report, proposal = asyncio.run(_impl())
 
@@ -187,7 +186,6 @@ def model_eval_status(slot: str, json_output: bool) -> None:
     """Show the latest recorded metric per model for ``--slot``."""
 
     async def _impl() -> dict[str, float]:
-        import asyncpg
 
         from services.model_eval.harness import LangfuseEvalHarness
 
@@ -196,13 +194,13 @@ def model_eval_status(slot: str, json_output: bool) -> None:
         else:
             from services.model_eval.scorers.reranker import RerankerScorer as _Scorer
 
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             cfg = await _load_cfg(pool)
             harness = LangfuseEvalHarness(site_config=cfg)
             return await harness.latest_by_model(slot, _Scorer.primary_metric)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     latest = asyncio.run(_impl())
 

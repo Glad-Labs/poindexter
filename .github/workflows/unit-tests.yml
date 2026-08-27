@@ -355,6 +355,17 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
 
+      # CLI audit-sink guard: a `poindexter <cmd>` that opens a bare asyncpg
+      # pool has no global AuditLogger, so every finding its services emit is
+      # DROPPED — silently (no failing test, just an operator page that never
+      # arrives). That shipped for real, losing a pro_delivery_action_needed
+      # warn finding during the first live Pro purchase 2026-08-26. Flags both
+      # `asyncpg.create_pool` and a drain-skipping `pool.close()`; _bootstrap.py
+      # owns the seam and is exempt. Pure-Python AST scan, no deps beyond stdlib.
+      - name: CLI audit-sink lint (findings reach audit_log from the CLI)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/cli_audit_sink_lint.py
+
       # Bandit ratchet: no NEW security findings. Bandit is a textual matcher
       # with no dataflow analysis, so on this codebase it is mostly false
       # positives (all 30 of #2594-#2623 were, closed by #2644) — which makes it
@@ -684,6 +695,8 @@ jobs:
         run: python scripts/ci/adapter_purity_lint.py
       - name: Atom-independence lint (tech-debt audit)
         run: python scripts/ci/atom_independence_lint.py
+      - name: CLI audit-sink lint (findings reach audit_log from the CLI)
+        run: python scripts/ci/cli_audit_sink_lint.py
       # The only non-stdlib lint in this job. Pinned to the exact poetry.lock
       # version because the baseline is only meaningful against the bandit that
       # generated it (a bump can add rules and turn a clean tree red);

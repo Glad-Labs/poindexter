@@ -10,15 +10,16 @@ import asyncio
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 
 async def _connect():
-    import asyncpg
     from brain import bootstrap
 
     dsn = bootstrap.resolve_database_url()
     if not dsn:
         raise click.ClickException("No database_url — run `poindexter setup` first.")
-    return await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
+    return await open_cli_pool(dsn, timeout=8)
 
 
 async def _make_site_config(pool):
@@ -86,7 +87,7 @@ def add_cmd(code, keywords, url, display_text, program, category, description, p
             )
             await _republish(pool)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     asyncio.run(_go())
     click.secho(f"Added/updated affiliate link '{code}'.", fg="green")
@@ -117,7 +118,7 @@ def keyword_add_cmd(code, keywords):
         try:
             return await add_keywords(pool, code=code, keywords=list(keywords))
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         added = asyncio.run(_go())
@@ -145,7 +146,7 @@ def keyword_rm_cmd(code, keywords):
         try:
             return await remove_keywords(pool, code=code, keywords=list(keywords))
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         removed = asyncio.run(_go())
@@ -165,7 +166,7 @@ def list_cmd(show_all):
         try:
             return await (list_all(pool) if show_all else list_active(pool))
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     links = asyncio.run(_go())
     if not links:
@@ -212,7 +213,7 @@ def _set_active(code, active):
                 await _republish(pool)
             return ok
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     ok = asyncio.run(_go())
     if not ok:
@@ -235,7 +236,7 @@ def _set_active_all(active: bool):
                 await _republish(pool)
             return changed
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     changed = asyncio.run(_go())
     click.secho(
@@ -259,7 +260,7 @@ def rm_cmd(code):
                 await _republish(pool)
             return ok
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     ok = asyncio.run(_go())
     if not ok:
@@ -283,7 +284,7 @@ def import_csv_cmd(csv_path, force):
                 await _republish(pool)
             return report
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     report = asyncio.run(_go())
     for r in report.rows:

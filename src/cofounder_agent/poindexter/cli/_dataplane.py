@@ -19,7 +19,7 @@ from typing import Any
 
 import click
 
-from poindexter.cli._bootstrap import resolve_dsn as _dsn
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
 
 def run_service(factory: Callable[[Any], Awaitable[Any]]) -> Any:
@@ -32,13 +32,11 @@ def run_service(factory: Callable[[Any], Awaitable[Any]]) -> Any:
     """
 
     async def _impl() -> Any:
-        import asyncpg
-
-        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        pool = await open_cli_pool()
         try:
             return await factory(pool)
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     return asyncio.run(_impl())
 

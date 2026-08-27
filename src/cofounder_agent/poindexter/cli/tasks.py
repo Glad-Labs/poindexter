@@ -15,6 +15,8 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 from ._api_client import WorkerClient
 from ._status_style import TASK_STATUS, color_for
 
@@ -431,11 +433,9 @@ async def _resolve_filter_ids(filter_clause: str) -> list[str]:
     SELECT only saw ``pipeline_tasks`` columns and asyncpg blew up with
     ``UndefinedColumnError: column "quality_score" does not exist``.
     """
-    import asyncpg
 
-    from poindexter.cli._bootstrap import resolve_dsn as _dsn
 
-    pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    pool = await open_cli_pool()
     try:
         rows = await pool.fetch(
             "SELECT t.task_id "
@@ -450,7 +450,7 @@ async def _resolve_filter_ids(filter_clause: str) -> list[str]:
             f"WHERE {filter_clause}"
         )
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
     return [r["task_id"] for r in rows]
 
 

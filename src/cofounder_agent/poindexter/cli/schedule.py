@@ -28,7 +28,7 @@ import click
 # DSN + asyncpg helpers (mirror the qa-gates / taps CLI patterns)
 # ---------------------------------------------------------------------------
 from poindexter.cli._aliases import deprecated_alias
-from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
 from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 
 
@@ -36,46 +36,23 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-class _SinglePool:
-    """Tiny asyncpg-pool-shaped wrapper around a single connection.
-
-    The scheduling service expects a ``pool.acquire()`` async context
-    manager. For one-shot CLI commands we don't need a real pool —
-    a single connection is plenty. This wrapper presents the right
-    surface area without pulling in asyncpg.create_pool."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    async def fetch(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        """Pool-level fetch. ``SiteConfig.load`` calls ``pool.fetch`` directly
-        (not via ``acquire``), so delegate to the wrapped connection."""
-        return await self._conn.fetch(*args, **kwargs)
-
-    def acquire(self):  # type: ignore[no-untyped-def]
-        conn = self._conn
-
-        class _Ctx:
-            async def __aenter__(self_inner):  # noqa: N805
-                return conn
-
-            async def __aexit__(self_inner, *exc):  # noqa: N805
-                return False
-
-        return _Ctx()
-
-
 async def _with_pool(fn):
-    """Open one asyncpg connection, hand a pool-shaped wrapper to ``fn``,
-    close on exit."""
-    import asyncpg
+    """Open the shared CLI pool, hand it to ``fn``, close on exit.
 
-    conn = await asyncpg.connect(_dsn())
+    Used to hand ``fn`` a single ``asyncpg.connect`` connection behind a
+    pool-shaped wrapper (``_SinglePool``). That wrapper predated the
+    audit-sink seam in ``open_cli_pool``: ``scheduling_service`` emits
+    findings, and a fire-and-forget audit write sharing one bare
+    connection with the command's own queries can collide (asyncpg
+    forbids concurrent operations per connection) — a real 1–2 conn pool
+    gives the background write its own connection and the finding a
+    place to land.
+    """
+    pool = await open_cli_pool()
     try:
-        pool = _SinglePool(conn)
         return await fn(pool)
     finally:
-        await conn.close()
+        await close_cli_pool(pool)
 
 
 async def _load_site_config(pool):

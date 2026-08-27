@@ -53,12 +53,41 @@ _global_audit_logger: Optional["AuditLogger"] = None
 _pending_writes: set[asyncio.Task] = set()
 
 
-def init_global_audit_logger(pool: Pool) -> "AuditLogger":
-    """Initialise (or replace) the module-level AuditLogger singleton."""
+def init_global_audit_logger(pool: Pool, *, quiet: bool = False) -> "AuditLogger":
+    """Initialise (or replace) the module-level AuditLogger singleton.
+
+    ``quiet=True`` logs the init at debug instead of info — for short-lived
+    CLI contexts where an info line on every ``poindexter <cmd>`` invocation
+    would be stderr noise (worker/daemon startup keeps the info line).
+    """
     global _global_audit_logger
     _global_audit_logger = AuditLogger(pool)
-    logger.info("Global AuditLogger initialised")
+    if quiet:
+        logger.debug("Global AuditLogger initialised")
+    else:
+        logger.info("Global AuditLogger initialised")
     return _global_audit_logger
+
+
+def reset_global_audit_logger(pool: Pool | None = None) -> bool:
+    """Clear the module-level AuditLogger singleton.
+
+    With ``pool`` given, only clears when the current global logger writes to
+    that exact pool — so a teardown seam (e.g. ``close_cli_pool``) can't
+    clobber a logger some other context re-initialised with its own pool in
+    the meantime (``cli/pipeline.py`` builds a full ``DatabaseService``, which
+    re-inits the global with the service's pool). With ``pool=None`` the reset
+    is unconditional (test cleanup).
+
+    Returns True when the global was cleared.
+    """
+    global _global_audit_logger
+    if _global_audit_logger is None:
+        return False
+    if pool is not None and _global_audit_logger.pool is not pool:
+        return False
+    _global_audit_logger = None
+    return True
 
 
 def get_audit_logger() -> Optional["AuditLogger"]:

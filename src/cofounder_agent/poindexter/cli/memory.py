@@ -21,6 +21,7 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.memory import MemoryClient, MemoryHit
 
 # ---------------------------------------------------------------------------
@@ -302,7 +303,6 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
         where_clause = f"WHERE published_at > NOW() - INTERVAL '{n} {interval}s'"
 
     async def _backfill() -> None:
-        import asyncpg
 
         from services.embedding_service import EmbeddingService
         from services.embeddings_db import EmbeddingsDatabase
@@ -312,7 +312,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
         # We need a DB pool, Ollama, and the embeddings_db + service.
         # We're standalone (outside the worker process) so we build them
         # here and close them at the end.
-        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        pool = await open_cli_pool(dsn)
         try:
             rows = await pool.fetch(
                 f"""
@@ -380,6 +380,6 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
                 fg="green" if failed == 0 else "yellow",
             )
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     _run(_backfill())

@@ -27,15 +27,16 @@ from typing import Any
 
 import click
 
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
+
 logger = logging.getLogger(__name__)
 
 
 async def _open_pool() -> Any:
-    import asyncpg
 
     from ._bootstrap import resolve_dsn
     dsn = resolve_dsn()
-    return await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    return await open_cli_pool(dsn)
 
 
 @click.group(
@@ -154,7 +155,7 @@ async def _run_status(as_json: bool) -> None:
             "WHERE approved_at > NOW() - INTERVAL '7 days'"
         )
 
-    await pool.close()
+    await close_cli_pool(pool)
 
     payload = _build_status_payload(
         settings, dict(last_24h) if last_24h else {}, recent_publishes,
@@ -220,7 +221,7 @@ async def _run_trend(niche: str | None, last_n: int, as_json: bool) -> None:
                 """,
                 last_n,
             )
-    await pool.close()
+    await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps([dict(r) for r in rows], indent=2, default=str))
@@ -285,7 +286,7 @@ async def _run_veto(task_prefix: str, as_json: bool) -> None:
 
         payload = await veto_auto_publish(pool, task_prefix)
     finally:
-        await pool.close()
+        await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
@@ -333,7 +334,7 @@ async def _run_decisions(last_n: int, would_fire_only: bool, as_json: bool) -> N
             """,
             last_n,
         )
-    await pool.close()
+    await close_cli_pool(pool)
 
     if as_json:
         click.echo(json.dumps([dict(r) for r in rows], indent=2, default=str))

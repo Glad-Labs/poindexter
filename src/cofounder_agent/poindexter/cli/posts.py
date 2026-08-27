@@ -22,13 +22,13 @@ def _run(coro):
 
 
 from poindexter.cli._aliases import deprecated_alias  # noqa: E402
-from poindexter.cli._bootstrap import resolve_dsn as _gate_dsn  # noqa: E402
+from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool  # noqa: E402
+from poindexter.cli._bootstrap import resolve_dsn as _gate_dsn
 
 
 async def _make_gate_pool():
     """Open a tiny pool for one CLI invocation."""
-    import asyncpg
-    return await asyncpg.create_pool(_gate_dsn(), min_size=1, max_size=2)
+    return await open_cli_pool(_gate_dsn())
 
 
 def _exit_error(msg: str, code: int = 1) -> None:
@@ -751,7 +751,7 @@ def post_create(
                 "idempotency_key": stored_key,
             }
         finally:
-            await pool.close()
+            await close_cli_pool(pool)
 
     try:
         result = _run(_impl())
