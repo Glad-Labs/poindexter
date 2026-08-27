@@ -722,7 +722,14 @@ services:
     container_name: poindexter-backup-offsite
     restart: unless-stopped
     entrypoint: ["/app/run-offsite.sh"]
+    # Host uid, not the image's 1001 — the config surface is 0700/0600 owned
+    # by the host user and would otherwise be unreadable (restic exits 3 but
+    # still saves an EMPTY snapshot). Only this service; Tier 1's dump dirs
+    # are 1001-owned and must keep the image uid. See docker-compose.local.yml.
+    user: "${POINDEXTER_HOST_UID:-1000}:${POINDEXTER_HOST_GID:-1000}"
     environment:
+      # Image's /var/cache/restic is uid-1001-owned; /tmp (1777) works for any uid.
+      RESTIC_CACHE_DIR: /tmp/restic-cache
       PG_HOST: postgres-local
       PG_PORT: "5432"
       PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}

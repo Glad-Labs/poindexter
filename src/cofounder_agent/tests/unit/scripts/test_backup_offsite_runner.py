@@ -27,6 +27,7 @@ service loop), so these tests source it under bash with `pg_dump`,
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -366,6 +367,86 @@ def test_config_backup_includes_the_last_configured_path(tmp_path):
     result = _run_config_harness(tmp_path)
     backup_line = result.stdout.split("RESTIC_ARGS")[1]
     assert "/config/claude" in backup_line or "claude" in backup_line
+
+
+_UNREADABLE_HARNESS = _CONFIG_HARNESS.replace(
+    "rc=0\nrun_config_backup",
+    # Force the predicate to report the claude path unreadable. Stubbing the
+    # predicate (rather than chmod'ing a fixture) is what makes this runnable
+    # as root — see _config_path_readable in run.sh.
+    '_config_path_readable() { [[ "$1" != *"/claude" ]]; }\n\nrc=0\nrun_config_backup',
+)
+
+
+def test_config_backup_alerts_on_mounted_but_unreadable_path(tmp_path):
+    """A uid mismatch makes a correctly-mounted path unreadable, and that is
+    WORSE than a missing mount: restic exits 3 on unreadable content but
+    still SAVES A SNAPSHOT ("processed 0 files ... snapshot saved", verified
+    against restic 0.16.4), so `restic snapshots --tag config` lists
+    reassuring entries containing nothing. The path must be alerted on and
+    never handed to restic.
+
+    Drives the branch by stubbing `_config_path_readable`, not by chmod:
+    CI runs as root, root holds CAP_DAC_OVERRIDE, and a `chmod 000` fixture
+    is therefore readable there — so a permissions-based fixture would make
+    this test silently vacuous in the one environment that gates merges."""
+    assert _BASH is not None
+    root = tmp_path / "config"
+    for name in ("poindexter", "claude"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    env = {
+        "PATH": str(Path(_BASH).parent),
+        "RUN_SH": _RUN_SH.as_posix(),
+        "BACKUP_DIR": (tmp_path / "backups").as_posix(),
+        "PGPASSWORD": "test",
+        "FAKE_RESTIC_RC": "0",
+        "SETTING_offsite_backup_config_paths": ",".join(
+            (root / n).as_posix() for n in ("poindexter", "claude")
+        ),
+    }
+    result = subprocess.run(
+        [_BASH, "-c", _UNREADABLE_HARNESS],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+    assert "UNREADABLE" in result.stdout
+    assert "ALERT severity=warning" in result.stdout
+    assert "cannot read mounted path" in result.stdout
+    # The unreadable path must NOT be handed to restic — that is what
+    # produces the empty-but-saved snapshot.
+    args = result.stdout.split("RESTIC_ARGS")[1]
+    assert (root / "claude").as_posix() not in args
+    assert (root / "poindexter").as_posix() in args
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root bypasses DAC (CAP_DAC_OVERRIDE), so chmod 000 is still readable",
+)
+def test_config_path_readable_predicate_honours_real_permissions(tmp_path):
+    """Companion to the stubbed test above: proves the predicate itself
+    actually tracks filesystem permissions, not just that the branch works.
+    Skipped as root, where the premise cannot hold."""
+    assert _BASH is not None
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    locked.chmod(0o000)
+    try:
+        result = subprocess.run(
+            [
+                _BASH, "-c",
+                f'source "$RUN_SH"; '
+                f'_config_path_readable "{ok.as_posix()}" && echo OK_READABLE; '
+                f'_config_path_readable "{locked.as_posix()}" || echo LOCKED_UNREADABLE',
+            ],
+            capture_output=True, text=True, timeout=30,
+            env={"PATH": str(Path(_BASH).parent), "RUN_SH": _RUN_SH.as_posix()},
+        )
+    finally:
+        locked.chmod(0o755)  # let pytest clean up
+    assert "OK_READABLE" in result.stdout
+    assert "LOCKED_UNREADABLE" in result.stdout
 
 
 def test_config_backup_skips_when_disabled(tmp_path):

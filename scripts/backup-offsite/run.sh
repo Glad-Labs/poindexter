@@ -211,6 +211,21 @@ run_backup() {
 # hiccup must not suppress prune/verify. It must still alert, though — a
 # silently-skipped config backup is the exact failure mode that motivated
 # this function.
+# Can this process actually READ the path (not merely see that it exists)?
+# Directories need -x to traverse as well as -r. Split out as a named
+# predicate so tests can exercise the unreadable BRANCH deterministically:
+# CI runs as root, and root holds CAP_DAC_OVERRIDE, so a `chmod 000` fixture
+# is readable there and cannot drive this case. (That same root-bypasses-DAC
+# fact is what made the original mount verification for #3399 wrong.)
+_config_path_readable() {
+    local p="$1"
+    if [[ -d "${p}" ]]; then
+        [[ -r "${p}" && -x "${p}" ]]
+        return
+    fi
+    [[ -r "${p}" ]]
+}
+
 run_config_backup() {
     local repo="$1" restic_host="$2"
     [[ "$(read_setting offsite_backup_config_enabled true)" == "true" ]] || {
@@ -222,15 +237,25 @@ run_config_backup() {
     paths_csv=$(read_setting offsite_backup_config_paths "${DEFAULT_CONFIG_PATHS}")
     excludes_csv=$(read_setting offsite_backup_config_excludes "${DEFAULT_CONFIG_EXCLUDES}")
 
-    # Only back up paths that are actually mounted. A path listed but not
-    # present is a compose/mount mistake, not a reason to fail the tick — but
-    # it is reported, because an unnoticed missing mount would silently shrink
-    # the backup set back to the state this function exists to prevent.
-    local -a present=() missing=()
+    # Classify into readable / unreadable / missing. Existence is NOT enough:
+    # this container runs as a fixed image uid, while the config surface is
+    # 0700/0600 owned by the HOST user, so a uid mismatch makes a perfectly
+    # mounted path unreadable. That case is worse than a missing mount —
+    # restic exits 3 on unreadable content but STILL SAVES A SNAPSHOT
+    # ("processed 0 files ... snapshot saved"), so `restic snapshots --tag
+    # config` would list reassuring entries containing nothing. Verified
+    # against restic 0.16.4. Directories need BOTH -r and -x (traverse).
+    local -a present=() missing=() unreadable=()
     local p
     while IFS= read -r p; do
         [[ -z "${p}" ]] && continue
-        if [[ -e "${p}" ]]; then present+=("${p}"); else missing+=("${p}"); fi
+        if [[ ! -e "${p}" ]]; then
+            missing+=("${p}")
+        elif ! _config_path_readable "${p}"; then
+            unreadable+=("${p}")
+        else
+            present+=("${p}")
+        fi
         # NOTE: `printf '%s\n'` (not '%s') — without the trailing newline the
         # final CSV element is unterminated and `while read` silently DROPS
         # it. Caught in review: it swallowed the last exclude pattern, i.e.
@@ -239,6 +264,16 @@ run_config_backup() {
 
     if [[ "${#missing[@]}" -gt 0 ]]; then
         log "WARN: config path(s) not mounted, skipping: ${missing[*]}"
+    fi
+    # Mounted-but-unreadable is a hard misconfiguration, not a soft skip: the
+    # operator believes these paths are covered and they are not. Alert even
+    # if other paths backed up fine, and never hand the path to restic (that
+    # is what produces the empty-but-saved snapshot).
+    if [[ "${#unreadable[@]}" -gt 0 ]]; then
+        log "ERROR: config path(s) mounted but UNREADABLE by uid $(id -u): ${unreadable[*]}"
+        emit_alert "warning" \
+            "Offsite config backup cannot read mounted path(s)" \
+            "Mounted but unreadable by container uid $(id -u): ${unreadable[*]}. The config surface is 0700/0600 owned by the host user, so this is almost certainly a uid mismatch — set the backup-offsite service's 'user:' to the host uid (POINDEXTER_HOST_UID). These paths are NOT backed up; bootstrap.toml may be among them."
     fi
     if [[ "${#present[@]}" -eq 0 ]]; then
         log "config backup: no configured paths present — skipping"

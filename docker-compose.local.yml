@@ -2444,7 +2444,20 @@ services:
     container_name: poindexter-backup-offsite
     restart: unless-stopped
     entrypoint: ["/app/run-offsite.sh"]
+    # Runs as the HOST user, unlike backup-hourly/daily which keep the image's
+    # built-in uid 1001. Required by the config snapshot: ~/.poindexter is
+    # 0700 and bootstrap.toml is 0600, both owned by the host user, so uid
+    # 1001 cannot even traverse them — restic would exit 3 and still save an
+    # EMPTY snapshot. Overriding only this service (rather than rebuilding the
+    # shared image with HOST_UID) keeps Tier 1 working: its hourly/ and daily/
+    # dump dirs are owned by 1001, and a uid flip there would break writes.
+    user: "${POINDEXTER_HOST_UID:-1000}:${POINDEXTER_HOST_GID:-1000}"
     environment:
+      # The image's /var/cache/restic is chowned to uid 1001 at build time and
+      # is not writable by the host uid above. /tmp is 1777, so any uid can
+      # use it. The cache is a per-run optimisation (index reuse), not state —
+      # losing it on recreate costs one index fetch, not correctness.
+      RESTIC_CACHE_DIR: /tmp/restic-cache
       PG_HOST: postgres-local
       PG_PORT: "5432"
       PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}
