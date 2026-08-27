@@ -36,7 +36,18 @@
 #      (diff-uncomputable -> defensive brain-daemon rebuild, same as the ps1)
 #   6. compose-apply: clone's `start-stack.sh up -d --no-build` — recreates
 #      services whose compose stanza OR freshly-built image changed; no-op
-#      for code-only merges
+#      for code-only merges. Attempted TWICE: recreating a service that others
+#      `depends_on: service_healthy` can lose a race against its own recreate
+#      ("No such container: <id>"), which strands the dependents CREATED and
+#      never started. That failure also never stamps the new config-hash, so
+#      the next pass re-runs the same recreate and loses the same race — a
+#      10-minute loop that kept worker+grafana down (2026-08-27). The second
+#      attempt sees the dependency already recreated and healthy.
+#   6b. stranded sweep: start any project container left in `created` state.
+#      `created` = never started, which is only ever an interrupted recreate —
+#      a deliberately-stopped service (parked voice-agent) is `exited`, so this
+#      cannot resurrect one. Runs even on a clean apply, and is reported in the
+#      status file, because a silent self-heal hides a recurring fault.
 #   7. bounce-on-change: restart the long-lived bind-mount app containers
 #      (worker, pipeline-bot) so changed Python is re-imported. prefect-worker
 #      is deliberately NOT bounced (each flow run is a fresh subprocess that
@@ -55,10 +66,10 @@
 #      `sudo -n systemctl` (docker-watchdog precedent — the operator user
 #      needs passwordless sudo; see the unit header). Hosts without the unit
 #      installed skip this step; --no-restart leaves the unit alone too.
-#   9. step independence: rebuilds, compose-apply, restarts, and the
-#      connector sync ALL run even if an earlier one failed; ANY failure
-#      withholds the marker so the pass retries next cycle (re-restarting a
-#      current container is a no-op).
+#   9. step independence: rebuilds, compose-apply, the stranded sweep,
+#      restarts, and the connector sync ALL run even if an earlier one failed;
+#      ANY failure withholds the marker so the pass retries next cycle
+#      (re-restarting a current container is a no-op).
 #
 # Marker  : ~/.poindexter/deploy-last-restarted-sha   (outside the clone)
 # Log     : ~/.poindexter/deploy-checkout-sync.log    (single .1 rotation)
@@ -82,6 +93,11 @@ MAX_WAIT_SEC="${SYNC_FLOW_WAIT_MAX_SEC:-90}"
 FORCE_FLOW_RESET="${SYNC_FLOW_FORCE:-0}"
 RESTART_CONTAINERS=(${SYNC_RESTART_CONTAINERS:-poindexter-worker poindexter-pipeline-bot})
 SKEW_MARGIN_SEC=5
+# Pause between the two compose-apply attempts (step 6). Long enough for a
+# just-recreated dependency to pass its healthcheck — the shortest interval in
+# the compose file is 10s — so the retry sees a settled stack instead of losing
+# the same race again.
+APPLY_RETRY_SETTLE_SEC="${SYNC_APPLY_RETRY_SETTLE_SEC:-15}"
 # Host systemd unit serving mcp-server/http_server.py from this clone (step 8).
 # "Not installed" is the opt-out — hosts that never enabled the connector skip
 # the step without config. SYNC_UV_BIN overrides uv discovery (systemd PATH
@@ -291,12 +307,33 @@ if [ -n "$rebuild_services" ]; then
 fi
 
 # ---- compose-apply (recreates changed-stanza / freshly-built services) ----
+# Retried once on failure, because the common failure here is a TRANSIENT race,
+# not a bad config. When a recreated service is one that others declare
+# `depends_on: <it>: service_healthy` (prometheus has 1 dependent, brain-daemon
+# has 6), compose can be waiting on the pre-recreate container while that very
+# container is replaced, and the wait dies with
+# `dependency failed to start: ... No such container: <id>`. The dependents are
+# then left CREATED-but-never-started.
+#
+# Left alone this self-perpetuates: the failed recreate never stamps the new
+# config-hash, so the next pass tries the same recreate and loses the same race,
+# every 10 minutes. Observed 2026-08-27 — worker + grafana were stranded down
+# and each pass re-stranded them. A second immediate attempt converges (the
+# dependency is already recreated and healthy by then), which is exactly what
+# the 10-minutes-later retry was accomplishing, minus the outage in between.
 apply_failed=0
-log "Applying compose from clone: start-stack.sh up -d --no-build"
-if ! bash "$DEPLOY_DIR/scripts/start-stack.sh" up -d --no-build >>"$LOG_FILE" 2>&1; then
-  log "compose-apply failed; continuing to container restarts — marker withheld, retries next cycle." ERROR
+for attempt in 1 2; do
+  [ "$attempt" = "2" ] && log "Retrying compose-apply once (transient dependency race)..." WARN
+  log "Applying compose from clone: start-stack.sh up -d --no-build (attempt $attempt/2)"
+  if bash "$DEPLOY_DIR/scripts/start-stack.sh" up -d --no-build >>"$LOG_FILE" 2>&1; then
+    apply_failed=0
+    break
+  fi
   apply_failed=1
-fi
+  [ "$attempt" = "1" ] && sleep "$APPLY_RETRY_SETTLE_SEC"
+done
+[ "$apply_failed" = "1" ] && \
+  log "compose-apply failed twice; continuing to container restarts — marker withheld, retries next cycle." ERROR
 
 # ---- bounce-on-change with redundancy guard --------------------------------
 restart_failed=0; restarted=""; skipped=""
@@ -317,6 +354,38 @@ for c in "${RESTART_CONTAINERS[@]}"; do
     restart_failed=1; log "  FAILED to restart '$c'" ERROR
   fi
 done
+
+# ---- stranded-container sweep (safety net) --------------------------------
+# A container in `created` state has NEVER been started — that state is only
+# ever an interrupted recreate, never an operator's intent. A deliberately
+# stopped service sits in `exited` instead, and note that those ARE still
+# listed here: `poindexter-livekit` and `poindexter-voice-agent-livekit`
+# survive as exited containers even with the `voice` profile out of
+# compose_profiles (parked 2026-08-19, deliberately). Filtering on `created`
+# is what keeps this sweep from un-parking them. That distinction is the whole
+# safety argument for starting these unattended — do NOT widen the filter to
+# `exited`, and do not reach for `compose start`, which would take the whole
+# lot up.
+#
+# This runs even when compose-apply succeeded, and independently of the restart
+# loop above: the loop only covers RESTART_CONTAINERS, and `docker restart` can
+# itself race a recreate that is still in flight (2026-08-27: the loop logged
+# "restarted 'poindexter-worker'" while the container it had just been handed
+# was replaced underneath it — the worker stayed down for the rest of the
+# cycle). The project is resolved through start-stack.sh so this uses the same
+# COMPOSE_PROJECT_NAME the apply did, rather than a second copy of the
+# bootstrap parsing that could drift from it.
+stranded_failed=0; stranded_started=""
+while IFS= read -r c; do
+  [ -z "$c" ] && continue
+  log "  stranded '$c' (created, never started) — starting" WARN
+  if docker start "$c" >>"$LOG_FILE" 2>&1; then
+    stranded_started="${stranded_started:+$stranded_started,}$c"
+  else
+    stranded_failed=1; log "  FAILED to start stranded '$c'" ERROR
+  fi
+done < <(bash "$DEPLOY_DIR/scripts/start-stack.sh" ps --status=created --format '{{.Name}}' 2>/dev/null || true)
+[ -n "$stranded_started" ] && log "Recovered stranded containers: $stranded_started" WARN
 
 # ---- claude.ai-connector sync (host systemd unit, not compose) -------------
 # poindexter-mcp-http.service runs mcp-server/http_server.py out of THIS
@@ -375,11 +444,15 @@ elif [ "$mcp_changed" = "1" ]; then
 fi
 
 # ---- outcome (step independence: marker only on a fully-clean pass) --------
-if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
+if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$restart_failed" = "0" ] && [ "$stranded_failed" = "0" ] && [ "$mcp_failed" = "0" ]; then
   printf '%s' "$head_sha" > "$MARKER_FILE"
   detail=""
   [ -n "$rebuild_services" ] && detail="rebuilt: $rebuild_services"
   [ -n "$skipped" ] && detail="${detail:+$detail; }skipped already-fresh: $skipped"
+  # Surface the recovery in the status file even on a clean pass — a sweep that
+  # had to act means the apply raced, and a silent self-heal is how a recurring
+  # fault stays invisible.
+  [ -n "$stranded_started" ] && detail="${detail:+$detail; }recovered stranded: $stranded_started"
   log "Pipeline now running $short_head. ${detail}"
   write_status deployed "$head_sha" "$last_deployed" "$restarted" "$detail"
 else
@@ -387,6 +460,7 @@ else
   [ "$build_failed" = "1" ] && steps="${steps}image-rebuild "
   [ "$apply_failed" = "1" ] && steps="${steps}compose-apply "
   [ "$restart_failed" = "1" ] && steps="${steps}container-restart "
+  [ "$stranded_failed" = "1" ] && steps="${steps}stranded-start "
   [ "$mcp_failed" = "1" ] && steps="${steps}mcp-connector "
   log "Deploy pass incomplete (failed: $steps); NOT recording marker — retries next cycle." ERROR
   write_status error "$head_sha" "$last_deployed" "$restarted" "failed steps: $steps"
