@@ -3529,3 +3529,62 @@ class TestRestockQuery:
         assert n == 1
         assert rendered[0].source == "image_kenburns"
         assert st.shot.source == "image_kenburns"
+
+
+class TestRestockQueryEchoRejection:
+    """Instruction-echo rejection (2026-08-27 production finding).
+
+    The director model answered "Write a better search query for a stock
+    footage clip" — the task restated. Un-caught, that string became a literal
+    Pexels search and keep-best then discarded the result SILENTLY, so the
+    whole repair looked like it never ran.
+    """
+
+    def test_rejects_the_observed_production_echo(self):
+        from services.video_renderers.shot_list_renderer import (
+            _clean_stock_query,
+        )
+
+        assert _clean_stock_query(
+            "Write a better search query for a stock footage clip",
+        ) == ""
+
+    def test_rejects_meta_words_and_preambles(self):
+        from services.video_renderers.shot_list_renderer import (
+            _clean_stock_query,
+        )
+
+        for echo in (
+            "a better query for this shot",
+            "search for server racks",
+            "Sure! server room cooling fans",
+            "Here is the query",
+            "stock footage of a datacenter",
+            "the clip should show a microphone",
+        ):
+            assert _clean_stock_query(echo) == "", echo
+
+    def test_rejects_degenerate_lengths(self):
+        from services.video_renderers.shot_list_renderer import (
+            _clean_stock_query,
+        )
+
+        assert _clean_stock_query("microphone") == ""          # 1 word
+        assert _clean_stock_query(" ".join(["word"] * 15)) == ""  # runaway
+
+    def test_accepts_real_queries(self):
+        from services.video_renderers.shot_list_renderer import (
+            _clean_stock_query,
+        )
+
+        for good in (
+            "speaking into headset microphone",
+            "server room cooling fans",
+            "analyst reading dashboard screen",
+            "circuit board macro closeup",
+        ):
+            assert _clean_stock_query(good) == good, good
+        # Still strips punctuation + labels around a genuine answer.
+        assert _clean_stock_query('Query: "server room cooling fans"') == (
+            "server room cooling fans"
+        )

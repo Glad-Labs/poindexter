@@ -270,6 +270,17 @@ Write ONE replacement query that:
   into a headset microphone", not "talking on a phone")
 - is 2-6 words, no punctuation, no quotes, no explanation
 
+Answer with the query WORDS ONLY. Do not restate the task, do not explain, do
+not write a sentence about queries — just the subject a camera would film.
+
+EXAMPLES
+subject: speech-recognition accuracy | missed query: busy city street
+  -> speaking into headset microphone
+subject: datacenter power draw | missed query: person at laptop
+  -> server room cooling fans
+subject: model benchmark scores | missed query: people laughing
+  -> analyst reading dashboard screen
+
 Output ONLY the query text on a single line.
 ```
 

@@ -1434,7 +1434,25 @@ def _clean_stock_query(raw: str) -> str:
     if ":" in line and len(line.split(":", 1)[0]) <= 12:
         line = line.split(":", 1)[1]  # drop a "Query:" style label
     cleaned = _QUERY_CLEAN_RE.sub(" ", line)
-    return " ".join(cleaned.split())[:200].strip()
+    out = " ".join(cleaned.split())[:200].strip()
+
+    # Reject an INSTRUCTION ECHO. Observed in production 2026-08-27: the
+    # director model answered "Write a better search query for a stock footage
+    # clip" — the task restated, not a query. Un-caught, that string became a
+    # literal Pexels search (returning nonsense), and keep-best then discarded
+    # the result SILENTLY, so the whole repair looked like a no-op. A real
+    # query names a subject; it does not talk about queries or searching.
+    low = out.lower()
+    if any(w in low for w in ("query", "search", "footage", "clip", "stock", "shot")):
+        return ""
+    words = out.split()
+    if words and words[0].lower() in (
+        "write", "provide", "return", "here", "output", "sure", "certainly",
+    ):
+        return ""
+    if not (2 <= len(words) <= 12):
+        return ""
+    return out
 
 
 async def _llm_restock_query(
@@ -1477,19 +1495,40 @@ async def _llm_restock_query(
 
     from services.llm_providers.dispatcher import dispatch_complete
 
+    # think=False + real output headroom: the director model is
+    # thinking-capable, and its reasoning channel shares the output budget.
+    # With a 64-token cap the trace ate the answer and what surfaced was an
+    # instruction echo (2026-08-27). Same shape as the director/reviewer/
+    # podcast thinking-leak family — see _resolve_director_think.
+    think: bool | None = None
+    if str(
+        site_config.get("video_director_disable_thinking", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes"):
+        think = False
+    kwargs: dict[str, Any] = {}
+    if think is not None:
+        kwargs["think"] = think
     try:
         completion = await dispatch_complete(
             pool, [{"role": "user", "content": prompt}], model,
             tier="standard", phase="video_restock_query",
-            temperature=0.4, max_tokens=64, timeout_s=90.0,
+            temperature=0.4, max_tokens=256, timeout_s=90.0, **kwargs,
         )
-        return _clean_stock_query(getattr(completion, "text", "") or "")
+        raw = getattr(completion, "text", "") or ""
     except Exception as exc:  # noqa: BLE001 — a re-query failure must not halt the render
         logger.warning(
-            "[SHOT_QA] re-query call failed for shot %d: %s",
+            "[SHOT_QA] shot %d re-query call failed: %s",
             shot.idx, describe_exception(exc),
         )
         return ""
+    cleaned = _clean_stock_query(raw)
+    if not cleaned:
+        logger.info(
+            "[SHOT_QA] shot %d re-query produced no usable query (model said "
+            "%r) — falling through to the render rung",
+            shot.idx, raw.strip()[:120],
+        )
+    return cleaned
 
 
 def _select_ai_style(site_config: Any, shot_idx: int) -> str:
@@ -2502,6 +2541,16 @@ async def _escalate_offtopic_stock(
             site_config=site_config, pool=pool,
         )
         if cand_qa.score is None or cand_qa.score <= st.qa.score:
+            # Log the REJECTION too. A silent keep-best made the whole repair
+            # look like it never ran (2026-08-27) — an attempted-and-rejected
+            # escalation is a different diagnosis from one that never fired.
+            logger.info(
+                "[SHOT_QA] shot %d escalation candidate scored %s vs incumbent "
+                "%.0f — keeping the stock frame",
+                st.shot.idx,
+                "unscorable" if cand_qa.score is None else f"{cand_qa.score:.0f}",
+                st.qa.score,
+            )
             continue
 
         logger.info(
