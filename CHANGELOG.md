@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+## [0.129.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.128.0...v0.129.0) (2026-08-27)
+
+
+### Features
+
+* **brain:** ComfyUI host-RAM recycle watch — queue-idle restart above watermark ([#3360](https://github.com/Glad-Labs/glad-labs-stack/issues/3360)) ([ddac7a9](https://github.com/Glad-Labs/glad-labs-stack/commit/ddac7a9256c1a9141db7a2baf72cadbe7a6ee588))
+* **ci:** exception-cause lint — failure strings must name their cause ([#3357](https://github.com/Glad-Labs/glad-labs-stack/issues/3357)) ([b86d330](https://github.com/Glad-Labs/glad-labs-stack/commit/b86d3304f50101c69d64c2a2e56d2a737d52ebe7))
+* **media:** on-theme end-card — site design system, brand fonts, operator logo ([#3353](https://github.com/Glad-Labs/glad-labs-stack/issues/3353)) ([5690a99](https://github.com/Glad-Labs/glad-labs-stack/commit/5690a9950d72056ef62e18ce2510848ef8900d4a))
+* **media:** retire the AI-human ban; prefer generated visuals over stock ([#3379](https://github.com/Glad-Labs/glad-labs-stack/issues/3379)) ([fb30a38](https://github.com/Glad-Labs/glad-labs-stack/commit/fb30a382b18a28511514f780c883a4976a89df57))
+* **pro:** full-auto delivery — LS custom_data webhook relay (CF Worker → KV → poll) ([#3367](https://github.com/Glad-Labs/glad-labs-stack/issues/3367)) ([f3fd2d7](https://github.com/Glad-Labs/glad-labs-stack/commit/f3fd2d711fe8fe942ea930d7831d28376b8243a7))
+* **pro:** relay reads via the Worker's own /lookup — no CF API token needed ([#3375](https://github.com/Glad-Labs/glad-labs-stack/issues/3375)) ([f7f6017](https://github.com/Glad-Labs/glad-labs-stack/commit/f7f601704d7a4511b1801f1bbf8521d589c69c1b))
+* **pro:** ship the operator console in the Pro deliverable ([#3216](https://github.com/Glad-Labs/glad-labs-stack/issues/3216)) ([#3361](https://github.com/Glad-Labs/glad-labs-stack/issues/3361)) ([386b489](https://github.com/Glad-Labs/glad-labs-stack/commit/386b489c21208f1e62e92246522dbb7acba7c864))
+* **rig:** put live temps on the XC7 LCD, and fix the strobing GIF core ([#3387](https://github.com/Glad-Labs/glad-labs-stack/issues/3387)) ([f0df0a8](https://github.com/Glad-Labs/glad-labs-stack/commit/f0df0a86efa4b725b9e773bfd2776ae7be518e9e))
+* **rig:** put the Glad Labs wordmark on the XC7 LCD animation ([#3389](https://github.com/Glad-Labs/glad-labs-stack/issues/3389)) ([8d8f0e2](https://github.com/Glad-Labs/glad-labs-stack/commit/8d8f0e2bbcf7ea76ac31e59ec52be82dc0e72897))
+* **rig:** upgrade OpenLinkHub to 0.9.1, run a coolant-loop GIF on the XC7 LCD ([#3383](https://github.com/Glad-Labs/glad-labs-stack/issues/3383)) ([43583cb](https://github.com/Glad-Labs/glad-labs-stack/commit/43583cb5eeef4b2b55c5250fafd7cb0707671f25))
+* **storefront:** CHECKOUT_LIVE=true + honest offer copy — gladlabs.ai starts selling ([#3216](https://github.com/Glad-Labs/glad-labs-stack/issues/3216)) ([#3363](https://github.com/Glad-Labs/glad-labs-stack/issues/3363)) ([92d00df](https://github.com/Glad-Labs/glad-labs-stack/commit/92d00df2ecf6f909a660dab33ef3a2379078fec4))
+
+
+### Bug Fixes
+
+* **async:** hold strong refs to fire-and-forget tasks (RUF006 audit) ([#3355](https://github.com/Glad-Labs/glad-labs-stack/issues/3355)) ([d83c091](https://github.com/Glad-Labs/glad-labs-stack/commit/d83c09196583cdac9b85a210f7ed472553b455cc))
+* **cli:** stop dropping findings emitted from poindexter CLI commands ([#3368](https://github.com/Glad-Labs/glad-labs-stack/issues/3368)) ([baef916](https://github.com/Glad-Labs/glad-labs-stack/commit/baef91615344a7b0bdcd484574f2914020d78c38))
+* **gpu:** cold-load VRAM guard — evict idle media sidecars before big Ollama loads ([#3344](https://github.com/Glad-Labs/glad-labs-stack/issues/3344)) ([464df4e](https://github.com/Glad-Labs/glad-labs-stack/commit/464df4e8002cb941054832a8deab2d19551c89f3))
+* **jobs:** failure details always name the cause — shared describe_exception ([#3354](https://github.com/Glad-Labs/glad-labs-stack/issues/3354)) ([4e1eae8](https://github.com/Glad-Labs/glad-labs-stack/commit/4e1eae84bbe4d1ae71a0c70322c4179ca5dfffde))
+* **jobs:** log lines name the cause too — describe_exception across services/jobs ([#3356](https://github.com/Glad-Labs/glad-labs-stack/issues/3356)) ([47cfdaa](https://github.com/Glad-Labs/glad-labs-stack/commit/47cfdaaf17b32e4bf73c37a1eda25adb2ddca7a5))
+* **media:** make every topic-escalation exit path observable ([#3384](https://github.com/Glad-Labs/glad-labs-stack/issues/3384)) ([364451a](https://github.com/Glad-Labs/glad-labs-stack/commit/364451adbad692a5bb9bb5a8d74a98bc7a3abae0))
+* **media:** off-topic stock footage escalates to on-theme renders ([#3373](https://github.com/Glad-Labs/glad-labs-stack/issues/3373)) ([e4070fd](https://github.com/Glad-Labs/glad-labs-stack/commit/e4070fd6dee9b21c7e5ff7a99df995d4be7c44b4))
+* **media:** re-query returned an instruction echo — think=False, validation, logging ([#3381](https://github.com/Glad-Labs/glad-labs-stack/issues/3381)) ([87ae5d8](https://github.com/Glad-Labs/glad-labs-stack/commit/87ae5d8cdb3fa7c126b5183646efea7c318ec384))
+* **media:** single-flight media/podcast dispatch — stop concurrent double-upload ([#3374](https://github.com/Glad-Labs/glad-labs-stack/issues/3374)) ([2a75d66](https://github.com/Glad-Labs/glad-labs-stack/commit/2a75d6684379f2fc1c8ac465c65e5a0aa17475cd))
+* **media:** static end-card + word-timestamp caption retiming ([#3358](https://github.com/Glad-Labs/glad-labs-stack/issues/3358)) ([3f9aaa7](https://github.com/Glad-Labs/glad-labs-stack/commit/3f9aaa7e2ba5e1296a9ecfb7387b61b1ec90611b))
+* **ops:** pro-freshness seed drops account-scoped platform URLs ([#3359](https://github.com/Glad-Labs/glad-labs-stack/issues/3359)) ([f396f65](https://github.com/Glad-Labs/glad-labs-stack/commit/f396f65099018023a35e0f1e5e53e39ea7a988c4))
+* **pipeline:** declare vetoed_by + featured_image_* as PipelineState channels ([#3376](https://github.com/Glad-Labs/glad-labs-stack/issues/3376)) ([81895aa](https://github.com/Glad-Labs/glad-labs-stack/commit/81895aa77e2e14965ca77255661434c7b4ecd064))
+* **research:** stop citing web sources we failed to fetch ([#3378](https://github.com/Glad-Labs/glad-labs-stack/issues/3378)) ([ffd1a90](https://github.com/Glad-Labs/glad-labs-stack/commit/ffd1a902e2650986d2d461c748602dd95f8f11c9))
+* **rig:** exclude the HX1500i from OpenLinkHub — it was logging 4.9M lines/day ([#3386](https://github.com/Glad-Labs/glad-labs-stack/issues/3386)) ([b9e2b40](https://github.com/Glad-Labs/glad-labs-stack/commit/b9e2b40df80934f807e6ffa15211d61309d03983))
+* **rig:** LCD GIF must be full-frame — partial frames are what strobes ([#3388](https://github.com/Glad-Labs/glad-labs-stack/issues/3388)) ([2016c9c](https://github.com/Glad-Labs/glad-labs-stack/commit/2016c9c329ce79ed0545749464296ec61b8900f1))
+* **settings:** seed 29 tunables the extractor's receiver blind spot orphaned ([#3366](https://github.com/Glad-Labs/glad-labs-stack/issues/3366)) ([31dab4e](https://github.com/Glad-Labs/glad-labs-stack/commit/31dab4e669fdc4a20798db42d2d64d4849c5b2a3))
+* **social:** close the Postiz delivery-state loop; ERROR is not a queue wedge ([#3352](https://github.com/Glad-Labs/glad-labs-stack/issues/3352)) ([1f2dacc](https://github.com/Glad-Labs/glad-labs-stack/commit/1f2daccf7dab3f6b6ffa366ddc94902e2efd258f))
+* **social:** cut over-limit promo copy at sentences, state prose budget in prompts ([#3351](https://github.com/Glad-Labs/glad-labs-stack/issues/3351)) ([1e57215](https://github.com/Glad-Labs/glad-labs-stack/commit/1e5721553be6e75fca1fe7046c9df0d2ec148708))
+* **social:** single-flight approve_draft — stop concurrent double-posting ([#3370](https://github.com/Glad-Labs/glad-labs-stack/issues/3370)) ([b842005](https://github.com/Glad-Labs/glad-labs-stack/commit/b842005dace668208c480324b936293154bedf52))
+* **storefront:** replace dead founding-members Discord invite ([#3362](https://github.com/Glad-Labs/glad-labs-stack/issues/3362)) ([43436ec](https://github.com/Glad-Labs/glad-labs-stack/commit/43436ec6d8001e2c5e3ab3a737a9a29311b0fc91))
+* **tests:** un-rot two integration tests that had no working coverage ([#3380](https://github.com/Glad-Labs/glad-labs-stack/issues/3380)) ([60f28c3](https://github.com/Glad-Labs/glad-labs-stack/commit/60f28c3e5278674f791ead315b180fa7dc56551e))
+
+
+### Code Refactoring
+
+* **cli:** dedup auth.py onto the shared _bootstrap helpers ([#3377](https://github.com/Glad-Labs/glad-labs-stack/issues/3377)) ([77226ac](https://github.com/Glad-Labs/glad-labs-stack/commit/77226ac2376eb00a058301d6a71c56ebadc73d17))
+
 ## [0.128.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.127.0...v0.128.0) (2026-08-26)
 
 
