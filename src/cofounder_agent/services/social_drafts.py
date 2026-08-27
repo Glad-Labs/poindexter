@@ -119,6 +119,19 @@ _APPROVABLE_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed")
 # hide history.
 _LIVE_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed")
 
+# Advisory-lock namespace for the approve/fire critical section. Two callers
+# posting the SAME draft concurrently — the every-minute ``fire_due_drafts``
+# sweep racing a manual ``poindexter social approve`` / console / MCP approve
+# of a scheduled draft — both read an approvable status, both clear the gate,
+# and both call Postiz, so the promo goes out TWICE (create_draft was hardened
+# against the duplicate-promo class in poindexter#833; the approve path was
+# not). ``pg_try_advisory_lock(NS, hashtext(draft_id))`` serializes the whole
+# read→gate→Postiz→mark section cluster-wide (advisory locks span workers, so
+# this holds for the SaaS multi-worker future too) on a dedicated pooled
+# connection; the loser of the race bails WITHOUT posting. A stable arbitrary
+# int32 chosen to not collide with GPU_ADVISORY_LOCK_KEY.
+_SOCIAL_POST_LOCK_NS: int = 0x50AC  # "SoAC" — social approve critical section
+
 
 @dataclass
 class SocialDraftRow:
@@ -285,6 +298,67 @@ class SocialDraftsService:
         whole reason the queue lives here instead of inside Postiz — a post
         whose publish slipped between scheduling and firing must not send a
         promo to a URL that 404s.
+
+        **Single-flight per draft.** The whole read→gate→Postiz→mark section
+        runs under a per-draft advisory lock (``_SOCIAL_POST_LOCK_NS``) so a
+        due-sweep firing a ``scheduled`` draft and a concurrent manual approve
+        of the same draft can't both reach ``create_post`` and double-post the
+        promo. The loser of the race returns ``{"success": False,
+        "contended": True}`` WITHOUT posting — the holder completes it.
+        """
+        async with pool.acquire() as lock_conn:
+            # pg_try_advisory_lock returns exactly True/False on real Postgres;
+            # a mock/degraded pool returns None (or a stub value), which we
+            # treat as "no real lock backend — proceed" rather than as
+            # contention (only a literal False means another session holds it).
+            got = await lock_conn.fetchval(
+                "SELECT pg_try_advisory_lock($1, hashtext($2))",
+                _SOCIAL_POST_LOCK_NS,
+                draft_id,
+            )
+            if got is False:
+                logger.info(
+                    "[social_drafts] draft %s already being posted (lock "
+                    "contended) — skipping to avoid a duplicate promo",
+                    draft_id[:8],
+                )
+                return {
+                    "success": False,
+                    "contended": True,
+                    "error": "draft is already being posted by another approver",
+                }
+            try:
+                return await self._approve_draft_locked(
+                    draft_id, pool, site_config
+                )
+            finally:
+                if got is not False:
+                    # Best-effort release; a dropped connection releases the
+                    # session lock anyway, so a failure here can't wedge it.
+                    try:
+                        await lock_conn.fetchval(
+                            "SELECT pg_advisory_unlock($1, hashtext($2))",
+                            _SOCIAL_POST_LOCK_NS,
+                            draft_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "[social_drafts] advisory-unlock for draft %s "
+                            "failed (lock frees on disconnect)",
+                            draft_id[:8],
+                            exc_info=True,
+                        )
+
+    async def _approve_draft_locked(
+        self,
+        draft_id: str,
+        pool: Any,
+        site_config: SiteConfig,
+    ) -> dict[str, Any]:
+        """The approve/fire critical section — see ``approve_draft``.
+
+        Runs under the per-draft advisory lock that ``approve_draft`` holds, so
+        exactly one caller executes this at a time for a given draft.
         """
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -569,6 +643,15 @@ class SocialDraftsService:
                 logger.info(
                     "[social_drafts] fired scheduled draft %s (%s)",
                     draft_id[:8], row["platform"],
+                )
+            elif result.get("contended"):
+                # Another approver holds the per-draft lock and is posting it
+                # right now — not our failure and not blocked; the holder owns
+                # the outcome. Don't count it, so metrics stay honest.
+                logger.info(
+                    "[social_drafts] scheduled draft %s already being posted "
+                    "by another approver — skipping",
+                    draft_id[:8],
                 )
             elif await self._still_scheduled(draft_id, pool):
                 # approve_draft's publish gate refused (post not live yet) and

@@ -701,6 +701,136 @@ async def test_approve_draft_bluesky_maps_type_and_integration():
 
 
 # ---------------------------------------------------------------------------
+# approve_draft — single-flight advisory lock (no duplicate promo)
+# ---------------------------------------------------------------------------
+
+
+class _LockConn:
+    """Fake asyncpg conn modelling pg_try_advisory_lock over shared state.
+
+    fetchval routes on the SQL: the advisory lock/unlock calls mutate the
+    shared ``held`` set (True on first acquire of a key, False while held);
+    every other call returns None. fetchrow routes on the SQL too and returns
+    the same rows every time (NOT a consuming pop) so BOTH racing callers can
+    independently read the draft + post — the lock, not an exhausted script,
+    is what must stop the second create_post. execute is a no-op. One conn is
+    shared across all ``pool.acquire()`` blocks so the lock state is
+    process-wide, exactly like a real advisory lock.
+    """
+
+    def __init__(self, held: set, draft_row, post_row):
+        self._held = held
+        self._draft_row = draft_row
+        self._post_row = post_row
+
+    async def fetchval(self, sql, *args):
+        if "pg_try_advisory_lock" in sql:
+            key = tuple(args)
+            if key in self._held:
+                return False
+            self._held.add(key)
+            return True
+        if "pg_advisory_unlock" in sql:
+            self._held.discard(tuple(args))
+            return True
+        return None
+
+    async def fetchrow(self, sql, *args):
+        if "FROM social_post_drafts" in sql:
+            return self._draft_row
+        if "FROM posts" in sql:
+            return self._post_row
+        return None
+
+    async def execute(self, *args, **kwargs):
+        return ""
+
+
+class _LockPool:
+    def __init__(self, draft_row, post_row):
+        self._conn = _LockConn(set(), draft_row, post_row)
+
+    def acquire(self):
+        conn = self._conn
+
+        class _Ctx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return None
+
+        return _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_approve_posts_only_once():
+    """Two concurrent approvals of the SAME draft — the fire-sweep racing a
+    manual approve — must post to Postiz exactly once. Without the per-draft
+    advisory lock both cleared the status check and both called create_post,
+    double-posting the promo (the approve-path twin of poindexter#833)."""
+    import asyncio
+
+    # Both callers can read the SAME draft + published post independently, so
+    # without the lock BOTH would clear the gate and call create_post twice —
+    # the lock is the only thing that can hold the count to one.
+    pool = _LockPool(_draft_row(id="dup-1", content="promo"), _post_row())
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+    })
+
+    async def _slow_create_post(*a, **k):
+        # Hold the lock across a real suspension so the racing call reaches its
+        # pg_try_advisory_lock and gets False while this one is mid-post.
+        await asyncio.sleep(0.05)
+        return {"success": True, "post_id": "pz-dup", "error": None}
+
+    with patch(
+        "services.social_drafts.PostizClient.create_post",
+        new_callable=AsyncMock,
+        side_effect=_slow_create_post,
+    ) as create_post:
+        svc = SocialDraftsService()
+        results = await asyncio.gather(
+            svc.approve_draft("dup-1", pool, sc),
+            svc.approve_draft("dup-1", pool, sc),
+        )
+
+    assert create_post.await_count == 1, "promo posted more than once"
+    successes = [r for r in results if r.get("success")]
+    contended = [r for r in results if r.get("contended")]
+    assert len(successes) == 1
+    assert len(contended) == 1
+
+
+@pytest.mark.asyncio
+async def test_lock_contention_skips_postiz_entirely():
+    """When the advisory lock is already held (pg_try_advisory_lock → False),
+    approve_draft returns contended and NEVER constructs a Postiz call."""
+    pool = _LockPool(_draft_row(id="held-1"), _post_row())
+
+    # Force fetchval to report the lock as already held (another approver).
+    async def _always_held(sql, *args):
+        if "pg_try_advisory_lock" in sql:
+            return False
+        return None
+
+    pool._conn.fetchval = _always_held  # type: ignore[method-assign]
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+    })
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("held-1", pool, sc)
+
+    assert result["success"] is False
+    assert result["contended"] is True
+    mock_cls.assert_not_called()  # never even built a client
+
+
+# ---------------------------------------------------------------------------
 # backfill_post_id
 # ---------------------------------------------------------------------------
 
