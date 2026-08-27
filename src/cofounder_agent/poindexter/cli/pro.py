@@ -15,6 +15,11 @@ Subcommands:
   sync a username (the ``pro_delivery_action_needed`` finding names the
   exact command to run).
 - ``unlink SUB`` — revoke access and detach the GitHub account.
+- ``relay status|register|remove`` — manage the Lemon Squeezy webhook that
+  feeds the custom_data relay Worker
+  (``infrastructure/cloudflare/ls-webhook-relay``), which is what makes
+  delivery fully automatic: LS only exposes the buyer's GitHub username in
+  webhook payloads, never via its REST API.
 """
 
 from __future__ import annotations
@@ -192,6 +197,132 @@ async def _run_unlink(subscription: str, as_json: bool) -> None:
     click.echo(
         f"unlinked {payload['unlinked'] or '(no github account)'} from "
         f"subscription {payload['subscription_id']}"
+    )
+
+
+@pro_group.group(
+    "relay",
+    help=(
+        "Manage the Lemon Squeezy webhook feeding the custom_data relay "
+        "Worker (full-auto delivery). Deploy the Worker first: "
+        "infrastructure/cloudflare/ls-webhook-relay/README.md."
+    ),
+)
+def relay_group() -> None:
+    """relay command sub-group."""
+
+
+@relay_group.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON for LLM/script consumers.")
+def cmd_relay_status(as_json: bool) -> None:
+    """Show relay settings here + the webhook list on Lemon Squeezy."""
+    asyncio.run(_run_relay_status(as_json))
+
+
+async def _run_relay_status(as_json: bool) -> None:
+    pool, site_config = await _open_ctx()
+    try:
+        from services.pro_delivery import cli_relay_status
+
+        payload = await cli_relay_status(pool, site_config)
+    finally:
+        await pool.close()
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo("=== pro relay status ===")
+    for key, value in payload["config"].items():
+        click.echo(f"  {key} = {value}")
+    click.echo()
+    hooks = payload["ls_webhooks"]
+    if isinstance(hooks, str):
+        click.echo(f"LS webhooks: {hooks}")
+        return
+    if not hooks:
+        click.echo(
+            "LS webhooks: none registered — run `poindexter pro relay "
+            "register <worker-url>` after deploying the Worker."
+        )
+        return
+    click.echo("LS webhooks:")
+    for h in hooks:
+        click.echo(
+            f"  #{h['id']}  {h['url']}\n"
+            f"      events: {', '.join(h['events'] or [])}  "
+            f"last_sent: {h['last_sent_at'] or 'never'}"
+        )
+
+
+@relay_group.command("register")
+@click.argument("relay_url")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON for LLM/script consumers.")
+def cmd_relay_register(relay_url: str, as_json: bool) -> None:
+    """Point Lemon Squeezy at RELAY_URL (create or update the webhook).
+
+    RELAY_URL is the deployed Worker endpoint, e.g.
+    https://ls-webhook-relay.<you>.workers.dev — the registration uses
+    app_settings.lemon_squeezy_webhook_secret as the signing secret, which
+    must match the Worker's LS_WEBHOOK_SECRET.
+    """
+    asyncio.run(_run_relay_register(relay_url, as_json))
+
+
+async def _run_relay_register(relay_url: str, as_json: bool) -> None:
+    pool, site_config = await _open_ctx()
+    try:
+        from services.pro_delivery import ProDeliveryConfigError, cli_relay_register
+
+        try:
+            payload = await cli_relay_register(pool, site_config, relay_url)
+        except (ValueError, ProDeliveryConfigError, RuntimeError) as exc:
+            raise click.ClickException(str(exc)) from exc
+    finally:
+        await pool.close()
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    hook = payload["webhook"]
+    click.echo(
+        f"{payload['action']} LS webhook #{hook['id']} -> {hook['url']} "
+        f"(events: {', '.join(hook['events'] or [])})"
+    )
+    for other in payload["other_webhooks"]:
+        click.echo(
+            f"NOTE: another webhook exists — #{other['id']} -> {other['url']} "
+            f"(last_sent: {other['last_sent_at'] or 'never'}). If it's a "
+            "stale pre-relay registration, remove it with: poindexter pro "
+            f"relay remove {other['id']}"
+        )
+
+
+@relay_group.command("remove")
+@click.argument("webhook_id")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON for LLM/script consumers.")
+def cmd_relay_remove(webhook_id: str, as_json: bool) -> None:
+    """Delete LS webhook WEBHOOK_ID (see ids in `pro relay status`)."""
+    asyncio.run(_run_relay_remove(webhook_id, as_json))
+
+
+async def _run_relay_remove(webhook_id: str, as_json: bool) -> None:
+    pool, site_config = await _open_ctx()
+    try:
+        from services.pro_delivery import ProDeliveryConfigError, cli_relay_remove
+
+        try:
+            payload = await cli_relay_remove(pool, site_config, webhook_id)
+        except (ValueError, ProDeliveryConfigError, RuntimeError) as exc:
+            raise click.ClickException(str(exc)) from exc
+    finally:
+        await pool.close()
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    click.echo(
+        f"webhook {payload['webhook_id']} "
+        + ("deleted" if payload["existed"] else "was already gone")
     )
 
 

@@ -1,0 +1,42 @@
+name = "ls-webhook-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+# KV namespace holding the custom_data mappings the delivery poll reads.
+# Operator creates it and fills the id here before deploying:
+#   npx wrangler kv namespace create RELAY_KV
+[[kv_namespaces]]
+binding = "RELAY_KV"
+id = "" # fill with the namespace id from `wrangler kv namespace create`
+
+# Rate limiting — 60 requests/min per IP. Lemon Squeezy sends a handful of
+# events per purchase, so this is pure abuse protection (it caps how fast
+# anyone can grind guesses against the HMAC check). The namespace_id is a
+# per-worker integer you pick; the CF dashboard shows it under Workers >
+# Rate Limiting after the first deploy.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "3001"
+simple = { limit = 60, period = 60 }
+
+[vars]
+# Days a mapping lives in KV. Live subscriptions refresh the clock on every
+# subscription_updated webhook (renewals), so this only garbage-collects
+# lapsed buyers' rows.
+RETENTION_DAYS = "90"
+
+# LS_WEBHOOK_SECRET is intentionally NOT a [vars] entry — set it as a Worker
+# secret so the signing secret never lands in this repo:
+#
+#   npx wrangler secret put LS_WEBHOOK_SECRET
+#
+# Use the SAME value as app_settings.lemon_squeezy_webhook_secret — that is
+# what `poindexter pro relay register` registers with Lemon Squeezy, and the
+# Worker rejects (401) anything not signed with it. Unset → the Worker
+# refuses all traffic (503, fail closed).
+
+# Custom domain — optionally route your own subdomain to this Worker via the
+# CF dashboard or `wrangler routes add`. The default workers.dev URL works
+# fine (Lemon Squeezy is the only caller). Don't commit a route block with an
+# operator-specific hostname.

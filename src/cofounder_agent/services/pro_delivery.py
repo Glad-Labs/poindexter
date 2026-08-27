@@ -9,9 +9,13 @@ design (local-first; Vercel functions can't reach the LAN, the Tailscale
 Funnel is retired), so the existing ``POST /api/webhooks/lemon-squeezy``
 route — kept, but no longer load-bearing — can never hear a live event. A
 poll from inside the network needs no ingress and reconciles after downtime,
-where a missed webhook is simply lost. If a public webhook relay ever gets
-built, the order-id-keyed ``revenue_events`` dedup here must be reconciled
-with the webhook handler's ``webhook_id``-keyed rows first.
+where a missed webhook is simply lost. The public webhook relay that DOES
+exist (``infrastructure/cloudflare/ls-webhook-relay``, see below) stores
+checkout custom_data mappings ONLY and never writes ``revenue_events``, so
+the order-id-keyed dedup here stays the single revenue path; if anyone ever
+makes a relay forward whole webhooks into that route instead, the
+``webhook_id``-keyed rows it writes must be reconciled with the poll's
+order-id keys first.
 
 Access policy (also documented in docs/operations/pro-delivery.md):
 
@@ -30,12 +34,27 @@ so it cannot touch the operator's own account or collaborators added by
 hand for unrelated reasons.
 
 GitHub username resolution: the storefront passes the buyer's username via
-``checkout[custom][github_username]`` on the buy URL. The sync looks for
-that custom data on the subscription and its order; when the LS API doesn't
-expose it, delivery degrades to a one-command manual step — a
-``pro_delivery_action_needed`` finding pings the operator with
-``poindexter pro link <subscription> <github-username>``. Operator-set
-usernames always win; the sync never overwrites a non-NULL value.
+``checkout[custom][github_username]`` on the buy URL. Verified live on the
+2026-08-26 test purchase (order 9315803): the param SURVIVES checkout and
+comes back in webhook payloads as ``meta.custom_data`` — but the LS REST
+API structurally omits it (order/subscription objects carry no custom-data
+field at all). So the username reaches the sync in resolution order:
+
+1. ``custom_data`` probed on the REST subscription/order attributes — dead
+   today, kept in case LS ever adds the field;
+2. the **webhook relay**: a Cloudflare Worker
+   (``infrastructure/cloudflare/ls-webhook-relay``) catches LS webhooks at
+   the edge, verifies the HMAC, and parks ``meta.custom_data`` in Workers
+   KV under ``sub:<id>`` / ``order:<id>`` keys; ``_relay_lookup`` reads
+   those via the CF REST API (outbound-only, no ingress) for subscriptions
+   still missing a username. Optional — enabled by setting
+   ``pro_delivery_relay_kv_namespace_id`` (+ token + account id); unset
+   means the feature is off, which is a designed state, not a fallback;
+3. manual: a ``pro_delivery_action_needed`` finding pings the operator
+   with ``poindexter pro link <subscription> <github-username>``.
+
+Operator-set usernames always win; the sync never overwrites a non-NULL
+value, and the relay is only consulted for rows whose column is NULL.
 """
 
 from __future__ import annotations
@@ -50,12 +69,24 @@ from typing import Any
 
 import httpx
 
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
 LS_API_BASE = "https://api.lemonsqueezy.com/v1"
 GITHUB_API_BASE = "https://api.github.com"
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
+
+# Events `pro relay register` subscribes the LS webhook to. All three carry
+# meta.custom_data; subscription_updated additionally fires on every renewal,
+# which refreshes the relay KV row's TTL so a live subscription's mapping
+# never ages out.
+RELAY_WEBHOOK_EVENTS = (
+    "order_created",
+    "subscription_created",
+    "subscription_updated",
+)
 
 # LS lifecycle statuses that grant access vs. revoke it. Anything unknown
 # (a status LS adds later) deliberately falls in NEITHER set: the row is
@@ -110,6 +141,20 @@ class _Config:
     permission: str
     store_id: str
     product_id: str
+    # Webhook-relay lookup (optional). All three set → the sync consults the
+    # relay's KV store for subscriptions missing a username; namespace unset
+    # → relay off entirely (designed state for installs without the Worker).
+    relay_kv_namespace_id: str = ""
+    relay_kv_token: str = ""
+    relay_account_id: str = ""
+
+    @property
+    def relay_enabled(self) -> bool:
+        return bool(
+            self.relay_kv_namespace_id
+            and self.relay_kv_token
+            and self.relay_account_id
+        )
 
 
 def normalize_github_username(raw: str | None) -> str | None:
@@ -149,10 +194,12 @@ def _parse_ts(raw: Any) -> datetime | None:
 def _extract_github_username(*sources: Any) -> str | None:
     """Hunt checkout custom_data for a GitHub username across payloads.
 
-    LS documents custom data on webhook payloads; whether the REST API
-    exposes it on subscription/order attributes has to be observed live,
-    so this probes every plausible carrier and the caller degrades to the
-    manual ``pro link`` path when nothing is found.
+    Observed live 2026-08-26 (order 9315803): the LS REST API does NOT
+    expose checkout custom_data on subscription/order attributes — only
+    webhook payloads carry it (``meta.custom_data``), which is what the
+    relay KV values hold. The REST-attribute probe stays because it costs
+    nothing and self-activates if LS ever adds the field; callers degrade
+    relay → manual ``pro link`` when nothing is found anywhere.
     """
     for src in sources:
         if not isinstance(src, dict):
@@ -206,6 +253,28 @@ class ProDeliveryService:
             missing.append(
                 "pro_delivery_github_repo (owner/name, e.g. Glad-Labs/poindexter-pro)"
             )
+        # Relay lookup is optional (namespace unset = off), but HALF-set is a
+        # misconfiguration: an operator who deployed the Worker and set the
+        # namespace believes full-auto delivery is live, so a missing token
+        # must fail loud rather than silently degrade to manual linking.
+        relay_ns = (sc.get("pro_delivery_relay_kv_namespace_id", "") or "").strip()
+        relay_token = ""
+        relay_account = ""
+        if relay_ns:
+            relay_token = await sc.get_secret("pro_delivery_relay_kv_token", "")
+            relay_account = (sc.get("cloudflare_account_id", "") or "").strip()
+            if not relay_token:
+                missing.append(
+                    "secret pro_delivery_relay_kv_token (CF API token, Workers "
+                    "KV Storage: Read) — required because "
+                    "pro_delivery_relay_kv_namespace_id is set"
+                )
+            if not relay_account:
+                missing.append(
+                    "cloudflare_account_id — required because "
+                    "pro_delivery_relay_kv_namespace_id is set"
+                )
+
         if missing:
             raise ProDeliveryConfigError(
                 "pro delivery is not configured — set: " + "; ".join(missing)
@@ -218,6 +287,9 @@ class ProDeliveryService:
             permission=(sc.get("pro_delivery_github_permission", "pull") or "pull"),
             store_id=(sc.get("pro_delivery_ls_store_id", "") or "").strip(),
             product_id=(sc.get("pro_delivery_ls_product_id", "") or "").strip(),
+            relay_kv_namespace_id=relay_ns,
+            relay_kv_token=relay_token,
+            relay_account_id=relay_account,
         )
 
     # -- HTTP helpers ------------------------------------------------------
@@ -252,11 +324,12 @@ class ProDeliveryService:
         subs: list[dict[str, Any]] = []
         orders: dict[str, dict[str, Any]] = {}
         url: str | None = f"{LS_API_BASE}/subscriptions"
-        params: dict[str, str] | None = {"page[size]": "100", "include": "order"}
+        first_params = {"page[size]": "100", "include": "order"}
         if cfg.store_id:
-            params["filter[store_id]"] = cfg.store_id
+            first_params["filter[store_id]"] = cfg.store_id
         if cfg.product_id:
-            params["filter[product_id]"] = cfg.product_id
+            first_params["filter[product_id]"] = cfg.product_id
+        params: dict[str, str] | None = first_params
         while url:
             resp = await client.get(url, params=params, headers=self._ls_headers(cfg))
             resp.raise_for_status()
@@ -270,6 +343,69 @@ class ProDeliveryService:
             url = (body.get("links") or {}).get("next")
             params = None
         return subs, orders
+
+    async def _relay_lookup(
+        self,
+        client: httpx.AsyncClient,
+        cfg: _Config,
+        subscription_id: str,
+        order_id: Any,
+    ) -> str | None:
+        """Fetch the buyer's GitHub username from the webhook relay's KV store.
+
+        The ls-webhook-relay Worker parks LS webhook ``meta.custom_data``
+        under ``sub:<subscription_id>`` / ``order:<order_id>`` keys; this
+        reads them back through the Cloudflare REST API (outbound-only).
+        Fail-open by contract: any failure returns None and the caller
+        degrades to the manual ``pro link`` finding — a relay outage must
+        never take down the rest of the sync (same posture as the QA rails'
+        degraded-state handling).
+        """
+        keys = [f"sub:{subscription_id}"]
+        if order_id is not None:
+            keys.append(f"order:{order_id}")
+        for key in keys:
+            url = (
+                f"{CF_API_BASE}/accounts/{cfg.relay_account_id}"
+                f"/storage/kv/namespaces/{cfg.relay_kv_namespace_id}"
+                f"/values/{key}"
+            )
+            try:
+                resp = await client.get(
+                    url,
+                    headers={"Authorization": f"Bearer {cfg.relay_kv_token}"},
+                )
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "[ProDelivery] relay KV lookup failed for %s: %s",
+                    key,
+                    describe_exception(exc),
+                )
+                return None
+            if resp.status_code == 404:
+                continue  # no mapping under this key — clean absence
+            if resp.status_code != 200:
+                logger.warning(
+                    "[ProDelivery] relay KV lookup for %s returned %s: %s",
+                    key,
+                    resp.status_code,
+                    resp.text[:200],
+                )
+                return None
+            try:
+                payload = resp.json()
+            except ValueError:
+                logger.warning(
+                    "[ProDelivery] relay KV value under %s is not JSON", key
+                )
+                continue
+            username = _extract_github_username(payload)
+            if username:
+                logger.info(
+                    "[ProDelivery] relay resolved %s -> %s", key, username
+                )
+                return username
+        return None
 
     async def _github_invite(
         self, client: httpx.AsyncClient, cfg: _Config, username: str
@@ -451,6 +587,27 @@ class ProDeliveryService:
                     username_from_ls = _extract_github_username(attrs, order_attrs)
 
                     try:
+                        # Relay consult — only for rows that could actually be
+                        # delivered (access-granting status) and still have no
+                        # username anywhere: not in the REST payload (dead
+                        # channel today) and not already linked in the DB.
+                        # The DB pre-check keeps steady-state KV reads at
+                        # zero once a username is known.
+                        if (
+                            username_from_ls is None
+                            and cfg.relay_enabled
+                            and status in ACCESS_STATUSES
+                        ):
+                            already_linked = await conn.fetchval(
+                                "SELECT github_username FROM pro_subscriptions"
+                                " WHERE subscription_id = $1",
+                                sub_id,
+                            )
+                            if already_linked is None:
+                                username_from_ls = await self._relay_lookup(
+                                    client, cfg, sub_id, attrs.get("order_id")
+                                )
+
                         is_new = await self._upsert_row(conn, sub, username_from_ls)
                         if is_new:
                             outcome.revenue_rows += await self._record_initial_revenue(
@@ -721,6 +878,256 @@ async def cli_status(pool: Any, site_config: Any, *, limit: int = 50) -> dict[st
 
 
 # ---------------------------------------------------------------------------
+# webhook relay management — `poindexter pro relay …`
+#
+# The relay Worker (infrastructure/cloudflare/ls-webhook-relay) is deployed
+# with wrangler; these commands manage the OTHER half — the Lemon Squeezy
+# webhook registration that feeds it, via the LS REST API. Operator-invoked
+# only: nothing here runs from the scheduled sync, so the LS account's
+# webhook config never changes without an explicit command.
+# ---------------------------------------------------------------------------
+
+
+def _ls_write_headers(ls_api_key: str) -> dict[str, str]:
+    return {
+        "Accept": "application/vnd.api+json",
+        "Content-Type": "application/vnd.api+json",
+        "Authorization": f"Bearer {ls_api_key}",
+    }
+
+
+async def _require_ls_key(site_config: Any) -> str:
+    ls_api_key = await site_config.get_secret("lemon_squeezy_api_key", "")
+    if not ls_api_key:
+        raise ProDeliveryConfigError(
+            "pro delivery is not configured — set: secret lemon_squeezy_api_key "
+            "(Lemon Squeezy → Settings → API)"
+        )
+    return ls_api_key
+
+
+async def _ls_list_webhooks(
+    client: httpx.AsyncClient, ls_api_key: str
+) -> list[dict[str, Any]]:
+    hooks: list[dict[str, Any]] = []
+    url: str | None = f"{LS_API_BASE}/webhooks"
+    params: dict[str, str] | None = {"page[size]": "100"}
+    while url:
+        resp = await client.get(
+            url, params=params, headers=_ls_write_headers(ls_api_key)
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        hooks.extend(body.get("data") or [])
+        url = (body.get("links") or {}).get("next")
+        params = None
+    return hooks
+
+
+def _webhook_summary(hook: dict[str, Any]) -> dict[str, Any]:
+    attrs = hook.get("attributes") or {}
+    return {
+        "id": str(hook.get("id")),
+        "url": attrs.get("url"),
+        "events": attrs.get("events"),
+        "last_sent_at": attrs.get("last_sent_at"),
+    }
+
+
+async def _resolve_store_id(
+    client: httpx.AsyncClient, site_config: Any, ls_api_key: str
+) -> str:
+    configured = (site_config.get("pro_delivery_ls_store_id", "") or "").strip()
+    if configured:
+        return configured
+    resp = await client.get(
+        f"{LS_API_BASE}/stores", headers=_ls_write_headers(ls_api_key)
+    )
+    resp.raise_for_status()
+    stores = resp.json().get("data") or []
+    if len(stores) == 1:
+        return str(stores[0]["id"])
+    ids = ", ".join(str(s.get("id")) for s in stores) or "none visible"
+    raise ValueError(
+        f"cannot pick a Lemon Squeezy store automatically (stores: {ids}) — "
+        "set pro_delivery_ls_store_id first"
+    )
+
+
+async def cli_relay_status(
+    pool: Any,
+    site_config: Any,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
+    """Both halves of the relay config: our settings + LS's webhook list."""
+    sc = site_config
+    config_state = {
+        "pro_delivery_relay_url": sc.get("pro_delivery_relay_url", "") or "(unset)",
+        "pro_delivery_relay_kv_namespace_id": (
+            sc.get("pro_delivery_relay_kv_namespace_id", "") or "(unset)"
+        ),
+        "cloudflare_account_id": sc.get("cloudflare_account_id", "") or "(unset)",
+        "pro_delivery_relay_kv_token_set": bool(
+            await sc.get_secret("pro_delivery_relay_kv_token", "")
+        ),
+        "lemon_squeezy_webhook_secret_set": bool(
+            await sc.get_secret("lemon_squeezy_webhook_secret", "")
+        ),
+    }
+    ls_api_key = await sc.get_secret("lemon_squeezy_api_key", "")
+    if not ls_api_key:
+        return {
+            "config": config_state,
+            "ls_webhooks": "unavailable — secret lemon_squeezy_api_key unset",
+        }
+    async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
+        hooks = await _ls_list_webhooks(client, ls_api_key)
+    return {
+        "config": config_state,
+        "ls_webhooks": [_webhook_summary(h) for h in hooks],
+    }
+
+
+async def cli_relay_register(
+    pool: Any,
+    site_config: Any,
+    relay_url: str,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
+    """Create-or-update the LS webhook that feeds the relay Worker.
+
+    Idempotent on the URL: an existing webhook already pointing at
+    ``relay_url`` is PATCHed (events + secret converged), anything else
+    gets a fresh POST. Other webhooks on the store are surfaced but never
+    touched — deleting one is its own explicit command (``relay remove``).
+    Also persists ``pro_delivery_relay_url`` so status/docs have one truth.
+    """
+    relay_url = (relay_url or "").strip()
+    if not relay_url.startswith("https://"):
+        raise ValueError(f"relay url must be https://…, got {relay_url!r}")
+
+    ls_api_key = await _require_ls_key(site_config)
+    secret = await site_config.get_secret("lemon_squeezy_webhook_secret", "")
+    if not secret:
+        raise ProDeliveryConfigError(
+            "pro delivery is not configured — set: secret "
+            "lemon_squeezy_webhook_secret (any 6-40 char string; also set the "
+            "same value as the Worker's LS_WEBHOOK_SECRET)"
+        )
+    # LS validates signing secrets to 6..40 chars — catch it here with a
+    # remediation instead of surfacing a bare 422.
+    if not 6 <= len(secret) <= 40:
+        raise ValueError(
+            f"lemon_squeezy_webhook_secret is {len(secret)} chars; Lemon "
+            "Squeezy accepts 6-40. Rotate it (poindexter settings set "
+            "lemon_squeezy_webhook_secret <value> --secret) and re-run "
+            "`wrangler secret put LS_WEBHOOK_SECRET` on the Worker to match."
+        )
+
+    attributes = {
+        "url": relay_url,
+        "events": list(RELAY_WEBHOOK_EVENTS),
+        "secret": secret,
+    }
+    async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
+        hooks = await _ls_list_webhooks(client, ls_api_key)
+        existing = next(
+            (
+                h
+                for h in hooks
+                if (h.get("attributes") or {}).get("url") == relay_url
+            ),
+            None,
+        )
+        if existing is not None:
+            body = {
+                "data": {
+                    "type": "webhooks",
+                    "id": str(existing["id"]),
+                    "attributes": attributes,
+                }
+            }
+            resp = await client.patch(
+                f"{LS_API_BASE}/webhooks/{existing['id']}",
+                json=body,
+                headers=_ls_write_headers(ls_api_key),
+            )
+            action = "updated"
+        else:
+            store_id = await _resolve_store_id(client, site_config, ls_api_key)
+            body = {
+                "data": {
+                    "type": "webhooks",
+                    "attributes": attributes,
+                    "relationships": {
+                        "store": {"data": {"type": "stores", "id": store_id}}
+                    },
+                }
+            }
+            resp = await client.post(
+                f"{LS_API_BASE}/webhooks",
+                json=body,
+                headers=_ls_write_headers(ls_api_key),
+            )
+            action = "created"
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"Lemon Squeezy webhook {action.rstrip('d')} failed: "
+                f"{resp.status_code} {resp.text[:300]}"
+            )
+        registered = resp.json().get("data") or {}
+        others = [
+            _webhook_summary(h)
+            for h in hooks
+            if str(h.get("id")) != str(registered.get("id"))
+        ]
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
+            "ON CONFLICT (key) DO UPDATE "
+            "SET value = EXCLUDED.value, updated_at = NOW()",
+            "pro_delivery_relay_url",
+            relay_url,
+        )
+
+    return {
+        "ok": True,
+        "action": action,
+        "webhook": _webhook_summary(registered),
+        "other_webhooks": others,
+    }
+
+
+async def cli_relay_remove(
+    pool: Any,
+    site_config: Any,
+    webhook_id: str,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
+    """Delete one LS webhook by id (e.g. a stale pre-relay registration)."""
+    ls_api_key = await _require_ls_key(site_config)
+    async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
+        resp = await client.delete(
+            f"{LS_API_BASE}/webhooks/{webhook_id}",
+            headers=_ls_write_headers(ls_api_key),
+        )
+    if resp.status_code not in (204, 404):
+        raise RuntimeError(
+            f"Lemon Squeezy webhook delete failed: "
+            f"{resp.status_code} {resp.text[:300]}"
+        )
+    return {
+        "ok": True,
+        "webhook_id": str(webhook_id),
+        "existed": resp.status_code == 204,
+    }
+
+
+# ---------------------------------------------------------------------------
 # buyer-side seed apply — `poindexter pro apply` (#3216 follow-up)
 #
 # The Pro deliverable's seed is a REFERENCE tuning, not a drop-in: many values
@@ -907,6 +1314,7 @@ async def cli_apply(
 
 __all__ = [
     "ACCESS_STATUSES",
+    "RELAY_WEBHOOK_EVENTS",
     "REVOKE_STATUSES",
     "ProDeliveryConfigError",
     "ProDeliveryService",
@@ -915,6 +1323,9 @@ __all__ = [
     "classify_seed",
     "cli_apply",
     "cli_link",
+    "cli_relay_register",
+    "cli_relay_remove",
+    "cli_relay_status",
     "cli_status",
     "cli_unlink",
     "normalize_github_username",

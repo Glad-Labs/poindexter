@@ -11,21 +11,42 @@ buyer                Lemon Squeezy              worker (local)             GitHu
   │  checkout ────────►  subscription                │                        │
   │  (buy URL carries    (custom_data:               │ SyncProSubscriptionsJob│
   │   github_username)    github_username)           │ polls /v1/subscriptions│
-  │                          ◄──────────────────────┤  every 5 min           │
-  │                                                  │ upsert pro_subscriptions
-  │                                                  │ reconcile access ─────►│ PUT /collaborators
+  │                          │  ◄─────────────────── ┤  every 5 min           │
+  │                          │ webhook                │ upsert pro_subscriptions
+  │                          ▼                        │ reconcile access ─────►│ PUT /collaborators
+  │                   CF Worker relay ──► Workers KV ◄┤ KV lookup for rows     │
+  │                   (verifies HMAC,     sub:<id>    │ missing a username     │
+  │                    parks custom_data) order:<id>  │                        │
   │ ◄────────────────────────────────────────────────────────────────────────┤ invite email
 ```
 
-**Poll, not webhooks.** The worker has no public ingress (local-first;
-Vercel functions can't reach the LAN; the Tailscale Funnel is retired), so
-the `POST /api/webhooks/lemon-squeezy` route — still mounted — can never
-hear a live event. `SyncProSubscriptionsJob` polls the LS API from inside
-the network instead: no ingress, and a poll reconciles after downtime where
-a missed webhook is lost forever. Buyer-visible latency is one tick
-(~5 min), which reads as "the GitHub invite arrived right after the
-receipt" (GitHub emails the invite natively; LS emails the receipt
-instantly).
+**Poll, not webhooks — plus a custom_data relay.** The worker has no public
+ingress (local-first; Vercel functions can't reach the LAN; the Tailscale
+Funnel is retired), so the `POST /api/webhooks/lemon-squeezy` route — still
+mounted — can never hear a live event. `SyncProSubscriptionsJob` polls the
+LS API from inside the network instead: no ingress, and a poll reconciles
+after downtime where a missed webhook is lost forever. Buyer-visible
+latency is one tick (~5 min), which reads as "the GitHub invite arrived
+right after the receipt" (GitHub emails the invite natively; LS emails the
+receipt instantly).
+
+The one thing the poll cannot see is checkout **custom_data** — the buyer's
+GitHub username. **Verified live on the 2026-08-26 test purchase (order
+9315803):** the storefront's `checkout[custom][github_username]` param
+_survives_ checkout (through the `/buy/` → `/checkout/cart/` 302) and comes
+back in every webhook payload as `meta.custom_data` — but the LS **REST API
+structurally omits it** (order/subscription objects have no custom-data
+field at all, and buy-URL checkouts don't create retrievable checkout
+objects). Hence the relay: a ~200-line Cloudflare Worker
+([`infrastructure/cloudflare/ls-webhook-relay`](../../infrastructure/cloudflare/ls-webhook-relay/README.md))
+receives the webhooks at the edge, verifies the HMAC signature, and parks
+`meta.custom_data` in Workers KV under `sub:<id>` / `order:<id>` keys; the
+sync reads those (outbound CF REST call) for subscriptions still missing a
+username. The relay carries the username mapping ONLY — it never writes
+`revenue_events`, so the poll stays the single revenue path and the
+webhook-vs-poll dedup question never arises. Username resolution order:
+REST attributes (dead today, self-activates if LS adds the field) → relay
+KV → manual `pro link` finding.
 
 ## Access policy
 
@@ -63,6 +84,43 @@ operator's account or hand-added collaborators.
    (spec §8 Track B gate): buy, watch `poindexter pro status`, confirm the
    invite lands with zero operator action, then cancel + refund in LS.
 
+## Webhook relay (optional — makes delivery fully automatic)
+
+Without the relay, every purchase needs one `poindexter pro link` (LS
+withholds the username from its REST API — see Architecture). Fine at
+founding scale; the relay closes it for good. Full deploy detail in the
+[Worker README](../../infrastructure/cloudflare/ls-webhook-relay/README.md);
+the short version:
+
+```bash
+cd infrastructure/cloudflare/ls-webhook-relay
+npm install
+npx wrangler kv namespace create RELAY_KV     # paste id into wrangler.toml
+npx wrangler deploy                            # note the workers.dev URL
+npx wrangler secret put LS_WEBHOOK_SECRET      # = lemon_squeezy_webhook_secret
+
+poindexter settings set pro_delivery_relay_kv_token <cf-token> --secret  # CF token: Workers KV Storage Read
+poindexter settings set pro_delivery_relay_kv_namespace_id <namespace-id>
+poindexter pro relay register https://ls-webhook-relay.<you>.workers.dev
+poindexter pro relay status                    # both halves at a glance
+```
+
+- `relay register` creates-or-updates the LS webhook via the API
+  (`order_created`, `subscription_created`, `subscription_updated` — all
+  custom_data carriers; the last also refreshes KV TTL on renewals) and
+  lists any other webhooks so stale registrations are visible
+  (`poindexter pro relay remove <id>` deletes one).
+- Half-set config fails loud: namespace id without the CF token (or
+  `cloudflare_account_id`) is a `pro_delivery_error` every tick, because an
+  operator who deployed the Worker believes full-auto delivery is live.
+- Steady-state cost is zero: the sync consults KV only for
+  access-status subscriptions whose `github_username` column is NULL — once
+  a row is linked, no KV reads at all. Free-tier KV is orders of magnitude
+  above this traffic.
+- Relay down / KV unreachable? The lookup fails open and that buyer gets
+  the standard `pro_delivery_action_needed` finding — exactly the
+  pre-relay behavior, never a stuck sync.
+
 ## Operating it
 
 ```bash
@@ -73,10 +131,12 @@ poindexter pro unlink 101        # revoke + detach
 ```
 
 - **`pro_delivery_action_needed` finding (Telegram):** a paying subscriber
-  has no GitHub username — LS didn't expose the checkout custom_data via
-  the API, or the buyer skipped/typoed it. The finding body names the exact
-  `poindexter pro link` command. This is the designed degradation, not an
-  error: delivery still happens, one command later.
+  has no GitHub username anywhere — not in the REST payload (expected: LS
+  withholds custom_data there), not in the relay KV (relay not deployed,
+  webhook missed while the relay was down, or the buyer skipped/typoed the
+  field). The finding body names the exact `poindexter pro link` command.
+  This is the designed degradation, not an error: delivery still happens,
+  one command later.
 - **`pro_delivery_error` finding:** config missing (severity error) or
   LS/GitHub API failures (severity warn, per-subscription isolation — one
   bad row never strands the rest).
@@ -129,6 +189,10 @@ freshness session, counts included) teaches the same flow to buyers.
   when the column is NULL — it never overwrites a `pro link`.
 - **Invite expired unaccepted** (GitHub expires repo invitations after ~7
   days): `poindexter pro unlink` + `pro link` re-sends.
-- **Webhook relay someday**: if a public relay is ever built, reconcile its
-  `revenue_events` dedup (webhook_id-keyed) with the poll's order-id keys
-  first — see the note in `services/pro_delivery.py`.
+- **Relay stores a wrong username** (buyer typo'd at checkout): the value
+  still has to pass `normalize_github_username`, and an operator `pro link`
+  always wins over it — `unlink` + `link` fixes any bad state.
+- **Turning a relay into a revenue pipe**: don't, without reading the
+  dedup note in `services/pro_delivery.py` — the shipped relay stores
+  custom_data mappings only, which is why the poll can stay the single
+  `revenue_events` writer.

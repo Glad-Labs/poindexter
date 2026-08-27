@@ -41,6 +41,9 @@ class FakeConn:
     async def fetchval(self, query: str, *args: Any) -> Any:
         if "SELECT 1 FROM pro_subscriptions" in query:
             return 1 if args[0] in self.db.subs else None
+        if "SELECT github_username FROM pro_subscriptions" in query:
+            row = self.db.subs.get(args[0])
+            return None if row is None else row["github_username"]
         raise AssertionError(f"unexpected fetchval: {query}")
 
     async def fetchrow(self, query: str, *args: Any) -> Any:
@@ -628,3 +631,431 @@ async def test_cli_apply_escalation_flags_widen_the_write_set(tmp_path):
     # Secrets and unknown keys are never written, even at full escalation.
     assert db.settings["secret_thing"] == ("enc:v1:x", True)
     assert "mystery_overlay_key" not in db.settings
+
+
+# ---------------------------------------------------------------------------
+# webhook-relay lookup (infrastructure/cloudflare/ls-webhook-relay)
+#
+# LS only exposes checkout custom_data in webhook payloads (verified live
+# 2026-08-26, order 9315803) — the relay Worker parks it in CF KV and the
+# sync reads it back. These cases pin the lookup contract: sub-key then
+# order-key, fail-open on relay trouble, never consulted once a username is
+# known, and half-set config fails loud.
+# ---------------------------------------------------------------------------
+
+
+class RelayRecorder(GithubRecorder):
+    """GithubRecorder + a fake Cloudflare KV values endpoint."""
+
+    def __init__(
+        self,
+        ls_page: dict[str, Any],
+        kv: dict[str, str] | None = None,
+        kv_status_override: int | None = None,
+    ):
+        super().__init__(ls_page)
+        self.kv = kv or {}
+        self.kv_requests: list[str] = []
+        self.kv_status_override = kv_status_override
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.startswith("https://api.cloudflare.com/"):
+            assert "/storage/kv/namespaces/ns123/values/" in url
+            assert request.headers["Authorization"] == "Bearer cf-kv-token"
+            key = url.rsplit("/values/", 1)[-1]
+            self.kv_requests.append(key)
+            if self.kv_status_override is not None:
+                return httpx.Response(self.kv_status_override, text="cf boom")
+            if key in self.kv:
+                return httpx.Response(200, text=self.kv[key])
+            return httpx.Response(404, json={"success": False})
+        return super().__call__(request)
+
+
+@pytest.fixture()
+def relay_site_config(monkeypatch: pytest.MonkeyPatch) -> SiteConfig:
+    monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
+    monkeypatch.setenv("PRO_DELIVERY_GITHUB_TOKEN", "gh-test-token")
+    monkeypatch.setenv("PRO_DELIVERY_RELAY_KV_TOKEN", "cf-kv-token")
+    return SiteConfig(
+        initial_config={
+            "pro_delivery_enabled": "true",
+            "pro_delivery_github_repo": "Glad-Labs/poindexter-pro",
+            "pro_delivery_relay_kv_namespace_id": "ns123",
+            "cloudflare_account_id": "acct123",
+        }
+    )
+
+
+def _kv_value(username: str) -> str:
+    return json.dumps(
+        {
+            "event_name": "subscription_created",
+            "order_id": "900",
+            "subscription_id": "101",
+            "custom_data": {"github_username": username},
+            "stored_at": "2026-08-27T02:45:49Z",
+        }
+    )
+
+
+async def _sync_relay(page, site_config, db=None, kv=None, kv_status_override=None):
+    db = db or FakeDb()
+    recorder = RelayRecorder(page, kv=kv, kv_status_override=kv_status_override)
+    outcome = await run_sync(
+        db, site_config, transport=httpx.MockTransport(recorder)
+    )
+    return outcome, recorder, db
+
+
+async def test_relay_fills_missing_username_and_delivers(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(), orders=[ls_order()])  # no username in REST
+    kv = {"sub:101": _kv_value("relay-octocat")}
+    outcome, recorder, db = await _sync_relay(page, relay_site_config, kv=kv)
+
+    assert recorder.kv_requests == ["sub:101"]
+    assert recorder.invites == ["relay-octocat"]
+    assert outcome.invited == ["relay-octocat"]
+    assert db.subs["101"]["github_username"] == "relay-octocat"
+    assert findings == []
+
+
+async def test_relay_falls_through_sub_key_to_order_key(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    kv = {"order:900": _kv_value("order-relay")}
+    outcome, recorder, _db = await _sync_relay(page, relay_site_config, kv=kv)
+
+    assert recorder.kv_requests == ["sub:101", "order:900"]
+    assert recorder.invites == ["order-relay"]
+    assert findings == []
+
+
+async def test_relay_miss_degrades_to_manual_finding(relay_site_config, findings):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    outcome, recorder, _db = await _sync_relay(page, relay_site_config, kv={})
+
+    assert recorder.kv_requests == ["sub:101", "order:900"]
+    assert outcome.missing_username == ["101"]
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "pro_delivery_action_needed"
+
+
+async def test_relay_error_fails_open_to_manual_finding(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    outcome, recorder, _db = await _sync_relay(
+        page, relay_site_config, kv_status_override=500
+    )
+
+    # A relay outage is a degraded lookup, not a sync failure: the designed
+    # manual path fires and no per-subscription error is recorded.
+    assert outcome.errors == []
+    assert outcome.missing_username == ["101"]
+    assert findings[0]["kind"] == "pro_delivery_action_needed"
+
+
+async def test_relay_garbage_username_degrades_to_manual(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    kv = {"sub:101": _kv_value("in--valid")}
+    outcome, recorder, _db = await _sync_relay(page, relay_site_config, kv=kv)
+
+    # Invalid username in KV normalizes to None → keeps probing, then the
+    # manual finding — a typo'd checkout field must not invite a stranger.
+    assert recorder.kv_requests == ["sub:101", "order:900"]
+    assert outcome.missing_username == ["101"]
+    assert findings[0]["kind"] == "pro_delivery_action_needed"
+
+
+async def test_relay_not_consulted_once_username_known(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    kv = {"sub:101": _kv_value("relay-octocat")}
+    db = FakeDb()
+    await _sync_relay(page, relay_site_config, db=db, kv=kv)
+    outcome2, recorder2, _ = await _sync_relay(
+        page, relay_site_config, db=db, kv=kv
+    )
+
+    # Steady state: the DB pre-check short-circuits, zero KV reads.
+    assert recorder2.kv_requests == []
+    assert outcome2.invited == []
+
+
+async def test_relay_not_consulted_for_revoke_status_rows(
+    relay_site_config, findings
+):
+    page = make_page(ls_sub(status="expired"), orders=[ls_order()])
+    _outcome, recorder, _db = await _sync_relay(
+        page, relay_site_config, kv={"sub:101": _kv_value("relay-octocat")}
+    )
+    # An expired sub can't be delivered to — don't burn KV reads on it.
+    assert recorder.kv_requests == []
+
+
+async def test_relay_disabled_makes_no_kv_requests(site_config, findings):
+    page = make_page(ls_sub(), orders=[ls_order()])
+    _outcome, recorder, _db = await _sync(page, site_config)
+    # The plain fixture has no relay keys; the recorder would assert on any
+    # api.cloudflare.com call, so reaching the finding proves no KV traffic.
+    assert findings[0]["kind"] == "pro_delivery_action_needed"
+
+
+async def test_relay_halfset_config_fails_loud(monkeypatch):
+    monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
+    monkeypatch.setenv("PRO_DELIVERY_GITHUB_TOKEN", "gh-test-token")
+    monkeypatch.delenv("PRO_DELIVERY_RELAY_KV_TOKEN", raising=False)
+    service = ProDeliveryService(
+        pool=FakeDb(),
+        site_config=SiteConfig(
+            initial_config={
+                "pro_delivery_enabled": "true",
+                "pro_delivery_github_repo": "Glad-Labs/poindexter-pro",
+                "pro_delivery_relay_kv_namespace_id": "ns123",
+                # cloudflare_account_id also missing
+            }
+        ),
+    )
+    with pytest.raises(ProDeliveryConfigError) as exc:
+        await service.sync()
+    msg = str(exc.value)
+    assert "pro_delivery_relay_kv_token" in msg
+    assert "cloudflare_account_id" in msg
+
+
+# ---------------------------------------------------------------------------
+# `pro relay register` / `remove` / `status` — LS webhook management
+# ---------------------------------------------------------------------------
+
+
+class LsAdminRecorder:
+    """MockTransport handler for the LS webhooks/stores admin endpoints."""
+
+    def __init__(
+        self,
+        webhooks: list[dict[str, Any]] | None = None,
+        stores: list[dict[str, Any]] | None = None,
+        delete_status: int = 204,
+    ):
+        self.webhooks = webhooks or []
+        self.stores = (
+            stores if stores is not None else [{"type": "stores", "id": "340440"}]
+        )
+        self.delete_status = delete_status
+        self.created: list[dict[str, Any]] = []
+        self.patched: list[tuple[str, dict[str, Any]]] = []
+        self.deleted: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        method = request.method
+        if url.startswith("https://api.lemonsqueezy.com/v1/stores"):
+            return httpx.Response(200, json={"data": self.stores})
+        if url.startswith("https://api.lemonsqueezy.com/v1/webhooks"):
+            if method == "GET":
+                return httpx.Response(
+                    200, json={"data": self.webhooks, "links": {}}
+                )
+            if method == "POST":
+                body = json.loads(request.content)
+                self.created.append(body)
+                attrs = body["data"]["attributes"]
+                return httpx.Response(
+                    201,
+                    json={
+                        "data": {
+                            "type": "webhooks",
+                            "id": "555",
+                            "attributes": {
+                                "url": attrs["url"],
+                                "events": attrs["events"],
+                                "last_sent_at": None,
+                            },
+                        }
+                    },
+                )
+            if method == "PATCH":
+                wid = url.rsplit("/", 1)[-1]
+                body = json.loads(request.content)
+                self.patched.append((wid, body))
+                attrs = body["data"]["attributes"]
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": {
+                            "type": "webhooks",
+                            "id": wid,
+                            "attributes": {
+                                "url": attrs["url"],
+                                "events": attrs["events"],
+                                "last_sent_at": None,
+                            },
+                        }
+                    },
+                )
+            if method == "DELETE":
+                self.deleted.append(url.rsplit("/", 1)[-1])
+                return httpx.Response(self.delete_status)
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+
+def _stale_hook(hook_id: str = "93977", url: str = "https://dead.example/hook"):
+    return {
+        "type": "webhooks",
+        "id": hook_id,
+        "attributes": {
+            "url": url,
+            "events": ["order_created"],
+            "last_sent_at": "2026-08-27T02:47:16.000000Z",
+        },
+    }
+
+
+@pytest.fixture()
+def relay_admin_site_config(monkeypatch: pytest.MonkeyPatch) -> SiteConfig:
+    monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
+    monkeypatch.setenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "whsec-test-secret")
+    return SiteConfig(initial_config={})
+
+
+RELAY_URL = "https://ls-webhook-relay.example.workers.dev"
+
+
+async def test_relay_register_creates_webhook_and_persists_url(
+    relay_admin_site_config,
+):
+    db = FakeDb()
+    recorder = LsAdminRecorder()
+    payload = await pro_delivery.cli_relay_register(
+        db, relay_admin_site_config, RELAY_URL,
+        transport=httpx.MockTransport(recorder),
+    )
+
+    assert payload["action"] == "created"
+    assert payload["webhook"]["url"] == RELAY_URL
+    assert payload["other_webhooks"] == []
+    [created] = recorder.created
+    attrs = created["data"]["attributes"]
+    assert attrs["events"] == list(pro_delivery.RELAY_WEBHOOK_EVENTS)
+    assert attrs["secret"] == "whsec-test-secret"
+    rel = created["data"]["relationships"]["store"]["data"]
+    assert rel == {"type": "stores", "id": "340440"}
+    assert db.settings["pro_delivery_relay_url"] == (RELAY_URL, False)
+
+
+async def test_relay_register_updates_existing_same_url(relay_admin_site_config):
+    recorder = LsAdminRecorder(webhooks=[_stale_hook("77", RELAY_URL)])
+    payload = await pro_delivery.cli_relay_register(
+        FakeDb(), relay_admin_site_config, RELAY_URL,
+        transport=httpx.MockTransport(recorder),
+    )
+    assert payload["action"] == "updated"
+    assert recorder.created == []
+    [(wid, body)] = recorder.patched
+    assert wid == "77"
+    assert body["data"]["attributes"]["events"] == list(
+        pro_delivery.RELAY_WEBHOOK_EVENTS
+    )
+
+
+async def test_relay_register_surfaces_stale_webhooks(relay_admin_site_config):
+    recorder = LsAdminRecorder(webhooks=[_stale_hook()])
+    payload = await pro_delivery.cli_relay_register(
+        FakeDb(), relay_admin_site_config, RELAY_URL,
+        transport=httpx.MockTransport(recorder),
+    )
+    assert payload["action"] == "created"
+    [other] = payload["other_webhooks"]
+    assert other["id"] == "93977"
+    assert other["url"] == "https://dead.example/hook"
+
+
+async def test_relay_register_rejects_non_https(relay_admin_site_config):
+    with pytest.raises(ValueError, match="https"):
+        await pro_delivery.cli_relay_register(
+            FakeDb(), relay_admin_site_config, "http://insecure.example",
+            transport=httpx.MockTransport(LsAdminRecorder()),
+        )
+
+
+async def test_relay_register_rejects_out_of_range_secret(monkeypatch):
+    monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
+    monkeypatch.setenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "x" * 41)
+    with pytest.raises(ValueError, match="6-40"):
+        await pro_delivery.cli_relay_register(
+            FakeDb(), SiteConfig(initial_config={}), RELAY_URL,
+            transport=httpx.MockTransport(LsAdminRecorder()),
+        )
+
+
+async def test_relay_register_multiple_stores_requires_setting(
+    relay_admin_site_config,
+):
+    recorder = LsAdminRecorder(
+        stores=[
+            {"type": "stores", "id": "1"},
+            {"type": "stores", "id": "2"},
+        ]
+    )
+    with pytest.raises(ValueError, match="pro_delivery_ls_store_id"):
+        await pro_delivery.cli_relay_register(
+            FakeDb(), relay_admin_site_config, RELAY_URL,
+            transport=httpx.MockTransport(recorder),
+        )
+
+
+async def test_relay_remove_deletes_and_tolerates_gone(relay_admin_site_config):
+    recorder = LsAdminRecorder()
+    payload = await pro_delivery.cli_relay_remove(
+        FakeDb(), relay_admin_site_config, "93977",
+        transport=httpx.MockTransport(recorder),
+    )
+    assert payload == {"ok": True, "webhook_id": "93977", "existed": True}
+    assert recorder.deleted == ["93977"]
+
+    gone = LsAdminRecorder(delete_status=404)
+    payload = await pro_delivery.cli_relay_remove(
+        FakeDb(), relay_admin_site_config, "93977",
+        transport=httpx.MockTransport(gone),
+    )
+    assert payload["existed"] is False
+
+
+async def test_relay_status_reports_both_halves(monkeypatch):
+    monkeypatch.setenv("LEMON_SQUEEZY_API_KEY", "ls-test-key")
+    monkeypatch.setenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "whsec-test-secret")
+    monkeypatch.setenv("PRO_DELIVERY_RELAY_KV_TOKEN", "cf-kv-token")
+    sc = SiteConfig(
+        initial_config={
+            "pro_delivery_relay_url": RELAY_URL,
+            "pro_delivery_relay_kv_namespace_id": "ns123",
+            "cloudflare_account_id": "acct123",
+        }
+    )
+    recorder = LsAdminRecorder(webhooks=[_stale_hook()])
+    payload = await pro_delivery.cli_relay_status(
+        FakeDb(), sc, transport=httpx.MockTransport(recorder)
+    )
+    assert payload["config"]["pro_delivery_relay_url"] == RELAY_URL
+    assert payload["config"]["pro_delivery_relay_kv_token_set"] is True
+    assert payload["config"]["lemon_squeezy_webhook_secret_set"] is True
+    [hook] = payload["ls_webhooks"]
+    assert hook["id"] == "93977"
+
+
+async def test_relay_status_without_ls_key_degrades(monkeypatch):
+    monkeypatch.delenv("LEMON_SQUEEZY_API_KEY", raising=False)
+    monkeypatch.delenv("LEMON_SQUEEZY_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("PRO_DELIVERY_RELAY_KV_TOKEN", raising=False)
+    payload = await pro_delivery.cli_relay_status(
+        FakeDb(), SiteConfig(initial_config={})
+    )
+    assert "lemon_squeezy_api_key" in payload["ls_webhooks"]
