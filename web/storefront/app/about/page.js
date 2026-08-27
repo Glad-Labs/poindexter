@@ -54,10 +54,10 @@ export default function AboutPage() {
               about.
             </p>
             <p>
-              Poindexter Pro is how you get there fastest — the production-tuned
-              prompt packs, configuration, and premium dashboards from the live
-              system, the VIP Discord, and the full operator book. The Writing
-              &amp; Research site (
+              Poindexter Pro is how you get there fastest — the operator
+              console, the live-tuned configuration from the running system
+              (rebuilt weekly), the full operator book, and the founding
+              Discord. The Writing &amp; Research site (
               <Link
                 href="https://www.gladlabs.io"
                 style={{

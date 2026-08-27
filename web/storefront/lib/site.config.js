@@ -28,11 +28,12 @@ export const PRO_MONTHLY_USD = 19;
 export const PRO_ANNUAL_USD = 180;
 export const PRO_TRIAL_DAYS = 7;
 
-// Gated launch. While false, every Pro CTA points to the founding-members
-// community instead of opening the Lemon Squeezy checkout — so no one is
-// charged for a deliverable that can't yet be delivered. Flip to true once the
-// Pro delivery channel exists and a live test purchase has been verified.
-export const CHECKOUT_LIVE = false;
+// LIVE since 2026-08-26: the pay→deliver chain shipped (glad-labs-stack#3216 —
+// LS poll → GitHub collaborator invite, weekly freshness rebuilds) and a live
+// test purchase delivered end-to-end (sub 2470345). While false, every Pro CTA
+// pointed to the founding-members community instead of checkout, so no one
+// could be charged for a deliverable that couldn't yet be delivered.
+export const CHECKOUT_LIVE = true;
 
 // Founding-members CTA (used while CHECKOUT_LIVE === false).
 // Permanent invite (Expire: Never) minted 2026-08-26 — the previous one was

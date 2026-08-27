@@ -6,7 +6,7 @@ import { PRO_MONTHLY_USD, PRO_ANNUAL_USD } from '@/lib/site.config';
 export const metadata = {
   title: 'Poindexter Pro',
   description:
-    'Poindexter Pro — production-tuned prompt packs, premium dashboards, the VIP Discord, and the operator book. $19/month or $180/year, Founding Member rate.',
+    'Poindexter Pro — the operator console, the live-tuned production config seed, the operator book, and weekly rebuilds from the running system. $19/month or $180/year, Founding Member rate.',
 };
 
 export default function GuidePage() {
@@ -18,7 +18,7 @@ export default function GuidePage() {
             <span>
               <span className="dot" aria-hidden="true" /> PRODUCT · PRO
             </span>
-            <span>PROMPTS · DASHBOARDS · BOOK · DISCORD</span>
+            <span>CONSOLE · SEED · BOOK · DISCORD</span>
             <span>FOUNDING MEMBER RATE</span>
           </div>
 
@@ -36,10 +36,11 @@ export default function GuidePage() {
             className="sf-reveal sf-reveal--3 gl-body gl-body--lg"
             style={{ maxWidth: '640px', marginTop: '1.5rem' }}
           >
-            The free Poindexter engine runs the full pipeline end-to-end. Pro
-            gives you months of production tuning in a single install — the
-            exact prompts, dashboards, and configuration Matt runs in his daily
-            content business, updated continuously as the system improves.
+            The free Poindexter engine runs the full pipeline end-to-end. Pro is
+            the operator layer on top: the cockpit console, the exact
+            configuration running Matt&apos;s production content business, and
+            the operator book — rebuilt from the live system every week, so your
+            copy never goes stale.
           </p>
         </div>
 
@@ -57,56 +58,44 @@ export default function GuidePage() {
           <ul className="sf-checklist">
             <li>
               <span>
-                <strong>PROMPT LIBRARY</strong> — production-tuned prompts for
-                drafting, research, QA, SEO, social, and image generation. The
-                anti-fabrication ruleset, the multi-model QA critic, the
-                pre-submission self-check. Updated as Matt tunes the live
-                system.
+                <strong>THE OPERATOR CONSOLE</strong> — the cockpit UI. System
+                pulse, the approval queue, pipeline stages, QA rails, GPU and
+                cost telemetry — one screen for the whole machine. Pro-only
+                surface; installs with a copy and a restart.
               </span>
             </li>
             <li>
               <span>
-                <strong>5 PREMIUM GRAFANA DASHBOARDS</strong> — Cost Analytics,
-                Content Quality, Infrastructure, Approval Queue, Link Registry.
-                Plus the QA Observability dashboard for real-time rejection
-                metrics. Know exactly what&apos;s happening in your pipeline.
+                <strong>THE LIVE-TUNED CONFIG SEED</strong> — 950+ production
+                values from the running business: quality thresholds, QA-rail
+                strictness, cadence, routing, cost controls. One command —
+                <code> poindexter pro apply</code> — adopts them safely, never
+                overwriting your own tuning.
               </span>
             </li>
             <li>
               <span>
                 <strong>THE POINDEXTER BOOK</strong> — the full operator book
                 covering architecture, hardware, models, prompts, quality gates,
-                operations, distribution, and the DB-driven config plane. New
-                chapters ship as the system evolves.
+                operations, distribution, and the DB-driven config plane — kept
+                reconciled against the live code.
               </span>
             </li>
             <li>
               <span>
-                <strong>OPERATOR-TUNED APP_SETTINGS</strong> — every knob Matt
-                touched to get production output. No guessing at threshold
-                values or weight balances; import the known-good configuration
-                and run.
+                <strong>REBUILT WEEKLY, AUTOMATICALLY</strong> — an automated
+                session exports the live system&apos;s current tuning to your
+                repo every week (the full prompt pack and Grafana boards ride
+                along, mirrored from the live tree). The CHANGELOG is the
+                receipt; <code>git pull</code> is the whole upgrade. Cancel
+                anytime, keep everything you&apos;ve downloaded.
               </span>
             </li>
             <li>
               <span>
-                <strong>FACT OVERRIDES DATABASE</strong> — curated
-                anti-hallucination rules, hardware facts, and brand corrections.
-                Keeps the writer honest about things LLMs commonly get wrong.
-              </span>
-            </li>
-            <li>
-              <span>
-                <strong>VIP DISCORD</strong> — private operator channel. Share
-                tunings, niche-specific tweaks, and get direct access to Matt.
-                The community is where the real tuning knowledge lives.
-              </span>
-            </li>
-            <li>
-              <span>
-                <strong>CONTINUOUS UPDATES</strong> — every prompt improvement,
-                new dashboard, and tuning win lands in your repo as the system
-                evolves. Cancel anytime, keep everything you&apos;ve downloaded.
+                <strong>FOUNDING DISCORD</strong> — the operators&apos; room.
+                Share tunings, niche-specific tweaks, and what&apos;s working —
+                the community is where the real tuning knowledge lives.
               </span>
             </li>
           </ul>
