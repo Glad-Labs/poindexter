@@ -121,6 +121,24 @@ def draw_frame(t: float) -> Image.Image:
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
+def _assert_full_frames(path: str) -> None:
+    """Fail loudly if any frame is a partial rect -- see the note in main()."""
+    from PIL import ImageSequence
+
+    want = (0, 0, SIZE, SIZE)
+    bad = [
+        i
+        for i, frame in enumerate(ImageSequence.Iterator(Image.open(path)))
+        if frame.tile and frame.tile[0][1] != want
+    ]
+    if bad:
+        raise SystemExit(
+            f"{path}: {len(bad)} of {FRAMES} frames are partial rects "
+            f"(first: frame {bad[0]}). OpenLinkHub renders these as a strobe. "
+            "Save with optimize=False."
+        )
+
+
 def main() -> None:
     frames = [draw_frame(i / FRAMES) for i in range(FRAMES)]
 
@@ -140,14 +158,34 @@ def main() -> None:
     frames = [f.quantize(palette=palette, dither=Image.NONE) for f in frames]
 
     path = os.path.join(sys.argv[1] if len(sys.argv) > 1 else ".", OUT)
+    # disposal=2 is LOAD-BEARING: every frame must be a full 480x480 rect.
+    # OpenLinkHub's decoder cannot cope with partial frames -- animation.go does
+    # `canvas := image.NewRGBA(pf.Bounds())` per frame, sizing the canvas to that
+    # frame's own bounds, never compositing against the previous frame nor
+    # honouring GIF disposal. Partial frames render as garbage that churns every
+    # frame; on the block that reads as a strobe. (Corsair's bundled
+    # concentric.gif is all full-frame and renders fine; openlinkhub.gif is not,
+    # and misrenders the same way.)
+    #
+    # optimize=False alone does NOT achieve this. Pillow's frame differencing is
+    # separate from `optimize` -- it crops each frame to the delta bbox unless
+    # the PREVIOUS frame's disposal is 2 ("restore to background"), which is the
+    # one setting that forces a full-rect write. Frames here are fully opaque
+    # and repaint the whole canvas, so disposal=2 costs nothing visually.
+    #
+    # None of this is visible when verifying through Pillow, which composites
+    # partial frames correctly on read -- hence _assert_full_frames below, which
+    # inspects the stored rects rather than the composited result.
     frames[0].save(
         path,
         save_all=True,
         append_images=frames[1:],
         duration=FRAME_MS,
         loop=0,
-        optimize=True,
+        optimize=False,
+        disposal=2,
     )
+    _assert_full_frames(path)
     size_mb = os.path.getsize(path) / 1024 / 1024
     # /api/lcd/upload caps at 5 MB; the on-disk path install.sh uses does not,
     # but staying under it keeps both routes viable.
