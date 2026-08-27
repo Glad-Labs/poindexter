@@ -99,7 +99,7 @@ def fake_pool(monkeypatch: pytest.MonkeyPatch) -> _FakePool:
 
 
 def _resolve_tool(name: str):
-    """FastMCP wraps tools — pull the underlying coroutine out for direct call."""
+    """MCPServer wraps tools — pull the underlying coroutine out for direct call."""
     obj = getattr(server, name, None)
     for attr in ("fn", "func", "callable"):
         impl = getattr(obj, attr, None)

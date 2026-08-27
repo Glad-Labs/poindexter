@@ -5,7 +5,7 @@ decides "let's hop on a call" / "I want to talk through this draft
 live", it calls ``start_voice_call`` and gets back a JSON payload
 with a tap-to-join URL and the effective brain mode.
 
-These tests exercise the tool function directly (no FastMCP transport
+These tests exercise the tool function directly (no MCPServer transport
 roundtrip) with a fake asyncpg pool. We don't spin up Postgres because
 the SQL is tiny and the value here is asserting the wiring — flip
 mutates the canonical ``voice_agent_brain_mode`` key, response carries
@@ -133,9 +133,9 @@ def fake_pool(monkeypatch: pytest.MonkeyPatch) -> _FakePool:
 
 
 # ---------------------------------------------------------------------------
-# FastMCP decorates tools — pull the underlying coroutine out so the
+# MCPServer decorates tools — pull the underlying coroutine out so the
 # test calls the function directly, not through the transport. The
-# ``fn`` attribute is the FastMCP convention; we fall back to ``func``
+# ``fn`` attribute is the MCPServer convention; we fall back to ``func``
 # (older MCP SDK) and finally to looking up by name on the registered
 # tool manager so the test stays robust to library upgrades.
 # ---------------------------------------------------------------------------

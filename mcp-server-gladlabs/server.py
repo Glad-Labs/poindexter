@@ -35,7 +35,7 @@ import os
 
 import asyncpg
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 # OAuth helper — local mirror, see oauth_client.py for why
 # (Glad-Labs/poindexter#244, mirrors the pattern from #243).
@@ -170,7 +170,7 @@ async def _openclaw_invoke(tool: str, action: str, args: dict) -> dict:
     return resp.json()
 
 
-mcp = FastMCP("GladLabs", instructions="""
+mcp = MCPServer("GladLabs", instructions="""
 Glad Labs operator MCP server — private business tools that layer on top of
 Poindexter. Use these tools to run the Glad Labs content business: post to
 Discord, look up customers, manage subscriber lists, etc.

@@ -7,7 +7,7 @@ tool flattened that into ``Export failed:`` — a false negative on a
 successful export. Dangerous for operators: a takedown/rebuild looks failed
 and may be retried or assumed not to have worked.
 
-These tests exercise the tool function directly (no FastMCP transport
+These tests exercise the tool function directly (no MCPServer transport
 roundtrip) with ``server._api`` monkeypatched, so they assert the wiring:
 the export tool must hand ``_api`` a timeout comfortably above the export's
 worst-case duration, and a slow-but-successful 200 must render as success.
@@ -31,10 +31,10 @@ import server  # noqa: E402 — sys.path adjustment above
 
 
 def _resolve_tool_callable(tool_name: str):
-    """Pull the underlying coroutine out from behind the FastMCP decorator.
+    """Pull the underlying coroutine out from behind the MCPServer decorator.
 
     Mirrors the helper in ``test_start_voice_call.py`` — the ``fn`` attr is
-    the FastMCP convention, with ``func`` / direct-callable fallbacks so the
+    the MCPServer convention, with ``func`` / direct-callable fallbacks so the
     test survives an SDK shape change.
     """
     tool_obj = getattr(server, tool_name, None)

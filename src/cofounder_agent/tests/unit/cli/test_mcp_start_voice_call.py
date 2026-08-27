@@ -45,7 +45,7 @@ _MCP_DIR = _REPO_ROOT / "mcp-server"
 def _import_mcp_server():
     """Import ``mcp-server/server.py`` once, reuse on subsequent calls.
 
-    The module registers tool callables on a FastMCP instance at import
+    The module registers tool callables on a MCPServer instance at import
     time. Importing once + reusing keeps the registry stable across
     tests. The server's heavy side effects (DB pool init, OAuth init)
     are LAZY — they fire only when the tool actually runs — so the
@@ -117,9 +117,9 @@ def _import_mcp_server():
 
 
 def _resolve_tool_callable(mod, tool_name: str):
-    """Pull the underlying coroutine out of FastMCP's tool wrapper.
+    """Pull the underlying coroutine out of MCPServer's tool wrapper.
 
-    FastMCP wraps ``@mcp.tool()`` decorated functions; the underlying
+    MCPServer wraps ``@mcp.tool()`` decorated functions; the underlying
     coroutine is exposed as ``.fn`` (current SDK) or ``.func`` (older
     SDK). Falling back to the raw attribute keeps this robust to MCP
     SDK upgrades.

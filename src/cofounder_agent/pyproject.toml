@@ -163,7 +163,7 @@ feedparser = "^6.0"
 boto3 = "^1.42.84"
 cloudinary = "^1.45"
 playwright = "^1.61"
-mcp = ">=1.28.1"
+mcp = ">=2.0.0,<3"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.3"
 # Apprise — unified push-notification library backing the generic

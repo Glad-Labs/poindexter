@@ -5,7 +5,7 @@ worker / FastAPI app — the goal is to verify:
 
 * ``POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST`` parsing is whitespace-tolerant
   and correctly distinguishes "unset" from "explicitly empty".
-* ``_apply_tool_allowlist`` mutates the FastMCP tool manager so
+* ``_apply_tool_allowlist`` mutates the MCPServer tool manager so
   ``list_tools`` and ``call_tool`` (the underlying primitives that
   back MCP's ``tools/list`` and ``tools/call`` RPCs) both reflect the
   filter.
@@ -24,8 +24,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 # Make ``import http_server`` resolve regardless of where pytest is invoked.
 HERE = Path(__file__).resolve().parent
@@ -40,15 +40,15 @@ import http_server  # noqa: E402 — sys.path adjustment above
 # ---------------------------------------------------------------------------
 
 
-def _build_fake_mcp() -> FastMCP:
-    """Create a fresh FastMCP instance with three tools mimicking the
+def _build_fake_mcp() -> MCPServer:
+    """Create a fresh MCPServer instance with three tools mimicking the
     read/write split (``read_a``, ``read_b``, ``write_c``).
 
     Using a fresh instance keeps the tests hermetic — we don't touch
     the real ``server.mcp`` (which has 25+ tools and side effects on
     import via the wider repo).
     """
-    mcp = FastMCP("AllowlistTest")
+    mcp = MCPServer("AllowlistTest")
 
     @mcp.tool()
     def read_a() -> str:
@@ -124,7 +124,7 @@ async def test_apply_allowlist_filters_list_tools_to_subset() -> None:
 async def test_apply_allowlist_blocks_call_tool_for_unlisted() -> None:
     """``tools/call`` (backed by ``call_tool``) raises for filtered tools.
 
-    FastMCP's tool manager raises ``ToolError("Unknown tool: ...")`` when
+    MCPServer's tool manager raises ``ToolError("Unknown tool: ...")`` when
     a name isn't in the registry — that's the same error path an
     unregistered name would hit, which the MCP layer surfaces as the
     standard ``isError: true`` tool-call response.
@@ -134,7 +134,7 @@ async def test_apply_allowlist_blocks_call_tool_for_unlisted() -> None:
 
     # Allowed call works.
     result = await mcp.call_tool("read_a", {})
-    # FastMCP normalises the return into structured content blocks; the
+    # MCPServer normalises the return into structured content blocks; the
     # only thing we care about here is that no error was raised.
     assert result is not None
 

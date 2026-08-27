@@ -27,7 +27,7 @@ separate participant identity (``claude-bridge``) on the same LiveKit
 room when an interactive Claude Code session wants the floor.
 
 Sibling shape: ``mcp-server-gladlabs/`` is the reference for the
-"focused MCP server" pattern (single FastMCP instance, lazy pool,
+"focused MCP server" pattern (single MCPServer instance, lazy pool,
 ``stdio`` entry).
 
 Usage:
@@ -45,7 +45,7 @@ import uuid as _uuid
 from pathlib import Path
 
 import asyncpg
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voice-bridge-mcp")
@@ -93,7 +93,7 @@ def _format_tool_error(tool_name: str, e: Exception) -> str:
     return f"{tool_name} failed (rid={rid}): {type(e).__name__}: {e}"
 
 
-mcp = FastMCP("VoiceBridge", instructions="""
+mcp = MCPServer("VoiceBridge", instructions="""
 Poindexter voice bridge MCP server — exposes voice as a session-agnostic
 UI surface. Use these tools to claim a LiveKit room for the current
 Claude Code session: voice in arrives as transcripts on a per-session

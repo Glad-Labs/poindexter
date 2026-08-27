@@ -112,7 +112,7 @@ def _import_server(server_dir, mod_name):
     """Import an MCP ``server.py`` fresh for the ``_get_oauth`` rebuild tests.
 
     The MCP servers normally run in their own ``uv`` venvs; importing
-    ``server.py`` here pulls in FastMCP + (for the public server) the
+    ``server.py`` here pulls in MCPServer + (for the public server) the
     worker ``services`` boot block. Both are available in the main poetry
     env, but if that ever stops being true in some CI shape we ``skip``
     rather than hard-fail — the same posture the gladlabs ``skipif`` takes.

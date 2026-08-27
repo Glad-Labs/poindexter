@@ -6,7 +6,7 @@ which only works for clients that spawn the MCP server as a subprocess
 talk to a **remote MCP server** registered as a Custom Connector at
 https://claude.ai/settings/connectors — that requires an HTTPS endpoint.
 
-This entry point exposes the same FastMCP instance + tool set over the
+This entry point exposes the same MCPServer instance + tool set over the
 ``streamable-http`` transport, wrapped in a tiny FastAPI app that
 enforces **OAuth 2.1 Bearer-JWT** auth — closes Glad-Labs/poindexter#240
 as Phase 1 of the umbrella OAuth migration (#241).
@@ -141,7 +141,7 @@ def _parse_tool_allowlist(raw: str | None) -> frozenset[str] | None:
 
 
 def _apply_tool_allowlist(mcp_instance, allowlist: frozenset[str]) -> list[str]:
-    """Trim the FastMCP tool manager's registry down to ``allowlist``.
+    """Trim the MCPServer tool manager's registry down to ``allowlist``.
 
     Mutates ``mcp_instance._tool_manager`` in place via the public
     ``remove_tool`` method, so subsequent ``list_tools`` / ``call_tool``
@@ -333,7 +333,7 @@ def _oauth_jwt_wrapper(
 
         # Stash the verified claims on the scope so downstream handlers
         # (or logging middleware) can attribute the request. Doesn't
-        # affect FastMCP's behaviour — it ignores keys it doesn't know.
+        # affect MCPServer's behaviour — it ignores keys it doesn't know.
         scope["oauth_client_id"] = claims.client_id
         scope["oauth_scopes"] = sorted(claims.scopes)
 
@@ -351,9 +351,9 @@ def build_app():
     """Construct the FastAPI app: health route + OAuth-JWT-wrapped MCP mount.
 
     The MCP session manager owns a long-lived task group that handles
-    streaming responses. FastMCP wires that into its inner Starlette app
+    streaming responses. MCPServer wires that into its inner Starlette app
     via ``lifespan=lambda app: self.session_manager.run()`` (see
-    ``mcp/server/fastmcp/server.py`` ``streamable_http_app``). When we
+    ``mcp/server/mcpserver/server.py`` ``streamable_http_app``). When we
     mount the inner Starlette app as a sub-app, FastAPI does NOT
     auto-invoke nested lifespans — so without the explicit hook below
     every MCP request fails with ``RuntimeError: Task group is not
@@ -364,14 +364,7 @@ def build_app():
     import server as poindexter_mcp  # type: ignore[import-not-found]
     from fastapi import FastAPI
 
-    # FastMCP defaults its internal route to ``/mcp``. We're already
-    # FastAPI-mounting at ``/mcp`` — if we leave the inner path at
-    # ``/mcp`` too, the Custom Connector URL becomes ``/mcp/mcp`` which
-    # is confusing. Re-anchoring the inner path to ``/`` gives a clean
-    # external URL of ``/mcp/`` (single segment).
-    poindexter_mcp.mcp.settings.streamable_http_path = "/"
-
-    # FastMCP auto-enables DNS-rebinding protection when bound to
+    # MCPServer auto-enables DNS-rebinding protection when bound to
     # localhost, with an empty allowed_hosts list. Behind a reverse
     # proxy / Tailscale Funnel the Host header is the public hostname
     # (e.g. ``<your-funnel-host>.ts.net``) which the empty allowlist
@@ -386,7 +379,7 @@ def build_app():
         for h in os.environ.get("POINDEXTER_MCP_ALLOWED_HOSTS", "").split(",")
         if h.strip()
     ]
-    poindexter_mcp.mcp.settings.transport_security = TransportSecuritySettings(
+    transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=bool(allowed),
         allowed_hosts=allowed,
     )
@@ -408,11 +401,19 @@ def build_app():
             ", ".join(removed) if removed else "none",
         )
 
-    inner = poindexter_mcp.mcp.streamable_http_app()  # also creates session_manager
+    # ``streamable_http_path="/"``: MCPServer defaults its internal route
+    # to ``/mcp``. We're already FastAPI-mounting at ``/mcp`` — if we left
+    # the inner path at ``/mcp`` too, the Custom Connector URL would
+    # become ``/mcp/mcp``. Re-anchoring to ``/`` keeps the clean external
+    # URL of ``/mcp/`` (single segment).
+    inner = poindexter_mcp.mcp.streamable_http_app(  # also creates session_manager
+        streamable_http_path="/",
+        transport_security=transport_security,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # Drive the FastMCP session_manager's task group for the lifetime
+        # Drive the MCPServer session_manager's task group for the lifetime
         # of the worker. Without this, handle_request() raises because
         # the task group never enters its async context.
         async with poindexter_mcp.mcp.session_manager.run():
@@ -432,7 +433,7 @@ def build_app():
             if tm is not None:
                 tools = list(getattr(tm, "_tools", {}).keys())
         except Exception:  # noqa: BLE001
-            # silent-ok: this introspects FastMCP PRIVATE internals
+            # silent-ok: this introspects MCPServer PRIVATE internals
             # (`_tool_manager` / `_tools`) purely to decorate the health
             # payload with a tool count, so it is expected to break across
             # upstream versions. Degrading `tool_count` to 0 is strictly

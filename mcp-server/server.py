@@ -27,7 +27,7 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 # OAuth helper — local mirror of services.auth.oauth_client. See
 # oauth_client.py docstring for why this is mirrored rather than
@@ -289,7 +289,7 @@ async def _get_memory_client() -> Any:
     return _memory_client
 
 
-mcp = FastMCP("Poindexter", instructions="""
+mcp = MCPServer("Poindexter", instructions="""
 Poindexter MCP server — your direct interface to the AI content pipeline.
 Built by Glad Labs LLC. Use these tools to manage content, monitor the
 system, and control operations.

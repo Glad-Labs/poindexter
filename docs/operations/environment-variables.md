@@ -149,7 +149,7 @@ Behaviour notes:
   always exposes the full registry, since the stdio path doesn't go
   through `http_server.build_app`.
 
-The filter runs **before** FastMCP builds its `streamable_http_app()`,
+The filter runs **before** MCPServer builds its `streamable_http_app()`,
 so both `tools/list` and `tools/call` reflect the trimmed registry —
 unlisted tools surface as `Unknown tool: <name>` to the client.
 
