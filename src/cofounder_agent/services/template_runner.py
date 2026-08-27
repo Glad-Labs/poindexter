@@ -447,6 +447,21 @@ class PipelineState(TypedDict, total=False):
     seo_keywords_list: list[str]
     featured_image_url: str
     featured_image_data: dict
+    # The hero image's scalar attributes, written by stage.source_featured_image
+    # (its module docstring lists them as outputs) and REWRITTEN by
+    # stage.caption_images, which re-captions the alt text from the actual
+    # rendered pixels. task_metadata.py persists all five, and
+    # static_export_service serves posts.metadata->>'featured_image_alt' to the
+    # public site. Undeclared, they were dropped at ainvoke on the graph_def
+    # path: 171 of 193 published posts with a hero image carry EMPTY alt text
+    # and none carry photographer attribution, with coverage falling to zero
+    # from 2026-07 on — the vision re-caption ran every time and its output
+    # evaporated. Same defect as vetoed_by below; declaring them is the fix.
+    featured_image_alt: str
+    featured_image_width: int
+    featured_image_height: int
+    featured_image_photographer: str
+    featured_image_source: str
     # Writer's [HERO-IMAGE:] subject, extracted by content.plan_image_markers;
     # source_featured_image._resolve_featured_subject grounds the hero image on it.
     featured_image_subject: str
@@ -666,6 +681,18 @@ class PipelineState(TypedDict, total=False):
     # QA aggregate output (#753): qa.aggregate writes qa_final_verdict, the
     # string pass/fail summary read by downstream consumers.
     qa_final_verdict: str            # qa.aggregate: 'pass' | 'fail' | advisory summary
+    # vetoed_by: the rails that actually rejected — non-advisory reviews with
+    # approved=False, plus "missing_required:<rail>" entries from the
+    # vacuous-pass guard. modules/content/task_metadata.py persists it as
+    # task_metadata.qa_vetoed_by, which the CLI + approval card read to show
+    # WHY a draft was flagged. Declared here because undeclared keys are
+    # DROPPED by LangGraph on the graph_def path (the prod path) — same lesson
+    # as seo_keywords_list / research_context / qa_rail_breakdown. Without the
+    # declaration the 2026-08-20 "flag with no reason" fix was dead on arrival:
+    # qa.aggregate computed vetoed_by correctly, the channel evaporated at
+    # ainvoke, and every rejected task persisted qa_vetoed_by=[] — a hard veto
+    # that named no rail.
+    vetoed_by: list                  # qa.aggregate: reviewers that hard-vetoed this draft
 
     # Auto-publish gate output (#753): content.evaluate_auto_publish writes this;
     # consumed downstream to decide whether to auto-publish or halt for approval.
