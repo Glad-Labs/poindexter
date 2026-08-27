@@ -109,6 +109,36 @@ model: `schnell_checkpoint` is an all-in-one `CheckpointLoaderSimple` file,
 while `qwen_model` and `klein_model` are `UNETLoader` diffusion models with
 their text encoder and VAE in separate files.
 
+### Per-candidate resolution
+
+`image_fanout_<name>_width` / `_height` override the global
+`image_fanout_width` / `_height`. `''` (the app_settings convention for
+unset) inherits the global, and **every candidate ships inheriting**, so
+this changes nobody's behaviour until an operator opts in.
+
+They ship empty rather than pre-tuned on purpose. These models genuinely
+don't share a best size — Qwen-Image is trained at 1328², FLUX.1-schnell
+degrades above roughly 1.2 MP, klein is native 1024 — but the obvious
+tuning does not fit the hardware:
+
+| qwen render     | Peak VRAM (32,607 MiB card) | Headroom    |
+| --------------- | --------------------------- | ----------- |
+| 1024² (1.05 MP) | 31,185 MiB                  | ~1.4 GB     |
+| 1328² (1.76 MP) | 31,537 MiB                  | **~1.0 GB** |
+
+Measured 2026-08-27 on the operator card, which also drives the desktop. A
+14B video render already OOM'd this same GPU at 31.9 GB, so ~1 GB is not a
+margin to spend unattended — qwen sits near the ceiling at either size.
+Raise it only on a card with real headroom or an idle one, and confirm by
+looking for a ComfyUI execution error rather than assuming it held.
+
+**Each judged render records the size it used** (`width`/`height` per
+candidate in the `image_fanout_judged` row). Resolution is a confound for
+the Phase-2 routing dataset: without it in the row, retuning a candidate's
+size splits the history into before/after halves that read identically.
+The stage-rendered `zimage` carries no dimensions — this service doesn't
+size it, and a fabricated global would misattribute it.
+
 klein's `steps`/`cfg` defaults (4 / 1.0) are the **distilled** variant's.
 `flux-2-klein-base-4b.safetensors` is the same architecture without baked
 guidance and wants ~20 steps at cfg 5 — the file and the two numbers have

@@ -19,6 +19,7 @@ from services.image_fanout import (
     _COMFY_CANDIDATES,
     FanoutCandidate,
     _build_candidate_graph,
+    _candidate_dimensions,
     _parse_score,
     _pick_winner,
     fanout_enabled,
@@ -127,6 +128,56 @@ class TestGraphs:
         # on ties and in the judge-down fall-open.
         assert set(wanted) == {n.strip() for n in _DEFAULT_PRIORITY.split(",")}
         assert wanted[0] == "zimage", "judge-down must reproduce production"
+
+
+class TestCandidateDimensions:
+    """Per-candidate render size, falling back to the global."""
+
+    def test_inherits_global_when_unset(self):
+        sc = _FakeSiteConfig({
+            "image_fanout_width": "1152", "image_fanout_height": "640"})
+        for name in _COMFY_CANDIDATES:
+            assert _candidate_dimensions(name, sc) == (1152, 640)
+
+    def test_empty_string_inherits(self):
+        """'' is the app_settings convention for unset — it must inherit, not
+        parse as 0 and render a zero-size latent."""
+        sc = _FakeSiteConfig({
+            "image_fanout_width": "1024", "image_fanout_height": "1024",
+            "image_fanout_qwen_width": "", "image_fanout_qwen_height": "",
+        })
+        assert _candidate_dimensions("qwen", sc) == (1024, 1024)
+
+    def test_per_candidate_overrides_global(self):
+        sc = _FakeSiteConfig({
+            "image_fanout_width": "1024", "image_fanout_height": "1024",
+            "image_fanout_qwen_width": "1328",
+            "image_fanout_qwen_height": "1328",
+        })
+        assert _candidate_dimensions("qwen", sc) == (1328, 1328)
+        # ...and only for that candidate.
+        assert _candidate_dimensions("schnell", sc) == (1024, 1024)
+
+    def test_override_reaches_the_built_graph(self):
+        """The knob is worthless if it stops at the resolver."""
+        sc = _FakeSiteConfig({
+            "image_fanout_qwen_width": "1328",
+            "image_fanout_qwen_height": "1328",
+            "image_fanout_klein_width": "768",
+            "image_fanout_klein_height": "768",
+        })
+        q = _build_candidate_graph(
+            "qwen", prompt="p", negative="n", seed=1, site_config=sc)
+        assert q["7"]["inputs"]["width"] == 1328
+        k = _build_candidate_graph(
+            "klein", prompt="p", negative="n", seed=1, site_config=sc)
+        # klein sizes BOTH the latent and the sigma schedule — Flux2Scheduler
+        # is resolution-aware, so a missed one silently mis-shifts the render.
+        assert k["10"]["inputs"]["width"] == 768
+        assert k["8"]["inputs"]["width"] == 768
+
+    def test_defaults_are_1024_with_no_config(self):
+        assert _candidate_dimensions("schnell", None) == (1024, 1024)
 
 
 class TestParseScore:
@@ -360,6 +411,40 @@ class TestRunFeaturedFanout:
         assert rendered == ["schnell", "klein", "qwen"]
         details = json.loads(pool.execute.await_args.args[4])
         assert {c["name"] for c in details["candidates"]} == {"zimage", "klein"}
+
+    @pytest.mark.asyncio
+    async def test_outcome_row_records_per_candidate_resolution(
+        self, zimage_file, tmp_path, no_gpu_unload,
+    ):
+        """Resolution is a confound the Phase-2 router has to be able to see:
+        without it in the row, retuning a candidate's size splits the dataset
+        into before/after halves that read identically."""
+        f = tmp_path / "q.png"
+        f.write_bytes(b"PNG")
+
+        async def render(name, graph, **kw):
+            if name == "qwen":
+                return str(f), {"model": "qwen", "elapsed_s": 1.0}
+            return None, {"failure": "skip"}
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={},
+                site_config=_sc(image_fanout_qwen_width="1328",
+                                image_fanout_qwen_height="1328"),
+                pool=pool, task_id="t1",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        by_name = {c["name"]: c for c in details["candidates"]}
+        assert (by_name["qwen"]["width"], by_name["qwen"]["height"]) == (1328, 1328)
+        # zimage is rendered by the stage, not sized here, so it carries no
+        # dimensions rather than a fabricated global that would misattribute
+        # its size. The row omits the key entirely — validate_event_details
+        # dumps with exclude_none, the same reason zimage has no elapsed_s.
+        assert "width" not in by_name["zimage"]
 
     @pytest.mark.asyncio
     async def test_candidates_setting_filters(self, zimage_file, no_gpu_unload):

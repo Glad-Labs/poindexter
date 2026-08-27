@@ -170,6 +170,13 @@ class ImageFanoutCandidateEntry(BaseModel):
     score: float | None = None
     reason: str = ""
     elapsed_s: float | None = None
+    # Render size, per candidate — they no longer share one. The routing
+    # dataset has to be able to see resolution as a variable, or retuning a
+    # candidate's size silently splits it into before/after halves that read
+    # identically. None on the stage-rendered zimage, which this service
+    # does not size.
+    width: int | None = None
+    height: int | None = None
 
 
 class ImageFanoutJudgedDetails(BaseModel):

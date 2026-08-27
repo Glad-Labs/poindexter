@@ -2033,8 +2033,30 @@ DEFAULTS: dict[str, str] = {
     # take minutes — this budget must cover it or the candidate is skipped
     # for that post (the fan-out degrades gracefully, never blocks).
     'image_fanout_render_timeout_s': '600',
+    # Global render size, and the fallback for any candidate without its own.
     'image_fanout_width': '1024',
     'image_fanout_height': '1024',
+    # Per-candidate overrides. '' = inherit the global above (the app_settings
+    # convention for unset), which is what every candidate ships doing — these
+    # exist so a model can render at ITS best size, not to change anyone's
+    # behaviour by default.
+    #
+    # They ship empty rather than pre-tuned because the obvious tuning is
+    # unsafe here. Qwen-Image is trained at 1328x1328, but measured on the
+    # operator 32GB card (2026-08-27) that peaks at 31,537 MiB of 32,607 —
+    # ~1GB of headroom on a GPU that also drives the desktop, and a 14B video
+    # render already OOM'd this same card at 31.9GB. 1024 peaks at 31,185
+    # MiB, so qwen sits near the ceiling either way. Raise it only on a card
+    # with real headroom (or an idle one), and watch for the ComfyUI
+    # execution error rather than assuming it held.
+    # FLUX.1-schnell is the opposite case: it degrades above roughly 1.2 MP,
+    # so 1024x1024 (1.05 MP) is already its sweet spot. klein is native 1024.
+    'image_fanout_schnell_width': '',
+    'image_fanout_schnell_height': '',
+    'image_fanout_qwen_width': '',
+    'image_fanout_qwen_height': '',
+    'image_fanout_klein_width': '',
+    'image_fanout_klein_height': '',
     'image_fanout_schnell_checkpoint': 'flux1-schnell-fp8.safetensors',
     'image_fanout_schnell_steps': '4',
     'image_fanout_schnell_cfg': '1.0',
@@ -4742,6 +4764,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_render_timeout_s': {'value_type': 'integer'},
     'image_fanout_width': {'value_type': 'integer'},
     'image_fanout_height': {'value_type': 'integer'},
+    'image_fanout_schnell_width': {'value_type': 'integer'},
+    'image_fanout_schnell_height': {'value_type': 'integer'},
+    'image_fanout_qwen_width': {'value_type': 'integer'},
+    'image_fanout_qwen_height': {'value_type': 'integer'},
+    'image_fanout_klein_width': {'value_type': 'integer'},
+    'image_fanout_klein_height': {'value_type': 'integer'},
     'image_fanout_schnell_checkpoint': {'value_type': 'string'},
     'image_fanout_schnell_steps': {'value_type': 'integer'},
     'image_fanout_schnell_cfg': {'value_type': 'float'},

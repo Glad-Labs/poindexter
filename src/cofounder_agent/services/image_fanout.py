@@ -273,12 +273,34 @@ def klein_graph(
     }
 
 
+def _candidate_dimensions(
+    name: str, site_config: Any,
+) -> tuple[int, int]:
+    """Resolve one candidate's render size, per-candidate first.
+
+    These models do not share a best resolution: Qwen-Image is trained at
+    1328x1328, while FLUX.1-schnell degrades above roughly 1.2 MP and klein
+    is native 1024. A single global size therefore has to hurt someone, and
+    the fan-out's whole premise is each model getting to show its best work.
+
+    ``image_fanout_<name>_width`` / ``_height`` override
+    ``image_fanout_width`` / ``_height``. Unset ('' per the app_settings
+    convention, or absent) inherits the global, so a candidate with no
+    override renders exactly as it did before.
+    """
+    width = int(_sc_num(site_config, "image_fanout_width", _DEFAULT_W))
+    height = int(_sc_num(site_config, "image_fanout_height", _DEFAULT_H))
+    return (
+        int(_sc_num(site_config, f"image_fanout_{name}_width", width)),
+        int(_sc_num(site_config, f"image_fanout_{name}_height", height)),
+    )
+
+
 def _build_candidate_graph(
     name: str, *, prompt: str, negative: str, seed: int,
     site_config: Any,
 ) -> dict[str, Any] | None:
-    width = int(_sc_num(site_config, "image_fanout_width", _DEFAULT_W))
-    height = int(_sc_num(site_config, "image_fanout_height", _DEFAULT_H))
+    width, height = _candidate_dimensions(name, site_config)
     if name == "schnell":
         return schnell_graph(
             prompt=prompt, seed=seed, width=width, height=height,
@@ -531,7 +553,8 @@ async def _record_outcome(
         "brief": brief[:300],
         "candidates": [
             {"name": c.name, "score": c.score, "reason": c.reason[:200],
-             "elapsed_s": c.meta.get("elapsed_s")}
+             "elapsed_s": c.meta.get("elapsed_s"),
+             "width": c.meta.get("width"), "height": c.meta.get("height")}
             for c in candidates
         ],
     }
@@ -618,6 +641,13 @@ async def run_featured_fanout(
                 name, graph, server_url=server_url, timeout_s=timeout_s,
             )
             if path:
+                # Stamp the size this candidate actually rendered at. The
+                # Phase-2 router learns from these rows, and resolution is a
+                # confound it has to be able to see: without this, retuning a
+                # candidate's size silently splits the dataset into
+                # before/after halves that look identical.
+                cw, ch = _candidate_dimensions(name, site_config)
+                meta = {**meta, "width": cw, "height": ch}
                 candidates.append(FanoutCandidate(name=name, path=path, meta=meta))
             else:
                 logger.warning(
