@@ -13,14 +13,15 @@ already user-agnostic (`$HOME`-relative), so only the `*.service` `User=` /
 
 ## Scripts (`scripts/linux/`)
 
-| File                          | Purpose                                                                                                                                                    |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backup-precious.sh`          | Pre-migration backup — precious DBs (`pg_dump`) + useful volumes (`tar`) + operator config. Runs from Git Bash on the source host while its stack is up.   |
-| `ollama-vision.sh`            | UUID-pins a second-GPU Ollama instance on `:11435` (Vulkan off, never-unload). Backs `ollama-vision.service`.                                              |
-| `run-session.sh`              | Runs one scheduled ops session with git-worktree isolation for the committing ones. Backs `poindexter-session@.service`.                                   |
-| `install-session-timers.sh`   | Generates + enables the 7 `systemd` session timers (the Task-Scheduler replacement).                                                                       |
-| `../demo-clips/bake-clips.sh` | Re-bakes the VHS demo-clip library in a throwaway container (poindexter#937). Defers when the box is already loaded. Backs `poindexter-demo-bake.service`. |
-| `docker-watchdog.sh`          | Minimal stack liveness watchdog (bare-metal replacement for `docker-watchdog.ps1` — no `wsl --shutdown`).                                                  |
+| File                          | Purpose                                                                                                                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backup-precious.sh`          | Pre-migration backup — precious DBs (`pg_dump`) + useful volumes (`tar`) + operator config. Runs from Git Bash on the source host while its stack is up.                                                    |
+| `ollama-vision.sh`            | UUID-pins a second-GPU Ollama instance on `:11435` (Vulkan off, never-unload). Backs `ollama-vision.service`.                                                                                               |
+| `run-session.sh`              | Runs one scheduled ops session with git-worktree isolation for the committing ones. Backs `poindexter-session@.service`.                                                                                    |
+| `install-session-timers.sh`   | Generates + enables the 7 `systemd` session timers (the Task-Scheduler replacement).                                                                                                                        |
+| `../demo-clips/bake-clips.sh` | Re-bakes the VHS demo-clip library in a throwaway container (poindexter#937). Defers when the box is already loaded. Backs `poindexter-demo-bake.service`.                                                  |
+| `docker-watchdog.sh`          | Minimal stack liveness watchdog (bare-metal replacement for `docker-watchdog.ps1` — no `wsl --shutdown`).                                                                                                   |
+| `install-oomd.sh`             | Installs + enables `systemd-oomd` with the swap-kill policy from `infrastructure/systemd/oomd/`. Re-run after editing those files. See [host OOM protection](../../docs/operations/host-oom-protection.md). |
 
 ## Units (`infrastructure/systemd/`)
 

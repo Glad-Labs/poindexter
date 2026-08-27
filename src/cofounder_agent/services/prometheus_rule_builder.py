@@ -1397,27 +1397,46 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # A host with no swap configured never fires: SwapTotal=0 makes the
         # division NaN (dropped by the comparison); the explicit
         # `SwapTotal > 0` conjunct documents that intent.
+        #
+        # The average is NOT decoration — the raw gauge could not fire.
+        # On 2026-08-27 this rule sat `pending` for 8h15m and never tripped
+        # while the box thrashed itself into a hard reboot: a thrashing host
+        # reclaims in bursts, so swap-free rattles (0% → 7% → 0% → 12%) and
+        # every blip above the threshold restarted the `for:` clock. Measured
+        # against that incident's own series at native 1m resolution, the
+        # longest unbroken sub-5% run was 71 MINUTES — a `for: 2h` on a raw
+        # read is unreachable by construction during the exact event it
+        # exists to catch. Averaging first turns the blips into what they
+        # are (noise on a pinned-full level) rather than an all-clear; the
+        # same series fires at avg-2h + for:30m ~10h before the freeze.
+        # This is the `*_over_time` smoothing the worker-gauge rules already
+        # use, applied for value blips instead of scrape holes.
         "expr": (
-            "(100 * node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes "
+            "(100 * avg_over_time(node_memory_SwapFree_bytes[2h]) "
+            "/ node_memory_SwapTotal_bytes "
             "< {threshold.host_memory_swap_free_warning_percent}) "
             "and (node_memory_SwapTotal_bytes > 0)"
         ),
-        # 2h: swap legitimately fills during a heavy render window; only a
-        # SUSTAINED hold means the resident set has outgrown RAM+swap.
-        # node_exporter is host-side, so the long pending clock is safe on a
-        # raw read (restart-gap policy: worker deploys can't blank it).
-        "for": "2h",
+        # Detection latency is the WINDOW plus this clock, not this clock
+        # alone: swap dropping to 0% takes ~1.9h to drag the 2h average
+        # under the threshold, so 30m here still means ~2.4h end-to-end —
+        # the original "sustained, not a render window" intent, now actually
+        # reachable. Keep `for:` well under the window; a second 2h here
+        # would push detection past 4h and back into uselessness.
+        "for": "30m",
         "severity": "warning",
         "category": "infrastructure",
         "summary": "Host swap has been effectively full for hours",
         "description": (
-            "Swap free has been under "
+            "Swap free has averaged under "
             "prometheus.threshold.host_memory_swap_free_warning_percent% "
-            "for 2h ({{ $value | humanize }}% free). The host is living "
-            "beyond RAM+swap — dormant model servers (TTS/audio sidecars) "
-            "park themselves in swap, and any model-load burst can tip the "
-            "box into global-OOM thrash before the acute rules can page "
-            "(2026-08-24 incident, poindexter#1021). Check "
+            "over 2h ({{ $value | humanize }}% free, 2h mean). The host is "
+            "living beyond RAM+swap — dormant model servers (TTS/audio "
+            "sidecars) park themselves in swap, and any model-load burst "
+            "can tip the box into global-OOM thrash before the acute rules "
+            "can page (2026-08-24 and 2026-08-27 incidents, "
+            "poindexter#1021). Brief recoveries are expected while this "
+            "fires and do NOT mean it cleared — the value is a mean. Check "
             "container_memory_swap by container on the Hardware & Power "
             "board; unload or restart the biggest dormant model sidecars, "
             "and consider whether the resident fleet has outgrown the box."

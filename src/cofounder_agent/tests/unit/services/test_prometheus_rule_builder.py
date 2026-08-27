@@ -1584,12 +1584,38 @@ class TestHostSwapExhaustedRule:
     def test_is_a_sustained_warning_not_a_page(self):
         rule = rb.DEFAULT_RULES["PoindexterHostSwapExhausted"]
         assert rule["severity"] == "warning"
-        # 2h: swap legitimately fills during a render window; only the
-        # sustained hold is the incident precursor.
-        assert rule["for"] == "2h"
         assert (
             "{threshold.host_memory_swap_free_warning_percent}" in rule["expr"]
         )
+
+    def test_averages_the_window_so_blips_cannot_reset_the_clock(self):
+        """2026-08-27 regression: the rule read the RAW gauge with `for: 2h`.
+
+        A thrashing host reclaims in bursts, so swap-free rattles above the
+        threshold every few minutes and each blip restarts the pending
+        clock. Measured on that incident's own series, the longest unbroken
+        sub-5% run was 71 min — the rule sat `pending` for 8h15m and never
+        fired while the box froze hard. Averaging the window first is what
+        makes the condition reachable, so it is the assertion, not the
+        `for:` duration.
+        """
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapExhausted"]
+        assert "avg_over_time(node_memory_SwapFree_bytes[2h])" in rule["expr"]
+        # A bare SwapFree read outside the average would reintroduce the bug.
+        expr_without_avg = rule["expr"].replace(
+            "avg_over_time(node_memory_SwapFree_bytes[2h])", ""
+        )
+        assert "node_memory_SwapFree_bytes" not in expr_without_avg
+
+    def test_pending_clock_stays_shorter_than_the_average_window(self):
+        """Detection latency is window + `for:`, not `for:` alone.
+
+        Swap hitting 0% takes ~1.9h to drag a 2h mean under threshold, so a
+        second 2h here would push detection past 4h — slower than the rule
+        it replaced, which is how this regresses quietly.
+        """
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapExhausted"]
+        assert rule["for"] == "30m"
 
     def test_no_swap_host_never_fires(self):
         """SwapTotal=0 → NaN division (dropped by the comparison); the
