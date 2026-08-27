@@ -1,0 +1,61 @@
+{
+  "id": 102,
+  "name": "Animation",
+  "background": "gladlabsloop",
+  "margin": 60,
+  "workers": 4,
+  "frameDelay": 0,
+  "separatorColor": {
+    "red": 0,
+    "green": 229,
+    "blue": 214,
+    "brightness": 0,
+    "position": 0,
+    "temperature": 0,
+    "Hex": "#00e5d6"
+  },
+  "sensors": {
+    "0": {
+      "name": "Liquid Temp",
+      "sensor": 2,
+      "textColor": {
+        "red": 0,
+        "green": 229,
+        "blue": 214,
+        "brightness": 0,
+        "position": 0,
+        "temperature": 0,
+        "Hex": "#00e5d6"
+      },
+      "enabled": true
+    },
+    "1": {
+      "name": "CPU Temp",
+      "sensor": 0,
+      "textColor": {
+        "red": 255,
+        "green": 184,
+        "blue": 51,
+        "brightness": 0,
+        "position": 0,
+        "temperature": 0,
+        "Hex": "#ffb833"
+      },
+      "enabled": true
+    },
+    "2": {
+      "name": "GPU Temp",
+      "sensor": 1,
+      "textColor": {
+        "red": 255,
+        "green": 128,
+        "blue": 0,
+        "brightness": 0,
+        "position": 0,
+        "temperature": 0,
+        "Hex": "#ff8000"
+      },
+      "enabled": true
+    }
+  }
+}

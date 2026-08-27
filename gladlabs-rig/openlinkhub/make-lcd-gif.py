@@ -47,6 +47,9 @@ RINGS = (
 TRAIL_SEGS = 26  # comet tail resolution
 TRAIL_DEG = 110  # tail length in degrees
 REST_ALPHA = 34  # faint always-on ring, so the circuit reads at every phase
+GLOW_R = 54  # central sphere's outer glow radius
+CORE_R = 15  # its solid centre
+PALETTE_TILES = 8  # frames sampled to build the shared palette
 
 
 def draw_frame(t: float) -> Image.Image:
@@ -102,14 +105,18 @@ def draw_frame(t: float) -> Image.Image:
                     continue
                 d.arc(box, a0, a1, fill=colour + (alpha,), width=w)
 
-    # central core, pulsing on the same clock
+    # Central sphere, breathing on the same clock. Drawn as a dense radial
+    # falloff (1px steps at supersample) rather than a few widely-spaced discs
+    # -- coarse steps read as a flat dot wearing a haze, not as a sphere.
     pulse = 0.5 + 0.5 * math.cos(2 * math.pi * t)
-    for rr in range(int(46 * SS), 0, -2 * SS):
-        a = int(52 * pulse * (1 - rr / (46 * SS)) ** 2)
+    glow_r = int(GLOW_R * (0.86 + 0.14 * pulse) * SS)
+    peak = 96 + 128 * pulse
+    for rr in range(glow_r, 0, -1):
+        a = int(peak * (1 - rr / glow_r) ** 2.2)
         if a > 0:
             d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=MINT + (a,))
-    core = int((9 + 3 * pulse) * SS)
-    d.ellipse([cx - core, cy - core, cx + core, cy + core], fill=MINT + (255,))
+    core_r = int(CORE_R * (0.80 + 0.20 * pulse) * SS)
+    d.ellipse([cx - core_r, cy - core_r, cx + core_r, cy + core_r], fill=MINT + (255,))
 
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
@@ -118,10 +125,19 @@ def main() -> None:
     frames = [draw_frame(i / FRAMES) for i in range(FRAMES)]
 
     # One shared palette for every frame, or the colours crawl between frames.
-    master = frames[0].copy()
-    master.paste(frames[FRAMES // 3], (0, 0), None)
-    palette = master.quantize(colors=256, method=Image.MEDIANCUT)
-    frames = [f.quantize(palette=palette, dither=Image.FLOYDSTEINBERG) for f in frames]
+    # It has to be built from a montage spanning the WHOLE loop: derive it from
+    # a single frame and every brightness that frame doesn't contain -- the
+    # sphere at full pulse, rings at other angles -- has no entry to land on,
+    # and dithering scatters it into speckle that reshuffles every frame. That
+    # reads as a strobe, with only the frames nearest the sampled one solid.
+    tiles = [frames[i * FRAMES // PALETTE_TILES] for i in range(PALETTE_TILES)]
+    montage = Image.new("RGB", (SIZE, SIZE * PALETTE_TILES))
+    for i, tile in enumerate(tiles):
+        montage.paste(tile, (0, i * SIZE))
+    palette = montage.quantize(colors=256, method=Image.MEDIANCUT)
+    # No dithering: the palette above already covers this ramp, and dither noise
+    # on a near-black field shimmers frame to frame.
+    frames = [f.quantize(palette=palette, dither=Image.NONE) for f in frames]
 
     path = os.path.join(sys.argv[1] if len(sys.argv) > 1 else ".", OUT)
     frames[0].save(

@@ -38,10 +38,11 @@ sudo cp -v "$HERE"/openlinkhub/temperatures/*.json /opt/OpenLinkHub/database/tem
 sudo cp -v "$HERE"/openlinkhub/profiles/*.json /opt/OpenLinkHub/database/profiles/
 sudo mkdir -p /opt/OpenLinkHub/database/rgb
 sudo cp -v "$HERE"/openlinkhub/rgb-device/*.json /opt/OpenLinkHub/database/rgb/
-# XC7 block LCD animation. Generated rather than committed (2.6 MB); the restart
-# below is what loads it, since OpenLinkHub caches images at startup.
+# XC7 block LCD animation. Generated rather than committed; the restart below is
+# what loads it, since OpenLinkHub caches images at startup.
 python3 "$HERE"/openlinkhub/make-lcd-gif.py /tmp
 sudo cp -v /tmp/gladlabsloop.gif /opt/OpenLinkHub/database/lcd/images/
+sudo cp -v "$HERE"/openlinkhub/lcd/animation.json /opt/OpenLinkHub/database/lcd/
 sudo chown -R openlinkhub:openlinkhub /opt/OpenLinkHub/database /opt/OpenLinkHub/config.json 2>/dev/null || true
 
 echo "== restart services =="
