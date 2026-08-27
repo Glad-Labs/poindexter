@@ -214,17 +214,17 @@
       sub: [
         ['SURFACE', 'Pipeline :: Prefect UI'],
         ['STATUS', 'ConnectError'],
-        ['IP', '100.64.1.5'],
+        ['IP', '203.0.113.5'],
       ],
       age: ago(73),
       tags: [['amber', 'DRIFT']],
       detail: {
         surface: 'Pipeline Operations :: Prefect UI',
-        url: 'http://100.64.1.5:4200/dashboard',
+        url: 'http://203.0.113.5:4200/dashboard',
         error: 'ConnectError: All connection attempts failed',
         recommend:
-          "Tailscale IP for device 'brain-pc' drifted. Run: UPDATE system_devices SET tailscale_ip='100.64.1.9' WHERE hostname='brain-pc';",
-        fix: "UPDATE system_devices SET tailscale_ip='100.64.1.9' WHERE hostname='brain-pc';",
+          "Tailscale IP for device 'brain-pc' drifted. Run: UPDATE system_devices SET tailscale_ip='203.0.113.9' WHERE hostname='brain-pc';",
+        fix: "UPDATE system_devices SET tailscale_ip='203.0.113.9' WHERE hostname='brain-pc';",
         firstSeen: ago(73),
       },
     },
@@ -1213,7 +1213,7 @@
     {
       ts: '14:25:02',
       tag: ['amber', 'DRIFT'],
-      html: 'operator_url_probe — <b>Prefect UI</b> unreachable (100.64.1.5)',
+      html: 'operator_url_probe — <b>Prefect UI</b> unreachable (203.0.113.5)',
     },
     {
       ts: '14:22:38',

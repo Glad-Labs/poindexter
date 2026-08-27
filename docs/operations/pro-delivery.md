@@ -90,8 +90,12 @@ The `pro-freshness` ops session (Sun 04:30, `scripts/ops_sessions/pro_freshness.
 rebuilds the deliverable repo weekly from the live system: the tuned seed is
 exported from **prod `app_settings`** (non-secret, identity/operator values
 dropped and counted), the prompt pack mirrors the live SKILL.md packs
-(post-#825 source of truth), and the premium Grafana boards are re-copied
-from provisioning. The book is scanned for deleted-code fossils and stale
+(post-#825 source of truth), the premium Grafana boards are re-copied
+from provisioning, and the **operator console SPA** is exported (dev tests
+excluded, `INSTALL.md` generated) — the console is Pro-tier by design
+(stripped from the OSS mirror; the engine's presence-based mount serves it
+wherever the directory exists), and the weekly export is how it reaches
+buyers. The book is scanned for deleted-code fossils and stale
 prices but never auto-edited. Every generated file passes the PII/secret
 scrub gate or nothing is pushed. Runbook row in
 [scheduled-agents.md](scheduled-agents.md); manual run:

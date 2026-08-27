@@ -256,3 +256,30 @@ def test_build_config_readme_tracks_counts_and_teaches_apply():
     assert "poindexter pro apply" in readme
     assert "--include-models" in readme
     assert pf.scan_text(readme, source="config/README.md") == []
+
+
+def test_build_console_exports_and_excludes_dev_clutter(tmp_path):
+    stack = tmp_path / "stack"
+    src = stack / "src" / "cofounder_agent" / "console"
+    (src / "js" / "__tests__").mkdir(parents=True)
+    (src / "js" / "app.jsx").write_text("render()")
+    (src / "js" / "__tests__" / "app.test.js").write_text("dev only")
+    (src / "js" / "api.test.js").write_text("dev only")
+    (src / "index.html").write_text("<div id=app>")
+
+    out = tmp_path / "deliverable" / "console"
+    out.mkdir(parents=True)
+    (out / "stale.js").write_text("from a renamed file")
+
+    count, scan_paths = pf.build_console(stack, out)
+
+    assert count == 2
+    assert not (out / "stale.js").exists(), "target must be cleared first"
+    assert not (out / "js" / "__tests__").exists()
+    assert not (out / "js" / "api.test.js").exists()
+    assert (out / "js" / "app.jsx").read_text() == "render()"
+    install = out / "INSTALL.md"
+    assert install.exists()
+    assert "presence-based" in install.read_text()
+    assert len(scan_paths) == 3  # 2 exported files + INSTALL.md
+    assert pf.scan_text(install.read_text(), source="INSTALL.md") == []

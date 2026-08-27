@@ -41,6 +41,7 @@ import datetime as _dt
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -267,6 +268,65 @@ def refresh_dashboards(stack_root: Path, out_dir: Path) -> tuple[list[str], list
     return copied, missing
 
 
+# Console export excludes dev-only clutter; everything else rides. The console
+# is a Pro-tier overlay by design (stripped from the OSS mirror; the engine's
+# presence-based mount serves it wherever the directory exists), so shipping it
+# in the PRIVATE deliverable repo is how it finally reaches buyers.
+_CONSOLE_EXCLUDE_DIRS = frozenset({"__tests__", "__pycache__", "node_modules"})
+
+_CONSOLE_INSTALL_MD = """# Installing the operator console
+
+The console is a static SPA the engine serves **presence-based**: if
+`src/cofounder_agent/console/` exists in your checkout, the worker mounts it
+at `/console`; if not, the route simply doesn't exist. Install is a copy:
+
+```bash
+cp -r ~/poindexter-pro/console <your-checkout>/src/cofounder_agent/console
+docker restart poindexter-worker
+```
+
+Then open `http://localhost:8002/console/`. First visit: open Settings inside
+the console and paste an OAuth client id/secret (`poindexter auth
+register-client --name console --scopes "api:read api:write"`).
+
+The console tracks the seller's live engine and updates with every weekly
+rebuild — pair it with a current engine release. Panels error loudly rather
+than showing fake data if an endpoint is missing (that's by design).
+"""
+
+
+def build_console(stack_root: Path, out_dir: Path) -> tuple[int, list[Path]]:
+    """Export the operator-console SPA into the deliverable.
+
+    Clears the target first (same stale-file hygiene as the prompt export),
+    copies everything except dev clutter, and writes an INSTALL.md for the
+    presence-based mount. Returns ``(files_copied, text_paths_for_scrub)`` —
+    every exported file is text, so all of them ride the verify gate.
+    """
+    src_root = stack_root / "src" / "cofounder_agent" / "console"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    copied = 0
+    scan_paths: list[Path] = []
+    for src in sorted(src_root.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(src_root)
+        if any(part in _CONSOLE_EXCLUDE_DIRS for part in rel.parts):
+            continue
+        if ".test." in src.name:
+            continue
+        dest = out_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        scan_paths.append(dest)
+        copied += 1
+    install = out_dir / "INSTALL.md"
+    install.write_text(_CONSOLE_INSTALL_MD, encoding="utf-8")
+    scan_paths.append(install)
+    return copied, scan_paths
+
+
 def scan_book(book_dir: Path) -> list[str]:
     """Report (never edit) deleted-code fossils + stale prices in the book."""
     hits: list[str] = []
@@ -450,11 +510,15 @@ def main() -> int:
     copied, missing_boards = refresh_dashboards(stack, CLONE_DIR / "dashboards")
     log.info("dashboards: copied=%s missing=%s", copied, missing_boards)
 
+    console_files, console_paths = build_console(stack, CLONE_DIR / "console")
+    log.info("console: %d files exported", console_files)
+
     book_drift = scan_book(CLONE_DIR / "book") if (CLONE_DIR / "book").exists() else []
 
     outputs = [seed_path, readme_path, CLONE_DIR / "prompts" / "manifest.json"]
     outputs += sorted((CLONE_DIR / "prompts").glob("*.prompt.md"))
     outputs += [CLONE_DIR / "dashboards" / f"{n}.json" for n in copied]
+    outputs += console_paths
     violations = verify_outputs(outputs, CLONE_DIR)
     if violations:
         detail = "PII/secret patterns matched in generated output:\n" + "\n".join(
@@ -489,7 +553,8 @@ def main() -> int:
     today = _dt.date.today().isoformat()
     summary = (
         f"seed {len(seed)} keys (dropped: {sum(drops.values())} — {drops}), "
-        f"{len(prompt_entries)} prompt packs, dashboards {', '.join(copied) or 'none'}"
+        f"{len(prompt_entries)} prompt packs, console {console_files} files, "
+        f"dashboards {', '.join(copied) or 'none'}"
         + (f"; MISSING boards: {', '.join(missing_boards)}" if missing_boards else "")
     )
     entry = (
@@ -506,7 +571,7 @@ def main() -> int:
     prepend_changelog(CLONE_DIR / "CHANGELOG.md", entry)
 
     for step in (
-        ["git", "add", "-A", "config", "prompts", "dashboards", "CHANGELOG.md"],
+        ["git", "add", "-A", "config", "prompts", "dashboards", "console", "CHANGELOG.md"],
         ["git", "commit", "-m", f"chore(freshness): rebuild from live system {today} — {summary}",
          "-m", "Automated by the pro-freshness ops session (glad-labs-stack#3216)."],
         ["git", "push", "origin", "main"],
