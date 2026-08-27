@@ -2,13 +2,33 @@
 
 Two scenarios:
 
-1. ``test_glad_labs_sweep_produces_a_batch`` — verifies the seeded
-   ``glad-labs`` niche exists, runs a full sweep against the test DB,
+1. ``test_seeded_niche_sweep_produces_a_batch`` — verifies the seeded
+   ``starter-blog`` niche exists, runs a full sweep against the test DB,
    and asserts an open batch with at least one candidate is created.
 2. ``test_resolve_advances_to_content_task`` — manually seeds a batch +
    candidate, ranks + resolves, and asserts a ``content_tasks`` row
    landed with the right ``niche_slug`` / ``writer_rag_mode`` /
    ``topic_batch_id`` provenance.
+
+Which niche is actually seeded
+==============================
+Test 1 asserted on ``glad-labs`` and had rotted: the public baseline
+seeds a generic ``starter-blog`` example, and the branded ``glad-labs``
+niche is restored on the operator rig alone by the private
+``services.operator_overrides.OPERATOR_NICHE_OVERRIDES`` (a conditional
+UPDATE that renames ``starter-blog``). So on any OSS install — and on any
+fresh test DB, which runs migrations without the overlay — ``glad-labs``
+has never existed. Assert on the slug the shipping seed actually creates;
+fixture topics stay brand-free for the same reason.
+
+Topic-sanity gate
+=================
+``resolve_batch`` runs every winner through ``services.topic_sanity``
+before handing off to the pipeline, so candidate titles seeded here are
+production input, not inert strings: a title needs at least
+``topic_sanity_min_alpha_words`` (default 2) letter-runs of >=2 chars.
+"E2E Topic 0" has exactly one ("Topic" — "E2E" and "0" are not alphabetic
+words), which is why the fixture spells its titles out.
 
 Self-contained DB fixture
 =========================
@@ -16,9 +36,9 @@ The unit-tier ``db_pool`` fixture (``tests/unit/conftest.py``) is not on
 this directory's conftest chain, and the integration tier's existing
 ``real_pool`` fixture is gated behind ``INTEGRATION_TESTS=1`` +
 ``REAL_SERVICES_TESTS=1`` and only loads ``init_test_schema.sql`` (not
-the niche migrations 0113-0115). To keep this file standalone + self-
-hermetic, we redefine the same disposable-test-DB pattern here. The
-fixture skips the whole module if no live Postgres DSN is reachable.
+the niche tables). To keep this file standalone + self-hermetic, we
+redefine the same disposable-test-DB pattern here. The fixture skips the
+whole module if no live Postgres DSN is reachable.
 """
 
 from __future__ import annotations
@@ -32,12 +52,40 @@ from urllib.parse import urlparse, urlunparse
 import pytest
 import pytest_asyncio
 
-from services.internal_rag_source import InternalCandidate
+from plugins.topic_source import DiscoveredTopic
 from services.niche_service import NicheService
 from services.site_config import SiteConfig
 from services.topic_batch_service import TopicBatchService
+from services.topic_pool import insert_pooled_topics
+from services.topic_sanity import evaluate_topic_sanity
 
 pytestmark = [pytest.mark.asyncio(loop_scope="session"), pytest.mark.integration]
+
+# The niche the public baseline seeds. The operator overlay renames this
+# row to ``glad-labs`` on the operator's rig only — see the module docstring.
+_SEEDED_NICHE_SLUG = "starter-blog"
+
+
+def _sane_title(title: str) -> str:
+    """Return ``title``, first asserting it clears the topic-sanity gate.
+
+    Candidate titles seeded by this file are production input, not inert
+    labels: the sweep drops contentless candidates before embedding
+    (``_drop_contentless_candidates``) and ``resolve_batch`` re-checks the
+    winner before handing off to the pipeline. A title needs at least
+    ``topic_sanity_min_alpha_words`` (default 2) letter-runs of >=2 chars,
+    which "E2E Topic 0" — the previous fixture spelling — does not have.
+
+    Checking here means a fixture that drifts below the gate fails by name
+    instead of surfacing as a ``TopicSanityError`` several frames deep in
+    production code, or (worse) as a silently shrunken batch.
+    """
+    verdict = evaluate_topic_sanity(title)
+    assert verdict.ok, (
+        f"fixture title {title!r} fails the topic-sanity gate "
+        f"({verdict.reason}): {verdict.detail}"
+    )
+    return title
 
 
 # ---------------------------------------------------------------------------
@@ -67,9 +115,9 @@ async def _e2e_db_pool_session():
     """Session-scoped asyncpg pool against a disposable test database.
 
     Creates a fresh ``poindexter_e2e_<hex>`` database, replays the
-    infrastructure init.sql + every migration in
-    ``services/migrations/`` (so the seed of ``glad-labs`` from 0115 is
-    applied), and yields a pool. Drops the database at session teardown.
+    infrastructure init.sql + every migration in ``services/migrations/``
+    (so the baseline's ``niches`` seed rows land), and yields a pool.
+    Drops the database at session teardown.
 
     Skips the whole module if no live Postgres DSN is reachable so a
     unit-only CI runner doesn't blow up.
@@ -142,10 +190,10 @@ async def _e2e_db_pool_session():
 async def db_pool(_e2e_db_pool_session):
     """Per-test wrapper that cleans up content_tasks between tests.
 
-    Niches are NOT truncated — the seeded ``glad-labs`` niche from
-    migration 0115 must persist for Test 1 even if it runs second, and
-    Test 2 creates its own ad-hoc niche so cross-test slug collision
-    isn't a concern (each test uses a unique slug).
+    Niches are NOT truncated — the baseline-seeded ``starter-blog`` niche
+    must persist for Test 1 even if it runs second, and Test 2 creates its
+    own ad-hoc niche so cross-test slug collision isn't a concern (each
+    test uses a unique slug).
     """
     try:
         yield _e2e_db_pool_session
@@ -177,39 +225,66 @@ def _clear_goal_vec_cache():
 
 
 # ---------------------------------------------------------------------------
-# Test 1 — full sweep against the seeded glad-labs niche
+# Test 1 — full sweep against the baseline-seeded niche
 # ---------------------------------------------------------------------------
 
 
-async def test_glad_labs_sweep_produces_a_batch(db_pool, monkeypatch):
-    """Run a sweep against the seeded glad-labs niche and assert it
+async def test_seeded_niche_sweep_produces_a_batch(db_pool, monkeypatch):
+    """Run a sweep against the baseline-seeded niche and assert it
     produces an open batch with at least one candidate.
 
     The sweep would normally call real Ollama for embeddings + LLM
     scoring — both are monkeypatched to deterministic fakes so the test
-    is hermetic. ``InternalRagSource.generate`` is also faked so the
-    test doesn't depend on real embedding rows existing in the test DB.
+    is hermetic. Candidates are deposited into ``topic_pool`` up front so
+    the test doesn't depend on real embedding rows existing in the test DB.
     """
     nsvc = NicheService(db_pool)
-    n = await nsvc.get_by_slug("glad-labs")
-    assert n is not None, "glad-labs niche should be seeded by migration 0115"
-
-    # Mock the internal source so we don't need real embeddings rows.
-    async def fake_internal_generate(self, **kwargs):
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref=f"glad-{i}",
-                distilled_topic=f"Glad Labs Topic {i}",
-                distilled_angle=f"Angle {i}",
-            )
-            for i in range(5)
-        ]
-
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
+    n = await nsvc.get_by_slug(_SEEDED_NICHE_SLUG)
+    assert n is not None, (
+        f"{_SEEDED_NICHE_SLUG!r} niche should be seeded by "
+        "0000_baseline.seeds.sql"
     )
+
+    # Deposit candidates the way the taps do. The sweep stopped dispatching
+    # topic sources inline at the poindexter#812 pool-reader cutover — it
+    # reads niche-tagged ``topic_pool`` rows — so the previous
+    # ``InternalRagSource.generate`` monkeypatch stubbed a call that is no
+    # longer made, and every sweep here read an empty pool. Both source
+    # classes are seeded because ``read_pooled`` splits on the source label
+    # (``internal_rag`` → internal, everything else → external) and the
+    # sweep caps internal's share of the batch.
+    async with db_pool.acquire() as conn:
+        await insert_pooled_topics(
+            conn,
+            niche_id=n.id,
+            source="devto",
+            topics=[
+                DiscoveredTopic(
+                    title=_sane_title(f"Local Model Routing Tradeoff {i}"),
+                    category="ai-ml",
+                    source="devto",
+                    source_url=f"https://example.test/external-{i}",
+                    relevance_score=0.9 - i * 0.1,
+                    description=f"External candidate {i}",
+                )
+                for i in range(3)
+            ],
+        )
+        await insert_pooled_topics(
+            conn,
+            niche_id=n.id,
+            source="internal_rag",
+            topics=[
+                DiscoveredTopic(
+                    title=_sane_title(f"Pipeline Retry Backoff Lesson {i}"),
+                    category="claude_session",
+                    source="internal_rag",
+                    relevance_score=0.8 - i * 0.1,
+                    description=f"Internal angle {i}",
+                )
+                for i in range(2)
+            ],
+        )
 
     # Hermetic embedding + LLM scoring — patch the source module so the
     # lazy imports inside TopicBatchService pick up the fakes.
@@ -254,6 +329,11 @@ async def test_glad_labs_sweep_produces_a_batch(db_pool, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _candidate_title(index: int) -> str:
+    """Title for the ``index``-th candidate Test 2 seeds by hand."""
+    return _sane_title(f"E2E Resolve Sample Topic {index}")
+
+
 async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
     """End-to-end pick → rank → resolve → content_tasks insert.
 
@@ -290,7 +370,7 @@ async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
                 RETURNING id
                 """,
                 batch_id, niche.id, f"e2e-ref-{i}",
-                f"E2E Topic {i}", f"E2E summary {i}",
+                _candidate_title(i), f"E2E summary {i}",
                 90 - i, i + 1,
             )
             cand_ids.append(str(row["id"]))
@@ -315,7 +395,7 @@ async def test_resolve_advances_to_content_task(db_pool, monkeypatch):
     assert task_row is not None, "resolve_batch must insert a content_tasks row"
     assert task_row["niche_slug"] == "e2e-resolve-niche"
     assert task_row["topic_batch_id"] == batch_id
-    assert task_row["topic"] == "E2E Topic 0"
+    assert task_row["topic"] == _candidate_title(0)
     assert task_row["status"] == "pending"
 
     # Batch was marked resolved + picked candidate recorded.
