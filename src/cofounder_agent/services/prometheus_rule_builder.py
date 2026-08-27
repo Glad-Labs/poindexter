@@ -66,6 +66,10 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # Infrastructure (Gitea #238 recovery)
     "postgres_p99_latency_seconds": "0.1",  # alert when SELECT 1 > 100ms p99
     "embeddings_missing_posts": "3",  # alert when >3 published posts lack embeddings
+    # Publishing-drought window for NoPublishedPostsRecently, in HOURS. This
+    # is the alert's whole duration and it lives in the QUERY, not in `for:`
+    # — see the rule's comment for why that distinction is load-bearing.
+    "no_published_posts_hours": "48",
     # Business / cost guards
     "daily_spend_warning_usd": "4.0",
     "daily_spend_critical_usd": "5.0",
@@ -296,6 +300,35 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     #   - Independent exporters (node_exporter, nvidia-smi,
     #     postgres_exporter, cadvisor) don't restart with worker deploys —
     #     raw instant reads are fine there.
+    #
+    # SECOND, INDEPENDENT FAILURE MODE (2026-08-27 audit) — read this before
+    # trusting the bullet directly above. Everything up to here is about
+    # SCRAPE HOLES: the metric blanks, so the expression stops matching.
+    # There is a separate one that no choice of exporter protects against:
+    #
+    #   **A Prometheus restart discards every pending `for:` clock.**
+    #
+    # `for:` state is in-memory. When Prometheus restarts, an alert whose
+    # condition is still true re-enters `pending` and must serve the whole
+    # duration again — no matter which exporter the metric came from. The
+    # "independent exporters are fine" bullet is true for holes and FALSE
+    # for this; two rules were written against that mistaken comfort:
+    #   - PoindexterHostSwapExhausted (node_exporter, `for: 2h`) sat pending
+    #     8h15m through the 2026-08-27 hard-reboot freeze and never fired.
+    #   - NoPublishedPostsRecently (`for: 48h`) missed a 61h outage.
+    #
+    # Measured 2026-08-27: 28 Prometheus restarts in 14 days, MEDIAN uptime
+    # 1.28h. Only ~59% of uptime windows reach 30m and ~11% reach 48h. The
+    # driver is poindexter-docker-watchdog recreating the observability tier,
+    # so this is normal operation, not an incident.
+    #
+    # Rules of thumb:
+    #   - Express a duration in the QUERY (`offset`, range vector,
+    #     `avg_over_time`) whenever you can. Those read persisted TSDB and
+    #     are exact the moment Prometheus is back.
+    #   - Keep `for:` for debouncing (minutes), not for defining the window.
+    #   - A long `for:` is not "more conservative", it is less likely to ever
+    #     fire. Enforced by _FOR_CLAUSE_CEILING_SECONDS below.
 
     # --- Content ---
     "EmbeddingsStale": {
@@ -326,25 +359,53 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-content",
         "interval": "1m",
-        # last_over_time bridges deploy-restart scrape holes on BOTH operands
-        # — the current read and the offset read (a hole 24h ago blanks the
-        # offset side today). With raw instant reads the `for: 48h` clock
-        # reset on every restart: 4,002 pending-minutes across 92 chopped
-        # episodes and ZERO fires in the 14d before 2026-07-11 (a 48h rule
-        # can complete at most ~7 episodes in 14d). A fresh publish still
-        # resolves immediately — last_over_time returns the newest sample.
+        # THE WHOLE DURATION LIVES IN THE QUERY. `for:` is deliberately tiny.
+        #
+        # `last_over_time` bridges scrape holes on both operands (a hole 48h
+        # ago blanks the offset side today). That was added 2026-07-11 against
+        # the same symptom this comment now finishes fixing — but holes were
+        # only half of it, and the half that survived is the one that matters:
+        #
+        # **A Prometheus restart discards every pending `for:` clock.** It is
+        # in-memory state, so the countdown starts over. Measured 2026-08-27:
+        # 28 restarts in 14 days, MEDIAN uptime 1.28h, and only 11% of uptime
+        # windows were even 48h long. The old `for: 48h` therefore needed a
+        # drought to coincide with a rare long window — it caught 1 of the 2
+        # qualifying droughts in the trailing 14d and stayed silent through a
+        # 61-hour publishing outage (08-18 09:18 -> 08-20 22:28).
+        #
+        # Fix: express the window as an `offset` and keep `for:` short. A
+        # range/offset query is evaluated from PERSISTED TSDB, so it is exact
+        # the instant Prometheus comes back, while a `for:` clock is not. Any
+        # rule whose condition is "X hasn't happened for N hours" belongs in
+        # this shape; `_FOR_CLAUSE_CEILING_SECONDS` enforces it for new rules.
+        # Replayed against the real series, this fires 48h into BOTH droughts,
+        # including the one the old rule missed.
+        #
+        # A fresh publish still resolves immediately — last_over_time returns
+        # the newest sample, so the offset operand stops matching at once.
         "expr": (
-            'last_over_time(poindexter_posts_total{status="published"}[1h] offset 24h)'
+            'last_over_time(poindexter_posts_total{status="published"}[1h] '
+            "offset {threshold.no_published_posts_hours}h)"
             ' == last_over_time(poindexter_posts_total{status="published"}[1h])'
         ),
-        "for": "48h",
+        # Only long enough to shrug off a single-scrape wobble. Total
+        # detection latency is the offset (48h) + this, NOT this alone.
+        "for": "15m",
         "severity": "info",
         "category": "content",
-        "summary": "No new posts published in 48h",
+        "summary": (
+            "No new posts published in "
+            "prometheus.threshold.no_published_posts_hours h"
+        ),
         "description": (
-            "Published post count hasn't grown in 48h. Either content "
-            "generation is stalled, QA is rejecting everything, or the "
-            "approval queue is backed up awaiting human review."
+            "Published post count hasn't grown in "
+            "prometheus.threshold.no_published_posts_hours hours. Either "
+            "content generation is stalled, QA is rejecting everything, or "
+            "the approval queue is backed up awaiting human review. The "
+            "window is the query's `offset`, so this is exact across a "
+            "Prometheus restart — do NOT 'fix' a perceived delay by raising "
+            "`for:`, which is what made this rule miss a 61h outage."
         ),
     },
     # poindexter#553 — a QA rail that's skipping 100% of recent passes is
@@ -1589,6 +1650,26 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         ),
     },
 }
+
+
+#: Upper bound on any rule's ``for:``, enforced by
+#: ``test_no_rule_exceeds_the_for_clause_ceiling``.
+#:
+#: A Prometheus restart discards pending ``for:`` state (see the restart-gap
+#: policy atop DEFAULT_RULES). Measured 2026-08-27 across 14 days: 28 restarts,
+#: median uptime 1.28h, and the fraction of uptime windows long enough to
+#: serve a given ``for:`` falls off fast —
+#:
+#:     for=  5m -> 82% of windows      for= 30m -> 59%
+#:     for= 10m -> 74%                 for=  1h -> 56%
+#:     for=  2h -> 41%                 for= 48h -> 11%
+#:
+#: 2h is the point where a rule is likelier to be interrupted than to complete,
+#: so it is the ceiling rather than a target. If a condition genuinely needs a
+#: longer window, put the window in the QUERY (``offset``, range vector,
+#: ``avg_over_time``) where it is computed from persisted TSDB and survives a
+#: restart — NoPublishedPostsRecently is the worked example.
+_FOR_CLAUSE_CEILING_SECONDS = 7200
 
 
 # ---------------------------------------------------------------------------

@@ -1017,12 +1017,17 @@ class TestRestartGapBridging:
         rule = rb.DEFAULT_RULES["NoPublishedPostsRecently"]
         expr = rule["expr"]
         # Both sides of the == carry the bridge: the current read AND the
-        # offset read (a restart hole 24h ago blanks the offset side today).
+        # offset read (a restart hole one window ago blanks the offset side
+        # today).
         assert expr.count("last_over_time(") == 2
         assert expr.count("[1h]") == 2
-        assert "offset 24h" in expr
-        # Intent unchanged: still the 24h-growth comparison held for 48h.
-        assert rule["for"] == "48h"
+        # The offset is threshold-driven since 2026-08-27 — the drought
+        # window moved OUT of `for:` and into the query, because a `for:`
+        # clock does not survive a Prometheus restart and a 48h one almost
+        # never completed. Asserting a literal `offset 24h` here would pin
+        # the shape that missed a 61h outage.
+        assert "offset {threshold.no_published_posts_hours}h" in expr
+        assert rule["for"] == "15m"
 
     def test_unapplied_migrations_bridges_with_last_not_max(self):
         rule = rb.DEFAULT_RULES["UnappliedMigrationsDrift"]
@@ -1050,7 +1055,7 @@ class TestRestartGapBridging:
         assert "last_over_time(poindexter_monthly_spend_usd[1h]) > 65.0" in out
         assert (
             'last_over_time(poindexter_posts_total{status=\\"published\\"}[1h]'
-            " offset 24h)" in out
+            " offset 48h)" in out
         )
 
     def test_ratchet_long_for_rules_bridge_or_run_on_independent_exporters(self):
@@ -1575,6 +1580,85 @@ class TestCpuTemperatureRules:
 # 24h+ with swap at zero free while MemAvailable looked fine, so neither
 # existing host-memory rule fired early)
 # ---------------------------------------------------------------------------
+
+def _for_seconds(raw: str) -> int:
+    """`"30m"` -> 1800. Only the units the rule table actually uses."""
+    unit = raw[-1]
+    return int(raw[:-1]) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+
+
+class TestForClauseCeiling:
+    """A Prometheus restart discards pending `for:` state.
+
+    Measured 2026-08-27: 28 restarts in 14d, median uptime 1.28h. A `for:`
+    longer than a typical uptime window is not "more conservative" — it is
+    less likely to EVER fire. Two rules were lost to this before it was
+    understood, so the ceiling is enforced rather than documented.
+    """
+
+    def test_no_rule_exceeds_the_for_clause_ceiling(self):
+        offenders = {
+            name: rule["for"]
+            for name, rule in rb.DEFAULT_RULES.items()
+            if "for" in rule
+            and _for_seconds(rule["for"]) > rb._FOR_CLAUSE_CEILING_SECONDS
+        }
+        assert not offenders, (
+            f"these rules use a `for:` longer than "
+            f"{rb._FOR_CLAUSE_CEILING_SECONDS}s and so are likelier to be "
+            f"interrupted by a Prometheus restart than to fire: {offenders}. "
+            f"Put the window in the query (offset / range vector / "
+            f"avg_over_time) instead — see NoPublishedPostsRecently."
+        )
+
+
+class TestNoPublishedPostsRecentlyRule:
+    """poindexter#1021 follow-up — the window moved out of `for:`.
+
+    The old shape (`offset 24h` + `for: 48h`) needed a drought to coincide
+    with a 48h+ Prometheus uptime window; only ~11% of windows qualify. It
+    caught 1 of the 2 qualifying droughts in the trailing 14d and stayed
+    silent through a 61h publishing outage (08-18 09:18 -> 08-20 22:28).
+    """
+
+    def test_window_lives_in_the_query_not_the_for_clause(self):
+        rule = rb.DEFAULT_RULES["NoPublishedPostsRecently"]
+        assert (
+            "offset {threshold.no_published_posts_hours}h" in rule["expr"]
+        ), "the drought window must be a query offset, not a `for:` duration"
+        assert _for_seconds(rule["for"]) <= 900, (
+            "`for:` here is a debounce, not the window — raising it is "
+            "exactly the regression that made this rule miss a 61h outage"
+        )
+
+    def test_threshold_is_tunable_and_seeded(self):
+        assert rb.DEFAULT_THRESHOLDS["no_published_posts_hours"] == "48"
+
+    def test_seeded_app_setting_matches_the_code_default(self):
+        """Second source for the same value — pin them (see the swap
+        threshold's twin test for why these are seeded at all)."""
+        from cofounder_agent.services.settings_defaults import DEFAULTS
+
+        assert DEFAULTS["prometheus.threshold.no_published_posts_hours"] == (
+            rb.DEFAULT_THRESHOLDS["no_published_posts_hours"]
+        )
+
+    def test_both_operands_bridge_scrape_holes(self):
+        """The 2026-07-11 fix stays: a hole on EITHER side blanks the
+        comparison, and the offset operand is the easy one to forget."""
+        expr = rb.DEFAULT_RULES["NoPublishedPostsRecently"]["expr"]
+        assert expr.count("last_over_time(") == 2
+
+    @pytest.mark.asyncio
+    async def test_renders_the_offset_with_the_threshold_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        section = out.split("alert: NoPublishedPostsRecently")[1].split(
+            "alert:", 1
+        )[0]
+        assert "{threshold." not in section
+        assert "offset 48h" in section
+        assert "for: 15m" in section
+
 
 class TestHostSwapExhaustedRule:
     """The chronic third leg of the host-memory family: MemoryLow watches

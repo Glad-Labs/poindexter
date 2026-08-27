@@ -352,6 +352,15 @@ DEFAULTS: dict[str, str] = {
     # tests/unit/services/test_prometheus_rule_builder.py so the two sources
     # cannot drift.
     'prometheus.threshold.host_memory_swap_free_warning_percent': '5',
+    # How long a publishing drought runs before NoPublishedPostsRecently
+    # fires, in hours. Seeded for the same reason as the key above: it is the
+    # whole duration of an alert that previously failed to fire (it missed a
+    # 61h outage), so an operator adjusting "how long before you tell me"
+    # should find it rather than know to invent the row. This is the alert's
+    # query `offset`, NOT a `for:` — a Prometheus restart resets `for:` state
+    # but cannot touch a range query. Pinned equal to DEFAULT_THRESHOLDS by
+    # tests/unit/services/test_prometheus_rule_builder.py.
+    'prometheus.threshold.no_published_posts_hours': '48',
 
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',

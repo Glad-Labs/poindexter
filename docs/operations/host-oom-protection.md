@@ -175,4 +175,9 @@ not by habit.
   to catch.
 - Per-container swap history lives in Prometheus (`container_memory_swap`) and
   survives a reboot — the first thing to pull when diagnosing a repeat.
+- [alert-rule-authoring.md](alert-rule-authoring.md) — how to write a rule that
+  can actually fire. **Both** failure modes behind this incident are documented
+  there with measured numbers: the value-blip reset above, and a second one
+  found afterwards — a Prometheus restart wipes pending `for:` state, and this
+  host restarts it every ~1.3 h.
 - 2026-08-24 precursor incident: poindexter#1021.
