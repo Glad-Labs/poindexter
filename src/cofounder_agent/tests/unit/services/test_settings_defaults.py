@@ -1015,6 +1015,18 @@ def test_caption_display_defaults_seeded():
     assert "plugin.media_compositor.ffmpeg_local.caption_position" not in DEFAULTS
 
 
+def test_video_topic_escalation_defaults_seeded():
+    """Off-topic stock escalation (2026-08-27): a stock shot the vision QA
+    keeps scoring below threshold is re-rendered as an on-theme AI still
+    rather than shipped as unrelated B-roll."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["video_shot_topic_escalation_enabled"] == "true"
+    assert DEFAULTS["video_shot_escalation_styles"] == ""
+    assert METADATA["video_shot_topic_escalation_enabled"]["value_type"] == "boolean"
+    assert METADATA["video_shot_escalation_styles"]["value_type"] == "string"
+
+
 def test_video_endcard_defaults_seeded():
     """Branded CTA end-card knobs (2026-08-25): the CTA tail renders over the
     pure-PIL brand card instead of a leftover stock clip."""

@@ -54,6 +54,7 @@ from plugins.media_compositor import CompositionRequest, CompositionScene
 from schemas.video_shot_list import _DEMO_ID_RE, Shot, VideoShotList
 from services.settings_defaults import default_int
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
+from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -1367,6 +1368,62 @@ _STYLE_MODIFIERS = (
 # a missed pexels shot goes straight to the card (never image-gen a human).
 _IMAGE_GEN_FAMILY = frozenset({"image_gen", "image_kenburns", "generative", "wan21"})
 
+# Human nouns — mirrors the director prompt's HUMAN-SUBJECT POLICY list. A
+# stock shot whose query names a person is NEVER escalated to an AI render:
+# AI-generated faces/hands are the strongest slop tell, and real footage is
+# the one sanctioned home for human subjects. Substring-matched on word
+# boundaries against the query + intent.
+_HUMAN_NOUNS = frozenset({
+    "person", "people", "man", "men", "woman", "women", "human", "humans",
+    "hand", "hands", "face", "faces", "developer", "developers", "engineer",
+    "engineers", "team", "teams", "crowd", "worker", "workers", "child",
+    "children", "kid", "kids", "student", "students", "doctor", "nurse",
+    "customer", "customers", "user", "users", "speaker", "speakers",
+    "someone", "somebody", "guy", "girl", "boy", "employee", "employees",
+})
+_WORD_RE = re.compile(r"[a-z]+")
+
+
+def _names_human_subject(*texts: str) -> bool:
+    """True when any text names a person — the AI-escalation veto."""
+    for text in texts:
+        if any(w in _HUMAN_NOUNS for w in _WORD_RE.findall((text or "").lower())):
+            return True
+    return False
+
+
+def _select_ai_style(site_config: Any, shot_idx: int) -> str:
+    """Style modifier for an escalated shot, rotated by index so several
+    escalations in one video don't all land in the same look. Operators can
+    narrow the pool via ``video_shot_escalation_styles`` (CSV)."""
+    styles: tuple[str, ...] = _STYLE_MODIFIERS
+    if site_config is not None:
+        raw = str(site_config.get("video_shot_escalation_styles", "") or "").strip()
+        if raw:
+            picked = tuple(s.strip() for s in raw.split(",") if s.strip())
+            if picked:
+                styles = picked
+    return styles[shot_idx % len(styles)]
+
+
+def _ai_prompt_from_stock_shot(shot: Shot, *, style: str) -> str:
+    """Build a stylized image-gen prompt for an off-topic stock shot.
+
+    The stock QUERY is what went wrong (a literal scene noun the search
+    matched to unrelated footage), so the prompt leads with the shot's
+    INTENT — why the shot exists, which carries the topic — and keeps the
+    query only as secondary subject detail. Style modifier + palette follow
+    the director's STYLE POLICY (stylized, never photoreal) so the
+    substitute lands on-brand rather than as a second miss.
+    """
+    intent = (shot.intent or "").strip().rstrip(".")
+    query = (shot.query or "").strip()
+    subject = f"{intent}, {query}" if intent and query else (intent or query)
+    return (
+        f"{style}, {subject}, deep navy and cyan palette, "
+        "clean composition, empty unpopulated scene"
+    )
+
 
 def _pexels_query_from_shot(shot: Shot) -> str:
     """Best-effort stock-search query for an image-gen-family shot falling back
@@ -2195,6 +2252,121 @@ async def _repair_pass(
                 st.result, st.qa = cand, cand_qa
 
 
+async def _escalate_offtopic_stock(
+    states: list[_ShotState],
+    *,
+    qa: _QAConfig,
+    site_config: Any,
+    render_kwargs: dict[str, Any],
+    pool: Any,
+    post_id: str,
+) -> int:
+    """Re-render still-off-topic STOCK shots as on-theme AI stills.
+
+    The gap this closes (2026-08-27 operator report: "footage generally not
+    related to the topic"): vision QA already detects the mismatch — 52
+    pexels shots over 14 days averaged 29.9/100 against a 60 threshold — but
+    the only repair for a stock shot is the next-ranked result of the SAME
+    query, and a query that matched unrelated footage at rank 1 matches
+    unrelated footage at rank 2. Those shots shipped anyway (holdover or
+    keep-below-threshold), which is exactly the "feels very off" symptom.
+
+    So after ``_repair_pass`` exhausts in-family retries, a stock shot still
+    under threshold is re-rendered from an intent-derived prompt as a
+    stylized Ken-Burns still — a different FAMILY, not another roll of the
+    same dice. Keep-best: the AI candidate must actually score higher, so a
+    weak substitute can never displace a better stock frame.
+
+    HUMAN-SUBJECT POLICY (never regress): a shot naming a person keeps its
+    stock frame regardless of score. AI faces/hands are the strongest slop
+    tell and real footage is their one sanctioned home — an off-topic real
+    person beats a melted AI one.
+
+    Returns the number of shots escalated. Gated by
+    ``video_shot_topic_escalation_enabled`` (default on).
+    """
+    if not qa.enabled:
+        return 0
+    if site_config is not None:
+        raw = str(
+            site_config.get("video_shot_topic_escalation_enabled", "true")
+            or "true",
+        ).strip().lower()
+        if raw not in ("true", "1", "yes"):
+            return 0
+
+    escalated = 0
+    for st in states:
+        if st.shot.source != "pexels":
+            continue
+        if st.qa is None or st.qa.score is None or st.qa.score >= qa.threshold:
+            continue
+        if _names_human_subject(st.shot.query or "", st.shot.intent or ""):
+            logger.info(
+                "[SHOT_QA] shot %d scored %.0f but names a human subject — "
+                "keeping real footage (policy: never AI-render people)",
+                st.shot.idx, st.qa.score,
+            )
+            continue
+
+        style = _select_ai_style(site_config, st.shot.idx)
+        try:
+            ai_shot = st.shot.model_copy(update={
+                "source": "image_kenburns",
+                "prompt": _ai_prompt_from_stock_shot(st.shot, style=style),
+                "query": None,
+                "kenburns_zoom": (1.0, 1.12),
+            })
+        except Exception as exc:  # noqa: BLE001 — a shot copy must not kill the render
+            logger.warning(
+                "[SHOT_QA] shot %d escalation shot-copy failed: %s",
+                st.shot.idx, describe_exception(exc),
+            )
+            continue
+
+        cand = await _render_one_shot(
+            ai_shot, prior_clip=None, attempt=0, **render_kwargs,
+        )
+        if not (cand.success and cand.clip_path):
+            continue
+        cand_qa = await score_shot_frame(
+            frame_path=cand.clip_path, shot=ai_shot,
+            site_config=site_config, pool=pool,
+        )
+        if cand_qa.score is None or cand_qa.score <= st.qa.score:
+            continue
+
+        logger.info(
+            "[SHOT_QA] shot %d escalated pexels->image_kenburns on topic "
+            "mismatch (%.0f -> %.0f)",
+            st.shot.idx, st.qa.score, cand_qa.score,
+        )
+        emit_finding(
+            source="shot_list_renderer", kind="shot_topic_escalated",
+            title=(
+                f"shot {st.shot.idx}: off-topic stock footage replaced with an "
+                f"on-theme render"
+            ),
+            body=(
+                f"Stock query {st.shot.query!r} scored {st.qa.score:.0f} against "
+                f"threshold {qa.threshold} (the footage did not match the shot's "
+                f"intent). Re-rendered as a stylized still from the shot's intent "
+                f"and scored {cand_qa.score:.0f}. Advisory — a persistently "
+                f"escalating query is a director-prompt signal."
+            ),
+            severity="info",
+            dedup_key=f"shot_topic_escalated:{post_id}:{st.shot.idx}",
+            extra={
+                "shot_idx": st.shot.idx, "query": st.shot.query or "",
+                "stock_score": st.qa.score, "ai_score": cand_qa.score,
+                "threshold": qa.threshold,
+            },
+        )
+        st.result, st.qa, st.shot = cand, cand_qa, ai_shot
+        escalated += 1
+    return escalated
+
+
 def _emit_fallback_finding(
     *, shot: Shot, score: float, threshold: float, post_id: str,
     title: str, body: str,
@@ -2657,6 +2829,13 @@ async def render_shot_list(
     await _repair_pass(
         states, qa=qa, site_config=site_config,
         render_kwargs=render_kwargs, pool=pool,
+    )
+    # Topic escalation: in-family retries can't fix a stock query that matched
+    # unrelated footage, so a still-off-topic stock shot gets one cross-family
+    # attempt as an on-theme AI still (never for human subjects).
+    await _escalate_offtopic_stock(
+        states, qa=qa, site_config=site_config,
+        render_kwargs=render_kwargs, pool=pool, post_id=post_id,
     )
     wordmark = ""
     if site_config is not None:

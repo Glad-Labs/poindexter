@@ -59,6 +59,16 @@ SHOT SOURCES AVAILABLE
   real-world subjects (people, places, products, recognizable scenes).
   Real footage beats AI hallucination for anything you'd see in a stock
   photography catalog. Requires a "query" field (search string).
+  QUERY RULE — the query must name something a viewer would connect to THIS
+  post's subject. A stock library matches your words literally: a query built
+  from an incidental noun in the narration ("busy city street", "smartphone on
+  table") returns footage about that noun, not about your topic, and the shot
+  lands as unrelated B-roll. Before writing a query, ask "if a viewer saw only
+  this clip, would it feel like it belongs to a video about {title}?" If the
+  honest answer is no, the subject is abstract — use image_kenburns instead.
+  Prefer the concrete artifacts of the domain (server racks, circuit boards,
+  a soundwave on a monitor, a datacenter aisle) over generic human-interest
+  scenes.
 
 - "image_kenburns": custom image-gen still image with Ken Burns zoom/pan motion.
   Use for abstract concepts, metaphors, and aesthetic shots that need a
@@ -265,6 +275,13 @@ are baked 16:9 landscape, and letterboxing terminal text into a 9:16 frame
 makes it unreadable on a phone. Do not emit source="cli_demo" in a short.
 - "pexels": stock clip — concrete real-world subjects (people, places,
   products). Real footage beats AI hallucination. Requires "query".
+  QUERY RULE — the query must name something a viewer would connect to THIS
+  post's subject. Stock search matches literally, so a query lifted from an
+  incidental noun in the narration returns unrelated B-roll ("busy city
+  street" for a post about speech-recognition benchmarks). Ask "would this
+  clip feel like it belongs to a video about {title}?" — if not, the subject
+  is abstract: use image_kenburns. Prefer the domain's concrete artifacts
+  (hardware, screens, circuitry) over generic human-interest scenes.
 - "image_kenburns": custom image-gen still + Ken Burns motion — abstract concepts,
   metaphors, aesthetic shots. Requires "prompt" + optional "kenburns_zoom".
 - "image_gen": static image-gen still — title cards, poster shots. Requires "prompt".

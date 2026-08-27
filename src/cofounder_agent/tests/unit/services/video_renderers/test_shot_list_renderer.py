@@ -3140,3 +3140,192 @@ class TestRenderShotListEndcard:
         assert len(scenes) == 4
         assert scenes[-1][0].endswith("endcard.png")
         assert abs(sum(d for _, d in scenes) - 57.0) < 0.1
+
+
+class TestTopicEscalationHelpers:
+    """Off-topic stock escalation (2026-08-27 operator report: "footage
+    generally not related to the topic"). Vision QA already flagged these —
+    52 pexels shots over 14 days averaged 29.9/100 — but the only repair was
+    the next-ranked result of the same bad query."""
+
+    def test_human_nouns_veto_escalation(self):
+        from services.video_renderers.shot_list_renderer import (
+            _names_human_subject,
+        )
+
+        assert _names_human_subject("a developer at a laptop", "")
+        assert _names_human_subject("", "show the team celebrating")
+        assert _names_human_subject("close up of hands typing", "")
+        assert not _names_human_subject("circuit board macro", "abstract data")
+        assert not _names_human_subject("", "")
+        # Substring-only matches must NOT trip it ("human" inside "humanity"
+        # is a word; "manual" contains "man" but is not a person).
+        assert not _names_human_subject("manual override switch", "")
+
+    def test_ai_prompt_leads_with_intent(self):
+        from services.video_renderers.shot_list_renderer import (
+            _ai_prompt_from_stock_shot,
+        )
+
+        shot = Shot(
+            idx=2, duration_s=4.0,
+            intent="error rates climb on multi-speaker audio",
+            source="pexels", query="busy city street",
+            narration_offset_s=0.0,
+        )
+        out = _ai_prompt_from_stock_shot(shot, style="cyberpunk neon")
+        assert out.startswith("cyberpunk neon,")
+        # Intent (the topic) leads; the stock query is only trailing detail.
+        assert out.index("error rates climb") < out.index("busy city street")
+        assert "empty unpopulated scene" in out  # human-free by construction
+
+    def test_ai_prompt_survives_missing_fields(self):
+        from services.video_renderers.shot_list_renderer import (
+            _ai_prompt_from_stock_shot,
+        )
+
+        shot = Shot(
+            idx=0, duration_s=2.0, intent="hook", source="pexels",
+            query="anything", narration_offset_s=0.0,
+        )
+        assert "hook" in _ai_prompt_from_stock_shot(shot, style="line art")
+
+    def test_style_rotation_and_operator_override(self):
+        from services.video_renderers.shot_list_renderer import (
+            _STYLE_MODIFIERS,
+            _select_ai_style,
+        )
+
+        class _SC:
+            def __init__(self, v=""):
+                self._v = v
+
+            def get(self, key, default=None):
+                return self._v if key == "video_shot_escalation_styles" else default
+
+        # Rotation by index so sibling escalations differ.
+        assert _select_ai_style(None, 0) == _STYLE_MODIFIERS[0]
+        assert _select_ai_style(None, 1) == _STYLE_MODIFIERS[1]
+        assert _select_ai_style(None, 0) != _select_ai_style(None, 1)
+        # Operator pool wins.
+        sc = _SC("low poly, line art")
+        assert _select_ai_style(sc, 0) == "low poly"
+        assert _select_ai_style(sc, 1) == "line art"
+        # Blank falls back to the built-in rotation.
+        assert _select_ai_style(_SC(""), 0) == _STYLE_MODIFIERS[0]
+
+
+class TestEscalateOfftopicStock:
+    """The escalation pass itself: cross-family retry, keep-best, and the
+    human-subject veto that must never regress."""
+
+    def _state(self, *, source="pexels", score=30.0, query="busy city street",
+               intent="benchmark scores collapse in production"):
+        from services.video_renderers.shot_list_renderer import (
+            ShotRenderResult,
+            _ShotState,
+        )
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        shot = Shot(
+            idx=1, duration_s=4.0, intent=intent, source=source,
+            query=query if source == "pexels" else None,
+            prompt=None if source == "pexels" else "a stylized abstract render",
+            narration_offset_s=0.0,
+        )
+        st = _ShotState(
+            shot=shot,
+            result=ShotRenderResult(
+                idx=1, source=source, success=True,
+                clip_path="/tmp/stock.mp4", duration_s=4.0,
+            ),
+            is_reused=False,
+            qa=ShotQAResult(score=score, reason="off topic"),
+        )
+        return st
+
+    async def _run(self, states, monkeypatch, *, cand_score=85.0,
+                   cand_ok=True, site_config=None):
+        from services.video_renderers import shot_list_renderer as slr
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        rendered: list = []
+
+        async def _fake_render(shot, **kwargs):
+            rendered.append(shot)
+            return slr.ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=cand_ok,
+                clip_path="/tmp/ai.png" if cand_ok else None,
+                duration_s=shot.duration_s,
+            )
+
+        async def _fake_score(*, frame_path, shot, site_config, pool):
+            return ShotQAResult(score=cand_score, reason="on topic")
+
+        monkeypatch.setattr(slr, "_render_one_shot", _fake_render)
+        monkeypatch.setattr(slr, "score_shot_frame", _fake_score)
+        qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
+        n = await slr._escalate_offtopic_stock(
+            states, qa=qa, site_config=site_config, render_kwargs={},
+            pool=object(), post_id="p1",
+        )
+        return n, rendered
+
+    @pytest.mark.asyncio
+    async def test_offtopic_stock_escalates_to_ai_still(self, monkeypatch):
+        st = self._state()
+        n, rendered = await self._run([st], monkeypatch)
+        assert n == 1
+        assert rendered[0].source == "image_kenburns"
+        assert rendered[0].query is None      # stock query dropped
+        assert rendered[0].prompt            # AI prompt built from intent
+        assert "benchmark scores collapse" in rendered[0].prompt
+        assert st.qa.score == 85.0           # state swapped to the better shot
+        assert st.shot.source == "image_kenburns"
+
+    @pytest.mark.asyncio
+    async def test_human_subject_never_escalates(self, monkeypatch):
+        st = self._state(query="developer typing at a laptop")
+        n, rendered = await self._run([st], monkeypatch)
+        assert n == 0
+        assert rendered == []                 # no AI render even attempted
+        assert st.shot.source == "pexels"     # real footage kept
+
+    @pytest.mark.asyncio
+    async def test_passing_shot_untouched(self, monkeypatch):
+        st = self._state(score=75.0)
+        n, rendered = await self._run([st], monkeypatch)
+        assert n == 0 and rendered == []
+
+    @pytest.mark.asyncio
+    async def test_non_stock_shot_untouched(self, monkeypatch):
+        st = self._state(source="image_kenburns", score=30.0)
+        n, rendered = await self._run([st], monkeypatch)
+        assert n == 0 and rendered == []
+
+    @pytest.mark.asyncio
+    async def test_keep_best_rejects_worse_candidate(self, monkeypatch):
+        st = self._state(score=45.0)
+        n, _ = await self._run([st], monkeypatch, cand_score=20.0)
+        assert n == 0
+        assert st.qa.score == 45.0            # incumbent kept
+        assert st.shot.source == "pexels"
+
+    @pytest.mark.asyncio
+    async def test_failed_candidate_render_keeps_incumbent(self, monkeypatch):
+        st = self._state()
+        n, _ = await self._run([st], monkeypatch, cand_ok=False)
+        assert n == 0
+        assert st.result.clip_path == "/tmp/stock.mp4"
+
+    @pytest.mark.asyncio
+    async def test_disabled_via_setting(self, monkeypatch):
+        class _SC:
+            def get(self, key, default=None):
+                if key == "video_shot_topic_escalation_enabled":
+                    return "false"
+                return default
+
+        st = self._state()
+        n, rendered = await self._run([st], monkeypatch, site_config=_SC())
+        assert n == 0 and rendered == []

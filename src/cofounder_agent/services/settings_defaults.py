@@ -452,6 +452,20 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_enabled': 'true',
     'video_shot_qa_threshold': '60',
     'video_shot_qa_max_retries': '2',
+    # Topic escalation (2026-08-27): a STOCK shot still below
+    # video_shot_qa_threshold after its in-family retries is re-rendered as a
+    # stylized AI still built from the shot's INTENT — the stock query is what
+    # matched unrelated footage, so re-querying it ranks differently but stays
+    # off-topic. Keep-best (the AI candidate must score higher) and never for
+    # human-subject shots (real footage is the only sanctioned home for
+    # people). 'false' restores the pre-fix behaviour: ship the off-topic
+    # stock frame with a shot_quality_fallback finding.
+    'video_shot_topic_escalation_enabled': 'true',
+    # Style-modifier pool for escalated shots (CSV). '' = the full built-in
+    # rotation (flat vector illustration / cinematic illustration / isometric
+    # 3d / line art / cyberpunk neon / glassmorphism / low poly / …), rotated
+    # by shot index so multiple escalations in one video don't all match.
+    'video_shot_escalation_styles': '',
     # A "pexels" shot tries a real Pexels VIDEO clip before the still-photo
     # fallback (shot_list_renderer._render_pexels_video / _render_pexels_image)
     # — the director prompt has always described this source as real footage.
@@ -4006,6 +4020,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
+    'video_shot_topic_escalation_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_shot_escalation_styles': {'owner': 'video', 'value_type': 'string'},
     'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
