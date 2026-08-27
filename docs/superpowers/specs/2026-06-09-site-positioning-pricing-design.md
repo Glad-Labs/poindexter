@@ -85,7 +85,8 @@ until Track B lands. No customer is charged for something they can't receive,
 and no operator secrets ship.
 
 - **Gated CTA (recommended):** primary = **"Join the founding members → Discord"**
-  (existing invite `discord.gg/GCDBxBVv`); optional secondary = email waitlist
+  (invite `discord.gg/M6vZvAeQVn` — reminted 2026-08-26 as never-expiring; the
+  original died on Discord's default 7-day expiry); optional secondary = email waitlist
   (reuse the public-site `NewsletterModal` pattern). Keep the $19/$180 +
   Founding-Member framing visible — sell the offer, capture the lead, don't
   charge yet.

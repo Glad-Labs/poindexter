@@ -35,5 +35,9 @@ export const PRO_TRIAL_DAYS = 7;
 export const CHECKOUT_LIVE = false;
 
 // Founding-members CTA (used while CHECKOUT_LIVE === false).
-export const FOUNDING_CTA_URL = 'https://discord.gg/GCDBxBVv';
+// Permanent invite (Expire: Never) minted 2026-08-26 — the previous one was
+// created with Discord's default 7-day expiry and died silently, so the CTA
+// dead-ended for weeks. If this is ever reminted, verify it resolves:
+//   curl -s https://discord.com/api/v10/invites/<code> | grep guild
+export const FOUNDING_CTA_URL = 'https://discord.gg/M6vZvAeQVn';
 export const FOUNDING_CTA_LABEL = 'Join the founding members';
