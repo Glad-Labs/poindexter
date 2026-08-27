@@ -9,7 +9,7 @@
   "memory": false,
   "memorySmBus": "i2c-0",
   "memoryType": 5,
-  "exclude": [],
+  "exclude": [7199],
   "memorySku": "",
   "resumeDelay": 15000,
   "logFile": "",
