@@ -563,8 +563,11 @@ class TestGroupingMakesSense:
         # qa_gate_retry_backoff_seconds (poindexter#1012), which sits directly
         # under the qa_gate_timeout_seconds key it complements; 387→397 for
         # the qa_self_claim_* trio (poindexter#1007), seated directly under
-        # the qa_title_coherence_* rail block they mirror.
-        assert span < 397, (
+        # the qa_title_coherence_* rail block they mirror. Bumped 397→406 for
+        # research_require_fetched_source_for_citation, seated directly beside
+        # research_extract_web_content — the setting it gates — inside the
+        # web-research interleave this span already tolerates.
+        assert span < 406, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

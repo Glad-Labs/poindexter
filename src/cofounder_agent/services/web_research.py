@@ -49,6 +49,28 @@ FETCH_TIMEOUT = 10
 MAX_CONCURRENT = 3
 
 
+def _failure_hosts(failures: list[str]) -> set[str]:
+    """Hostnames out of the ``"<url>: <error>"`` strings ``search`` collects.
+
+    Used to key the ``web_research_extract_failed`` finding's dedup so a
+    newly-broken source is distinguishable from an already-known one. Falls
+    back to the raw entry when a string isn't parseable as a URL — a dedup key
+    that is merely ugly still separates two different failures, which a
+    constant key does not.
+    """
+    from urllib.parse import urlparse
+
+    hosts: set[str] = set()
+    for entry in failures:
+        candidate = str(entry).split(": ", 1)[0].strip()
+        try:
+            host = urlparse(candidate).netloc
+        except ValueError:
+            host = ""
+        hosts.add(host or candidate[:60] or "?")
+    return hosts
+
+
 class WebResearcher:
     """Free web research using DuckDuckGo + content extraction."""
 
@@ -111,11 +133,23 @@ class WebResearcher:
                 ),
                 body=(
                     f"search(query={query[:50]!r}): {extract_failures}. "
-                    "Those results were kept with empty content — the "
-                    "writer sees a title/snippet but no extracted text "
-                    "for them."
+                    "Those results are dropped from the citable corpus by "
+                    "research_service when "
+                    "research_require_fetched_source_for_citation is on — the "
+                    "writer never sees them; otherwise it sees a title/snippet "
+                    "with no extracted text."
                 ),
-                dedup_key="web_research_extract_failed",
+                # Keyed by the failing HOSTS, not a bare literal. The old
+                # constant key gave every extract failure — any query, any
+                # site, forever — one fingerprint, so the dispatcher's dedup
+                # collapsed them all into the first fire and a newly-broken
+                # source never paged again. Per-host keying means a site that
+                # starts failing is visible while one already-known stays
+                # deduped.
+                dedup_key=(
+                    "web_research_extract_failed:"
+                    + ",".join(sorted(_failure_hosts(extract_failures)))
+                ),
             )
 
         logger.info("[RESEARCH] Web search: %d results for '%s'", len(results), query[:50])

@@ -396,6 +396,36 @@ facts/numbers, so two settings govern how much real text it carries:
 `Source text:` excerpt per source, so the writer sees a titled, summarised, and
 substantiated source rather than a bare link.
 
+- **`research_require_fetched_source_for_citation`** (default `true`) — a result
+  whose page could **not** be fetched comes back from `WebResearcher.search`
+  with `content=""` (it is kept, not dropped — that is what its
+  `web_research_extract_failed` finding reports). Such a result is now excluded
+  from the `RECENT WEB SOURCES (cite if relevant)` list entirely. **A source we
+  could not read is not a source the writer may cite**, for two independent
+  reasons: we have nothing to ground the claim against, and the URL's liveness
+  is unverified. On 2026-08-27 DuckDuckGo returned a since-deleted GitHub repo,
+  `build_context` listed it, the writer dutifully cited it, and `qa.citations`
+  HEAD'd it to a `404` and hard-vetoed the draft at _"50% of citations dead"_ —
+  the pipeline arguing with itself about a decision made three stages earlier.
+  The empty body also drags grounding: `research_context` is exactly what the
+  `ragas` / `faithfulness` rails score against, and that run's
+  `context_precision` was `0.33`. Only consulted when
+  `research_extract_web_content` is `true` — the `search_simple` path has no
+  content for _any_ result by design, so requiring it there would empty the
+  section on every run. Flip false to restore the old behaviour. If **every**
+  web result is unfetchable the section is omitted (no empty header) and a
+  `research_web_sources_all_unfetchable` finding fires, because a corpus with no
+  web tier sends the writer back to model knowledge — the ungrounded output this
+  whole layer exists to prevent.
+
+> The `web_research_extract_failed` finding this depends on was keyed
+> `dedup_key="web_research_extract_failed"` — a bare literal, so the
+> dispatcher's fingerprint dedup collapsed every extract failure (any query, any
+> site, forever) into the first fire and a newly-broken source never paged
+> again. It is now keyed by failing host, so a known-bad site stays deduped while
+> a new one surfaces. See [findings-routing.md](findings-routing.md) for why
+> fingerprint dedup and per-kind cooldown are different throttles.
+
 **Re-run de-duplication.** `_collect_research_context` layers three sources in
 order: caller-attached research (`_extract_caller_research`, e.g. the seed-URL
 `Source article:` block), the fresh `ResearchService.build_context` render, and

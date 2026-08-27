@@ -512,3 +512,72 @@ class TestDDGRetry:
         assert results == []
         assert instance.text.call_count == 1
         sleep_mock.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# web_research_extract_failed — dedup key must separate distinct failures
+# ---------------------------------------------------------------------------
+
+
+class TestExtractFailedDedupKey:
+    """The finding's dedup_key was the bare literal
+    ``"web_research_extract_failed"``, so the dispatcher's fingerprint dedup
+    collapsed EVERY extract failure — any query, any site, forever — into the
+    first fire. A newly-broken source never paged again, which is why the
+    2026-08-27 dead-GitHub-citation failure left no finding row at all.
+    Keying by failing host keeps a known-bad site deduped while letting a new
+    one through.
+    """
+
+    def test_hosts_extracted_from_failure_strings(self):
+        from services.web_research import _failure_hosts
+
+        assert _failure_hosts(["https://a.example/x: boom"]) == {"a.example"}
+        assert _failure_hosts(
+            ["https://a.example/x: boom", "https://b.example/y: 404"]
+        ) == {"a.example", "b.example"}
+
+    def test_same_host_different_paths_collapse(self):
+        from services.web_research import _failure_hosts
+
+        assert _failure_hosts(
+            ["https://a.example/one: boom", "https://a.example/two: boom"]
+        ) == {"a.example"}
+
+    def test_unparseable_entry_still_separates(self):
+        """A malformed entry must not fall back to a shared constant — an ugly
+        key still distinguishes two different failures; a constant does not."""
+        from services.web_research import _failure_hosts
+
+        hosts = _failure_hosts(["not a url at all", "also not a url"])
+        assert len(hosts) == 2
+
+    @pytest.mark.asyncio
+    async def test_finding_dedup_key_includes_hosts(self):
+        researcher = WebResearcher(site_config=SiteConfig())
+        results = [
+            {"title": "A", "url": "https://a.example/x", "snippet": "s"},
+            {"title": "B", "url": "https://b.example/y", "snippet": "s"},
+        ]
+        # Mimic _extract_content's contract: record the failure, return "".
+        # Patched with `new=` rather than an AsyncMock side_effect — the mock
+        # retains the coroutine it awaited, which surfaces later in the run as
+        # a spurious "coroutine ... was never awaited" RuntimeWarning against
+        # an unrelated test.
+        async def _fail(url, failures=None):
+            if failures is not None:
+                failures.append(f"{url}: boom")
+            return ""
+
+        with (
+            patch.object(researcher, "_ddg_search", new_callable=AsyncMock, return_value=results),
+            patch.object(researcher, "_extract_content", new=_fail),
+            patch("utils.findings.emit_finding") as emit,
+        ):
+            await researcher.search("q", num_results=2)
+
+        emit.assert_called_once()
+        key = emit.call_args.kwargs["dedup_key"]
+        assert key != "web_research_extract_failed"
+        assert "a.example" in key
+        assert "b.example" in key

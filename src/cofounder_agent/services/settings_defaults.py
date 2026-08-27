@@ -1382,7 +1382,16 @@ DEFAULTS: dict[str, str] = {
     # research_web_content_chars_per_source caps how much of each source's
     # extracted text is injected into the generation prompt (token budget;
     # 600 ≈ one substantial paragraph × up-to-5 sources).
+    # research_require_fetched_source_for_citation drops web results whose page
+    # could NOT be fetched (content="") from the "cite if relevant" corpus. A
+    # search hit we could not read is a source we cannot ground against, and
+    # offering it to the writer anyway is how a stale index becomes a dead
+    # citation: DuckDuckGo returned a deleted GitHub repo on 2026-08-27, the
+    # writer cited it, and qa.citations hard-vetoed the draft at 50% dead. Only
+    # consulted when research_extract_web_content is true — the snippet-only
+    # search_simple path has no content for ANY result by design.
     'research_extract_web_content': 'true',
+    'research_require_fetched_source_for_citation': 'true',
     'research_web_content_chars_per_source': '600',
 
     # ----- Quality assurance pipeline -----
@@ -4941,6 +4950,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rate_limit_triage_per_ip': {'owner': 'triage_routes', 'value_type': 'string'},
     'rate_limit_video_generate_per_ip': {'value_type': 'string'},
     'research_extract_web_content': {'owner': 'research_service', 'value_type': 'boolean'},
+    'research_require_fetched_source_for_citation': {'owner': 'research_service', 'value_type': 'boolean'},
     'research_web_content_chars_per_source': {'owner': 'research_service', 'value_type': 'integer'},
     'router_feedback_alpha': {'owner': 'router_outcome_feedback', 'value_type': 'float'},
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},

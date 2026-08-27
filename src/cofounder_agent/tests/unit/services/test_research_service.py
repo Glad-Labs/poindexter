@@ -188,8 +188,18 @@ class TestBuildContext:
 
     @pytest.mark.asyncio
     async def test_includes_web_results(self, service, mock_pool):
+        # ``content`` is what WebResearcher.search returns for a page it
+        # successfully fetched. It is required here because an empty body on
+        # the extract path means the fetch FAILED, and such a result is no
+        # longer offered to the writer as a citation (see
+        # TestBuildContextUnfetchableSources).
         web_results = [
-            {"title": "Fresh Article", "url": "https://blog.example.com/fresh", "snippet": "Recent findings on the topic"},
+            {
+                "title": "Fresh Article",
+                "url": "https://blog.example.com/fresh",
+                "snippet": "Recent findings on the topic",
+                "content": "Extracted body text from the fetched page.",
+            },
         ]
         with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=web_results):
             context = await service.build_context("FastAPI deployment")
@@ -333,16 +343,122 @@ class TestBuildContextSourceText:
             pytest.fail("expected a 'Source text:' line in the context")
 
     @pytest.mark.asyncio
-    async def test_no_source_text_line_when_content_empty(self, service, mock_pool):
+    async def test_no_source_text_line_when_content_empty(self, mock_pool):
         """Snippet-only results (content == '') must not emit a blank
-        'Source text:' line — that would be prompt noise."""
+        'Source text:' line — that would be prompt noise.
+
+        Exercised on the snippet-only path (``research_extract_web_content``
+        false), where NO result carries content by design. On the extract path
+        an empty body means the fetch failed, and the result is dropped
+        outright — see TestBuildContextUnfetchableSources.
+        """
+        sc = SiteConfig(initial_config={"research_extract_web_content": "false"})
+        svc = ResearchService(pool=mock_pool, site_config=sc)
         web_results = [
             {"title": "T", "url": "https://e.com", "snippet": "teaser", "content": ""},
         ]
-        with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=web_results):
-            context = await service.build_context("topic")
+        with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=web_results):
+            context = await svc.build_context("topic")
         assert "RECENT WEB SOURCES" in context
         assert "Source text:" not in context
+
+
+# ---------------------------------------------------------------------------
+# build_context — unfetchable sources are not citable
+# ---------------------------------------------------------------------------
+
+
+class TestBuildContextUnfetchableSources:
+    """A web result we could not FETCH (content == '' on the extract path) must
+    not be offered to the writer as a citation.
+
+    The 2026-08-27 regression: DuckDuckGo returned a since-deleted GitHub repo,
+    ``WebResearcher.search`` kept it with empty content, build_context listed it
+    under "RECENT WEB SOURCES (cite if relevant)", the writer cited it, and
+    ``qa.citations`` HEAD'd it to a 404 and hard-vetoed the draft at "50% of
+    citations dead". The pipeline handed the writer a URL it had already failed
+    to load.
+    """
+
+    @staticmethod
+    def _results():
+        return [
+            {
+                "title": "Live Source",
+                "url": "https://live.example/ok",
+                "snippet": "teaser",
+                "content": "A real extracted paragraph with a number: 142.",
+            },
+            {
+                "title": "GitHub - deleted/repo: This repository...",
+                "url": "https://github.com/deleted/repo",
+                "snippet": "saga patterns, checkpoint/rollback",
+                "content": "",  # fetch failed — 404
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def test_unfetchable_source_is_dropped_by_default(self, mock_pool):
+        svc = ResearchService(pool=mock_pool, site_config=SiteConfig())
+        with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=self._results()):
+            context = await svc.build_context("agent rollback")
+        assert "https://github.com/deleted/repo" not in context
+        # The fetchable one still reaches the writer — this drops the dead
+        # source, it does not disable web research.
+        assert "https://live.example/ok" in context
+        assert "142" in context
+
+    @pytest.mark.asyncio
+    async def test_operator_can_restore_old_behaviour(self, mock_pool):
+        sc = SiteConfig(
+            initial_config={"research_require_fetched_source_for_citation": "false"}
+        )
+        svc = ResearchService(pool=mock_pool, site_config=sc)
+        with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=self._results()):
+            context = await svc.build_context("agent rollback")
+        assert "https://github.com/deleted/repo" in context
+
+    @pytest.mark.asyncio
+    async def test_noop_on_snippet_only_path(self, mock_pool):
+        """``search_simple`` returns no content for ANY result, so requiring a
+        fetched body there would empty the section on every run."""
+        sc = SiteConfig(initial_config={"research_extract_web_content": "false"})
+        svc = ResearchService(pool=mock_pool, site_config=sc)
+        with patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=self._results()):
+            context = await svc.build_context("agent rollback")
+        assert "https://github.com/deleted/repo" in context
+        assert "https://live.example/ok" in context
+
+    @pytest.mark.asyncio
+    async def test_section_omitted_and_finding_emitted_when_all_unfetchable(self, mock_pool):
+        """Zero citable web sources must not leave an empty header in the
+        prompt, and must page — the writer falls back on model knowledge,
+        which is the ungrounded output research exists to prevent."""
+        svc = ResearchService(pool=mock_pool, site_config=SiteConfig())
+        results = [
+            {"title": "A", "url": "https://a.example/x", "snippet": "s", "content": ""},
+            {"title": "B", "url": "https://b.example/y", "snippet": "s", "content": ""},
+        ]
+        with (
+            patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=results),
+            patch("utils.findings.emit_finding") as emit,
+        ):
+            context = await svc.build_context("agent rollback")
+        assert "RECENT WEB SOURCES" not in context
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["kind"] == "research_web_sources_all_unfetchable"
+
+    @pytest.mark.asyncio
+    async def test_no_finding_when_some_source_survives(self, mock_pool):
+        """A partial failure is already reported by web_research's own
+        extract-failed finding — don't page twice for one event."""
+        svc = ResearchService(pool=mock_pool, site_config=SiteConfig())
+        with (
+            patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=self._results()),
+            patch("utils.findings.emit_finding") as emit,
+        ):
+            await svc.build_context("agent rollback")
+        emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

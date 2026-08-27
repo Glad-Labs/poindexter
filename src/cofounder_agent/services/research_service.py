@@ -222,6 +222,11 @@ class ResearchService:
 
         # 3. Free web search via DuckDuckGo (replaces Serper)
         web_results = await self._web_search(topic)
+        # Counted for the summary log below: what actually reached the corpus,
+        # not what search returned. Those diverge once unfetchable results are
+        # dropped, and the log claiming "5 web" for a corpus holding 4 is how a
+        # thinning research tier stays invisible.
+        web_citable_count = 0
         if web_results:
             try:
                 content_budget = self._site_config.get_int(
@@ -229,18 +234,88 @@ class ResearchService:
                 )
             except Exception:
                 content_budget = 600
-            web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
+            # A result whose page we could NOT fetch has no extracted content
+            # (WebResearcher.search keeps it with content="" — see its
+            # web_research_extract_failed finding). Listing it here anyway told
+            # the writer to cite a URL we had already failed to load, and a
+            # search index that is merely STALE looks identical to one that is
+            # fresh: DuckDuckGo returned a deleted GitHub repo on 2026-08-27,
+            # the writer dutifully cited it, and qa.citations HEAD'd it to a 404
+            # and hard-vetoed the draft at "50% of citations dead". The same
+            # empty body also poisons grounding — research_context is what the
+            # ragas / deepeval faithfulness rails score against, so an
+            # unfetchable title drags context_precision down (0.33 on that run).
+            #
+            # So: a source we could not read is not a source we may cite.
+            # DB-gated (research_require_fetched_source_for_citation) rather
+            # than hardcoded — an operator who wants the old snippet-only
+            # behaviour flips it false, and it is a no-op when
+            # research_extract_web_content is already false (the search_simple
+            # path returns no content for ANY result by design, so requiring it
+            # there would empty the section every time).
+            require_fetched = False
+            if self._site_config.get_bool("research_extract_web_content", True):
+                require_fetched = self._site_config.get_bool(
+                    "research_require_fetched_source_for_citation", True
+                )
+
+            citable, dropped = [], []
             for result in web_results:
-                snippet = result.get("snippet", "")[:100]
-                web_lines.append(f"- [{result['title']}]({result['url']}): {snippet}")
-                # Inject the extracted page text (when _web_search fetched it
-                # via WebResearcher.search) so the writer has real sourced
-                # facts/numbers to cite — bounded by
-                # research_web_content_chars_per_source to keep the prompt lean.
                 content = (result.get("content") or "").strip()
-                if content and content_budget > 0:
-                    web_lines.append(f"  Source text: {content[:content_budget]}")
-            sections.append("\n".join(web_lines))
+                if require_fetched and not content:
+                    dropped.append(result.get("url") or "?")
+                else:
+                    citable.append((result, content))
+            web_citable_count = len(citable)
+
+            if dropped:
+                # WARNING, not DEBUG: this is the operator-actionable half of a
+                # stale search index, and it changes what the writer is allowed
+                # to say. web_research already emits the finding naming these
+                # URLs; this line says what we then DID about them.
+                logger.warning(
+                    "[RESEARCH] Dropped %d unfetchable web source(s) from the "
+                    "citable corpus for '%s': %s — a source we could not read "
+                    "is not a source the writer may cite",
+                    len(dropped), topic[:40], dropped,
+                )
+
+            if citable:
+                web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
+                for result, content in citable:
+                    snippet = result.get("snippet", "")[:100]
+                    web_lines.append(f"- [{result['title']}]({result['url']}): {snippet}")
+                    # Inject the extracted page text (when _web_search fetched it
+                    # via WebResearcher.search) so the writer has real sourced
+                    # facts/numbers to cite — bounded by
+                    # research_web_content_chars_per_source to keep the prompt lean.
+                    if content and content_budget > 0:
+                        web_lines.append(f"  Source text: {content[:content_budget]}")
+                sections.append("\n".join(web_lines))
+            elif dropped:
+                # Every web source failed to fetch. Say so loudly rather than
+                # silently handing the writer a corpus with no web tier — the
+                # draft will lean on the model's own knowledge, which is exactly
+                # the ungrounded output the research step exists to prevent.
+                from utils.findings import emit_finding
+
+                emit_finding(
+                    source="research_service",
+                    kind="research_web_sources_all_unfetchable",
+                    title=(
+                        f"All {len(dropped)} web source(s) unfetchable for "
+                        f"topic {topic[:50]!r}"
+                    ),
+                    body=(
+                        f"ResearchService.build_context dropped every web "
+                        f"result ({dropped}) because none could be fetched. The "
+                        "writer gets no web tier in its corpus for this topic "
+                        "and will fall back on model knowledge. Check whether "
+                        "the search provider is degraded or the results are "
+                        "stale."
+                    ),
+                    dedup_key=f"research_web_sources_all_unfetchable:{topic[:50]}",
+                )
 
         # 4. Add writing guidance based on available sources
         if sections:
@@ -254,7 +329,7 @@ class ResearchService:
 
         context = "\n\n".join(sections)
         logger.info("[RESEARCH] Built context for '%s': %d refs, %d internal, %d web",
-                     topic[:40], len(refs), len(internal), len(web_results))
+                     topic[:40], len(refs), len(internal), web_citable_count)
         return context
 
     def _find_references(self, topic: str) -> list[dict[str, str]]:
