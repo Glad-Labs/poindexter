@@ -1475,9 +1475,17 @@ async def _llm_restock_query(
     (no model, no pool, empty/garbage reply) and the caller keeps what it has.
     """
     if site_config is None or pool is None:
+        logger.info(
+            "[SHOT_QA] shot %d re-query skipped — no %s available",
+            shot.idx, "site_config" if site_config is None else "pool",
+        )
         return ""
     model = (site_config.get("video_director_model", "") or "").strip()
     if not model:
+        logger.info(
+            "[SHOT_QA] shot %d re-query skipped — video_director_model unset",
+            shot.idx,
+        )
         return ""
     context = "; ".join(
         (s.intent or "").strip() for s in all_shots
@@ -2443,11 +2451,26 @@ async def _escalate_offtopic_stock(
 
     escalated = 0
     all_shots = [st.shot for st in states]
-    for st in states:
-        if st.shot.source != "pexels":
-            continue
-        if st.qa is None or st.qa.score is None or st.qa.score >= qa.threshold:
-            continue
+    candidates = [
+        st for st in states
+        if st.shot.source == "pexels"
+        and st.qa is not None and st.qa.score is not None
+        and st.qa.score < qa.threshold
+    ]
+    # One line per render saying the pass RAN and what it saw. Without it, a
+    # pass that considered nothing and a pass that never executed produce the
+    # same (empty) log — which cost two full verification renders to tell
+    # apart on 2026-08-27.
+    logger.info(
+        "[SHOT_QA] topic-escalation pass: %d/%d shot(s) below threshold %.0f "
+        "(stock scores: %s)",
+        len(candidates), len(states), qa.threshold,
+        ", ".join(
+            f"{st.shot.idx}:{'?' if st.qa is None or st.qa.score is None else int(st.qa.score)}"
+            for st in states if st.shot.source == "pexels"
+        ) or "no stock shots",
+    )
+    for st in candidates:
 
         # RUNG 1 — re-query stock with a better search string. The clip missed
         # because the QUERY was wrong, not because stock footage is wrong, so
@@ -2531,10 +2554,23 @@ async def _escalate_offtopic_stock(
             )
             continue
 
+        logger.info(
+            "[SHOT_QA] shot %d escalating pexels->image_kenburns (scored %.0f "
+            "< %.0f) with prompt %r",
+            st.shot.idx, st.qa.score, qa.threshold, ai_shot.prompt,
+        )
         cand = await _render_one_shot(
             ai_shot, prior_clip=None, attempt=0, **render_kwargs,
         )
         if not (cand.success and cand.clip_path):
+            # Image-gen can be cold or evicted at this point in the render
+            # (the hero phase hard-unloads it), and a silent `continue` here
+            # was indistinguishable from the escalation never running.
+            logger.warning(
+                "[SHOT_QA] shot %d escalation render failed (%s) — keeping the "
+                "off-topic stock frame",
+                st.shot.idx, cand.error or "no clip produced",
+            )
             continue
         cand_qa = await score_shot_frame(
             frame_path=cand.clip_path, shot=ai_shot,
