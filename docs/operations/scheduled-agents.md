@@ -271,12 +271,48 @@ Host-side env knobs read by [`scripts/ops_sessions/_common.py`](../../scripts/op
 | Var                                | Default                              | Purpose                                            |
 | ---------------------------------- | ------------------------------------ | -------------------------------------------------- |
 | `OPS_OLLAMA_URL`                   | `http://localhost:11434`             | local Ollama endpoint                              |
-| `OPS_OLLAMA_MODEL_TRIAGE`          | `llama3.2:3b`                        | `alert-triage` classifier model                    |
+| `OPS_OLLAMA_MODEL_TRIAGE`          | `granite4.2:3b`                      | `alert-triage` classifier model                    |
 | `OPS_OLLAMA_MODEL_TESTFIX`         | `qwen2.5-coder:7b`                   | `test-health` fix-proposer model                   |
 | `OPS_CLAUDE_MD_MAX_ATTEMPTS`       | `3`                                  | `claude-md-sync` regenerate-on-conflict retries    |
 | `OPS_CLAUDE_MD_MERGE_WAIT_SECONDS` | `3600`                               | how long it waits for its own PR to merge          |
 | `OPS_CLAUDE_MD_POLL_SECONDS`       | `60`                                 | PR-state poll interval within that budget          |
 | `OPS_LOG_DIR`                      | `~/.poindexter/logs/claude-sessions` | session-log dir (also honored by `run-session.sh`) |
+
+**Both model defaults must stay OSI-permissive.** `scripts/ops_sessions/` is
+not in the strip list in `scripts/sync-to-github.sh`, so whatever is pinned in
+`_common.py` is what the open-source product hands a fresh install — these are
+the _product's_ defaults, not just Glad Labs'. A 2026-08-27 license audit found
+`llama3.2:3b` (the previous `OPS_OLLAMA_MODEL_TRIAGE`) was the last
+non-permissive default anywhere in the tree: the Llama 3.2 Community License is
+not OSI-approved, carries an acceptable-use policy and a 700M-MAU ceiling, and
+the upstream `meta-llama/Llama-3.2-3B-Instruct` repo is `gated: manual`, so a
+downstream user could not fetch the weights the default named. It was replaced
+with **`granite4.2:3b`** (IBM Granite 4.2, Apache-2.0, ~2.2 GB — same size
+class). `qwen2.5-coder:7b` was already Apache-2.0 and stays: the only current
+`qwen3-coder` tags are 30b and 480b, and at ~18.6 GB the 30b overshoots the
+consumer stack's 8-16 GB VRAM target. `test_ops_common.py`'s
+`test_default_model_pins_are_permissively_licensed` guards the allowlist; check
+a candidate's license layer (`/v2/library/<model>/blobs/<license-digest>` on
+`registry.ollama.ai`) before widening it.
+
+**Classification runs greedy.** `ollama_chat` sends `options.temperature` (0 by
+default) rather than inheriting the model's baked-in sampling. Models differ
+enormously here — `llama3.2:3b` ships no temperature, `granite4.2:3b` bakes in
+`temperature 1 / top_p 0.95` — so leaving it unset makes determinism a property
+of whichever pin is set. Swapping the triage pin surfaced exactly that: at
+full-entropy sampling the _same_ alert returned different verdicts across runs,
+in a session whose output is filed GitHub issues. Pass a non-zero `temperature`
+only where sampling is genuinely wanted.
+
+`ollama_chat` sends `think: false` for the same reason. `granite4.2:3b` is a
+**thinking** model: left to reason it puts its trace in `message.thinking` and
+takes ~41s for a one-key JSON reply, versus ~8s with thinking off (measured on
+Ollama 0.32.1). The worse failure mode is the one already documented for
+`ops_triage_writer_model` — a thinking model that exhausts its budget mid-trace
+returns an **empty** `message.content`, which the session then rejects as
+unparseable. These sessions want the answer, never the trace. The flag is
+harmless on non-thinking models (verified against `qwen2.5-coder:7b`), so it is
+sent unconditionally rather than per-pin.
 
 **The default models must actually be pulled.** These are plain code defaults,
 not app_settings — `ollama list` must show every model in the table above. A

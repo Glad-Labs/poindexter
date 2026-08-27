@@ -93,6 +93,110 @@ def test_successful_call_is_unaffected(monkeypatch):
     assert _common.ollama_chat("hi", model="qwen2.5-coder:7b") == "ok"
 
 
+# --- sampling determinism ----------------------------------------------------
+# A model's baked-in sampling params vary wildly (llama3.2:3b ships none, so
+# Ollama's 0.8 applied; granite4.2:3b bakes in temperature 1 / top_p 0.95).
+# Leaving temperature unset makes every session's determinism a property of
+# whichever pin happens to be set. The bake-off preceding the 2026-08-27
+# triage-pin swap caught exactly that: sampling at Granite's baked-in 1.0, the
+# same alert returned different verdicts across runs (self-consistent on only
+# 4 of 8 real alerts) — in a session whose output is FILING GITHUB ISSUES.
+
+
+def _captured_body(monkeypatch) -> dict:
+    import httpx
+    seen: dict = {}
+
+    def _post(url, **kwargs):
+        seen.update(kwargs.get("json") or {})
+        return _Resp(200)
+
+    monkeypatch.setattr(httpx, "post", _post)
+    return seen
+
+
+def test_ollama_chat_pins_temperature_zero_by_default(monkeypatch):
+    body = _captured_body(monkeypatch)
+    _common.ollama_chat("hi", model="m:1b")
+    assert body["options"]["temperature"] == 0.0
+
+
+def test_ollama_chat_temperature_is_overridable(monkeypatch):
+    body = _captured_body(monkeypatch)
+    _common.ollama_chat("hi", model="m:1b", temperature=0.7)
+    assert body["options"]["temperature"] == 0.7
+
+
+def test_ollama_chat_disables_thinking(monkeypatch):
+    """Same reason as temperature: don't let the pin decide behaviour.
+
+    granite4.2:3b is a thinking model — left alone it puts its reasoning in
+    ``message.thinking`` and takes 41s for a one-key JSON reply vs 8s with
+    thinking off. The real hazard is the failure mode already documented for
+    ``ops_triage_writer_model``: a thinking model that burns its budget
+    mid-trace returns an EMPTY ``message.content``, which surfaces here as an
+    unparseable answer. These sessions want the answer, never the trace.
+    """
+    body = _captured_body(monkeypatch)
+    _common.ollama_chat("hi", model="m:1b")
+    assert body["think"] is False
+
+
+# --- default-pin licensing (2026-08-27 audit) --------------------------------
+
+
+def _default_pin(name: str) -> str:
+    """The literal default in the source, independent of the caller's env.
+
+    Read via ``ast`` rather than the imported module attribute on purpose:
+    ``MODEL_*`` resolves ``OPS_OLLAMA_MODEL_*`` at import, so on a box that
+    exports an override the attribute is the operator's choice, not the value
+    that ships. What needs guarding is what a fresh OSS install inherits.
+    """
+    import ast
+    tree = ast.parse((_ops_dir() / "_common.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == name):
+            continue
+        # Expect exactly `os.environ.get("OPS_OLLAMA_MODEL_X", "<default>")`.
+        # Fail loudly rather than by AttributeError if that shape ever changes,
+        # so the next reader is told what to update instead of debugging a
+        # traceback in a licensing guard.
+        value = node.value
+        if not (isinstance(value, ast.Call) and len(value.args) == 2
+                and isinstance(value.args[1], ast.Constant)):
+            raise AssertionError(
+                f"{name} is no longer `os.environ.get(<key>, <literal default>)`; "
+                "update _default_pin() to read the new shape"
+            )
+        return value.args[1].value
+    raise AssertionError(f"{name} not found as a module-level assignment")
+
+
+@pytest.mark.parametrize("pin", ["MODEL_TRIAGE", "MODEL_TESTFIX"])
+def test_default_model_pins_are_permissively_licensed(pin):
+    """`scripts/ops_sessions/` ships publicly — these defaults are the OSS
+    product's, not just Glad Labs'.
+
+    ``scripts/sync-to-github.sh`` does not strip this directory, so whatever is
+    pinned here is what Glad-Labs/poindexter hands a fresh install. The
+    2026-08-27 audit found ``llama3.2:3b`` was the last non-permissive default
+    in the tree: the Llama 3.2 Community License is not OSI-approved, carries
+    an acceptable-use policy and a 700M-MAU ceiling, and its upstream HF repo
+    is ``gated: manual`` — a downstream user cannot fetch the weights the
+    default names. Widen this allowlist only with an Apache-2.0/MIT model
+    (check the registry's license layer), never to re-admit a community
+    license.
+    """
+    permissive = {
+        "granite4.2:3b",       # IBM Granite 4.2 — Apache-2.0
+        "granite4.2:8b",       # Apache-2.0
+        "qwen2.5-coder:7b",    # Qwen2.5-Coder — Apache-2.0
+        "qwen3-coder:30b",     # Apache-2.0
+    }
+    assert _default_pin(pin) in permissive
+
+
 # --- preflight_model_pins (stack#3163) --------------------------------------
 # A pin can be unsatisfiable for weeks with the 03:00 session failure as the
 # only detector. The preflight turns that into a seconds-fast, correctly-
@@ -118,16 +222,16 @@ class _TagsResp:
 def test_preflight_passes_when_all_pins_present(monkeypatch):
     import httpx
     monkeypatch.setattr(
-        httpx, "get", lambda *a, **k: _TagsResp(["llama3.2:3b", "qwen2.5-coder:7b"]),
+        httpx, "get", lambda *a, **k: _TagsResp(["granite4.2:3b", "qwen2.5-coder:7b"]),
     )
-    _common.preflight_model_pins("llama3.2:3b", "qwen2.5-coder:7b")
+    _common.preflight_model_pins("granite4.2:3b", "qwen2.5-coder:7b")
 
 
 def test_preflight_missing_pin_names_model_and_remedy(monkeypatch):
     import httpx
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _TagsResp(["llama3.2:3b"]))
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _TagsResp(["granite4.2:3b"]))
     with pytest.raises(_common.OllamaUnavailable) as exc:
-        _common.preflight_model_pins("llama3.2:3b", "qwen2.5-coder:7b")
+        _common.preflight_model_pins("granite4.2:3b", "qwen2.5-coder:7b")
     msg = str(exc.value)
     assert "qwen2.5-coder:7b" in msg
     assert "ollama pull qwen2.5-coder:7b" in msg
@@ -150,7 +254,7 @@ def test_preflight_connect_failure_is_ollama_unavailable(monkeypatch):
 
     monkeypatch.setattr(httpx, "get", _boom)
     with pytest.raises(_common.OllamaUnavailable):
-        _common.preflight_model_pins("llama3.2:3b")
+        _common.preflight_model_pins("granite4.2:3b")
 
 
 def test_model_pins_registry_covers_every_pin():

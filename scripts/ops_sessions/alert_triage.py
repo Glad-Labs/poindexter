@@ -36,7 +36,14 @@ def parse_classification(raw: str) -> dict:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError(f"non-JSON classification: {raw[:120]}") from exc
-    cls = str(data.get("classification", "")).strip().lower()
+    # Strip quotes around the VALUE, not just whitespace. The system prompt
+    # shows the enum as `"probe_bug"|"real_failure"`, and models periodically
+    # copy the quotes into the value itself -> `{"classification": "\"probe_bug\""}`.
+    # That is well-formed JSON, so it parses fine and then matches neither
+    # branch in main(), silently dropping a probe-bug issue that should have
+    # been filed. Observed from granite4.2:3b during the 2026-08-27 pin
+    # bake-off; it is a general model behaviour, not a granite quirk.
+    cls = str(data.get("classification", "")).strip().strip("\"'").strip().lower()
     return {
         "classification": cls,
         "reason": str(data.get("reason", "") or ""),
@@ -115,6 +122,7 @@ def main() -> int:
         return 1
     filed = 0
     skipped = 0
+    unparseable = 0
     for a in alerts:
         alertname = a["alertname"]
         n_paged = a["n_paged"]
@@ -131,7 +139,19 @@ def main() -> int:
         except c.OllamaUnavailable as exc:
             c.notify_fail("alert-triage: Ollama down", str(exc)[:300], "alert_triage")
             return 1
-        verdict = parse_classification(raw)
+        try:
+            verdict = parse_classification(raw)
+        except ValueError as exc:
+            # One garbled reply must not abort the sweep. parse_classification
+            # raises on non-JSON, and an uncaught ValueError here would exit
+            # main() with a traceback and NO notify_fail — the exact
+            # "exception nobody catches pages nobody" shape _common's
+            # OllamaUnavailable docstring exists to prevent. Skip the alert;
+            # the cron retries daily, and `unparseable=N` in the summary line
+            # is what tells the operator the model is emitting junk.
+            log.warning("unparseable classification for %s: %s", alertname, exc)
+            unparseable += 1
+            continue
         if verdict["classification"] == "probe_bug":
             suppressed = n_total - n_paged
             c.gh("issue", "create", "--repo", REPO, "--label", "bug",
@@ -140,7 +160,10 @@ def main() -> int:
                  "--body", f"{verdict['reason']}\n\nSuspect: `{verdict['suspect_file']}`\n\n"
                            f"_Filed by the alert-triage ops session (local-model triage)._")
             filed += 1
-    log.info("alerts=%d filed=%d skipped_already_tracked=%d", len(alerts), filed, skipped)
+    log.info(
+        "alerts=%d filed=%d skipped_already_tracked=%d unparseable=%d",
+        len(alerts), filed, skipped, unparseable,
+    )
     return 0
 
 

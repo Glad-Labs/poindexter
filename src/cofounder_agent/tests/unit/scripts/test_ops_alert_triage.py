@@ -78,6 +78,61 @@ def test_parse_classification_bad_json_raises():
         at.parse_classification("not json")
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"classification": "\\"probe_bug\\""}',    # value wrapped in double quotes
+        '{"classification": "\'probe_bug\'"}',      # ... or single quotes
+        '{"classification": " \\"PROBE_BUG\\" "}',  # ... plus padding and case
+    ],
+)
+def test_parse_classification_strips_quotes_copied_into_the_value(raw):
+    """A quoted value must still classify.
+
+    The system prompt spells the enum as ``"probe_bug"|"real_failure"``, and
+    models periodically copy those quotes into the value itself. The result is
+    well-formed JSON that parses cleanly and then matches NEITHER branch in
+    ``main()`` — so a probe-bug issue is silently never filed, with no error
+    anywhere. Seen from granite4.2:3b during the 2026-08-27 triage-pin
+    bake-off; treat it as general model behaviour, not one model's quirk.
+    """
+    assert at.parse_classification(raw)["classification"] == "probe_bug"
+
+
+def test_main_skips_unparseable_reply_without_crashing_the_sweep(monkeypatch):
+    """A garbled model reply must skip that alert, not abort the run.
+
+    parse_classification raises ValueError on non-JSON. Uncaught, that exits
+    main() with a traceback and NO notify_fail — the "exception nobody catches
+    pages nobody" shape. It matters more now that the triage pin is a model
+    whose output shape was observed to vary (quote-wrapped enums, empty
+    content when a thinking budget runs out).
+    """
+    def fake_asyncio_run(coro):
+        coro.close()
+        return [
+            {"alertname": "GarbledFirst", "dispatch_result": "sent", "n_paged": 9, "n_total": 9},
+            {"alertname": "GoodSecond", "dispatch_result": "sent", "n_paged": 7, "n_total": 7},
+        ]
+
+    replies = iter([
+        "I think this is probably a probe bug!",  # not JSON at all
+        '{"classification": "probe_bug", "reason": "r", "suspect_file": "f.py"}',
+    ])
+    filed = []
+
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    monkeypatch.setattr(at.c, "asyncio_run", fake_asyncio_run)
+    monkeypatch.setattr(at, "_has_open_probe_issue", lambda _a: False)
+    monkeypatch.setattr(at.c, "ollama_chat", lambda *_a, **_k: next(replies))
+    monkeypatch.setattr(at.c, "gh", lambda *args: (filed.append(args), _FakeProc(0, ""))[1])
+
+    assert at.main() == 0
+    # the good alert after it still got filed — the sweep continued
+    assert len(filed) == 1
+    assert "GoodSecond" in " ".join(filed[0])
+
+
 def test_has_open_probe_issue_true_when_gh_finds_a_match(monkeypatch):
     calls = []
 

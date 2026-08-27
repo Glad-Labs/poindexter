@@ -20,7 +20,17 @@ import asyncpg
 import httpx
 
 OPS_OLLAMA_URL = os.environ.get("OPS_OLLAMA_URL", "http://localhost:11434")
-MODEL_TRIAGE = os.environ.get("OPS_OLLAMA_MODEL_TRIAGE", "llama3.2:3b")
+
+# Both defaults must be OSI-permissive: `scripts/ops_sessions/` is NOT in the
+# strip list in `scripts/sync-to-github.sh`, so whatever is pinned here is what
+# the open-source product hands a fresh install. `llama3.2:3b` was the last
+# non-permissive default in the tree (2026-08-27 license audit) — the Llama 3.2
+# Community License is not OSI-approved, carries an acceptable-use policy and a
+# 700M-MAU ceiling, and the upstream HF repo is `gated: manual`, so a downstream
+# user could not even fetch the weights the default names. Granite 4.2 and
+# Qwen2.5-Coder are both Apache-2.0. Keep it that way: check the model's license
+# layer (`/v2/library/<m>/blobs/<license-digest>`) before changing a pin.
+MODEL_TRIAGE = os.environ.get("OPS_OLLAMA_MODEL_TRIAGE", "granite4.2:3b")
 MODEL_TESTFIX = os.environ.get("OPS_OLLAMA_MODEL_TESTFIX", "qwen2.5-coder:7b")
 
 # Every model pin the session fleet uses, keyed by its env knob. The single
@@ -92,12 +102,45 @@ def ollama_chat(
     system: str | None = None,
     as_json: bool = False,
     timeout: float = 120.0,
+    temperature: float = 0.0,
 ) -> str:
+    """Chat once against ``OPS_OLLAMA_URL``, greedily by default.
+
+    ``temperature`` is sent EXPLICITLY rather than left to the model, because
+    otherwise every session's determinism is a property of whichever pin
+    happens to be set. A model's baked-in sampling params vary wildly:
+    ``llama3.2:3b`` ships none (so Ollama's 0.8 applied), while
+    ``granite4.2:3b`` bakes in ``temperature 1 / top_p 0.95``. Absent this
+    kwarg the 2026-08-27 triage-pin swap would have moved alert classification
+    to full-entropy sampling as a side effect: in the bake-off that preceded
+    the swap, Granite was self-consistent on only 4 of 8 real alerts, returning
+    different verdicts for the same input across runs — in a session whose
+    output is *filing GitHub issues*. These are classification and code-repair
+    tasks with one right answer, so greedy decode is the correct default; pass
+    a non-zero value only where sampling is actually wanted.
+
+    ``think: false`` is sent for the same reason — to stop behaviour depending
+    on the pin. ``granite4.2:3b`` is a *thinking* model, and left to reason it
+    spends the bulk of its budget in ``message.thinking`` before answering:
+    41s for a one-key JSON reply, versus 8s with thinking off. The far worse
+    failure mode is the one already documented for ``ops_triage_writer_model``
+    — a thinking model that exhausts its budget mid-trace returns an EMPTY
+    ``message.content``, which ``parse_ollama_content`` hands back as ``""``
+    and the caller then rejects as unparseable. Sessions here want the answer,
+    never the trace. Harmless on non-thinking models (verified against
+    ``qwen2.5-coder:7b``) and on any Ollama that ignores the field.
+    """
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": user})
-    body: dict = {"model": model, "messages": messages, "stream": False}
+    body: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "think": False,
+        "options": {"temperature": temperature},
+    }
     if as_json:
         body["format"] = "json"
     try:
