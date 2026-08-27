@@ -39,6 +39,17 @@ GETTER_NAMES = {"get", "get_int", "get_float", "get_bool", "get_list"}
 RECEIVER_NAMES = {
     "site_config",
     "_site_config",
+    # The `_sc = site_config` / `sc = site_config` local-alias convention
+    # (social_poster, podcast_service, generate_media_scripts, ...) spread
+    # after this extractor was written, and its reads were invisible here —
+    # so keys like social_twitter_char_limit shipped as reads with NO seed
+    # anywhere (2026-08-26 audit: 50+ keys read via these receivers never
+    # reached settings_defaults.py, hence never the DB, hence no operator
+    # surface). A non-SiteConfig local named `sc`/`_sc` calling
+    # .get("literal", literal) would false-positive; the regen diff is the
+    # review gate for that.
+    "_sc",
+    "sc",
     # NOTE: 'config' / 'cfg' deliberately excluded — those are job-config
     # dicts in services/jobs/, not SiteConfig instances. Image providers
     # that read a SiteConfig from `config["_site_config"]` will surface as

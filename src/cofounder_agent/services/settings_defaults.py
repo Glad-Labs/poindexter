@@ -3883,6 +3883,57 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # backlog drains (e.g. after the worker was down through several slots).
     'social_schedule_fire_batch_size': '10',
 
+    # ----- Seed-gap audit, 2026-08-26 -----
+    # These keys were read in code (so tunable in principle) but seeded
+    # NOWHERE — the `_sc = site_config` local-alias convention was invisible
+    # to scripts/extract_settings_defaults.py, so their reads never reached
+    # this registry, the DB never got a row, and no operator surface (CLI
+    # settings list, console, zero-reader probe) could show they exist.
+    # Every value below is the exact inline code default at its read site,
+    # so seeding is behavior-neutral by construction; the row's existence is
+    # what changes (discoverable + tunable without reading source).
+    # Platform prose limits _polish_social_copy trims to (social_poster.py).
+    'social_twitter_char_limit': '280',
+    'social_linkedin_char_limit': '700',
+    # LLM token budget for one social-promo generation call.
+    'social_poster_max_tokens': '300',
+    # Consecutive self-inflicted un-claims before a media piece stops getting
+    # free retries (dispatch_media_pipeline.py, poindexter#995).
+    'media_pipeline_unclaim_max': '3',
+    # Podcast assembly toggles + CDN cache-buster version segment.
+    'podcast_include_intro': 'true',
+    'podcast_include_outro': 'true',
+    'podcast_video_narration_sibling_enabled': 'true',
+    'podcast_cdn_version': 'v2',
+    # Pexels search-query build (image_service/pexels provider).
+    'image_search_query_max_tokens': '30',
+    'image_search_query_temperature': '0.4',
+    'image_search_query_timeout_seconds': '20',
+    'image_ollama_client_timeout_seconds': '30',
+    # GPU-registry label for the image-gen slot (NOT an LLM model name).
+    'image_generation_model': 'image_gen',
+    # Writer length window + retry budget (ai_content_generator.py).
+    'content_gen_min_word_ratio': '0.9',
+    'content_gen_max_word_ratio': '1.1',
+    'content_gen_max_refinement_attempts': '3',
+    # content_validator thresholds (warnings per rule group).
+    'banned_transition_opener_threshold': '2',
+    'buzzword_density_threshold': '2',
+    'content_validator_named_source_promote_enabled': 'false',
+    # url_scraper / crawler identity + SSRF posture.
+    'scraper_bot_name': 'PoindexterBot/1.0',
+    'arxiv_base_url': 'https://arxiv.org',
+    'url_scraper_allow_internal_ips': 'false',
+    # DB query-monitoring decorators (decorators.py).
+    'enable_query_monitoring': 'true',
+    'log_all_queries': 'false',
+    'slow_query_threshold_ms': '100',
+    # Misc operational windows/toggles.
+    'operational_metrics_window_hours': '24',
+    'worker_hang_dump_seconds': '300',
+    'sentry_debug_logging': 'false',
+    'oauth_dcr_enabled': 'false',
+
 }
 
 
@@ -5006,6 +5057,37 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_self_review_model': {'owner': 'self_review', 'value_type': 'model'},
     'youtube_attribution_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'youtube_oembed_timeout_seconds': {'owner': 'content_reconcile_citations', 'value_type': 'integer'},
+
+    # ----- Seed-gap audit, 2026-08-26 (see the matching DEFAULTS section) -----
+    'social_twitter_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
+    'social_linkedin_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
+    'social_poster_max_tokens': {'owner': 'social_poster', 'value_type': 'integer'},
+    'media_pipeline_unclaim_max': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
+    'podcast_include_intro': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'podcast_include_outro': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'podcast_video_narration_sibling_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'podcast_cdn_version': {'owner': 'podcast_distribute', 'value_type': 'string'},
+    'image_search_query_max_tokens': {'owner': 'image_service', 'value_type': 'integer'},
+    'image_search_query_temperature': {'owner': 'image_service', 'value_type': 'float'},
+    'image_search_query_timeout_seconds': {'owner': 'image_service', 'value_type': 'integer'},
+    'image_ollama_client_timeout_seconds': {'owner': 'image_service', 'value_type': 'integer'},
+    'image_generation_model': {'owner': 'image_service', 'value_type': 'string'},
+    'content_gen_min_word_ratio': {'owner': 'ai_content_generator', 'value_type': 'float'},
+    'content_gen_max_word_ratio': {'owner': 'ai_content_generator', 'value_type': 'float'},
+    'content_gen_max_refinement_attempts': {'owner': 'ai_content_generator', 'value_type': 'integer'},
+    'banned_transition_opener_threshold': {'owner': 'content_validator', 'value_type': 'integer'},
+    'buzzword_density_threshold': {'owner': 'content_validator', 'value_type': 'integer'},
+    'content_validator_named_source_promote_enabled': {'owner': 'content_validator', 'value_type': 'boolean'},
+    'scraper_bot_name': {'owner': 'url_scraper', 'value_type': 'string'},
+    'arxiv_base_url': {'owner': 'url_scraper', 'value_type': 'url'},
+    'url_scraper_allow_internal_ips': {'owner': 'url_scraper', 'value_type': 'boolean'},
+    'enable_query_monitoring': {'owner': 'query_decorators', 'value_type': 'boolean'},
+    'log_all_queries': {'owner': 'query_decorators', 'value_type': 'boolean'},
+    'slow_query_threshold_ms': {'owner': 'query_decorators', 'value_type': 'integer'},
+    'operational_metrics_window_hours': {'owner': 'metrics_routes', 'value_type': 'integer'},
+    'worker_hang_dump_seconds': {'owner': 'worker_service', 'value_type': 'integer'},
+    'sentry_debug_logging': {'owner': 'sentry_integration', 'value_type': 'boolean'},
+    'oauth_dcr_enabled': {'owner': 'oauth_routes', 'value_type': 'boolean'},
 }
 
 

@@ -89,6 +89,17 @@ _OVERRIDES: dict[str, str] = {
     "enable_writer_self_review": "content",
     "enable_tracing": "observability",
     "enable_pyroscope": "observability",
+    # Seed-gap audit 2026-08-26 (stack#3366): bare-named keys with no
+    # shared prefix rule. Categorized here so they leave the "general"
+    # residual (test_general_residual_is_small).
+    "arxiv_base_url": "content",  # url_scraper research source (no url_scraper prefix)
+    "scraper_bot_name": "content",  # url_scraper UA (no url_scraper prefix)
+    "banned_transition_opener_threshold": "quality",  # content_validator threshold
+    "buzzword_density_threshold": "quality",  # content_validator threshold
+    "enable_query_monitoring": "observability",
+    "slow_query_threshold_ms": "observability",
+    "operational_metrics_window_hours": "observability",
+    "worker_hang_dump_seconds": "infrastructure",  # matches worker_heartbeat -> infrastructure
 }
 
 # (prefix, category). First match wins; the list is sorted longest-prefix-first
