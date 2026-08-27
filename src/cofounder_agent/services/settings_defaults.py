@@ -1294,9 +1294,9 @@ DEFAULTS: dict[str, str] = {
     'image_search_query_model': 'ollama/gemma3:27b',  # image_service Pexels query-gen (was gemma4:31b)
     'image_prompt_model': 'ollama/gemma3:27b',  # image_providers/ai_generation image-gen prompt-gen (was gemma4:31b)
     'writer_self_review_model': 'ollama/gemma3:27b',  # services/self_review writer self-review (was gemma4:31b)
-    # NOTE: retention/collapse cold-data summaries keep their existing per-step
-    # keys (memory_compression_summary_model / embedding_collapse_summary_model,
-    # both seeded ollama/phi4:14b in 0000_baseline.seeds.sql) — no new key here.
+    # NOTE: no new key — the two cold-data summary paths diverged. LIVE:
+    # memory_compression_summary_model (summarize_to_table; raw-SQL read, so its
+    # NULL last_read_at is not "dead"). Collapse: retention_embeddings_collapse.
     'use_ollama': 'false',
     # Boot-time validation of *_model keys against
     # installed Ollama models (glad-labs-stack#1284). Flip to 'false' on

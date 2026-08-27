@@ -516,7 +516,20 @@ async def embeddings_collapse(
 
     # Model is read from config JSONB; operators set it via
     # `poindexter retention config set <name> summary_model=<model>`.
-    # Default matches the former embedding_collapse_summary_model app_setting.
+    #
+    # There is deliberately NO app_setting here. `embedding_collapse_summary_model`
+    # was retired 2026-06-24 when the standalone collapse job folded into this
+    # retention handler — it is absent from both `settings_defaults.DEFAULTS` and
+    # `0000_baseline.seeds.sql`, so nothing re-seeds it, but installs provisioned
+    # before that date still carry an orphan row that reads as live config and
+    # is not. Do not "restore" it: the per-policy JSONB is the seam, so two
+    # policies can collapse at different model sizes. The default below matches
+    # the value that key used to hold, so behaviour was unchanged at the fold.
+    #
+    # Its sibling is NOT symmetric, despite the matching name:
+    # `memory_compression_summary_model` IS live, baseline-seeded, and read from
+    # app_settings by `retention_summarize_to_table` (which fails loud when it is
+    # empty). Changing one path does not change the other.
     summary_model = str(
         config.get("summary_model") or "phi4:14b"
     ).strip().removeprefix("ollama/")

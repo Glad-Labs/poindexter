@@ -42,9 +42,21 @@ delete alone loses to the next boot's ``INSERT ... ON CONFLICT DO NOTHING``.
 **The keep-list is the point.** ``topic_discovery_length_distribution`` is LIVE
 (read via ``services/topic_length.py``) and was seeded on the line directly
 above the three dead ``topic_discovery_*`` rows. ``topic_discovery_manual_trigger``
-is a documented operator affordance, and ``embedding_collapse_summary_model`` is
-pinned by its own test — both deliberately survive this batch. A prefix- or
-block-based removal would have taken all three out with the fossils.
+is a documented operator affordance. Both deliberately survive this batch; a
+prefix- or block-based removal would have taken them out with the fossils.
+
+``embedding_collapse_summary_model`` is also excluded, but for a different
+reason than this docstring used to give — it is **not** a live key. It was
+retired 2026-06-24, before this batch, when the collapse job folded into the
+``embeddings_collapse`` retention handler, which reads ``summary_model`` from
+``retention_policies.config`` JSONB instead (see
+``handlers/retention_embeddings_collapse.py`` and
+``test_hygiene_summary_model_rightsize``). Batch 3 had nothing to retire: the
+key is in neither ``DEFAULTS`` nor ``0000_baseline.seeds.sql``, so it cannot be
+re-seeded, and the only rows left are orphans on installs seeded before that
+date. It stays in ``_KEEP_UNRETIRED_KEYS`` because that list means "not retired
+*by this batch*", which remains true — do not read it as an assertion that the
+key is live.
 """
 
 from __future__ import annotations
@@ -103,9 +115,13 @@ _KEEP_SEEDED_KEYS = (
     "electricity_rate_kwh",
 )
 
-# Live keys in the same families that this batch deliberately does NOT retire.
+# Keys in the same families that this batch deliberately does NOT retire.
+# "Unretired" means "not retired BY THIS BATCH" — it does not assert liveness.
 _KEEP_UNRETIRED_KEYS = (
+    # Live — a documented operator affordance.
     "topic_discovery_manual_trigger",
+    # NOT live: retired 2026-06-24, ahead of this batch (see module docstring).
+    # Kept here so a later batch doesn't "discover" it and re-litigate.
     "embedding_collapse_summary_model",
 )
 
