@@ -1,6 +1,6 @@
 """Tests for ``services/video_renderers/shot_list_renderer.py``.
 
-Glad-Labs/glad-labs-stack#649 PR 2 — the director-driven renderer that
+Glad-Labs/poindexter#649 PR 2 — the director-driven renderer that
 turns a ``VideoShotList`` into an MP4 by composing per-shot clips and
 running them through ``FFmpegLocalCompositor``.
 """
