@@ -89,8 +89,16 @@ Docker container, use the container's hostname + container port (e.g.
 ```
 
 Brain probes that need to verify "this service is reachable from the host
-side" specifically (i.e. that Docker Desktop's port-forward isn't stuck)
-should use `host.docker.internal:<host_port>`.
+side" specifically should use `host.docker.internal:<host_port>`. (On
+docker-ce this needs `extra_hosts: host-gateway`; Docker Desktop provides it
+natively.)
+
+The original motivation was Docker Desktop's port-forward getting stuck — a
+**Windows/WSL2** failure mode that `brain/docker_port_forward_probe.py`
+exists to self-heal. On bare-metal Linux there is no port-forwarding proxy
+in the path, so that wedge class cannot occur and the probe is dead weight:
+turn it off with `docker_port_forward_probe_enabled=false`. It ships enabled
+because Docker Desktop installs are the ones that need it.
 
 ## When to add a row here
 

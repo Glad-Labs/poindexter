@@ -489,12 +489,18 @@ docker ps | grep gpu-scraper   # if containerized
 
 ## Disk Space Low
 
-**Means.** A host volume is running low on free disk space. This is now a **Prometheus** alert, defined in `infrastructure/prometheus/alerts/infrastructure.yml`. (It used to be a Grafana SQL rule, but that rule was mislabeled — it actually queried `pg_database_size`, duplicating [§ DB Size Warning](#db-size-warning) — so it was removed 2026-06-03 and replaced with real host-disk monitoring.) Two thresholds fire:
+**Means.** A host volume is running low on free disk space. This is a **Prometheus** alert. (It used to be a Grafana SQL rule, but that rule was mislabeled — it actually queried `pg_database_size`, duplicating [§ DB Size Warning](#db-size-warning) — so it was removed 2026-06-03 and replaced with real host-disk monitoring.) Two thresholds fire:
 
-- **`PoindexterDiskSpaceLow`** (warning) — a drive-letter volume has under 20 GB free for 10 minutes.
+- **`PoindexterDiskSpaceLow`** (warning) — a filesystem has under 20 GB free for 10 minutes.
 - **`PoindexterDiskSpaceCritical`** (critical) — under 10 GB free for 5 minutes; Postgres writes, Docker pulls, and image generation will start failing.
 
-Both are sourced from windows_exporter's `windows_logical_disk_free_bytes` (the `windows` scrape job on `host.docker.internal:9182`), filtered to drive-letter volumes (`[A-Z]:`). The `{{ $labels.volume }}` label in the alert names the affected drive.
+Both are **DB-rendered**, not static: they live in `DEFAULT_RULES` in `services/prometheus_rule_builder.py` (not `infrastructure/prometheus/alerts/infrastructure.yml`, which keeps only a pointer comment) so the 20/10 GB thresholds and the total-size filter are tunable via `app_settings` — `prometheus.threshold.disk_free_warning_gb`, `disk_free_critical_gb`, `disk_min_total_gb`. `RenderPrometheusRulesJob` writes them into `rules/*.yml` every 5 minutes.
+
+Source is node_exporter's `node_filesystem_free_bytes`, filtered to `fstype=~"ext4|xfs|btrfs"` (real local filesystems — skips tmpfs/squashfs/ntfs rescue mounts). The `{{ $labels.mountpoint }}` label names the affected filesystem.
+
+> **On Windows/WSL2** the source is windows_exporter's `windows_logical_disk_free_bytes` (the `windows` scrape job on `host.docker.internal:9182`), filtered to drive-letter volumes (`volume=~"[A-Z]:"`), and the label to read is `{{ $labels.volume }}`. This host moved to node_exporter in the Pop!_OS migration (Phase 5.2), which also renamed the scrape job `windows` → `node` and `WindowsExporterDown` → `NodeExporterDown`.
+>
+> Note `prometheus.threshold.disk_min_total_gb` is **100** on this host, lowered from the 200 default: the 147 GB root partition fell under it, and the filter would otherwise have excluded the exact partition that filled up and took Postgres down.
 
 **Triage.**
 

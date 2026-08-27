@@ -1,5 +1,17 @@
 # Idle-only WSL/Docker GPU reset
 
+> **Platform: Windows + WSL2 + Docker Desktop only.** This whole document
+> describes a failure mode that does not exist on bare-metal Linux — there is
+> no WSL VM to hold GPU memory and no Docker Desktop to restart. Matt's host
+> moved to Pop!_OS in the 2026-07 migration, so nothing here runs there; it is
+> kept for operators running Poindexter on Windows (the same reasoning that
+> keeps the `scripts/*.ps1` fleet in-tree, glad-labs-stack#3324). Read "this
+> host" below as "the Windows host you are running on".
+>
+> **The Linux equivalent** of the underlying concern — dormant GPU sidecars
+> holding memory — is `brain/`'s sidecar-recycle probe
+> (glad-labs-stack#3398), not this script.
+
 **Status:** built (PR 2, 2026-07-12), **not yet activated**. Registration and
 the first live run are a deliberate, supervised operator action — see
 [Activation runbook](#activation-runbook) below. Related:
