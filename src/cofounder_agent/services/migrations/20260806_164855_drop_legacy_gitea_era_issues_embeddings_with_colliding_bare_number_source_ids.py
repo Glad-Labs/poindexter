@@ -11,7 +11,7 @@ corpus-staleness panel (poindexter#989) surfaced them.
 They are dropped rather than migrated because their key scheme is unsafe.
 Every legacy row keys ``source_id`` on the **bare issue number** (``185``),
 which cannot represent more than one repo: ``Glad-Labs/poindexter#185`` and
-``Glad-Labs/glad-labs-stack#185`` collide on the
+``Glad-Labs/poindexter#185`` collide on the
 ``(source_table, source_id, chunk_index, embedding_model)`` unique
 constraint, so whichever embedded second would silently overwrite the
 first. ``GitHubIssuesTap`` keys on ``github/{owner}/{repo}/issues/{number}``
