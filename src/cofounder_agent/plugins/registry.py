@@ -698,6 +698,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.probe_cloudflare_beacon",
             "ProbeCloudflareBeaconJob",
         ),
+        # Records this host's public egress IP and emits a finding when it
+        # moves. Several integrations (Mercury) authorise by source-IP
+        # allowlist, and a re-leased residential WAN address makes them 401
+        # in a way indistinguishable from an expired token — this makes the
+        # cause legible at the moment it changes.
+        (
+            "jobs",
+            "services.jobs.probe_wan_ip_change",
+            "ProbeWanIpChangeJob",
+        ),
         ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),

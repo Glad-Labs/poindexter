@@ -243,6 +243,16 @@ DEFAULTS: dict[str, str] = {
     # 2026-08-27; without it, losing the disk makes this repo's own restic
     # password undecryptable (poindexter#889). Paths are IN-CONTAINER mount
     # points, bound read-only by the compose files.
+    # --- WAN egress-IP change probe (probe_wan_ip_change) ---
+    # Mercury and any other source-IP-allowlisted integration 401s from an
+    # unrecognised address, indistinguishable from an expired token. This
+    # host is on a residential WAN with no static guarantee.
+    'wan_ip_probe_enabled': 'true',
+    # Plain-text IP echo. Must return a BARE address and nothing else — the
+    # probe rejects any non-IP payload rather than storing it as a baseline.
+    'wan_ip_probe_url': 'https://api.ipify.org',
+    # Written by the job; '' means "not yet observed", never "it changed".
+    'wan_ip_last_seen': '',
     'offsite_backup_config_enabled': 'true',
     'offsite_backup_config_paths': '/config/poindexter,/config/claude',
     'offsite_backup_config_excludes': (
@@ -2988,6 +2998,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.quality_regression.fallback': 'discord',
     'findings.quality_regression.cooldown_minutes': '1440',
     'findings.quality_regression.min_severity': 'warn',
+    # WAN egress-IP change probe (probe_wan_ip_change). Telegram, not
+    # Discord: this is the cause of an integration outage rather than routine
+    # noise, and it is only actionable while you remember the change happened.
+    # 0 cooldown because each distinct new IP is its own dedup key already —
+    # a cooldown here would swallow a second change while the allowlist you
+    # just edited is already stale.
+    'findings.wan_ip_changed.delivery': 'telegram',
+    'findings.wan_ip_changed.fallback': 'discord',
+    'findings.wan_ip_changed.cooldown_minutes': '0',
+    'findings.wan_ip_changed.min_severity': 'warn',
     'findings.broken_link.delivery': 'discord',
     'findings.broken_link.fallback': 'log_only',
     'findings.broken_link.cooldown_minutes': '360',
@@ -4607,6 +4627,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.broken_internal_link.fallback': {'value_type': 'string'},
     'findings.broken_internal_link.min_severity': {'value_type': 'string'},
     'findings.broken_internal_link_autofixed.delivery': {'value_type': 'string'},
+    'findings.wan_ip_changed.cooldown_minutes': {'value_type': 'integer'},
+    'findings.wan_ip_changed.delivery': {'value_type': 'string'},
+    'findings.wan_ip_changed.fallback': {'value_type': 'string'},
+    'findings.wan_ip_changed.min_severity': {'value_type': 'string'},
     'findings.broken_link.cooldown_minutes': {'value_type': 'integer'},
     'findings.broken_link.delivery': {'value_type': 'string'},
     'findings.broken_link.fallback': {'value_type': 'string'},
@@ -4911,6 +4935,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_pool_read_per_source_limit': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'niche_top_n_per_pool': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'oauth_issuer_url': {'owner': 'oauth_routes'},
+    'wan_ip_last_seen': {'owner': 'probe_wan_ip_change', 'value_type': 'string'},
+    'wan_ip_probe_enabled': {'owner': 'probe_wan_ip_change', 'value_type': 'boolean'},
+    'wan_ip_probe_url': {'owner': 'probe_wan_ip_change', 'value_type': 'url'},
     'offsite_backup_config_enabled': {'owner': 'backup', 'value_type': 'boolean'},
     'offsite_backup_config_excludes': {'owner': 'backup', 'value_type': 'string'},
     'offsite_backup_config_paths': {'owner': 'backup', 'value_type': 'string'},
