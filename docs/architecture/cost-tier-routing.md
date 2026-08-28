@@ -49,7 +49,7 @@ it now comes from the call site's own pin, not from a tier→model lookup.
 ## The contract: fail loud, no silent default
 
 Every step resolves its pin and **does not fall back to a hardcoded literal**.
-Per [`feedback_no_silent_defaults.md`](../../CLAUDE.md), an unset pin is a
+Per `feedback_no_silent_defaults.md`, an unset pin is a
 configuration bug, not a quiet default. The reaction depends on whether the step
 is on the critical content path:
 
@@ -176,7 +176,7 @@ the pin alone gets refused.
 
 2. **Authorise paid endpoints.** The LiteLLM router default-denies any non-local
    model prefix (`anthropic/`, `openai/`, `gemini/`, …) or non-local `api_base`
-   per [`feedback_no_paid_apis`](../../CLAUDE.md) — so step 1 on its own raises
+   per `feedback_no_paid_apis` — so step 1 on its own raises
    `LiteLLMProvider refuses paid model prefix …`. Open the gate by flipping the
    flat operator key:
 

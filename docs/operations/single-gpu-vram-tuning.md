@@ -4,7 +4,7 @@ When the worker shares **one** GPU with the Windows desktop (the reference box
 is an RTX 5090, 32GB), VRAM pressure can freeze the whole desktop — keyboard and
 mouse included. This runbook removes that failure mode and frees headroom for
 longer context. It is the host-side half of the
-[single-GPU VRAM budget design](../superpowers/specs/2026-06-22-single-gpu-vram-budget-stability-design.md);
+single-GPU VRAM budget design (`docs/superpowers/specs/2026-06-22-single-gpu-vram-budget-stability-design.md`);
 the in-app changes (reranker→CPU, the budget calculator, per-phase context) ship
 separately.
 

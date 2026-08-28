@@ -166,5 +166,5 @@ Pinned by `tests/unit/middleware/test_cache_control.py` and
 
 ## Related
 
-- [`src/cofounder_agent/console/README.md`](../../src/cofounder_agent/console/README.md) §1 — the console's own caching story, and the deploy bug that started this
+- `src/cofounder_agent/console/README.md` §1 — the console's own caching story, and the deploy bug that started this
 - `utils/operator_console.py` — the mount that sets its own `no-cache`

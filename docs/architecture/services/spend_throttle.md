@@ -7,7 +7,7 @@
 ## What it does
 
 `spend_throttle` defers **new work** when total spend crosses a soft budget.
-It is P3 of the [cost-attribution design](../../superpowers/specs/2026-06-21-cost-control-attribution-design.md)
+It is P3 of the cost-attribution design (`docs/superpowers/specs/2026-06-21-cost-control-attribution-design.md`)
 (§6) and a fail-**open** sibling of [`pipeline_throttle`](../../../src/cofounder_agent/services/pipeline_throttle.py):
 instead of gating on approval-queue depth it gates on money — the
 [`cost_ledger`](../../../src/cofounder_agent/services/cost_ledger.py) `total_usd` (paid API + measured electricity)

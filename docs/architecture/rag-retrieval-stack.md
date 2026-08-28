@@ -241,7 +241,7 @@ this RAG/research stack contributed how many characters. Fields live on
 | `writer_prompt_revise_calls`             | How many revise passes ran (same value as `revision_loops`)                                                                              |
 
 Visible on the **Pipeline** dashboard's "Writer Context Size" row. See
-[the design doc](../superpowers/specs/2026-07-16-writer-prompt-size-metrics-design.md)
+the design doc (`docs/superpowers/specs/2026-07-16-writer-prompt-size-metrics-design.md`)
 for the full rationale and the forks considered.
 
 > **Always filter `atom_runs.metrics` queries by `atom`.** Generic keys

@@ -82,7 +82,7 @@ few weeks, then break again — and it leans on exactly the automated-on-subscri
 path that Anthropic's 2026-06-15 billing split is closing (programmatic agent use
 bills at full API rates). So the worthwhile sessions were re-homed onto
 deterministic scripts + the local Ollama fleet, which never expire and never bill.
-Full rationale: [`docs/superpowers/specs/2026-07-09-scheduled-agents-rewire-design.md`](../superpowers/specs/2026-07-09-scheduled-agents-rewire-design.md).
+Full rationale: `docs/superpowers/specs/2026-07-09-scheduled-agents-rewire-design.md`.
 
 ## How a session runs
 

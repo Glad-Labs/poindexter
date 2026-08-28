@@ -1,6 +1,6 @@
 # Plugin Architecture
 
-> ⚠️ **This is a design specification, not a shipping status document.** It describes how Poindexter is evolving architecturally. Some sections describe shipped work; others describe future phases. For current deployment state, see [CLAUDE.md](../../CLAUDE.md).
+> ⚠️ **This is a design specification, not a shipping status document.** It describes how Poindexter is evolving architecturally. Some sections describe shipped work; others describe future phases. For current deployment state, see `CLAUDE.md`.
 
 **Last Updated:** 2026-05-13
 **Status:** 📐 Design — umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) v3 locked; child phases [#65-#72](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4276031164) rewritten to match. Layered on top of the plugin substrate is **Module v1** ([#490](https://github.com/Glad-Labs/poindexter/issues/490), spec at [`module-v1.md`](module-v1.md)) — the unit of business-function composition (one Module = one business: content / finance / customer-support / ops). The first four Module v1 phases shipped 2026-05-13.

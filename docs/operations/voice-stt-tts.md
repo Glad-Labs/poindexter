@@ -21,7 +21,7 @@ differs.
 >
 > **`claude-code` profile status (2026-06-22):** `voice_agent_claude_code_enabled=false`,
 > container removed. The `poindexter` room remains active. See
-> [`voice-host-brain.md`](voice-host-brain) to re-enable the dev room.
+> `voice-host-brain.md` to re-enable the dev room.
 
 ## Start / stop
 

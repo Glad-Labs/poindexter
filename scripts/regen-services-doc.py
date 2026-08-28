@@ -353,7 +353,10 @@ def intro_lines(n_files: int, n_pkgs: int) -> list[str]:
         "`src/cofounder_agent/services/` and `src/cofounder_agent/modules/content/`. "
         'Use it to find "what is responsible for X" without reading source. For '
         "the load-bearing subset on the critical execution path, see "
-        '[CLAUDE.md\'s "Key services" table](../../CLAUDE.md).',
+        # NOT a link: CLAUDE.md is stripped from the public mirror, so a link
+        # here 404s for every reader of gladlabs.mintlify.app (which is built
+        # from that mirror). Caught by scripts/ci/docs_link_rot_lint.py.
+        'CLAUDE.md\'s "Key services" table.',
         "",
         "---",
         "",

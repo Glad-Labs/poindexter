@@ -77,7 +77,7 @@ directly, so this is a real injection seam and is pinned by tests.
 ## Colours and type
 
 Palette mirrors
-[`packages/brand/src/tokens/colors.css`](../../packages/brand/src/tokens/colors.css)
+`packages/brand/src/tokens/colors.css`
 — cyan `#00e5ff` primary, amber `#ffb74d` categorical, deep navy `#070a0f`
 base. Cyan-and-amber rather than green-and-red keeps the gate legible for
 red-green colourblind readers, which is the tokens file's own stated rule.

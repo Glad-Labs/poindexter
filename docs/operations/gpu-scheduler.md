@@ -6,7 +6,7 @@ an in-process priority gate plus a cross-process Postgres
 `pg_advisory_lock` held on a dedicated connection. This page covers the
 operator-facing surfaces added by the poindexter#914 rebuild — full design
 in the
-[queue + admission spec](../superpowers/specs/2026-07-26-gpu-scheduler-queue-admission-design.md).
+queue + admission spec (`docs/superpowers/specs/2026-07-26-gpu-scheduler-queue-admission-design.md`).
 
 ## Observe layer (P0 — always on)
 

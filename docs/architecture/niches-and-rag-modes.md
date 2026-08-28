@@ -133,7 +133,7 @@ The matched internal snippet is persisted on the winning row
 **Writer consumer** below). Penalized candidates emit an advisory
 `external_topic_ungrounded` finding (visible on the Findings board plus a
 dedicated Pipeline-board panel). Full design:
-[`2026-07-10-822-external-internal-grounding-design.md`](../superpowers/specs/2026-07-10-822-external-internal-grounding-design.md).
+`docs/superpowers/specs/2026-07-10-822-external-internal-grounding-design.md`.
 
 **Writer consumer (#822 half 2).** When a grounded external topic reaches the
 `canonical_blog` writer, `GenerateContentStage._read_internal_grounding` reads
@@ -147,7 +147,7 @@ the public prompt unless opted in); a `posts` match gets an inline
 `/posts/<slug>` link. Governed by `writer_internal_grounding_enabled` (default
 `true`); fail-open (no match / disabled / ineligible / scrub failure →
 byte-identical prompt) and scrub fail-closed on the preview. Full design:
-[`2026-07-10-822-writer-internal-grounding-design.md`](../superpowers/specs/2026-07-10-822-writer-internal-grounding-design.md).
+`docs/superpowers/specs/2026-07-10-822-writer-internal-grounding-design.md`.
 
 > This is the complementary half of #820 (`internal_rag` storyworthiness):
 > #820 makes the _internal_ source pick material worth writing; #822 makes
