@@ -21,6 +21,7 @@ on:
     paths:
       - 'infrastructure/grafana/**'
       - 'scripts/ci/grafana_panels_lint.py'
+      - 'scripts/ci/grafana_threshold_ramp_lint.py'
       - 'src/cofounder_agent/services/migrations/**'
       - '.github/workflows/grafana-panels-lint.yml'
   pull_request:
@@ -28,6 +29,7 @@ on:
     paths:
       - 'infrastructure/grafana/**'
       - 'scripts/ci/grafana_panels_lint.py'
+      - 'scripts/ci/grafana_threshold_ramp_lint.py'
       - 'src/cofounder_agent/services/migrations/**'
       - '.github/workflows/grafana-panels-lint.yml'
   workflow_dispatch:
@@ -136,3 +138,28 @@ jobs:
         # are the gate to flipping this back to hard-fail.
         continue-on-error: true
         run: python scripts/ci/grafana_panels_lint.py infrastructure/grafana/dashboards/
+
+  # Pure JSON structure check -- no datasource, no containers, so it runs as
+  # its own fast job rather than queueing behind Postgres/Prometheus boot.
+  # Unlike the query lint above this is a HARD gate: a duplicated threshold
+  # colour has no false-positive mode, it is always either a missing
+  # escalation colour or a step that should not exist.
+  grafana-threshold-ramp-lint:
+    # Source-repo only, same rationale as the job above.
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: "3.13"
+
+      # Stdlib only -- no pip install step needed.
+      - name: Lint Grafana threshold ramps
+        run: python scripts/ci/grafana_threshold_ramp_lint.py infrastructure/grafana/dashboards/

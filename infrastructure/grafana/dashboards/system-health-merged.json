@@ -1050,10 +1050,6 @@
                 "value": null
               },
               {
-                "color": "blue",
-                "value": 1
-              },
-              {
                 "color": "yellow",
                 "value": 20
               }
@@ -1231,10 +1227,6 @@
               {
                 "color": "blue",
                 "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
               },
               {
                 "color": "yellow",

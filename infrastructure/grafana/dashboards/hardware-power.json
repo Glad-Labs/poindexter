@@ -740,7 +740,7 @@
                 "value": 800
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 1200
               }
             ]
@@ -803,7 +803,7 @@
                 "value": 800
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 1200
               }
             ]

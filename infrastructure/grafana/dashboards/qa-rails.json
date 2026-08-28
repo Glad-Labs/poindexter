@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "RAG Retrieval Stack doc",
-      "tooltip": "Path A vs Path B \u2014 LlamaIndex retriever activation runbook",
+      "tooltip": "Path A vs Path B — LlamaIndex retriever activation runbook",
       "type": "link",
       "url": "https://github.com/Glad-Labs/poindexter/blob/main/docs/architecture/rag-retrieval-stack.md"
     },
@@ -38,7 +38,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "LLM trace explorer \u2014 drill into specific reviewer LLM calls",
+      "tooltip": "LLM trace explorer — drill into specific reviewer LLM calls",
       "type": "link",
       "url": "http://localhost:3010"
     },
@@ -50,14 +50,14 @@
       "tags": [],
       "targetBlank": true,
       "title": "GlitchTip",
-      "tooltip": "Self-hosted error tracker \u2014 reviewer exceptions land here",
+      "tooltip": "Self-hosted error tracker — reviewer exceptions land here",
       "type": "link",
       "url": "http://localhost:8080/glad-labs/poindexter/issues/"
     }
   ],
   "tags": ["qa", "lane-d", "issue-329"],
   "timezone": "browser",
-  "title": "QA Rails \u2014 Multi-Model Review",
+  "title": "QA Rails — Multi-Model Review",
   "uid": "qa-rails",
   "version": 1,
   "schemaVersion": 39,
@@ -165,7 +165,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": null
               },
               {
@@ -225,7 +225,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of MemoryClient.search \u2192 rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ \u2014 investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` \u2014 operator-enabled rails must never silently degrade.",
+      "description": "Count of MemoryClient.search → rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ — investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` — operator-enabled rails must never silently degrade.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -237,7 +237,7 @@
               "options": {
                 "0": {
                   "color": "blue",
-                  "text": "\u2713 0"
+                  "text": "✓ 0"
                 }
               }
             }
@@ -387,7 +387,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of QA reviewer skips in the last 24h. Each row is one operator-enabled rail (deepeval g_eval / faithfulness, guardrails brand / competitor, ragas_eval) raising at runtime \u2014 chain still completes without that rail's signal, but the failure is surfaced loudly per `feedback_no_silent_defaults`. Click into the audit_log to see which reviewer + exception. RED at 1+.",
+      "description": "Count of QA reviewer skips in the last 24h. Each row is one operator-enabled rail (deepeval g_eval / faithfulness, guardrails brand / competitor, ragas_eval) raising at runtime — chain still completes without that rail's signal, but the failure is surfaced loudly per `feedback_no_silent_defaults`. Click into the audit_log to see which reviewer + exception. RED at 1+.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -399,7 +399,7 @@
               "options": {
                 "0": {
                   "color": "blue",
-                  "text": "\u2713 0"
+                  "text": "✓ 0"
                 }
               }
             }
@@ -461,7 +461,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-reviewer skip count in the last 24h \u2014 which rails are flaking. Empty table = all rails healthy.",
+      "description": "Per-reviewer skip count in the last 24h — which rails are flaking. Empty table = all rails healthy.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -609,7 +609,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -648,7 +648,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -729,7 +729,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": null
               },
               {
@@ -804,7 +804,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Last 20 QA passes \u2014 full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
+      "description": "Last 20 QA passes — full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -850,11 +850,11 @@
                     "options": {
                       "true": {
                         "color": "blue",
-                        "text": "\u2713 APPROVED"
+                        "text": "✓ APPROVED"
                       },
                       "false": {
                         "color": "orange",
-                        "text": "\u2717 REJECTED"
+                        "text": "✗ REJECTED"
                       }
                     }
                   }
@@ -881,7 +881,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -946,7 +946,7 @@
     },
     {
       "type": "row",
-      "title": "Ragas Eval \u2014 RAG Retrieval Quality",
+      "title": "Ragas Eval — RAG Retrieval Quality",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1005,7 +1005,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": null
               },
               {
@@ -1067,7 +1067,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true \u2192 ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost \u2014 consider sampling.",
+      "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true → ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost — consider sampling.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1132,7 +1132,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels \u2014 that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
+      "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels — that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1188,7 +1188,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -1239,7 +1239,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -1305,7 +1305,7 @@
       },
       "id": 18,
       "panels": [],
-      "title": "Self-Heal Before Paging \u2014 Flag vs Discard",
+      "title": "Self-Heal Before Paging — Flag vs Discard",
       "type": "row"
     },
     {
@@ -1535,7 +1535,7 @@
       },
       "id": 22,
       "panels": [],
-      "title": "Vision Rail \u2014 Scored vs Pass-Open",
+      "title": "Vision Rail — Scored vs Pass-Open",
       "type": "row"
     },
     {
@@ -1543,7 +1543,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Share of image_relevance (vision_gate) reviews in the window that PASSED OPEN \u2014 the vision scorer no-op'd (model/infra unavailable) and the gate accepted without looking. 0% is healthy; a sustained high value means the vision leg is dark (it ran at 100% silently for weeks pre-fix). Vacuous passes (no images to assess) are excluded from the denominator.",
+      "description": "Share of image_relevance (vision_gate) reviews in the window that PASSED OPEN — the vision scorer no-op'd (model/infra unavailable) and the gate accepted without looking. 0% is healthy; a sustained high value means the vision leg is dark (it ran at 100% silently for weeks pre-fix). Vacuous passes (no images to assess) are excluded from the denominator.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1868,7 +1868,7 @@
       },
       "id": 28,
       "panels": [],
-      "title": "QA Rescue Cycle \u2014 Yield",
+      "title": "QA Rescue Cycle — Yield",
       "type": "row"
     },
     {
@@ -1936,7 +1936,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Terminal QA decisions that went through >= 1 rescue rewrite \u2014 did the revision convert the reject or not.",
+      "description": "Terminal QA decisions that went through >= 1 rescue rewrite — did the revision convert the reject or not.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1977,7 +1977,7 @@
     },
     {
       "type": "row",
-      "title": "Advisory Rails \u2014 What the Gate Ignores",
+      "title": "Advisory Rails — What the Gate Ignores",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2001,7 +2001,7 @@
         "x": 0,
         "y": 112
       },
-      "description": "final_score counts only rails that can gate; qa_all_rail_score counts every rail. This is the difference. A large positive gap means the advisory rails are consistently less impressed than the gate \u2014 i.e. the gate is scoring higher than the full evidence supports. Informational: neither number is compared to the threshold. NULL for passes written before #2125 persisted the all-rail score.",
+      "description": "final_score counts only rails that can gate; qa_all_rail_score counts every rail. This is the difference. A large positive gap means the advisory rails are consistently less impressed than the gate — i.e. the gate is scoring higher than the full evidence supports. Informational: neither number is compared to the threshold. NULL for passes written before #2125 persisted the all-rail score.",
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -2071,7 +2071,7 @@
         "x": 6,
         "y": 112
       },
-      "description": "Advisory rails that scored BELOW the pass's own approval threshold on a pass that was APPROVED anyway. This is the concrete answer to 'what did we ship that a rail objected to?' \u2014 each row is a rail that flagged a problem and was overruled by being advisory. Sorted worst-score-first. Empty here is the good state.",
+      "description": "Advisory rails that scored BELOW the pass's own approval threshold on a pass that was APPROVED anyway. This is the concrete answer to 'what did we ship that a rail objected to?' — each row is a rail that flagged a problem and was overruled by being advisory. Sorted worst-score-first. Empty here is the good state.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2166,7 +2166,7 @@
         "x": 0,
         "y": 124
       },
-      "description": "Two lines: what the gate scored, and what every rail together scored. They diverge when advisory rails disagree with the gating subset. Divergence is not itself a bug \u2014 advisory rails are advisory on purpose \u2014 but a widening, persistent gap is the argument for graduating a rail to required_to_pass.",
+      "description": "Two lines: what the gate scored, and what every rail together scored. They diverge when advisory rails disagree with the gating subset. Divergence is not itself a bug — advisory rails are advisory on purpose — but a widening, persistent gap is the argument for graduating a rail to required_to_pass.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2214,7 +2214,7 @@
     },
     {
       "type": "table",
-      "title": "Per-rail objection rate \u2014 graduation candidates",
+      "title": "Per-rail objection rate — graduation candidates",
       "id": 35,
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -2226,7 +2226,7 @@
         "x": 12,
         "y": 124
       },
-      "description": "Per rail: how often it ran, how often it objected (scored under the pass threshold or returned approved=false), and whether it can actually reject. A rail with a high objection rate that is still advisory is a graduation candidate \u2014 flip qa_gates.<rail>.required_to_pass. A rail that never objects is a candidate for removal: it burns tokens to always agree.",
+      "description": "Per rail: how often it ran, how often it objected (scored under the pass threshold or returned approved=false), and whether it can actually reject. A rail with a high objection rate that is still advisory is a graduation candidate — flip qa_gates.<rail>.required_to_pass. A rail that never objects is a candidate for removal: it burns tokens to always agree.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2347,5 +2347,5 @@
       ]
     }
   ],
-  "description": "CHARTER: per-reviewer QA behavior \u2014 pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."
+  "description": "CHARTER: per-reviewer QA behavior — pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."
 }

@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "Open Langfuse 3 \u2014 LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
+      "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
       "type": "link",
       "url": "http://localhost:3010"
     }
@@ -34,7 +34,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Approval Queue \u2014 Human Oversight",
+      "title": "Approval Queue — Human Oversight",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -73,7 +73,7 @@
                 "value": 5
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 10
               }
             ]
@@ -135,7 +135,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": null
               },
               {
@@ -363,7 +363,7 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "orange",
+                      "color": "dark-red",
                       "value": null
                     },
                     {
@@ -507,10 +507,6 @@
               {
                 "color": "blue",
                 "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
               }
             ]
           },
@@ -898,7 +894,7 @@
     },
     {
       "type": "row",
-      "title": "Quality \u2014 scores & output",
+      "title": "Quality — scores & output",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1036,7 +1032,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Quality scores over time \u2014 are we improving?",
+      "description": "Quality scores over time — are we improving?",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1240,7 +1236,7 @@
     },
     {
       "type": "row",
-      "title": "QA \u2014 rejections & validation",
+      "title": "QA — rejections & validation",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1256,7 +1252,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Rejection rate over the selected time window. Lower is better \u2014 but a 0% rate with low throughput often means content isn't being generated.",
+      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1281,7 +1277,7 @@
                 "value": 60
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 80
               }
             ]
@@ -1489,7 +1485,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval vs rejection rates over time \u2014 track human oversight effectiveness",
+      "description": "Approval vs rejection rates over time — track human oversight effectiveness",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1686,7 +1682,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-writer-model approval rate \u2014 reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
+      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1746,7 +1742,7 @@
     },
     {
       "type": "row",
-      "title": "Topic Discovery \u2014 Niche Pivot",
+      "title": "Topic Discovery — Niche Pivot",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1798,7 +1794,7 @@
                 "value": 3
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 6
               }
             ]
@@ -1856,7 +1852,7 @@
                 "value": 72
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 168
               }
             ]
@@ -1957,7 +1953,7 @@
       "type": "table",
       "id": 41,
       "title": "Recent batch decisions (7 days)",
-      "description": "Closed batches with the picked candidate \u2014 retroactive review of what got shipped to research/draft.",
+      "description": "Closed batches with the picked candidate — retroactive review of what got shipped to research/draft.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2074,7 +2070,7 @@
       "type": "stat",
       "id": 44,
       "title": "Oldest pending",
-      "description": "Age of the oldest pending media \u2014 surfaces stuck items (green <24h, yellow <7d, red \u22657d)",
+      "description": "Age of the oldest pending media — surfaces stuck items (green <24h, yellow <7d, red ≥7d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2140,7 +2136,7 @@
     },
     {
       "id": 46,
-      "title": "media_approvals \u2014 approved (window)",
+      "title": "media_approvals — approved (window)",
       "type": "stat",
       "description": "Approved media_approvals in the dashboard time window, filtered on decided_at.",
       "datasource": {
@@ -2444,7 +2440,7 @@
     },
     {
       "id": 52,
-      "title": "media_approvals \u2014 rejected by medium",
+      "title": "media_approvals — rejected by medium",
       "type": "bargauge",
       "description": "Rejected media_approvals grouped by medium (podcast / video / video_short) in the dashboard time window. Filtered on decided_at.",
       "datasource": {
@@ -3051,7 +3047,7 @@
     },
     {
       "type": "row",
-      "title": "Pipeline Throttle & Stale-Task Sweeper \u00b7 Prometheus",
+      "title": "Pipeline Throttle & Stale-Task Sweeper · Prometheus",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3067,7 +3063,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_active \u2014 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
+      "description": "poindexter_pipeline_throttle_active — 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3079,11 +3075,11 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "\u2713 flowing"
+                  "text": "✓ flowing"
                 },
                 "1": {
                   "color": "red",
-                  "text": "\u26a0 THROTTLED"
+                  "text": "⚠ THROTTLED"
                 }
               }
             }
@@ -3144,7 +3140,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_queue_size \u2014 current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
+      "description": "poindexter_pipeline_throttle_queue_size — current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3211,7 +3207,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_auto_cancelled_total \u2014 cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed \u2192 shown as a raw cumulative value.",
+      "description": "poindexter_pipeline_auto_cancelled_total — cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed → shown as a raw cumulative value.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3274,7 +3270,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles \u2014 correlate with the 'Throttle state' tile above.",
+      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles — correlate with the 'Throttle state' tile above.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3384,7 +3380,7 @@
       "id": 74,
       "title": "Recent partial renders (findings)",
       "type": "table",
-      "description": "Most recent partial_render findings \u2014 emitted when some-but-not-all shots rendered successfully. Indicates mid-render failures that still produced an output file.",
+      "description": "Most recent partial_render findings — emitted when some-but-not-all shots rendered successfully. Indicates mid-render failures that still produced an output file.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3765,7 +3761,7 @@
     {
       "id": 82,
       "type": "table",
-      "title": "Social drafts \u2014 per-post breakdown",
+      "title": "Social drafts — per-post breakdown",
       "description": "Per-draft detail: platform, status, error message, retry count, Postiz post ID, and timestamps. Shows the 50 most recent drafts. Drill into error column to diagnose failed Postiz submissions.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -3940,7 +3936,7 @@
       "type": "row",
       "collapsed": false,
       "panels": [],
-      "title": "Dispatch & Rework \u2014 is the queue draining?",
+      "title": "Dispatch & Rework — is the queue draining?",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3952,7 +3948,7 @@
       "id": 101,
       "type": "stat",
       "title": "In-progress stall (min)",
-      "description": "Max minutes since ANY graph-node progress across in_progress tasks (pipeline_tasks.last_progress_at heartbeat). The stuck-flow probe auto-crashes the run at 20m stall \u2014 orange here means a kill is imminent. 0 = nothing in progress. This is the signal that made the 2026-07-02 stall-crash-requeue loop (poindexter#807) invisible.",
+      "description": "Max minutes since ANY graph-node progress across in_progress tasks (pipeline_tasks.last_progress_at heartbeat). The stuck-flow probe auto-crashes the run at 20m stall — orange here means a kill is imminent. 0 = nothing in progress. This is the signal that made the 2026-07-02 stall-crash-requeue loop (poindexter#807) invisible.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -4144,7 +4140,7 @@
       "id": 104,
       "type": "stat",
       "title": "Tasks re-run >1x (24h)",
-      "description": "Tasks whose graph executed under more than one pipeline run in 24h \u2014 rework burn (rejected-task regens, crash-requeue loops). Each extra run is a full writer+images+QA pass of GPU time.",
+      "description": "Tasks whose graph executed under more than one pipeline run in 24h — rework burn (rejected-task regens, crash-requeue loops). Each extra run is a full writer+images+QA pass of GPU time.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -4207,8 +4203,8 @@
     {
       "id": 105,
       "type": "table",
-      "title": "Rework \u2014 tasks with multiple pipeline runs (7d)",
-      "description": "Every extra run of the same task is a repeated full pipeline pass. Expected source: operator rejects that requeue for a QA-feedback regen (by design, bounded) \u2014 anything beyond 2-3 runs or without a reject is a crash-requeue loop (poindexter#807).",
+      "title": "Rework — tasks with multiple pipeline runs (7d)",
+      "description": "Every extra run of the same task is a repeated full pipeline pass. Expected source: operator rejects that requeue for a QA-feedback regen (by design, bounded) — anything beyond 2-3 runs or without a reject is a crash-requeue loop (poindexter#807).",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -4251,14 +4247,14 @@
       },
       "id": 106,
       "panels": [],
-      "title": "Publishing Funnel \u2014 30d task cohort",
+      "title": "Publishing Funnel — 30d task cohort",
       "type": "row"
     },
     {
       "id": 112,
       "type": "bargauge",
       "title": "Content funnel (task cohort, fixed 30d)",
-      "description": "Cohort-based: follows blog/dev-diary tasks CREATED in the last 30 days (panel-pinned window, ignores the dashboard picker) through their outcomes via the pipeline_task_id seams \u2014 late stages credit the cohort that produced them, not whatever landed in the window. Stages 1-2 are window-based context (topic discovery precedes tasks). Stages 7-9 are parallel post-publish outcomes, not sequential. Social counts start 2026-06-29 (Postiz go-live); Google indexing lags publish by days, so recent cohorts read low on stage 9 by nature.",
+      "description": "Cohort-based: follows blog/dev-diary tasks CREATED in the last 30 days (panel-pinned window, ignores the dashboard picker) through their outcomes via the pipeline_task_id seams — late stages credit the cohort that produced them, not whatever landed in the window. Stages 1-2 are window-based context (topic discovery precedes tasks). Stages 7-9 are parallel post-publish outcomes, not sequential. Social counts start 2026-06-29 (Postiz go-live); Google indexing lags publish by days, so recent cohorts read low on stage 9 by nature.",
       "gridPos": {
         "h": 10,
         "w": 14,
@@ -4317,7 +4313,7 @@
       "id": 113,
       "type": "table",
       "title": "Funnel conversion (30d cohort)",
-      "description": "Per-stage conversion for the same 30d task cohort. '% of previous' is blank for the parallel post-publish stages (distributed / viewed / indexed aren't downstream of each other). The big historical drop is Survived-QA \u2014 cross-reference the rejection panels above when it moves.",
+      "description": "Per-stage conversion for the same 30d task cohort. '% of previous' is blank for the parallel post-publish stages (distributed / viewed / indexed aren't downstream of each other). The big historical drop is Survived-QA — cross-reference the rejection panels above when it moves.",
       "gridPos": {
         "h": 10,
         "w": 10,
@@ -4353,7 +4349,7 @@
     },
     {
       "type": "row",
-      "title": "Media Quality \u2014 Layer 2 (semantic 0-100)",
+      "title": "Media Quality — Layer 2 (semantic 0-100)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -4460,7 +4456,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Share of Layer-2-evaluated media whose composite could not be computed (layer2_status='unavailable' \u2014 e.g. all video shots reused/unscored, or podcast faithfulness not yet wired) so the score fell back to a bare 100. High = Layer 2 is blind, not that media is good.",
+      "description": "Share of Layer-2-evaluated media whose composite could not be computed (layer2_status='unavailable' — e.g. all video shots reused/unscored, or podcast faithfulness not yet wired) so the score fell back to a bare 100. High = Layer 2 is blind, not that media is good.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4529,7 +4525,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Advisory Layer-2 findings raised in the last 24h (video_shot_fidelity_low ships now; video_topic_mismatch + podcast_faithfulness_low light up when the follow-up PR lands). Advisory only \u2014 none of these auto-reject.",
+      "description": "Advisory Layer-2 findings raised in the last 24h (video_shot_fidelity_low ships now; video_topic_mismatch + podcast_faithfulness_low light up when the follow-up PR lands). Advisory only — none of these auto-reject.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4688,7 +4684,7 @@
       },
       "id": 119,
       "panels": [],
-      "title": "Image Generation \u2014 OCR Text-Leakage Gate",
+      "title": "Image Generation — OCR Text-Leakage Gate",
       "type": "row"
     },
     {
@@ -4696,7 +4692,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Mean OCR-detected leaked-text characters per generated image (image_ocr_gate_result rows). Lower is better \u2014 the 2026-07 bake-off measured z_image_turbo at 25.33 unguarded vs chroma1_flash's 0.44; this gate retries to pull it down. 0 rows in the window (no image generation) shows as no data.",
+      "description": "Mean OCR-detected leaked-text characters per generated image (image_ocr_gate_result rows). Lower is better — the 2026-07 bake-off measured z_image_turbo at 25.33 unguarded vs chroma1_flash's 0.44; this gate retries to pull it down. 0 rows in the window (no image generation) shows as no data.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4834,7 +4830,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "How many gated generations needed a seed re-roll (first attempt leaked over threshold). Expected to be non-zero for z_image_turbo \u2014 this is the gate doing its job, not an error.",
+      "description": "How many gated generations needed a seed re-roll (first attempt leaked over threshold). Expected to be non-zero for z_image_turbo — this is the gate doing its job, not an error.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4894,7 +4890,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Last 20 image_ocr_gate_result audit_log rows \u2014 model, best attempt's leaked-char count, attempts used, and whether it landed under threshold. task_id correlates back to pipeline_tasks.",
+      "description": "Last 20 image_ocr_gate_result audit_log rows — model, best attempt's leaked-char count, attempts used, and whether it landed under threshold. task_id correlates back to pipeline_tasks.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4940,11 +4936,11 @@
                     "options": {
                       "true": {
                         "color": "blue",
-                        "text": "\u2713 PASSED"
+                        "text": "✓ PASSED"
                       },
                       "false": {
                         "color": "orange",
-                        "text": "\u2717 BEST-EFFORT"
+                        "text": "✗ BEST-EFFORT"
                       }
                     }
                   }
@@ -5200,7 +5196,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Average draft-call prompt size broken down by context section \u2014 answers which section dominates. poindexter#868.",
+      "description": "Average draft-call prompt size broken down by context section — answers which section dominates. poindexter#868.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -5372,7 +5368,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Most recent 25 draft calls by total prompt size \u2014 spot-check outliers. poindexter#868.",
+      "description": "Most recent 25 draft calls by total prompt size — spot-check outliers. poindexter#868.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -5423,7 +5419,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "image_fanout_judged audit rows: which model's featured-image candidate shipped, and how often each was even PRESENT to compete. Win counts without a presence denominator lie \u2014 a starved candidate reads identically to a losing one (zimage's 8-day slump was 36 silent 503s, not the judge's opinion). Every configured candidate gets a row even at zero renders. Win rates seed the Phase-2 class\u2192provider routing map. Empty until image_fanout_enabled=true.",
+      "description": "image_fanout_judged audit rows: which model's featured-image candidate shipped, and how often each was even PRESENT to compete. Win counts without a presence denominator lie — a starved candidate reads identically to a losing one (zimage's 8-day slump was 36 silent 503s, not the judge's opinion). Every configured candidate gets a row even at zero renders. Win rates seed the Phase-2 class→provider routing map. Empty until image_fanout_enabled=true.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -5478,7 +5474,7 @@
           "refId": "A"
         }
       ],
-      "title": "Featured fan-out \u2014 wins & presence by model",
+      "title": "Featured fan-out — wins & presence by model",
       "type": "table"
     },
     {
@@ -5541,7 +5537,7 @@
           "refId": "A"
         }
       ],
-      "title": "Featured fan-out \u2014 recent judged renders",
+      "title": "Featured fan-out — recent judged renders",
       "type": "table"
     }
   ],
@@ -5561,5 +5557,5 @@
   "uid": "pipeline-merged",
   "version": 3,
   "weekStart": "",
-  "description": "CHARTER: diagnose the content pipeline \u2014 where tasks are, why they failed or were rejected, and what media/approvals are waiting. Answers 'why is nothing publishing?'. Everything pipeline-shaped: approval queue, live operations, QA decisions, content quality. Replaces approval-queue / pipeline-operations / qa-observability / quality-content as separate dashboards."
+  "description": "CHARTER: diagnose the content pipeline — where tasks are, why they failed or were rejected, and what media/approvals are waiting. Answers 'why is nothing publishing?'. Everything pipeline-shaped: approval queue, live operations, QA decisions, content quality. Replaces approval-queue / pipeline-operations / qa-observability / quality-content as separate dashboards."
 }
