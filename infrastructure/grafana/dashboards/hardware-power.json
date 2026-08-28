@@ -3173,7 +3173,7 @@
       "id": 93,
       "type": "timeseries",
       "title": "Swap by tier — where pages actually land",
-      "description": "Per-device swap usage against each device's capacity. node_exporter only exposes the pool as one SwapFree/SwapTotal pair, which cannot show this: zram (prio 1000) fills first and dm-crypt (prio -1) only starts moving once it is full. A slow-tier line that begins climbing while the fast line is pinned at its capacity IS the cliff — read it as the moment the host started paging to encrypted disk.",
+      "description": "Per-device swap usage against each device's capacity. node_exporter only exposes the pool as one SwapFree/SwapTotal pair, which cannot show this: zram (prio 1000) fills first and dm-crypt (prio -1) only starts moving once it is full. A slow-tier line that begins climbing while the fast line is pinned at its capacity IS the cliff — read it as the moment the host started paging to encrypted disk. Line shapes carry the meaning, not just colour: fast tier solid, slow tier dotted, each device's capacity dashed.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -3217,6 +3217,21 @@
                 "value": 0
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*\\(slow\\).*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dot",
+                  "dash": [2, 6]
+                }
+              }
+            ]
           }
         ]
       },
@@ -3255,7 +3270,7 @@
       "id": 94,
       "type": "timeseries",
       "title": "Fast-tier fullness vs alert threshold",
-      "description": "The series PoindexterHostSwapFastTierFull evaluates, plus its band. The rule averages this over 1h before comparing, because a saturated tier rattles as reclaim bursts free a few hundred MB — on the raw line every dip under the band would restart a `for:` clock (the trap that cost PoindexterHostSwapExhausted the 2026-08-27 freeze). Judge sustained level here, not individual dips.",
+      "description": "The series PoindexterHostSwapFastTierFull evaluates, plus its band. The rule averages this over 1h before comparing, because a saturated tier rattles as reclaim bursts free a few hundred MB — on the raw line every dip under the band would restart a `for:` clock (the trap that cost PoindexterHostSwapExhausted the 2026-08-27 freeze). Judge sustained level here, not individual dips. The 1h mean is the thicker dashed line: this panel colours by VALUE (threshold bands), so the two series would otherwise be the same hue and impossible to tell apart — which is the one comparison the panel exists to make.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -3301,7 +3316,27 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*1h mean.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [16, 6]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
