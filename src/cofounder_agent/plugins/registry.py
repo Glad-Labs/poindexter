@@ -1126,7 +1126,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         # down content_router_service.py over a handful of commits).
         ("stages", "modules.content.stages.verify_task", "VerifyTaskStage"),
         ("stages", "modules.content.stages.generate_content", "GenerateContentStage"),
-        ("stages", "modules.content.stages.writer_self_review", "WriterSelfReviewStage"),
         # Resolve ``[posts/<slug>]`` placeholders before validation. The
         # writer LLM emits these as hints to internal posts but NO code
         # ever resolved them; the validator (added 2026-05-12) catches

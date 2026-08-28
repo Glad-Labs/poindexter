@@ -449,7 +449,6 @@ screenshot = "cofounder_agent.services.image_providers.screenshot:ScreenshotProv
 [project.entry-points."poindexter.stages"]
 verify_task = "cofounder_agent.modules.content.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.modules.content.stages.generate_content:GenerateContentStage"
-writer_self_review = "cofounder_agent.modules.content.stages.writer_self_review:WriterSelfReviewStage"
 quality_evaluation = "cofounder_agent.modules.content.stages.quality_evaluation:QualityEvaluationStage"
 url_validation = "cofounder_agent.modules.content.stages.url_validation:UrlValidationStage"
 source_featured_image = "cofounder_agent.modules.content.stages.source_featured_image:SourceFeaturedImageStage"

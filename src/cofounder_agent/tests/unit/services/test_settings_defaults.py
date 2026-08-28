@@ -566,8 +566,11 @@ class TestGroupingMakesSense:
         # the qa_title_coherence_* rail block they mirror. Bumped 397→406 for
         # research_require_fetched_source_for_citation, seated directly beside
         # research_extract_web_content — the setting it gates — inside the
-        # web-research interleave this span already tolerates.
-        assert span < 406, (
+        # web-research interleave this span already tolerates. Bumped 406→416
+        # for writer_self_review_review_model (2026-08-28), seated directly
+        # beside writer_self_review_model — the pin it splits off — inside the
+        # self-review block this span already contains.
+        assert span < 416, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

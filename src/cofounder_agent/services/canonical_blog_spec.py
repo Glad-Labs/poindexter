@@ -83,7 +83,12 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # satisfied at build/seed validation time.
         {"id": "draft_gate", "atom": "atoms.approval_gate",
          "config": {"gate_name": "draft_gate"}},
-        {"id": "writer_self_review", "atom": "stage.writer_self_review"},
+        # Self-review is TWO calls with opposite demands (detect vs revise) and,
+        # since 2026-08-28, potentially two different models. It ran as one
+        # stage node, which hid that fan-out from the graph — see the atom
+        # docstrings for the measured split. Two nodes make it the truth.
+        {"id": "detect_contradictions", "atom": "content.detect_contradictions"},
+        {"id": "revise_contradictions", "atom": "content.revise_contradictions"},
         {"id": "resolve_internal_link_placeholders", "atom": "stage.resolve_internal_link_placeholders"},
         # Deterministic citation repair (#765): re-link named sources the writer
         # dropped the URL for, matching them against the research corpus by
@@ -183,13 +188,14 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
     ],
     "edges": [
         {"from": "verify_task", "to": "generate_draft"},
-        # generate_content atom chain → draft_gate → writer_self_review
+        # generate_content atom chain → draft_gate → detect/revise contradictions
         {"from": "generate_draft", "to": "generate_title"},
         {"from": "generate_title", "to": "check_title_originality"},
         {"from": "check_title_originality", "to": "normalize_draft"},
         {"from": "normalize_draft", "to": "draft_gate"},
-        {"from": "draft_gate", "to": "writer_self_review"},
-        {"from": "writer_self_review", "to": "resolve_internal_link_placeholders"},
+        {"from": "draft_gate", "to": "detect_contradictions"},
+        {"from": "detect_contradictions", "to": "revise_contradictions"},
+        {"from": "revise_contradictions", "to": "resolve_internal_link_placeholders"},
         {"from": "resolve_internal_link_placeholders", "to": "reconcile_citations"},
         {"from": "reconcile_citations", "to": "llm_reconcile_citations"},
         {"from": "llm_reconcile_citations", "to": "inject_affiliate_links"},

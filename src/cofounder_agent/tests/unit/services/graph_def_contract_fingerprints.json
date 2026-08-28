@@ -4,6 +4,7 @@
   "atoms.set_task_status": "d67baff9cbc2",
   "content.check_title_originality": "b9fa11e26645",
   "content.compile_meta": "72f9955b5d55",
+  "content.detect_contradictions": "6176211313bc",
   "content.evaluate_auto_publish": "022f5e76065b",
   "content.generate_draft": "5bb3c709d832",
   "content.generate_images": "e09538385a9a",
@@ -22,6 +23,7 @@
   "content.reconcile_citations": "fe8545ce8c98",
   "content.record_pipeline_version": "e042ffcd4247",
   "content.republish_post": "6fb6177e456e",
+  "content.revise_contradictions": "a02fa237423a",
   "media.load_scripts": "37afbb461cc0",
   "media.persist": "1cef9109aab0",
   "media.qa": "616ac1dcce41",
@@ -61,6 +63,5 @@
   "stage.review_video_shot_list": "4045f58835c4",
   "stage.source_featured_image": "4045f58835c4",
   "stage.url_validation": "4045f58835c4",
-  "stage.verify_task": "4045f58835c4",
-  "stage.writer_self_review": "4045f58835c4"
+  "stage.verify_task": "4045f58835c4"
 }

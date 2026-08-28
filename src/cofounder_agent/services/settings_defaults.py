@@ -1350,6 +1350,16 @@ DEFAULTS: dict[str, str] = {
     'image_search_query_model': 'ollama/gemma3:27b',  # image_service Pexels query-gen (was gemma4:31b)
     'image_prompt_model': 'ollama/gemma3:27b',  # image_providers/ai_generation image-gen prompt-gen (was gemma4:31b)
     'writer_self_review_model': 'ollama/gemma3:27b',  # services/self_review writer self-review (was gemma4:31b)
+    # Model for the self-review DETECT call only; the revise call always uses
+    # writer_self_review_model. EMPTY = use the reviser for both (the historical
+    # behaviour, and the default). The two calls have opposite demands: detect
+    # reads the whole draft and names contradictions, revise must edit
+    # surgically and stay inside the minimal-edit contract. Measured 2026-08-28
+    # on real posts with an injected contradiction (n=4/arm): gemma detected
+    # 1/4 but revised correctly; glm-4.7-5090 detected 4/4 and had EVERY
+    # revision rejected as too long (2.40x-7.39x). A thinking detector also
+    # needs the step-2 token budget to be useful here.
+    'writer_self_review_review_model': '',
     # NOTE: no new key — the two cold-data summary paths diverged. LIVE:
     # memory_compression_summary_model (summarize_to_table; raw-SQL read, so its
     # NULL last_read_at is not "dead"). Collapse: retention_embeddings_collapse.

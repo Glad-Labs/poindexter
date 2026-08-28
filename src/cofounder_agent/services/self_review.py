@@ -16,8 +16,10 @@ which 404s on a cloud model name. With no pool (tests / bootstrap) the local
 Gated by app_settings ``enable_writer_self_review`` (default ``false``).
 When disabled, returns ``(draft, {"enabled": False, ...})`` unchanged.
 
-The WriterSelfReviewStage + the inline self-review inside
-GenerateContentStage both call this helper.
+On the graph this runs as TWO atoms — ``content.detect_contradictions`` then
+``content.revise_contradictions`` — which delegate to the two halves below.
+``self_review_and_revise`` composes them for non-graph callers. The old
+``WriterSelfReviewStage`` (one node, both calls) was deleted 2026-08-28.
 """
 
 from __future__ import annotations
@@ -106,6 +108,34 @@ async def _resolve_self_review_model(
     )
 
 
+def _resolve_review_model(revise_model: str, *, site_config: SiteConfig) -> str:
+    """Model for the DETECT call, which may differ from the reviser.
+
+    Self-review is two calls with opposite demands, and one pin served both.
+    The detect call reads the whole draft and names contradictions; the revise
+    call must edit surgically and stay inside the minimal-edit contract
+    (length ratio + no planning dump). Measured 2026-08-28 over real published
+    posts with an injected contradiction, n=4 per arm:
+
+        gemma-4-31B-it-qat   detected 1/4, and revised correctly when it did
+        glm-4.7-5090 (think) detected 4/4, and every revision was REJECTED
+                             as too long (2.40x / 4.77x / 5.36x / 7.39x)
+
+    Neither is good at both. Splitting the pin lets the better detector do the
+    detecting without letting it near the draft.
+
+    Empty (the seeded default) means "use the reviser", so behaviour is
+    unchanged until an operator opts in. Falling back rather than failing loud
+    is right here: unlike ``writer_self_review_model`` this key has a correct
+    default, so an unset value is a configuration CHOICE, not a missing
+    required setting (contrast feedback_no_silent_defaults, which governs
+    settings with no sane fallback)."""
+    override = site_config.get("writer_self_review_review_model")
+    if override and str(override).strip():
+        return str(override).strip()
+    return revise_model
+
+
 def _emit_rejected_finding(model: str, reason: str) -> None:
     """Best-effort visibility when a self-review revision is discarded.
 
@@ -142,35 +172,27 @@ def _emit_rejected_finding(model: str, reason: str) -> None:
         pass
 
 
-async def self_review_and_revise(
-    draft: str, title: str, topic: str, *, pool: Any = None,
-    site_config: SiteConfig,
-) -> tuple[str, dict]:
-    """Ask the writer model to catch + fix cross-section contradictions.
+class _SelfReviewCtx:
+    """Resolved setup shared by the detect and revise halves.
 
-    Returns ``(possibly_revised_draft, stats_dict)`` where stats includes:
-
-    - ``enabled`` (bool) — False when the feature flag is off; True otherwise.
-    - ``contradictions_found`` (int) — count the detector returned.
-    - ``revised`` (bool) — True only when we accepted the revision.
-
-    Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
-    module global + ``set_site_config`` shim was retired. The instance is
-    threaded down to ``_resolve_self_review_model`` so the whole call chain
-    shares one config.
+    Both halves need the same flag check, model resolution, timeout and
+    provider routing, so it is resolved once per call rather than duplicated
+    into two atoms (which must not import each other).
     """
+
+    __slots__ = ("complete", "review_model", "revise_model")
+
+    def __init__(self, complete: Any, review_model: str, revise_model: str) -> None:
+        self.complete = complete
+        self.review_model = review_model
+        self.revise_model = revise_model
+
+
+async def _prepare(
+    *, pool: Any, site_config: SiteConfig,
+) -> _SelfReviewCtx | None:
+    """Resolve models + a completion callable, or None when self-review can't run."""
     _sc = site_config
-    stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
-
-    enabled = (
-        str(_sc.get("enable_writer_self_review", "false")).lower() == "true"
-    )
-    if not enabled:
-        return draft, stats
-
-    stats["enabled"] = True
-    if not draft or len(draft) < 500:
-        return draft, stats  # too short for meaningful cross-section review
 
     # Per-step pin. Operators tune app_settings.writer_self_review_model —
     # no code edit per niche. _resolve_self_review_model reads it directly
@@ -180,22 +202,24 @@ async def self_review_and_revise(
         resolved_model = await _resolve_self_review_model(pool, site_config=_sc)
     except RuntimeError as exc:
         logger.warning("[SELF_REVIEW] could not resolve model: %s", exc)
-        return draft, stats
-    review_model = str(resolved_model).removeprefix("ollama/")
+        return None
 
-    review_prompt = _resolve_prompt(
-        "qa.self_review.contradictions_review",
-        title=title,
-        topic=topic,
-        draft=draft,
-        fallback=_REVIEW_PROMPT_FALLBACK,
-    )
+    # ``revise_model`` writes the text that ships, so it keeps the historical
+    # key name (and its seat in multi_model_qa._WRITER_FAMILY_PINS). The detect
+    # call may use a different model — see _resolve_review_model.
+    revise_model = str(resolved_model).removeprefix("ollama/")
+    review_model = _resolve_review_model(
+        revise_model, site_config=_sc
+    ).removeprefix("ollama/")
+    if review_model != revise_model:
+        logger.info(
+            "[SELF_REVIEW] split models: detect=%s revise=%s",
+            review_model, revise_model,
+        )
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. The
     # timeout knob survives via the new ``timeout_s`` kwarg (v2.1).
-    timeout_s = _sc.get_int(
-        "content_router_contradiction_timeout_seconds", 120,
-    )
+    timeout_s = _sc.get_int("content_router_contradiction_timeout_seconds", 120)
 
     # Routing (Sonnet-canary 404 fix; same class as glad-labs-stack#2199): the
     # local ``ollama_native`` provider is only needed for the no-pool fallback.
@@ -212,10 +236,10 @@ async def self_review_and_revise(
             logger.warning(
                 "[SELF_REVIEW] ollama_native provider not registered; skipping",
             )
-            return draft, stats
+            return None
 
     async def _complete(
-        prompt: str, *, temperature: float, max_tokens: int,
+        prompt: str, *, temperature: float, max_tokens: int, model: str,
     ) -> Any:
         """One self-review completion, routed like the draft.
 
@@ -248,7 +272,7 @@ async def self_review_and_revise(
             return await dispatch_complete(
                 pool,
                 messages,
-                review_model,
+                model,
                 tier="standard",
                 phase="writer_self_review",
                 temperature=temperature,
@@ -261,45 +285,117 @@ async def self_review_and_revise(
             )
         return await local_provider.complete(
             messages=messages,
-            model=review_model,
+            model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout_s=timeout_s,
         )
 
+    return _SelfReviewCtx(_complete, review_model, revise_model)
+
+
+def _gate(draft: str, site_config: SiteConfig) -> dict | None:
+    """Shared entry gate. Returns a stats dict to short-circuit on, else None."""
+    stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
+    if str(site_config.get("enable_writer_self_review", "false")).lower() != "true":
+        return stats
+    stats["enabled"] = True
+    if not draft or len(draft) < 500:
+        return stats  # too short for meaningful cross-section review
+    return None
+
+
+async def detect_contradictions(
+    draft: str, title: str, topic: str, *, pool: Any = None,
+    site_config: SiteConfig,
+) -> tuple[str | None, dict]:
+    """DETECT half — find cross-section contradictions, change nothing.
+
+    Returns ``(review_text_or_None, stats)``. ``None`` means "nothing to fix"
+    (flag off, draft too short, model unresolvable, PASS, or no numbered
+    findings), so the caller skips the revise half entirely.
+
+    Split from the revise half because the two calls have opposite demands and
+    are measurably better served by different models — see
+    ``_resolve_review_model``. Keeping them as separate graph nodes is what
+    makes that visible: a single node that quietly fanned out to two models
+    would hide half of what runs from the graph.
+    """
+    stats = _gate(draft, site_config)
+    if stats is not None:
+        return None, stats
+    stats = {"enabled": True, "contradictions_found": 0, "revised": False}
+
+    ctx = await _prepare(pool=pool, site_config=site_config)
+    if ctx is None:
+        return None, stats
+
+    review_prompt = _resolve_prompt(
+        "qa.self_review.contradictions_review",
+        title=title,
+        topic=topic,
+        draft=draft,
+        fallback=_REVIEW_PROMPT_FALLBACK,
+    )
     try:
-        result = await _complete(
+        result = await ctx.complete(
             review_prompt,
             temperature=0.2,
-            max_tokens=_sc.get_int(
+            max_tokens=site_config.get_int(
                 "content_router_contradiction_review_max_tokens", 1500,
             ),
+            model=ctx.review_model,
         )
-        review_text = (result.text or "").strip()
+    except Exception as e:
+        logger.warning("[SELF_REVIEW] detect failed (non-fatal): %s", e)
+        return None, stats
 
-        if not review_text or review_text.upper().startswith("PASS"):
-            return draft, stats
+    review_text = (result.text or "").strip()
+    if not review_text or review_text.upper().startswith("PASS"):
+        return None, stats
 
-        contradictions = [
-            ln for ln in review_text.splitlines()
-            if re.match(r"^\s*\d+[\.\)]\s+", ln)
-        ]
-        stats["contradictions_found"] = len(contradictions)
-        if not contradictions:
-            return draft, stats
+    contradictions = [
+        ln for ln in review_text.splitlines()
+        if re.match(r"^\s*\d+[\.\)]\s+", ln)
+    ]
+    stats["contradictions_found"] = len(contradictions)
+    if not contradictions:
+        return None, stats
+    return review_text, stats
 
+
+async def revise_contradictions(
+    draft: str, review_text: str, *, pool: Any = None,
+    site_config: SiteConfig,
+) -> tuple[str, dict]:
+    """REVISE half — apply the detected fixes under the minimal-edit contract.
+
+    Returns ``(text, stats)``. On any rejection the ORIGINAL draft comes back:
+    a revision that fails the contract is discarded, never shipped.
+    """
+    stats: dict = {"enabled": True, "contradictions_found": 0, "revised": False}
+    if not draft or not review_text:
+        return draft, stats
+
+    ctx = await _prepare(pool=pool, site_config=site_config)
+    if ctx is None:
+        return draft, stats
+
+    _sc = site_config
+    try:
         revise_prompt = _resolve_prompt(
             "qa.self_review.contradictions_revise",
             review_text=review_text,
             draft=draft,
             fallback=_REVISE_PROMPT_FALLBACK,
         )
-        revised = await _complete(
+        revised = await ctx.complete(
             revise_prompt,
             temperature=0.3,
             max_tokens=_sc.get_int(
                 "content_router_contradiction_revise_max_tokens", 8000,
             ),
+            model=ctx.revise_model,
         )
         revised_text = (revised.text or "").strip()
 
@@ -355,8 +451,8 @@ async def self_review_and_revise(
         if reject_reason is None:
             stats["revised"] = True
             logger.info(
-                "[SELF_REVIEW] Revised draft: %d contradictions found, %d chars in/%d out",
-                len(contradictions), len(draft), len(revised_text),
+                "[SELF_REVIEW] Revised draft: %d chars in/%d out",
+                len(draft), len(revised_text),
             )
             return revised_text, stats
 
@@ -364,10 +460,44 @@ async def self_review_and_revise(
         logger.warning(
             "[SELF_REVIEW] Revision REJECTED — %s; keeping original (%d chars, "
             "model=%s)",
-            reject_reason, len(draft), review_model,
+            reject_reason, len(draft), ctx.revise_model,
         )
-        _emit_rejected_finding(review_model, reject_reason)
+        # Blame the REVISER, not the detector: the contract that failed is
+        # about the revision text, and the finding's dedup_key is per-model
+        # ("this model is a poor fit for this instruction-following task").
+        # Attributing a reviser's dump to the detect model would point the
+        # operator at the wrong pin once the two differ.
+        _emit_rejected_finding(ctx.revise_model, reject_reason)
     except Exception as e:
         logger.warning("[SELF_REVIEW] Self-review failed (non-fatal): %s", e)
 
     return draft, stats
+
+
+async def self_review_and_revise(
+    draft: str, title: str, topic: str, *, pool: Any = None,
+    site_config: SiteConfig,
+) -> tuple[str, dict]:
+    """Detect + revise in one call — the pre-split entry point.
+
+    Retained because it is a stable public seam with its own test suite, and
+    because a caller outside the graph (a script, a one-off) still wants the
+    whole pass. On the graph the two halves run as separate nodes so the
+    composition is visible; this is the same composition, in-process.
+
+    Returns ``(possibly_revised_draft, stats_dict)`` where stats includes
+    ``enabled`` / ``contradictions_found`` / ``revised``.
+    """
+    review_text, stats = await detect_contradictions(
+        draft, title, topic, pool=pool, site_config=site_config,
+    )
+    if not review_text:
+        return draft, stats
+
+    revised, revise_stats = await revise_contradictions(
+        draft, review_text, pool=pool, site_config=site_config,
+    )
+    # Detect owns contradictions_found; revise owns revised/rejected_reason.
+    merged = {**stats, **{k: v for k, v in revise_stats.items()
+                          if k != "contradictions_found"}}
+    return revised, merged

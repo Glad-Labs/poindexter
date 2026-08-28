@@ -56,13 +56,21 @@ class TestCanonicalBlogSpec:
         assert "stage.finalize_task" not in node_atoms
         # The surviving coarse stages are present as stage.* nodes.
         for s in (
-            "verify_task", "writer_self_review",
+            "verify_task",
             "resolve_internal_link_placeholders", "quality_evaluation",
             "url_validation", "source_featured_image", "caption_images",
             "generate_media_scripts",
             "generate_video_shot_list", "capture_training_data",
         ):
             assert f"stage.{s}" in node_atoms, s
+        # writer_self_review was ONE stage node making TWO LLM calls; since
+        # 2026-08-28 those calls can use different models, so a single node
+        # would hide half the fan-out from the graph. Split into two atoms.
+        assert "stage.writer_self_review" not in node_atoms
+        assert {
+            "content.detect_contradictions",
+            "content.revise_contradictions",
+        } <= node_atoms
 
     def test_review_video_shot_list_node_between_director_and_training(self):
         spec = CANONICAL_BLOG_GRAPH_DEF
@@ -213,11 +221,13 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_45(self):
+    def test_node_count_is_46(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
         # + social.generate_drafts + qa.content_originality (RAG self-echo net)
         # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
         # + content.inject_affiliate_links (curated affiliate-link injection)
         # + qa.title_coherence (title↔body honesty check, 2026-07-24)
         # + qa.self_claim (our-own-system claim verification, poindexter#1007)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 45
+        # +1 net: stage.writer_self_review (1 node) -> content.detect_contradictions
+        #   + content.revise_contradictions (2 nodes), 2026-08-28
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 46

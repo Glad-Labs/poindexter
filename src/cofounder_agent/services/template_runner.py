@@ -660,6 +660,11 @@ class PipelineState(TypedDict, total=False):
     image_plans: list                # content.plan_image_markers output: [{num, desc}, ...]
     image_results: list              # content.generate_images output: [{num, url, alt_text, source}, ...]
     qa_feedback_formatted: str       # content.compile_meta: formatted QA rail feedback
+    # content.detect_contradictions -> content.revise_contradictions. MUST be a
+    # declared channel: LangGraph drops undeclared keys at ainvoke, which would
+    # silently starve the revise node on every run (the same failure that left
+    # the auto-publish gate reading `niche_slug missing` for six weeks).
+    contradiction_review: str
 
     # dev_diary / narrate_bundle seam (#753): atoms.narrate_bundle requires
     # context_bundle — the structured dev-diary JSON assembled by
