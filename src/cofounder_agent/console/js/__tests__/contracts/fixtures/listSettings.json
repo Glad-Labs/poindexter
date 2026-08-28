@@ -2,18 +2,18 @@
   "items": [
     {
       "key": "active_pipeline_experiment_key",
-      "value": "",
+      "value": "writer-voice-rotation",
       "data_type": "string",
       "category": "pipeline",
       "environment": "production",
-      "description": "Experiment key the content pipeline routes through (matches experiments.key in the experiments table). Empty = disabled. Set via `poindexter settings set active_pipeline_experiment_key <key>` to opt the pipeline into an A/B experiment. The harness is best-effort — a misconfigured experiment never halts the pipeline, just falls back to default config.",
+      "description": "",
       "is_encrypted": false,
       "is_read_only": false,
       "tags": [],
       "id": 11807,
       "created_at": "2026-05-02T03:03:46.252990Z",
-      "updated_at": "2026-05-02T03:03:46.252990Z",
-      "value_preview": "",
+      "updated_at": "2026-08-28T01:10:19.499774Z",
+      "value_preview": "writer-voice-rotation",
       "owner": null,
       "value_type": null,
       "deprecated": false,
@@ -40,7 +40,7 @@
     },
     {
       "key": "affiliate_clicks_last_sync",
-      "value": "2026-08-27T18:41:15.372251+00:00",
+      "value": "2026-08-28T19:47:36.212608+00:00",
       "data_type": "string",
       "category": "cost",
       "environment": "production",
@@ -50,8 +50,8 @@
       "tags": [],
       "id": 941770,
       "created_at": "2026-07-11T23:23:22.616038Z",
-      "updated_at": "2026-08-27T18:41:15.372454Z",
-      "value_preview": "2026-08-27T18:41:15.372251+00:00",
+      "updated_at": "2026-08-28T19:47:36.212811Z",
+      "value_preview": "2026-08-28T19:47:36.212608+00:00",
       "owner": null,
       "value_type": null,
       "deprecated": false,
@@ -1901,7 +1901,7 @@
       "superseded_by": null
     }
   ],
-  "total": 1601,
+  "total": 1641,
   "limit": 100,
   "offset": 0
 }

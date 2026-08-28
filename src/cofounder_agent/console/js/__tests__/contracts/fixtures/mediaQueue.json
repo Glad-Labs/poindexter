@@ -1,20 +1,28 @@
 {
   "items": [
     {
-      "post_id": "3d5fc894-c92b-41d8-8aeb-71b93cfc2abd",
+      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
       "medium": "video",
-      "title": "A Morse Code Headline Slipped Past Our Content Filter",
-      "slug": "a-morse-code-headline-slipped-past-our-content-fil-28431849",
-      "quality_score": 100,
-      "created_at": "2026-08-27T15:44:17.141772Z"
+      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
+      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
+      "quality_score": 75,
+      "created_at": "2026-08-28T15:23:01.542599Z"
     },
     {
-      "post_id": "3d5fc894-c92b-41d8-8aeb-71b93cfc2abd",
+      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
       "medium": "video_short",
-      "title": "A Morse Code Headline Slipped Past Our Content Filter",
-      "slug": "a-morse-code-headline-slipped-past-our-content-fil-28431849",
-      "quality_score": 100,
-      "created_at": "2026-08-27T15:43:03.617825Z"
+      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
+      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
+      "quality_score": 85,
+      "created_at": "2026-08-28T15:22:26.862568Z"
+    },
+    {
+      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
+      "medium": "podcast",
+      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
+      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
+      "quality_score": 98,
+      "created_at": "2026-08-28T01:56:15.521567Z"
     },
     {
       "post_id": "3d5fc894-c92b-41d8-8aeb-71b93cfc2abd",
@@ -39,14 +47,6 @@
       "slug": "97-gigawatts-3-trillion-zero-vacancy-inside-the-20-bc6f5fc9",
       "quality_score": 100,
       "created_at": "2026-08-27T03:21:26.638566Z"
-    },
-    {
-      "post_id": "2feb273d-88ed-48d6-81da-50e2cf9582d7",
-      "medium": "podcast",
-      "title": "IBM's Agent Memory Study Found More Context Often Hurts Performance",
-      "slug": "ibms-agent-memory-study-found-more-context-often-h-fca93be5",
-      "quality_score": 98,
-      "created_at": "2026-08-26T13:31:26.578006Z"
     }
   ],
   "total": 6,
