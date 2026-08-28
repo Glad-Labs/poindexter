@@ -202,6 +202,17 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' or 'bash scripts/start-stack.sh'}
       GF_INSTALL_PLUGINS: grafana-clock-panel
+      # Server-side PNG/PDF rendering via the grafana-image-renderer sidecar
+      # below. Deliberately NOT installed as an in-process plugin: the
+      # renderer needs Chromium plus a pile of shared libraries the
+      # grafana-oss image does not ship, which is why Grafana documents the
+      # remote service as the supported shape.
+      #
+      # SERVER_URL is where Grafana sends render jobs; CALLBACK_URL is the
+      # address the renderer loads Grafana back on. Both use compose service
+      # DNS, so neither needs a published port.
+      GF_RENDERING_SERVER_URL: http://grafana-image-renderer:8081/render
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
       # Allow the operator console to embed /d-solo panels (local/tailnet-only;
       # anonymous Viewer is safe — Grafana Cloud was retired 2026-05-03).
       GF_SECURITY_ALLOW_EMBEDDING: "true"
@@ -256,6 +267,54 @@ services:
         condition: service_healthy
       prometheus:
         condition: service_healthy
+
+  # ===========================================
+  # Grafana Image Renderer — server-side PNG/PDF rendering
+  # ===========================================
+  # Gives Grafana /render/d-solo (panel screenshots) and image attachments on
+  # alert notifications. Added 2026-08-28: without it, dashboard changes could
+  # only be verified structurally — panel JSON, query frame shapes, geometry
+  # read back from the API — never as pixels, which is the one thing a
+  # legibility fix actually needs.
+  #
+  # NOTE ON VERSIONS: v5 is a Go rewrite with a completely different config
+  # surface to the Node-era v3/v4 service. The `RENDERING_MODE`,
+  # `RENDERING_CLUSTERING_MAX_CONCURRENCY` and `RENDERING_VIEWPORT_MAX_*`
+  # variables in most tutorials and older docs DO NOT EXIST here — they are
+  # silently ignored. Read `grafana-image-renderer server --help` in the image
+  # before changing anything below.
+  grafana-image-renderer:
+    image: grafana/grafana-image-renderer:v5.12.2
+    container_name: poindexter-grafana-renderer
+    restart: unless-stopped
+    environment:
+      # Cap concurrent renders. The default is 0 (unlimited); this host
+      # swap-livelocked on 2026-08-27 and each concurrent render is a Chromium
+      # process, so an unbounded renderer is a memory risk rather than a
+      # throughput win for on-demand use.
+      RATE_LIMIT_MAX_LIMIT: "2"
+      # Bound one render's viewport. Defaults are 3000x3000; nothing here
+      # renders larger than a dashboard at 2x, and a runaway width/height is
+      # the main way this container gets fat.
+      BROWSER_MAX_WIDTH: "2000"
+      BROWSER_MAX_HEIGHT: "2000"
+      BROWSER_MAX_PAGE_SCALE_FACTOR: "2"
+      LOG_LEVEL: info
+    # No published port, on purpose. Only Grafana calls this, over the compose
+    # network. The service fetches arbitrary URLs on request and its auth
+    # token defaults to "-" (matching Grafana's default), so publishing it
+    # would expose an effectively unauthenticated fetch-and-screenshot
+    # endpoint on the tailnet.
+    expose:
+      - "8081"
+    healthcheck:
+      # The binary ships its own healthcheck subcommand — the image has no
+      # wget/curl/node to probe with.
+      test: ["CMD", "/usr/bin/grafana-image-renderer", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ===========================================
   # Brain Daemon — standalone monitor, self-healer, knowledge graph

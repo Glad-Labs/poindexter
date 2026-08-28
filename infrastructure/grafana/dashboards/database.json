@@ -330,25 +330,12 @@
                 "value": "decbytes"
               },
               {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "gauge",
-                  "mode": "gradient"
-                }
-              },
-              {
-                "id": "min",
-                "value": 0
-              },
-              {
-                "id": "color",
-                "value": {
-                  "mode": "continuous-BlYlRd"
-                }
-              },
-              {
                 "id": "custom.width",
                 "value": 160
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
               }
             ]
           },
@@ -488,7 +475,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-BlYlRd"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "unit": "decbytes",
           "min": 0,
@@ -511,8 +499,8 @@
           "values": true
         },
         "orientation": "horizontal",
-        "displayMode": "gradient",
-        "valueMode": "color",
+        "displayMode": "basic",
+        "valueMode": "text",
         "showUnfilled": true,
         "namePlacement": "left",
         "sizing": "auto",

@@ -221,6 +221,13 @@ services:
       prometheus:
         condition: service_healthy
 
+  # NOTE: no grafana-image-renderer here, deliberately. The renderer is a
+  # ~560 MB image that runs a headless Chromium per render; that is the wrong
+  # trade on the 8-16 GB target this file exists for, and it buys convenience
+  # (panel PNGs, alert image attachments) rather than capability. The operator
+  # stack in docker-compose.local.yml has it. Dashboards render fine in a
+  # browser without it.
+
   # ===========================================
   # Brain Daemon — self-healing watchdog, knowledge graph
   # ===========================================

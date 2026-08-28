@@ -59,7 +59,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | --- | --- | --- |
 | Backend API | http://localhost:8002 | FastAPI worker (poindexter-worker container) |
 | Brain daemon | Local process (brain/), no HTTP | Self-healing watchdog — Telegram alerts on failure |
-| Grafana | http://localhost:3000 | 12 dashboards (Mission Control / Pipeline / Cost / Observability / System Health / Integrations / **QA Rails** / **Findings** / **Experiments & Dry-Run** / **Database** / **Hardware & Power** / **SEO Harvest**; Revenue is parked in `dashboards-parked/` until revenue_events has data) |
+| Grafana | http://localhost:3000 | 12 dashboards (server-side PNG/PDF rendering via the `grafana-image-renderer` sidecar — `GET /render/d-solo/<uid>/<slug>?panelId=N&width=&height=&encoding=png`, which is how a panel gets verified as pixels rather than as JSON)  (Mission Control / Pipeline / Cost / Observability / System Health / Integrations / **QA Rails** / **Findings** / **Experiments & Dry-Run** / **Database** / **Hardware & Power** / **SEO Harvest**; Revenue is parked in `dashboards-parked/` until revenue_events has data) |
 | QA Rails dashboard | http://localhost:3000/d/qa-rails | Per-reviewer pass-rate, score distribution, latest QA passes (#329 Lane D) — created 2026-05-10 |
 | Findings dashboard | http://localhost:3000/d/findings | Probe-findings routing — emitted/pending-delivery counts, by-kind/severity, kind→delivery-policy, latest findings (#461 Phase 4) — created 2026-06-02 |
 | Langfuse | http://localhost:3010 | LLM trace explorer + prompt-catalog review UI (read-only mirror of the SKILL.md packs since poindexter#825 — prompt edits go in the repo; every reviewer LLM call is traced) |
