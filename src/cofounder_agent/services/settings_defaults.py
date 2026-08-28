@@ -353,6 +353,36 @@ DEFAULTS: dict[str, str] = {
     # A recycle needs BOTH idle proofs: the GPU scheduler advisory lock free
     # AND the container's CPU under cpu_idle_percent (measured idle draw for
     # these four is 0.09-1.21%). See docs/operations/host-oom-protection.md.
+    # --- ollama runner RAM recycle (poindexter#3434) -----------------------
+    # The llama-server runner ollama spawns leaks ~6.9 MiB per request
+    # (measured 2026-08-28, dead linear, no plateau): a fresh runner holds
+    # 0.30 GB, one that had served ~5.5h held 9.35 GB and was the single
+    # largest holder of host swap. sidecar_ram_recycle_* cannot reach it —
+    # that probe restarts DOCKER containers and ollama is a host systemd unit.
+    #
+    # OFF by default: every other install's ollama layout differs (one
+    # instance, a container, a remote host), and a probe that restarts
+    # someone's LLM endpoint uninvited is a bad default.
+    'ollama_runner_ram_recycle_enabled': 'false',
+    # unit|watermark_gb|endpoint|model — PIPE-delimited, unlike its colon-
+    # delimited sidecar sibling, because two fields carry their own colons (the
+    # endpoint is a URL, the model has a `:tag`) and a colon split is genuinely
+    # ambiguous. 4 GB sits well above a fresh runner (0.30 GB) and well below
+    # the 9.35 GB incident.
+    'ollama_runner_ram_recycle_targets':
+        'ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b',
+    # A recycle costs an ~85s model reload, so do not churn.
+    'ollama_runner_ram_recycle_cooldown_minutes': '120',
+    # A loaded-but-idle runner reads 0.0%; one mid-generation pegs a core.
+    'ollama_runner_ram_recycle_cpu_idle_percent': '5',
+    # The GPU advisory lock is held by every QA rail that calls this endpoint,
+    # so a free lock proves no rail is mid-call. Global and blunt (free only
+    # ~7% of the time under render load), so relaxing it trades safety for
+    # responsiveness — see docs/operations/host-oom-protection.md.
+    'ollama_runner_ram_recycle_require_gpu_lock_free': 'true',
+    # Empty = derive from the runtime (host.docker.internal in a container,
+    # localhost otherwise). Set only for a non-standard exporter location.
+    'ollama_runner_ram_recycle_exporter_url': '',
     'sidecar_ram_recycle_enabled': 'true',
     'sidecar_ram_recycle_targets': (
         'poindexter-chatterbox:6,poindexter-speaches:6,'

@@ -326,6 +326,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_SIDECAR_RAM_WATCH = False
 
 try:
+    # poindexter#3434 — ollama's llama-server runner leaks ~6.9 MiB/request
+    # (measured; a 5.5h-old vision runner held 9.35 GB vs 0.30 GB fresh).
+    # sidecar_ram_watch cannot reach it: that probe restarts DOCKER containers
+    # and ollama is a HOST systemd unit. This one measures via the gpu-exporter
+    # (pid: host) and recycles through ollama's own API.
+    from ollama_runner_ram_watch import run_ollama_runner_ram_watch_probe
+    _HAS_OLLAMA_RUNNER_RAM_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.ollama_runner_ram_watch import run_ollama_runner_ram_watch_probe
+        _HAS_OLLAMA_RUNNER_RAM_WATCH = True
+    except ImportError:
+        _HAS_OLLAMA_RUNNER_RAM_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -506,6 +521,10 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Sidecar host-RAM recycle offline — the dormant TTS/audio/video model "
      "servers re-fill swap unreclaimed, which is what hard-froze the box on "
      "2026-08-27"),
+    ("_HAS_OLLAMA_RUNNER_RAM_WATCH", "brain/ollama_runner_ram_watch.py",
+     "Ollama runner host-RAM recycle offline — the llama-server runner leaks "
+     "~6.9 MiB/request and reaches ~9 GB in hours, and no container probe can "
+     "see a host systemd unit (poindexter#3434)"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
@@ -3129,6 +3148,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] sidecar_ram_watch probe failed: %s", e)
+
+    # Ollama runner host-RAM recycle (poindexter#3434). Its sibling above
+    # cannot cover this: ollama runs as a host systemd unit, so cadvisor never
+    # sees it and `docker restart` cannot reach it. Measures via the
+    # gpu-exporter (pid: host) and recycles through ollama's API — keep_alive:0
+    # terminates the runner, which is what actually frees the leaked memory.
+    # Off unless app_settings.ollama_runner_ram_recycle_enabled=true.
+    if _HAS_OLLAMA_RUNNER_RAM_WATCH:
+        try:
+            or_summary = await run_ollama_runner_ram_watch_probe(pool)
+            probe_results["ollama_runner_ram_watch"] = {
+                "ok": bool(or_summary.get("ok", False)),
+                "detail": or_summary.get("detail", ""),
+                "summary": or_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] ollama_runner_ram_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

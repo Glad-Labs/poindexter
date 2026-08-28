@@ -609,3 +609,71 @@ class TestSwapTierMetrics:
         out = self._render(swaps=one)
         assert 'device="dm-0",priority="-1",tier="fast"' in out
         assert 'tier="slow"' not in out
+
+
+class TestOllamaRunnerScan:
+    """Per-unit host memory of ollama's llama-server runners (2026-08-28).
+
+    ollama runs as a host systemd unit, so cadvisor's container_memory_* cannot
+    see it and the brain daemon's namespaces cannot read its cgroup. This
+    exporter has pid:host and is the only thing that can.
+    """
+
+    @staticmethod
+    def _proc(tmp_path, pid, cmdline, cgroup, anon_kb, swap_kb, ticks="10 20"):
+        d = tmp_path / str(pid)
+        d.mkdir()
+        (d / "cmdline").write_bytes(cmdline.encode())
+        (d / "cgroup").write_text(cgroup)
+        (d / "status").write_text(
+            f"Name:\tllama-server\nVmRSS:\t{anon_kb}   kB\n"
+            f"RssAnon:\t{anon_kb}   kB\nVmSwap:\t{swap_kb}   kB\n"
+        )
+        u, s = ticks.split()
+        (d / "stat").write_text(
+            "1 (llama-server) S " + " ".join(["0"] * 10) + f" {u} {s} " + " ".join(["0"] * 20)
+        )
+        return d
+
+    def test_attributes_runners_to_their_systemd_unit(self, tmp_path):
+        self._proc(tmp_path, 100, "llama-server\x00--port\x0011435\x00",
+                   "0::/system.slice/ollama-vision.service\n", 1048576, 2097152)
+        out = EXPORTER.scan_ollama_runners(str(tmp_path))
+        # 1 GiB anon + 2 GiB swap
+        assert out == {"ollama-vision.service": (3 * 1024**3, 1)}
+
+    def test_ignores_processes_that_merely_mention_llama_server(self, tmp_path):
+        """A grep, or this exporter's own probe, has 'llama-server' in its
+        cmdline. Matching on the cmdline alone counts those as runners; keying
+        on the systemd unit drops them, because they live under user.slice."""
+        self._proc(tmp_path, 200, "grep\x00llama-server\x00",
+                   "0::/user.slice/user-1000.slice/session-3.scope\n", 1024, 0)
+        assert EXPORTER.scan_ollama_runners(str(tmp_path)) == {}
+
+    def test_sums_multiple_runners_in_one_unit(self, tmp_path):
+        for pid in (300, 301):
+            self._proc(tmp_path, pid, "llama-server\x00",
+                       "0::/system.slice/ollama-primary.service\n", 1048576, 0)
+        total, count = EXPORTER.scan_ollama_runners(str(tmp_path))["ollama-primary.service"]
+        assert (total, count) == (2 * 1024**3, 2)
+
+    def test_swap_is_counted_not_just_rss(self, tmp_path):
+        """The whole point. The kernel evicts an untouched leak within minutes,
+        so RssAnon alone falls to ~nothing while the process still holds GB —
+        which is exactly how the 2026-08-28 leak stayed invisible."""
+        self._proc(tmp_path, 400, "llama-server\x00",
+                   "0::/system.slice/ollama-vision.service\n", 1024, 9 * 1024 * 1024)
+        total, _ = EXPORTER.scan_ollama_runners(str(tmp_path))["ollama-vision.service"]
+        assert total > 9 * 1024**3
+
+    def test_missing_proc_root_is_not_fatal(self):
+        assert EXPORTER.scan_ollama_runners("/nonexistent-proc") == {}
+
+    def test_cpu_ticks_parse_past_a_comm_containing_spaces_and_parens(self):
+        """comm is field 2 and may contain ')' — split after the LAST one or a
+        process named 'llama-server (x)' shifts every later field."""
+        stat = (
+            "7 (llama server (x)) S " + " ".join(["0"] * 10)
+            + " 55 45 " + " ".join(["0"] * 20)
+        )
+        assert EXPORTER._read_proc_cpu_ticks(stat) == 100.0

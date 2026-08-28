@@ -31,6 +31,7 @@ Reliability:
     manager's restart policy.
 """
 import logging
+import os
 import pathlib
 import re
 import subprocess
@@ -1189,6 +1190,146 @@ def _format_swap_tier_rows(swaps_text: str, mm_stat_lookup) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Ollama runner host memory (2026-08-28). The `llama-server` runner ollama
+# spawns LEAKS ~6.9 MiB per request (measured; see
+# docs/operations/host-oom-protection.md) — an 8h-old vision runner held
+# 9.35 GiB while a fresh one holds 0.30 GiB. Nothing could see it: ollama runs
+# as a HOST systemd unit, so cadvisor's container_memory_* never covers it, and
+# the brain daemon runs in its own cgroup+pid namespace and cannot read the
+# unit's cgroup files. This exporter has `pid: host`, so it can.
+#
+# The metric is RssAnon + VmSwap, NOT VmRSS. On a host with swap the kernel
+# evicts an untouched leak within minutes, so VmRSS falls back to ~70 MiB and
+# the process reads as innocent while holding 9 GiB. Reading RSS alone is
+# exactly how this hid for a full day.
+#
+# Attribution is by systemd UNIT, read from /proc/<pid>/cgroup, never by
+# matching the cmdline: any shell whose command line merely CONTAINS
+# "llama-server" (a grep, this exporter's own probe) matches the naive test.
+# Those live under user.slice, so keying on the unit drops them for free.
+_OLLAMA_RUNNER_HELP = (
+    "# HELP ollama_runner_anon_bytes Ollama runner host anonymous memory (RssAnon+VmSwap)\n"
+    "# TYPE ollama_runner_anon_bytes gauge\n"
+    "# HELP ollama_runner_count Ollama llama-server runner processes per unit\n"
+    "# TYPE ollama_runner_count gauge\n"
+    "# HELP ollama_runner_cpu_percent Ollama runner CPU over the last collector interval\n"
+    "# TYPE ollama_runner_cpu_percent gauge\n"
+)
+_OLLAMA_UNIT_RE = re.compile(r"/(ollama-[A-Za-z0-9_.-]+\.service)\b")
+
+
+def _read_proc_anon_bytes(status_text: str) -> int | None:
+    """RssAnon + VmSwap in bytes from a /proc/<pid>/status blob."""
+    anon = swap = None
+    for line in status_text.splitlines():
+        if line.startswith("RssAnon:"):
+            anon = int(line.split()[1]) * 1024
+        elif line.startswith("VmSwap:"):
+            swap = int(line.split()[1]) * 1024
+        if anon is not None and swap is not None:
+            break
+    if anon is None:
+        return None
+    return anon + (swap or 0)
+
+
+# Prior (utime+stime, wall) sample per unit, so CPU% is a RATE across the
+# collector's 10s interval rather than the process's lifetime average. A
+# lifetime average is useless as an idle gate: a runner that was busy an hour
+# ago and is idle now still reads busy.
+_OLLAMA_CPU_PRIOR: dict[str, tuple[float, float]] = {}
+_OLLAMA_RUNNER_TICKS: dict[str, float] = {}
+_CLOCK_TICKS = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+
+
+def _read_proc_cpu_ticks(stat_text: str) -> float | None:
+    """utime + stime in ticks from a /proc/<pid>/stat blob.
+
+    Fields are positional, but comm (field 2) may contain spaces AND
+    parentheses, so split after the LAST ')' rather than on whitespace —
+    the standard way to parse this file without tripping on a process
+    named something like "llama-server (x)".
+    """
+    close = stat_text.rfind(")")
+    if close == -1:
+        return None
+    fields = stat_text[close + 2 :].split()
+    if len(fields) < 13:
+        return None
+    try:
+        return float(fields[11]) + float(fields[12])  # utime, stime
+    except ValueError:
+        return None
+
+
+def scan_ollama_runners(proc_root: str = "/proc") -> dict[str, tuple[int, int]]:
+    """``{unit: (total_anon_bytes, runner_count)}`` for ollama's llama-server runners."""
+    out: dict[str, list[int]] = {}
+    _ticks: dict[str, float] = {}
+    try:
+        entries = os.listdir(proc_root)
+    except OSError as exc:
+        logger.warning("ollama-runner: %s unreadable (%s)", proc_root, exc)
+        return {}
+
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        base = f"{proc_root}/{entry}"
+        try:
+            with open(f"{base}/cmdline", "rb") as fh:
+                cmdline = fh.read().decode("utf-8", "replace")
+            if "llama-server" not in cmdline:
+                continue
+            with open(f"{base}/cgroup") as fh:
+                match = _OLLAMA_UNIT_RE.search(fh.read())
+            if not match:
+                # Not under an ollama-*.service — a shell or tool that merely
+                # mentions llama-server. Skip silently; this is the common case.
+                continue
+            with open(f"{base}/status") as fh:
+                anon = _read_proc_anon_bytes(fh.read())
+            with open(f"{base}/stat") as fh:
+                ticks = _read_proc_cpu_ticks(fh.read())
+        except (OSError, ValueError, IndexError):
+            # A process exiting mid-scan is routine, not a fault.
+            continue
+        if anon is None:
+            continue
+        out.setdefault(match.group(1), []).append(anon)
+        if ticks is not None:
+            _ticks.setdefault(match.group(1), 0.0)
+            _ticks[match.group(1)] += ticks
+
+    _OLLAMA_RUNNER_TICKS.clear()
+    _OLLAMA_RUNNER_TICKS.update(_ticks)
+    return {unit: (sum(vals), len(vals)) for unit, vals in out.items()}
+
+
+def get_ollama_runner_metrics() -> str:
+    """Per-unit host memory of ollama's llama-server runners. Linux-only."""
+    if sys.platform != "linux":
+        return ""
+    units = scan_ollama_runners()
+    if not units:
+        return ""
+    lines = [_OLLAMA_RUNNER_HELP.rstrip("\n")]
+    now = time.monotonic()
+    for unit, (total, count) in sorted(units.items()):
+        lines.append(f'ollama_runner_anon_bytes{{unit="{unit}"}} {total}')
+        lines.append(f'ollama_runner_count{{unit="{unit}"}} {count}')
+        ticks = _OLLAMA_RUNNER_TICKS.get(unit)
+        prior = _OLLAMA_CPU_PRIOR.get(unit)
+        if ticks is not None:
+            if prior is not None and now > prior[1]:
+                busy_s = (ticks - prior[0]) / _CLOCK_TICKS
+                pct = max(0.0, 100.0 * busy_s / (now - prior[1]))
+                lines.append(f'ollama_runner_cpu_percent{{unit="{unit}"}} {pct:.2f}')
+            _OLLAMA_CPU_PRIOR[unit] = (ticks, now)
+    return "\n".join(lines) + "\n"
+
+
 def get_swap_tier_metrics() -> str:
     """Per-device swap usage plus zram's real RAM cost, tagged fast/slow tier.
 
@@ -1239,8 +1380,12 @@ def _collect_all_metrics() -> bytes:
     hwinfo = get_hwinfo_metrics()
     lm = get_lm_sensors_metrics()
     swap = get_swap_tier_metrics()
+    runners = get_ollama_runner_metrics()
     total = get_total_power_metrics(gpu, cpu)
-    combined = gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + swap + total
+    combined = (
+        gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + swap
+        + runners + total
+    )
     return _dedupe_psu_metric(combined).encode()
 
 

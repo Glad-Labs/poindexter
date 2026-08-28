@@ -288,9 +288,57 @@ A/B land at 0.3-0.5 GiB. One real difference worth knowing: `mmap=on` peaks at
 `--no-mmap` — so every load with mmap on evicts ~18 GiB of page cache, its own
 kind of pressure on a tight box, separate from the leak.
 
-**Neither recycle probe can reach a host systemd unit** — and now that this is a
-leak rather than a fixed resident, that is a real coverage gap, not a harmless
-one. `sidecar_ram_watch.py` and the comfyui probe both work through
+### The recycle
+
+`brain/ollama_runner_ram_watch.py` closes the gap, and it is a **recycle, not a
+fix** — the leak is upstream, so this keeps returning.
+
+It could not be an extension of `sidecar_ram_watch`, because _both_ halves of
+that probe are docker-shaped: it measures with `docker exec` and acts with
+`docker restart`, and ollama is a host systemd unit. So the halves come from
+elsewhere:
+
+- **Measure** — `scripts/nvidia-smi-exporter.py` runs `pid: host`, so it can
+  read `/proc/<pid>/status` for the runners and publishes
+  `ollama_runner_anon_bytes{unit=...}` (plus `_cpu_percent`, `_count`).
+  Attribution is by systemd unit read from `/proc/<pid>/cgroup`, **never** by
+  matching the cmdline — any shell whose command line merely _contains_
+  `llama-server` (a grep, the exporter's own probe) matches the naive test.
+  Those live under `user.slice`, so keying on the unit drops them for free.
+  The brain already scrapes this exporter for wall power, so no new dependency.
+- **Act** — ollama's own HTTP API. `keep_alive: 0` terminates the runner, which
+  is what actually frees the memory; a follow-up load with `keep_alive: -1`
+  restores the pin eagerly, so the ~85 s reload lands on the probe rather than
+  on whichever QA rail calls next. Restarting the systemd unit is neither
+  possible from the daemon's namespaces nor necessary.
+
+Two idle gates, same shape as its sibling, and unprovable counts as busy:
+
+1. **GPU advisory lock free** — every QA rail that calls this endpoint holds it,
+   so a free lock proves no rail is mid-call. Global and blunt (free only ~7% of
+   the time under render load), so the probe can defer for hours. That is the
+   intended trade: a recycle costs an ~85 s reload, but a recycle _during_ a QA
+   pass costs that rail its answer.
+2. **Runner CPU under threshold** — not redundant with the lock. Requests that
+   never take the GPU scheduler lock (a warm-up ping, a direct curl) still peg
+   the runner. `/api/ps` is deliberately **not** used: it reports which model is
+   _loaded_, not whether it is generating, so it reads "idle" mid-inference.
+
+Ships **off** (`ollama_runner_ram_recycle_enabled=false`) — other installs run
+ollama differently, and a probe that restarts someone's LLM endpoint uninvited
+is a bad default. Targets are `unit|watermark_gb|endpoint|model`, **pipe**-
+delimited unlike the colon-delimited sidecar setting, because the endpoint is a
+URL and the model carries a `:tag`; a colon split is genuinely ambiguous
+(`…:qwen3-vl:30b` right-splits to model `30b`).
+
+Watch it on the **"Ollama runner host memory"** panel: once enabled it should
+read as a sawtooth, each drop a recycle. A line that climbs without dropping
+means the recycle is off, deferring on the GPU lock, or failing — check the
+Findings board for `ollama_runner_ram_recycle_failed`.
+
+**Neither of the two older recycle probes can reach a host systemd unit** — and
+now that this is a leak rather than a fixed resident, that was a real coverage
+gap, not a harmless one. `sidecar_ram_watch.py` and the comfyui probe both work through
 `restart_container` on docker names; `ollama-vision.service` is outside them by
 construction. For host units the equivalent read is
 `systemctl show <unit> -p MemorySwapCurrent`, which no container metric covers.

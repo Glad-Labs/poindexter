@@ -3370,6 +3370,75 @@
       ]
     },
     {
+      "id": 95,
+      "type": "timeseries",
+      "title": "Ollama runner host memory — the leak, per unit",
+      "description": "RssAnon + VmSwap of ollama's llama-server runners, per systemd unit. Not RSS: the kernel evicts an untouched leak within minutes, so RSS falls to ~70 MiB and a runner holding 9 GiB reads as innocent — that is exactly how this hid for a day. cadvisor cannot show this at all (ollama is a host unit, not a container), so it comes from the gpu-exporter's pid:host scan. Measured 2026-08-28: the runner leaks ~6.9 MiB per request, dead linear — a fresh one holds 0.30 GiB, a 5.5 h-old one held 9.35 GiB. Expect a SAWTOOTH once ollama_runner_ram_recycle_enabled=true: each drop is the brain unloading and re-pinning the model. A line that climbs without dropping means the recycle is off, deferring on the GPU lock, or failing — check the Findings board for ollama_runner_ram_recycle_failed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 183
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "host anon memory",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*primary.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dot",
+                  "dash": [2, 6]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "ollama_runner_anon_bytes",
+          "legendFormat": "{{unit}}"
+        }
+      ]
+    },
+    {
       "id": 66,
       "type": "row",
       "collapsed": false,
@@ -3378,7 +3447,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 183
+        "y": 191
       },
       "panels": []
     },
@@ -3395,7 +3464,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 184
+        "y": 192
       },
       "fieldConfig": {
         "defaults": {
@@ -3460,7 +3529,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 192
+        "y": 200
       },
       "id": 69,
       "panels": [],
@@ -3503,7 +3572,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 193
+        "y": 201
       },
       "id": 70,
       "options": {
@@ -3560,7 +3629,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 193
+        "y": 201
       },
       "id": 71,
       "options": {

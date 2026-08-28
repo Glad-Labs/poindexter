@@ -55,12 +55,15 @@ scrape_configs:
         # usage and zram's real RAM cost (2026-08-28) — node_exporter only
         # exposes the whole-pool SwapFree/SwapTotal, which cannot see the
         # priority-tiered cliff where a full zram pushes every new page onto
-        # dm-crypt. NOTE this keep-list is an allowlist: any NEW metric
+        # dm-crypt. ollama_runner_.* = per-systemd-unit host memory of ollama's
+        # llama-server runners, which leak ~6.9 MiB/request and are invisible to
+        # cadvisor (host units, not containers). NOTE this keep-list is an
+        # allowlist: any NEW metric
         # family the exporter grows must be added here or Prometheus drops it
         # silently at ingestion (the exporter serves it, the scrape reads up=1,
         # and the series just never exists — exactly how the 12vhpwr family
         # shipped dark for one deploy).
-        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*|gpu_12vhpwr_.*|host_swap_device_.*|zram_.*'
+        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*|gpu_12vhpwr_.*|host_swap_device_.*|zram_.*|ollama_runner_.*'
         action: keep
 
   # (RETIRED at the Pop!_OS migration) The `nvidia-smi-host` job scraped the
