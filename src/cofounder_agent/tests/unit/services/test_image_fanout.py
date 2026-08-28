@@ -547,6 +547,39 @@ class TestVramFixAndDatasetCompleteness:
         assert details["zimage_absent_reason"] == "HTTP 503"
 
     @pytest.mark.asyncio
+    async def test_zimage_deselected_records_not_in_candidates(
+        self, tmp_path, no_gpu_unload,
+    ):
+        """A zimage-less row NEVER carries an empty reason.
+
+        Deselecting zimage is the one absence that used to fall through
+        silently, and silence reads identically to a producer bug — the
+        08-27 unexplained row cost a round of forensics to rule out as a
+        starvation before the candidate list explained it.
+        """
+        for name in ("schnell", "klein"):
+            (tmp_path / f"{name}.png").write_bytes(b"P")
+
+        async def render(name, graph, **kw):
+            return str(tmp_path / f"{name}.png"), {"model": name}
+
+        async def score(candidate, **kw):
+            candidate.score = 50.0
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", render), \
+             patch.object(image_fanout, "_score_candidate", score), \
+             patch("services.gpu_scheduler.gpu._unload_comfyui", AsyncMock()):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=None, zimage_meta=None,
+                site_config=_sc(image_fanout_candidates="schnell,klein"),
+                pool=pool, task_id="t",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        assert details["zimage_absent_reason"] == "not in candidates"
+        assert not any(c["name"] == "zimage" for c in details["candidates"])
+
+    @pytest.mark.asyncio
     async def test_judge_token_budget_reads_setting(self, tmp_path):
         cand = FanoutCandidate(name="qwen", path=str(tmp_path / "c.png"))
         (tmp_path / "c.png").write_bytes(b"P")

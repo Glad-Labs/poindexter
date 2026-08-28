@@ -139,6 +139,23 @@ size splits the history into before/after halves that read identically.
 The stage-rendered `zimage` carries no dimensions — this service doesn't
 size it, and a fabricated global would misattribute it.
 
+### Every zimage-less row says why
+
+`zimage` is the production model, so its absence from a fan-out is the one
+gap that corrupts the routing dataset quietly: a row without it looks like
+the judge preferred the others rather than like the candidate never
+rendered. Each such row therefore carries `zimage_absent_reason` —
+the stage's failure string (`HTTP 503`, `ReadTimeout`), `ocr_gate_rejected`,
+`render returned nothing`, or `not in candidates` when the operator has
+taken `zimage` out of `image_fanout_candidates`.
+
+That last value exists because **silence is indistinguishable from a
+producer bug.** The deliberate case originally fell through with no field
+at all, and the one row it produced (2026-08-27) cost a round of forensics
+to rule out as a starvation before the candidate list explained it. Reading
+the dataset, treat a zimage-less row with no reason as a bug in this
+service — not as a deselection.
+
 klein's `steps`/`cfg` defaults (4 / 1.0) are the **distilled** variant's.
 `flux-2-klein-base-4b.safetensors` is the same architecture without baked
 guidance and wants ~20 steps at cfg 5 — the file and the two numbers have

@@ -673,14 +673,25 @@ async def run_featured_fanout(
     # into the fan-out, record WHY (the stage's failure meta rides in via
     # zimage_meta) — 24/32 early rows were zimage-less with the reason
     # unrecorded, which made the absence look like a preference.
+    #
+    # EVERY zimage-less row carries a reason, including the deliberate one:
+    # a row with no reason at all is indistinguishable from a producer bug,
+    # so "operator took zimage out of image_fanout_candidates" has to say so
+    # rather than fall through as silence. (2026-08-27 21:30 was exactly
+    # this — one unexplained absence that cost a round of forensics to rule
+    # out as a starvation.)
     zimage_absent_reason = ""
-    if "zimage" in wanted and not any(c.name == "zimage" for c in candidates):
-        zmeta = zimage_meta or {}
-        zimage_absent_reason = str(
-            zmeta.get("failure")
-            or ("ocr_gate_rejected" if zmeta.get("ocr_gate_rejected") else "")
-            or "render returned nothing",
-        )[:200]
+    if not any(c.name == "zimage" for c in candidates):
+        if "zimage" not in wanted:
+            zimage_absent_reason = "not in candidates"
+        else:
+            zmeta = zimage_meta or {}
+            zimage_absent_reason = str(
+                zmeta.get("failure")
+                or ("ocr_gate_rejected" if zmeta.get("ocr_gate_rejected")
+                    else "")
+                or "render returned nothing",
+            )[:200]
     await _record_outcome(
         pool, task_id=task_id, brief=prompt, candidates=candidates,
         winner=winner, judge_ran=judge_ran,
