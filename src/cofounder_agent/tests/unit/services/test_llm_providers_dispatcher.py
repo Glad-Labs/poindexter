@@ -77,10 +77,16 @@ class _FakeProvider:
 
 
 class _FakeCompletionResult:
-    def __init__(self, prompt_tokens=0, completion_tokens=0, finish_reason="", raw=None):
+    def __init__(
+        self, prompt_tokens=0, completion_tokens=0, finish_reason="", raw=None,
+        model="",
+    ):
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens
         self.finish_reason = finish_reason
+        # Real providers stamp the identifier they actually dispatched. Default
+        # "" keeps the pre-existing fakes on the requested-name fallback.
+        self.model = model
         if raw is not None:
             self.raw = raw
 
@@ -1000,3 +1006,131 @@ class TestDispatchCompleteGpuSerialization:
             )
         assert tracker.calls == []
         provider.complete.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# cost_logs.model identity
+# ---------------------------------------------------------------------------
+
+
+class _ResolvingProvider(_FakeProvider):
+    """Provider that namespaces a bare model name, as LiteLLMProvider does."""
+
+    def _resolve_model(self, model: str) -> str:
+        return model if "/" in model else f"ollama/{model}"
+
+
+@pytest.mark.unit
+class TestCostLogModelIdentity:
+    """``cost_logs.model`` records what the provider RAN, not what was asked.
+
+    WHY THIS EXISTS (stack#3343 follow-up)
+
+    29 call sites across 14 files strip the ``ollama/`` prefix off their
+    configured ``*_model`` value before dispatching (``ragas_eval``,
+    ``multi_model_qa``, ``podcast_service``, ``social_poster``,
+    ``title_generation``, ...) — legacy from when they spoke to Ollama
+    directly and needed the bare tag. The LiteLLM router silently re-adds
+    the prefix, so the calls are identical, but logging the REQUEST filed
+    one engine under two spellings: on 2026-08-27 the Cost & Analytics
+    "By Model" table showed ``gemma-4-31B-it-qat:latest`` as 27,257 calls
+    bare PLUS 637 as ``ollama/gemma-4-31B-it-qat:latest``, and the same
+    split hit ``phi4:14b`` and ``qwen3-vl:30b``.
+    """
+
+    async def test_provider_reported_model_wins_over_requested(self):
+        """A caller that stripped the prefix still logs the resolved name."""
+        pool, executions = _make_logging_pool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        provider.complete.return_value = _FakeCompletionResult(
+            prompt_tokens=1, completion_tokens=2,
+            model="ollama/gemma-4-31B-it-qat:latest",
+        )
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                # What ragas_eval / multi_model_qa actually pass after
+                # .removeprefix("ollama/").
+                model="gemma-4-31B-it-qat:latest",
+            )
+        args = [a for (q, a) in executions if "cost_logs" in q][0]
+        assert args[2] == "ollama/gemma-4-31B-it-qat:latest"
+
+    async def test_ollama_chat_prefix_is_preserved(self):
+        """``ollama_chat/`` is a different ENDPOINT, not a spelling variant."""
+        pool, executions = _make_logging_pool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        provider.complete.return_value = _FakeCompletionResult(
+            model="ollama_chat/qwen3-vl:30b",
+        )
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="ollama_chat/qwen3-vl:30b",
+            )
+        args = [a for (q, a) in executions if "cost_logs" in q][0]
+        assert args[2] == "ollama_chat/qwen3-vl:30b"
+
+    async def test_failure_row_files_under_the_resolved_spelling(self):
+        """No Completion on the error path — resolve so failures don't re-split.
+
+        4.5% of rows are failures and 87% of those were bare, so leaving the
+        error path on the requested name would keep the phantom series alive.
+        """
+        pool, executions = _make_logging_pool(setting_value="litellm")
+        provider = _ResolvingProvider(name="litellm")
+        provider.complete.side_effect = RuntimeError("ollama down")
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            with pytest.raises(RuntimeError, match="ollama down"):
+                await dispatcher.dispatch_complete(
+                    pool,
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="gemma-4-31B-it-qat:latest",
+                )
+        args = [a for (q, a) in executions if "cost_logs" in q][0]
+        assert args[2] == "ollama/gemma-4-31B-it-qat:latest"
+        assert args[10] is False  # success
+
+    def test_provider_without_resolver_keeps_the_raw_name(self):
+        """anthropic / gemini / ollama_native resolve nothing.
+
+        They each talk to ONE backend with the name as given, so synthesizing
+        an ``ollama/`` namespace for them would be a lie.
+        """
+        provider = _FakeProvider(name="anthropic")
+        assert not hasattr(provider, "_resolve_model")
+        assert dispatcher._cost_log_model(
+            "claude-sonnet-5", None, provider,
+        ) == "claude-sonnet-5"
+
+    def test_resolver_failure_falls_back_to_requested_name(self):
+        provider = _FakeProvider(name="litellm")
+        provider._resolve_model = MagicMock(side_effect=RuntimeError("boom"))
+        assert dispatcher._cost_log_model("gemma3:27b", None, provider) == "gemma3:27b"
+
+    def test_blank_reported_model_falls_back(self):
+        provider = _FakeProvider(name="litellm")
+        assert dispatcher._cost_log_model(
+            "gemma3:27b", _FakeCompletionResult(model="   "), provider,
+        ) == "gemma3:27b"
+
+    def test_litellm_provider_still_exposes_the_resolver_we_bank_on(self):
+        """Pin the duck-typed seam.
+
+        ``_cost_log_model``'s failure path looks up ``_resolve_model`` by name.
+        Renaming it on LiteLLMProvider would silently drop every failure row
+        back to the bare spelling with all tests still green — so assert the
+        method exists AND that it namespaces a bare tag.
+        """
+        from services.llm_providers.litellm_provider import LiteLLMProvider
+
+        resolver = getattr(LiteLLMProvider, "_resolve_model", None)
+        assert callable(resolver), "LiteLLMProvider._resolve_model went away"
+        provider = LiteLLMProvider.__new__(LiteLLMProvider)
+        provider._default_prefix = "ollama/"
+        assert provider._resolve_model("gemma3:27b") == "ollama/gemma3:27b"
+        assert provider._resolve_model("anthropic/claude-sonnet-5") == (
+            "anthropic/claude-sonnet-5"
+        )

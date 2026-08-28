@@ -836,6 +836,54 @@ async def dispatch_complete(
             raise
 
 
+def _cost_log_model(model: str, result: Any, provider: Any) -> str:
+    """The model identifier to record on the ``cost_logs`` row.
+
+    Record what the provider ACTUALLY dispatched, not the string a call site
+    happened to type. Providers stamp ``Completion.model`` with the identifier
+    they ran — for the LiteLLM router that is the prefix-RESOLVED name
+    (``resolve_model_name``: bare ``gemma3:27b`` becomes ``ollama/gemma3:27b``)
+    — so prefer it whenever there is a result.
+
+    WHY (stack#3343 follow-up): 29 call sites across 14 files strip the
+    ``ollama/`` prefix off their configured ``*_model`` value before
+    dispatching (``ragas_eval``, ``multi_model_qa``, ``podcast_service``,
+    ``social_poster``, ``title_generation``, ... — legacy from when they spoke
+    to Ollama directly and needed the bare tag), and the router silently
+    re-adds it. Logging the REQUEST therefore filed one engine under two
+    spellings, and every per-model ``GROUP BY`` split into phantom series: on
+    2026-08-27 ``gemma-4-31B-it-qat:latest`` showed as 27,257 calls bare +
+    637 prefixed on the Cost & Analytics "By Model" table. stack#3340 fixed
+    the throughput panels by normalizing on READ; this fixes the WRITE.
+
+    On the FAILURE path there is no ``Completion`` (``result=None``), so fall
+    back to the provider's own resolution of the requested name — a failed
+    call must file under the same spelling as its successful twin, or the
+    phantom series comes back through the 4.5% of rows that error. Providers
+    that do no name resolution (``anthropic`` / ``gemini`` / ``ollama_native``
+    each talk to one backend with the name as given) expose no resolver and
+    keep the raw string, so this can never synthesize a wrong namespace for
+    them.
+
+    ``ollama_chat/`` is deliberately NOT collapsed into ``ollama/``: it is a
+    different endpoint (``/api/chat`` vs ``/api/generate``) with different
+    tool-call round-tripping, so those rows are a real routing distinction
+    rather than a spelling one. Read-side rollups that want per-engine totals
+    collapse it themselves (``services/llm_throughput.py`` and the
+    cost-analytics panels share one ``^ollama(_chat)?/`` regex).
+    """
+    reported = str(getattr(result, "model", "") or "").strip()
+    if reported:
+        return reported
+    resolver = getattr(provider, "_resolve_model", None)
+    if not callable(resolver):
+        return model
+    try:
+        return str(resolver(model) or model).strip() or model
+    except Exception:  # noqa: BLE001 — silent-ok: this is a LOGGING label on the error path of a call that already failed; any resolver problem falls back to the requested name, which is exactly the pre-fix behaviour. Never let it mask the original dispatch exception the caller is about to see.
+        return model
+
+
 async def _record_dispatch_cost(
     *,
     pool: Any,
@@ -864,6 +912,10 @@ async def _record_dispatch_cost(
         return
     try:
         provider_name = getattr(provider, "name", "unknown") if provider else "unknown"
+        # The label for the row. NOTE: every behavioural decision below
+        # (_is_paid_llm_call, the electricity fallback) deliberately keeps
+        # reading the REQUESTED `model` — this is a reporting label only.
+        logged_model = _cost_log_model(model, result, provider)
         raw: dict[str, Any] = getattr(result, "raw", {}) or {} if result is not None else {}
         cost_usd = 0.0
         rc = raw.get("response_cost") if isinstance(raw, dict) else None
@@ -940,7 +992,7 @@ async def _record_dispatch_cost(
                     $14, $15, NOW(), NOW()
                 )
                 """,
-                task_id, phase, model, provider_name,
+                task_id, phase, logged_model, provider_name,
                 prompt_tokens, completion_tokens, total_tokens,
                 cost_usd, "inference", duration_ms, success,
                 electricity_kwh, error,
