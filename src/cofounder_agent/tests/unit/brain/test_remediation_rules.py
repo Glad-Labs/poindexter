@@ -97,7 +97,7 @@ async def test_load_config_parses_llm_longtail_knobs():
         "ops_firefighter_min_repeats": "2",
         "ops_firefighter_min_age_minutes": "10",
         "ops_firefighter_min_confidence": "0.6",
-        "ops_firefighter_model": "ollama/llama3.2:3b",
+        "ops_firefighter_model": "ollama/granite4.2:3b",
         "ops_firefighter_llm_exclude_regex": "(?i)(ollama|gpu|vram)",
     }
     pool.set_fetchval(lambda sql, args: store.get(args[0]))
@@ -106,7 +106,7 @@ async def test_load_config_parses_llm_longtail_knobs():
     assert cfg["min_repeats"] == 2
     assert cfg["min_age_minutes"] == 10
     assert cfg["min_confidence"] == 0.6
-    assert cfg["model"] == "ollama/llama3.2:3b"
+    assert cfg["model"] == "ollama/granite4.2:3b"
     assert "ollama" in cfg["llm_exclude_regex"]
 
 
@@ -121,5 +121,107 @@ async def test_load_config_llm_longtail_defaults_when_unset():
     assert cfg["min_repeats"] == 2
     assert cfg["min_age_minutes"] == 10
     assert cfg["min_confidence"] == 0.6
-    assert cfg["model"] == "ollama/llama3.2:3b"
+    assert cfg["model"] == "ollama/granite4.2:3b"
     assert cfg["llm_exclude_regex"]  # non-empty circular-dependency guard
+
+
+# ---------------------------------------------------------------------------
+# Cross-checks against settings_defaults.DEFAULTS
+# ---------------------------------------------------------------------------
+#
+# `load_firefighter_config` hardcodes a fallback for every knob it reads, used
+# on a fresh or partially-seeded DB. That makes it a FOURTH home for default
+# values, alongside the three seed sources `scripts/ci/settings_seed_value_drift_lint.py`
+# already guards — and nothing was checking it. The 2026-08-27 licence sweep
+# retired `ollama/llama3.2:3b` from every other default and left this one
+# behind (its repo-wide grep was truncated, so `brain/` was never checked),
+# shipping a non-permissively-licensed model tag to the public mirror in a file
+# the sweep believed it had cleared. These tests close that gap.
+
+
+def _defaults_value(key: str) -> str:
+    """Read one key out of settings_defaults.DEFAULTS by AST.
+
+    Parsed rather than imported: `brain/` deliberately depends on nothing from
+    `src/cofounder_agent/` at runtime (the brain image ships asyncpg/httpx only),
+    and importing the module here would couple the two.
+    """
+    import ast
+    from pathlib import Path
+
+    defaults_py = (
+        Path(__file__).resolve().parents[3] / "services" / "settings_defaults.py"
+    )
+    tree = ast.parse(defaults_py.read_text(encoding="utf-8"))
+    for node in tree.body:
+        target_is_defaults = False
+        value = None
+        if isinstance(node, ast.Assign):
+            target_is_defaults = any(
+                isinstance(t, ast.Name) and t.id == "DEFAULTS" for t in node.targets
+            )
+            value = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target_is_defaults = node.target.id == "DEFAULTS"
+            value = node.value
+        if target_is_defaults and isinstance(value, ast.Dict):
+            for k, v in zip(value.keys, value.values, strict=False):
+                if (
+                    isinstance(k, ast.Constant)
+                    and k.value == key
+                    and isinstance(v, ast.Constant)
+                ):
+                    return str(v.value)
+    raise AssertionError(f"{key!r} not found in settings_defaults.DEFAULTS")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cfg_field,settings_key",
+    [
+        ("model", "ops_firefighter_model"),
+        ("llm_exclude_regex", "ops_firefighter_llm_exclude_regex"),
+    ],
+)
+async def test_brain_fallback_matches_settings_defaults(cfg_field, settings_key):
+    """The brain's fallback must equal the seeded default for the same key.
+
+    Drift here is silent and only bites a fresh/partial DB — precisely the
+    install least able to notice. It is also how a retired model tag survives a
+    licence audit: `settings_defaults.py` says one thing, the brain says
+    another, and only the brain runs when the row is missing.
+    """
+    pool = FakePool()
+    pool.set_fetchval(lambda sql, args: None)  # nothing seeded
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg[cfg_field] == _defaults_value(settings_key), (
+        f"brain fallback for {settings_key!r} has drifted from "
+        "settings_defaults.DEFAULTS — a fresh DB would behave differently from "
+        "a seeded one."
+    )
+
+
+@pytest.mark.asyncio
+async def test_brain_firefighter_model_fallback_is_permissively_licensed():
+    """`brain/` is NOT stripped by scripts/sync-to-github.sh, so this default
+    ships to Glad-Labs/poindexter.
+
+    Asserts the value the brain ACTUALLY resolves on an unseeded DB, not
+    `DEFAULTS`. Those are equal today, and the drift test above keeps them so —
+    but reading DEFAULTS here would make this test blind to the one case the
+    drift test cannot see: both literals changed together to the same
+    non-permissive tag. Same allowlist as
+    tests/unit/test_settings_defaults_firefighter.py; verify a new entry with
+    `ollama show --license` rather than assuming, and never re-admit a
+    community licence.
+    """
+    permissive = {
+        "ollama/granite4.2:3b",  # IBM Granite 4.2 — Apache-2.0
+        "ollama/granite4.2:8b",  # Apache-2.0
+        "ollama/qwen2.5:7b",     # Apache-2.0
+        "ollama/phi4:14b",       # MIT
+    }
+    pool = FakePool()
+    pool.set_fetchval(lambda sql, args: None)  # nothing seeded
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg["model"] in permissive

@@ -94,7 +94,15 @@ async def load_firefighter_config(pool: Any) -> dict[str, Any]:
         "min_repeats": await _read_int(pool, "ops_firefighter_min_repeats", 2),
         "min_age_minutes": await _read_int(pool, "ops_firefighter_min_age_minutes", 10),
         "min_confidence": await _read_float(pool, "ops_firefighter_min_confidence", 0.6),
-        "model": await _read_str(pool, "ops_firefighter_model", "ollama/llama3.2:3b"),
+        # Fallback MUST match settings_defaults.DEFAULTS["ops_firefighter_model"]
+        # (same discipline as the exclude-regex default above): this is a FOURTH
+        # home for a hardcoded default, alongside the three seed sources the
+        # settings_seed_value_drift_lint covers, and the brain reads it on a
+        # fresh/partial DB. The 2026-08-27 licence sweep retired ollama/llama3.2:3b
+        # from every other default and missed this one — its repo-wide grep was
+        # truncated, so brain/ was never checked. Sweep brain/ too.
+        # Pinned by tests/unit/brain/test_remediation_rules.py.
+        "model": await _read_str(pool, "ops_firefighter_model", "ollama/granite4.2:3b"),
         "llm_exclude_regex": await _read_str(
             pool, "ops_firefighter_llm_exclude_regex", _DEFAULT_LLM_EXCLUDE_REGEX
         ),
