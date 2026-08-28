@@ -182,6 +182,20 @@ class PluginScheduler:
         # successful tick (see _reset_circular_failure_streak); a page fires
         # only once the streak reaches scheduler_circular_job_page_threshold.
         self._consecutive_circular_failures: dict[str, int] = {}
+        # Per-job wall-clock of the FIRST overlap skip in the current streak,
+        # used only for jobs in _overlap_expected_jobs below. Such a job
+        # overlaps on every tick until its run finishes, then clears — so early
+        # skips are its designed steady state. What IS a fault is a job that can
+        # never start because the previous run never ends, and only the elapsed
+        # streak separates those two: record when it began, and reset it the
+        # moment the job completes. See _on_job_max_instances.
+        self._overlap_streak_started_at: dict[str, datetime] = {}
+        # Jobs that declared ``overlap_expected = True`` (populated by
+        # register_job). For these, and ONLY these, an overlap skip is the
+        # designed steady state rather than a fault, so it is recorded at info
+        # until the streak crosses the wedge threshold. Every other job keeps
+        # paging on the first skip.
+        self._overlap_expected_jobs: set[str] = set()
 
     @staticmethod
     def _heartbeat_interval_seconds(cfg: dict) -> float:
@@ -298,6 +312,14 @@ class PluginScheduler:
                 self._jobs_failed += 1
                 await self._escalate_job_failure(job.name, f"raised: {e}")
                 await self._record_last_run(job.name, ok=False)
+            finally:
+                # The run ended — cleanly, ok=False, or by raising. Any of
+                # those frees the slot, so the next fire can start and the
+                # overlap streak is over. Reset unconditionally: a job that
+                # FAILS fast is not wedged, and leaving a stale streak start
+                # behind would let unrelated overlaps hours apart accumulate
+                # into a bogus "continuously wedged" page.
+                self._reset_overlap_streak(job.name)
 
         # Anchor interval jobs' first fire to their PERSISTED last run, not
         # to boot time. APScheduler's IntervalTrigger with no explicit
@@ -316,6 +338,16 @@ class PluginScheduler:
         add_kwargs: dict[str, Any] = {}
         if next_run_time is not None:
             add_kwargs["next_run_time"] = next_run_time
+
+        # A job whose interval is a POLL cadence rather than a runtime budget
+        # declares ``overlap_expected = True``; the overlap escalation then
+        # applies a time gate instead of paging on the first skip. Recorded
+        # here because apscheduler's EVENT_JOB_MAX_INSTANCES carries only a
+        # job_id, not the Job object. See _on_job_max_instances.
+        if getattr(job, "overlap_expected", False):
+            self._overlap_expected_jobs.add(job.name)
+        else:
+            self._overlap_expected_jobs.discard(job.name)
 
         self._scheduler.add_job(
             _runner,
@@ -625,52 +657,135 @@ class PluginScheduler:
         """
         self._consecutive_circular_failures.pop(job_name, None)
 
+    def _reset_overlap_streak(self, job_name: str) -> None:
+        """Clear a job's overlap streak once its run ends.
+
+        The other half of the overlap severity ladder: the streak measures how
+        long a job has been UNABLE TO START, so it is only meaningful while the
+        blocking run is still in flight. Any completion ends it. Cheap no-op
+        for jobs that never overlapped (they never populate the dict)."""
+        self._overlap_streak_started_at.pop(job_name, None)
+
     def _on_job_max_instances(self, event: Any) -> None:
         """A due fire was SKIPPED because the previous run is still in flight.
 
         apscheduler handles this with a single quiet warning in its own logger
         namespace — which is how the 2026-08-15 tap overlap went unnoticed (an
         hourly job wedged for 80 minutes and the next fire piled on; with
-        ``max_instances=1`` it would instead have skipped, silently). A skip
-        means a job is running longer than its interval, which is always worth
-        surfacing: warn in OUR logger, count it for ``get_stats``, and emit a
-        deduped ``job_overlap_skipped`` finding (severity warn, so it routes)
-        gated by ``scheduler_alert_on_job_overlap`` (default on).
+        ``max_instances=1`` it would instead have skipped, silently). So we
+        surface it: warn in OUR logger, count it for ``get_stats``, and emit a
+        deduped ``job_overlap_skipped`` finding gated by
+        ``scheduler_alert_on_job_overlap`` (default on).
+
+        **Severity depends on whether the job declared the overlap expected.**
+        This handler used to page on the FIRST skip for every job, on the
+        premise that a skip always means wedged. That premise is wrong for a job
+        whose interval is a POLL cadence rather than a runtime budget —
+        ``dispatch_media_pipeline`` declares ``schedule="every 5 minutes"`` with
+        ``idempotent=False`` precisely because it does GPU-bound renders taking
+        minutes, so every long render skips 2-6 due fires by design. Measured
+        over the 7 days to 2026-08-27: 191 ``job_overlap_skipped`` findings,
+        **145 of them that one job**, climbing 3/day → 28/day as hero renders
+        moved to the quality tier (~644s/shot). Correct behaviour reported as a
+        fault, and the loudest finding kind in the system.
+
+        So the tolerance is **opt-in per job**, not global:
+
+        - A job that does NOT set ``overlap_expected`` pages on the first skip,
+          exactly as before (#1471). This matters: for an hourly job the first
+          skip already means an hour has elapsed, so a flat time gate would have
+          made the 2026-08-15 tap wedge slower to surface, not faster.
+        - A job that sets ``overlap_expected = True`` records ``info`` (which is
+          structurally unroutable — the findings router's fetch floor is
+          warn/critical — so it lands on the Findings board and in ``get_stats``
+          but never pages) until it has been blocked for
+          ``scheduler_overlap_alert_after_minutes`` (default 60), then escalates
+          to ``warn``. A job that cannot start for an hour is wedged whatever
+          its cadence.
+
+        The streak resets the moment the run ends (``_reset_overlap_streak``),
+        so a declaring job that overlaps and then finishes never escalates,
+        while one that never finishes escalates exactly once per wedge (the
+        ``dedup_key`` is stable per job, so the dispatcher collapses repeats).
+        The ladder mirrors ``tap_failure``'s severity gate
+        (docs/architecture/findings-routing.md) and the self-heal ladder in
+        ``reap_stale_topic_batches``.
 
         Sync + best-effort: listeners run inside apscheduler's dispatch, so
         this must never raise or block.
         """
         job_name = getattr(event, "job_id", None) or "<unknown>"
         self._jobs_overlap_skipped += 1
+        # setdefault so the FIRST skip of a streak anchors it and later skips
+        # read that same anchor — the elapsed value is what the gate needs.
+        now = datetime.now(timezone.utc)
+        streak_started = self._overlap_streak_started_at.setdefault(job_name, now)
+        blocked_minutes = (now - streak_started).total_seconds() / 60.0
         logger.warning(
             "scheduler: job %r fire skipped — previous run still in progress "
-            "(the job is running longer than its interval; next tick will "
-            "catch up)",
-            job_name,
+            "for %.1f min (next tick catches up once it completes)",
+            job_name, blocked_minutes,
         )
         try:
             enabled = True
+            threshold = 60
             if self._site_config is not None:
                 enabled = self._site_config.get_bool(
                     "scheduler_alert_on_job_overlap", True
+                )
+                threshold = max(
+                    1,
+                    self._site_config.get_int(
+                        "scheduler_overlap_alert_after_minutes", 60
+                    ),
                 )
             if not enabled:
                 return
             from utils.findings import emit_finding
 
+            # Only a job that DECLARED its interval to be a poll cadence gets
+            # the tolerance. Everything else pages on the first skip exactly as
+            # before (#1471): for an hourly job the first skip already means an
+            # hour elapsed, so a flat time gate would have made the 2026-08-15
+            # tap wedge SLOWER to surface, not faster.
+            expected = job_name in self._overlap_expected_jobs
+            wedged = (not expected) or blocked_minutes >= threshold
+            if wedged:
+                body = (
+                    f"A scheduled fire of {job_name!r} was skipped because the "
+                    f"previous run had not finished (max_instances=1), and that "
+                    f"has now been true for {blocked_minutes:.0f} minutes "
+                    f"(>= scheduler_overlap_alert_after_minutes={threshold}). A "
+                    f"job that cannot start for that long is wedged on a hung "
+                    f"downstream call rather than merely slow — check the "
+                    f"in-flight run before the backlog grows."
+                )
+            else:
+                body = (
+                    f"A scheduled fire of {job_name!r} was skipped because the "
+                    f"previous run had not finished (max_instances=1), blocked "
+                    f"{blocked_minutes:.0f} min so far. This job declares "
+                    f"overlap_expected=True — its interval is a poll cadence, "
+                    f"not a runtime budget (a GPU render outruns a 5-minute tick "
+                    f"by design) — so the skip is recorded but not paged. It "
+                    f"escalates to warn once blocked for "
+                    f"scheduler_overlap_alert_after_minutes={threshold} min."
+                )
             emit_finding(
                 source=f"scheduler.{job_name}",
                 kind="job_overlap_skipped",
-                title=f"scheduled job '{job_name}' fire skipped — still running",
-                body=(
-                    f"A scheduled fire of {job_name!r} was skipped because the "
-                    "previous run had not finished (max_instances=1). The job "
-                    "is outrunning its interval — likely wedged on a hung "
-                    "downstream call. The skipped fire is dropped; the next "
-                    "tick runs normally once the in-flight run completes."
+                title=(
+                    f"scheduled job '{job_name}' fire skipped — still running "
+                    f"({blocked_minutes:.0f} min)"
                 ),
-                severity="warn",
+                body=body,
+                severity="warn" if wedged else "info",
                 dedup_key=f"job-overlap:{job_name}",
+                extra={
+                    "job": job_name,
+                    "blocked_minutes": round(blocked_minutes, 1),
+                    "threshold_minutes": threshold,
+                },
             )
         except Exception as e:  # noqa: BLE001 — listener must never crash dispatch
             logger.error(

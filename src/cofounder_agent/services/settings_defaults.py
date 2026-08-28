@@ -2929,6 +2929,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # quiet internal warning). The scheduler's own WARNING log fires
     # regardless; this switch only gates the findings-pipeline escalation.
     'scheduler_alert_on_job_overlap': 'true',
+    # How long a job must be CONTINUOUSLY unable to start (previous run still
+    # in flight) before its `job_overlap_skipped` finding escalates info -> warn
+    # and pages. Below this it is recorded on the Findings board only.
+    # An interval is a POLL cadence for some jobs, not a runtime budget:
+    # dispatch_media_pipeline polls every 5 min but does GPU renders that take
+    # minutes, so it skips 2-6 due fires per render BY DESIGN. Paging on the
+    # first skip made it the loudest finding kind in the system (145 of 191
+    # fires over the 7d to 2026-08-27) while saying nothing true. The streak
+    # resets when the run ends, so only a job that never finishes escalates.
+    # 60 = an hour of being unable to start, which is a wedge at any cadence.
+    'scheduler_overlap_alert_after_minutes': '60',
 
     # ----- Scheduler job-metrics sink (Glad-Labs/poindexter#853) -----
     # Persist every metrics-emitting job fire as an audit_log 'job_run' row
@@ -5119,6 +5130,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},
+    'scheduler_overlap_alert_after_minutes': {'owner': 'scheduler', 'value_type': 'integer'},
     'scheduler_circular_job_page_threshold': {'owner': 'scheduler', 'value_type': 'integer'},
     'scheduler_job_metrics_capture_enabled': {'owner': 'scheduler', 'value_type': 'boolean'},
     'self_consistency_enabled': {'value_type': 'boolean'},

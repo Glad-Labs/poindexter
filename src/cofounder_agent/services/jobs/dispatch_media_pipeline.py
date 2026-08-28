@@ -352,6 +352,15 @@ class DispatchMediaPipelineJob:
     schedule = "every 5 minutes"
     # GPU-bound render that takes minutes — never let two instances overlap.
     idempotent = False
+    # The 5-minute schedule is a POLL cadence, not a runtime budget: a single
+    # quality-tier hero render runs ~644s/shot, so a busy cycle legitimately
+    # skips 2-6 due fires and the scheduler must not report that as a fault.
+    # Measured 7d to 2026-08-27: 145 of the system's 191 job_overlap_skipped
+    # findings were this job behaving exactly as designed. Skips are still
+    # recorded (info, Findings board + get_stats) and still escalate to a page
+    # once blocked past scheduler_overlap_alert_after_minutes — a render that
+    # never returns IS a wedge. See PluginScheduler._on_job_max_instances.
+    overlap_expected = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         sc = config.get("_site_config")

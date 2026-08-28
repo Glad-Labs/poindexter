@@ -53,6 +53,22 @@ class Job(Protocol):
         idempotent: Whether two overlapping runs would be safe. If
             ``False``, apscheduler will not start a new instance while
             the previous one is still running.
+
+    Optional attributes (read via ``getattr`` so existing jobs need no
+    change, and deliberately NOT declared below — ``Job`` is
+    ``runtime_checkable``, so a required annotation would fail
+    ``isinstance`` for every job that omits it):
+
+        overlap_expected: Set ``True`` when the ``schedule`` is a POLL
+            cadence rather than a runtime budget — i.e. a normal run is
+            expected to outlast the interval and skip due fires. Defaults
+            to ``False``. Skipped fires are always recorded, but a job
+            declaring this reports them at ``info`` (board-only) until it
+            has been blocked for
+            ``scheduler_overlap_alert_after_minutes``, rather than paging
+            on the first skip. Only meaningful alongside
+            ``idempotent=False``. See
+            ``PluginScheduler._on_job_max_instances``.
     """
 
     name: str

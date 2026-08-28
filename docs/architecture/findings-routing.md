@@ -159,6 +159,28 @@ That is what makes a one-off container-DNS `ConnectError` (2026-08-15, healed on
 run) free while a genuinely dead tap still pages an hour later. It needs a real counter —
 `external_taps.consecutive_failures` — not `last_run_status`, which is one bit.
 
+`job_overlap_skipped` is the same gate on a different axis, and shows the trap in picking
+one. A scheduler fire skipped because the previous run is still in flight used to page on
+the **first** skip, on the premise that a skip means the job is wedged. That premise holds
+only when the interval is a runtime budget. `dispatch_media_pipeline` polls every 5 minutes
+but renders on the GPU for minutes, so a normal cycle skips 2-6 due fires by design — 145 of
+the system's 191 `job_overlap_skipped` findings over the 7 days to 2026-08-27, the loudest
+kind in the system, every one of them correct behaviour reported as a fault.
+
+The gate is **opt-in per job** (`overlap_expected = True` on the Job class) rather than a
+flat time threshold, because a flat threshold gets the other half wrong: for an _hourly_
+job the first skip already means an hour has elapsed, so deferring it would have made the
+2026-08-15 tap wedge slower to surface — the very incident the finding was built for. A
+declaring job records `info` until blocked past `scheduler_overlap_alert_after_minutes`
+(default 60) and then pages; a non-declaring job is unchanged. The streak resets when the
+run ends, so "slow" never escalates and "never finishes" always does.
+
+**The general rule both cases share:** when a kind fires on a subject that is sometimes
+routine and sometimes a fault, the discriminator belongs in the _producer's severity_, not
+in a router cooldown. A cooldown throttles a true signal to a survivable rate; severity
+separates the true signal from the false one. Reach for a cooldown only once the finding
+means the same thing every time it fires.
+
 #### Declined is not failed
 
 The same change stopped counting `GpuBusyError` / `GpuLockTimeoutError` as tap failures
