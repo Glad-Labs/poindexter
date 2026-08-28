@@ -478,8 +478,24 @@ async def _render_pexels_video(
 _FREE_VRAM_SAMPLES = 4
 _FREE_VRAM_SAMPLE_GAP_S = 4.0
 
+# (width, height, free_GB_required). Landscape-first; the caller swaps for
+# portrait. Ordered largest-first — the first rung that fits wins.
+#
+# The GB figures are a REQUIREMENT (free VRAM before starting), not the peak.
+# Validated against Prometheus `nvidia_gpu_process_memory_mib` over the 7d to
+# 2026-08-28: wan peaked at 25.1-25.3 GB across 8 separate render sessions,
+# all at 832x480 — so the 27.0 rung carries ~1.8 GB of headroom over measured
+# peak. Fitting base + k*pixels through both rungs recovers a ~10 GB model base
+# and ~42.5 GB/Mpx of activations, which reproduces the 27.0 figure exactly.
+#
+# There is deliberately NO rung above 832x480 on this hardware. The same fit
+# puts 896x512 at ~27.5 GB peak (~29.3 required) and 960x544 at ~29.9 GB peak
+# (~31.7 required) on a 31.8 GB card — and speaches alone holds ~2.8 GB that
+# the reclaim ladder deliberately never evicts (it is load-bearing for
+# podcast/video TTS). A rung above 832x480 could therefore never fire; adding
+# one would be dead code that makes the ceiling look higher than it is.
 _HERO_PLATE_LADDER: tuple[tuple[int, int, float], ...] = (
-    (832, 480, 27.0),   # validated: 4-for-4, good output
+    (832, 480, 27.0),   # validated: 4-for-4, good output; measured peak 25.2GB
     (704, 400, 22.0),   # quality floor — modest step, still coherent
 )
 
@@ -567,6 +583,28 @@ async def _fit_hero_dims_to_free_vram(
         # silent-ok: a settings read must not decide the geometry; the
         # documented default (adaptive on) applies.
         pass
+
+    # Configured LARGER than the ladder's top rung? Then the operator's setting
+    # is unreachable and every render silently caps below it. Say so once per
+    # call rather than letting the cap be invisible: `video_hero_width/height`
+    # were raised to 960x544 on 2026-08-27 for the quality tier, and because the
+    # ladder's top rung is 832x480 the "never step UP" guard below matched on
+    # every render — so the configured tier never rendered and nothing said so.
+    # Measured on the RTX 5090 (31.8 GB): wan peaks at 25.2 GB for 832x480,
+    # which fits the ladder's 27 GB requirement almost exactly, and the same
+    # base+activation fit puts 960x544 at ~29.9 GB peak / ~31.7 GB required —
+    # i.e. it needs the card to be entirely empty, so there is deliberately NO
+    # rung for it. Adding one would be a rung that can never fire.
+    _top_w, _top_h, _ = _HERO_PLATE_LADDER[0]
+    if width * height > _top_w * _top_h:
+        logger.warning(
+            "[SHOT_LIST] configured hero plate %dx%d exceeds the ladder's top "
+            "rung %dx%d — this render can never use the configured size; it "
+            "will cap at %dx%d or lower. Either lower video_hero_width/height "
+            "to a ladder size or add a measured rung.",
+            width, height, _top_w, _top_h, _top_w, _top_h,
+        )
+
     # The worker container is GPU-less, so free VRAM comes from Prometheus —
     # scraped every ~10s. The caller reclaims immediately before this, and a
     # single sample taken 3s later still reports the PRE-reclaim figure. Take
@@ -2656,7 +2694,16 @@ def _emit_hero_fallback_finding(*, shot: Shot, post_id: str, reason: str = "") -
         source="shot_list_renderer", kind="hero_render_fallback",
         title=f"hero shot {shot.idx} fell back to still (Ken Burns)",
         body=body,
-        severity="warn",
+        # info, NOT warn: this is per-shot forensics, and the aggregate view is
+        # ProbeHeroFallbackJob's job (it counts a trailing window and pages once
+        # as `hero_fallback_streak`, with a stable dedup_key so a sustained
+        # outage is one page rather than one per shot). Emitting warn here
+        # double-reported the same degradation through both paths and made this
+        # the 4th-loudest finding kind in the system — 79 routed pages over the
+        # 7d to 2026-08-27. Both `probe_hero_fallback`'s docstring and the
+        # settings_defaults comment already documented these as "info-level by
+        # design"; only the call site disagreed.
+        severity="info",
         dedup_key=f"hero_render_fallback:{post_id}:{shot.idx}",
         extra={"shot_idx": shot.idx, "source": shot.source, "reason": reason},
     )

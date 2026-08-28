@@ -611,3 +611,66 @@ async def test_falls_back_to_registry_when_live_read_unavailable(monkeypatch):
 
     assert out == (704, 400)
     registry.free_gb.assert_awaited()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_configured_plate_above_the_top_rung_is_capped_and_says_so(caplog):
+    """`video_hero_width/height` were raised to 960x544 on 2026-08-27 for the
+    quality tier. The ladder's top rung is 832x480, so the "never step UP"
+    guard matched on every render and the configured tier never rendered —
+    silently. The cap is legitimate (960x544 needs ~31.7GB free on a 31.8GB
+    card); the silence was not.
+    """
+    import logging
+
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+         caplog.at_level(
+             logging.WARNING, logger="services.video_renderers.shot_list_renderer"
+         ):
+        out = await slr._fit_hero_dims_to_free_vram(960, 544, _sc())
+
+    # Capped to the top rung even with 30GB free — the rung, not the request.
+    assert out == (832, 480)
+    assert any(
+        "exceeds the ladder's top rung" in rec.getMessage()
+        for rec in caplog.records
+    ), "the silent cap must announce itself"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_configured_plate_at_the_top_rung_is_not_warned(caplog):
+    """The warning must fire on a real cap only — a configured size the ladder
+    can actually honour is not a misconfiguration."""
+    import logging
+
+    from services.video_renderers import shot_list_renderer as slr
+
+    with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
+         caplog.at_level(
+             logging.WARNING, logger="services.video_renderers.shot_list_renderer"
+         ):
+        out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
+
+    assert out == (832, 480)
+    assert not any(
+        "exceeds the ladder's top rung" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+@pytest.mark.unit
+def test_no_ladder_rung_above_832x480_on_this_hardware():
+    """Twin of the floor guard, for the ceiling. Measured 2026-08-28: wan peaks
+    at 25.2GB for 832x480, and the base+activation fit through both rungs puts
+    896x512 at ~29.3GB required and 960x544 at ~31.7GB on a 31.8GB card — with
+    ~2.8GB permanently held by speaches, which the reclaim ladder never evicts.
+    A rung above 832x480 could never fire, so adding one is dead code that
+    makes the ceiling look higher than it is."""
+    from services.video_renderers import shot_list_renderer as slr
+
+    assert max(w for w, _h, _g in slr._HERO_PLATE_LADDER) <= 832
+    assert max(h for _w, h, _g in slr._HERO_PLATE_LADDER) <= 480
