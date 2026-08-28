@@ -85,3 +85,36 @@ regexes = [
   # 2026-05-26.
   '''Authorization:\s*Bearer\s+(YOUR_[A-Z_]+|<[a-z_]+>|REDACTED|placeholder|example|dev-token|\$[A-Z_]+)''',
 ]
+
+# ---------------------------------------------------------------------------
+# GitHub App installation tokens — stateless (JWT) format
+# ---------------------------------------------------------------------------
+# gitleaks' bundled `github-app-token` rule is `(ghu|ghs)_[0-9a-zA-Z]{36}`,
+# which only ever matched the CLASSIC opaque token. On 2026-04-27 GitHub
+# started rolling every newly-minted installation token over to a stateless
+# `ghs_<APPID>_<JWT>` shape — ~520 chars, two dots, charset [A-Za-z0-9._-].
+# The `_` and `.` break the bundled rule's 36-char alphanumeric run, so a
+# leaked modern token scans CLEAN. Verified against the pinned gitleaks
+# v8.30.1 with this exact config: classic token = 1 finding, stateless
+# token = 0 findings.
+#
+# This is live risk, not future risk. We mint installation tokens in six
+# workflows across three Apps (mirror-sync, release-please, ci-runner), and
+# the rollout predates this rule by four months — so any token pasted into
+# a committed log excerpt or debugging note since April has been invisible
+# to both this gate and the `gitleaks protect --staged` pre-commit hook,
+# which share these rules.
+#
+# ADDITIVE, deliberately — no `[extend] disabledRules`. Leaving the bundled
+# rule enabled keeps classic-token coverage owned upstream, so a future
+# gitleaks fix can't be silently undone by ours going stale. The regex
+# below requires the two-dot JWT tail, which is also what stops it
+# double-reporting classic tokens the bundled rule already catches.
+#
+# Shape follows GitHub's own guidance (`ghs_[A-Za-z0-9\.\-_]{36,}`) narrowed
+# to the stateless structure. gitleaks uses Go RE2 — no lookarounds here.
+[[rules]]
+id = "github-app-token-stateless"
+description = "GitHub App installation token (stateless ghs_APPID_JWT format)"
+regex = '''ghs_[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+keywords = ["ghs_"]

@@ -15,6 +15,17 @@ import logging
 
 import services.logger_config as lc
 
+# Synthetic GitHub App installation tokens — never real, never minted.
+# _CLASSIC is the opaque ghs_ + 36-alphanumeric shape; _STATELESS is the
+# ghs_<APPID>_<JWT> format GitHub began rolling out 2026-04-27 (~520 chars
+# in the wild, two dots, charset [A-Za-z0-9._-]).
+_CLASSIC_GHS = "ghs_16C7e42F292c6912E7710c838347Ae178B4a"
+_STATELESS_GHS = (
+    "ghs_1234567_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJzdWIiOiJ0ZXN0IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDM2MDB9"
+    ".dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
+
 # ---------------------------------------------------------------------------
 # KEY-based redaction
 # ---------------------------------------------------------------------------
@@ -176,6 +187,14 @@ class TestValueShapeDetection:
             None, "info", {"loaded": "pdx_a1b2c3d4e5"}
         )
         assert out["loaded"] == lc.REDACTED_VALUE
+
+    def test_github_app_installation_token_masked_by_shape(self):
+        # Matched on prefix, so the classic opaque token and the stateless
+        # ghs_<APPID>_<JWT> format (GitHub rollout began 2026-04-27) are
+        # both covered by the one entry.
+        for token in (_CLASSIC_GHS, _STATELESS_GHS):
+            out = lc.redact_secrets(None, "info", {"loaded": token})
+            assert out["loaded"] == lc.REDACTED_VALUE
 
     def test_envelope_encrypted_value_masked_by_shape(self):
         # plugins/secrets.py wraps secrets in `enc:v1:...` — even though

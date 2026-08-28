@@ -88,6 +88,10 @@ _SECRET_VALUE_PATTERNS = [
     r"\bwhsec_[A-Za-z0-9+/=]{8,}",
     r"\bghp_[A-Za-z0-9]{20,}\b",
     r"\bgithub_pat_[A-Za-z0-9_]{20,}\b",
+    # App installation tokens, classic + stateless. No trailing \b: a
+    # stateless token's base64url tail can end in "-", which is not a word
+    # character, so an anchored boundary would clip the match short.
+    r"\bghs_[A-Za-z0-9._-]{20,}",
     r"\benc:v1:[A-Za-z0-9+/=]+",
 ]
 

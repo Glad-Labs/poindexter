@@ -35,6 +35,17 @@ from services.taps.claude_code_sessions import (
     _summarize_tool_input,
 )
 
+# Synthetic GitHub App installation tokens — never real, never minted.
+# _CLASSIC is the opaque ghs_ + 36-alphanumeric shape; _STATELESS is the
+# ghs_<APPID>_<JWT> format GitHub began rolling out 2026-04-27 (~520 chars
+# in the wild, two dots, charset [A-Za-z0-9._-]).
+_CLASSIC_GHS = "ghs_16C7e42F292c6912E7710c838347Ae178B4a"
+_STATELESS_GHS = (
+    "ghs_1234567_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJzdWIiOiJ0ZXN0IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDM2MDB9"
+    ".dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -89,6 +100,26 @@ class TestScrub:
         out = _scrub("token: ghp_abcdefghijklmnopqrstuvwxyz01234567890", patterns)
         assert "ghp_abc" not in out
         assert "[REDACTED:ghp]" in out
+
+    def test_github_app_installation_token_redacted(self):
+        # Classic opaque shape: ghs_ + 36 alphanumerics.
+        patterns = _compile_scrub_patterns([])
+        out = _scrub(f"token: {_CLASSIC_GHS}", patterns)
+        assert "ghs_16C7" not in out
+        assert "[REDACTED:ghs]" in out
+
+    def test_github_app_stateless_token_redacted_whole(self):
+        # The stateless ghs_<APPID>_<JWT> format GitHub began rolling out
+        # 2026-04-27. Scrubbing the JWT tail alone is NOT enough, so this
+        # asserts the ghs_ prefix and app id are gone too — which is what
+        # pins the ghs_ pattern's position AHEAD of the JWT pattern. Swap
+        # the two and this test fails with a surviving "ghs_1234567_".
+        patterns = _compile_scrub_patterns([])
+        out = _scrub(f"token: {_STATELESS_GHS}", patterns)
+        assert "ghs_" not in out
+        assert "1234567" not in out
+        assert "[REDACTED:ghs]" in out
+        assert "[REDACTED:jwt]" not in out
 
     def test_aws_key_redacted(self):
         patterns = _compile_scrub_patterns([])

@@ -9,6 +9,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Synthetic GitHub App installation tokens — never real, never minted.
+# _CLASSIC is the opaque ghs_ + 36-alphanumeric shape; _STATELESS is the
+# ghs_<APPID>_<JWT> format GitHub began rolling out 2026-04-27 (~520 chars
+# in the wild, two dots, charset [A-Za-z0-9._-]).
+_CLASSIC_GHS = "ghs_16C7e42F292c6912E7710c838347Ae178B4a"
+_STATELESS_GHS = (
+    "ghs_1234567_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    ".eyJzdWIiOiJ0ZXN0IiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDM2MDB9"
+    ".dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
 
 def _ops_dir() -> Path:
     return next(
@@ -42,6 +52,11 @@ def test_scan_text_flags_pii_and_secrets():
         f"tailnet ip {_FAKE_TAILNET_IP}",
         "dsn postgresql://u:p@h/db",
         "key AKIAABCDEFGHIJKLMNOP",
+        # GitHub App installation tokens, classic + stateless. This gate
+        # runs before a push to the PUBLIC poindexter-pro repo, so a token
+        # that slips it is published, not just logged.
+        f"token {_CLASSIC_GHS}",
+        f"token {_STATELESS_GHS}",
         "path /home/mattm/glad-labs-website",
         "hook https://discord.com/api/webhooks/123/abc",
     ]

@@ -244,6 +244,28 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
   / `trivy-fs` / `sbom` always run — a secret or CVE can land in any
   file. The weekly baseline + manual `workflow_dispatch` scans run
   every job regardless.
+  - **`.gitleaks.toml` carries one repo-local rule on top of the
+    bundled set** (`[extend] useDefault = true` keeps the defaults):
+    `github-app-token-stateless`. gitleaks' own `github-app-token` rule
+    is `(ghu|ghs)_[0-9a-zA-Z]{36}`, which only matches the CLASSIC
+    opaque installation token. GitHub began rolling installation tokens
+    over to a stateless `ghs_<APPID>_<JWT>` shape on 2026-04-27 (~520
+    chars, two dots, charset `[A-Za-z0-9._-]`) — the `_` and `.` break
+    that 36-char alphanumeric run, so a leaked modern token scanned
+    **clean** on both this gate and the `gitleaks protect --staged`
+    pre-commit hook, which share these rules. The rule is **additive**
+    on purpose: the bundled rule stays enabled so classic-token
+    coverage stays owned upstream, and the repo-local regex requires
+    the two-dot JWT tail so it does not double-report classic tokens.
+    Pinned by `tests/unit/scripts/test_gitleaks_app_token_rule.py`,
+    which reads the shipped config and exercises the regex without
+    needing the gitleaks binary. The same `ghs_` gap was closed in the
+    five Python scrubbers (`logger_config`, `rag_scrub`,
+    `taps/claude_code_sessions`, `scripts/regen-app-settings-doc.py`,
+    `scripts/ops_sessions/pro_freshness.py`) — in the two that also
+    carry a JWT pattern the `ghs_` entry must stay **above** it, or a
+    stateless token is only half-scrubbed and keeps a live
+    `ghs_<APPID>_` prefix.
 - **`grafana-panels-lint` is `paths:`-gated** to
   `infrastructure/grafana/**` + the lint script + migrations — the
   model the others copy.

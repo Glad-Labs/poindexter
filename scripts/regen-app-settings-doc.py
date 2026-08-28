@@ -129,7 +129,7 @@ _SECRET_PATTERNS = [
     re.compile(r"^[a-f0-9]{20,}$"),
     re.compile(r"^[A-Za-z0-9]{32,}$"),
     re.compile(r"^sk-[A-Za-z0-9]{10,}"),
-    re.compile(r"^ghp_|^github_pat_|^gho_"),
+    re.compile(r"^ghp_|^github_pat_|^gho_|^ghs_"),
     re.compile(r"^xox[baprs]-"),
     re.compile(r"-----BEGIN"),
     re.compile(r"^AKIA[0-9A-Z]{16}$"),

@@ -150,6 +150,7 @@ SECRET_VALUE_PREFIXES: tuple[str, ...] = (
     "sk-",  # OpenAI-style
     "ghp_",  # GitHub personal access token
     "gho_",  # GitHub OAuth token
+    "ghs_",  # GitHub App installation token (classic + stateless JWT)
     "xoxb-",  # Slack bot token
     "xoxp-",  # Slack user token
 )

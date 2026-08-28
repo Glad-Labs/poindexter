@@ -37,9 +37,11 @@ Events kept but summarized:
 The embedded text is run through a small set of regex patterns that
 replace known credential formats with ``[REDACTED]`` before embedding.
 Patterns cover OpenAI/Anthropic ``sk-...`` keys, GitHub PATs
-(``ghp_...``), JWT tokens (``eyJ...``), AWS access keys, and our own
-``enc:v1:...`` ciphertext prefix (so encrypted secrets don't end up
-embedded in plaintext-adjacent context).
+(``ghp_...``), GitHub App installation tokens (``ghs_...``, both the
+classic opaque shape and the stateless ``ghs_<APPID>_<JWT>`` format),
+JWT tokens (``eyJ...``), AWS access keys, and our own ``enc:v1:...``
+ciphertext prefix (so encrypted secrets don't end up embedded in
+plaintext-adjacent context).
 
 The scrub happens inside this Tap, not in the runner, so sessions that
 carry secrets are stored redacted. Reversing = re-running the Tap
@@ -110,6 +112,14 @@ _DEFAULT_SCRUB_PATTERNS: tuple[tuple[str, str], ...] = (
     # GitHub personal access tokens + fine-grained tokens.
     (r"ghp_[A-Za-z0-9]{36,}", "[REDACTED:ghp]"),
     (r"github_pat_[A-Za-z0-9_]{50,}", "[REDACTED:github_pat]"),
+    # GitHub App installation tokens, BOTH shapes: the classic opaque
+    # ``ghs_`` + 36 alphanumerics, and the stateless ``ghs_<APPID>_<JWT>``
+    # format GitHub began rolling out 2026-04-27 (~520 chars, two dots,
+    # widening the charset with ``.`` and ``_``). Must stay ABOVE the JWT
+    # pattern below: the JWT rule matches a stateless token's tail, so if
+    # it ran first the token would be only half-scrubbed, leaving a live
+    # ``ghs_<APPID>_`` prefix next to a ``[REDACTED:jwt]``.
+    (r"ghs_[A-Za-z0-9._-]{36,}", "[REDACTED:ghs]"),
     # AWS access keys.
     (r"AKIA[A-Z0-9]{16}", "[REDACTED:aws]"),
     # JWT — three base64url segments separated by dots, header starts

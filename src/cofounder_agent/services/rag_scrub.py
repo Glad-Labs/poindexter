@@ -17,6 +17,11 @@ SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"sk-[A-Za-z0-9]{32,}"), "[REDACTED:sk]"),
     (re.compile(r"ghp_[A-Za-z0-9]{36,}"), "[REDACTED:ghp]"),
     (re.compile(r"github_pat_[A-Za-z0-9_]{50,}"), "[REDACTED:github_pat]"),
+    # Both installation-token shapes — classic ``ghs_`` + 36 alphanumerics
+    # and the stateless ``ghs_<APPID>_<JWT>`` format (GitHub rollout began
+    # 2026-04-27). Ordered above the JWT pattern so a stateless token is
+    # redacted whole rather than losing only its JWT tail.
+    (re.compile(r"ghs_[A-Za-z0-9._-]{36,}"), "[REDACTED:ghs]"),
     (re.compile(r"AKIA[A-Z0-9]{16}"), "[REDACTED:aws]"),
     (
         re.compile(
