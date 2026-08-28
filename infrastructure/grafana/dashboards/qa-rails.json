@@ -757,7 +757,7 @@
       },
       "id": 7,
       "options": {
-        "displayMode": "gradient",
+        "displayMode": "basic",
         "minVizHeight": 10,
         "minVizWidth": 0,
         "namePlacement": "auto",

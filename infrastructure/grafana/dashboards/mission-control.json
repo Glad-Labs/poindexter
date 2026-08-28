@@ -176,7 +176,8 @@
           },
           "expr": "sum(up{job=~\"poindexter-worker|postgres-exporter|nvidia-smi|tempo|pyroscope|uptime-kuma\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "services up"
         }
       ],
       "fieldConfig": {
@@ -362,7 +363,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 4
       },
@@ -429,8 +430,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 4
       },
       "fieldConfig": {
@@ -495,8 +496,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 4
       },
       "fieldConfig": {
@@ -562,7 +563,6 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 168,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -585,23 +585,23 @@
         }
       },
       "gridPos": {
-        "h": 5,
-        "w": 24,
-        "x": 0,
-        "y": 8
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
       },
       "id": 17,
       "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
       },
       "targets": [
         {
@@ -616,7 +616,7 @@
         }
       ],
       "title": "Last pub (h)",
-      "type": "bargauge"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -658,7 +658,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 8
       },
       "id": 19,
       "options": {
@@ -701,7 +701,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 13
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -774,7 +774,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -816,10 +816,10 @@
       "type": "text",
       "description": "GlitchTip Postgres is not provisioned as a Grafana datasource (separate container, no datasource yml). Open the GlitchTip UI for live unresolved-issue counts; a future PR can add it via Grafana's Infinity plugin once installed.",
       "gridPos": {
-        "h": 4,
+        "h": 7,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 25
       },
       "options": {
         "mode": "markdown",
@@ -832,10 +832,10 @@
       "type": "text",
       "description": "Langfuse Postgres (and Clickhouse, if v3 is wired) is not provisioned as a Grafana datasource. Open the Langfuse UI to drill into traces and judge-model spend; a future PR can add live stats via Infinity or a langfuse-postgres datasource.",
       "gridPos": {
-        "h": 4,
+        "h": 7,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 25
       },
       "options": {
         "mode": "markdown",

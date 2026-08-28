@@ -89,7 +89,8 @@
             "uid": "local-prometheus"
           },
           "expr": "up{job=\"poindexter-worker\"}",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "worker"
         }
       ],
       "title": "Worker",
@@ -237,7 +238,8 @@
             "uid": "local-prometheus"
           },
           "expr": "up{job=\"nvidia-smi\"}",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "gpu-exporter"
         }
       ],
       "title": "GPU exporter",
@@ -310,7 +312,8 @@
             "uid": "local-prometheus"
           },
           "expr": "up{job=\"pyroscope\"}",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "pyroscope"
         }
       ],
       "title": "Pyroscope",
@@ -383,7 +386,8 @@
             "uid": "local-prometheus"
           },
           "expr": "up{job=\"tempo\"}",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "tempo"
         }
       ],
       "title": "Tempo",
@@ -456,7 +460,8 @@
             "uid": "local-prometheus"
           },
           "expr": "up{job=\"uptime-kuma\"}",
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": "uptime-kuma"
         }
       ],
       "title": "Uptime-kuma",
@@ -492,7 +497,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 5
       },
@@ -554,8 +559,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 5
       },
       "id": 20,
@@ -620,8 +625,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 5
       },
       "id": 21,
@@ -653,10 +658,72 @@
       "type": "stat"
     },
     {
+      "id": 715,
+      "title": "Failed last fire",
+      "type": "stat",
+      "description": "Number of scheduler jobs where the most recent fire status was 'err'. Healthy = 0. >0 = at least one job ran but raised — open the freshness table, sort by Last status, and check Loki for the underlying traceback.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "count(poindexter_scheduler_job_last_run_ok == 0) or vector(0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 713,
       "title": "Scheduled jobs — freshness + last-run status",
       "type": "table",
-      "description": "Auto-populated for every PluginScheduler job. Healthy = age below the job's expected interval (every-2h jobs sit at 0-7200s, every-60s jobs at 0-90s). Orange highlight = age suggests the loop is dead. ok=0 = ran recently but failed; click the job_name to grep Loki for details.",
+      "description": "Auto-populated for every PluginScheduler job. Healthy = age below the job's expected interval (every-2h jobs sit at 0-7200s, every-60s jobs at 0-90s). Orange highlight = age suggests the loop is dead. ok=0 = ran recently but failed; click the job_name to grep Loki for details. Both targets aggregate by job_name so the merge has one shared key: carrying __name__ through made the join fail silently, yielding 76+76 unjoined rows with an empty Last status column.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -674,9 +741,11 @@
           },
           "custom": {
             "align": "left",
-            "displayMode": "auto",
             "filterable": true,
-            "inspect": false
+            "inspect": false,
+            "cellOptions": {
+              "type": "auto"
+            }
           },
           "mappings": [],
           "thresholds": {
@@ -783,7 +852,7 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "poindexter_scheduler_job_last_run_age_seconds",
+          "expr": "max by (job_name) (poindexter_scheduler_job_last_run_age_seconds)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -793,7 +862,7 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "poindexter_scheduler_job_last_run_ok",
+          "expr": "min by (job_name) (poindexter_scheduler_job_last_run_ok)",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -824,68 +893,6 @@
       ]
     },
     {
-      "id": 715,
-      "title": "Jobs whose last fire failed",
-      "type": "stat",
-      "description": "Number of scheduler jobs where the most recent fire status was 'err'. Healthy = 0. >0 = at least one job ran but raised — open the freshness table, sort by Last status, and check Loki for the underlying traceback.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 19
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "count(poindexter_scheduler_job_last_run_ok == 0) or vector(0)",
-          "instant": true,
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "type": "row",
       "title": "Audit Log · GlitchTip · Publish Queues",
       "collapsed": false,
@@ -893,7 +900,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 19
       },
       "panels": [],
       "id": 24
@@ -936,7 +943,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1001,7 +1008,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1062,7 +1069,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1119,7 +1126,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1180,7 +1187,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1241,7 +1248,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 24
+        "y": 20
       },
       "options": {
         "colorMode": "background",
@@ -1280,7 +1287,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 28
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -1295,7 +1302,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -1325,16 +1333,16 @@
     {
       "id": 38,
       "type": "bargauge",
-      "title": "By Source",
+      "title": "By Source — top 8",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 5,
+        "h": 9,
         "w": 8,
         "x": 8,
-        "y": 28
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -1349,7 +1357,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -1371,24 +1380,25 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT source as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT source as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC LIMIT 8",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Bounded to the top 8 sources: the unbounded query returned 69 rows into a panel this size can show ~8, so the tail was dropped silently."
     },
     {
       "id": 39,
       "type": "bargauge",
-      "title": "By Event",
+      "title": "By Event — top 8",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "gridPos": {
-        "h": 5,
+        "h": 9,
         "w": 8,
         "x": 16,
-        "y": 28
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -1403,7 +1413,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -1425,10 +1436,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT event_type as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC",
+          "rawSql": "SELECT event_type as metric, COUNT(*) as value FROM audit_log WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 2 DESC LIMIT 8",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Bounded to the top 8 event_types: the unbounded query returned 27 rows into a panel this size can show ~8, so the tail was dropped silently."
     },
     {
       "datasource": {
@@ -2275,8 +2287,11 @@
                 }
               },
               {
-                "id": "custom.displayMode",
-                "value": "color-background"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               }
             ]
           }
@@ -3090,9 +3105,11 @@
         "defaults": {
           "custom": {
             "align": "left",
-            "displayMode": "auto",
             "filterable": true,
-            "inspect": false
+            "inspect": false,
+            "cellOptions": {
+              "type": "auto"
+            }
           },
           "mappings": [],
           "unit": "short",

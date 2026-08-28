@@ -1940,7 +1940,9 @@
         "defaults": {
           "custom": {
             "align": "auto",
-            "displayMode": "auto"
+            "cellOptions": {
+              "type": "auto"
+            }
           }
         },
         "overrides": []
@@ -1976,7 +1978,9 @@
         "defaults": {
           "custom": {
             "align": "auto",
-            "displayMode": "auto"
+            "cellOptions": {
+              "type": "auto"
+            }
           }
         },
         "overrides": []
@@ -2386,7 +2390,7 @@
       "type": "bargauge",
       "id": 51,
       "title": "Pending by medium",
-      "description": "Pending media_approvals rows grouped by medium type",
+      "description": "Pending media_approvals rows grouped by medium type min=0 is load-bearing: with a single medium pending, a bargauge without an explicit floor draws an empty bar and floats the value outside it.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2400,7 +2404,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "thresholds": {
             "mode": "absolute",
@@ -2408,10 +2412,20 @@
               {
                 "color": "blue",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 15
               }
             ]
           },
-          "noValue": "0"
+          "noValue": "0",
+          "min": 0,
+          "unit": "short"
         },
         "overrides": []
       },
@@ -2423,7 +2437,8 @@
         },
         "orientation": "horizontal",
         "displayMode": "gradient",
-        "showUnfilled": true
+        "showUnfilled": true,
+        "namePlacement": "left"
       },
       "targets": [
         {
@@ -2476,7 +2491,8 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "short",
+          "min": 0
         }
       },
       "options": {
@@ -2822,7 +2838,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -3771,9 +3788,11 @@
         "defaults": {
           "custom": {
             "align": "auto",
-            "displayMode": "auto",
             "inspect": false,
-            "minWidth": 80
+            "minWidth": 80,
+            "cellOptions": {
+              "type": "auto"
+            }
           },
           "color": {
             "mode": "thresholds"
@@ -3796,8 +3815,11 @@
             },
             "properties": [
               {
-                "id": "custom.displayMode",
-                "value": "color-background"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "mappings",
@@ -3843,8 +3865,11 @@
             },
             "properties": [
               {
-                "id": "custom.displayMode",
-                "value": "color-background"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
@@ -4283,7 +4308,8 @@
           "unit": "short",
           "min": 0,
           "color": {
-            "mode": "continuous-BlPu"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "thresholds": {
             "mode": "absolute",
@@ -4301,7 +4327,7 @@
         "displayMode": "gradient",
         "orientation": "horizontal",
         "showUnfilled": true,
-        "valueMode": "color",
+        "valueMode": "text",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "/^value$/",
@@ -5200,7 +5226,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "continuous-BlPu"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "mappings": [],
           "min": 0,
@@ -5222,7 +5249,8 @@
           "fields": "",
           "values": false
         },
-        "showUnfilled": true
+        "showUnfilled": true,
+        "valueMode": "text"
       },
       "pluginVersion": "11.0.0",
       "targets": [

@@ -442,7 +442,7 @@
         ]
       },
       "gridPos": {
-        "h": 14,
+        "h": 6,
         "w": 24,
         "x": 0,
         "y": 5
@@ -507,7 +507,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 11
       },
       "id": 9,
       "options": {
@@ -570,7 +570,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 11
       },
       "id": 11,
       "options": {
@@ -602,7 +602,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Every retention_policies row. min_interval_hours throttles how often collapse-type policies run (collapse rows default to 168 h = weekly).",
+      "description": "Every retention_policies row. min_interval_hours throttles how often collapse-type policies run (collapse rows default to 168 h = weekly). Name is pinned to 280px: the default width cut every embeddings.* policy at the point where they differ, so three distinct policies rendered identically.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -645,14 +645,38 @@
                 ]
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Handler"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 12,
+        "h": 16,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 15
       },
       "id": 12,
       "options": {
@@ -690,7 +714,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 31
       },
       "id": 26,
       "title": "Embedding Hygiene -- Orphan Prune & Collapse",
@@ -727,7 +751,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 32
       },
       "id": 29,
       "options": {
@@ -809,7 +833,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 36
       },
       "id": 30,
       "options": {
@@ -871,7 +895,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 50
+        "y": 46
       },
       "id": 13,
       "options": {
@@ -934,7 +958,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 50
+        "y": 46
       },
       "id": 15,
       "options": {
@@ -987,7 +1011,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 50
+        "y": 46
       },
       "id": 58,
       "options": {
@@ -1066,10 +1090,10 @@
         ]
       },
       "gridPos": {
-        "h": 10,
+        "h": 14,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 50
       },
       "id": 16,
       "options": {
@@ -1131,7 +1155,7 @@
     },
     {
       "gridPos": {
-        "h": 3,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 67
@@ -1153,7 +1177,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 75
       },
       "id": 20,
       "options": {
@@ -1169,10 +1193,10 @@
     },
     {
       "gridPos": {
-        "h": 4,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 77
       },
       "id": 21,
       "options": {
@@ -1191,7 +1215,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 86
       },
       "id": 22,
       "options": {
@@ -1207,10 +1231,10 @@
     },
     {
       "gridPos": {
-        "h": 6,
+        "h": 12,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 88
       },
       "id": 23,
       "options": {
@@ -1229,7 +1253,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 84
+        "y": 100
       },
       "id": 24,
       "options": {
@@ -1245,10 +1269,10 @@
     },
     {
       "gridPos": {
-        "h": 3,
+        "h": 7,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 102
       },
       "id": 25,
       "options": {
@@ -1271,7 +1295,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 89
+        "y": 109
       },
       "panels": []
     },
@@ -1284,7 +1308,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 90
+        "y": 110
       },
       "options": {
         "reduceOptions": {
@@ -1336,7 +1360,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 90
+        "y": 110
       },
       "options": {
         "reduceOptions": {
@@ -1384,7 +1408,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 90
+        "y": 110
       },
       "options": {
         "reduceOptions": {
@@ -1440,7 +1464,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 90
+        "y": 110
       },
       "options": {
         "reduceOptions": {
@@ -1499,7 +1523,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 94
+        "y": 114
       },
       "options": {
         "sortBy": [
@@ -1512,7 +1536,9 @@
       "fieldConfig": {
         "defaults": {
           "custom": {
-            "displayMode": "auto"
+            "cellOptions": {
+              "type": "auto"
+            }
           },
           "mappings": []
         },
@@ -1524,8 +1550,11 @@
             },
             "properties": [
               {
-                "id": "custom.displayMode",
-                "value": "color-background"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "thresholds",
@@ -1588,7 +1617,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 104
+        "y": 124
       },
       "panels": []
     },
@@ -1613,7 +1642,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 125
       },
       "id": 38,
       "options": {
@@ -1650,7 +1679,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 115
+        "y": 135
       },
       "panels": []
     },
@@ -1667,7 +1696,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 116
+        "y": 136
       },
       "fieldConfig": {
         "defaults": {
@@ -1732,7 +1761,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 116
+        "y": 136
       },
       "fieldConfig": {
         "defaults": {
@@ -1797,7 +1826,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 144
       },
       "fieldConfig": {
         "defaults": {
@@ -1843,7 +1872,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 134
+        "y": 154
       },
       "panels": []
     },
@@ -1860,7 +1889,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 135
+        "y": 155
       },
       "fieldConfig": {
         "defaults": {
@@ -1928,7 +1957,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 143
+        "y": 163
       },
       "panels": []
     },
@@ -1980,10 +2009,10 @@
         ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 11,
         "w": 24,
         "x": 0,
-        "y": 144
+        "y": 164
       },
       "id": 46,
       "options": {
@@ -2017,7 +2046,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 152
+        "y": 175
       },
       "id": 47,
       "panels": [],
@@ -2050,7 +2079,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 153
+        "y": 176
       },
       "id": 48,
       "options": {
@@ -2105,7 +2134,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 153
+        "y": 176
       },
       "id": 49,
       "options": {
@@ -2168,7 +2197,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 153
+        "y": 176
       },
       "id": 50,
       "options": {
@@ -2231,7 +2260,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 153
+        "y": 176
       },
       "id": 51,
       "options": {
@@ -2294,7 +2323,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 153
+        "y": 176
       },
       "id": 52,
       "options": {
@@ -2349,7 +2378,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 153
+        "y": 176
       },
       "id": 53,
       "options": {
@@ -2408,7 +2437,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 157
+        "y": 180
       },
       "id": 54,
       "options": {
@@ -2471,7 +2500,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 157
+        "y": 180
       },
       "id": 55,
       "options": {
@@ -2530,7 +2559,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 157
+        "y": 180
       },
       "id": 56,
       "options": {
@@ -2589,7 +2618,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 157
+        "y": 180
       },
       "id": 57,
       "options": {

@@ -42,7 +42,16 @@
           },
           "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'page1_push' AND status = 'open'"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 2,
@@ -75,7 +84,16 @@
           },
           "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'striking_distance' AND status = 'open'"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 3,
@@ -108,7 +126,16 @@
           },
           "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE tier = 'low_ctr' AND status = 'open'"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 4,
@@ -162,7 +189,11 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
         },
         "overrides": []
       },
@@ -210,7 +241,16 @@
           },
           "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE status = 'queued'"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 8,
