@@ -165,6 +165,98 @@ sidecar blocked on a CUDA sync mid-inference sits under the CPU threshold and
 looks idle. That is precisely why the gate defaults on; relax it deliberately,
 not by habit.
 
+## The tier problem: total swap is the wrong number
+
+Everything above measures the swap pool as **one number**. On this host that
+number hides the cliff that actually degrades the box.
+
+Swap here is **priority-tiered**:
+
+| device       | what it is                   | size                                  | priority |
+| ------------ | ---------------------------- | ------------------------------------- | -------- |
+| `/dev/zram0` | compressed pages held in RAM | 16 GiB (24 GiB after the next reboot) | 1000     |
+| `/dev/dm-0`  | dm-crypt partition on NVMe   | 32 GiB                                | -1       |
+
+Linux fills the highest priority first. So zram absorbs everything until it is
+full, and from that moment **every new page lands on encrypted NVMe** — which
+is what turns memory pressure into io stall.
+
+Measured 2026-08-28: zram **99.7% full** while total swap read **61%**, memory
+PSI spiking to `full avg10=8.3` and io PSI to ~10%. Both existing guards key on
+the total, so both were ~14 GiB of further growth away from reacting:
+
+- `PoindexterHostSwapExhausted` — pool free < 5%, i.e. ~45.5 GiB used
+- `systemd-oomd` — `SwapUsedLimit=90%`, i.e. ~43.1 GiB used
+
+The performance cliff is at 16 GiB, **a third of the pool**. That band is where
+the box lives while feeling bad, and nothing watched it. This is the same
+failure shape as the alert that missed the 2026-08-27 freeze, one layer up:
+**the guard was keyed on the wrong quantity.**
+
+### What now watches it
+
+`nvidia-smi-exporter.py` emits per-device swap usage and zram's real RAM cost
+(`host_swap_device_*`, `zram_*`). node_exporter cannot supply these — 1.7.0 has
+no zram collector at all, and its `node_memory_Swap*` pair is pool-wide by
+construction. The exporter reads `/proc/swaps` and `/sys/block/<dev>/mm_stat`,
+both host-global, so the container needs no extra bind mount.
+
+Rules and panels match on **`tier="fast"`**, not `device=~"zram.*"`. The
+exporter derives that label from whichever device currently holds the top
+priority, so resizing or replacing the fast device keeps them correct rather
+than silently matching nothing.
+
+`PoindexterHostSwapFastTierFull` (warning) fires on a 1 h mean above
+`prometheus.threshold.host_swap_fast_tier_used_warning_percent` (default 90).
+The average is not decoration — see the blip-reset trap in
+[alert-rule-authoring.md](alert-rule-authoring.md). Panels: the **Host Memory —
+pressure** row on the Hardware & Power board.
+
+> **Adding a metric family to this exporter?** The `nvidia-smi` scrape job in
+> `infrastructure/prometheus/config/prometheus.yml` has a `metric_relabel_configs`
+> **allowlist**. A family missing from that regex is dropped at ingestion: the
+> exporter serves it, the scrape reads `up=1`, and the series simply never
+> exists. That is how the `gpu_12vhpwr_*` family shipped dark for a deploy.
+
+## Sizing the fast tier
+
+Config: `infrastructure/systemd/zram/pop-zram` → `/etc/pop-zram`, deployed by
+`scripts/linux/install-swap-tiering.sh`. Read by `/usr/bin/pop-zram-config` at
+boot.
+
+The 2026-08-28 driver was not a leak — it was a **new permanent tenant**. The
+QA model-placement doctrine pinned `qwen3-vl:30b` onto GPU 1 with
+`OLLAMA_KEEP_ALIVE=-1`, and `llama-server`'s host-side copy of the weights
+(~8.3 GiB) was swapped out and never touched again: `VmRSS` 70 MiB, major
+faults flat across sampling. It is inert, correctly evicted, and permanent —
+restarting the unit only re-deposits it at the next model load. A 16 GiB tier
+minus an 8.3 GiB resident leaves ~7.7 GiB of working fast tier, so the tier was
+sized to 24 GiB to restore roughly the headroom it had before the pin.
+
+Three things to hold onto when changing this:
+
+- **zram costs RAM.** It holds compressed pages _in memory_, so the ceiling
+  costs `size / compression_ratio` — ~2.45x with zstd on this working set, so a
+  full 24 GiB tier costs ~9.8 GiB. Watch "zram RAM cost" on the board. Do not
+  keep raising it: zram's own memory is unswappable, so an oversized tier
+  causes the pressure it was meant to relieve. 24 GiB is 40% of 60 GiB — near
+  the top of the conventional band.
+- **The change lands at reboot.** `pop-zram-config` opens with
+  `test -b /dev/zram0 && exit 0`, so a live host keeps the zram it booted with.
+  The install script says so rather than pretending otherwise.
+- **A live resize is the spike you are trying to avoid.** `swapoff` faults
+  every page zram holds back into RAM at once. `--apply-now` exists but refuses
+  unless `MemAvailable` covers 1.5x the net cost. At boot the same change is
+  free, because nothing is in zram yet.
+
+**Neither recycle probe can reach a host systemd unit.** `sidecar_ram_watch.py`
+and the comfyui probe both work through `restart_container` on docker names;
+`ollama-vision.service` is outside them by construction. For host units the
+equivalent read is `systemctl show <unit> -p MemorySwapCurrent`, which no
+container metric covers. In this case that is fine — the tenant is inert and
+recycling it would only re-deposit — but a host unit that swaps _and_ faults
+would need a different mechanism, not a wider watermark list.
+
 ## Related
 
 - The chronic-condition alert is `PoindexterHostSwapExhausted` in
@@ -181,3 +273,7 @@ not by habit.
   found afterwards — a Prometheus restart wipes pending `for:` state, and this
   host restarts it every ~1.3 h.
 - 2026-08-24 precursor incident: poindexter#1021.
+- Swap **tier** telemetry (`host_swap_device_*` / `zram_*`) comes from
+  `scripts/nvidia-smi-exporter.py`, not node_exporter — see the tier section
+  above for why, and for the scrape allowlist that will silently drop any new
+  family you add to that exporter.

@@ -1,0 +1,51 @@
+# /etc/pop-zram — swap fast-tier sizing. Read by /usr/bin/pop-zram-config at
+# boot (pop-default-settings-zram.service). Deployed by
+# scripts/linux/install-swap-tiering.sh; edit it HERE, not under /etc.
+#
+# WHY THIS FILE EXISTS (2026-08-28)
+# --------------------------------
+# The host swaps into a PRIORITY-TIERED pool: zram0 at priority 1000 and a
+# 32 GiB dm-crypt partition at -1. zram takes every page first, so once it is
+# full every new page lands on encrypted NVMe instead of compressed RAM. That
+# cliff is what memory pressure actually feels like here, and it is invisible
+# in the aggregate SwapFree/SwapTotal that node_exporter reports.
+#
+# On 2026-08-28 zram sat 99.7% full while total swap read 61%. The cause was a
+# NEW permanent tenant, not a leak: the QA model-placement doctrine pinned
+# qwen3-vl:30b into GPU 1 with OLLAMA_KEEP_ALIVE=-1, and llama-server's
+# host-side copy of the weights (~8.3 GiB) was swapped out and never touched
+# again — VmRSS 70 MiB, major faults flat. It is inert, correctly evicted, and
+# permanent. Restarting the unit only re-deposits it on the next model load.
+#
+# So the fix is to SIZE the tier for the tenant rather than fight it. A 16 GiB
+# zram minus an 8.3 GiB permanent resident leaves ~7.7 GiB of working fast
+# tier; 24 GiB restores roughly the headroom the tier had before the pin.
+#
+# THE COST IS REAL RAM. zram holds compressed pages in RAM, so the tier's
+# ceiling costs (size / compression ratio) — measured ~2.45x with zstd on this
+# working set, so a full 24 GiB tier costs ~9.8 GiB of RAM against ~6.5 GiB
+# today. That is affordable on 60 GiB and visible on the Hardware & Power
+# board ("zram RAM cost"). Do NOT keep raising this: zram memory is itself
+# unswappable, so an oversized tier causes the pressure it was meant to
+# relieve. 24 GiB is 40% of RAM — near the top of the conventional band.
+
+ALGO=zstd
+
+# MiB. Default without this file is 16384.
+MAX_SIZE=24576
+
+# Pop's default. Correct for a zram-FIRST pool: 180 biases reclaim toward swap
+# over dropping page cache, which is the right trade when swap is compressed
+# RAM. Note /etc/sysctl.d/10-pop-default-settings.conf sets 10 — pop-zram-config
+# overrides it at boot, so this value is the one that governs. Left unchanged
+# deliberately: growing the tier is one variable, and re-tuning swappiness in
+# the same change would make the result unattributable.
+SWAPPINESS=180
+
+# 0 = no swap readahead, the zstd default. There is a real tension here that is
+# NOT worth resolving blind: 0 is right for zram (per-page decompression is
+# cheap, readahead just wastes it) and wrong for the dm-crypt tier (4 KiB
+# random reads, where batching helps). The setting is global, so one tier
+# always loses. Growing zram keeps more traffic on the tier that wants 0.
+# Revisit only with a measurement of slow-tier swap-in, not on principle.
+PAGE_CLUSTERS=0

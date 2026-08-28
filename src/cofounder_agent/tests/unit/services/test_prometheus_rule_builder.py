@@ -1738,3 +1738,111 @@ class TestHostSwapExhaustedRule:
         )[0]
         assert "{threshold." not in section
         assert "< 5" in section
+
+
+class TestHostSwapFastTierFullRule:
+    """The TIER leg of the host-memory family (2026-08-28).
+
+    Its three siblings all read the swap pool as ONE number. On a
+    priority-tiered host that number hides the cliff that actually hurts:
+    zram (prio 1000) takes every page first, and once it is full each new
+    page falls to dm-crypt (prio -1) — compressed RAM to encrypted NVMe.
+    Measured the day this rule was written: zram 99.7% full while total
+    swap read 61%.
+    """
+
+    def test_is_a_sustained_warning_not_a_page(self):
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapFastTierFull"]
+        assert rule["severity"] == "warning"
+        assert (
+            "{threshold.host_swap_fast_tier_used_warning_percent}"
+            in rule["expr"]
+        )
+
+    def test_matches_the_tier_label_not_a_device_name(self):
+        """`tier="fast"` is derived by the exporter from whichever device
+        currently holds the top swap priority.
+
+        A `device=~"zram.*"` matcher would look equivalent and read more
+        obviously, but it silently matches NOTHING the day the fast device
+        is renamed, replaced, or joined by a second one — and a rule that
+        matches nothing is indistinguishable from a healthy rule.
+        """
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapFastTierFull"]
+        assert 'tier="fast"' in rule["expr"]
+        assert "zram" not in rule["expr"]
+
+    def test_averages_the_window_so_blips_cannot_reset_the_clock(self):
+        """Same trap that cost PoindexterHostSwapExhausted the 2026-08-27
+        freeze: a saturated tier rattles as reclaim bursts free a few
+        hundred MB, and every dip under the threshold restarts a raw
+        `for:` clock. The average is the fix, so it is the assertion."""
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapFastTierFull"]
+        assert (
+            'avg_over_time(host_swap_device_used_bytes{tier="fast"}[1h])'
+            in rule["expr"]
+        )
+        expr_without_avg = rule["expr"].replace(
+            'avg_over_time(host_swap_device_used_bytes{tier="fast"}[1h])', ""
+        )
+        assert "host_swap_device_used_bytes" not in expr_without_avg
+
+    def test_pending_clock_stays_shorter_than_the_average_window(self):
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapFastTierFull"]
+        assert rule["for"] == "15m"
+        assert _for_seconds(rule["for"]) < 60 * 60  # under the 1h window
+
+    def test_host_without_the_series_never_fires(self):
+        """No swap, or an exporter too old to emit the family, leaves the
+        division NaN; the explicit size conjunct documents that a host
+        without a fast tier stays silent by design rather than alerting on
+        absent data."""
+        rule = rb.DEFAULT_RULES["PoindexterHostSwapFastTierFull"]
+        assert 'host_swap_device_size_bytes{tier="fast"} > 0' in rule["expr"]
+
+    def test_fires_before_the_aggregate_rule_can(self):
+        """The reason this rule exists at all.
+
+        PoindexterHostSwapExhausted needs the WHOLE pool down to 5% free.
+        With a 16 GiB fast tier inside a 48 GiB pool, the fast tier is
+        already 100% gone when the pool is only a third used — a ~14 GiB
+        band in which the box pages to dm-crypt and the aggregate rule is
+        still quiet. If someone ever raises this threshold above what the
+        aggregate rule implies, the tier rule stops leading and becomes
+        redundant, which is the silent way this regresses.
+        """
+        fast_full_pct = float(
+            rb.DEFAULT_THRESHOLDS["host_swap_fast_tier_used_warning_percent"]
+        )
+        pool_free_pct = float(
+            rb.DEFAULT_THRESHOLDS["host_memory_swap_free_warning_percent"]
+        )
+        # The aggregate rule only speaks when the pool is this full.
+        pool_full_pct = 100 - pool_free_pct
+        assert fast_full_pct < pool_full_pct, (
+            "the fast-tier threshold must trip before the whole-pool rule, "
+            "otherwise it adds latency instead of lead time"
+        )
+
+    def test_threshold_is_seeded_and_tunable(self):
+        assert (
+            rb.DEFAULT_THRESHOLDS["host_swap_fast_tier_used_warning_percent"]
+            == "90"
+        )
+
+    def test_seeded_app_setting_matches_the_code_default(self):
+        from cofounder_agent.services.settings_defaults import DEFAULTS
+
+        key = "prometheus.threshold.host_swap_fast_tier_used_warning_percent"
+        assert DEFAULTS[key] == (
+            rb.DEFAULT_THRESHOLDS["host_swap_fast_tier_used_warning_percent"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_renders_with_defaults_substituted(self):
+        out = await rb.build_current(_FakePool([]))
+        section = out.split("alert: PoindexterHostSwapFastTierFull")[1].split(
+            "alert:", 1
+        )[0]
+        assert "{threshold." not in section
+        assert "> 90" in section

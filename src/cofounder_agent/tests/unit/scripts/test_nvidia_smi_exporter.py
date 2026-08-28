@@ -516,3 +516,96 @@ class TestAstralPinTelemetry:
         monkeypatch.setattr(EXPORTER, "_astral_bus", None)
         monkeypatch.setattr(EXPORTER, "_astral_find_bus", lambda: None)
         assert EXPORTER.get_astral_pin_metrics() == ""
+
+
+class TestSwapTierMetrics:
+    """The fast/slow tier split (2026-08-28).
+
+    node_exporter reports the swap pool as one SwapFree/SwapTotal pair, which
+    cannot express the thing that actually hurts on this host: zram (priority
+    1000) takes every page first, and once full each new page falls to
+    dm-crypt (priority -1). Measured the day this shipped — zram 99.7% full
+    while total swap read 61%, with both existing guards still ~14 GiB away
+    from reacting.
+    """
+
+    # Real /proc/swaps output from the host, 2026-08-28.
+    SWAPS = (
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n"
+        "/dev/dm-0                               partition\t33553912\t15610592\t-1\n"
+        "/dev/zram0                              partition\t16777212\t13927592\t1000\n"
+    )
+
+    @staticmethod
+    def _mm_stat(device):
+        return {"orig": 13928157184, "compr": 4826845535, "mem_used": 5011697664}
+
+    def _render(self, swaps=None, mm_stat=None):
+        return EXPORTER._format_swap_tier_rows(
+            swaps if swaps is not None else self.SWAPS,
+            mm_stat if mm_stat is not None else self._mm_stat,
+        )
+
+    def test_highest_priority_device_is_labelled_the_fast_tier(self):
+        """`tier` is derived from the priority column, never from the device
+        name. Alert rules match on it precisely so that resizing or replacing
+        the fast device cannot leave them silently matching nothing."""
+        out = self._render()
+        assert 'device="zram0",priority="1000",tier="fast"' in out
+        assert 'device="dm-0",priority="-1",tier="slow"' in out
+
+    def test_proc_swaps_columns_are_kib_not_pages(self):
+        """/proc/swaps counts 1024-byte units. Reading them as 4 KiB pages
+        would overstate every device 4x and put the fast tier permanently
+        over any threshold — a units bug that looks like a real incident."""
+        out = self._render()
+        # 16777212 KiB == the 16 GiB zram device.
+        assert "host_swap_device_size_bytes{device=\"zram0\"," in out
+        size = next(
+            line for line in out.splitlines()
+            if line.startswith("host_swap_device_size_bytes") and "zram0" in line
+        )
+        assert size.rsplit(" ", 1)[1] == str(16777212 * 1024)
+
+    def test_zram_ram_cost_is_reported_for_zram_devices_only(self):
+        out = self._render()
+        assert 'zram_mem_used_bytes{device="zram0"} 5011697664' in out
+        assert 'zram_orig_data_bytes{device="zram0"} 13928157184' in out
+        assert "dm-0" not in out.split("# HELP zram_orig_data_bytes")[1]
+
+    def test_unreadable_mm_stat_keeps_the_tier_gauges(self):
+        """A zram device whose mm_stat cannot be read loses only its RAM-cost
+        series. Dropping the tier gauges too would blind the alert over a
+        secondary accounting detail."""
+        def boom(device):
+            raise OSError("no such file")
+
+        out = self._render(mm_stat=boom)
+        assert 'tier="fast"' in out
+        assert "zram_mem_used_bytes" not in out
+
+    def test_malformed_row_is_skipped_not_fatal(self):
+        out = self._render(
+            swaps=self.SWAPS + "/dev/broken partition notanumber 0 -2\n"
+        )
+        assert 'tier="fast"' in out
+        assert "broken" not in out
+
+    def test_no_swap_emits_nothing(self):
+        """A swapless host must produce no series at all. Emitting zeros would
+        make `host_swap_device_size_bytes{tier="fast"} > 0` true and hand the
+        alert a division by zero to reason about."""
+        header = self.SWAPS.splitlines()[0] + "\n"
+        assert self._render(swaps=header) == ""
+
+    def test_single_device_host_is_all_fast_tier(self):
+        """With one swap device there is no slow tier to fall through to, so
+        it is the fast one by definition — the alert still means 'the tier
+        that takes pages first is full'."""
+        one = (
+            self.SWAPS.splitlines()[0] + "\n"
+            + "/dev/dm-0                               partition\t33553912\t100\t-1\n"
+        )
+        out = self._render(swaps=one)
+        assert 'device="dm-0",priority="-1",tier="fast"' in out
+        assert 'tier="slow"' not in out

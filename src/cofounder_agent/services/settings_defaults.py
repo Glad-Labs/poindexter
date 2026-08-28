@@ -377,6 +377,7 @@ DEFAULTS: dict[str, str] = {
     # tests/unit/services/test_prometheus_rule_builder.py so the two sources
     # cannot drift.
     'prometheus.threshold.host_memory_swap_free_warning_percent': '5',
+    'prometheus.threshold.host_swap_fast_tier_used_warning_percent': '90',
     # How long a publishing drought runs before NoPublishedPostsRecently
     # fires, in hours. Seeded for the same reason as the key above: it is the
     # whole duration of an alert that previously failed to fire (it missed a

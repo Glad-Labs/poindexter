@@ -169,6 +169,14 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # host-memory rule fired early: MemAvailable stayed above its floor
     # while dormant model servers quietly consumed the whole swap file).
     "host_memory_swap_free_warning_percent": "5",
+    # Fast-tier (highest swap priority — zram here) fullness ceiling for
+    # PoindexterHostSwapFastTierFull (2026-08-28). Deliberately NOT the same
+    # number as the swap-free floor above: that one asks "is the whole pool
+    # gone?", this one asks "has the CHEAP tier gone, so every new page now
+    # costs a dm-crypt write?". 90% leaves room for the tier to breathe while
+    # still firing well before the aggregate rule can (measured 2026-08-28:
+    # zram 99.7% full at 61% total swap — a ~14 GiB blind band).
+    "host_swap_fast_tier_used_warning_percent": "90",
     # Mains supply quality (Glad-Labs/poindexter#924). Watches
     # psu_line_voltage_volts — true outlet voltage from the Shelly wall-plug
     # meter (see docs/operations/wall-power-metering.md), NOT a PSU-internal
@@ -1501,6 +1509,60 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "container_memory_swap by container on the Hardware & Power "
             "board; unload or restart the biggest dormant model sidecars, "
             "and consider whether the resident fleet has outgrown the box."
+        ),
+    },
+    "PoindexterHostSwapFastTierFull": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        # The TIER leg of the host-memory family (2026-08-28). Its three
+        # siblings all measure the swap pool as one number, and on a
+        # priority-tiered host that number hides the cliff that actually
+        # hurts: zram (prio 1000) takes every page first and, once full,
+        # each new page falls to dm-crypt (prio -1) — compressed RAM to
+        # encrypted NVMe, silently.
+        #
+        # Measured on the day this rule was written: zram 99.7% full while
+        # total swap read 61%, io PSI ~10%, and BOTH existing guards
+        # (PoindexterHostSwapExhausted at 5% free, systemd-oomd at
+        # SwapUsedLimit=90%) were ~14 GiB of further growth away from
+        # reacting. Same failure shape as the 2026-08-27 freeze, one layer
+        # up: the guard was keyed on the wrong quantity.
+        #
+        # Matches on tier="fast", NOT device=~"zram.*" — the exporter derives
+        # that label from whichever device currently holds the top swap
+        # priority, so resizing or replacing the fast device keeps the rule
+        # correct instead of silently matching nothing.
+        #
+        # Window-in-the-query per the restart-gap policy atop DEFAULT_RULES:
+        # a saturated tier rattles as reclaim bursts free a few hundred MB,
+        # and every blip under the threshold would restart a raw `for:`.
+        "expr": (
+            "(100 * avg_over_time(host_swap_device_used_bytes{tier=\"fast\"}[1h]) "
+            "/ host_swap_device_size_bytes{tier=\"fast\"} "
+            "> {threshold.host_swap_fast_tier_used_warning_percent}) "
+            "and (host_swap_device_size_bytes{tier=\"fast\"} > 0)"
+        ),
+        # 1h window + 15m debounce ~= 1.2h end-to-end. Shorter than the
+        # aggregate rule's 2.4h on purpose: this one exists to fire FIRST,
+        # while the slow tier still has room to absorb the overflow.
+        "for": "15m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Fast swap tier (zram) is saturated — new pages are going to disk",
+        "description": (
+            "The highest-priority swap device has averaged over "
+            "prometheus.threshold.host_swap_fast_tier_used_warning_percent% "
+            "full for an hour ({{ $value | humanize }}%, 1h mean). Total swap "
+            "may still look healthy — it is not the same question. Every page "
+            "swapped from here on lands on the slow tier (dm-crypt NVMe), "
+            "which is what turns memory pressure into io stall. Usual cause "
+            "is a dormant tenant parking GB it never reads: check "
+            "host_swap_device_used_bytes and container_memory_swap on the "
+            "Hardware & Power board, and `systemctl show <unit> -p "
+            "MemorySwapCurrent` for host units, which no container metric "
+            "covers. Recycling the process is what returns the memory; a "
+            "mem_limit only pins it into RAM instead."
         ),
     },
     # Postgres connection-pool saturation. Previously static in

@@ -2986,6 +2986,355 @@
       ]
     },
     {
+      "id": 90,
+      "type": "stat",
+      "title": "Fast swap tier used (zram)",
+      "description": "Fullness of the HIGHEST-PRIORITY swap device — the one that takes every page first. This is a different question from total swap, and the gap between them is the point: on 2026-08-28 this read 99.7% while total swap read 61%. Past 100% here, every new page lands on dm-crypt NVMe instead of compressed RAM, which is what turns memory pressure into io stall. Orange band = prometheus.threshold.host_swap_fast_tier_used_warning_percent (PoindexterHostSwapFastTierFull).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 171
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "orange",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "100 * host_swap_device_used_bytes{tier=\"fast\"} / host_swap_device_size_bytes{tier=\"fast\"}",
+          "legendFormat": "{{device}}"
+        }
+      ]
+    },
+    {
+      "id": 91,
+      "type": "stat",
+      "title": "zram RAM cost",
+      "description": "Physical RAM zram is consuming to hold the compressed pages (mm_stat mem_used_total). zram swap is not free memory — it trades RAM for compression, so this is the real standing cost of the fast tier and the number to weigh before enlarging it in /etc/pop-zram.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 171
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10737418240
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "zram_mem_used_bytes",
+          "legendFormat": "{{device}}"
+        }
+      ]
+    },
+    {
+      "id": 92,
+      "type": "stat",
+      "title": "zram compression ratio",
+      "description": "orig_data / compr_data — how much swap the fast tier buys per byte of RAM it holds. Measured ~2.45x with zstd on this host's working set. Multiply a proposed zram size by (1 / this) to predict its RAM cost.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 171
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "zram_orig_data_bytes / zram_compr_data_bytes",
+          "legendFormat": "{{device}}"
+        }
+      ]
+    },
+    {
+      "id": 93,
+      "type": "timeseries",
+      "title": "Swap by tier — where pages actually land",
+      "description": "Per-device swap usage against each device's capacity. node_exporter only exposes the pool as one SwapFree/SwapTotal pair, which cannot show this: zram (prio 1000) fills first and dm-crypt (prio -1) only starts moving once it is full. A slow-tier line that begins climbing while the fast line is pinned at its capacity IS the cliff — read it as the moment the host started paging to encrypted disk.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "swap in use",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*capacity.*"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [10, 10]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "host_swap_device_used_bytes",
+          "legendFormat": "{{device}} used ({{tier}})"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "host_swap_device_size_bytes",
+          "legendFormat": "{{device}} capacity"
+        }
+      ]
+    },
+    {
+      "id": 94,
+      "type": "timeseries",
+      "title": "Fast-tier fullness vs alert threshold",
+      "description": "The series PoindexterHostSwapFastTierFull evaluates, plus its band. The rule averages this over 1h before comparing, because a saturated tier rattles as reclaim bursts free a few hundred MB — on the raw line every dip under the band would restart a `for:` clock (the trap that cost PoindexterHostSwapExhausted the 2026-08-27 freeze). Judge sustained level here, not individual dips.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisLabel": "% of tier",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "orange",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "100 * host_swap_device_used_bytes{tier=\"fast\"} / host_swap_device_size_bytes{tier=\"fast\"}",
+          "legendFormat": "{{device}} now"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "100 * avg_over_time(host_swap_device_used_bytes{tier=\"fast\"}[1h]) / host_swap_device_size_bytes{tier=\"fast\"}",
+          "legendFormat": "{{device}} 1h mean (what the rule reads)"
+        }
+      ]
+    },
+    {
       "id": 66,
       "type": "row",
       "collapsed": false,
@@ -2994,7 +3343,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 171
+        "y": 183
       },
       "panels": []
     },
@@ -3011,7 +3360,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 172
+        "y": 184
       },
       "fieldConfig": {
         "defaults": {
@@ -3076,7 +3425,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 180
+        "y": 192
       },
       "id": 69,
       "panels": [],
@@ -3119,7 +3468,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 181
+        "y": 193
       },
       "id": 70,
       "options": {
@@ -3176,7 +3525,7 @@
         "h": 6,
         "w": 18,
         "x": 6,
-        "y": 181
+        "y": 193
       },
       "id": 71,
       "options": {

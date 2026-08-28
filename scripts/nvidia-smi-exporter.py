@@ -31,6 +31,7 @@ Reliability:
     manager's restart policy.
 """
 import logging
+import pathlib
 import re
 import subprocess
 import sys
@@ -1071,6 +1072,143 @@ def get_lm_sensors_metrics():
 
 
 # ---------------------------------------------------------------------------
+# Swap TIER metrics (stack: 2026-08-28). node_exporter gives SwapFree/SwapTotal
+# for the whole pool and nothing per device — but this host swaps into a
+# PRIORITY-TIERED pool (zram0 at prio 1000, dm-crypt at prio -1), and the two
+# tiers are not interchangeable: zram is compressed RAM, cryptswap is encrypted
+# NVMe. zram fills FIRST and, once full, every new page falls to the slow tier.
+#
+# That cliff is invisible in the aggregate. On 2026-08-28 zram sat 99.7% full
+# while total swap read 61% — the box was already paging to dm-crypt (io PSI
+# ~10%) with both existing guards (PoindexterHostSwapExhausted at 95% of TOTAL,
+# systemd-oomd SwapUsedLimit=90% of TOTAL) still ~14 GiB away from reacting.
+# Same failure shape as the 2026-08-27 freeze: the guard keyed on the wrong
+# quantity. These series make the fast tier observable so a rule can key on it.
+#
+# The `tier` label — not the device name — is what alerts should match on:
+# "fast" is whatever currently holds the highest swap priority, so the rule
+# survives a layout change (a different device, a resized zram) that a
+# hardcoded device=~"zram.*" matcher would not.
+_SWAP_TIER_HELP = (
+    "# HELP host_swap_device_size_bytes Swap device capacity, per device\n"
+    "# TYPE host_swap_device_size_bytes gauge\n"
+    "# HELP host_swap_device_used_bytes Swap device bytes in use, per device\n"
+    "# TYPE host_swap_device_used_bytes gauge\n"
+)
+_ZRAM_HELP = (
+    "# HELP zram_orig_data_bytes Uncompressed size of data held in zram\n"
+    "# TYPE zram_orig_data_bytes gauge\n"
+    "# HELP zram_compr_data_bytes Compressed size of data held in zram\n"
+    "# TYPE zram_compr_data_bytes gauge\n"
+    "# HELP zram_mem_used_bytes Physical RAM consumed by zram to hold it\n"
+    "# TYPE zram_mem_used_bytes gauge\n"
+)
+
+
+def _read_zram_mm_stat(device: str) -> dict[str, int]:
+    """Parse /sys/block/<device>/mm_stat into the three fields worth exporting.
+
+    zram's mm_stat is positional and has GROWN over kernel releases (7 fields
+    historically, 9 on 6.x with huge_pages_since). Index the first three only —
+    orig/compr/mem_used are stable at 0/1/2 — so a newer kernel adding columns
+    can never shift what we read.
+    """
+    raw = pathlib.Path(f"/sys/block/{device}/mm_stat").read_text().split()
+    if len(raw) < 3:
+        raise ValueError(f"mm_stat has {len(raw)} fields, need >= 3")
+    return {
+        "orig": int(raw[0]),
+        "compr": int(raw[1]),
+        "mem_used": int(raw[2]),
+    }
+
+
+def _format_swap_tier_rows(swaps_text: str, mm_stat_lookup) -> str:
+    """Pure formatter: /proc/swaps text + a ``device -> mm_stat dict`` callable.
+
+    Split out from the I/O so the tier arithmetic is testable without a host
+    that happens to have zram — the same shape as ``_format_gpu_rows`` above,
+    and for the same reason (this parser's predecessor blanked every series on
+    an input shape nobody had exercised).
+    """
+    devices = []
+    for line in swaps_text.splitlines()[1:]:  # row 0 is the header
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        filename, _type, size_kib, used_kib, priority = parts[:5]
+        try:
+            devices.append({
+                "device": filename.rsplit("/", 1)[-1],
+                # /proc/swaps counts in 1024-byte units, NOT pages.
+                "size": int(size_kib) * 1024,
+                "used": int(used_kib) * 1024,
+                "priority": int(priority),
+            })
+        except ValueError as exc:
+            logger.warning("swap-tier: unparseable /proc/swaps row %r (%s)", line, exc)
+
+    if not devices:
+        return ""
+
+    # Highest priority wins the pages first, so that is the tier whose
+    # exhaustion pushes traffic onto slower storage.
+    top = max(d["priority"] for d in devices)
+
+    lines = [_SWAP_TIER_HELP.rstrip("\n")]
+    for d in devices:
+        labels = (
+            f'device="{d["device"]}",'
+            f'priority="{d["priority"]}",'
+            f'tier="{"fast" if d["priority"] == top else "slow"}"'
+        )
+        lines.append(f"host_swap_device_size_bytes{{{labels}}} {d['size']}")
+        lines.append(f"host_swap_device_used_bytes{{{labels}}} {d['used']}")
+
+    zram_lines = []
+    for d in devices:
+        if not d["device"].startswith("zram"):
+            continue
+        try:
+            stat = mm_stat_lookup(d["device"])
+        except (OSError, ValueError) as exc:
+            # Loud, not silent: a zram device present in /proc/swaps whose
+            # mm_stat we cannot read is a real gap in the RAM-cost accounting,
+            # and the tier gauges above stay correct without it.
+            logger.warning("swap-tier: mm_stat unreadable for %s (%s)", d["device"], exc)
+            continue
+        labels = f'device="{d["device"]}"'
+        zram_lines.append(f"zram_orig_data_bytes{{{labels}}} {stat['orig']}")
+        zram_lines.append(f"zram_compr_data_bytes{{{labels}}} {stat['compr']}")
+        zram_lines.append(f"zram_mem_used_bytes{{{labels}}} {stat['mem_used']}")
+
+    if zram_lines:
+        lines.append(_ZRAM_HELP.rstrip("\n"))
+        lines.extend(zram_lines)
+
+    return "\n".join(lines) + "\n"
+
+
+def get_swap_tier_metrics() -> str:
+    """Per-device swap usage plus zram's real RAM cost, tagged fast/slow tier.
+
+    Linux-only and best-effort: a host with swap off emits nothing (no series
+    beats a fabricated zero). Reads /proc/swaps, which is host-global and
+    visible inside the container without any extra bind mount.
+    """
+    if sys.platform != "linux":
+        return ""
+
+    try:
+        swaps_text = pathlib.Path("/proc/swaps").read_text()
+    except OSError as exc:
+        logger.warning("swap-tier: /proc/swaps unreadable (%s)", exc)
+        return ""
+
+    return _format_swap_tier_rows(swaps_text, _read_zram_mm_stat)
+
+
+# ---------------------------------------------------------------------------
 # Background collector — /metrics serves a cached snapshot refreshed off the
 # request path (2026-07-12). Per-request collection intermittently took
 # 2.5-6.7s+ (Prometheus saw multi-minute wedges), blowing the brain's 3s
@@ -1100,8 +1238,9 @@ def _collect_all_metrics() -> bytes:
     aida = get_aida64_metrics()
     hwinfo = get_hwinfo_metrics()
     lm = get_lm_sensors_metrics()
+    swap = get_swap_tier_metrics()
     total = get_total_power_metrics(gpu, cpu)
-    combined = gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + total
+    combined = gpu + procs + cpu + shelly + astral + aida + hwinfo + lm + swap + total
     return _dedupe_psu_metric(combined).encode()
 
 
