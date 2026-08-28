@@ -213,6 +213,22 @@ services:
       # DNS, so neither needs a published port.
       GF_RENDERING_SERVER_URL: http://grafana-image-renderer:8081/render
       GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+      # REQUIRED, not optional. Grafana 13 refuses to *start* when a rendering
+      # server is configured and this is left at its built-in default of "-":
+      #   "failed to start rendering service: Using the default
+      #    [rendering]renderer_token is not allowed for production settings"
+      # It crash-loops, taking the whole dashboard stack down with it. Must
+      # match AUTH_TOKEN on the renderer below.
+      #
+      # The fallback keeps a fresh `docker compose up` working out of the box.
+      # It is a shared-secret between two services on a private compose
+      # network with no published port, so a known default is defence in
+      # depth rather than the only control -- but set grafana_renderer_token
+      # in ~/.poindexter/bootstrap.toml (start-stack.sh exports every
+      # bootstrap key as an uppercase env var) and it is used automatically.
+      # If you ever publish the renderer's port, setting a real token stops
+      # being optional.
+      GF_RENDERING_RENDERER_TOKEN: ${GRAFANA_RENDERER_TOKEN:-poindexter-renderer-local-only}
       # Allow the operator console to embed /d-solo panels (local/tailnet-only;
       # anonymous Viewer is safe — Grafana Cloud was retired 2026-05-03).
       GF_SECURITY_ALLOW_EMBEDDING: "true"
@@ -292,6 +308,8 @@ services:
       # swap-livelocked on 2026-08-27 and each concurrent render is a Chromium
       # process, so an unbounded renderer is a memory risk rather than a
       # throughput win for on-demand use.
+      # Must match GF_RENDERING_RENDERER_TOKEN on grafana above.
+      AUTH_TOKEN: ${GRAFANA_RENDERER_TOKEN:-poindexter-renderer-local-only}
       RATE_LIMIT_MAX_LIMIT: "2"
       # Bound one render's viewport. Defaults are 3000x3000; nothing here
       # renders larger than a dashboard at 2x, and a runaway width/height is
