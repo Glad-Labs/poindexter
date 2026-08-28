@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+## [0.130.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.129.0...v0.130.0) (2026-08-28)
+
+
+### Features
+
+* **brain:** recycle the dormant GPU sidecars that actually fill swap ([#3398](https://github.com/Glad-Labs/glad-labs-stack/issues/3398)) ([08524b8](https://github.com/Glad-Labs/glad-labs-stack/commit/08524b8a9dfebffa7ce2aa788596fced8221416a))
+* **brain:** recycle the leaking ollama runner — the probe gap nothing could reach ([#3441](https://github.com/Glad-Labs/glad-labs-stack/issues/3441)) ([142f1f7](https://github.com/Glad-Labs/glad-labs-stack/commit/142f1f7f9738a816556bab91b04428cef5d0b075))
+* **ci:** self-hosted Semgrep ratchet — the private overlay is scanned again ([#3433](https://github.com/Glad-Labs/glad-labs-stack/issues/3433)) ([6013c99](https://github.com/Glad-Labs/glad-labs-stack/commit/6013c995f4c3b390fd61f0efe418298567b25605))
+* **grafana:** add the image-renderer sidecar, and fix what it immediately caught ([#3425](https://github.com/Glad-Labs/glad-labs-stack/issues/3425)) ([a73e442](https://github.com/Glad-Labs/glad-labs-stack/commit/a73e442b20c84a13e66fe84b6e8f8f304e769048))
+* **image:** add FLUX.2-klein-4B as a fourth featured-image fan-out candidate ([#3404](https://github.com/Glad-Labs/glad-labs-stack/issues/3404)) ([dae9e71](https://github.com/Glad-Labs/glad-labs-stack/commit/dae9e71fe3186f39cbd16ba33a31eeb0cba8e0d9))
+* **image:** per-candidate render resolution for the featured fan-out ([#3408](https://github.com/Glad-Labs/glad-labs-stack/issues/3408)) ([69259e8](https://github.com/Glad-Labs/glad-labs-stack/commit/69259e8c7c031a24f9fd1fd98e95007a977a13cc))
+* **memory:** watch the swap FAST TIER, and size it for its new permanent tenant ([#3430](https://github.com/Glad-Labs/glad-labs-stack/issues/3430)) ([c3a1b78](https://github.com/Glad-Labs/glad-labs-stack/commit/c3a1b78a24b4875da49657c8100ca445303f700e))
+* **probe:** notice when the WAN egress IP changes, so allowlist 401s read as a cause ([#3420](https://github.com/Glad-Labs/glad-labs-stack/issues/3420)) ([f4b96cc](https://github.com/Glad-Labs/glad-labs-stack/commit/f4b96cc8a6ece77cdfe83ab76a21a1f9e6559862))
+* **rig:** put the real Glad Labs logo, large and centred, on the XC7 LCD ([#3395](https://github.com/Glad-Labs/glad-labs-stack/issues/3395)) ([254b227](https://github.com/Glad-Labs/glad-labs-stack/commit/254b22712c30b2f86788616c71d34d2de75013e4))
+
+
+### Bug Fixes
+
+* **alerts:** move the publishing-drought window out of `for:` — it missed a 61h outage ([#3403](https://github.com/Glad-Labs/glad-labs-stack/issues/3403)) ([7be426d](https://github.com/Glad-Labs/glad-labs-stack/commit/7be426d2a29670e92a02f6fc950c941addb76f02))
+* **alerts:** swap-exhaustion rule could not fire; add host OOM protection ([#3393](https://github.com/Glad-Labs/glad-labs-stack/issues/3393)) ([0f1b6b3](https://github.com/Glad-Labs/glad-labs-stack/commit/0f1b6b3ac082c6b32a4864cb6d9389c265fb785f))
+* **backup:** config snapshot was unreadable by the container uid ([#3401](https://github.com/Glad-Labs/glad-labs-stack/issues/3401)) ([e523c16](https://github.com/Glad-Labs/glad-labs-stack/commit/e523c16468891357a62f43c25d1a409d6b869afe))
+* **backup:** offsite tier now covers bootstrap.toml + memory, not just the DB ([#3399](https://github.com/Glad-Labs/glad-labs-stack/issues/3399)) ([b663969](https://github.com/Glad-Labs/glad-labs-stack/commit/b663969f261f32fd8b214668638c7c596a439b39))
+* **brain:** lower the comfyui RAM watermark 20 -&gt; 16 GB, onto a measured valley ([#3412](https://github.com/Glad-Labs/glad-labs-stack/issues/3412)) ([063d7da](https://github.com/Glad-Labs/glad-labs-stack/commit/063d7da79e29aab50e9028981be508167d1a8402))
+* **brain:** the firefighter model fallback still shipped llama3.2:3b ([#3411](https://github.com/Glad-Labs/glad-labs-stack/issues/3411)) ([5626f46](https://github.com/Glad-Labs/glad-labs-stack/commit/5626f4607fe44e75aaf336b538e13a14ce6e973a))
+* **ci:** a check that scanned nothing must not report clean ([#3429](https://github.com/Glad-Labs/glad-labs-stack/issues/3429)) ([4537f6a](https://github.com/Glad-Labs/glad-labs-stack/commit/4537f6a642a5973cc04f35b8b0c6512fc91d86a4))
+* **content:** budget for reasoning on the self-review detect call ([#3444](https://github.com/Glad-Labs/glad-labs-stack/issues/3444)) ([3d58572](https://github.com/Glad-Labs/glad-labs-stack/commit/3d58572754c85760f7e7296b2ed69c6963b97cde))
+* **cost:** one row per model — log what ran, not what was asked ([#3422](https://github.com/Glad-Labs/glad-labs-stack/issues/3422)) ([21bf075](https://github.com/Glad-Labs/glad-labs-stack/commit/21bf07555bdf1f972b3977a1aa396e065eaf3d50))
+* **deploy:** stop a raced compose-apply from stranding the worker down ([#3407](https://github.com/Glad-Labs/glad-labs-stack/issues/3407)) ([520ca8a](https://github.com/Glad-Labs/glad-labs-stack/commit/520ca8a6db30fb860ac8e51a89ada858ba5ffd54))
+* **docs:** stop public docs linking into content the mirror strips ([#3431](https://github.com/Glad-Labs/glad-labs-stack/issues/3431)) ([752d4ad](https://github.com/Glad-Labs/glad-labs-stack/commit/752d4ad312b343a16deb93fe242cf530ad04001e))
+* **docs:** the ollama-vision swap shadow is a LEAK, not a permanent tenant ([#3434](https://github.com/Glad-Labs/glad-labs-stack/issues/3434)) ([e6d6caf](https://github.com/Glad-Labs/glad-labs-stack/commit/e6d6caf263baecdb0ab29f926214ca60cd239ca6))
+* **firefighter:** refuse to auto-restart the database and the brain itself ([#3413](https://github.com/Glad-Labs/glad-labs-stack/issues/3413)) ([ed1a61b](https://github.com/Glad-Labs/glad-labs-stack/commit/ed1a61b2766e650b00d57c6960e9a74d0939afdb))
+* **grafana:** 23 invisible threshold escalations across 6 boards, + a ratchet ([#3421](https://github.com/Glad-Labs/glad-labs-stack/issues/3421)) ([6b0ecb1](https://github.com/Glad-Labs/glad-labs-stack/commit/6b0ecb15c56d6beb0f42493b066803f2459f8c3d))
+* **grafana:** fleet dashboard cleanup — 26 defects found by rendering, not reading ([#3428](https://github.com/Glad-Labs/glad-labs-stack/issues/3428)) ([68befc0](https://github.com/Glad-Labs/glad-labs-stack/commit/68befc01ab9c26a277844d47378b721c0a512633))
+* **grafana:** make the Database board legible — bound per-table panels, fix clipped headers ([#3414](https://github.com/Glad-Labs/glad-labs-stack/issues/3414)) ([1b719cd](https://github.com/Glad-Labs/glad-labs-stack/commit/1b719cdbfc8d0b3491909847a840e87b1b753aac))
+* **grafana:** set the renderer token — Grafana 13 refuses to start without it ([#3426](https://github.com/Glad-Labs/glad-labs-stack/issues/3426)) ([e396629](https://github.com/Glad-Labs/glad-labs-stack/commit/e396629ddc6d9560a176f3210970d23467fce5d1))
+* **grafana:** swap-tier panels were unreadable — colour was carrying meaning alone ([#3432](https://github.com/Glad-Labs/glad-labs-stack/issues/3432)) ([3cc1408](https://github.com/Glad-Labs/glad-labs-stack/commit/3cc14085b437542ebd68aaac36c94e5e07b1df5a))
+* **image-fanout:** a deselected zimage says so instead of going silent ([#3427](https://github.com/Glad-Labs/glad-labs-stack/issues/3427)) ([0bd9517](https://github.com/Glad-Labs/glad-labs-stack/commit/0bd9517c08e878f3b36f6ff2ee78655831fa7277))
+* **model-eval:** un-rot the eval harness — five bugs made every run vanish ([#3394](https://github.com/Glad-Labs/glad-labs-stack/issues/3394)) ([b2da43a](https://github.com/Glad-Labs/glad-labs-stack/commit/b2da43a3a86fbabb27ffce0d5e0cc348cf105032))
+* **ops:** drop the last non-permissive model default from the OSS product ([#3397](https://github.com/Glad-Labs/glad-labs-stack/issues/3397)) ([9d4b4a2](https://github.com/Glad-Labs/glad-labs-stack/commit/9d4b4a25270a2d44911813892821f7ec1a45fba3))
+* **ops:** retire the last non-permissive model defaults from app_settings ([#3400](https://github.com/Glad-Labs/glad-labs-stack/issues/3400)) ([febb5fa](https://github.com/Glad-Labs/glad-labs-stack/commit/febb5fa1ef4bf067407a56481896537a0c291a66))
+* **rig:** white CPU readout on the block — amber vanished into the artwork ([#3396](https://github.com/Glad-Labs/glad-labs-stack/issues/3396)) ([5ebd566](https://github.com/Glad-Labs/glad-labs-stack/commit/5ebd566b9c8208a0895db79795022c6be073367c))
+* **scheduler:** stop a poll-cadence job reporting its own design as a fault ([#3415](https://github.com/Glad-Labs/glad-labs-stack/issues/3415)) ([22ed041](https://github.com/Glad-Labs/glad-labs-stack/commit/22ed041210d09d6f2bfe6d00946468ac9e42b508))
+* **stack:** derive POINDEXTER_HOST_UID/GID instead of guessing 1000 ([#3402](https://github.com/Glad-Labs/glad-labs-stack/issues/3402)) ([af17b35](https://github.com/Glad-Labs/glad-labs-stack/commit/af17b35e3f213904e9032c1624b930c8f9630fdf))
+* **sync:** strip the vendored Semgrep rules — they froze the public mirror ([#3437](https://github.com/Glad-Labs/glad-labs-stack/issues/3437)) ([d1186fc](https://github.com/Glad-Labs/glad-labs-stack/commit/d1186fcd1b4947e13784e495eef56e5d077e8412))
+* **video:** stop hero fallbacks double-paging, and surface the silent plate cap ([#3423](https://github.com/Glad-Labs/glad-labs-stack/issues/3423)) ([47c60e9](https://github.com/Glad-Labs/glad-labs-stack/commit/47c60e99d0c1329053c4e32e377135509db980f1))
+* **watchdog:** stop recreating 5 containers on every ordinary deploy ([#3409](https://github.com/Glad-Labs/glad-labs-stack/issues/3409)) ([fc78a4a](https://github.com/Glad-Labs/glad-labs-stack/commit/fc78a4ace943265b550ac1ecf991a2d9e43f0e2a))
+
+
+### Code Refactoring
+
+* **content:** split writer_self_review into detect + revise atoms ([#3435](https://github.com/Glad-Labs/glad-labs-stack/issues/3435)) ([dc68a86](https://github.com/Glad-Labs/glad-labs-stack/commit/dc68a8663717ff935d235a2b6dac7e4ba44535a9))
+
 ## [0.129.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.128.0...v0.129.0) (2026-08-27)
 
 
