@@ -93,12 +93,32 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tA
 ```bash
 sudo mkdir -p /mnt/newdata
 sudo mount /dev/disk/by-id/nvme-Corsair_MP700_ELITE_with_Heatsink_AA0CB507000XOS-part1 /mnt/newdata
-sudo rsync -aHAX --numeric-ids --info=progress2 /data/ /mnt/newdata/
+sudo rsync -aHAX -x --numeric-ids --info=progress2 /data/ /mnt/newdata/
 ```
 
 `-H` preserves hardlinks (the container image stores are full of them; without
 it the copy inflates badly), `-AX` keeps ACLs and xattrs, `--numeric-ids`
 avoids remapping ownership through the host's user database.
+
+> **`-x` (`--one-file-system`) is not optional — omitting it corrupts the
+> copy.** Docker keeps one live overlay mount per running container under
+> `/data/docker/rootfs/overlayfs/<id>` (46 of them on this host). Without
+> `-x`, rsync descends into every one and copies the _merged union view_ of
+> that container's filesystem as real files, into a directory that on disk
+> should hold nothing but an empty stub for Docker to mount onto.
+>
+> Measured on the 2026-08-28 run, where pass 1 was launched without it:
+> **96 GB** of union content landed in `/mnt/newdata/docker/rootfs/overlayfs`
+> against a true on-disk size of **12 KB**. It also explains a confusing
+> symptom worth recognising — `du /data` reporting 1.1 TB while `df` reports
+> 965 GB used. `du` crosses into the same mounts and double-counts; `df`
+> measures the filesystem. **If those two disagree by roughly the size of
+> your running containers, you are looking at mount traversal, not sparse
+> files** (check `du --apparent-size` against `du`: equal means not sparse).
+>
+> Stopping Docker in §2 unmounts all 46, so pass 2 with `--delete` repairs a
+> target already polluted this way — but only if `-x` is present, and only
+> because the daemons are down. Do not rely on that; pass `-x` in both.
 
 Expect ~20–30 minutes. Nothing is at risk here — the source is only read.
 
@@ -124,7 +144,7 @@ sudo lsof +D /data 2>/dev/null | head  # expect empty
 ### 3. Pass 2 — delta copy with everything stopped
 
 ```bash
-sudo rsync -aHAX --numeric-ids --delete --info=progress2 /data/ /mnt/newdata/
+sudo rsync -aHAX -x --numeric-ids --delete --info=progress2 /data/ /mnt/newdata/
 ```
 
 `--delete` matters: pass 1 copied files that the daemons have since removed,
@@ -135,7 +155,7 @@ that produces a weird failure three days later.
 
 ```bash
 # Byte-level: any output at all is a mismatch
-sudo rsync -aHAXn --numeric-ids --delete --itemize-changes /data/ /mnt/newdata/ | head -20
+sudo rsync -aHAXn -x --numeric-ids --delete --itemize-changes /data/ /mnt/newdata/ | head -20
 
 # Structural
 sudo find /data -xdev | wc -l ; sudo find /mnt/newdata -xdev | wc -l
