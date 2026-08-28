@@ -569,8 +569,10 @@ class TestGroupingMakesSense:
         # web-research interleave this span already tolerates. Bumped 406→416
         # for writer_self_review_review_model (2026-08-28), seated directly
         # beside writer_self_review_model — the pin it splits off — inside the
-        # self-review block this span already contains.
-        assert span < 416, (
+        # self-review block this span already contains. Bumped 416→428 for the
+        # writer_self_review_thinking_* pair (2026-08-28), seated in that same
+        # self-review block beside the pin whose thinking budget they set.
+        assert span < 428, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

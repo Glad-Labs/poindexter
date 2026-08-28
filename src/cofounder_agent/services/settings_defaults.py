@@ -1360,6 +1360,18 @@ DEFAULTS: dict[str, str] = {
     # revision rejected as too long (2.40x-7.39x). A thinking detector also
     # needs the step-2 token budget to be useful here.
     'writer_self_review_review_model': '',
+    # Token budget + timeout for the self-review DETECT call when the detect
+    # model is a thinking model (thinking_model_substrings). Mirrors the critic
+    # path's qa_thinking_model_max_tokens: reasoning tokens count against
+    # max_tokens and are emitted BEFORE the numbered findings, so the standard
+    # 1500 truncates the answer away. Measured 2026-08-28, glm-4.7-5090 on the
+    # longest published post, only the cap differing: 1500 -> 3 findings (cut
+    # mid-sentence), 8000 -> 9 findings. A harder truncation leaves zero
+    # numbered lines, which reads as a clean PASS — a silent false negative
+    # (Glad-Labs/poindexter#1031). Inert unless the detect model is a thinking
+    # model, so a non-thinking default install is unaffected.
+    'writer_self_review_thinking_max_tokens': '8000',
+    'writer_self_review_thinking_timeout_seconds': '300',
     # NOTE: no new key — the two cold-data summary paths diverged. LIVE:
     # memory_compression_summary_model (summarize_to_table; raw-SQL read, so its
     # NULL last_read_at is not "dead"). Collapse: retention_embeddings_collapse.
@@ -5336,6 +5348,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_rag_two_pass_research_max_sources': {'owner': 'two_pass_writer', 'value_type': 'integer'},
     'writer_rag_two_pass_snippet_limit': {'owner': 'two_pass_writer', 'value_type': 'integer'},
     'writer_self_review_model': {'owner': 'self_review', 'value_type': 'model'},
+    'writer_self_review_review_model': {'owner': 'self_review', 'value_type': 'model'},
+    'writer_self_review_thinking_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
+    'writer_self_review_thinking_timeout_seconds': {'owner': 'self_review', 'value_type': 'integer'},
     'youtube_attribution_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'youtube_oembed_timeout_seconds': {'owner': 'content_reconcile_citations', 'value_type': 'integer'},
 

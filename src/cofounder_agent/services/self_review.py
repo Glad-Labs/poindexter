@@ -240,6 +240,7 @@ async def _prepare(
 
     async def _complete(
         prompt: str, *, temperature: float, max_tokens: int, model: str,
+        timeout_s_override: int | None = None,
     ) -> Any:
         """One self-review completion, routed like the draft.
 
@@ -250,6 +251,9 @@ async def _prepare(
         call signature is safe on either backend.
         """
         messages = [{"role": "user", "content": prompt}]
+        # A thinking detector needs longer than the shared default; everything
+        # else keeps it (None = no override).
+        call_timeout_s = timeout_s_override or timeout_s
         if pool is not None:
             # Production / in-graph path — the SAME dispatcher the draft uses.
             # A cloud model routes to LiteLLM (cost-tracked + cost_guard-gated);
@@ -277,7 +281,7 @@ async def _prepare(
                 phase="writer_self_review",
                 temperature=temperature,
                 max_tokens=max_tokens,
-                timeout_s=timeout_s,
+                timeout_s=call_timeout_s,
             )
         if local_provider is None:  # pragma: no cover - pool is None ⟹ resolved above
             raise RuntimeError(
@@ -288,7 +292,7 @@ async def _prepare(
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout_s=timeout_s,
+            timeout_s=call_timeout_s,
         )
 
     return _SelfReviewCtx(_complete, review_model, revise_model)
@@ -337,14 +341,59 @@ async def detect_contradictions(
         draft=draft,
         fallback=_REVIEW_PROMPT_FALLBACK,
     )
+
+    # Thinking budget (mirrors the critic path's qa_thinking_model_max_tokens).
+    # Reasoning tokens count against max_tokens and are emitted BEFORE the
+    # numbered findings, so a thinking detector on the standard 1500 budget
+    # truncates its own answer away. Measured 2026-08-28, glm-4.7-5090 on the
+    # longest published post, same prompt, only the cap differing:
+    #
+    #     cap 1500 -> 7,636 chars, 3 numbered findings, cut mid-sentence
+    #     cap 8000 -> 17,663 chars, 9 numbered findings
+    #
+    # Two thirds of the findings were being discarded by the cap. Worse, the
+    # list accumulates THROUGH the response, so a harder truncation leaves zero
+    # numbered lines — which this function reads as "no contradictions" and
+    # returns as a clean PASS. A budget cliff that manufactures false negatives
+    # is exactly the invisible failure Glad-Labs/poindexter#1031 is about.
+    #
+    # NOT a `think=False` fix: disabling reasoning is what the writer/podcast/
+    # video-director paths do, and measured here it took glm's detection from
+    # 4/4 to 0/4. Thinking is load-bearing for THIS task, so budget for it the
+    # way the critic does rather than switching it off.
+    from services.llm_providers.thinking_models import (
+        is_thinking_model,
+        resolve_thinking_substrings,
+    )
+
+    standard_max = site_config.get_int(
+        "content_router_contradiction_review_max_tokens", 1500,
+    )
+    if is_thinking_model(
+        ctx.review_model, substrings=resolve_thinking_substrings(site_config)
+    ):
+        review_max_tokens = site_config.get_int(
+            "writer_self_review_thinking_max_tokens", 8000,
+        )
+        review_timeout_s = site_config.get_int(
+            "writer_self_review_thinking_timeout_seconds", 300,
+        )
+        logger.info(
+            "[SELF_REVIEW] detect model %s is a thinking model — budget "
+            "%d tokens / %ds (standard would be %d)",
+            ctx.review_model, review_max_tokens, review_timeout_s, standard_max,
+        )
+    else:
+        review_max_tokens = standard_max
+        review_timeout_s = None  # keep the shared default
+
     try:
         result = await ctx.complete(
             review_prompt,
             temperature=0.2,
-            max_tokens=site_config.get_int(
-                "content_router_contradiction_review_max_tokens", 1500,
-            ),
+            max_tokens=review_max_tokens,
             model=ctx.review_model,
+            timeout_s_override=review_timeout_s,
         )
     except Exception as e:
         logger.warning("[SELF_REVIEW] detect failed (non-fatal): %s", e)
