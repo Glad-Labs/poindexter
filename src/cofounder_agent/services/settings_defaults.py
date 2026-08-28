@@ -316,7 +316,13 @@ DEFAULTS: dict[str, str] = {
     # sidecar's healthy working set. Inert while the opt-in
     # `--profile comfyui` sidecar isn't running.
     'comfyui_ram_recycle_enabled': 'true',
-    'comfyui_ram_recycle_watermark_gb': '20',
+    # 16, not 20: it is the floor of the 16-18 GB valley between comfyui's
+    # normal post-render working set (12-16 GB) and its accumulated state
+    # (20-30 GB). Lowered 2026-08-27 — comfyui alone reached 29.4 GB, 63% of
+    # the host's 47 GB swap, and stack#3409 removed ~10 spurious container
+    # recreations/week that had been clearing it for free. Full histogram in
+    # brain/comfyui_ram_watch.py.
+    'comfyui_ram_recycle_watermark_gb': '16',
     'comfyui_ram_recycle_cooldown_minutes': '60',
 
     # Sidecar host-RAM recycle (2026-08-27 hard-reboot freeze). The comfyui

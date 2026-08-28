@@ -300,3 +300,36 @@ def test_watermark_reads_from_app_settings():
     )
     assert summary["status"] == "recycled"
     assert summary["watermark_gb"] == 17.5
+
+
+# ---------------------------------------------------------------------------
+# Watermark placement (2026-08-27) — lowered 20.0 -> 16.0
+# ---------------------------------------------------------------------------
+
+
+class TestWatermarkPlacement:
+    """The watermark is a measured value, not a round number.
+
+    comfyui's rss+swap is trimodal over 7 days: fresh (0-4 GB), normal
+    post-render working set (12-16 GB), accumulated (20-30 GB), with a
+    1.3%-occupancy valley at 16-18 GB. 16.0 sits at the valley floor.
+    """
+
+    def test_default_sits_above_the_normal_working_set(self):
+        """Below 16 the probe starts recycling ordinary post-render state and
+        charging a cold model reload for the next render."""
+        assert cw.DEFAULT_WATERMARK_GB >= 16.0
+
+    def test_default_sits_below_the_accumulated_mode(self):
+        """comfyui alone reached 29.4 GB — 63% of the host's 47 GB swap — on
+        the day the box hard-froze from swap exhaustion. The watermark has to
+        catch that mode, which starts at 20 GB."""
+        assert cw.DEFAULT_WATERMARK_GB < 20.0
+
+    def test_seeded_app_setting_matches_the_module_default(self):
+        """Two sources for one value is a drift pair — pin them."""
+        from cofounder_agent.services.settings_defaults import DEFAULTS
+
+        assert float(DEFAULTS["comfyui_ram_recycle_watermark_gb"]) == (
+            cw.DEFAULT_WATERMARK_GB
+        )

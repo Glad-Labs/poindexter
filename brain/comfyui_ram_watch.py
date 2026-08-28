@@ -111,10 +111,33 @@ COOLDOWN_MINUTES_KEY = "comfyui_ram_recycle_cooldown_minutes"
 SERVER_URL_KEY = "video_comfyui_server_url"
 
 DEFAULT_ENABLED = True
-# Generous by design: a fresh post-render working set (weights staged for
-# the fp8 14B pair) sits well below this, so only genuine cross-render
-# accumulation crosses it. The 2026-08-26 incident was at 28.6 GB.
-DEFAULT_WATERMARK_GB = 20.0
+# Sits in the VALLEY of a trimodal distribution, not at a round number.
+# Measured over 7 days (2,001 samples of rss+swap, 2 GB bins):
+#
+#     0-4 GB   ###############  fresh / just-recycled   (31%)
+#     4-12 GB  ##                                        (9%)
+#    12-16 GB  ###############  normal post-render set  (32%)
+#    16-18 GB  #                <-- the valley, 1.3%
+#    20-30 GB  ##############   accumulated             (23%)
+#
+# 16 GB is the top of the normal working set and the floor of the valley, so
+# an ordinary post-render footprint (12-16 GB) is left alone while genuine
+# accumulation (20 GB+) is caught 4 GB earlier than the previous 20.0.
+#
+# Why it was lowered (2026-08-27): comfyui alone reached 29.4 GB, 63% of the
+# host's 47 GB swap, on a box that hard-froze from swap exhaustion that day.
+# The probe was already helping — time above 20 GB fell from 42-67%/day
+# pre-probe to 1.6% on 08-27 — but stack#3409 removed ~10 spurious container
+# recreations per week (a watchdog running `up -d` from the wrong checkout)
+# that had been incidentally clearing this process for free. With that crutch
+# gone, accumulation is expected to show up more, not less.
+#
+# Do NOT lower this into the 12-16 GB mode: the probe only recycles a
+# verifiably idle queue, so it would not interrupt a render, but it WOULD
+# recycle after most render batches and charge a cold model reload for the
+# next one. The 60-minute cooldown caps the damage at one reload per hour,
+# which is the backstop rather than the plan.
+DEFAULT_WATERMARK_GB = 16.0
 DEFAULT_COOLDOWN_MINUTES = 60
 DEFAULT_SERVER_URL = "http://comfyui:8188"
 
