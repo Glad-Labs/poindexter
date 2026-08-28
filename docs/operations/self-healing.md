@@ -67,10 +67,10 @@ is the "still firing?" oracle.
 into the loop (they return `ActionResult(status="failed", …)` instead). v1 ships
 two, each wrapping a primitive the brain already owns:
 
-| `action_name`        | Params                    | Does                                                                                                                |
-| -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `restart_container`  | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`.                         |
-| `run_auto_remediate` | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep. |
+| `action_name`        | Params                    | Does                                                                                                                                              |
+| -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_container`  | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`. Refuses the restart denylist — see Safety guardrails. |
+| `run_auto_remediate` | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep.                               |
 
 Adding an action = register one more executor in `ACTION_REGISTRY` (+ the
 primitive it wraps). An unknown `action_name` is `skipped` — it never crashes the
@@ -133,6 +133,28 @@ the container on a guess is worse than reporting it.
   across all actions — a backstop when many alerts fire at once.
 - **Allowlist.** `ops_firefighter_action_allowlist` (CSV, default empty = every
   registered action allowed). Set it to shrink what can run without deleting rules.
+- **Restart denylist (blast radius).** `restart_container` refuses
+  `poindexter-postgres-local` and `poindexter-brain-daemon` outright. These are
+  **hardcoded** in `brain/remediation/registry.py::_NEVER_RESTART` and are not
+  switchable from the DB, because each destroys the record of its own restart:
+  the brain _runs_ the executor, and postgres _holds_ `audit_log` — so the
+  outcome row can never be written. (The console's manual-restart path refuses
+  the same two, for the same reason.) `ops_firefighter_restart_denylist` (CSV,
+  default empty) **adds** install-specific names on top; it is a union, never a
+  replacement, so emptying it cannot re-open the two invariants. A refused
+  restart returns a non-`ok` status, which means the alert **pages** — refusing
+  is not the same as swallowing.
+
+  Why hardcoded rather than trusting the picker: replaying the real
+  `docker_port_forward_restart_skipped` alert — whose own annotation says the
+  restart was skipped _because_ the target is a database container — models
+  picked `restart_container` on `poindexter-postgres-local` at confidence
+  **above** `ops_firefighter_min_confidence`, so the confidence gate would not
+  have stopped it (`llama3.2:3b` 4/5 runs, `granite4.2:3b` 1/5). A better model
+  moves that rate; only the guard makes it zero. The catalog description also
+  names both containers as never-choose, which suppresses most picks at the
+  source — the executor guard is the backstop for the rest.
+
 - **Verify-then-page.** A successful action never silences an unfixed problem: if
   the alert is still firing after the grace window, it pages. Silence is earned
   only by the alert actually stopping.

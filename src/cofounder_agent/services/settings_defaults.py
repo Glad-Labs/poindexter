@@ -161,6 +161,15 @@ DEFAULTS: dict[str, str] = {
     # CSV of enabled action_names; empty = all registered actions allowed.
     # Per-action-type kill switch (e.g. "restart_container" to allow only that).
     "ops_firefighter_action_allowlist": "",
+    # ADDITIONAL container names the firefighter must never restart (CSV).
+    # Empty is the correct default and is NOT an empty denylist: this UNIONS
+    # onto a hardcoded floor in brain/remediation/registry.py::_NEVER_RESTART
+    # (poindexter-postgres-local + poindexter-brain-daemon), which cannot be
+    # switched off from here. Those two destroy the record of their own restart
+    # — the brain runs the executor, postgres holds audit_log — and the console
+    # path refuses them for the same reason. Add names here for install-specific
+    # containers that are likewise unsafe to bounce automatically (poindexter#1026).
+    "ops_firefighter_restart_denylist": "",
     # ----- LLM long-tail selector (Plan B) -----
     # For an alert with NO deterministic rule, a small local model picks an action
     # from the registry allowlist (or abstains). Runs on the worker via
