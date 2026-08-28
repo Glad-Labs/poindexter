@@ -25,7 +25,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Database — Postgres internals",
+      "title": "Connections & sessions",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -37,21 +37,6 @@
       "id": 1
     },
     {
-      "id": 2,
-      "title": "Postgres Database",
-      "type": "text",
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 1
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "## Postgres — poindexter_brain"
-      }
-    },
-    {
       "id": 4,
       "title": "Active conn",
       "type": "stat",
@@ -59,7 +44,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 3
+        "y": 1
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -86,7 +71,7 @@
                 "value": 50
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 90
               }
             ]
@@ -128,7 +113,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 3
+        "y": 1
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -233,7 +218,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 3
+        "y": 1
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -260,7 +245,7 @@
                 "value": 86400
               },
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": 604800
               }
             ]
@@ -297,38 +282,39 @@
     },
     {
       "id": 7,
-      "title": "Table Statistics",
-      "type": "text",
+      "type": "row",
+      "title": "Tables & vacuum debt",
+      "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 2,
+        "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "## Table Statistics"
+        "y": 7
       }
     },
     {
       "id": 8,
-      "title": "Table Row Counts",
+      "title": "All tables — size, rows & dead %",
       "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 11
-      },
+      "description": "Every user table, sorted by on-disk size (heap + indexes + TOAST). Sortable and filterable — this is the full-fidelity companion to the top-12 chart beside it. dead % is the vacuum signal to read, not the raw dead-row count: a small table at 90% dead tuples needs vacuum more than a large one at 0.3%. The footer totals the size column, which should track the Database Size stat below.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 14,
+        "x": 0,
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
-            "displayMode": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
             "filterable": true
           }
         },
@@ -336,147 +322,40 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "estimated_rows"
+              "options": "total_size"
             },
             "properties": [
               {
-                "id": "custom.displayMode",
-                "value": "gradient-gauge"
+                "id": "unit",
+                "value": "decbytes"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "min",
                 "value": 0
               },
               {
-                "id": "max",
-                "value": 10000
-              },
-              {
                 "id": "color",
                 "value": {
-                  "mode": "continuous-blues"
+                  "mode": "continuous-BlYlRd"
                 }
+              },
+              {
+                "id": "custom.width",
+                "value": 160
               }
             ]
-          }
-        ]
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": [
-          {
-            "displayName": "estimated_rows",
-            "desc": true
-          }
-        ],
-        "footer": {
-          "show": true,
-          "reducer": ["sum"],
-          "fields": ["estimated_rows"]
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
           },
-          "rawSql": "SELECT schemaname, relname as table_name, n_live_tup as estimated_rows, n_dead_tup as dead_rows, last_vacuum, last_autovacuum, last_analyze FROM pg_stat_user_tables ORDER BY n_live_tup DESC",
-          "format": "table",
-          "editorMode": "code"
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "title": "Table Sizes",
-      "type": "barchart",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 11
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Size",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "lineWidth": 1,
-            "axisFontSize": 14
-          },
-          "unit": "decbytes",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "showValue": "always",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "barWidth": 0.8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "rawSql": "SELECT relname as table_name, pg_total_relation_size(quote_ident(relname)) as total_size_bytes FROM pg_stat_user_tables ORDER BY total_size_bytes DESC",
-          "format": "table",
-          "editorMode": "code"
-        }
-      ]
-    },
-    {
-      "id": 10,
-      "title": "Index Usage",
-      "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 19
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto",
-            "filterable": true
-          }
-        },
-        "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "idx_scan_pct"
+              "options": "dead_pct"
             },
             "properties": [
               {
@@ -484,8 +363,11 @@
                 "value": "percent"
               },
               {
-                "id": "custom.displayMode",
-                "value": "gradient-gauge"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
               },
               {
                 "id": "min",
@@ -501,12 +383,307 @@
                   "mode": "absolute",
                   "steps": [
                     {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10
+                    },
+                    {
                       "color": "orange",
+                      "value": 25
+                    },
+                    {
+                      "color": "dark-red",
+                      "value": 50
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "live_rows"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dead_rows"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "total_size",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": true,
+          "reducer": ["sum"],
+          "fields": ["total_size"],
+          "countRows": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT relname AS table_name, n_live_tup AS live_rows, n_dead_tup AS dead_rows, CASE WHEN (n_live_tup + n_dead_tup) > 0 THEN ROUND(n_dead_tup * 100.0 / (n_live_tup + n_dead_tup), 1) ELSE 0 END AS dead_pct, pg_total_relation_size(relid) AS total_size, GREATEST(last_vacuum, last_autovacuum) AS last_vacuum, last_analyze FROM pg_stat_user_tables ORDER BY total_size DESC",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Largest tables (top 12)",
+      "type": "bargauge",
+      "description": "Top 12 tables by total relation size — 94% of all on-disk bytes. This was a barchart over all 116 tables, which rendered the table names as an unreadable overprinted block. The remaining tables are in the sortable table to the left.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 10,
+        "x": 14,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlYlRd"
+          },
+          "unit": "decbytes",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "maxVizHeight": 300
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "rawSql": "SELECT relname AS table_name, pg_total_relation_size(relid) AS total_size FROM pg_stat_user_tables ORDER BY total_size DESC LIMIT 12",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Dead tuples — top 10 tables",
+      "type": "bargauge",
+      "description": "Top 10 tables by dead-tuple count (postgres_exporter). Counts alone over-weight big tables — cross-read the dead % column in the table above, which is the actual vacuum-urgency signal. Single-sourced to Prometheus; the duplicate SQL barchart was removed.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1000
+              },
+              {
+                "color": "orange",
+                "value": 10000
+              },
+              {
+                "color": "dark-red",
+                "value": 100000
+              }
+            ]
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "topk(10, pg_stat_user_tables_n_dead_tup{job=\"postgres-exporter\"})",
+          "legendFormat": "{{relname}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "row",
+      "title": "Index & query activity",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      }
+    },
+    {
+      "id": 10,
+      "title": "Index Usage",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "idx_scan_pct"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-red",
                       "value": null
                     },
                     {
                       "color": "orange",
                       "value": 50
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 75
                     },
                     {
                       "color": "blue",
@@ -552,7 +729,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 27
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -562,8 +739,10 @@
         "defaults": {
           "custom": {
             "align": "auto",
-            "displayMode": "auto",
-            "filterable": true
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto"
+            }
           }
         },
         "overrides": [
@@ -605,13 +784,20 @@
                     {
                       "color": "orange",
                       "value": 30
+                    },
+                    {
+                      "color": "dark-red",
+                      "value": 300
                     }
                   ]
                 }
               },
               {
-                "id": "custom.displayMode",
-                "value": "color-background"
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               }
             ]
           }
@@ -643,14 +829,96 @@
       ]
     },
     {
+      "id": 27,
+      "type": "row",
+      "title": "Storage & transactions",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      }
+    },
+    {
+      "id": 18,
+      "title": "Database Size",
+      "type": "stat",
+      "description": "Total size of poindexter_brain as reported by postgres_exporter (poindexter#735 item 2 — replaces the former SQL pg_database_size() panel that polled local-brain-db). Should track the size-column total in the tables panel above.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 536870912
+              },
+              {
+                "color": "orange",
+                "value": 1073741824
+              },
+              {
+                "color": "dark-red",
+                "value": 5368709120
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "pg_database_size_bytes{datname=\"poindexter_brain\",job=\"postgres-exporter\"}",
+          "legendFormat": "DB Size",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "id": 12,
       "title": "Cache Hit Ratio",
       "type": "gauge",
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 27
+        "w": 8,
+        "x": 8,
+        "y": 36
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -665,7 +933,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "orange",
+                "color": "dark-red",
                 "value": null
               },
               {
@@ -710,7 +978,8 @@
           "format": "table",
           "editorMode": "code"
         }
-      ]
+      ],
+      "description": "Shared-buffer hit ratio over the lifetime of the current stats epoch. Below ~99% on a working set this small means buffers are being evicted."
     },
     {
       "id": 13,
@@ -718,9 +987,9 @@
       "type": "stat",
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 27
+        "w": 8,
+        "x": 16,
+        "y": 36
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -789,172 +1058,8 @@
           "format": "table",
           "editorMode": "code"
         }
-      ]
-    },
-    {
-      "id": 14,
-      "title": "Dead Tuples (Vacuum Needed)",
-      "type": "barchart",
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 33
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1000
-              },
-              {
-                "color": "orange",
-                "value": 10000
-              },
-              {
-                "color": "orange",
-                "value": 100000
-              }
-            ]
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisLabel": "Dead Tuples",
-            "fillOpacity": 80,
-            "gradientMode": "scheme",
-            "lineWidth": 1,
-            "axisFontSize": 14
-          },
-          "unit": "short",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "showValue": "always",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "xTickLabelRotation": 0,
-        "xTickLabelMaxLength": 20,
-        "barWidth": 0.8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "rawSql": "SELECT relname as table_name, n_dead_tup as dead_tuples FROM pg_stat_user_tables WHERE n_dead_tup > 0 ORDER BY n_dead_tup DESC",
-          "format": "table",
-          "editorMode": "code"
-        }
-      ]
-    },
-    {
-      "id": 15,
-      "type": "row",
-      "title": "Postgres Internals (postgres_exporter)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 39
-      },
-      "panels": []
-    },
-    {
-      "id": 18,
-      "title": "Database Size",
-      "type": "stat",
-      "description": "Total size of poindexter_brain as reported by postgres_exporter (poindexter#735 item 2 — replaces the former SQL pg_database_size() panel that polled local-brain-db).",
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 40
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 536870912
-              },
-              {
-                "color": "orange",
-                "value": 1073741824
-              },
-              {
-                "color": "red",
-                "value": 5368709120
-              }
-            ]
-          },
-          "unit": "decbytes"
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "textMode": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "pg_database_size_bytes{datname=\"poindexter_brain\",job=\"postgres-exporter\"}",
-          "legendFormat": "DB Size",
-          "refId": "A"
-        }
-      ]
+      ],
+      "description": "Cumulative transaction counters for poindexter_brain since the last stats reset — they only ever climb. Read the ratio, not the absolute values; a rising rolled_back share is the signal."
     },
     {
       "id": 19,
@@ -963,9 +1068,9 @@
       "description": "Rate of deadlocks per second on poindexter_brain. Should be near 0.",
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 40
+        "w": 24,
+        "x": 0,
+        "y": 42
       },
       "datasource": {
         "type": "prometheus",
@@ -990,7 +1095,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 1
               }
             ]
@@ -1021,157 +1126,15 @@
       ]
     },
     {
-      "id": 20,
-      "title": "Dead Tuples (top tables)",
-      "type": "bargauge",
-      "description": "Top 10 tables by dead tuple count from postgres_exporter. High values indicate vacuum is needed.",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 46
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1000
-              },
-              {
-                "color": "orange",
-                "value": 10000
-              },
-              {
-                "color": "red",
-                "value": 100000
-              }
-            ]
-          },
-          "unit": "short",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true,
-        "text": {}
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "topk(10, pg_stat_user_tables_n_dead_tup{job=\"postgres-exporter\"})",
-          "legendFormat": "{{relname}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 21,
-      "type": "table",
-      "title": "Data feed freshness — dead-man's switch",
-      "description": "Age of the newest row per data feed vs its staleness threshold. STALE means every panel reading that table is showing old data without looking broken. Alerting is handled by brain/data_freshness_probe.py (edge-triggered data_feed_stale finding, feeds configured in app_settings.data_freshness_feeds); this panel is the at-a-glance view. Thresholds here mirror the seeded defaults - keep in sync when tuning.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 54
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT feed, latest, round(age_min) AS age_minutes, threshold_min,\n       CASE WHEN age_min > threshold_min THEN 'STALE' ELSE 'fresh' END AS state\nFROM (\n  SELECT 'cost_logs' AS feed, max(created_at) AS latest,\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60 AS age_min, 180 AS threshold_min FROM cost_logs\n  UNION ALL SELECT 'gpu_metrics', max(\"timestamp\"),\n         EXTRACT(EPOCH FROM (now() - max(\"timestamp\")))/60, 30 FROM gpu_metrics\n  UNION ALL SELECT 'atom_runs', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 720 FROM atom_runs\n  UNION ALL SELECT 'page_views', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 2880 FROM page_views\n  UNION ALL SELECT 'sensor_samples (corsair_csv)', max(sampled_at),\n         EXTRACT(EPOCH FROM (now() - max(sampled_at)))/60, 120 FROM sensor_samples WHERE source = 'corsair_csv'\n) feeds\nORDER BY age_min DESC NULLS LAST",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            }
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "STALE": {
-                  "color": "red",
-                  "index": 0
-                },
-                "fresh": {
-                  "color": "green",
-                  "index": 1
-                }
-              }
-            }
-          ]
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "state"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "showHeader": true,
-        "sortBy": []
-      }
-    },
-    {
       "id": 22,
       "type": "row",
       "collapsed": false,
-      "title": "App DB Pool & Ping Latency",
+      "title": "App DB pool & latency",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 48
       },
       "panels": []
     },
@@ -1188,7 +1151,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 49
       },
       "fieldConfig": {
         "defaults": {
@@ -1269,7 +1232,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 49
       },
       "fieldConfig": {
         "defaults": {
@@ -1327,6 +1290,92 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Data feed freshness",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      }
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Data feed freshness — dead-man's switch",
+      "description": "Age of the newest row per data feed vs its staleness threshold. STALE means every panel reading that table is showing old data without looking broken. Alerting is handled by brain/data_freshness_probe.py (edge-triggered data_feed_stale finding, feeds configured in app_settings.data_freshness_feeds); this panel is the at-a-glance view. Thresholds here mirror the seeded defaults - keep in sync when tuning.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT feed, latest, round(age_min) AS age_minutes, threshold_min,\n       CASE WHEN age_min > threshold_min THEN 'STALE' ELSE 'fresh' END AS state\nFROM (\n  SELECT 'cost_logs' AS feed, max(created_at) AS latest,\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60 AS age_min, 180 AS threshold_min FROM cost_logs\n  UNION ALL SELECT 'gpu_metrics', max(\"timestamp\"),\n         EXTRACT(EPOCH FROM (now() - max(\"timestamp\")))/60, 30 FROM gpu_metrics\n  UNION ALL SELECT 'atom_runs', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 720 FROM atom_runs\n  UNION ALL SELECT 'page_views', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 2880 FROM page_views\n  UNION ALL SELECT 'sensor_samples (corsair_csv)', max(sampled_at),\n         EXTRACT(EPOCH FROM (now() - max(sampled_at)))/60, 120 FROM sensor_samples WHERE source = 'corsair_csv'\n) feeds\nORDER BY age_min DESC NULLS LAST",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "STALE": {
+                  "color": "red",
+                  "index": 0
+                },
+                "fresh": {
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      }
     }
   ],
   "description": "CHARTER: Postgres internals + data-feed freshness — connection pressure, table growth, index health, and the feed dead-man's switch. Answers 'is the spinal cord healthy and is its data current?'."
