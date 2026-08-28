@@ -3,8 +3,7 @@
     "B310": 2
   },
   "brain/alert_sync.py": {
-    "B310": 1,
-    "B324": 1
+    "B310": 1
   },
   "brain/brain_daemon.py": {
     "B108": 1,

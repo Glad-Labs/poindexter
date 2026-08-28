@@ -231,8 +231,13 @@ def main() -> int:
         return 1
 
     print(
+        # `total`/`n_files` come from the CURRENT scan, not the baseline, so
+        # say "found" — labelling them "baselined" made the two numbers look
+        # like the same thing during the 2026-08-28 CI audit, and they can
+        # legitimately differ (the tree may sit BELOW its baseline until
+        # someone re-baselines to lock the win in).
         f"bandit_lint: clean - no new findings "
-        f"({total} baselined across {n_files} files; ratchet only shrinks)."
+        f"({total} found across {n_files} files; ratchet only shrinks)."
     )
     return 0
 

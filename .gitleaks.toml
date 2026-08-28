@@ -28,6 +28,13 @@ paths = [
   # private baseline suppresses these per-finding; adding the path here lets
   # the public repo's gitleaks pass without shipping the baseline externally.
   '''(?i)^src/cofounder_agent/tests/.*\.py$''',
+  # Vendored Semgrep rulesets are, by definition, a corpus of credential
+  # PATTERNS plus the example values that exercise them — a Slack webhook shape
+  # and a sample private key trip gitleaks on sight. Allowlisting the directory
+  # rather than the two fingerprints is deliberate: a rules refresh
+  # (infrastructure/semgrep/README.md) would mint new fingerprints and turn
+  # this red again for a reason that has nothing to do with the code.
+  '''(?i)^infrastructure/semgrep/.*\.yaml$''',
   # Documentation examples: curl snippets, Authorization header demos,
   # placeholder bearer tokens like "YOUR_API_TOKEN" / "$TOKEN" / "dev-token".
   '''(?i)^docs/.*\.md$''',

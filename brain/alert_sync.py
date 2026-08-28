@@ -85,7 +85,11 @@ def _rule_uid(name: str) -> str:
     orphaned in Grafana — operator can clean up manually). Most of the
     time rule names are stable so UIDs are stable too.
     """
-    h = hashlib.sha1(name.encode("utf-8")).hexdigest()
+    # Identifier derivation, not security: this maps a rule NAME to a stable
+    # Grafana UID. usedforsecurity=False says so to the scanners (and to the
+    # next reader) — retention_embeddings_collapse.py already annotates its
+    # equivalent digest the same way.
+    h = hashlib.sha1(name.encode("utf-8"), usedforsecurity=False).hexdigest()
     return f"pdx-{h[:20]}"
 
 
