@@ -71,6 +71,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = Path(__file__).resolve().parent / "silent_excepts_baseline.json"
 
@@ -308,8 +311,13 @@ def scan_file(path: Path) -> int:
     return count
 
 
+_SCANNED = 0  # files actually read by the last compute_counts() call
+
+
 def compute_counts() -> dict[str, int]:
     """Map of ``relpath -> silent-handler count`` across all scan roots."""
+    global _SCANNED
+    _SCANNED = 0
     counts: dict[str, int] = {}
     for root, excluded in SCAN_ROOTS:
         if not root.exists():
@@ -318,6 +326,7 @@ def compute_counts() -> dict[str, int]:
             rel_parts = py_file.relative_to(root).parts
             if excluded and rel_parts and rel_parts[0] in excluded:
                 continue
+            _SCANNED += 1
             n = scan_file(py_file)
             if n:
                 rel = str(py_file.relative_to(REPO_ROOT)).replace("\\", "/")
@@ -381,10 +390,12 @@ def main() -> int:
         )
         return 1
 
+    require_scanned(_SCANNED, lint="lint_silent_excepts", roots=[r for r, _ in SCAN_ROOTS])
     total = sum(counts.values())
     print(
         f"lint_silent_excepts: clean — no new silent handlers "
-        f"({total} baselined across {len(counts)} files; ratchet only shrinks)."
+        f"({total} baselined across {len(counts)} files, {_SCANNED} scanned; "
+        "ratchet only shrinks)."
     )
     return 0
 

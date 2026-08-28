@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: compares seed sources, needs no tree
 """CI guard: catch keys a migration DELETEs that a seed file still re-seeds.
 
 The drift this prevents (found 2026-06-21): a one-shot migration DELETEs dead

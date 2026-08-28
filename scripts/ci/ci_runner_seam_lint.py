@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: parses workflow YAML, not a source tree
 """Guard the ``vars.CI_RUNNER`` runs-on seam against Docker-needing jobs.
 
 The self-hosted runners are containers that deliberately do NOT mount

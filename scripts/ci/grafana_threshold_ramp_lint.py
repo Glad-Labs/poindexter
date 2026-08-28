@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: has its own `if not files` floor
 """CI lint: no Grafana threshold ramp may repeat the previous step's colour.
 
 WHY
@@ -114,7 +115,9 @@ def main() -> int:
                 for where, steps in _ramps(panel):
                     checked += 1
                     colors = [s.get("color") for s in steps]
-                    for idx, (prev, cur) in enumerate(zip(colors, colors[1:]), start=1):
+                    for idx, (prev, cur) in enumerate(
+                    zip(colors, colors[1:], strict=False), start=1
+                ):
                         if prev != cur:
                             continue
                         failures.append(

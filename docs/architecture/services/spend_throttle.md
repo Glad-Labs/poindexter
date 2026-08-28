@@ -7,10 +7,10 @@
 ## What it does
 
 `spend_throttle` defers **new work** when total spend crosses a soft budget.
-It is P3 of the [cost-attribution design](../2026-06-21-cost-control-attribution-design.md)
-(§6) and a fail-**open** sibling of [`pipeline_throttle`](./pipeline_throttle.md):
+It is P3 of the [cost-attribution design](../../superpowers/specs/2026-06-21-cost-control-attribution-design.md)
+(§6) and a fail-**open** sibling of [`pipeline_throttle`](../../../src/cofounder_agent/services/pipeline_throttle.py):
 instead of gating on approval-queue depth it gates on money — the
-[`cost_ledger`](./cost_ledger.md) `total_usd` (paid API + measured electricity)
+[`cost_ledger`](../../../src/cofounder_agent/services/cost_ledger.py) `total_usd` (paid API + measured electricity)
 against two soft ceilings.
 
 It is consulted at the **new-work seam** — the Prefect `content_generation_flow`
@@ -105,7 +105,7 @@ The two judgment-call defaults are deliberately above real burn (~$1.5/day,
 
 ## See also
 
-- [`cost_ledger.md`](./cost_ledger.md) — the spend read seam.
+- [`services/cost_ledger.py`](../../../src/cofounder_agent/services/cost_ledger.py) — the spend read seam.
 - [`cost_guard.md`](./cost_guard.md) — the per-call hard cap (fails closed).
-- [`pipeline_throttle.md`](./pipeline_throttle.md) — the approval-queue sibling.
+- [`services/pipeline_throttle.py`](../../../src/cofounder_agent/services/pipeline_throttle.py) — the approval-queue sibling.
 - `feedback_self_heal_not_suppress` — throttle before page.

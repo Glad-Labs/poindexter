@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: walks .ps1 files, carries its own floor
 """Lint tracked PowerShell scripts for the BOM-less non-ASCII trap.
 
 Why this exists

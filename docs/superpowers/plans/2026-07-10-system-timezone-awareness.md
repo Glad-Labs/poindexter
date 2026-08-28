@@ -38,7 +38,7 @@
 | `CLAUDE.md`                                                                   | One-line pointer in the config section                                     | Modify     |
 | Tests (per task)                                                              | Contract tests                                                             | **Create** |
 
-**Not changed (verified during planning):** `brain/operator_notifier.py` and `brain/alert_dispatcher.py` have no operator-facing _formatted_ timestamp — the only renders are the UTC `alerts.log` write and internal dedup/audit fields, all of which stay UTC by design. `main.py` needs no change: the scheduler resolves the zone from the `site_config` it is already passed at [`main.py:531`](src/cofounder_agent/main.py#L531).
+**Not changed (verified during planning):** `brain/operator_notifier.py` and `brain/alert_dispatcher.py` have no operator-facing _formatted_ timestamp — the only renders are the UTC `alerts.log` write and internal dedup/audit fields, all of which stay UTC by design. `main.py` needs no change: the scheduler resolves the zone from the `site_config` it is already passed at [`main.py:531`](../../../src/cofounder_agent/main.py#L531).
 
 ---
 

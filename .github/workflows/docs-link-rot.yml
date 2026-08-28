@@ -1,0 +1,54 @@
+# Link-rot guard for the docs tree.
+#
+# Replaces coverage that was silently lost. `Mintlify Validation (gladlabs) -
+# link-rot` sits in Glad-Labs/poindexter's `Main` ruleset as a REQUIRED status
+# check, but it has never produced a check run — 0 on every recent commit and
+# every recent PR — while `Mintlify Deployment` from the same app reports fine.
+# So the docs were not being link-checked despite the required list saying they
+# were, and a human PR against that repo would hang forever waiting on a check
+# that never arrives. Found by the poindexter#1029 follow-on audit (2026-08-28).
+#
+# Runs on BOTH repos on purpose: docs/ is public and mirrored verbatim, and the
+# lint resolves paths inside the docs tree only, so it gives the same verdict in
+# either place. No repo guard needed.
+#
+# NOTE: deliberately NO `paths:` filter. A path-filtered job can never be added
+# to the required checks — it does not report on PRs outside those paths and
+# leaves them pending forever (see reference_required_check_paths_filter_hang).
+# The lint is pure stdlib over ~324 files and finishes in about a second, so
+# running it on every PR costs nothing and keeps it promotable to a required
+# check once it has some history.
+name: docs-link-rot
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  docs-link-rot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      # Pure stdlib — no pip install step on purpose. A link checker that needs
+      # a dependency tree is a link checker that breaks for an unrelated reason.
+      - name: Check docs navigation + internal links
+        run: python scripts/ci/docs_link_rot_lint.py

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: has its own `if not files` floor returning non-zero
 """Lint the migrations directory for collisions and naming-convention drift.
 
 Glad-Labs/poindexter#378 — keep the migrations directory consistent

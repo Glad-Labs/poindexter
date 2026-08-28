@@ -56,6 +56,9 @@ import ast
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_dir, require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BRAIN_DIR = REPO_ROOT / "brain"
 
@@ -148,11 +151,13 @@ def check_file(path: Path) -> list[tuple[int, str]]:
 
 
 def main() -> int:
-    if not BRAIN_DIR.is_dir():
-        print(f"brain_async_safety_lint: {BRAIN_DIR} not found", file=sys.stderr)
-        return 0
+    # A missing brain/ used to print this same diagnosis and then return 0 --
+    # the lint named its own blindness and passed anyway. Now it fails.
+    require_dir(BRAIN_DIR, lint="brain_async_safety_lint")
     total = 0
+    scanned = 0
     for path in sorted(BRAIN_DIR.rglob("*.py")):
+        scanned += 1
         for lineno, msg in check_file(path):
             total += 1
             rel = path.relative_to(REPO_ROOT).as_posix()
@@ -165,7 +170,11 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print("brain_async_safety_lint: OK — no blocking calls on the brain event loop.")
+    require_scanned(scanned, lint="brain_async_safety_lint", roots=(BRAIN_DIR,))
+    print(
+        f"brain_async_safety_lint: OK — no blocking calls on the brain event loop "
+        f"({scanned} files)."
+    )
     return 0
 
 

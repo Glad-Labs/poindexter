@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: walks .github/workflows, carries its own floor
 """Lint .github/workflows/ for unpinned third-party Actions usage.
 
 Defends against the floating-tag supply-chain vector:

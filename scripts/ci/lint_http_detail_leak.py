@@ -47,6 +47,9 @@ import ast
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Production trees that construct FastAPI HTTPException. Tests are excluded —
@@ -137,6 +140,7 @@ def scan_file(path: Path) -> list[int]:
 
 def main() -> int:
     offenders: list[str] = []
+    scanned = 0
     for root, excluded in SCAN_ROOTS:
         if not root.exists():
             continue
@@ -144,6 +148,7 @@ def main() -> int:
             rel_parts = py.relative_to(root).parts
             if excluded and rel_parts and rel_parts[0] in excluded:
                 continue
+            scanned += 1
             for lineno in scan_file(py):
                 rel = str(py.relative_to(REPO_ROOT)).replace("\\", "/")
                 offenders.append(f"  {rel}:{lineno}")
@@ -161,7 +166,10 @@ def main() -> int:
         )
         return 1
 
-    print("lint_http_detail_leak: clean — no HTTPException detail leaks.")
+    require_scanned(
+        scanned, lint="lint_http_detail_leak", roots=[r for r, _ in SCAN_ROOTS]
+    )
+    print(f"lint_http_detail_leak: clean — no HTTPException detail leaks ({scanned} files).")
     return 0
 
 

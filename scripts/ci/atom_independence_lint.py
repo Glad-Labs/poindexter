@@ -66,6 +66,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = Path(__file__).resolve().parent / "atom_independence_baseline.json"
 
@@ -189,15 +192,22 @@ def _rel(path: Path) -> str:
     return str(path.relative_to(REPO_ROOT)).replace("\\", "/")
 
 
+_SCANNED = 0  # files actually read by the last compute_counts() call
+
+
 def compute_counts() -> dict[str, int]:
     """Map of ``relpath -> violation count`` across the atom package and the
     module-root library seams atoms import."""
+    global _SCANNED
+    _SCANNED = 0
     counts: dict[str, int] = {}
     for f in _atom_files():
+        _SCANNED += 1
         n = len(scan_source(f.read_text(encoding="utf-8"), check_sibling_atoms=True))
         if n:
             counts[_rel(f)] = n
     for f in _atom_imported_local_libs():
+        _SCANNED += 1
         n = len(scan_source(f.read_text(encoding="utf-8"), check_sibling_atoms=False))
         if n:
             counts[_rel(f)] = n
@@ -265,10 +275,12 @@ def main() -> int:
         )
         return 1
 
+    require_scanned(_SCANNED, lint="atom_independence_lint", roots=[ATOMS_DIR])
     total = sum(counts.values())
     print(
         f"atom_independence_lint: clean - no new atom->stage/atom imports "
-        f"({total} baselined across {len(counts)} files; ratchet only shrinks)."
+        f"({total} baselined across {len(counts)} files, {_SCANNED} scanned; "
+        "ratchet only shrinks)."
     )
     return 0
 

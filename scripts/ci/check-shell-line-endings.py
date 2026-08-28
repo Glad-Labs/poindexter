@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: walks shell scripts, carries its own floor
 """Lint tracked shell scripts for CRLF line endings.
 
 Why this exists

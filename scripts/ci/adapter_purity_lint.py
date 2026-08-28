@@ -74,6 +74,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = Path(__file__).resolve().parent / "adapter_purity_baseline.json"
 
@@ -210,10 +213,16 @@ def _iter_target_files():
             yield py_file
 
 
+_SCANNED = 0  # files actually read by the last compute_counts() call
+
+
 def compute_counts() -> dict[str, int]:
     """Map of ``relpath -> inline-SQL count`` across all adapter scan roots."""
+    global _SCANNED
+    _SCANNED = 0
     counts: dict[str, int] = {}
     for py_file in _iter_target_files():
+        _SCANNED += 1
         n = scan_file(py_file)
         if n:
             rel = str(py_file.relative_to(REPO_ROOT)).replace("\\", "/")
@@ -278,10 +287,12 @@ def main() -> int:
         )
         return 1
 
+    require_scanned(_SCANNED, lint="adapter_purity_lint", roots=[REPO_ROOT / r for r, _, _ in SCAN_SPECS])
     total = sum(counts.values())
     print(
         f"adapter_purity_lint: clean — no new inline-SQL adapters "
-        f"({total} baselined across {len(counts)} files; ratchet only shrinks)."
+        f"({total} baselined across {len(counts)} files, {_SCANNED} scanned; "
+        "ratchet only shrinks)."
     )
     return 0
 

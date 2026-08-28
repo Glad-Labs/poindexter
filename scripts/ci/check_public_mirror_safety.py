@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: diff-scoped; takes an explicit file list
 """Lint the source tree for content that would leak to the public mirror.
 
 **Single source of truth for leak-guard patterns + allowlist.** This

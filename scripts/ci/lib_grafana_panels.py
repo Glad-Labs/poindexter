@@ -1,3 +1,4 @@
+# scan-floor-exempt: helper library imported by grafana_panels_lint, not a lint
 """Pure helpers for ``grafana_panels_lint.py`` — macro substitution,
 panel walking, target classification.
 

@@ -29,9 +29,16 @@ name: Release poindexter to PyPI
 on:
   push:
     tags:
-      # Tag schema is intentionally package-scoped so the umbrella repo
-      # can cut independent releases for other components later.
-      - "poindexter-v*.*.*"
+      # This USED to be "poindexter-v*.*.*" on the theory that the umbrella
+      # repo would cut package-scoped tags. It never did: release-please runs
+      # `include-component-in-tag: false`, so it cuts plain `v0.129.0`, and no
+      # `poindexter-v*` tag has ever existed in either repo. The workflow
+      # therefore had ZERO runs in its entire life and could not fire from the
+      # release process at all -- while poindexter#41 ("Publish poindexter CLI
+      # to PyPI") was closed 2026-04-21 on the workflow EXISTING. pypi.org
+      # still 404s for the package. Found by the poindexter#1029 follow-on
+      # audit. Matched to the tags actually cut so the build at least runs.
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       target:
@@ -107,7 +114,13 @@ jobs:
   publish-testpypi:
     name: Publish to TestPyPI
     needs: build
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    # Mirror-only for the same OIDC reason as publish-pypi below. This is the
+    # dry run that proves the Trusted Publisher path before the real one is
+    # switched on -- dispatch it from Glad-Labs/poindexter with target=testpypi.
+    if: >-
+      github.repository == 'Glad-Labs/poindexter' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.target == 'testpypi'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -132,11 +145,26 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     needs: build
-    # Tag pushes always go to real PyPI. A workflow_dispatch with
-    # target=pypi also routes here.
+    # Three conditions, all required, because this is a public, irreversible
+    # publish that has never once run:
+    #
+    #  1. Only from the PUBLIC mirror. The Trusted Publisher documented in the
+    #     header is registered against `Repository: poindexter`, and the mirror
+    #     is where release-mirror-to-public.yml re-creates each `v*` tag. The
+    #     same tag also exists on glad-labs-stack, where OIDC would not match.
+    #  2. A real release tag, or an explicit dispatch with target=pypi.
+    #  3. `vars.POINDEXTER_PYPI_RELEASE == 'true'` -- the deliberate go-live
+    #     switch. The build job below now runs on every release tag (which is
+    #     the actual fix for "never fires"), but the FIRST publish must not
+    #     happen unattended: the PyPI project does not exist yet, so the
+    #     Trusted Publisher is unverified and would fail the release run.
+    #     Set the repo variable on Glad-Labs/poindexter once the pending
+    #     publisher is registered; no code change needed to go live.
     if: >-
-      startsWith(github.ref, 'refs/tags/poindexter-v') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+      github.repository == 'Glad-Labs/poindexter' &&
+      vars.POINDEXTER_PYPI_RELEASE == 'true' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

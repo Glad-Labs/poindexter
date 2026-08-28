@@ -44,6 +44,9 @@ import sys
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -80,8 +83,10 @@ def _locked_root_version(lock: Path, name: str | None) -> str | None:
 def main() -> int:
     drifted: list[str] = []
     checked = 0
+    discovered = 0
 
     for lock in sorted(REPO_ROOT.glob("*/uv.lock")):
+        discovered += 1
         pyproject = lock.with_name("pyproject.toml")
         if not pyproject.is_file():
             continue
@@ -118,6 +123,15 @@ def main() -> int:
         )
         return 1
 
+    # Floor on DISCOVERED locks, not checked ones. `checked == 0` is a
+    # legitimate state -- the public mirror strips mcp-server-gladlabs/, so its
+    # uv.lock loses its sibling pyproject and is correctly skipped (see
+    # test_main_skips_a_lock_with_no_sibling_pyproject). What is never
+    # legitimate is the `*/uv.lock` glob matching NOTHING, which is what a
+    # renamed tree looks like and what used to print a cheerful "0 lockfile(s)".
+    require_scanned(
+        discovered, lint="uv_lock_version_lint", what="lockfiles", roots=(REPO_ROOT,)
+    )
     print(f"uv.lock version lint: {checked} lockfile(s) match their pyproject.")
     return 0
 

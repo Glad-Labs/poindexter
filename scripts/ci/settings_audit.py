@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: audit-only reporter, not wired into CI as a gate
 """Read-only app_settings lifecycle audit.
 
 Classifies every live ``app_settings`` key against four declared sources of

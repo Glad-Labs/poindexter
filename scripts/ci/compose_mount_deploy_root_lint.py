@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: single-file check on compose YAML
 """Fail a net-new bare ``./`` bind mount of repo-shipped code or config.
 
 Why

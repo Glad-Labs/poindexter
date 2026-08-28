@@ -50,6 +50,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Production trees where a SiteConfig instance is reachable. Tests construct
@@ -149,6 +152,7 @@ def scan_file(path: Path) -> list[tuple[int, str]]:
 
 def main() -> int:
     offenders: list[str] = []
+    scanned = 0
     for root, excluded in SCAN_ROOTS:
         if not root.exists():
             continue
@@ -156,6 +160,7 @@ def main() -> int:
             rel_parts = py.relative_to(root).parts
             if excluded and rel_parts and rel_parts[0] in excluded:
                 continue
+            scanned += 1
             rel = str(py.relative_to(REPO_ROOT)).replace("\\", "/")
             if rel in ALLOWED_FILES:
                 continue
@@ -177,7 +182,10 @@ def main() -> int:
         )
         return 1
 
-    print("lint_secret_ciphertext_footgun: clean — no ciphertext-footgun reads.")
+    require_scanned(
+        scanned, lint="lint_secret_ciphertext_footgun", roots=[r for r, _ in SCAN_ROOTS]
+    )
+    print(f"lint_secret_ciphertext_footgun: clean — no ciphertext-footgun reads ({scanned} files).")
     return 0
 
 

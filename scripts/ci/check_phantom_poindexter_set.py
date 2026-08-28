@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: greps a fixed set of manifests
 """Fail the build if any file documents the phantom ``poindexter set`` command.
 
 The Poindexter CLI registers a ``settings`` command group

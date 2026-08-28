@@ -27,6 +27,18 @@ concurrency:
 
 jobs:
   check:
+    # Source-repo only — same rationale as grafana-panels-lint.yml / ports-lint.yml.
+    # This one is not merely redundant on the mirror, it is UNPASSABLE there: the
+    # committed services.md is generated from the full private tree, while the
+    # mirror regenerates it from the tree scripts/sync-to-github.sh has stripped
+    # (operator_overrides.py, operator_leak_patterns.py, taps/claude_code_sessions.py).
+    # The doc's header carries a file count, so the two can never agree — it read
+    # `483 files` committed vs `481 files` regenerated. Without this guard the job
+    # failed on every Dependabot PR the mirror ever opened (0 green in 6 runs back
+    # to 2026-06-15), gating nothing and training everyone to ignore a red X.
+    # Found by the poindexter#1029 follow-on audit; 15 of its 16 PR-time peers
+    # already carried this line.
+    if: github.repository != 'Glad-Labs/poindexter'
     # CI_RUNNER seam (see docs/operations/self-hosted-ci-runner.md): runs on the
     # self-hosted fleet when the repo variable is set, else ubuntu-latest. The
     # variable is unset on the public mirror and on forks, so this is hosted

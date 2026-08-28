@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: compares seed sources, needs no tree
 """CI guard: catch app_settings seed sources that disagree on a key's VALUE.
 
 Sibling to ``settings_seed_drift_lint.py``, which guards a different failure

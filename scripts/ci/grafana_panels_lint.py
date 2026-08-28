@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: needs live Postgres/Prometheus; floored in-script via _report(configured=...)
 """CI lint: validate every Grafana panel query against its datasource.
 
 PR Glad-Labs/poindexter#308 deleted four panels whose SQL referenced
@@ -215,7 +216,22 @@ async def lint(dashboards_dir: Path) -> int:
     if pool is not None:
         await pool.close()
 
-    return _report(findings)
+    # A datasource we were CONFIGURED to reach must actually have validated
+    # something. Every connection failure inside _validate is deliberately
+    # non-fatal (SKIP for a dead pool, WARN for an unreachable Prometheus), so
+    # without this floor a datasource that dies mid-run collapses all of its
+    # targets to SKIP/WARN and _report() still returns 0 -- a green job that
+    # checked nothing. The workflow's wait-for-Postgres / wait-for-Prometheus
+    # steps only cover the BOOT case; this covers losing the datasource after
+    # it came up. poindexter#1029's hard-fail turned "red and ignored" into
+    # "green and empty" here, which is the quieter failure, not the louder one.
+    configured = {"prometheus"}  # no URL needed -- always has a default
+    if database_url:
+        configured.add("postgres")
+    if loki_url:
+        configured.add("loki")
+
+    return _report(findings, configured)
 
 
 async def _validate(
@@ -257,7 +273,7 @@ async def _validate(
     return "SKIP", f"unknown kind {kind}"
 
 
-def _report(findings: list[Finding]) -> int:
+def _report(findings: list[Finding], configured: set[str] | None = None) -> int:
     fails = [f for f in findings if f.severity == "FAIL"]
     warns = [f for f in findings if f.severity == "WARN"]
     skips = [f for f in findings if f.severity == "SKIP"]
@@ -281,6 +297,41 @@ def _report(findings: list[Finding]) -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Floor: a configured datasource that validated ZERO of its own targets did
+    # not pass, it went dark. Reported separately from FAIL because the cause is
+    # the datasource, not the dashboards. An unconfigured kind (loki with no
+    # LOKI_URL, the documented CI case) is exempt -- it is not in `configured`.
+    if configured:
+        ok_by_kind: dict[str, int] = {}
+        seen_by_kind: dict[str, int] = {}
+        for f in findings:
+            seen_by_kind[f.kind] = seen_by_kind.get(f.kind, 0) + 1
+            if f.severity == "OK":
+                ok_by_kind[f.kind] = ok_by_kind.get(f.kind, 0) + 1
+        dark = [
+            kind
+            for kind in sorted(configured)
+            if seen_by_kind.get(kind, 0) > 0 and ok_by_kind.get(kind, 0) == 0
+        ]
+        if dark:
+            for kind in dark:
+                print(
+                    f"FAIL: {kind} was configured and has {seen_by_kind[kind]} target(s), "
+                    f"but validated 0 of them — the datasource went dark mid-run. "
+                    f"This is a CI/datasource failure, not a dashboard failure.",
+                    file=sys.stderr,
+                )
+            return 1
+
+    if not findings:
+        print(
+            "FAIL: 0 panel targets were examined — the dashboards parsed but "
+            "produced nothing to lint, which is never a pass.",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 

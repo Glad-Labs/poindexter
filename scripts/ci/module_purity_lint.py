@@ -10,12 +10,20 @@ Platform *type* (allowed) and capability-scoped handle; it may NOT import:
 Run: python scripts/ci/module_purity_lint.py
 Exit 0 = clean, exit 1 = violations found (with file+line listed).
 """
-import sys
 import ast
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_dir, require_scanned  # noqa: E402
 
 ROOT = Path(__file__).parents[2] / "src" / "cofounder_agent"
 CONTENT_DIR = ROOT / "modules" / "content"
+
+# modules/content/ arrived as a physical code move and could move again; a
+# vanished CONTENT_DIR used to rglob to nothing and print "clean (0 files
+# checked)" with exit 0. Fail instead.
+require_dir(CONTENT_DIR, lint="module_purity_lint")
 
 BANNED = [
     ("services.site_config", "use platform.config instead"),
@@ -24,7 +32,9 @@ BANNED = [
 ]
 
 violations = []
+scanned = 0
 for py_file in sorted(CONTENT_DIR.rglob("*.py")):
+    scanned += 1
     try:
         tree = ast.parse(py_file.read_text(encoding="utf-8"))
     except SyntaxError:
@@ -50,5 +60,6 @@ if violations:
         print(f"  {v}")
     sys.exit(1)
 else:
-    print(f"module_purity_lint: clean ({len(list(CONTENT_DIR.rglob('*.py')))} files checked)")
+    require_scanned(scanned, lint="module_purity_lint", roots=(CONTENT_DIR,))
+    print(f"module_purity_lint: clean ({scanned} files checked)")
     sys.exit(0)

@@ -1,3 +1,4 @@
+# scan-floor-exempt: single-file anchor check on CLAUDE.md
 """Fail CI when a CLAUDE.md sync anchor stops matching (#2832).
 
 Every count the two CLAUDE.md sync scripts maintain rides on a prose

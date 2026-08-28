@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scan-floor-exempt: requires the bandit binary; fails loud without it
 """CI lint: no NEW bandit security findings (the bandit ratchet).
 
 Bandit is a **textual/AST pattern matcher with no dataflow analysis**. It cannot

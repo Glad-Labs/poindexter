@@ -51,6 +51,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib_scan_floor import require_scanned  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2] / "src" / "cofounder_agent"
 SCAN_DIRS = [
     ROOT / "services",
@@ -263,6 +266,7 @@ def main() -> int:
         return 1
 
     total_files = sum(len(list(d.rglob("*.py"))) for d in SCAN_DIRS if d.exists())
+    require_scanned(total_files, lint="kernel_purity_lint", roots=SCAN_DIRS)
     baselined_found = sum(len(found.get(key, [])) for key in KERNEL_PURITY_BASELINE)
     print(
         f"kernel_purity_lint: clean — {total_files} files checked, "
