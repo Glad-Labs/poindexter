@@ -1557,12 +1557,16 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "may still look healthy — it is not the same question. Every page "
             "swapped from here on lands on the slow tier (dm-crypt NVMe), "
             "which is what turns memory pressure into io stall. Usual cause "
-            "is a dormant tenant parking GB it never reads: check "
+            "is a tenant parking GB it never reads: check "
             "host_swap_device_used_bytes and container_memory_swap on the "
             "Hardware & Power board, and `systemctl show <unit> -p "
             "MemorySwapCurrent` for host units, which no container metric "
-            "covers. Recycling the process is what returns the memory; a "
-            "mem_limit only pins it into RAM instead."
+            "covers. The known one is ollama-vision, whose runner leaks ~6.9 "
+            "MiB per request and reaches ~9 GiB in a few hours (measured "
+            "2026-08-28) — read total anonymous as RssAnon+VmSwap, since "
+            "RssAnon alone falls to ~10 MiB and hides it. Recycling the "
+            "process is what returns the memory; a mem_limit only pins it "
+            "into RAM instead."
         ),
     },
     # Postgres connection-pool saturation. Previously static in

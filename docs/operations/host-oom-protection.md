@@ -224,14 +224,13 @@ Config: `infrastructure/systemd/zram/pop-zram` → `/etc/pop-zram`, deployed by
 `scripts/linux/install-swap-tiering.sh`. Read by `/usr/bin/pop-zram-config` at
 boot.
 
-The 2026-08-28 driver was not a leak — it was a **new permanent tenant**. The
-QA model-placement doctrine pinned `qwen3-vl:30b` onto GPU 1 with
-`OLLAMA_KEEP_ALIVE=-1`, and `llama-server`'s host-side copy of the weights
-(~8.3 GiB) was swapped out and never touched again: `VmRSS` 70 MiB, major
-faults flat across sampling. It is inert, correctly evicted, and permanent —
-restarting the unit only re-deposits it at the next model load. A 16 GiB tier
-minus an 8.3 GiB resident leaves ~7.7 GiB of working fast tier, so the tier was
-sized to 24 GiB to restore roughly the headroom it had before the pin.
+The 2026-08-28 driver is a **leak in the `ollama-vision` runner**, measured
+below. An earlier revision of this section called it "a new permanent tenant …
+restarting the unit only re-deposits it" — **that was wrong, and wrong in the
+direction that costs you the fix.** Recycling the runner reclaims all of it.
+
+The tier was still sized to 24 GiB, which remains worth doing: it buys headroom
+against the leak's refill time rather than against a fixed resident.
 
 Three things to hold onto when changing this:
 
@@ -249,13 +248,54 @@ Three things to hold onto when changing this:
   unless `MemAvailable` covers 1.5x the net cost. At boot the same change is
   free, because nothing is in zram yet.
 
-**Neither recycle probe can reach a host systemd unit.** `sidecar_ram_watch.py`
-and the comfyui probe both work through `restart_container` on docker names;
-`ollama-vision.service` is outside them by construction. For host units the
-equivalent read is `systemctl show <unit> -p MemorySwapCurrent`, which no
-container metric covers. In this case that is fine — the tenant is inert and
-recycling it would only re-deposit — but a host unit that swaps _and_ faults
-would need a different mechanism, not a wider watermark list.
+## The ollama-vision runner leaks ~6.9 MiB per request
+
+Measured 2026-08-28 by A/B benching the runner. The metric is **total anonymous
+= `RssAnon` + `VmSwap`**, invariant to whether the kernel has swapped it out
+yet — `RssAnon` alone falls to ~10 MiB within minutes and reads as "no shadow
+at all", which is how this hid.
+
+| runner                            | total anon   |
+| --------------------------------- | ------------ |
+| 5.5 h old, as found               | **9.35 GiB** |
+| freshly loaded, mmap on (default) | **0.30 GiB** |
+| freshly loaded, `use_mmap: false` | 0.46 GiB     |
+
+Then driving plain **text** requests at a fresh runner:
+
+| requests | total anon | Δ per 5                           |
+| -------- | ---------- | --------------------------------- |
+| 0        | 0.302 GiB  | —                                 |
+| 5        | 0.434 GiB  | +0.132 (includes one-off warm-up) |
+| 10       | 0.469 GiB  | +0.035                            |
+| 15       | 0.503 GiB  | +0.034                            |
+| 20       | 0.538 GiB  | +0.035                            |
+| 25       | 0.572 GiB  | +0.034                            |
+| 30       | 0.607 GiB  | +0.035                            |
+
+**Dead linear at ~6.9 MiB/request with no deceleration** — a leak, not a cache
+that plateaus. It never releases: the 5.5 h process sat idle 30+ minutes still
+holding 9.34 GiB. 9 GiB of growth is ~1,300 requests, ≈4/min over that window,
+which is ordinary QA-rail traffic. The requests were text-only, so this is
+**not** specific to the vision/mmproj path.
+
+**`use_mmap` is not the lever — do not spend time there.** llama-server's own
+load log reads `mmap = true` with `CPU_Mapped model buffer size = 166.92 MiB`;
+including compute buffers its intended host footprint is under 250 MiB, and the
+mapped GGUF is `r--s` (shared, read-only) holding ~zero swap. Both arms of the
+A/B land at 0.3-0.5 GiB. One real difference worth knowing: `mmap=on` peaks at
+**18.4 GiB RSS** during load (the whole file paged through) versus 0.69 GiB for
+`--no-mmap` — so every load with mmap on evicts ~18 GiB of page cache, its own
+kind of pressure on a tight box, separate from the leak.
+
+**Neither recycle probe can reach a host systemd unit** — and now that this is a
+leak rather than a fixed resident, that is a real coverage gap, not a harmless
+one. `sidecar_ram_watch.py` and the comfyui probe both work through
+`restart_container` on docker names; `ollama-vision.service` is outside them by
+construction. For host units the equivalent read is
+`systemctl show <unit> -p MemorySwapCurrent`, which no container metric covers.
+Recycling costs an ~85 s model reload, so the gate wants the same idle proof the
+sidecar probe already uses, not a blind timer.
 
 ## Related
 
