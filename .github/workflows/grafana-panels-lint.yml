@@ -129,14 +129,25 @@ jobs:
       - name: Apply migrations
         run: python scripts/ci/migrations_smoke.py
 
+      # Hard-fail. This step was `continue-on-error: true` from the time the
+      # macro expansion mis-rendered $__timeFrom()/$__timeTo() as bigint-ms
+      # (Grafana's Postgres datasource emits quoted timestamp literals), which
+      # made correct SQL report `42846 cannot cast type bigint to timestamp`
+      # and false-failed 58 panels. That was fixed 2026-08-07; the soft-fail
+      # outlived it by three weeks, during which a genuinely broken panel
+      # query would have merged green -- exactly the #308 bug class this
+      # workflow exists to catch. Restored to hard-fail 2026-08-28
+      # (poindexter#1029) on the evidence of 0 warnings / 0 failures in CI and
+      # against live datasources, and 15/15 clean runs of the service
+      # containers (their wait steps were never soft-failed, so those
+      # successes are real).
+      #
+      # NOTE: this job carries a `paths:` filter, so it must NOT be added to
+      # the branch's required status checks -- a required check that is
+      # path-filtered never reports on PRs outside those paths and leaves them
+      # pending forever. A red X here is a visible signal to fix, not a merge
+      # block.
       - name: Lint Grafana panel queries
-        # Soft-fail mode: the macro expansion (esp. $__timeFrom / $__timeTo
-        # / $__timeFilter) doesn't yet round-trip every shape Grafana emits
-        # in practice, so 58 panels false-fail today on time-cast warnings
-        # that aren't real schema drift. The output is still surfaced in
-        # the workflow log for review. Tracking issue + macro hardening
-        # are the gate to flipping this back to hard-fail.
-        continue-on-error: true
         run: python scripts/ci/grafana_panels_lint.py infrastructure/grafana/dashboards/
 
   # Pure JSON structure check -- no datasource, no containers, so it runs as
