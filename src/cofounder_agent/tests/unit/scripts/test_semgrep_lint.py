@@ -104,7 +104,13 @@ def test_no_vendored_rules_raises_rather_than_scanning_with_none(mod, tmp_path) 
 
 @pytest.mark.unit
 def test_vendored_rules_are_present_and_non_trivial(mod) -> None:
-    """The real rulesets ship in-repo — that is what removes the network dep."""
+    """The real rulesets ship in-repo — that is what removes the network dep.
+
+    Skipped on the public mirror, which strips infrastructure/semgrep/: the
+    rules are a credential-pattern corpus that public push protection rejects.
+    """
+    if not Path(mod.RULES_DIR).is_dir():
+        pytest.skip("vendored rules stripped (public mirror) — nothing to check")
     args = mod._rules_args()
     assert args, "expected --config args for the vendored rulesets"
     configs = [Path(a) for a in args if a != "--config"]

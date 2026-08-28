@@ -114,6 +114,10 @@ _STRIP_DIR_PREFIXES = (
     ".shared-context/",
     ".design-sync/",  # claude.ai/design sync inputs for the stripped @glad-labs/brand package
     ".github/workflows-disabled/",
+    # Vendored Semgrep rulesets — a credential-pattern corpus that public
+    # push protection rejects on sight. Stripped lock-step with the git-rm
+    # lines in sync-to-github.sh.
+    "infrastructure/semgrep/",
     ".githooks/",
 )
 
@@ -161,6 +165,9 @@ _STRIP_FILES = (
     # Operator-identity RAG scrub overlay + its literal-carrying test (2026-07-07).
     "src/cofounder_agent/services/operator_leak_patterns.py",
     "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py",
+    # The semgrep job cannot run on the mirror: its vendored rules are
+    # stripped above, and the lint fails loud rather than scanning with none.
+    ".github/workflows/semgrep.yml",
     ".woodpecker.yml",
     "scripts/migrate-poindexter-rename.sh",
     "scripts/sync-to-github.sh",

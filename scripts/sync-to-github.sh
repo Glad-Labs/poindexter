@@ -88,6 +88,14 @@ git rm -r --cached --quiet src/cofounder_agent/console/ 2>/dev/null || true
 git rm -r --cached --quiet docs/brand/ 2>/dev/null || true                              # brand asset PNGs (logos, screenshots)
 git rm -r --cached --quiet docs/experiments/ 2>/dev/null || true                        # launch drafts + tuning notes
 git rm -r --cached --quiet docs/superpowers/ 2>/dev/null || true                        # internal brainstorming/specs/plans workflow
+# Vendored Semgrep rulesets + the job that uses them. These CANNOT ship: the
+# rules are a corpus of credential patterns and p-secrets.yaml carries a sample
+# Slack webhook URL, which GitHub PUSH PROTECTION on the public repo rejects
+# outright — it froze the mirror once (2026-08-28). Nor do they need to ship:
+# the ratchet exists to cover the operator overlay, which is stripped from the
+# mirror anyway, and the mirror has its own CodeQL over the public subset.
+git rm -r --cached --quiet infrastructure/semgrep/ 2>/dev/null || true
+git rm --cached --quiet .github/workflows/semgrep.yml 2>/dev/null || true
 git rm --cached --quiet docs/operations/documentation-audit-2026-04-29.md 2>/dev/null || true
 git rm --cached --quiet docs/operations/migrations-audit-2026-04-27.md 2>/dev/null || true
 git rm --cached --quiet docs/operations/overnight-2026-04-27-summary.md 2>/dev/null || true
