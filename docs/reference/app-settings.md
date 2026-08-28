@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-08-26.**  
+> **Auto-generated from live `app_settings` table on 2026-08-28.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -792,7 +792,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `ops_triage_writer_model` | `ollama/llama3.2:3b` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to llama3.2:3b (a small, non-thin... |
+| `ops_triage_writer_model` | `ollama/granite4.2:3b` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to granite4.2:3b — small (~2.24 G... |
 
 ## orchestration
 
