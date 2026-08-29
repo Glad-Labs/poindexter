@@ -2,6 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** — run a command, confirm the expected output.
 
+> ## ✅ MIGRATION COMPLETE — this document is HISTORY, not a work order (2026-08-28)
+>
+> **All 7 phases are done. Windows was removed from this hardware on
+> 2026-08-27/28** — partitions, filesystem and EFI boot entry. `/data` moved to
+> the MP700 (PCIe5) on 2026-08-28. There is no rollback target and nothing here
+> is left to execute.
+>
+> **⚠️ Task 7.3 below is actively WRONG and must not be run.** It instructs you
+> to `git rm` the Windows `.ps1` fleet; that was reversed by
+> [stack#3324](https://github.com/Glad-Labs/glad-labs-stack/issues/3324)
+> (2026-08-24), which keeps those scripts for OSS users on Windows. That trap
+> has already been sprung once — see the annotation on the task itself.
+>
+> Steps are still written in the imperative and marked with checkboxes because
+> that is how they were authored. **Read them as a record of what was done,
+> including where execution deviated from the plan** (Phase 7 documents three
+> such deviations). Nothing below should be treated as an instruction to a
+> future session.
+>
+> The original in-flight status log follows, preserved for the reasoning it
+> captures.
+
 > ## 📍 RESUME HERE — migration status (last updated 2026-07-23)
 >
 > A session picking this up: read this block first, then jump to the phase named under "Next".
@@ -173,15 +195,15 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       | `nvme0n1` | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
 
       > **🚨 THE `nvme?` NUMBERING IS NOT STABLE ACROSS BOOTS — it FLIPPED on 2026-07-22.** On the GParted boot the SAME hardware enumerated the **opposite** way:
-                                  >
-                                  > | Linux device | Model | 2026-07-22 layout | Role |
-                                  > | ------------ | ----- | ----------------- | ---- |
-                                  > | **`nvme0n1`** | **Corsair MP600 CORE XT** | p1 16M MSR · **p2 1.8T ntfs "MP600"** | ⛔ **INSTALL TARGET** — shrink `nvme0n1p2` |
-                                  > | **`nvme1n1`** | **Corsair MP700 ELITE with Heatsink** | p1 100M vfat ESP · p2 16M MSR · **p3 1.8T ntfs "MP700" = Windows C:** · p4 797M recovery | **WINDOWS DRIVE — NEVER TOUCH** |
-                                  >
-                                  > This nearly caused a disaster: keying off the 2026-07-19 mapping, `nvme1n1` was about to be resized in GParted — but on this boot `nvme1n1` is the **MP700 (Windows C:)**. The `MP700` partition **label** on `nvme1n1p3` is what caught it. **NEW STANDING RULE: at every destructive step, identify each disk by its MODEL string and/or the Windows layout (ESP+MSR+C:+Recovery = the drive to AVOID), NEVER by the `nvme0`/`nvme1` number.** Volume labels (`MP600`/`MP700`) happen to track the models here and are a useful second signal; the bare device number is not.
+                                      >
+                                      > | Linux device | Model | 2026-07-22 layout | Role |
+                                      > | ------------ | ----- | ----------------- | ---- |
+                                      > | **`nvme0n1`** | **Corsair MP600 CORE XT** | p1 16M MSR · **p2 1.8T ntfs "MP600"** | ⛔ **INSTALL TARGET** — shrink `nvme0n1p2` |
+                                      > | **`nvme1n1`** | **Corsair MP700 ELITE with Heatsink** | p1 100M vfat ESP · p2 16M MSR · **p3 1.8T ntfs "MP700" = Windows C:** · p4 797M recovery | **WINDOWS DRIVE — NEVER TOUCH** |
+                                      >
+                                      > This nearly caused a disaster: keying off the 2026-07-19 mapping, `nvme1n1` was about to be resized in GParted — but on this boot `nvme1n1` is the **MP700 (Windows C:)**. The `MP700` partition **label** on `nvme1n1p3` is what caught it. **NEW STANDING RULE: at every destructive step, identify each disk by its MODEL string and/or the Windows layout (ESP+MSR+C:+Recovery = the drive to AVOID), NEVER by the `nvme0`/`nvme1` number.** Volume labels (`MP600`/`MP700`) happen to track the models here and are a useful second signal; the bare device number is not.
 
-                                  **⚠️ Note (from the original 2026-07-19 boot):** the install target was `nvme1n1` then — but per the flip above, do not rely on that. Confirm the model reads **`MP600 CORE XT`** in `lsblk`/GParted Device Information before touching any partition. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
+                                      **⚠️ Note (from the original 2026-07-19 boot):** the install target was `nvme1n1` then — but per the flip above, do not rely on that. Confirm the model reads **`MP600 CORE XT`** in `lsblk`/GParted Device Information before touching any partition. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
 
 - [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
@@ -1130,35 +1152,110 @@ Rollback is cheap **only if you've done it once**. Do a dry run in the first few
 
 ---
 
-## Phase 7 — ⛔ The wipe (only after the exit criteria are met)
+## Phase 7 — ⛔ The wipe — ✅ **EXECUTED 2026-08-27/28**
 
-**This is the one irreversible phase.** Do not start it before Task 6.2 Step 5 scores a commit, the Task 1.4 credential gate is ✅, and the [poindexter#889](https://github.com/Glad-Labs/poindexter/issues/889) recovery path has been proven from an unrelated machine.
+**This was the one irreversible phase.** It is done: Windows is off this
+hardware entirely — partitions, filesystem and EFI boot entry. What follows is
+a record of what actually happened, kept because several steps went
+differently from the plan.
 
-### Task 7.1: Final pre-wipe checks
+**Gate status at execution.** Task 6.2's ≥14-day evaluation was satisfied by
+**35 days** of unbroken operation (clock started 2026-07-23) rather than by the
+logged weekly process — `/data/migration-eval.md` was never created, so the
+evidence is the run itself, not the log. Task 6.3's **rollback rehearsal never
+happened**; that was a real gap, mitigated only by the dual-boot target
+remaining untouched until the moment of the wipe. The Task 1.4 credential gate
+closed differently than expected — see 7.1 Step 2.
 
-- [ ] **Step 1: Confirm the offsite backup is intact and current** — list it remotely; do not assume.
-- [ ] **Step 2: Confirm no Windows-only dependency remains unported.** Walk the Phase 5 list; anything still only on Windows either gets ported now or is consciously abandoned.
-- [ ] **Step 3: Take a final Windows-side dump** if anything at all still lives there.
+### Task 7.1: Final pre-wipe checks — ✅ done
 
-### Task 7.2: Decide the MP700's role, then wipe
+- [x] **Step 1: Confirm the offsite backup is intact and current.** Listing it
+      rather than assuming is what found the real problem: **the offsite tier
+      backed up the database and nothing else.** `~/.poindexter/bootstrap.toml`
+      (holding `poindexter_secret_key`) and the Claude memory tree rode solely
+      on the Tier-3 DR USB job, which had been pulled. Since that key decrypts
+      the `app_settings` rows holding the repo's own restic password, the
+      healthy offsite snapshot was **unopenable after a disk loss**
+      ([poindexter#889](https://github.com/Glad-Labs/poindexter/issues/889)).
+      Fixed and deployed before the wipe (stack#3399, #3401, #3402); verified
+      by `restic ls` showing `bootstrap.toml` and `MEMORY.md` inside snapshot
+      `d7f1253b`, not by the snapshot merely existing.
+- [x] **Step 2: Confirm no Windows-only dependency remains unported.** Outcome
+      inverted the plan's framing: the `scripts/*.ps1` fleet is **deliberately
+      kept** for OSS users on Windows (stack#3324, 2026-08-24), so "unported"
+      was the wrong question for it. Credentials were the real gate, and they
+      closed empirically — every account had already been authenticated from
+      Pop!\_OS, which proves a factor exists outside the Windows TPM. OneDrive
+      was confirmed empty by the operator (it is a cloud-files reparse point
+      Linux cannot traverse, so this could not be checked from Linux).
+- [x] **Step 3: Take a final Windows-side dump.** Nothing operational lived
+      there. The one irreplaceable item was personal: 1,357 wedding photos
+      (18 GB, 2018 originals + a scanned marriage certificate). Copied to
+      `/data/personal/wedding-photos-2018` and verified byte-identical with
+      `rsync -c` before the wipe. `migration-backup-copy` (14 GB) was
+      superseded by the now-complete offsite snapshot.
 
-- [ ] **Step 1: Choose the end state.** Recommended: **reinstall Pop on the MP700** (PCIe5 — Postgres and Docker benefit most) and demote the MP600 to `/data`. The Phase 3 layout was designed for exactly this: `/` is small and `/data` already holds the bulk, so reinstalling root is cheap and the heavy data never moves. Alternative: keep Linux on the MP600 and make the MP700 `/data` — no reinstall, but the DB stays on the slower drive.
-- [ ] **Step 2: Wipe the MP700** and execute the chosen layout.
-- [ ] **Step 3: Re-run Task 6.1 verification** on the final configuration.
+### Task 7.2: Decide the MP700's role, then wipe — ✅ done
 
-### Task 7.3: Retire the obsolete WSL scaffolding
+- [x] **Step 1: Choose the end state — NEITHER option below was taken.** The
+      plan recommended reinstalling Pop on the MP700 and demoting the MP600 to
+      `/data`. That was rejected: it spends a weekend re-earning a working
+      system for little gain, because **root does almost no I/O** — Docker,
+      containerd and the Postgres volume all already live on `/data`. The
+      listed alternative (leave everything, make the MP700 `/data`) was close
+      but under-specified. What was actually done: **wipe the MP700, make it
+      the new `/data`, leave `/` on the MP600.** The PCIe5 drive ends up under
+      exactly the workloads that benefit, with no reinstall and no
+      re-verification of the whole stack.
+- [x] **Step 2: Wipe the MP700 and execute the chosen layout.** Wiped
+      2026-08-27 (GPT + all four Windows partitions), rebuilt as a single
+      1.8 TB ext4 volume labelled `poindexter-data`. The dead
+      `Windows Boot Manager` EFI entry was removed separately after confirming
+      systemd-boot healthy and both loader files present on the ESP. `/data`
+      migrated 2026-08-28 per
+      [the migration runbook](2026-08-28-data-volume-migration-mp700.md) —
+      ~18 minutes of local downtime, public site unaffected.
+- [x] **Step 3: Re-run Task 6.1 verification.** Post-migration state matched
+      the pre-migration baseline exactly: 46 containers, worker/Grafana/Prefect
+      all 200, `posts` 370, `pipeline_tasks` 2065, `app_settings` 1623.
+      `/data` went from 88% full on PCIe4 to 54% on PCIe5.
 
-Now that no rollback target exists, the deletions deferred from Task 5.3 are safe.
+### Task 7.3: ~~Retire the obsolete WSL scaffolding~~ — ⚠️ **SUPERSEDED, DO NOT EXECUTE**
 
-- [ ] **Step 1: Remove the WSL-only scripts:**
+> **The instructions this task used to contain are wrong and must not be
+> followed.** It said to `git rm` the WSL-only `.ps1` scripts, retire
+> `brain/docker_port_forward_probe.py`, and delete the `.wslconfig`/VHDX docs.
+>
+> **[stack#3324](https://github.com/Glad-Labs/glad-labs-stack/issues/3324)
+> (2026-08-24) decided the opposite**: the Windows fleet **stays in-tree** for
+> OSS users running Poindexter on Windows. "Superseded on Matt's host" is not
+> "dead" — the platform axis matters, not just the caller axis. That decision
+> post-dates this plan (2026-07-17) and wins.
+>
+> This trap has already been sprung once: on 2026-08-27 the deletion was
+> proposed by quoting this task, and was caught only by cross-checking the
+> later decision. **Read this task as history, not as a work order.**
 
-```bash
-git rm scripts/idle-wsl-gpu-reset.ps1 scripts/register-idle-wsl-reset.ps1 scripts/fix-task-window-visibility.ps1 scripts/docker-watchdog.ps1
-```
+What was done instead, per #3324's own "frame it per-platform" guidance
+(stack#3405) — **zero files deleted**:
 
-- [ ] **Step 2: Retire the brain's `docker_port_forward_probe`** DB-wedge watch + its `alert_events` routing — dead on bare metal. Own PR, not this one.
-- [ ] **Step 3: Drop** the `.wslconfig` balloon tuning, VHDX compaction runbooks, and the `#2239` autovacuum-stat-reset workaround from the docs.
-- [ ] **Step 4: Commit** the deletions.
+- **`.ps1` fleet** — all 15 scripts retained.
+- **`docker_port_forward_probe`** — retained and still ships
+  `DEFAULT_ENABLED = True`, because Docker Desktop installs are the ones that
+  need it. Disabled on this host with
+  `docker_port_forward_probe_enabled=false`: a settings row, not a deletion.
+- **WSL/Docker-Desktop docs** — re-framed rather than dropped.
+  `docs/operations/idle-wsl-gpu-reset.md` carries a platform banner (it
+  described a failure mode that cannot occur on bare metal while reading as
+  current-host instructions); `ports.md` separates the still-true
+  `host.docker.internal` guidance from its Windows-only motivation.
+
+The same pass found the counter-risk that keeping-for-Windows creates:
+`incident-response.md` sent Disk Space Low triage to `windows_exporter`'s
+`windows_logical_disk_free_bytes` on the `windows` scrape job — verified dead
+on this host (job absent, 0 series), so an operator mid-incident followed it
+nowhere. **Keeping something for another platform obliges you to label it as
+such**, or it rots into a trap for the platform you are actually on.
 
 ---
 
