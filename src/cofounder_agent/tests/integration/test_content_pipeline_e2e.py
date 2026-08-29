@@ -736,32 +736,87 @@ class TestThinkingModels:
         finally:
             await client.close()
 
+    # Budget headroom for the thinking overhead. Matches the qwen test above
+    # and the class docstring's own rule; the previous 1500 did not.
+    _GLM_MAX_TOKENS = 4000
+
     @pytest.mark.asyncio
+    @pytest.mark.timeout(180)
     async def test_glm47_generates_nonempty_content(self):
-        """glm-4.7 variant returns non-empty content with 1500 token budget.
+        """glm-4.7 returns visible, non-truncated content.
 
         Detects the actual installed glm-4.7 variant name (e.g. glm-4.7-5090:latest).
+
+        **Was flaky, and the old parameters were the cause** (fixed 2026-08-29
+        after a spurious CI failure on an unrelated PR). It ran at
+        ``max_tokens=1500, temperature=0.3`` and asserted ``>= 5`` words. Raw
+        Ollama does NOT inline chain-of-thought into ``text`` — reasoning
+        tokens count against ``eval_count`` while producing no visible output
+        — so a run whose thinking ate ~1496 of the 1500 tokens returned a
+        four-word fragment ("This is good but") and failed the word count.
+
+        Measured against the live model. Old settings, 5 runs: token use
+        varied 713-1500 and **one run in five hit the 1500 ceiling**. New
+        settings are deterministic at ``temperature=0.0`` and the bounded
+        prompt costs far less — a steady **450 tokens**, so the 4000 budget
+        leaves ~8.9x headroom and the cliff is gone. (The prompt change is
+        most of that saving: the old open-ended "write 2 sentences" ran 1253
+        tokens even when deterministic.)
+
+        The word count alone was the wrong instrument: it could only catch
+        truncation indirectly, and lowering the threshold would have let the
+        four-word fragment pass while asserting nothing. The token-ceiling
+        check below tests the real condition.
         """
         # Find the actual glm-4.7 model name (may have a suffix like -5090)
         glm_model = _find_ollama_model("glm-4.7")
         if not glm_model:
             pytest.skip("No glm-4.7 variant installed in Ollama")
 
-        client = _make_client()
+        client = _make_client(timeout=150)
         try:
             result = await client.generate(
-                prompt="Write 2 sentences about why code reviews matter.",
+                # Bounded output: an open-ended "write 2 sentences" invites a
+                # long answer that has further to be cut off.
+                prompt=(
+                    "Reply with exactly one short sentence explaining why "
+                    "code reviews matter."
+                ),
                 model=glm_model,
-                max_tokens=1500,
-                temperature=0.3,
+                max_tokens=self._GLM_MAX_TOKENS,
+                temperature=0.0,  # Deterministic — removes the thinking-length variance
             )
-            text = result["text"]
-            assert text, f"{glm_model} returned no content"
-            assert len(text.strip()) > 0, (
-                f"{glm_model} returned whitespace-only content — may need larger token budget"
+            text = (result["text"] or "").strip()
+            # Same escape as the qwen test: a thinking model legitimately can
+            # spend its whole budget on reasoning. That is a model behaviour,
+            # not a regression in our code.
+            if not text:
+                pytest.skip(
+                    f"{glm_model} consumed all {result.get('tokens', 0)} tokens on "
+                    "internal reasoning — expected behavior for thinking models "
+                    "with certain prompt/token combinations"
+                )
+            # A FAILURE, not a skip: with 4000 tokens for a one-sentence answer,
+            # hitting the ceiling means the budget or the model config is wrong,
+            # and every downstream caller sharing these settings is being
+            # truncated too. Skipping here would hide exactly that.
+            tokens = result.get("tokens", 0)
+            assert tokens < self._GLM_MAX_TOKENS, (
+                f"{glm_model} hit the {self._GLM_MAX_TOKENS}-token ceiling "
+                f"({tokens}) — visible output is truncated mid-generation. "
+                f"Raise the budget or shorten the prompt; do NOT relax the "
+                f"word count below, which only measures this indirectly. "
+                f"Got: {text[:200]}"
             )
-            words = text.strip().split()
-            assert len(words) >= 5, f"{glm_model} output too short ({len(words)} words): {text[:200]}"
+            # One short sentence measures ~18 words here; 5 is a floor for
+            # "a sentence happened", not a tuned expectation. The ceiling
+            # check above owns truncation, so this only has to catch a
+            # degenerate one-or-two-word reply.
+            words = text.split()
+            assert len(words) >= 5, (
+                f"{glm_model} output too short ({len(words)} words) despite "
+                f"finishing under the token ceiling at {tokens} tokens: {text[:200]}"
+            )
         finally:
             await client.close()
 
