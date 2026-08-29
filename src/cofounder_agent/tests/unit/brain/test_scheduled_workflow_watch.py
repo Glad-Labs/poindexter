@@ -248,6 +248,94 @@ class TestNotAssessed:
 
 
 @pytest.mark.unit
+class TestEveryPassIsAudible:
+    """A probe that only speaks on failure looks identical to a dead probe.
+
+    Found during this probe's own first-pass verification: the brain log said
+    nothing at all, and whether it had run had to be dug out of
+    brain_knowledge. Silence-on-success is the failure class this file exists
+    to catch, so it must not be the file's own behaviour.
+    """
+
+    @pytest.mark.asyncio
+    async def test_healthy_pass_still_logs(self, monkeypatch, caplog):
+        mod, _ = _client({False: (40, _iso(1)), True: (40, _iso(2))})
+        monkeypatch.setattr(swf, "httpx", mod)
+        with caplog.at_level("INFO", logger=swf.logger.name):
+            await swf.run_scheduled_workflow_watch(_pool())
+        assert any("pass complete" in r.getMessage() for r in caplog.records), (
+            "a healthy pass logged nothing — indistinguishable from not running"
+        )
+
+    @pytest.mark.asyncio
+    async def test_not_assessed_never_reads_as_healthy(self, monkeypatch, caplog):
+        """The headline must not CLAIM health for targets never checked.
+
+        Asserting only the parenthetical counts is not enough — those stay
+        correct even when the summary says "all 1 workflow(s) healthy", which
+        is the misleading half. So this pins the claim itself, on both the
+        returned `detail` (it propagates into the brain's cycle summary) and
+        the log line.
+        """
+        mod, _ = _client({False: (0, None), True: (0, None)})
+        monkeypatch.setattr(swf, "httpx", mod)
+        with caplog.at_level("INFO", logger=swf.logger.name):
+            summary = await swf.run_scheduled_workflow_watch(_pool())
+
+        assert "healthy" not in summary["detail"], (
+            f"claimed health with nothing assessed: {summary['detail']!r}"
+        )
+        assert "assessed" in summary["detail"], summary["detail"]
+
+        line = next(r.getMessage() for r in caplog.records if "pass complete" in r.getMessage())
+        assert "healthy" not in line, line
+        assert "0 assessed" in line and "1 not assessed" in line, line
+
+    @pytest.mark.asyncio
+    async def test_mixed_pass_reports_assessed_count_not_configured(
+        self, monkeypatch, caplog
+    ):
+        """With one healthy and one unreachable target, say 1 — not 2."""
+        two = json.dumps(_WATCH + [
+            {"repo": "acme/other", "workflow": "nightly.yml", "max_age_hours": 30},
+        ])
+        seen = {"n": 0}
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, url, params=None):  # noqa: ANN001, ARG002
+                # First target healthy; second has zero scheduled runs.
+                if "nightly.yml" in url:
+                    payload = {"total_count": 0, "workflow_runs": []}
+                else:
+                    payload = {"total_count": 5,
+                               "workflow_runs": [{"created_at": _iso(2)}]}
+                seen["n"] += 1
+
+                class _R:
+                    status_code = 200
+
+                    def json(self_inner):
+                        return payload
+
+                return _R()
+
+        mod = MagicMock()
+        mod.AsyncClient = MagicMock(return_value=_Client())
+        monkeypatch.setattr(swf, "httpx", mod)
+        with caplog.at_level("INFO", logger=swf.logger.name):
+            summary = await swf.run_scheduled_workflow_watch(_pool(watches=two))
+
+        assert "all 1 assessed" in summary["detail"], summary["detail"]
+        assert "1 not assessed" in summary["detail"], summary["detail"]
+
+
+@pytest.mark.unit
 class TestConfigValidation:
     @pytest.mark.parametrize("entry", [
         {"repo": "no-slash", "workflow": "a.yml"},

@@ -408,10 +408,34 @@ async def run_scheduled_workflow_watch(pool: Any) -> dict[str, Any]:
                 bad.append(_target_name(watch))
 
     await _stamp_run(pool)
-    detail = (
-        f"{len(bad)} of {len(watches)} scheduled workflow(s) unhealthy: "
-        + ", ".join(bad)
-        if bad
-        else f"all {len(watches)} scheduled workflow(s) healthy"
+
+    # `not_assessed` is neither health nor alarm — a target the probe could
+    # not reach must never be counted as fine. Saying "all N healthy" when
+    # zero were actually checked is the precise lie this probe exists to
+    # catch, so the summary counts ASSESSED targets, not configured ones.
+    n_unassessed = sum(
+        1 for r in results.values() if r.get("state") == "not_assessed"
+    )
+    n_assessed = len(results) - n_unassessed
+    if bad:
+        detail = (
+            f"{len(bad)} of {n_assessed} assessed scheduled workflow(s) "
+            f"unhealthy: " + ", ".join(bad)
+        )
+    elif n_assessed == 0:
+        detail = "no scheduled workflow(s) assessed"
+    else:
+        detail = f"all {n_assessed} assessed scheduled workflow(s) healthy"
+    if n_unassessed and n_assessed:
+        detail += f" ({n_unassessed} not assessed)"
+
+    # Log EVERY completed pass, healthy or not. A probe that only speaks when
+    # something is wrong is indistinguishable from a probe that never ran —
+    # the exact failure class this file exists to catch. It bit during this
+    # probe's own first-pass verification: the brain log said nothing, and
+    # whether it had run had to be dug out of brain_knowledge.
+    logger.info(
+        "[sched_wf] pass complete — %s (%d assessed, %d not assessed)",
+        detail, n_assessed, n_unassessed,
     )
     return {"ok": not bad, "detail": detail, "workflows": results}
