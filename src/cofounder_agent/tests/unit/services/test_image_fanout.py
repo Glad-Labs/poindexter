@@ -192,6 +192,23 @@ class TestParseScore:
         s, r = _parse_score("I think this image is nice")
         assert s is None
 
+    def test_empty_is_reported_as_empty_not_unparseable(self):
+        """An empty completion and a malformed one are different failures and
+        must not share a label. qwen3-vl burns the whole budget in its
+        reasoning channel and returns empty content; calling that
+        "unparseable" sent a real investigation hunting a parser bug that did
+        not exist (31 of the first 115 candidate scores).
+        """
+        for blank in ("", "   ", "\n\t "):
+            score, reason = _parse_score(blank)
+            assert score is None
+            assert "empty" in reason
+            assert "unparseable" not in reason
+
+    def test_malformed_still_reads_as_unparseable(self):
+        _, reason = _parse_score("I think this image is nice")
+        assert "unparseable" in reason
+
 
 class TestPickWinner:
     def _c(self, name, score):
@@ -241,6 +258,19 @@ def _sc(**over):
     base = {"image_fanout_enabled": "true"}
     base.update(over)
     return _FakeSiteConfig(base)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_object_store():
+    """Candidate retention uploads to the object store, so this module now has
+    a THIRD live-service edge alongside :8188/:9836 (see the module docstring).
+    Stub it for every test by default — on a credentialed operator box a unit
+    run would otherwise write real objects. Retention tests re-patch locally;
+    the innermost patch wins, same idiom as the gpu rungs.
+    """
+    with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+               AsyncMock(return_value=None)):
+        yield
 
 
 @pytest.fixture
@@ -598,10 +628,154 @@ class TestVramFixAndDatasetCompleteness:
             await image_fanout._score_candidate(
                 cand, brief="b",
                 site_config=_FakeSiteConfig({
-                    "qa_vision_model": "qwen3-vl:30b",
+                    # NON-thinking vision model: the configured base is the
+                    # budget. A thinking model is lifted instead — see
+                    # TestJudgeThinkingBudget below.
+                    "qa_vision_model": "llava:13b",
                     "image_fanout_judge_max_tokens": "3000",
                 }),
                 pool=MagicMock(),
             )
         assert captured["max_tokens"] == 3000
         assert cand.score == 70.0
+
+
+class TestJudgeThinkingBudget:
+    """qwen3-vl's reasoning channel shares max_tokens with the JSON answer and
+    returns EMPTY content when it loses that race — the same failure, model and
+    fix as multi_model_qa._maybe_bump_vision_thinking_budget, which the fan-out
+    judge never inherited. 31/115 live scores were lost this way.
+    """
+
+    def test_thinking_model_is_lifted_to_the_thinking_budget(self):
+        assert image_fanout._judge_token_budget(
+            "ollama/qwen3-vl:30b", 2048, _FakeSiteConfig({})) == 8000
+
+    def test_non_thinking_model_keeps_the_base(self):
+        assert image_fanout._judge_token_budget(
+            "llava:13b", 2048, _FakeSiteConfig({})) == 2048
+
+    def test_lift_never_lowers_a_larger_base(self):
+        """max(), not assignment — an operator who raised the floor above the
+        thinking budget keeps their value."""
+        assert image_fanout._judge_token_budget(
+            "ollama/qwen3-vl:30b", 12000, _FakeSiteConfig({})) == 12000
+
+    def test_thinking_budget_is_db_configurable(self):
+        sc = _FakeSiteConfig({"qa_vision_thinking_num_predict": "5000"})
+        assert image_fanout._judge_token_budget(
+            "ollama/qwen3-vl:30b", 2048, sc) == 5000
+
+    def test_registry_failure_falls_back_to_base(self):
+        with patch("services.llm_providers.thinking_models.is_thinking_model",
+                   side_effect=RuntimeError("registry down")):
+            assert image_fanout._judge_token_budget(
+                "ollama/qwen3-vl:30b", 2048, _FakeSiteConfig({})) == 2048
+
+
+class TestCandidateRetention:
+    """Without retention the fan-out is unauditable by construction: losing
+    candidates are temp files nothing references, so a judged score cannot be
+    checked against the image it describes — which is what blocked calibrating
+    the judge across the first 48 rows.
+    """
+
+    @pytest.mark.asyncio
+    async def test_uploads_every_candidate_and_records_the_url(self, tmp_path):
+        a, b = tmp_path / "a.png", tmp_path / "b.png"
+        a.write_bytes(b"A")
+        b.write_bytes(b"B")
+        cands = [FanoutCandidate(name="schnell", path=str(a)),
+                 FanoutCandidate(name="klein", path=str(b))]
+        seen = []
+
+        async def fake_upload(self, local_path, key, content_type=None):
+            seen.append(key)
+            return f"https://cdn.example/{key}"
+
+        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+                   fake_upload):
+            await image_fanout._retain_candidates(
+                cands, task_id="t42", site_config=_sc())
+
+        assert [c.meta["url"] for c in cands] == [
+            "https://cdn.example/" + k for k in seen]
+        # Keyed by task so a row's images are findable, and by day so age
+        # pruning stays a list_keys away.
+        assert all("t42" in k for k in seen)
+        assert any("schnell" in k for k in seen)
+        # Distinct per candidate, and never a bare name a re-run could clobber.
+        assert len(set(seen)) == len(seen)
+        assert not any(k.endswith("/schnell.png") for k in seen)
+
+    @pytest.mark.asyncio
+    async def test_disabled_setting_skips_upload(self, tmp_path):
+        f = tmp_path / "a.png"
+        f.write_bytes(b"A")
+        cand = FanoutCandidate(name="schnell", path=str(f))
+        upload = AsyncMock(return_value="https://cdn.example/x")
+        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+                   upload):
+            await image_fanout._retain_candidates(
+                [cand], task_id="t",
+                site_config=_sc(image_fanout_retain_candidates="false"))
+        upload.assert_not_awaited()
+        assert "url" not in cand.meta
+
+    @pytest.mark.asyncio
+    async def test_upload_failure_is_soft(self, tmp_path):
+        """A retention miss costs the audit trail, never the image."""
+        f = tmp_path / "a.png"
+        f.write_bytes(b"A")
+        cand = FanoutCandidate(name="schnell", path=str(f))
+        with patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+                   AsyncMock(side_effect=RuntimeError("object store down"))):
+            await image_fanout._retain_candidates(
+                [cand], task_id="t", site_config=_sc())
+        assert "url" not in cand.meta
+
+    @pytest.mark.asyncio
+    async def test_url_reaches_the_outcome_row(
+        self, zimage_file, no_gpu_unload,
+    ):
+        async def no_render(name, graph, **kw):
+            return None, {"failure": "skip"}
+
+        async def fake_upload(self, local_path, key, content_type=None):
+            return "https://cdn.example/" + key
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", no_render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()), \
+             patch("services.r2_upload_service.R2UploadService.upload_to_r2",
+                   fake_upload):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={"model": "z_image_turbo"},
+                site_config=_sc(), pool=pool, task_id="t9",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        entry = details["candidates"][0]
+        assert entry["name"] == "zimage"
+        assert entry["url"].startswith("https://cdn.example/")
+
+    @pytest.mark.asyncio
+    async def test_row_omits_url_when_retention_is_off(
+        self, zimage_file, no_gpu_unload,
+    ):
+        """exclude_none: an absent image reference is absent, not null — same
+        contract as the stage-rendered zimage's missing elapsed_s."""
+        async def no_render(name, graph, **kw):
+            return None, {"failure": "skip"}
+
+        pool = _pool()
+        with patch.object(image_fanout, "_render_via_comfy", no_render), \
+             patch.object(image_fanout, "_score_candidate", AsyncMock()):
+            await run_featured_fanout(
+                prompt="p", negative="n", zimage_path=zimage_file,
+                zimage_meta={"model": "z_image_turbo"},
+                site_config=_sc(image_fanout_retain_candidates="false"),
+                pool=pool, task_id="t9",
+            )
+        details = json.loads(pool.execute.await_args.args[4])
+        assert "url" not in details["candidates"][0]

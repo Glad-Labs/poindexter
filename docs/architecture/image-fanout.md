@@ -58,12 +58,52 @@ the catalog stops being single-model monotone.
   the node wrapper can't kill a render it asked for.
 - **Judge** — mirrors `shot_vision_qa.score_shot_frame`: one image per call
   to `qa_vision_model` via `dispatch_complete` (cost_logs + Langfuse free),
-  prompt key `qa.featured_image_fanout` (content-qa SKILL.md pack),
-  `image_fanout_judge_max_tokens` (2048) for the qwen3-vl think-trace
-  budget — it shares that budget with the JSON answer, and 1024 starved
-  the answer out of ~30% of live calls. Fail-soft: an
-  unscorable candidate keeps `score=None`; all-`None` falls open to
-  `image_fanout_priority` order (default zimage-first = today's behaviour).
+  prompt key `qa.featured_image_fanout` (content-qa SKILL.md pack).
+  Fail-soft: an unscorable candidate keeps `score=None`; all-`None` falls
+  open to `image_fanout_priority` order (default zimage-first = today's
+  behaviour).
+
+  **The judge scores each candidate in an INDEPENDENT call** — it never sees
+  the candidates side by side. Anything phrased in the prompt as a hard
+  threshold (today: "any legible text caps the score at 40") is therefore
+  applied by separate stochastic calls, and will fire unevenly on borderline
+  images by construction. That is a property of the design, not a model
+  defect; read a cross-candidate inconsistency as evidence about the _rule
+  shape_ before concluding the judge is miscalibrated.
+
+- **Judge output budget — `_judge_token_budget`.** qwen3-vl's reasoning
+  channel shares `max_tokens` with the JSON answer, and when the trace
+  exhausts the budget the call returns **empty content, not truncated
+  JSON** — it fails the parse having looked like a healthy request the whole
+  way. Measured over the first 12 days: 31 of 115 candidate scores lost,
+  every one having generated exactly the configured budget. Raising
+  1024 → 2048 only moved the loss rate 30.6% → 20.9%, because a reasoning
+  trace is the wrong order of magnitude for a nudge.
+
+  `image_fanout_judge_max_tokens` (2048) is now a **floor**: a thinking
+  vision model is lifted to `qa_vision_thinking_num_predict` (8000), reusing
+  the key rather than adding a second budget that would have to be kept in
+  agreement. This is the same failure, model and fix as
+  `multi_model_qa._maybe_bump_vision_thinking_budget` (the
+  `vision_scorer_unavailable` RCA of 2026-07-12) — the fan-out judge simply
+  never inherited it. An empty completion now reports `empty vision
+response`, distinct from `unparseable vision response`; conflating them
+  once cost an investigation that went looking for a parser bug.
+
+- **Candidate retention** — `image_fanout_retain_candidates` (true) uploads
+  **every** candidate to the object store under
+  `fanout/<YYYYMMDD>/<task>/<candidate>-<HHMMSS>.png` (time-suffixed so a
+  task re-run cannot overwrite the images an earlier row points at)
+  and records the public URL on its entry in the judged row. Without it the
+  fan-out is unauditable by construction: candidates are `mkstemp` files,
+  only the winner's path is returned to the stage, and the losers survive in
+  the worker's `/tmp` only until the next container restart — so a score
+  could not be checked against the image it described for any of the first
+  48 rows. The winner is uploaded here too even though the stage separately
+  publishes it: this key holds what the _judge_ saw, before any downstream
+  resize. Best-effort per candidate, and a quiet no-op when no object-store
+  credentials are configured. Nothing prunes these yet — the dated prefix is
+  there so age-based pruning stays a `list_keys` away.
 - **VRAM choreography** — zimage renders first (image-gen warm from the
   inline batch); the service then hard-unloads image-gen (decline-gated
   rung) before ComfyUI loads. ComfyUI swaps schnell→klein→qwen internally
@@ -99,7 +139,8 @@ the catalog stops being single-model monotone.
 `enabled` (false) · `candidates` / `priority`
 (`zimage,schnell,klein,qwen`) · `judge_enabled` (true) · `comfyui_url`
 (`http://comfyui:8188`) · `render_timeout_s` (600) · `width`/`height`
-(1024) · per-model knobs (`schnell_checkpoint/steps/cfg`,
+(1024) · `judge_max_tokens` (2048, a floor — see the judge-budget note
+above) · `retain_candidates` (true) · per-model knobs (`schnell_checkpoint/steps/cfg`,
 `qwen_model/text_encoder/vae/steps/cfg/shift`,
 `klein_model/text_encoder/vae/steps/cfg`).
 
@@ -221,3 +262,16 @@ makes the difference visible.
 - Inline images stay single-model (fan-out is featured-only).
 - The class→provider routing map (seeded from this phase's audit rows) and
   provider extraction into registered ImageProvider plugins.
+
+  **Do not seed that map from the raw win rates yet.** Audited over the first
+  48 judged rows (2026-08-16 → 08-27), only 42% of wins were an actual
+  comparative judge preference; the other 58% were resolved by
+  `image_fanout_priority` order (score ties, rows where the judge scored only
+  one candidate, judge down). Presence is lopsided too — zimage appeared in
+  21 rows against schnell's 47 — so a raw win _rate_ is confounded before the
+  judge speaks. The judge is also near-binary in practice: 71% of scores
+  ≥ 90, 24% ≤ 40, and only 4.8% anywhere in the 41–89 band. The retention and
+  budget fixes above address the mechanical half; the score-distribution half
+  is a `qa.featured_image_fanout` prompt question, deliberately left until
+  there is enough per-candidate data to answer it without over-fitting.
+  Tracked in Glad-Labs/poindexter#1032.

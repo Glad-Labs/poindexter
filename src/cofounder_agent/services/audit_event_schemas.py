@@ -177,6 +177,12 @@ class ImageFanoutCandidateEntry(BaseModel):
     # does not size.
     width: int | None = None
     height: int | None = None
+    # Public object-store URL of the exact image this score describes. The
+    # judged row is the Phase-2 router's training data, and a score with no
+    # retrievable image cannot be checked, only trusted — the first 48 rows
+    # were unauditable for precisely this reason. None (key omitted) when
+    # image_fanout_retain_candidates is off or the upload missed.
+    url: str | None = None
 
 
 class ImageFanoutJudgedDetails(BaseModel):

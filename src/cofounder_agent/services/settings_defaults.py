@@ -2157,10 +2157,21 @@ DEFAULTS: dict[str, str] = {
     'image_fanout_klein_vae': 'flux2-vae.safetensors',
     'image_fanout_klein_steps': '4',
     'image_fanout_klein_cfg': '1.0',
-    # Judge output budget. qwen3-vl's <think> trace shares it with the
-    # JSON answer; 1024 starved the answer out of ~30% of live calls in
-    # the first 8 days (unparseable-response fail-softs).
+    # Judge output budget FLOOR. qwen3-vl's reasoning trace shares it with
+    # the JSON answer, and losing that race returns EMPTY content rather
+    # than truncated JSON — 31 of the first 115 candidate scores, each
+    # having generated exactly this many output tokens. A thinking vision
+    # model is lifted from here to qa_vision_thinking_num_predict (8000) by
+    # image_fanout._judge_token_budget, mirroring the identical fix in
+    # multi_model_qa; raising THIS value alone only moved the loss rate
+    # 30.6% -> 20.9%, because a reasoning trace does not fit in a nudge.
     'image_fanout_judge_max_tokens': '2048',
+    # Keep every candidate image in the object store, keyed by day and task,
+    # so a judged row can be audited against the images it scored. Off means
+    # the losing candidates exist only in the worker's /tmp until the next
+    # restart, which is what made the first 48 rows uncheckable. Degrades
+    # quietly to no-op when no object-store credentials are configured.
+    'image_fanout_retain_candidates': 'true',
     # Per-call HTTP timeout (seconds) for a local image inference server
     # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
     # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
@@ -4888,6 +4899,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_klein_steps': {'value_type': 'integer'},
     'image_fanout_klein_cfg': {'value_type': 'float'},
     'image_fanout_judge_max_tokens': {'value_type': 'integer'},
+    'image_fanout_retain_candidates': {'value_type': 'boolean'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
     'image_ocr_gate_enforce': {'value_type': 'boolean'},
     'image_ocr_gate_fail_closed_when_unavailable': {'value_type': 'boolean'},

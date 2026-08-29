@@ -68,6 +68,8 @@ from typing import Any
 
 import httpx
 
+from utils.exception_format import describe_exception
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_COMFY_URL = "http://comfyui:8188"
@@ -438,6 +440,16 @@ async def _render_via_comfy(
 
 
 def _parse_score(text: str) -> tuple[float | None, str]:
+    # An EMPTY completion is not a malformed one, and conflating the two cost
+    # a real investigation. qwen3-vl spends the whole output budget in its
+    # reasoning channel and returns empty ``content`` — 31 of 115 candidate
+    # scores over the first 12 days, every one of which had generated exactly
+    # ``max_tokens`` output tokens (measured in Langfuse, not inferred). The
+    # old blanket "unparseable vision response" made that look like bad JSON
+    # and sent the next reader hunting for a parser bug that was not there.
+    # ``_judge_token_budget`` is the fix; this label is how you SEE it recur.
+    if not text.strip():
+        return None, "empty vision response (judge budget exhausted)"
     json_text = text
     if "```" in text:
         m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -457,6 +469,47 @@ def _parse_score(text: str) -> tuple[float | None, str]:
     if not isinstance(raw, (int, float)):
         return None, "vision response missing numeric score"
     return float(raw), str(parsed.get("reason", ""))[:200]
+
+
+def _judge_token_budget(model: str, base: int, site_config: Any) -> int:
+    """Raise the judge's output budget when the vision model is a thinking one.
+
+    Same model, same failure, same fix as
+    ``multi_model_qa._maybe_bump_vision_thinking_budget`` (the
+    ``vision_scorer_unavailable`` RCA of 2026-07-12) — the fan-out judge
+    simply never inherited it. qwen3-vl's reasoning channel shares
+    ``max_tokens`` with the JSON answer, and when the trace exhausts the
+    budget the call returns EMPTY content rather than truncated JSON, so it
+    fails the parse having looked like a healthy request the whole way.
+
+    Raising 1024 -> 2048 (2026-08-25) only moved the loss rate 30.6% ->
+    20.9%, because a reasoning trace is the wrong order of magnitude for a
+    nudge; the established budget for this model in this role is 8000.
+
+    Deliberately reuses ``qa_vision_thinking_num_predict`` instead of adding
+    a second knob: it is the same model doing the same job, and two budgets
+    that have to agree is one more pair that can drift apart. Non-thinking
+    vision models keep ``base``; an already-larger ``base`` is never lowered.
+    """
+    try:
+        from services.llm_providers.thinking_models import (
+            is_thinking_model,
+            resolve_thinking_substrings,
+        )
+
+        if not is_thinking_model(
+            model, substrings=resolve_thinking_substrings(site_config),
+        ):
+            return base
+    except Exception as exc:  # noqa: BLE001 — a registry miss must not decide
+        # a judge call's fate; the configured base is the documented fallback.
+        logger.warning(
+            "[IMAGE_FANOUT] thinking-model check failed for %s (%s) — using "
+            "base judge budget %d", model, describe_exception(exc), base,
+        )
+        return base
+    return max(base, int(_sc_num(
+        site_config, "qa_vision_thinking_num_predict", 8000)))
 
 
 async def _score_candidate(
@@ -490,11 +543,15 @@ async def _score_candidate(
              "image_url": {"url": f"data:image/png;base64,{b64}"}},
         ],
     }]
-    # qwen3-vl's <think> trace shares this budget with the JSON answer; at
-    # 1024 the answer was starved out of ~30% of live judge calls in the
-    # first 8 days ("unparseable vision response" on 19/72 candidate scores).
-    max_tokens = int(_sc_num(
-        site_config, "image_fanout_judge_max_tokens", 2048))
+    # qwen3-vl's reasoning trace shares this budget with the JSON answer, and
+    # losing that race returns EMPTY content, not truncated JSON. The base is
+    # the operator's floor; a thinking vision model is lifted to the
+    # established thinking budget — see ``_judge_token_budget``.
+    max_tokens = _judge_token_budget(
+        model,
+        int(_sc_num(site_config, "image_fanout_judge_max_tokens", 2048)),
+        site_config,
+    )
     try:
         completion = await dispatch_complete(
             pool, messages, model,  # type: ignore[arg-type]  # multimodal
@@ -535,6 +592,69 @@ def _pick_winner(
     return min(top, key=prio)
 
 
+def _retain_enabled(site_config: Any) -> bool:
+    val = _sc_get(site_config, "image_fanout_retain_candidates", True)
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
+async def _retain_candidates(
+    candidates: list[FanoutCandidate], *, task_id: str | None,
+    site_config: Any,
+) -> None:
+    """Upload every candidate to the object store, stamping the public URL
+    onto its meta so a judged row can be checked against the images it scored.
+
+    Without this the fan-out is unauditable BY CONSTRUCTION, and that is not
+    a theoretical loss: candidates are ``tempfile.mkstemp`` files, only the
+    winner's path is returned to the stage, and the losers survive in the
+    worker's ``/tmp`` only until the next container restart. The row carried
+    name/score/reason and no reference of any kind, so "did the judge's 40
+    actually match that image?" could not be answered for ANY of the first 48
+    rows — which blocks calibrating the judge, and the judge's scores are what
+    the Phase-2 routing map is trained on.
+
+    The winner is uploaded here too, even though the stage separately
+    publishes it as the post's featured image. This key holds what the JUDGE
+    saw, before any downstream resize or re-encode, and a row that stands on
+    its own beats one that half-points into another subsystem's naming.
+
+    Best-effort per candidate: a retention miss costs an audit trail, never an
+    image. Objects land under a dated prefix so age-based pruning stays a
+    ``list_keys`` away (not built here — nothing prunes them yet).
+    """
+    if site_config is None or not candidates or not _retain_enabled(site_config):
+        return
+    from services.r2_upload_service import R2UploadService
+
+    svc = R2UploadService(site_config=site_config)
+    now = time.gmtime()
+    day = time.strftime("%Y%m%d", now)
+    # Time-suffixed so a RE-RUN of the same task cannot overwrite the images
+    # an earlier judged row already points at — the row and the image it
+    # describes have to stay a matched pair, which is the whole point.
+    stamp = time.strftime("%H%M%S", now)
+    for c in candidates:
+        key = f"fanout/{day}/{task_id or 'no-task'}/{c.name}-{stamp}.png"
+        try:
+            url = await svc.upload_to_r2(c.path, key, content_type="image/png")
+        except Exception as exc:  # noqa: BLE001 — see docstring; the audit
+            # trail is the casualty, and the render must still ship.
+            logger.warning(
+                # describe_exception, never a bare %s: an object-store upload
+                # raises httpx timeouts whose str() is the EMPTY STRING, and
+                # this module already lost weeks to a "render failed ()" log
+                # line that named no cause (poindexter#3229).
+                "[IMAGE_FANOUT] candidate retention failed for %s (%s) — its "
+                "row will carry no image reference",
+                c.name, describe_exception(exc),
+            )
+            continue
+        if url:
+            c.meta["url"] = url
+
+
 async def _record_outcome(
     pool: Any, *, task_id: str | None, brief: str,
     candidates: list[FanoutCandidate], winner: FanoutCandidate,
@@ -554,7 +674,10 @@ async def _record_outcome(
         "candidates": [
             {"name": c.name, "score": c.score, "reason": c.reason[:200],
              "elapsed_s": c.meta.get("elapsed_s"),
-             "width": c.meta.get("width"), "height": c.meta.get("height")}
+             "width": c.meta.get("width"), "height": c.meta.get("height"),
+             # The image this score describes. None (key omitted) when
+             # retention is off or the upload missed — see _retain_candidates.
+             "url": c.meta.get("url")}
             for c in candidates
         ],
     }
@@ -692,6 +815,10 @@ async def run_featured_fanout(
                     else "")
                 or "render returned nothing",
             )[:200]
+    # Before the row is written, and before the ComfyUI free below: the
+    # candidate temp files are still on disk only until this frame ends.
+    await _retain_candidates(
+        candidates, task_id=task_id, site_config=site_config)
     await _record_outcome(
         pool, task_id=task_id, brief=prompt, candidates=candidates,
         winner=winner, judge_ran=judge_ran,
