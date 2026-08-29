@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-08-28.**  
+> **Auto-generated from live `app_settings` table on 2026-08-29.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -1030,7 +1030,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `writer_rag_context_snippet_max_chars` | `500` |  | Per-snippet character cap when building the snippet block for generate_with_context and generate_with_outline (the tw... |
+| `writer_rag_context_snippet_max_chars` | `2000` |  | Per-snippet character cap when building the snippet block for generate_with_context and generate_with_outline (the tw... |
 | `writer_rag_research_topic_max_sources` | `2` |  | Default max_sources for the module-level research_topic() shim used by the TWO_PASS writer mode. Default 2 matches th... |
 | `writer_rag_two_pass_max_revision_loops` | `3` |  | Hard cap on revise → detect_needs → research_each → revise loops in the TWO_PASS LangGraph state machine. Default 3 m... |
 | `writer_rag_two_pass_research_max_sources` | `2` |  | max_sources passed to research_topic for each [EXTERNAL_NEEDED: ...] marker the TWO_PASS draft surfaces. Default 2 ma... |
