@@ -1538,7 +1538,15 @@ DEFAULTS: dict[str, str] = {
     # WORK" section. Independent of the discovery-side
     # niche_external_grounding_enabled; eligibility rides writer_rag_source_filter.
     'writer_internal_grounding_enabled': 'true',
-    'writer_rag_context_snippet_max_chars': '500',
+    # The writer's per-snippet grounding budget. It governed nothing until
+    # the chunk_text payload landed (poindexter#1033 + #3453) — snippets
+    # carried a 500-char preview, so a 500-char cap could never bind. Raised
+    # 500 -> 2000 (2026-08-29): 4x the evidence for +7.5k input tokens/draft
+    # (~$0.02 x ~5 drafts/day, against a $12/day throttle). NOT bounded by
+    # `num_ctx` — the writer is cloud (claude-sonnet-5) and num_ctx is
+    # stripped for non-local models; swap the writer local and
+    # `draft_generation_num_ctx` must exceed 20 x this.
+    'writer_rag_context_snippet_max_chars': '2000',
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',
     'writer_rag_two_pass_snippet_limit': '20',

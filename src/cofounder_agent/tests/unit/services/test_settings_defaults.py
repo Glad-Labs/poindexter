@@ -574,8 +574,11 @@ class TestGroupingMakesSense:
         # self-review block beside the pin whose thinking budget they set.
         # Bumped 428→434 for rag_rerank_max_chars, seated directly beside
         # rag_rerank_device inside the RAG-section interleave noted above —
-        # it is the third knob of the same reranker.
-        assert span < 434, (
+        # it is the third knob of the same reranker. Bumped 434→442 for the
+        # writer_rag_context_snippet_max_chars raise (2026-08-29) — a comment
+        # on a key already inside the tolerated writer_rag interleave,
+        # recording why 500 could never bind and what bounds the new value.
+        assert span < 442, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )
