@@ -430,6 +430,38 @@ permanently stale. Public-side CI (test-backend, migrations-smoke,
 mcp-server-tests, Mintlify Deployment, link-rot) still has to pass on
 the resulting commit.
 
+### When the mirror sync fails, it files ONE issue and closes it itself
+
+The sync workflow opens a GitHub issue on `glad-labs-stack` when it goes
+red, so a frozen mirror shows up in notifications instead of sitting
+unnoticed on a derived branch nobody watches.
+
+The title is **stable** (`⚠️ poindexter mirror sync FAILED`, no run id)
+and that is load-bearing. The sync fires on every push to `main` and
+stays broken until the cause is fixed, so a per-run title filed one
+issue per push — 11 issues for one expired PAT (2026-06-13), 7 for one
+sample webhook URL (2026-08-28), 20 issues across 3 real incidents, all
+closed by hand. `scripts/ci/notify_operator_issue.py` now comments on
+the open issue instead, and a later green sync closes it. One incident,
+one issue, no manual cleanup. The same helper backs the `lint-main` and
+semgrep ratchet guards.
+
+**Three causes, and the run log tells them apart immediately:**
+
+| Symptom in the log                                                  | Cause                                                                                        | Fix                                                                                     |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `[sync] Leak guard FAILED`                                          | Our `check_public_mirror_safety.py` found an operator-private pattern in a public-bound file | Rephrase the value or add the file to `_STRIP_FILES`                                    |
+| `GH013: Repository rule violations` / `Push cannot contain secrets` | **GitHub's** push protection on the receiving repo                                           | Rephrase the credential-shaped string, or strip the file in `scripts/sync-to-github.sh` |
+| `403` / `not authorized` on the push                                | The `glad-labs-mirror-sync` App lost access                                                  | Re-check the install's Contents + Workflows write                                       |
+
+The second one is the trap: it is **not** the leak guard, so our guard
+passing tells you nothing about it. On 2026-08-28 the log read
+`[sync] Leak guard passed.` immediately before GitHub rejected the push
+over a sample Slack webhook URL in a vendored semgrep rule file, and
+the issue text sent the reader to re-run the guard that had already
+passed. Do not click GitHub's "allow this secret" unblock URL to get
+past it — that ships the value.
+
 ## Deploying the local worker (bringing prod up to `main`)
 
 The worker / brain / pipeline-bot / prefect-worker containers **bind-mount

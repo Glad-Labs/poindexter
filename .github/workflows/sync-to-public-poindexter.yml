@@ -120,42 +120,64 @@ jobs:
           echo "- Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "- Result: see job status above" >> $GITHUB_STEP_SUMMARY
 
+      - name: Clear the failure issue once the sync is green again
+        # The fix closes the issue, not a human three weeks later. Paired with
+        # the failure handler below: both key on the SAME stable title, which is
+        # the dedupe key in both directions. Best-effort — the notifier always
+        # exits 0, so a flaky `gh` call cannot redden a sync that succeeded.
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 scripts/ci/notify_operator_issue.py recovered \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ poindexter mirror sync FAILED" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"
+
       - name: Notify operator on failure
-        # Opens a GitHub issue on Glad-Labs/poindexter so the operator sees the
-        # failure in GitHub notifications without needing a separate webhook secret.
-        # GITHUB_TOKEN has write access to issues on the source repo
-        # (Glad-Labs/glad-labs-stack); the mirror-sync App token is scoped to
-        # poindexter Contents+Workflows (not Issues), so filing on the source
-        # repo is both simpler and more reliable.
+        # Opens a GitHub issue on Glad-Labs/glad-labs-stack so the operator sees
+        # the failure in GitHub notifications without needing a separate webhook
+        # secret. GITHUB_TOKEN has write access to issues on the source repo; the
+        # mirror-sync App token is scoped to poindexter Contents+Workflows (not
+        # Issues), so filing on the source repo is both simpler and more reliable.
         #
-        # Two failure modes, in order of likelihood: (1) the sync-filter step
-        # aborting on the leak guard — a newly-introduced operator-private pattern
-        # in a public-bound file froze the mirror on #1543/#1544 (2026-06-13),
-        # because public-mirror-safety is a non-blocking PR check; and (2) App
-        # access (uninstalled, missing Contents/Workflows write, or an invalid
-        # MIRROR_SYNC_APP_PRIVATE_KEY). See the header.
+        # The title is deliberately STABLE (no run id). This workflow fires on
+        # every push to main and stays broken until the cause is fixed, so a
+        # per-run title filed one issue per push: 11 issues for one expired PAT
+        # (2026-06-13), 7 for one sample webhook URL (2026-08-28). The notifier
+        # comments on the open issue instead — one incident, one issue.
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create \
-            --repo "${{ github.repository }}" \
-            --title "⚠️ poindexter mirror sync FAILED (run ${{ github.run_id }})" \
-            --label "bug" \
-            --body "The **sync-to-public-poindexter** workflow failed.
-
-          **Run:** ${RUN_URL}
-          **Triggered by:** ${{ github.actor }}
-          **Source commit:** \`${{ github.sha }}\`
+          cat > "${RUNNER_TEMP}/sync-failure-body.md" <<'BODY'
+          The **sync-to-public-poindexter** workflow failed. The public mirror is
+          now FROZEN at its last good commit and will stay there until this is
+          fixed — every later push to `main` fails the same way.
 
           ### Likely cause (in order of likelihood)
-          1. **Leak-guard abort (most common).** The sync filter (\`scripts/sync-to-github.sh\`) aborts when \`scripts/ci/check_public_mirror_safety.py\` finds an operator-private pattern in a public-bound file — the mirror freezes on purpose rather than leak. This is what froze it on #1543/#1544 (2026-06-13): a change merged to \`main\` carrying a leaked value because \`public-mirror-safety\` is a non-blocking PR check.
-          2. **App access lost.** The \`glad-labs-mirror-sync\` App uninstalled from poindexter, its install missing Contents/Workflows write, or an invalid \`MIRROR_SYNC_APP_PRIVATE_KEY\`. (Installation tokens are ephemeral and auto-minted, so there is no PAT to expire.)
+          1. **Leak-guard abort.** The sync filter (`scripts/sync-to-github.sh`) aborts when `scripts/ci/check_public_mirror_safety.py` finds an operator-private pattern in a public-bound file — the mirror freezes on purpose rather than leak. This froze it on #1543/#1544 (2026-06-13): a change merged to `main` carrying a leaked value, because `public-mirror-safety` is a non-blocking PR check.
+          2. **GitHub push protection rejected the push** (`GH013: Repository rule violations found` / "Push cannot contain secrets"). This is NOT the leak guard — it is GitHub's own secret scanner on the *receiving* repo, so **our leak guard passing tells you nothing about it**. It froze the mirror on #3436-#3448 (2026-08-28) over a sample Slack webhook URL inside a vendored semgrep rule file. The log names the exact file, line, and commit.
+          3. **App access lost.** The `glad-labs-mirror-sync` App uninstalled from poindexter, its install missing Contents/Workflows write, or an invalid `MIRROR_SYNC_APP_PRIVATE_KEY`. (Installation tokens are ephemeral and auto-minted, so there is no PAT to expire.)
 
           ### Fix
-          1. **Leak case:** run \`python scripts/ci/check_public_mirror_safety.py\` locally on \`main\` to find the offending file + pattern, remove or rephrase the value (see \`_LEAK_PATTERNS\` / \`_STRIP_FILES\` in that script), and commit to \`main\`.
-          2. **App case:** confirm the \`glad-labs-mirror-sync\` App is installed on \`Glad-Labs/poindexter\` with Contents + Workflows: read+write; if the key was rotated, update \`MIRROR_SYNC_APP_PRIVATE_KEY\` on \`Glad-Labs/glad-labs-stack\`.
-          3. The next push to \`main\` re-runs the sync, or re-run this workflow via \`workflow_dispatch\` to confirm.
+          Read the run log first — it distinguishes these three immediately.
 
-          _Auto-filed by the sync-to-public-poindexter failure handler._"
+          1. **Leak case:** run `python scripts/ci/check_public_mirror_safety.py` locally on `main` to find the offending file + pattern, remove or rephrase the value (see `_LEAK_PATTERNS` / `_STRIP_FILES` in that script), and commit to `main`.
+          2. **Push-protection case:** the credential-shaped string is real text in a public-bound file. Either rephrase it, or strip the file from the mirror in `scripts/sync-to-github.sh` (what #3437 did for the vendored semgrep rules). Do NOT click GitHub's "allow this secret" unblock URL for a value that should not ship.
+          3. **App case:** confirm the `glad-labs-mirror-sync` App is installed on `Glad-Labs/poindexter` with Contents + Workflows: read+write; if the key was rotated, update `MIRROR_SYNC_APP_PRIVATE_KEY` on `Glad-Labs/glad-labs-stack`.
+
+          The next push to `main` re-runs the sync — **this issue closes itself** when one goes green.
+
+          _Auto-filed by the sync-to-public-poindexter failure handler._
+          BODY
+          python3 scripts/ci/notify_operator_issue.py failed \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ poindexter mirror sync FAILED" \
+            --label bug \
+            --body-file "${RUNNER_TEMP}/sync-failure-body.md" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"

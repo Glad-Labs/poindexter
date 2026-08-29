@@ -82,26 +82,46 @@ jobs:
       # goes red unnoticed is the exact failure this whole workstream exists to
       # fix. Filing an issue is what makes a red here visible — same pattern as
       # unit-tests.yml's lint-main guard.
+      - name: Clear the semgrep-ratchet issue once main is green again
+        # Self-heals: the fix closes the issue. Same stable title as the failure
+        # handler below — that title is the dedupe key in both directions.
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 scripts/ci/notify_operator_issue.py recovered \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ main fails the semgrep ratchet" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"
+
       - name: Notify operator — main fails the semgrep ratchet
+        # Stable title (no run id) so consecutive red pushes comment on one
+        # issue rather than filing one each. See scripts/ci/notify_operator_issue.py.
         if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create \
-            --repo "${{ github.repository }}" \
-            --title "⚠️ main fails the semgrep ratchet (run ${{ github.run_id }})" \
-            --label "bug" \
-            --body "A NEW semgrep finding reached \`main\`.
-
-          **Run:** ${RUN_URL}
-          **Commit:** \`${{ github.sha }}\`
+          cat > "${RUNNER_TEMP}/semgrep-body.md" <<'BODY'
+          A NEW semgrep finding reached `main`.
 
           This ratchet is the only scanner covering the operator overlay — GitHub code scanning is disabled on the private repos, and the mirror's CodeQL cannot see the stripped files. So a regression here is genuinely unwatched elsewhere.
 
           Semgrep has no project context, so most findings are false positives. **Read the flagged line before acting:**
 
           1. Genuinely unsafe → fix the code.
-          2. The sanctioned pattern (hardcoded SQL identifier + asyncpg bind params, a log message that merely mentions login) → re-baseline with \`python scripts/ci/semgrep_lint.py --update-baseline\` and say why in the commit message.
+          2. The sanctioned pattern (hardcoded SQL identifier + asyncpg bind params, a log message that merely mentions login) → re-baseline with `python scripts/ci/semgrep_lint.py --update-baseline` and say why in the commit message.
 
-          _Auto-filed by the semgrep ratchet guard._" || true
+          **This issue closes itself** when a later push to main passes the ratchet.
+
+          _Auto-filed by the semgrep ratchet guard._
+          BODY
+          python3 scripts/ci/notify_operator_issue.py failed \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ main fails the semgrep ratchet" \
+            --label bug \
+            --body-file "${RUNNER_TEMP}/semgrep-body.md" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"

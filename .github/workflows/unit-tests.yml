@@ -734,32 +734,52 @@ jobs:
         run: python scripts/ci/lint_secret_ciphertext_footgun.py
       - name: Services os.getenv lint (DB-first config, GH#93)
         run: python scripts/check-no-os-getenv-in-services.py
+      - name: Clear the lint-main issue once main is green again
+        # Self-heals: the fix closes the issue. Same stable title as the failure
+        # handler below — that title is the dedupe key in both directions.
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 scripts/ci/notify_operator_issue.py recovered \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ main fails a ratchet lint" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"
+
       - name: Notify operator — main fails a ratchet lint
         # File an issue (GH notification -> phone) so a poisoned main is caught
         # in minutes, not via every PR going red. GITHUB_TOKEN can write issues
-        # on the source repo; no extra secret. Mirrors the sync-to-public
-        # failure handler. (No dedup — main-red is rare and short-lived; a couple
-        # of duplicate issues across back-to-back red pushes is acceptable.)
+        # on the source repo; no extra secret.
+        #
+        # Stable title (no run id) so back-to-back red pushes comment on one
+        # issue instead of filing one each — the mirror-sync handler filed 20
+        # issues for 3 incidents that way before this was shared out.
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create \
-            --repo "${{ github.repository }}" \
-            --title "⚠️ main fails a ratchet lint (run ${{ github.run_id }})" \
-            --label "bug" \
-            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / adapter-purity / atom-independence / services-os.getenv) failed on the push to **main**.
-
-          **Run:** ${RUN_URL}
-          **Commit:** \`${{ github.sha }}\`
+          cat > "${RUNNER_TEMP}/lint-main-body.md" <<'BODY'
+          A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / adapter-purity / atom-independence / services-os.getenv) failed on a push to **main**.
 
           ### Why this matters
           test-backend (which carries these lints for PRs) is skipped on private-main pushes, so this job is main's only guard. A red run here means a violation reached main through a branch whose CI predated the lint — and **every open PR branched off this main will inherit it and go red** until main is fixed.
 
           ### Fix
           1. Open the run above — the failing step names the file and the offending count vs baseline.
-          2. Fix the violation on a branch (add logging / re-raise / route the import) and merge — or, if intentional, re-baseline (\`python scripts/ci/<lint>.py --update-baseline\`) or, for services-os.getenv, allowlist the file in \`ALLOWED_FILES\`.
+          2. Fix the violation on a branch (add logging / re-raise / route the import) and merge — or, if intentional, re-baseline (`python scripts/ci/<lint>.py --update-baseline`) or, for services-os.getenv, allowlist the file in `ALLOWED_FILES`.
           3. Open PRs go green again once they rebase onto the fixed main.
 
-          _Auto-filed by the lint-main guard (unit-tests.yml)._"
+          **This issue closes itself** when a later push to main passes the lints.
+
+          _Auto-filed by the lint-main guard (unit-tests.yml)._
+          BODY
+          python3 scripts/ci/notify_operator_issue.py failed \
+            --repo "${{ github.repository }}" \
+            --title "⚠️ main fails a ratchet lint" \
+            --label bug \
+            --body-file "${RUNNER_TEMP}/lint-main-body.md" \
+            --run-url "${RUN_URL}" \
+            --commit "${{ github.sha }}"
