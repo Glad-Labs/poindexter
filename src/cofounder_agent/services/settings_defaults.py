@@ -3095,6 +3095,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings_daily_digest_lookback_hours': '24',
     'findings_daily_digest_top_n': '5',
 
+    # ----- alert-triage ops session: closing its own filed issues -----
+    # How long an alert must be SILENT before the daily alert-triage session
+    # closes the `probe bug: <alertname>` issue it filed. Nothing else ever
+    # closed these, and a stale open one is not merely clutter: the session
+    # skips filing for any alert that already has an open issue, so a fault
+    # that was fixed and later genuinely returns would never be re-filed.
+    'alert_triage_probe_issue_quiet_days': '7',
+
     # ----- Findings per-kind delivery policy (#461) -----
     # Per-kind policy for findings.<kind>.{delivery,fallback,cooldown_minutes,
     # min_severity}. Intended to drive per-kind suppression on the EXISTING

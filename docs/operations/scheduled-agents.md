@@ -27,7 +27,7 @@ cloud model are kept **disabled** pending a metered-API decision.
 | `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references                                                                                                                                                                    | PR (or flag)                                      |
 | `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface                                                                                                                                                                    | self-merging PR / Discord note                    |
 | `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels                                                                                                                                                                         | label edits + Discord digest                      |
-| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real)                                                                                                                                                                | probe-bug issues                                  |
+| `alert-triage`      | local LLM               | daily 01:00 | classify noisy `alert_events` (bug vs real); close filed issues whose alert has gone quiet                                                                                                                 | probe-bug issues (opened + closed)                |
 | `test-health`       | local LLM               | daily 03:00 | fix simple test failures behind a re-run gate                                                                                                                                                              | PR                                                |
 | `pro-freshness`     | deterministic           | Sun 04:30   | rebuild the Pro deliverable from the live system (seed from prod app_settings, prompts from SKILL.md packs, premium dashboards; book drift reported not edited; PII/secret scrub gate before any push)     | push to `Glad-Labs/poindexter-pro` + Discord note |
 | `pin-check`         | deterministic           | daily 12:30 | verify every `OPS_OLLAMA_MODEL_*` pin exists on `OPS_OLLAMA_URL` (`GET /api/tags`) — daytime on purpose, so a broken pin pages while the operator is awake instead of failing a 03:00 session (stack#3163) | operator notify on missing pin                    |
@@ -37,6 +37,41 @@ cloud model are kept **disabled** pending a metered-API decision.
 The deterministic sessions make **zero model calls** (`pin-check` GETs
 `/api/tags` — daemon metadata, no inference). The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.
+
+### `alert-triage` closes what it files
+
+The session files one `probe bug: <alertname> …` issue per noisy alert, and
+skips any alert that already has one open so it does not re-file daily.
+
+Nothing used to close them. That is worse than backlog clutter, because the
+same "already open" guard means **a stale issue suppresses the filer**: an
+alert that was fixed months ago and then genuinely comes back is never
+re-filed, because its long-dead issue is still sitting there open.
+
+So each run now closes first, then files. Any open probe-bug issue whose
+alert has not fired within `alert_triage_probe_issue_quiet_days` (default 7)
+is commented and closed — and because closing happens _before_ filing in the
+same run, an alert that returns gets its stale issue closed and a fresh one
+opened on the same pass.
+
+Verify what a run would do without waiting for 01:00:
+
+```bash
+systemctl start poindexter-session@alert-triage.service
+```
+
+The summary line reports both directions:
+`alerts=N filed=N closed_quiet=N skipped_already_tracked=N unparseable=N`.
+
+**The lookup deliberately avoids `gh issue list --search`.** The GitHub search
+index lags writes by minutes, so a search-based lookup can miss an issue that
+demonstrably exists — which both files a duplicate and leaves a resolved one
+open. Plain `gh issue list` reads the issues API directly and is
+read-your-writes consistent; `--limit` is explicit because the default
+truncates at 30 without saying so.
+
+Both guards fail safe: if GitHub cannot be read at all, the run files nothing,
+closes nothing, and pages the operator, rather than acting on a guess.
 
 ### What `test-health` will and won't fix
 

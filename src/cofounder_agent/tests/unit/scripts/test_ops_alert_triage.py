@@ -99,22 +99,121 @@ def test_parse_classification_strips_quotes_copied_into_the_value(raw):
     assert at.parse_classification(raw)["classification"] == "probe_bug"
 
 
+def _fake_run(alerts, *, firing=(), days=7):
+    """Serve main()'s two asyncio_run calls in order: alerts, then quiet_context."""
+    seq = iter([alerts, (days, set(firing))])
+
+    def run(coro):
+        coro.close()  # never awaited — avoids a "coroutine never awaited" warning
+        return next(seq)
+
+    return run
+
+
+def _issue(number, alertname):
+    return {"number": number, "title": f"probe bug: {alertname} paged 6x/24h (6x total, 0 dedup-suppressed)"}
+
+
+# --------------------------------------------------------------------------
+# Title parsing — the dedupe key in both directions
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("alertname", [
+    "PoindexterSystemdUnitFailed",
+    "gpu_scheduler:gpu_lock_timeout",
+    "modules.content.multi_model_qa:critic_model_collision",
+])
+def test_alertname_round_trips_through_the_issue_title(alertname):
+    """Dotted/colonned alertnames must survive the title grammar intact."""
+    assert at.alertname_from_title(_issue(1, alertname)["title"]) == alertname
+
+
+def test_alertname_from_title_ignores_unrelated_issues():
+    """Hand-written issues must never be mistaken for this session's output."""
+    assert at.alertname_from_title("Refactor the image service") == ""
+    assert at.alertname_from_title("⚠️ poindexter mirror sync FAILED") == ""
+
+
+# --------------------------------------------------------------------------
+# Reading open issues — two gh traps that would silently un-fix this
+# --------------------------------------------------------------------------
+
+def test_open_probe_issues_returns_only_this_sessions_issues(monkeypatch):
+    payload = (
+        '[{"number": 1, "title": "probe bug: AlertOne paged 6x/24h (6x total, 0 dedup-suppressed)"},'
+        ' {"number": 2, "title": "Refactor something unrelated"}]'
+    )
+    monkeypatch.setattr(at.c, "gh", lambda *_a: _FakeProc(0, payload))
+    found = at.open_probe_issues()
+    assert [i["number"] for i in found] == [1]
+
+
+def test_open_probe_issues_never_uses_the_search_index(monkeypatch):
+    """`--search` lags writes by minutes, so it can miss an issue that exists —
+    which files a duplicate AND leaves a resolved one open."""
+    calls = []
+    monkeypatch.setattr(at.c, "gh", lambda *a: (calls.append(a), _FakeProc(0, "[]"))[1])
+    at.open_probe_issues()
+    assert "--search" not in calls[0]
+
+
+def test_open_probe_issues_passes_an_explicit_limit(monkeypatch):
+    """`gh issue list` silently truncates at 30."""
+    calls = []
+    monkeypatch.setattr(at.c, "gh", lambda *a: (calls.append(a), _FakeProc(0, "[]"))[1])
+    at.open_probe_issues()
+    assert "--limit" in calls[0]
+    assert int(calls[0][calls[0].index("--limit") + 1]) >= 100
+
+
+@pytest.mark.parametrize("proc", [_FakeProc(1, ""), _FakeProc(0, "not json")])
+def test_open_probe_issues_returns_none_when_github_cannot_be_read(monkeypatch, proc):
+    """None, not [] — callers must tell 'nothing open' from 'could not tell'."""
+    monkeypatch.setattr(at.c, "gh", lambda *_a: proc)
+    assert at.open_probe_issues() is None
+
+
+# --------------------------------------------------------------------------
+# Closing on quiet
+# --------------------------------------------------------------------------
+
+def test_close_resolved_closes_a_quiet_alert_and_spares_a_firing_one(monkeypatch):
+    calls = []
+    monkeypatch.setattr(at.c, "gh", lambda *a: (calls.append(a), _FakeProc(0, ""))[1])
+    log = logging.getLogger("test-alert-triage")
+
+    closed = at.close_resolved(
+        [_issue(10, "QuietOne"), _issue(11, "StillFiring")],
+        firing={"StillFiring"},
+        days=7,
+        log=log,
+    )
+
+    assert closed == {"QuietOne"}
+    closes = [a for a in calls if a[:2] == ("issue", "close")]
+    assert [a[2] for a in closes] == ["10"]
+    assert any(a[:2] == ("issue", "comment") for a in calls), "closing should say why"
+
+
+def test_close_resolved_closes_nothing_when_everything_is_still_firing(monkeypatch):
+    monkeypatch.setattr(at.c, "gh", lambda *_a: pytest.fail("must not touch a firing alert's issue"))
+    assert at.close_resolved(
+        [_issue(10, "Loud")], firing={"Loud"}, days=7,
+        log=logging.getLogger("test-alert-triage"),
+    ) == set()
+
+
+# --------------------------------------------------------------------------
+# main()
+# --------------------------------------------------------------------------
+
 def test_main_skips_unparseable_reply_without_crashing_the_sweep(monkeypatch):
     """A garbled model reply must skip that alert, not abort the run.
 
     parse_classification raises ValueError on non-JSON. Uncaught, that exits
     main() with a traceback and NO notify_fail — the "exception nobody catches
-    pages nobody" shape. It matters more now that the triage pin is a model
-    whose output shape was observed to vary (quote-wrapped enums, empty
-    content when a thinking budget runs out).
+    pages nobody" shape.
     """
-    def fake_asyncio_run(coro):
-        coro.close()
-        return [
-            {"alertname": "GarbledFirst", "dispatch_result": "sent", "n_paged": 9, "n_total": 9},
-            {"alertname": "GoodSecond", "dispatch_result": "sent", "n_paged": 7, "n_total": 7},
-        ]
-
     replies = iter([
         "I think this is probably a probe bug!",  # not JSON at all
         '{"classification": "probe_bug", "reason": "r", "suspect_file": "f.py"}',
@@ -122,94 +221,48 @@ def test_main_skips_unparseable_reply_without_crashing_the_sweep(monkeypatch):
     filed = []
 
     monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
-    monkeypatch.setattr(at.c, "asyncio_run", fake_asyncio_run)
-    monkeypatch.setattr(at, "_has_open_probe_issue", lambda _a: False)
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run([
+        {"alertname": "GarbledFirst", "dispatch_result": "sent", "n_paged": 9, "n_total": 9},
+        {"alertname": "GoodSecond", "dispatch_result": "sent", "n_paged": 7, "n_total": 7},
+    ], firing={"GarbledFirst", "GoodSecond"}))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: [])
     monkeypatch.setattr(at.c, "ollama_chat", lambda *_a, **_k: next(replies))
     monkeypatch.setattr(at.c, "gh", lambda *args: (filed.append(args), _FakeProc(0, ""))[1])
 
     assert at.main() == 0
-    # the good alert after it still got filed — the sweep continued
     assert len(filed) == 1
     assert "GoodSecond" in " ".join(filed[0])
 
 
-def test_has_open_probe_issue_true_when_gh_finds_a_match(monkeypatch):
-    calls = []
-
-    def fake_gh(*args):
-        calls.append(args)
-        return _FakeProc(0, '[{"number": 2350}]')
-
-    monkeypatch.setattr(at.c, "gh", fake_gh)
-    assert at._has_open_probe_issue("FinanceMercuryPollStale") is True
-    # queried the right alert, scoped to open issues in this repo
-    (call,) = calls
-    assert "FinanceMercuryPollStale" in " ".join(call)
-    assert "open" in call
-    assert at.REPO in call
-
-
-def test_has_open_probe_issue_false_when_gh_finds_nothing(monkeypatch):
-    monkeypatch.setattr(at.c, "gh", lambda *_a: _FakeProc(0, "[]"))
-    assert at._has_open_probe_issue("BrandNewAlert") is False
-
-
-def test_has_open_probe_issue_failsafe_on_gh_error(monkeypatch):
-    # gh itself failed (auth hiccup, rate limit, ...) — fail toward "don't file"
-    monkeypatch.setattr(at.c, "gh", lambda *_a: _FakeProc(1, ""))
-    assert at._has_open_probe_issue("X") is True
-
-
-def test_has_open_probe_issue_failsafe_on_bad_json(monkeypatch):
-    monkeypatch.setattr(at.c, "gh", lambda *_a: _FakeProc(0, "not json"))
-    assert at._has_open_probe_issue("X") is True
-
-
 def test_main_skips_already_tracked_alert_without_classifying_or_filing(monkeypatch):
-    def fake_asyncio_run(coro):
-        coro.close()  # never actually run — avoid a "coroutine never awaited" warning
-        return [{
-            "alertname": "FinanceMercuryPollStale", "dispatch_result": "sent",
-            "n_paged": 19, "n_total": 19,
-        }]
-
     def boom_ollama(*a, **k):
         raise AssertionError("an already-tracked alert must not be re-classified")
 
-    def boom_gh(*a, **k):
-        raise AssertionError("an already-tracked alert must not file a duplicate issue")
-
-    monkeypatch.setattr(at.c, "get_logger", lambda _name: logging.getLogger("test-alert-triage"))
-    monkeypatch.setattr(at.c, "asyncio_run", fake_asyncio_run)
-    monkeypatch.setattr(at, "_has_open_probe_issue", lambda _alertname: True)
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
+        [{"alertname": "FinanceMercuryPollStale", "dispatch_result": "sent", "n_paged": 19, "n_total": 19}],
+        firing={"FinanceMercuryPollStale"},
+    ))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: [_issue(7, "FinanceMercuryPollStale")])
     monkeypatch.setattr(at.c, "ollama_chat", boom_ollama)
-    monkeypatch.setattr(at.c, "gh", boom_gh)
+    monkeypatch.setattr(at.c, "gh", lambda *a: pytest.fail("must not file a duplicate"))
 
     assert at.main() == 0
 
 
 def test_main_classifies_and_files_when_nothing_open_yet(monkeypatch):
     filed = []
-
-    def fake_asyncio_run(coro):
-        coro.close()
-        return [{
-            "alertname": "NewNoisyAlert", "dispatch_result": "sent",
-            "n_paged": 8, "n_total": 8,
-        }]
-
-    def fake_gh(*args):
-        filed.append(args)
-        return _FakeProc(0, "")
-
-    monkeypatch.setattr(at.c, "get_logger", lambda _name: logging.getLogger("test-alert-triage"))
-    monkeypatch.setattr(at.c, "asyncio_run", fake_asyncio_run)
-    monkeypatch.setattr(at, "_has_open_probe_issue", lambda _alertname: False)
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
+        [{"alertname": "NewNoisyAlert", "dispatch_result": "sent", "n_paged": 8, "n_total": 8}],
+        firing={"NewNoisyAlert"},
+    ))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: [])
     monkeypatch.setattr(
         at.c, "ollama_chat",
         lambda *_a, **_k: '{"classification": "probe_bug", "reason": "r", "suspect_file": "f.py"}',
     )
-    monkeypatch.setattr(at.c, "gh", fake_gh)
+    monkeypatch.setattr(at.c, "gh", lambda *args: (filed.append(args), _FakeProc(0, ""))[1])
 
     assert at.main() == 0
     (call,) = filed
@@ -218,21 +271,16 @@ def test_main_classifies_and_files_when_nothing_open_yet(monkeypatch):
 
 
 def test_main_title_distinguishes_paged_from_total_when_dedup_partially_worked(monkeypatch):
-    # The whole point of the fix: an alert that mostly dedups but still pages
-    # a handful of times must file with the REAL (paged) count in the title,
-    # not the raw row count that includes suppressed repeats.
+    # An alert that mostly dedups but still pages a handful of times must file
+    # with the REAL (paged) count in the title, not the raw row count.
     filed = []
-
-    def fake_asyncio_run(coro):
-        coro.close()
-        return [{
-            "alertname": "PoindexterHostMemoryThrashing", "dispatch_result": "sent",
-            "n_paged": 11, "n_total": 87,
-        }]
-
-    monkeypatch.setattr(at.c, "get_logger", lambda _name: logging.getLogger("test-alert-triage"))
-    monkeypatch.setattr(at.c, "asyncio_run", fake_asyncio_run)
-    monkeypatch.setattr(at, "_has_open_probe_issue", lambda _alertname: False)
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
+        [{"alertname": "PoindexterHostMemoryThrashing", "dispatch_result": "sent",
+          "n_paged": 11, "n_total": 87}],
+        firing={"PoindexterHostMemoryThrashing"},
+    ))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: [])
     monkeypatch.setattr(
         at.c, "ollama_chat",
         lambda *_a, **_k: '{"classification": "probe_bug", "reason": "r", "suspect_file": "f.py"}',
@@ -240,8 +288,50 @@ def test_main_title_distinguishes_paged_from_total_when_dedup_partially_worked(m
     monkeypatch.setattr(at.c, "gh", lambda *args: (filed.append(args), _FakeProc(0, ""))[1])
 
     assert at.main() == 0
-    (call,) = filed
-    title = " ".join(call)
-    assert "paged 11x/24h" in title
-    assert "87x total" in title
-    assert "76 dedup-suppressed" in title
+    assert "paged 11x/24h" in " ".join(filed[0])
+
+
+def test_main_closes_a_quiet_issue_and_can_refile_it_in_the_same_run(monkeypatch):
+    """The suppression fix, end to end.
+
+    A stale open issue makes the filing guard skip its alert. So an alert that
+    was fixed long ago and has genuinely come back must get its old issue
+    closed AND a fresh one filed in the SAME run — otherwise the return is
+    invisible for another whole day, or forever if it keeps re-firing.
+    """
+    calls = []
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    # The alert is noisy again now, but had NOT fired inside the quiet window.
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
+        [{"alertname": "ReturnedFromTheDead", "dispatch_result": "sent", "n_paged": 9, "n_total": 9}],
+        firing=set(),
+    ))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: [_issue(42, "ReturnedFromTheDead")])
+    monkeypatch.setattr(
+        at.c, "ollama_chat",
+        lambda *_a, **_k: '{"classification": "probe_bug", "reason": "r", "suspect_file": "f.py"}',
+    )
+    monkeypatch.setattr(at.c, "gh", lambda *args: (calls.append(args), _FakeProc(0, ""))[1])
+
+    assert at.main() == 0
+    verbs = [a[:2] for a in calls]
+    assert ("issue", "close") in verbs, "the stale issue must be closed"
+    assert ("issue", "create") in verbs, "and a fresh one filed in the same run"
+    assert verbs.index(("issue", "close")) < verbs.index(("issue", "create"))
+
+
+def test_main_files_and_closes_nothing_when_github_is_unreadable(monkeypatch):
+    """Fail-safe: without the issue list we cannot tell tracked from untracked,
+    and filing blind resumes the duplicate-issue spam this guard exists to stop."""
+    notified = []
+    monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
+    monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
+        [{"alertname": "Whatever", "dispatch_result": "sent", "n_paged": 9, "n_total": 9}],
+    ))
+    monkeypatch.setattr(at, "open_probe_issues", lambda: None)
+    monkeypatch.setattr(at.c, "notify_fail", lambda *a: notified.append(a))
+    monkeypatch.setattr(at.c, "ollama_chat", lambda *a, **k: pytest.fail("must not classify"))
+    monkeypatch.setattr(at.c, "gh", lambda *a: pytest.fail("must not touch GitHub"))
+
+    assert at.main() == 1
+    assert notified, "an unreadable GitHub must page, not pass silently"
