@@ -2186,6 +2186,15 @@ DEFAULTS: dict[str, str] = {
     # restart, which is what made the first 48 rows uncheckable. Degrades
     # quietly to no-op when no object-store credentials are configured.
     'image_fanout_retain_candidates': 'true',
+    # How long a retained candidate image lives before FanoutCandidatePruneJob
+    # deletes it. Aligned to the audit_log retention window (90d) on purpose:
+    # the image exists to make its judged row checkable, so neither should
+    # outlive the other. The job refuses to run below a 7-day floor.
+    'image_fanout_candidate_retention_days': '90',
+    # Per-run delete cap, so a first pass over a large backlog is bounded and
+    # observable rather than one unbounded delete storm. Leftovers are taken
+    # by the next daily pass.
+    'image_fanout_candidate_prune_max_deletes_per_run': '500',
     # Per-call HTTP timeout (seconds) for a local image inference server
     # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
     # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
@@ -4915,6 +4924,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_fanout_klein_cfg': {'value_type': 'float'},
     'image_fanout_judge_max_tokens': {'value_type': 'integer'},
     'image_fanout_retain_candidates': {'value_type': 'boolean'},
+    'image_fanout_candidate_retention_days': {
+        'owner': 'fanout_candidate_prune', 'value_type': 'integer'},
+    'image_fanout_candidate_prune_max_deletes_per_run': {
+        'owner': 'fanout_candidate_prune', 'value_type': 'integer'},
     'image_ocr_gate_enabled': {'value_type': 'boolean'},
     'image_ocr_gate_enforce': {'value_type': 'boolean'},
     'image_ocr_gate_fail_closed_when_unavailable': {'value_type': 'boolean'},

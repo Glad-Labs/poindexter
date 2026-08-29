@@ -5567,6 +5567,142 @@
       ],
       "title": "Featured fan-out — recent judged renders",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Share of fan-out candidates the judge returned NO score for. Every one is a candidate that rendered and then did not compete: _pick_winner sees only scored candidates, so a lost score hands its siblings an uncontested win and the Phase-2 routing dataset records that as a preference. Ran at 27% for the first 12 days (31/115) while reporting itself healthy — qwen3-vl was spending its whole max_tokens in the reasoning channel and returning empty content, fixed by the thinking-budget lift in _judge_token_budget. The companion table says WHICH failure it is. Empty until image_fanout_enabled=true.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "dark-red",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 285
+      },
+      "id": 208,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH judged AS (\n  SELECT details\n  FROM audit_log\n  WHERE event_type = 'image_fanout_judged'\n    AND $__timeFilter(timestamp)\n),\ncands AS (\n  SELECT c->>'score' AS score, COALESCE(c->>'reason', '') AS reason\n  FROM judged, LATERAL jsonb_array_elements(details->'candidates') AS c\n)\nSELECT ROUND(\n  100.0 * COUNT(*) FILTER (WHERE score IS NULL) / NULLIF(COUNT(*), 0), 1\n) AS \"Judge loss %\"\nFROM cands",
+          "refId": "A"
+        }
+      ],
+      "title": "Featured fan-out — judge loss rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "WHY each lost score was lost. The distinction is the point: 'empty' means the judge generated its entire token budget and returned nothing (raise the budget), 'unparseable' means it answered in the wrong shape (a prompt or parser problem). Those two shared one label until 2026-08-28, which sent an investigation hunting a parser bug that did not exist — the responses were never malformed, they were empty.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 8,
+        "y": 285
+      },
+      "id": 209,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH judged AS (\n  SELECT details\n  FROM audit_log\n  WHERE event_type = 'image_fanout_judged'\n    AND $__timeFilter(timestamp)\n),\ncands AS (\n  SELECT c->>'score' AS score, COALESCE(c->>'reason', '') AS reason\n  FROM judged, LATERAL jsonb_array_elements(details->'candidates') AS c\n)\nSELECT\n  CASE\n    WHEN reason ILIKE 'empty vision response%'\n      THEN 'empty — judge spent its whole budget reasoning'\n    WHEN reason ILIKE 'unparseable%'\n      THEN 'unparseable — the model answered, but not in JSON'\n    WHEN reason ILIKE 'vision response missing numeric score%'\n      THEN 'JSON parsed, score field was not a number'\n    WHEN reason ILIKE 'judge call failed%' THEN 'judge call failed (transport)'\n    WHEN reason ILIKE 'judge unavailable%' THEN 'judge unavailable (no model/pool)'\n    WHEN reason ILIKE 'unreadable candidate file%' THEN 'candidate file unreadable'\n    WHEN reason = '' THEN '(no reason recorded)'\n    ELSE reason\n  END AS \"Why the score was lost\",\n  COUNT(*) AS \"Lost\",\n  ROUND(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM cands), 0), 1)\n    AS \"% of all candidate scores\"\nFROM cands\nWHERE score IS NULL\nGROUP BY 1\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Featured fan-out — why judge scores were lost",
+      "type": "table"
     }
   ],
   "refresh": "30s",

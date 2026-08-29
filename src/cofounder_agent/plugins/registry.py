@@ -786,6 +786,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.media_orphan_sweep",
             "MediaOrphanSweepJob",
         ),
+        # Fan-out candidate prune — ages out the retained featured-fanout
+        # candidate images (fanout/**) that image_fanout._retain_candidates
+        # writes so judged rows stay checkable. Pure TTL on a prefix we own;
+        # deliberately NOT part of media_orphan_sweep, whose keep-set is
+        # reference-based and would read every candidate as an orphan.
+        (
+            "jobs",
+            "services.jobs.fanout_candidate_prune",
+            "FanoutCandidatePruneJob",
+        ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.classify_content_types", "ClassifyContentTypesJob"),
         ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),

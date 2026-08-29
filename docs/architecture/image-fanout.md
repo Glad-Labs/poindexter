@@ -102,8 +102,27 @@ response`, distinct from `unparseable vision response`; conflating them
   48 rows. The winner is uploaded here too even though the stage separately
   publishes it: this key holds what the _judge_ saw, before any downstream
   resize. Best-effort per candidate, and a quiet no-op when no object-store
-  credentials are configured. Nothing prunes these yet — the dated prefix is
-  there so age-based pruning stays a `list_keys` away.
+  credentials are configured.
+
+- **Candidate lifecycle — `FanoutCandidatePruneJob`** (`fanout_candidate_prune`,
+  daily 04:37 local) deletes retained candidates older than
+  `image_fanout_candidate_retention_days` (90). The TTL is aligned to the
+  `audit_log` retention window on purpose: the image exists to make its judged
+  row checkable, so neither should outlive the other — change one and consider
+  the other. Bounded by
+  `image_fanout_candidate_prune_max_deletes_per_run` (500), guarded by a
+  `fanout/` prefix check re-asserted at the delete call site, and refused
+  outright below a 7-day floor so a fat-fingered `0` cannot read as "delete
+  everything". `idempotent = False`, so two delete passes never race.
+
+  **Do NOT add `fanout/` to `media_orphan_sweep_prefixes`.** That job decides
+  by _reference_ — an object survives if its key appears in a post, a
+  `media_assets` row, or the feed XML. Candidates appear in none of those (they
+  are referenced only from `audit_log` details), so every one of them, including
+  the render from ten minutes ago, reads there as an orphan. They are not
+  orphans; they are deliberately-kept audit artifacts with a TTL, which is a
+  different lifecycle and gets its own job.
+
 - **VRAM choreography** — zimage renders first (image-gen warm from the
   inline batch); the service then hard-unloads image-gen (decline-gated
   rung) before ComfyUI loads. ComfyUI swaps schnell→klein→qwen internally
@@ -254,6 +273,24 @@ a non-zero **Rendered** count. It is listed there at zero renders as soon
 as it is in `image_fanout_candidates`, which is the point: a candidate that
 is configured but never renders is a starvation bug, and the panel is what
 makes the difference visible.
+
+## Watching the judge
+
+Two panels at the foot of the Pipeline board, beside the wins/presence table:
+
+- **"Featured fan-out — judge loss rate"** — the share of candidates the judge
+  returned no score for. This is the number that would have surfaced the
+  2026-08 defect: it sat at 27% for twelve days while every surface reported
+  healthy. A lost score is not a missing datapoint — `_pick_winner` sees only
+  scored candidates, so it hands the siblings an uncontested win that the
+  routing dataset then records as a preference.
+- **"Featured fan-out — why judge scores were lost"** — the breakdown that
+  makes the loss actionable. `empty` means the judge spent its whole budget
+  reasoning and returned nothing (a budget problem); `unparseable` means it
+  answered in the wrong shape (a prompt or parser problem). Those two shared
+  one label until 2026-08-28, which is exactly why an investigation went
+  looking for a parser bug that did not exist. Rows written before that date
+  all read `unparseable` regardless of which they were.
 
 ## Known gaps (Phase 2)
 
