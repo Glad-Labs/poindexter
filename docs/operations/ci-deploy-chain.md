@@ -285,6 +285,41 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
     wrong. On a gitleaks upgrade, re-verify the _sample_ before editing
     a rule. The script declares `# scan-floor-exempt:` because it builds
     its own corpus rather than walking the repo tree.
+- **What is actually REQUIRED on `main`** (15 checks as of
+  2026-08-28; classic branch protection, `strict: false`):
+  `migrations-smoke`, `test-backend`, `mcp-server-tests`,
+  `backend-lint`, `syntax-check`, `gitleaks — secret scan`,
+  `public-mirror-safety`, `semgrep`, `docs-link-rot`,
+  `phantom-poindexter-set`, `Trivy — filesystem vuln scan`,
+  `Trivy — Dockerfile + IaC config`, `Lint third-party Actions for SHA
+pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
+(src/cofounder_agent)`. The last six were promoted from advisory on
+  2026-08-28 — they already ran on every PR, so gating them cost zero
+  extra CI minutes and only changed whether a red result blocks.
+
+  **What can be promoted is decided by one mechanical rule.** A
+  workflow-level `paths:` filter means the workflow does not run at all
+  on an unrelated PR, so its check is _never created_ and a required
+  check sits pending forever — that is the required-check hang. A
+  job-level `if:` (the `needs: changes` pattern in `security.yml`)
+  always reports, as `skipped`, and GitHub counts a skipped required
+  check as satisfied. So `if:`-gated jobs are safe to require;
+  `paths:`-gated workflows are not, until they are converted to the
+  always-run + job-level `if:` shape. `integration-db`, `ports-lint`,
+  `rerank-import-guard` and `grafana-panels-lint` are the reasonable
+  Tier-2 candidates for that conversion; `docker-build` and
+  `playwright-e2e` are deliberately left advisory (too expensive per PR
+  for the signal).
+
+  **Gating is not a rot cure-all** — it fixes "red and ignored" and
+  "PR job wedged", and does nothing for the other shapes. A scheduled
+  job has no PR to block (those need a dead-man's switch — the
+  benchmarks→Grafana ingest is the pattern). A check that is green
+  because it scanned nothing needs a scan floor. And a check that is
+  green because its _rule_ went blind to a changed credential format
+  needs a positive control — see the `gitleaks` canary above, and
+  `reference_nongating_ci_jobs_rot_invisibly` for the full taxonomy.
+
 - **`grafana-panels-lint` is `paths:`-gated** to
   `infrastructure/grafana/**` + the lint script + migrations — the
   model the others copy.

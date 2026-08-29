@@ -84,7 +84,9 @@ jobs:
               with:
                   # App-minted token (NOT GITHUB_TOKEN) — required so the
                   # opened PR triggers downstream workflows (especially
-                  # ``migrations-smoke``, the lone branch-protection gate).
+                  # ``migrations-smoke`` and the other required checks --
+                  # 15 of them as of 2026-08-28, not the one this comment
+                  # used to claim; see docs/operations/ci-deploy-chain.md).
                   token: ${{ steps.app_token.outputs.token }}
                   # Manifest mode: reads config from release-please-config.json
                   # and tracks versions in .release-please-manifest.json.
