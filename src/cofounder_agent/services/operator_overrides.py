@@ -147,7 +147,11 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # R2 access key ID (is_secret=false half of the keypair; the secret half
     # is storage_secret_key, kept encrypted in the DB / bootstrap, never here).
     # Restored on the operator rig so R2 uploads work after a fresh reseed.
-    "storage_access_key": "98ada7d8c1590c0d90591948da6690a7",
+    # ROTATED 2026-08-29 (the April keypair had been flagged for rotation since
+    # June). If you rotate again, update this value in the same change — a stale
+    # ID here silently restores a REVOKED key on the next reseed, and the
+    # breakage surfaces long after the rotation as "uploads just stopped".
+    "storage_access_key": "29956ef817814d1e8c1759716fe08f65",
     # Podcast distribution assets — the operator's actual Spotify show and
     # R2-hosted cover art. Blanked in the public seeds (they correlate back to
     # the Glad Labs tenant); restored here on the operator rig.
