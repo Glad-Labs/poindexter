@@ -340,7 +340,14 @@ DEFAULTS: dict[str, str] = {
     # Roles, not backends: `render`/`qa_judge`/`llm_primary` stay meaningful
     # across Ollama -> vLLM -> a managed API (empty list = no GPU, no lock).
     'gpu_lock_per_device_enabled': 'false',
-    'gpu_lock_scopes': '',
+    # Phase 3 (poindexter#3457): llm_primary is [0] because
+    # scripts/linux/ollama-primary.sh now UUID-pins primary to GPU 0 and
+    # refuses to start unpinned. qa_judge {1} is therefore genuinely
+    # disjoint from render {0} and primary {0}, so judges stop queueing
+    # behind renders. DO NOT narrow a role here without the matching
+    # ENFORCED pin — declaring a disjointness the hardware does not have
+    # removes mutual exclusion between two workloads on one card.
+    'gpu_lock_scopes': '{"render": [0], "qa_judge": [1], "llm_primary": [0]}',
     # Empty = use the hostname. A GPU index is only unique WITHIN a host, so
     # two nodes sharing one Postgres would otherwise serialise on the same key
     # and the fleet would get one GPU's worth of throughput.
@@ -1188,6 +1195,14 @@ DEFAULTS: dict[str, str] = {
     # estimate dropped entirely (kv_cache_gb=0): the runner allocates KV at
     # its configured context, not the caller's request, so admission must
     # charge for it — several GB on a 31B model at 8192.
+    #
+    # POST-PIN (poindexter#3457 Phase 3): scripts/linux/ollama-primary.sh now
+    # UUID-pins ollama-primary to GPU 0, so on the operator box this must be
+    # '0' (or unset) — listing a card primary can no longer reach makes the
+    # fit gate admit against VRAM that is not available to it. That is the
+    # OPPOSITE of the #1016 bug: widening was right while primary roamed both
+    # cards, narrowing is right now that it cannot. Change this ONLY together
+    # with the pin, never before it.
     'ollama_gpu_indexes': '',
     'gpu1_headroom_gb': '4.5',
     'gpu_admission_assumed_num_ctx': '8192',

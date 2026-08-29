@@ -127,12 +127,14 @@ def test_removing_the_override_restores_serialisation(scoped):
 # --- overlap semantics -------------------------------------------------------
 
 
-def test_default_map_ships_inert_everything_overlaps(scoped):
-    """Enabling scoping alone must change nothing.
+def test_default_map_grants_judge_render_concurrency(scoped):
+    """Phase 3: the shipped map is now genuinely split.
 
-    `llm_primary` holds both cards in the shipped map, so it intersects both
-    render and qa_judge. Concurrency only appears once primary is pinned
-    (Phase 3) — which is what makes this safe to merge.
+    Phase 2 shipped `llm_primary: [0, 1]` so every set overlapped and enabling
+    scoping changed nothing. Phase 3 narrows it to [0] because
+    scripts/linux/ollama-primary.sh UUID-pins primary to GPU 0 and refuses to
+    start unpinned — so the judge on GPU 1 is disjoint from BOTH render and
+    primary, which is the whole point of the change.
     """
     scoped(
         gpu_lock_per_device_enabled="true",
@@ -144,14 +146,51 @@ def test_default_map_ships_inert_everything_overlaps(scoped):
     primary = set(gs.resolve_lock_keys("ollama", "some-writer"))
     render = set(gs.resolve_lock_keys("image_gen", None))
     judge = set(gs.resolve_lock_keys("ollama", "qwen3-vl:30b"))
-    # Inertness is primary overlapping EVERY other role — checking only
-    # primary-vs-render passes even when primary is pinned to [0], which is
-    # the Phase 3 config and a real behaviour change. (Caught by mutation.)
-    assert not primary.isdisjoint(render), "primary must still serialise vs render"
-    assert not primary.isdisjoint(judge), (
-        "primary must still serialise vs the judge — otherwise enabling "
-        "scoping alone grants concurrency, and this no longer ships inert"
-    )
+    assert judge.isdisjoint(render), "judge must not queue behind renders"
+    assert judge.isdisjoint(primary), "judge must not queue behind the writer"
+    assert primary == render, "primary and render both hold GPU 0"
+
+
+def test_every_declared_split_is_backed_by_an_enforced_pin():
+    """A narrowed scope is a CLAIM about hardware. Something must enforce it.
+
+    Declaring `llm_primary: [0]` while ollama-primary can still land on GPU 1
+    is strictly worse than not splitting at all: the lock stops serialising
+    primary against the judge while the hardware still lets them collide on
+    one card. So if the shipped map gives one role a card another role lacks,
+    the pin scripts that make that true must exist and must refuse to start
+    unpinned.
+
+    A coupling test on purpose — the config and the pin are one change and
+    must never drift apart.
+    """
+    from pathlib import Path
+
+    scopes = gs.DEFAULT_GPU_LOCK_SCOPES
+    judge = set(scopes.get("qa_judge", []))
+    primary = set(scopes.get("llm_primary", []))
+    if judge.isdisjoint(primary):
+        repo = Path(gs.__file__).resolve().parents[3]
+        for script, card in (
+            ("scripts/linux/ollama-primary.sh", "0"),
+            ("scripts/linux/ollama-vision.sh", "1"),
+        ):
+            path = repo / script
+            assert path.is_file(), (
+                f"{script} must exist: the map claims a split only that pin "
+                f"makes true"
+            )
+            body = path.read_text(encoding="utf-8")
+            assert f"-i {card}" in body, f"{script} must resolve GPU {card}"
+            assert "refusing to start unpinned" in body, (
+                f"{script} must FAIL rather than start unpinned — a pin that "
+                f"silently degrades to 'any GPU' turns the declared split into "
+                f"two workloads sharing a card with no mutual exclusion"
+            )
+            assert "OLLAMA_VULKAN=false" in body, (
+                f"{script} must disable Vulkan — Ollama's Vulkan backend "
+                f"ignores CUDA_VISIBLE_DEVICES, so the pin would be a no-op"
+            )
 
 
 def test_pinning_primary_makes_judge_and_render_disjoint(scoped):

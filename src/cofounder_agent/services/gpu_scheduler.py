@@ -306,9 +306,12 @@ def _cfg_bool(key: str, default: bool) -> bool:
 DEFAULT_GPU_LOCK_SCOPES: dict[str, list[int]] = {
     "render": [0],
     "qa_judge": [1],
-    # Unpinned today, so it overlaps both — which is why enabling scoping
-    # changes nothing until ollama-primary is actually pinned (Phase 3).
-    "llm_primary": [0, 1],
+    # Phase 3: ollama-primary is UUID-pinned to GPU 0 by
+    # scripts/linux/ollama-primary.sh, which refuses to start unpinned — so
+    # this [0] is ENFORCED, not merely declared. Widen it back to [0, 1] the
+    # moment that pin is removed, or the lock stops serialising primary
+    # against the judge while the hardware still lets them collide.
+    "llm_primary": [0],
 }
 
 
