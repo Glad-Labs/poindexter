@@ -320,6 +320,53 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   needs a positive control — see the `gitleaks` canary above, and
   `reference_nongating_ci_jobs_rot_invisibly` for the full taxonomy.
 
+- **Scheduled workflows have a dead-man's switch**
+  (`brain/scheduled_workflow_watch.py`, 2026-08-28). Nothing gates a
+  cron: when a scheduled workflow starts failing — or stops firing —
+  no check anywhere changes colour. The 2026-08-25 sweep found
+  `benchmarks` had never once passed in 71 runs and the weekly
+  `playwright-e2e` never in 11. The probe emits an edge-triggered
+  `scheduled_workflow_stale` finding (warn → Discord via the findings
+  router) in two distinct modes, because they diagnose differently:
+  **`stale`** (last successful _scheduled_ run older than its window)
+  and **`never_green`** (scheduled runs exist, none has ever passed).
+
+  **Runs are filtered to `event=schedule`, and that filter is the
+  whole point.** `security`, `unit-tests`, `release-please` and
+  `console-contract-drift` also run on pushes and PRs — query their
+  last successful run unfiltered and you get today's push, so a cron
+  dead for three weeks reports perfectly healthy. Without the filter
+  the watchdog would itself be a "green while checking nothing" check.
+
+  Config is `app_settings.scheduled_workflows`, and it ships **empty**:
+  a useful default would have to name this operator's repos, and a
+  `Glad-Labs/glad-labs-stack` literal in `settings_defaults.py` would
+  reach the public mirror and trip the private-repo leak guard. Set
+  `max_age_hours` to roughly 1.5x the cron period — GitHub's scheduler
+  is best-effort and routinely runs late, so a window equal to the
+  period produces false alarms. The operator list for this install:
+
+  | workflow                     | cron          | `max_age_hours` |
+  | ---------------------------- | ------------- | --------------- |
+  | `benchmarks.yml`             | `0 7 * * *`   | 30              |
+  | `console-contract-drift.yml` | `0 8 * * *`   | 30              |
+  | `regen-app-settings-doc.yml` | `13 6 * * *`  | 30              |
+  | `sync-claude-md.yml`         | `17 6 * * *`  | 30              |
+  | `release-please.yml`         | `0 8 * * *`   | 30              |
+  | `unit-tests.yml`             | `0 9 * * *`   | 30              |
+  | `runner-healthcheck.yml`     | `0 */6 * * *` | 12              |
+  | `playwright-e2e.yml`         | `0 6 * * 1`   | 192             |
+  | `security.yml`               | `17 6 * * 1`  | 192             |
+
+  Not assessed (no finding) when httpx is missing, no `gh_token` is
+  configured, the workflow 404s, the API errors, or the workflow has no
+  scheduled runs at all — mirroring `data_freshness_probe`'s zero-rows
+  rule, so an operator who never enabled a cron is never alarmed about
+  it. Self-throttled to
+  `scheduled_workflow_watch_interval_minutes` (default 60) rather than
+  riding the brain's 5-minute cycle, since each target costs two
+  GitHub API calls.
+
 - **`grafana-panels-lint` is `paths:`-gated** to
   `infrastructure/grafana/**` + the lint script + migrations — the
   model the others copy.

@@ -374,6 +374,24 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_DATA_FRESHNESS_PROBE = False
 
 try:
+    # Dead-man's switch for SCHEDULED CI (2026-08-28). A required check that
+    # goes red blocks a merge; a scheduled workflow that dies changes nothing
+    # anywhere. The 2026-08-25 sweep found `benchmarks` had never passed in 71
+    # runs and weekly `playwright-e2e` never in 11. Watches
+    # app_settings.scheduled_workflows and emits an edge-triggered
+    # `scheduled_workflow_stale` finding. Runs are filtered to
+    # event=schedule — several targets also run on PRs, and an unfiltered
+    # query reports a push run as health.
+    from scheduled_workflow_watch import run_scheduled_workflow_watch
+    _HAS_SCHEDULED_WORKFLOW_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.scheduled_workflow_watch import run_scheduled_workflow_watch
+        _HAS_SCHEDULED_WORKFLOW_WATCH = True
+    except ImportError:
+        _HAS_SCHEDULED_WORKFLOW_WATCH = False
+
+try:
     # DB wall-clock skew probe (2026-07-08 investigation). Compares postgres
     # clock_timestamp() to an external UTC reference (HTTP Date header) and
     # emits an edge-triggered `db_clock_skew` finding (critical -> Telegram)
@@ -530,6 +548,9 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
      "Data-feed dead-man's switch offline — dashboards can serve stale data "
      "silently (incl. the iCUE corsair_csv sensor feed, #868)"),
+    ("_HAS_SCHEDULED_WORKFLOW_WATCH", "brain/scheduled_workflow_watch.py",
+     "Scheduled-CI dead-man's switch offline — a cron workflow that stops "
+     "firing or never passes has no PR to block and turns nothing red"),
     ("_HAS_CLOCK_SKEW_PROBE", "brain/clock_skew_probe.py",
      "DB wall-clock skew detection offline — a WSL2 sleep/resume clock "
      "excursion can silently poison every DB timestamp undetected (#2212)"),
@@ -3201,6 +3222,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] data_freshness probe failed: %s", e)
+
+    # Dead-man's switch for SCHEDULED CI (2026-08-28). Gating fixes "red and
+    # ignored"; nothing gates a cron. Emits an edge-triggered
+    # `scheduled_workflow_stale` finding when a watched workflow's last
+    # SUCCESSFUL scheduled run ages out, or when it has never succeeded at
+    # all. Self-throttling (default hourly) — see brain/scheduled_workflow_watch.py.
+    if _HAS_SCHEDULED_WORKFLOW_WATCH:
+        try:
+            sw_summary = await run_scheduled_workflow_watch(pool)
+            probe_results["scheduled_workflow_watch"] = {
+                "ok": bool(sw_summary.get("ok", False)),
+                "detail": sw_summary.get("detail", ""),
+                "summary": sw_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] scheduled_workflow_watch probe failed: %s", e)
 
     # DB wall-clock skew probe (2026-07-08 investigation). Compares postgres
     # clock_timestamp() to an external UTC reference and emits an

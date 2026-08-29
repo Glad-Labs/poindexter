@@ -3559,6 +3559,29 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' "threshold_minutes": 2880}]'
     ),
 
+    # ----- Scheduled-CI dead-man's switch (2026-08-28) -----
+    # brain/scheduled_workflow_watch.py. A required check that goes red blocks
+    # a merge; a SCHEDULED workflow that dies turns nothing red anywhere. The
+    # 2026-08-25 sweep found `benchmarks` had never passed in 71 runs and the
+    # weekly playwright job never in 11 — both silent for months.
+    #
+    # Ships EMPTY on purpose, for two reasons. A useful default would have to
+    # name this operator's repos, and a `Glad-Labs/glad-labs-stack` literal
+    # here would ship to the public mirror and trip the private-repo leak
+    # guard. And repo/workflow names are install-specific anyway — there is no
+    # value that is right for a second operator.
+    #
+    # Populate with a JSON list; max_age_hours wants ~1.5x the cron period,
+    # because GitHub's scheduler is best-effort and routinely runs late:
+    #   [{"repo": "<owner>/<repo>", "workflow": "benchmarks.yml",
+    #     "max_age_hours": 30}]
+    # See docs/operations/ci-deploy-chain.md for the full runbook.
+    'scheduled_workflow_watch_enabled': 'true',
+    'scheduled_workflows': '[]',
+    # Each target costs two GitHub API calls, and nothing here moves minute to
+    # minute — so this does not ride the brain's 5-minute cycle.
+    'scheduled_workflow_watch_interval_minutes': '60',
+
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
     # brain/clock_skew_probe.py compares postgres clock_timestamp() to an
     # external UTC reference (the HTTP Date header from clock_skew_reference_url)
@@ -5248,6 +5271,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'research_web_content_chars_per_source': {'owner': 'research_service', 'value_type': 'integer'},
     'router_feedback_alpha': {'owner': 'router_outcome_feedback', 'value_type': 'float'},
     'scheduled_publisher_poll_seconds': {'owner': 'scheduled_publisher', 'value_type': 'integer'},
+    'scheduled_workflow_watch_enabled': {'owner': 'scheduled_workflow_watch', 'value_type': 'boolean'},
+    'scheduled_workflow_watch_interval_minutes': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
+    'scheduled_workflows': {'owner': 'scheduled_workflow_watch', 'value_type': 'json'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_overlap_alert_after_minutes': {'owner': 'scheduler', 'value_type': 'integer'},
