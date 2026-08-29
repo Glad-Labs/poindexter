@@ -174,10 +174,10 @@ async def test_fetch_recent_snippets_returns_empty_for_unmapped_kind():
     assert pool.last_conn is None
 
 
-async def test_fetch_recent_snippets_handles_null_text_preview():
+async def test_fetch_recent_snippets_handles_null_snippet():
     rows = [
-        {"source_id": "abc-123", "text_preview": None},
-        {"source_id": "def-456", "text_preview": "real preview"},
+        {"source_id": "abc-123", "snippet": None},
+        {"source_id": "def-456", "snippet": "real preview"},
     ]
     pool = _FakePool(rows=rows)
     src = InternalRagSource(pool, site_config=SiteConfig())
@@ -191,11 +191,11 @@ async def test_fetch_recent_snippets_handles_null_text_preview():
 async def test_generate_aggregates_across_multiple_kinds(monkeypatch):
     rows_by_table = {
         "claude_sessions": [
-            {"source_id": "cs-1", "text_preview": "session one"},
-            {"source_id": "cs-2", "text_preview": "session two"},
+            {"source_id": "cs-1", "snippet": "session one"},
+            {"source_id": "cs-2", "snippet": "session two"},
         ],
         "brain": [
-            {"source_id": "bk-1", "text_preview": "brain entry"},
+            {"source_id": "bk-1", "snippet": "brain entry"},
         ],
     }
     pool = _FakePool(rows_by_table=rows_by_table)
@@ -273,8 +273,8 @@ async def test_generate_skips_candidates_when_distill_returns_none(monkeypatch):
     # candidate or allowed to crash the loop.
     rows_by_table = {
         "claude_sessions": [
-            {"source_id": "cs-1", "text_preview": "good"},
-            {"source_id": "cs-2", "text_preview": "bad"},
+            {"source_id": "cs-1", "snippet": "good"},
+            {"source_id": "cs-2", "snippet": "bad"},
         ],
     }
     pool = _FakePool(rows_by_table=rows_by_table)
@@ -590,7 +590,7 @@ async def test_generate_applies_kind_weights_to_limits(monkeypatch):
 async def test_fetch_snippets_with_query_vec_ranks_by_vector(monkeypatch):
     # The storyworthy path orders by pgvector distance within the lookback
     # window; params are (table, lookback_days, vec_text, limit).
-    rows = [{"source_id": "x", "text_preview": "story"}]
+    rows = [{"source_id": "x", "snippet": "story"}]
     pool = _FakePool(rows=rows)
     src = InternalRagSource(pool, site_config=SiteConfig())
     out = await src._fetch_recent_snippets(
@@ -616,7 +616,7 @@ async def test_fetch_snippets_empty_vector_window_falls_back_to_recency():
             self.last_args = (query, args)
             if "embedding <=>" in query:
                 return []
-            return [{"source_id": "old", "text_preview": "older story"}]
+            return [{"source_id": "old", "snippet": "older story"}]
 
     conn = _TwoQueryConn()
 

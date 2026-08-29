@@ -5,6 +5,60 @@ hitting the same `embeddings` pgvector table (16k+ rows, 768-dim
 nomic-embed-text vectors, HNSW-indexed). Operators pick which one runs
 via `app_settings.rag_engine_enabled`.
 
+## The retrieval payload — `chunk_text` vs `text_preview` (poindexter#1033)
+
+Two columns on `embeddings` hold text, and conflating them cost us most of the
+corpus for months.
+
+| Column         | Type           | Holds                                           | Read by                                                                                  |
+| -------------- | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `chunk_text`   | `text`         | The **full chunk the vector was computed over** | Retrieval payload, cross-encoder reranker, any consumer feeding retrieved text to an LLM |
+| `text_preview` | `varchar(500)` | A short **display** snippet                     | Memory dashboard, `poindexter memory` CLI, `chat_tools`, voice agent                     |
+
+The tap runner chunks at `app_settings.tap_chunk_max_chars` (default 6000) and
+embeds each chunk **in full**. Before #1033 only `text_preview` was persisted,
+and both `rag_engine` retriever paths built their `TextNode` from it. Measured
+on the live 196-post corpus:
+
+- 313 chunks, median **4,284** chars each (p90 5,751)
+- **1,079,141 of 1,234,626 chars discarded — 87.4%**
+- only 4/313 chunks (1.3%) fit inside the preview
+- across 40 sampled queries the best-matching 500-char window was **not** the
+  first one 40% of the time (median **+0.073 cosine** left on the table)
+
+The reranker consequence was unconditional: `rag_engine._rerank` scores
+`node.text`, so the cross-encoder — the most expensive stage in the stack — saw
+~12% of every candidate regardless of where the match sat.
+
+**Invariants to preserve:**
+
+- `_retrieval_text(row)` in `services/rag_engine.py` is the single seam that
+  decides what a consumer sees. It returns `chunk_text` and falls back to
+  `text_preview`. **The fallback is load-bearing, not defensive** — `chunk_text`
+  is NULL on every pre-migration row, so the column ships ahead of the backfill
+  without blanking retrieval.
+- `MemoryHit.text_preview` is **always** a preview and `MemoryHit.chunk_text`
+  **always** the full payload. The two search paths used to disagree (the
+  direct-pgvector path stored a preview, the rag_engine path stored
+  `node.text`); `_node_preview` re-clips on the rag path so they agree.
+- Don't add whole-chunk text to a display surface. Dashboards render 240 chars,
+  the CLI 80, voice 10 words — they must not pull 6 KB rows to do it.
+
+**Backfill.** Taps dedup on chunk-0 `content_hash`, so an unchanged document is
+skipped forever and would keep `chunk_text` NULL indefinitely. Use
+`scripts/backfill_embeddings_chunk_text.py`, which re-derives text from each
+Tap's own `extract()` and writes it only when two interlocks both hold: chunk 0's
+stored hash equals `content_hash(text)` (proving the source is unchanged since
+the vector was made) **and** the recomputed chunk count matches the stored row
+count. Anything failing either check is skipped and reported — writing the wrong
+text against a real vector is worse than NULL, because the fallback at least
+degrades honestly. No embedding calls; vectors are never touched. Verified
+196/196 posts (313 rows) recoverable at time of writing.
+
+```bash
+docker exec poindexter-worker python /app/scripts/backfill_embeddings_chunk_text.py --dry-run
+```
+
 ## Path A — Legacy inline pgvector (default)
 
 `poindexter.memory.MemoryClient.search` embeds the query once via

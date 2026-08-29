@@ -77,6 +77,22 @@ def _coerce_metadata(raw: Any) -> dict:
     return {}
 
 
+def _retrieval_text(row: Any) -> str:
+    """Return the full embedded chunk, falling back to the 500-char preview.
+
+    ``embeddings.chunk_text`` holds the text the vector was actually computed
+    over (poindexter#1033); ``text_preview`` is a ``varchar(500)`` display
+    field. Building the ``TextNode`` from the preview meant retrieval matched
+    on a median ~4.3k characters and handed the consumer 500 of them — and the
+    cross-encoder reranker, which scores ``node.text``, saw the same fragment.
+
+    The fallback is load-bearing, not defensive: ``chunk_text`` is NULL on
+    every row written before the migration, so the column can ship ahead of
+    the re-tap backfill without blanking retrieval in the meantime.
+    """
+    return row.get("chunk_text") or row.get("text_preview") or ""
+
+
 # ---------------------------------------------------------------------------
 # Embedding model — Ollama-native via LlamaIndex's adapter
 # ---------------------------------------------------------------------------
@@ -277,8 +293,8 @@ def _build_retriever_class():
             # so callers like MemoryClient.search can reconstruct a full
             # MemoryHit without a second query (#329 sub-issue 4).
             sql_parts = [
-                "SELECT source_table, source_id, text_preview, metadata, "
-                "writer, origin_path, "
+                "SELECT source_table, source_id, text_preview, chunk_text, "
+                "metadata, writer, origin_path, "
                 "1 - (embedding <=> $1::vector) AS similarity "
                 "FROM embeddings",
                 "WHERE 1 - (embedding <=> $1::vector) >= $2",
@@ -314,7 +330,7 @@ def _build_retriever_class():
                     "origin_path": row.get("origin_path"),
                 })
                 node = TextNode(
-                    text=row.get("text_preview") or "",
+                    text=_retrieval_text(row),
                     metadata=metadata,
                     id_=f"{row['source_table']}:{row['source_id']}",
                 )
@@ -566,7 +582,8 @@ def _build_hybrid_retriever_class():
                 src_rows = []
                 try:
                     src_rows = await self._pool.fetch(
-                        "SELECT source_table, source_id, text_preview, metadata "
+                        "SELECT source_table, source_id, text_preview, "
+                        "chunk_text, metadata "
                         "FROM embeddings "
                         "WHERE (source_table || ':' || source_id) = ANY($1::text[])",
                         missing_ids,
@@ -582,7 +599,7 @@ def _build_hybrid_retriever_class():
                     })
                     node_by_id[nid] = NodeWithScore(
                         node=TextNode(
-                            text=row.get("text_preview") or "",
+                            text=_retrieval_text(row),
                             metadata=metadata,
                             id_=nid,
                         ),

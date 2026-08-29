@@ -42,6 +42,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
         text_preview: str | None = None,
         writer: str | None = None,
         chunk_index: int = 0,
+        chunk_text: str | None = None,
     ) -> str:
         """
         Store an embedding vector in the database.
@@ -59,13 +60,17 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             content_hash: SHA-256 hash of the content that was embedded.
             embedding: The embedding vector as a list of floats.
             metadata: Optional JSON metadata about the embedding.
-            text_preview: First ~500 chars of the embedded text. Required by
-                the DB schema — falls back to the title from `metadata` if
-                omitted, then to the source_id.
+            text_preview: First ~500 chars of the embedded text, for DISPLAY
+                surfaces only. Required by the DB schema — falls back to the
+                title from `metadata` if omitted, then to the source_id.
             writer: Origin label (worker, auto-embed, claude-code, etc).
             chunk_index: Zero-based ordinal of this chunk within the source.
                 Part of the natural key, so distinct chunks of one source
                 must pass distinct values to avoid clobbering each other.
+            chunk_text: The FULL text that was embedded — the retrieval
+                payload (poindexter#1033). Defaults to ``text_preview`` when
+                omitted, which reproduces the pre-#1033 truncation, so pass
+                it from any caller whose text exceeds 500 chars.
 
         Returns:
             The embedding row ID (string).
@@ -89,6 +94,10 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                 )
             else:
                 text_preview = source_id
+        # Preserve the full payload BEFORE text_preview is clipped, so a
+        # caller that passed only text_preview still stores whatever it had
+        # rather than silently re-truncating (poindexter#1033).
+        full_text = chunk_text if chunk_text is not None else text_preview
         text_preview = (text_preview or "")[:500]
 
         try:
@@ -98,13 +107,16 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                     INSERT INTO embeddings (source_table, source_id, content_hash,
                                             embedding, embedding_model, metadata,
                                             text_preview, writer,
-                                            created_at, updated_at, chunk_index)
-                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8, $9, $10, $11)
+                                            created_at, updated_at, chunk_index,
+                                            chunk_text)
+                    VALUES ($1, $2, $3, $4::vector, $5, $6::jsonb, $7, $8, $9, $10,
+                            $11, $12)
                     ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                     DO UPDATE SET content_hash = EXCLUDED.content_hash,
                                   embedding   = EXCLUDED.embedding,
                                   metadata    = EXCLUDED.metadata,
                                   text_preview = EXCLUDED.text_preview,
+                                  chunk_text  = EXCLUDED.chunk_text,
                                   writer      = COALESCE(EXCLUDED.writer, embeddings.writer),
                                   updated_at  = EXCLUDED.updated_at
                     RETURNING id
@@ -120,6 +132,7 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
                     now,
                     now,
                     chunk_index,
+                    full_text,
                 )
             embedding_id = str(row["id"]) if row else None
             logger.info(

@@ -417,12 +417,12 @@ async def _write_summary_and_delete(
                 """
                 INSERT INTO embeddings (
                     source_table, source_id, content_hash, chunk_index,
-                    text_preview, embedding_model, embedding, metadata,
-                    writer, is_summary, created_at, updated_at
+                    text_preview, chunk_text, embedding_model, embedding,
+                    metadata, writer, is_summary, created_at, updated_at
                 )
                 VALUES (
                     $1, $2, $3, 0,
-                    $4, $5, $6::vector, $7::jsonb,
+                    $4, $9, $5, $6::vector, $7::jsonb,
                     'collapse_handler', TRUE, $8, $8
                 )
                 ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
@@ -430,6 +430,7 @@ async def _write_summary_and_delete(
                               embedding     = EXCLUDED.embedding,
                               metadata      = EXCLUDED.metadata,
                               text_preview  = EXCLUDED.text_preview,
+                              chunk_text    = EXCLUDED.chunk_text,
                               is_summary    = TRUE,
                               updated_at    = EXCLUDED.updated_at
                 RETURNING id
@@ -442,6 +443,10 @@ async def _write_summary_and_delete(
                 vector_str,
                 metadata_json,
                 now,
+                # Collapse summaries are retrieval targets like any other row,
+                # so they carry the full summary text (poindexter#1033) rather
+                # than only the 500-char display preview above.
+                summary_text or summary_id,
             )
             if summary_row is None:
                 raise RuntimeError(

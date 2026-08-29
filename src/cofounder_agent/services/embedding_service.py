@@ -118,6 +118,12 @@ class EmbeddingService:
                 embedding=embedding,
                 metadata={"title": title},
                 text_preview=combined[:500],
+                # Store what was actually embedded, not a 500-char slice of it
+                # (poindexter#1033). ``combined`` is already truncated to
+                # content[:2000] by this path — see the dual-writer note in
+                # embed_all_posts; PostsTap re-chunks the same post at full
+                # fidelity on its next run.
+                chunk_text=combined,
                 writer="worker",
             )
 
@@ -259,6 +265,8 @@ class EmbeddingService:
                     content_hash=content_hashes[i],
                     embedding=embeddings[i],
                     metadata={"title": title},
+                    text_preview=combined_texts[i][:500],
+                    chunk_text=combined_texts[i],
                 )
                 embedded += 1
             except Exception as e:

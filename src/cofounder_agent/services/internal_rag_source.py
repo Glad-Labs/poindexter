@@ -294,7 +294,7 @@ class InternalRagSource:
                     vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
                     rows = await conn.fetch(
                         """
-                        SELECT source_id, text_preview
+                        SELECT source_id, COALESCE(chunk_text, text_preview) AS snippet
                           FROM embeddings
                          WHERE source_table = $1
                            AND created_at > NOW() - make_interval(days => $2)
@@ -318,7 +318,7 @@ class InternalRagSource:
             if not rows:
                 rows = await conn.fetch(
                     """
-                    SELECT source_id, text_preview
+                    SELECT source_id, COALESCE(chunk_text, text_preview) AS snippet
                       FROM embeddings
                      WHERE source_table = $1
                      ORDER BY created_at DESC
@@ -326,7 +326,10 @@ class InternalRagSource:
                     """,
                     st, limit,
                 )
-        return [(str(r["source_id"]), r["text_preview"] or "", []) for r in rows]
+        # Snippets are fed to _distill_topic_angle (an LLM), so they take the
+        # full chunk rather than the 500-char display preview
+        # (poindexter#1033). COALESCE covers rows not yet backfilled.
+        return [(str(r["source_id"]), r["snippet"] or "", []) for r in rows]
 
     async def _distill_topic_angle(
         self,

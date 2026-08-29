@@ -67,6 +67,16 @@ class MemoryHit:
     writer: str | None
     origin_path: str | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Full text of the embedded chunk (poindexter#1033). ``text_preview`` is a
+    # 500-char DISPLAY field — dashboards, CLI and voice render 80-240 chars of
+    # it — while this carries the whole chunk the vector was computed over, for
+    # consumers that feed retrieved text to an LLM. Empty string when the row
+    # predates the backfill; consumers fall back to ``text_preview``.
+    # Before #1033 the two search paths disagreed: the direct-pgvector path put
+    # a 500-char preview here and the rag_engine path put ``node.text``. They
+    # now agree — ``text_preview`` is always a preview, ``chunk_text`` always
+    # the full payload.
+    chunk_text: str = ""
     # Display-only 0-1 score for surfaces that render a "similarity" to a
     # human/LLM (e.g. the writer's internal-linking prompt). Set only on the
     # rerank path — see `_search_via_rag_engine` — where `.similarity` is a raw
@@ -85,6 +95,16 @@ class MemoryHit:
             f"[{self.similarity:.3f}] {self.source_table}/{self.source_id}"
             f"{writer_str}: {self.text_preview[:80]}"
         )
+
+
+def _node_preview(node: Any) -> str:
+    """Clip a retrieved node's text down to the 500-char display preview.
+
+    Mirrors what ``MemoryClient.store`` writes into ``embeddings.text_preview``
+    (first 500 chars, newlines flattened) so a hit built from the rag_engine
+    path renders identically to one built from the direct-pgvector path.
+    """
+    return (getattr(node, "text", "") or "")[:500].replace("\n", " ").strip()
 
 
 def _rerank_logit_to_similarity(logit: float) -> float:
@@ -412,6 +432,17 @@ class MemoryClient:
             merged_metadata["tags"] = [t for t in tags if t]
 
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
+        # Two payloads, deliberately (poindexter#1033):
+        #   chunk_text   — the FULL embedded chunk. This is what retrieval
+        #                  hands consumers and what the cross-encoder reranks.
+        #                  Storing only the preview meant the vector was
+        #                  computed over ~4.3k median chars while the reader
+        #                  got 500 of them (87.4% of the post corpus discarded),
+        #                  and in 40% of sampled queries the matching passage
+        #                  sat outside that window entirely.
+        #   text_preview — the SHORT display field, unchanged. Console, CLI and
+        #                  voice render an 80-180 char snippet; they must not
+        #                  pull whole chunks into memory to do it.
         preview = text[:500].replace("\n", " ").strip()
         now = datetime.now(timezone.utc)
         origin = origin_path or source_id
@@ -421,14 +452,16 @@ class MemoryClient:
             await conn.execute(
                 """
                 INSERT INTO embeddings (source_table, source_id, chunk_index,
-                                        content_hash, text_preview,
+                                        content_hash, text_preview, chunk_text,
                                         embedding_model, embedding, metadata,
                                         writer, origin_path,
                                         created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8::jsonb, $9, $10, $11, $11)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, $9::jsonb,
+                        $10, $11, $12, $12)
                 ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
                 DO UPDATE SET content_hash = EXCLUDED.content_hash,
                               text_preview = EXCLUDED.text_preview,
+                              chunk_text   = EXCLUDED.chunk_text,
                               embedding    = EXCLUDED.embedding,
                               metadata     = EXCLUDED.metadata,
                               writer       = EXCLUDED.writer,
@@ -440,6 +473,7 @@ class MemoryClient:
                 chunk_index,
                 final_hash,
                 preview,
+                text,
                 final_model,
                 vector_str,
                 json.dumps(merged_metadata),
@@ -572,7 +606,7 @@ class MemoryClient:
 
         args.append(limit)
         sql = f"""
-            SELECT source_table, source_id, text_preview, metadata,
+            SELECT source_table, source_id, text_preview, chunk_text, metadata,
                    writer, origin_path,
                    1 - (embedding <=> $1::vector) as similarity
             FROM embeddings
@@ -599,6 +633,11 @@ class MemoryClient:
                     source_id=row["source_id"],
                     similarity=float(row["similarity"]),
                     text_preview=row["text_preview"] or "",
+                    # .get(): this column post-dates the row shape some
+                    # callers hand-build, and is NULL on every row written
+                    # before the poindexter#1033 migration. Both fall back
+                    # to the preview rather than KeyError-ing.
+                    chunk_text=row.get("chunk_text") or row["text_preview"] or "",
                     writer=row["writer"],
                     origin_path=row["origin_path"],
                     metadata=meta or {},
@@ -939,7 +978,14 @@ class MemoryClient:
                     source_id=str(md.get("source_id", "")),
                     similarity=score,
                     display_similarity=display_similarity,
-                    text_preview=getattr(nws.node, "text", "") or "",
+                    # node.text is the FULL chunk since poindexter#1033, so
+                    # clip it back down for the display field rather than
+                    # letting whole chunks reach dashboards/CLI/voice. Before
+                    # #1033 this line put node.text (then a 500-char preview)
+                    # straight into text_preview, which is why the two search
+                    # paths used to disagree about what the field meant.
+                    text_preview=_node_preview(nws.node),
+                    chunk_text=getattr(nws.node, "text", "") or "",
                     writer=md.get("writer"),
                     origin_path=md.get("origin_path"),
                     metadata={
