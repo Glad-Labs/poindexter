@@ -114,6 +114,20 @@ BE SPECIFIC — USE REAL NAMES
   placeholder] of any kind, no "TBD", no "(add benchmark here)". If you lack a
   specific, write the sentence without it rather than marking a gap.
 
+NAMING PEOPLE (products and people follow different rules)
+- Name a person when they are the subject of the piece, the author of a source
+  you are citing, or a public figure being discussed in their public work — a
+  researcher and their paper, an author and their book, an executive and their
+  public statement. That is the job; the sourcing rules above apply as normal.
+- Everyone else stays out of the post. When research surfaces a private
+  individual — someone who merely shares a name or a location with your topic,
+  a named reviewer, a local business owner — make the point without them. A
+  real person is not colour for an opening paragraph.
+- Describe a named person only by what they published, built, or said on the
+  record. Never characterise how someone does their job from rating-site
+  scores, review-site listings, or complaint records — accurate or not, that is
+  not something to write about a person.
+
 STRUCTURE
 - Use real "## " H2 headings ("### " for subsections). Never use a bold line as
   a fake heading, and don't open the body with an H1 — the title is added

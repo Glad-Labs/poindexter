@@ -229,3 +229,41 @@ def test_generate_prompt_bans_bracketed_placeholders() -> None:
     assert "be specific" in g          # the BE SPECIFIC — USE REAL NAMES block
     assert "placeholder" in g          # forbids bracketed fill-in-the-blank tokens
     assert "name the actual" in g      # affirmatively licenses naming grounded entities
+
+
+def test_generate_prompt_bounds_naming_people_separately_from_products() -> None:
+    """The writer must not use a private individual as opening colour.
+
+    A draft reached awaiting_approval at Q:94 having named a real, non-public
+    person surfaced by web research purely through a shared surname, and
+    characterised how they do their job from their rating-site score
+    (poindexter#1009). No rail objected, and none would: every content rail we
+    have asks whether a claim is TRUE, and these claims were true. Accuracy was
+    never the issue.
+
+    The prompt's own "BE SPECIFIC — USE REAL NAMES" block is what grants the
+    naming licence ("Naming an entity that already appears in your topic or
+    context is NOT fabrication — it is the job"), which is right for products
+    and wrong for people. So the boundary has to live beside it, and it has to
+    stay: this pins the three cases apart — name people who are the subject or
+    the source, leave private individuals out, and never grade a person from
+    reputation-site data.
+
+    This is the writer-side mitigation only. The `qa.person_mention` rail in
+    poindexter#1009 is the actual guard; a prompt directive is not a gate.
+    """
+    pm = UnifiedPromptManager()
+    # Collapse whitespace: the pack is hard-wrapped, so a phrase like "private
+    # individual" is split across lines. These assertions are about meaning,
+    # and must survive an incidental reflow of the prompt.
+    raw = pm.prompts["atoms.two_pass_writer.generate_with_context"]["template"]
+    g = " ".join(raw.lower().split())
+    # The boundary exists and is about people, not entities in general.
+    assert "naming people" in g
+    # Naming is permitted for the subject/source/public figure...
+    assert "public figure" in g
+    # ...and refused for private individuals surfaced incidentally.
+    assert "private individual" in g
+    # The reputation-data half stands on its own — it applies even to a public
+    # figure, so it must not be phrased as a sub-clause of the private-person rule.
+    assert "rating-site" in g or "review-site" in g
