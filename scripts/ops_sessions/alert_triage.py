@@ -25,6 +25,11 @@ _TITLE_PAGED = " paged "
 QUIET_DAYS_SETTING = "alert_triage_probe_issue_quiet_days"
 QUIET_DAYS_DEFAULT = 7
 
+# Applied when a probe-bug issue is closed because the alert is REAL but is
+# already tracked by a properly-scoped issue (often cross-repo, in poindexter).
+# See tracked_elsewhere_alertnames for why this cannot just be "closed".
+TRACKED_ELSEWHERE_LABEL = "tracked-elsewhere"
+
 
 def build_classification_prompt(
     alertname: str, n_paged: int, n_total: int, dispatch_result: str, probe_src: str
@@ -103,6 +108,46 @@ def open_probe_issues() -> list[dict] | None:
     except json.JSONDecodeError:
         return None
     return [r for r in rows if alertname_from_title(r.get("title", ""))]
+
+
+def tracked_elsewhere_alertnames() -> set[str]:
+    """Alertnames whose triage already concluded — do not file them again.
+
+    Two different reasons close a probe-bug issue, and they need opposite
+    behaviour afterwards:
+
+    - **Closed because the alert went quiet.** If it comes back, we want a
+      fresh issue. ``close_resolved`` handles that, and re-filing is correct.
+    - **Closed because the alert is real and tracked elsewhere** — usually a
+      properly-scoped issue in ``Glad-Labs/poindexter`` that this session
+      cannot see. The alert keeps firing by design, so "has it gone quiet?"
+      will never be true and the filer re-files a duplicate every single day.
+
+    Closing alone cannot distinguish them, so the closer applies
+    ``tracked-elsewhere`` and this reads it back. Observed 2026-08-29: eight
+    duplicates were closed against poindexter#914/#967/#992/#1013/#1019/#1035,
+    and the very next run re-filed ``critic_model_collision`` (#3476) because
+    it is still firing 40x/48h — correctly, by the old rules.
+
+    This is dedupe across repos, not suppression: the alert still fires, still
+    pages, and still shows on the dashboards. Only the duplicate GitHub issue
+    is skipped, and un-labelling the closed issue re-arms filing.
+
+    Fails toward filing (empty set + a loud log): a duplicate issue is a
+    nuisance, whereas silently never filing is the failure mode this whole
+    session exists to prevent.
+    """
+    proc = c.gh(
+        "issue", "list", "--repo", REPO, "--state", "closed",
+        "--label", TRACKED_ELSEWHERE_LABEL, "--limit", "500", "--json", "title",
+    )
+    if proc.returncode != 0:
+        return set()
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return set()
+    return {n for n in (alertname_from_title(r.get("title", "")) for r in rows) if n}
 
 
 async def quiet_context() -> tuple[int, set[str]]:
@@ -218,6 +263,10 @@ def main() -> int:
     # would otherwise keep suppressing its own re-file for another whole day.
     resolved = close_resolved(open_issues, firing, quiet_days, log)
     tracked = {alertname_from_title(i["title"]) for i in open_issues} - resolved
+    # An alert that is real, still firing, and already tracked by a
+    # properly-scoped issue elsewhere would otherwise be re-filed every day.
+    concluded = tracked_elsewhere_alertnames()
+    tracked |= concluded
 
     filed = 0
     skipped = 0
@@ -260,8 +309,9 @@ def main() -> int:
                            f"_Filed by the alert-triage ops session (local-model triage)._")
             filed += 1
     log.info(
-        "alerts=%d filed=%d closed_quiet=%d skipped_already_tracked=%d unparseable=%d",
-        len(alerts), filed, len(resolved), skipped, unparseable,
+        "alerts=%d filed=%d closed_quiet=%d skipped_already_tracked=%d "
+        "tracked_elsewhere=%d unparseable=%d",
+        len(alerts), filed, len(resolved), skipped, len(concluded), unparseable,
     )
     return 0
 

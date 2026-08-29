@@ -54,6 +54,25 @@ is commented and closed — and because closing happens _before_ filing in the
 same run, an alert that returns gets its stale issue closed and a fresh one
 opened on the same pass.
 
+**Two close reasons, opposite consequences.** Closing alone is not enough,
+because a probe-bug issue gets closed for two different reasons:
+
+| Why it was closed                                                                          | Should it re-file if the alert fires again?           | Mechanism                                    |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------- | -------------------------------------------- |
+| The alert went quiet                                                                       | **Yes** — the fault came back and you want to know    | close on quiet (above)                       |
+| The alert is real but tracked by a properly-scoped issue, often cross-repo in `poindexter` | **No** — it fires by design until that issue is fixed | close **with the `tracked-elsewhere` label** |
+
+The second case is not hypothetical: on 2026-08-29 eight duplicates were closed
+against poindexter#914/#967/#992/#1013/#1019/#1035, and the very next run
+re-filed `critic_model_collision` (#3476) — correctly under the old rules, since
+it is real and still firing 40x/48h, so "has it gone quiet?" is never true for
+it. Without the label that repeats every single day.
+
+So when you close a probe-bug issue as a duplicate, **apply `tracked-elsewhere`**.
+This is dedupe across repos, not suppression — the alert still fires, still
+pages, and still shows on the dashboards; only the duplicate GitHub issue is
+skipped. Removing the label re-arms filing.
+
 Verify what a run would do without waiting for 01:00:
 
 ```bash
@@ -61,7 +80,7 @@ systemctl start poindexter-session@alert-triage.service
 ```
 
 The summary line reports both directions:
-`alerts=N filed=N closed_quiet=N skipped_already_tracked=N unparseable=N`.
+`alerts=N filed=N closed_quiet=N skipped_already_tracked=N tracked_elsewhere=N unparseable=N`.
 
 **The lookup deliberately avoids `gh issue list --search`.** The GitHub search
 index lags writes by minutes, so a search-based lookup can miss an issue that
