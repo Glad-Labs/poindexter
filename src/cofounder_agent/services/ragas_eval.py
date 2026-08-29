@@ -316,7 +316,7 @@ async def _build_ragas_models(
     # parse — even on the fix_output_format retry. All Ragas 0.4.x
     # internal prompts (faithfulness_statements, nli_statements, etc.)
     # expect bare JSON, so JSON-mode is safe for all three metrics. See
-    # Glad-Labs/glad-labs-stack#1910.
+    # Glad-Labs/poindexter#1910.
     # num_predict is load-bearing for a thinking judge — the library default
     # cuts it off mid-reasoning and Ollama returns EMPTY content, which Ragas
     # surfaces as the -1.0 sentinel rather than as a starved call. See
