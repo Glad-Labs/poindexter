@@ -1472,6 +1472,9 @@ DEFAULTS: dict[str, str] = {
     # (unlike rag_rerank_enabled below). Default true: glad-labs-stack#2133
     # closed the drift between this defaulting false and CLAUDE.md
     # documenting the three-mode RAG stack as live/stable on prod.
+    'rag_graph_expand_enabled': 'false',
+    'rag_graph_expand_max_neighbours': '10',
+    'rag_graph_expand_seed_k': '5',
     'rag_hybrid_enabled': 'true',
     'rag_min_similarity': '0.3',
     'rag_rerank_enabled': 'false',
@@ -1483,6 +1486,13 @@ DEFAULTS: dict[str, str] = {
     # (services/rag_excerpt.py) spends those tokens on the passage that
     # matched. Raise it with a longer-window reranker model; 0 = uncapped.
     'rag_rerank_max_chars': '2000',
+    'retrieval_eval_golden_size': '120',
+    'retrieval_eval_min_chunk_chars': '1200',
+    'retrieval_eval_per_source_cap': '60',
+    'retrieval_eval_question_max_tokens': '80',
+    'retrieval_eval_question_model': 'qwen2.5:7b',
+    'retrieval_eval_seed': '1033',
+    'retrieval_eval_span_chars': '400',
     'rag_rrf_k': '60',
     # CSV of embeddings.source_table values RAG retrieval may draw from. MUST
     # default to content-only ('posts'): the corpus is ~⅔ claude_sessions /
@@ -4431,6 +4441,13 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
     'rag_rerank_max_chars': {'owner': 'rag_engine', 'value_type': 'integer'},
+    'retrieval_eval_golden_size': {'owner': 'retrieval_eval', 'value_type': 'integer'},
+    'retrieval_eval_min_chunk_chars': {'owner': 'retrieval_eval', 'value_type': 'integer'},
+    'retrieval_eval_per_source_cap': {'owner': 'retrieval_eval', 'value_type': 'integer'},
+    'retrieval_eval_question_max_tokens': {'owner': 'retrieval_eval', 'value_type': 'integer'},
+    'retrieval_eval_question_model': {'owner': 'retrieval_eval', 'value_type': 'string'},
+    'retrieval_eval_seed': {'owner': 'retrieval_eval', 'value_type': 'integer'},
+    'retrieval_eval_span_chars': {'owner': 'retrieval_eval', 'value_type': 'integer'},
     'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},
@@ -4499,6 +4516,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_internal_grounding_enabled': {
         'owner': 'two_pass_writer', 'value_type': 'boolean',
     },
+    'rag_graph_expand_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
+    'rag_graph_expand_max_neighbours': {'owner': 'rag_engine', 'value_type': 'integer'},
+    'rag_graph_expand_seed_k': {'owner': 'rag_engine', 'value_type': 'integer'},
     'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_engine_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},

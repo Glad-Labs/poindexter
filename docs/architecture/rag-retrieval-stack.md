@@ -107,6 +107,100 @@ reads one. `0` disables the cap.
 > raise `draft_generation_num_ctx` alongside it, or the draft loses the room it
 > needs to be written.
 
+## Measuring retrieval — the eval harness (poindexter#1033 step 2)
+
+`scripts/eval_retrieval.py` + `services/retrieval_eval.py` answer the question
+neither existing evaluator can: **given the whole corpus, does retrieval
+surface the chunk that holds the answer, and does the consumer receive that
+text?**
+
+- `ragas evaluate` scores _generated content_ given whatever retrieval returned.
+  A missed document looks like a thin answer.
+- `model_eval`'s reranker scorer ranks a _fixed candidate list_. It cannot see a
+  candidate the retriever never produced.
+
+### The golden set
+
+`services/model_eval/golden_sets/retrieval.py` mines cases from the live
+corpus: pick a real chunk, pick a real span inside it, ask a **pinned local
+model** to write a question that span answers. Cases are labelled by where the
+span sits:
+
+- `head` — span starts inside the first 500 chars (the pre-#1033 payload)
+- `deep` — span starts past it
+
+**Reporting recall per region is the point.** The obvious eval (post title → its
+own chunk) probes only a document's opening and would have scored clean straight
+through the #1033 truncation bug.
+
+Question generation deliberately passes `pool=None` to `ollama_chat_text` so it
+takes the direct-httpx path to local Ollama. Passing a pool routes through
+`dispatch_complete` → LiteLLM → **Anthropic** on the `budget` tier, i.e. a
+120-case golden-set build would spend real API money writing test questions.
+
+Two filters run on every generated question, and they are not cosmetic — they
+rejected **42 of 162** candidates on the first live build:
+
+- **meta** — the model was told not to say "passage"/"excerpt"/"the text", and
+  when it disobeys the question names no subject ("What does the passage suggest
+  about leverage?"). A miss there measures the question, not the retriever.
+- **vague** — fewer than 2 content words shared with the span. _Caveat: this
+  tilts the set slightly toward lexical retrieval. The floor is deliberately low
+  and `question_span_overlap` is recorded per case so the tilt is measurable._
+
+### Metrics
+
+`recall@{1,5,10}` / `MRR` / `nDCG@5`, plus two payload-aware ones:
+
+- `payload_contains_span` — did the **delivered text** contain the answer? A
+  correctly-ranked hit whose payload stops before the answer is not a hit for
+  any consumer.
+- `legacy_payload_contains_span` — would the pre-#1033 500-char preview have
+  contained it? The gap between these two is what the payload repair bought,
+  measured on today's corpus without reverting anything.
+
+Headline: **`deep_head_recall_gap`** = head recall@5 − deep recall@5.
+
+### Two traps this harness must keep guarding against
+
+**1. It must mirror the real consumer, not the config.** `score_retrieval`
+deliberately does **not** pass `site_config` to `get_rag_retriever`, because the
+entire settings block there is gated on `if site_config is not None`. Passing
+one activates `rag_source_filter` (`'posts'` on this install) — the first run did
+exactly that and scored `claude_sessions`/`memory`/`audit` at a flat `0.000`
+across 82 of 120 cases. That was not a quality finding; it was a scope no
+consumer uses. `MemoryClient._search_via_rag_engine` is the **only** production
+caller and it passes explicit parameters with no config object, so the eval
+reproduces that shape.
+
+> Corollary worth knowing on its own: **`rag_source_filter` binds for nobody in
+> production.** Changing it has no effect on any live retrieval path.
+
+**2. A degraded stage must not be silently measured as an enabled one.** When
+`rerank=True` but `sentence_transformers` is absent (it is an optional poetry
+extra, so a host run lacks it), `get_rag_retriever` degrades to passthrough with
+only a WARNING. Correct for production, wrong for an eval: the run gets labelled
+"prod" while measuring hybrid-without-rerank, and the two variants come back
+byte-identical — which reads as "the reranker does nothing" instead of "the
+reranker never ran." `score_retrieval` detects this and relabels the variant
+`[rerank-DEGRADED]`.
+
+Consequence: **a host run cannot measure the reranker.** Run in the worker
+container (or a throwaway container off the worker image) for a
+production-faithful number.
+
+### Running it
+
+```bash
+docker cp scripts/eval_retrieval.py poindexter-worker:/tmp/eval_retrieval.py
+docker exec poindexter-worker python /tmp/eval_retrieval.py --build --run --compare
+```
+
+`--build` regenerates the golden set (one small local LLM call per case),
+`--run` scores it, `--compare` also scores vector-only and hybrid-without-rerank
+against the identical cases, `--persist` writes to `audit_log`
+(`event_type='retrieval_eval'`).
+
 ## Path A — Legacy inline pgvector (default)
 
 `poindexter.memory.MemoryClient.search` embeds the query once via

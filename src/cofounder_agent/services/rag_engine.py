@@ -360,6 +360,7 @@ async def get_rag_retriever(
     source_filter: list[str] | None = None,
     hybrid: bool | None = None,
     rerank: bool | None = None,
+    graph_expand: bool | None = None,
     embed_base_url: str | None = None,
 ) -> Any:
     """Return a LlamaIndex retriever wired to our pgvector schema.
@@ -412,6 +413,8 @@ async def get_rag_retriever(
         )
         if hybrid is None:
             hybrid = bool(site_config.get_bool("rag_hybrid_enabled", False))
+        if graph_expand is None:
+            graph_expand = bool(site_config.get_bool("rag_graph_expand_enabled", False))
         if rerank is None:
             rerank = bool(site_config.get_bool("rag_rerank_enabled", False))
         try:
@@ -456,6 +459,9 @@ async def get_rag_retriever(
         embed_options=embed_options,
     )
 
+    if graph_expand is None:
+        graph_expand = False
+
     retriever = base
     if hybrid:
         hybrid_cls = _build_hybrid_retriever_class()
@@ -465,6 +471,31 @@ async def get_rag_retriever(
             top_k=max(top_k * 4, 20) if rerank else top_k,
             min_similarity=min_similarity,
             source_filter=source_filter,
+            site_config=site_config,
+        )
+    if graph_expand:
+        # Slotted BEFORE rerank on purpose: expansion ADDS candidates the
+        # lexical/vector stages could not reach, and the cross-encoder is what
+        # decides whether a neighbour earns its place. Expanding after rerank
+        # would append unranked documents below a ranked list.
+        graph_cls = _build_graph_expanded_retriever_class()
+        # Budget = the inner page PLUS room for neighbours. Sizing this equal to
+        # the inner page (the original bug) makes expansion a no-op, because the
+        # inner already fills its page and the neighbours are appended below it.
+        #
+        # Note the shape of the win this enables: neighbours enter BELOW every
+        # matched result, so with no reranker downstream they can only fill
+        # slots the inner left empty. It is the cross-encoder that promotes a
+        # good neighbour above a weak match — which is why graph expansion is
+        # only expected to move recall when rerank is also on.
+        _inner_page = max(top_k * 4, 20) if rerank else top_k
+        _graph_room = int(
+            site_config.get_int("rag_graph_expand_max_neighbours", 10)
+        ) if site_config is not None else 10
+        retriever = graph_cls(
+            inner=retriever,
+            pool=pool,
+            top_k=_inner_page + _graph_room,
             site_config=site_config,
         )
     if rerank:
@@ -805,3 +836,156 @@ __all__ = [
 
 # Used by the type checker / for documentation.
 _ = Iterable  # noqa: F841
+
+
+# ---------------------------------------------------------------------------
+# Graph expansion — traverse the curated knowledge_edges graph (poindexter#1035)
+# ---------------------------------------------------------------------------
+
+
+def _build_graph_expanded_retriever_class():
+    """Retriever that adds one-hop neighbours of its inner results.
+
+    The idea is cognee's — traverse, then rank — but the graph here is the
+    ``[[wiki-link]]`` structure the operator already wrote by hand across the
+    memory corpus, so it costs a regex pass and no LLM at all (see
+    ``services/knowledge_graph``). Cognee would have re-derived the same edges
+    with a structured-extraction call per chunk.
+
+    Lazy-built like its siblings so this module still imports without
+    llama-index installed.
+    """
+    from llama_index.core.retrievers import BaseRetriever
+    from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+
+    class GraphExpandedRetriever(BaseRetriever):
+        def __init__(self, *, inner, pool, top_k, site_config=None):
+            super().__init__()
+            self._inner = inner
+            self._pool = pool
+            self._top_k = top_k
+            self._site_config = site_config
+
+        def _int_setting(self, key: str, default: int) -> int:
+            """Read an int setting, warning loudly if the stored value is junk.
+
+            Mirrors ``_max_chars`` on the rerank retriever: a garbage
+            app_settings value must not silently restore the default and leave
+            the operator believing their number is live
+            (feedback_no_silent_defaults).
+            """
+            if self._site_config is None:
+                return default
+            try:
+                return int(self._site_config.get_int(key, default))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[rag/graph] %s unreadable (%s) — falling back to %d; "
+                    "fix the app_settings value.", key, e, default,
+                )
+                return default
+
+        def _max_neighbours(self) -> int:
+            return self._int_setting("rag_graph_expand_max_neighbours", 10)
+
+        def _seed_k(self) -> int:
+            return self._int_setting("rag_graph_expand_seed_k", 5)
+
+        async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            results = await self._inner.aretrieve(query_bundle)
+            if not results:
+                # Nothing to expand FROM. Returning early matters: seeding an
+                # empty traversal would fetch the globally most-linked-to
+                # documents and present them as answers to a query that
+                # matched nothing.
+                return results
+
+            from services.knowledge_graph import neighbours
+
+            seeds: list[tuple[str, str]] = []
+            present: set[tuple[str, str]] = set()
+            for nws in results:
+                md = dict(getattr(nws.node, "metadata", {}) or {})
+                key = (str(md.get("source_table", "")), str(md.get("source_id", "")))
+                present.add(key)
+                if len(seeds) < self._seed_k():
+                    seeds.append(key)
+
+            try:
+                hops = await neighbours(
+                    self._pool, seeds, limit=self._max_neighbours()
+                )
+            except Exception as e:  # noqa: BLE001
+                # Expansion is additive: if the graph is unavailable the base
+                # results are still correct, so degrade rather than fail the
+                # query. Logged loudly so a missing table is not silent.
+                logger.warning("[rag/graph] expansion failed, returning base results: %s", e)
+                return results
+
+            hops = [h for h in hops if (h[0], h[1]) not in present]
+            if not hops:
+                return results
+
+            rows = await self._pool.fetch(
+                """
+                SELECT e.source_table, e.source_id, e.text_preview, e.chunk_text,
+                       e.metadata, e.writer, e.origin_path
+                  FROM embeddings e
+                  JOIN unnest($1::text[], $2::text[]) AS s(t, i)
+                    ON e.source_table = s.t AND e.source_id = s.i
+                 WHERE e.chunk_index = 0
+                """,
+                [h[0] for h in hops],
+                [h[1] for h in hops],
+            )
+
+            weight_by = {(h[0], h[1]): h[2] for h in hops}
+            # Graph neighbours enter BELOW every retrieved result. They were not
+            # matched by the query, only vouched for by something that was; the
+            # reranker downstream is what promotes a good one. Scoring them
+            # alongside real similarities would let a well-connected document
+            # outrank an actual match.
+            floor = min((float(r.score or 0.0) for r in results), default=0.0)
+            added: list[NodeWithScore] = []
+            for row in rows:
+                metadata = _coerce_metadata(row.get("metadata"))
+                key = (row["source_table"], row["source_id"])
+                metadata.update({
+                    "source_table": row["source_table"],
+                    "source_id": row["source_id"],
+                    "writer": row.get("writer"),
+                    "origin_path": row.get("origin_path"),
+                    "graph_expanded": True,
+                    "graph_weight": weight_by.get(key, 0.0),
+                })
+                added.append(
+                    NodeWithScore(
+                        node=TextNode(
+                            text=_retrieval_text(row),
+                            metadata=metadata,
+                            id_=f"{row['source_table']}:{row['source_id']}",
+                        ),
+                        score=floor - 1e-6,
+                    )
+                )
+
+            logger.info(
+                "[rag/graph] expanded %d base result(s) with %d neighbour(s) "
+                "(cap %d)",
+                len(results), len(added), self._top_k,
+            )
+            # self._top_k is the graph layer's OWN budget and must exceed the
+            # inner retriever's page, or this slice silently discards every
+            # neighbour just computed. It did exactly that on the first run —
+            # the inner returned a full page of top_k, so `added` was appended
+            # and then truncated away, and the graph-on / graph-off arms came
+            # back byte-identical. See get_rag_retriever for how the budget is
+            # sized against the downstream reranker.
+            return (results + added)[: self._top_k]
+
+        def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            return asyncio.get_event_loop().run_until_complete(
+                self._aretrieve(query_bundle)
+            )
+
+    return GraphExpandedRetriever

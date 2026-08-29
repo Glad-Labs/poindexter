@@ -578,7 +578,13 @@ class TestGroupingMakesSense:
         # writer_rag_context_snippet_max_chars raise (2026-08-29) — a comment
         # on a key already inside the tolerated writer_rag interleave,
         # recording why 500 could never bind and what bounds the new value.
-        assert span < 442, (
+        # Bumped 442->460 for the poindexter#1033 step-2/3 keys (2026-08-29):
+        # rag_graph_expand_{enabled,max_neighbours,seed_k} seated beside
+        # rag_hybrid_enabled (graph expansion is a retrieval stage stacked with
+        # hybrid and rerank), and the retrieval_eval_* block seated beside
+        # rag_rerank_max_chars. Both sit inside the RAG-section interleave this
+        # span already tolerates rather than opening a new one.
+        assert span < 460, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

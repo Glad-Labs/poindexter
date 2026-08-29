@@ -35,3 +35,14 @@ def mrr(ranked_is_relevant: list[bool]) -> float:
         if is_rel:
             return 1.0 / (i + 1)
     return 0.0
+
+
+def recall_at_k(ranked_is_relevant: list[bool], k: int) -> float:
+    """1.0 when any relevant item appears in the first ``k``, else 0.0.
+
+    Binary because the retrieval golden set has exactly one gold chunk per
+    case: the question was written from that chunk, so "did we get it back"
+    is a yes/no. Graded recall would need multi-label ground truth we do not
+    have and would have to invent — see ``services/retrieval_eval.py``.
+    """
+    return 1.0 if any(ranked_is_relevant[:k]) else 0.0

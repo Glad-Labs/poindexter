@@ -172,6 +172,9 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("quality", "quality"),
     ("deepeval", "quality"),
     ("ragas", "quality"),
+    # Retrieval-eval harness (poindexter#1033 step 2) — it scores retrieval,
+    # so it sits with the other evaluators rather than with rag_* runtime knobs.
+    ("retrieval_eval", "quality"),
     ("self_consistency", "quality"),
     ("unlinked", "quality"),
     ("min_curation", "quality"),
