@@ -31,10 +31,16 @@ No embedding calls are made. Vectors are never touched.
 
 Usage
 -----
-    # in-container (the DSN + Ollama endpoint live there)
-    docker exec poindexter-worker python /app/scripts/backfill_embeddings_chunk_text.py --dry-run
-    docker exec poindexter-worker python /app/scripts/backfill_embeddings_chunk_text.py --apply
-    docker exec poindexter-worker python /app/scripts/backfill_embeddings_chunk_text.py --apply --tap posts
+Run it in the worker container — that is where the DSN and the importable
+``services.*`` / ``plugins.*`` trees live. The container's ``/app`` is
+``src/cofounder_agent``, NOT the repo root, so repo-root ``scripts/`` is not
+mounted: copy the file in first.
+
+    docker cp scripts/backfill_embeddings_chunk_text.py \
+        poindexter-worker:/tmp/backfill_chunk_text.py
+    docker exec poindexter-worker python /tmp/backfill_chunk_text.py --dry-run
+    docker exec poindexter-worker python /tmp/backfill_chunk_text.py --apply
+    docker exec poindexter-worker python /tmp/backfill_chunk_text.py --apply --tap posts
 """
 
 from __future__ import annotations
@@ -57,8 +63,7 @@ async def main() -> int:
     args = ap.parse_args()
 
     import asyncpg
-
-    from plugins.registry import get_plugins
+    from plugins.registry import get_core_samples, get_taps
     from services.taps._chunking import chunk_text, content_hash
 
     dsn = (
@@ -82,7 +87,19 @@ async def main() -> int:
     )
     print(f"chunk max_chars = {max_chars}  (app_settings.tap_chunk_max_chars)")
 
-    taps = [t for t in get_plugins("tap")]
+    # Mirror how services/taps/runner.py::run_all enumerates taps — entry-point
+    # taps plus the core samples — so this backfill covers exactly the set that
+    # writes the rows. Dedup by name: the two sources overlap, and unlike the
+    # runner (whose per-doc content_hash dedup makes a second pass a no-op) this
+    # script would process every document twice and double-count the report.
+    seen: set[str] = set()
+    taps = []
+    for t in list(get_taps()) + list(get_core_samples().get("taps", [])):
+        n = getattr(t, "name", t.__class__.__name__)
+        if n in seen:
+            continue
+        seen.add(n)
+        taps.append(t)
     if args.tap:
         taps = [t for t in taps if getattr(t, "name", "") == args.tap]
         if not taps:
