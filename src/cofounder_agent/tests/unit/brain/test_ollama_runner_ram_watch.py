@@ -276,3 +276,20 @@ class TestUrlSchemeGuard:
         )
         assert out["status"] == "exporter_unreachable"
         assert out["ok"] is False
+
+
+def test_gpu_lock_key_matches_the_worker_constant():
+    """The brain duplicates this int64 by hand — pin it to the worker.
+
+    This probe gates on `pg_advisory_lock(GPU_ADVISORY_LOCK_KEY)` being free
+    before recycling an ollama runner. The brain runs stdlib + asyncpg and
+    cannot import the worker package, so the value is copied. A copy that
+    drifts does not raise — it reads "GPU idle" during a render and recycles a
+    live model server mid-generation.
+
+    Added 2026-08-28 by `scripts/ci/gpu_lock_key_contract_lint.py`, which
+    found this duplicate unpinned.
+    """
+    from cofounder_agent.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
+
+    assert ow.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY

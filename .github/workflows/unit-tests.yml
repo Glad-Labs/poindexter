@@ -355,6 +355,16 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
 
+      # GPU advisory-lock key is a five-party contract, and the two brain
+      # consumers duplicate the int64 BY HAND (the brain runs stdlib+asyncpg
+      # and cannot import the worker). A diverged copy never raises — the
+      # health probe stops seeing render sessions, and the recycle probes read
+      # "GPU idle" mid-render and bounce a live model server. Found a real
+      # unpinned sixth copy the first time it ran (#3441's runner probe).
+      - name: GPU lock-key contract lint
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/gpu_lock_key_contract_lint.py
+
       # CLI audit-sink guard: a `poindexter <cmd>` that opens a bare asyncpg
       # pool has no global AuditLogger, so every finding its services emit is
       # DROPPED — silently (no failing test, just an operator page that never
@@ -697,6 +707,8 @@ jobs:
         run: python scripts/ci/atom_independence_lint.py
       - name: CLI audit-sink lint (findings reach audit_log from the CLI)
         run: python scripts/ci/cli_audit_sink_lint.py
+      - name: GPU lock-key contract lint (five-party cross-tree contract)
+        run: python scripts/ci/gpu_lock_key_contract_lint.py
       # The only non-stdlib lint in this job. Pinned to the exact poetry.lock
       # version because the baseline is only meaningful against the bandit that
       # generated it (a bump can add rules and turn a clean tree red);

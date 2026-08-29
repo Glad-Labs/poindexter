@@ -1121,8 +1121,15 @@ class TestProbeContentGenGpuLock:
             await hp.probe_content_gen(p)
         call = p._lock_conn.fetchval.await_args
         assert "pg_try_advisory_lock" in call.args[0]
-        # Same int64 key the worker's GPUScheduler holds (kept in sync by value).
-        assert call.args[1] == hp.GPU_ADVISORY_LOCK_KEY == 7_777_777_777
+        # Same int64 key the worker's GPUScheduler holds. Pin it against the
+        # WORKER CONSTANT, not a literal: the brain duplicates the value by
+        # hand (it runs stdlib + asyncpg and cannot import the worker), so a
+        # literal-only assertion passes happily while the two trees diverge —
+        # and a diverged key means this probe stops seeing render sessions and
+        # loads the ~19 GB writer into VRAM mid-render.
+        from cofounder_agent.services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY
+
+        assert call.args[1] == hp.GPU_ADVISORY_LOCK_KEY == GPU_ADVISORY_LOCK_KEY
 
     async def test_runs_and_unlocks_when_lock_free(self):
         p = self._pool(lock_free=True, writer="gemma3:27b")
