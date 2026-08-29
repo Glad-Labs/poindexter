@@ -266,6 +266,25 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
     carry a JWT pattern the `ghs_` entry must stay **above** it, or a
     stateless token is only half-scrubbed and keeps a live
     `ghs_<APPID>_` prefix.
+  - **The `gitleaks` job carries a positive control**
+    (`scripts/ci/gitleaks_canary.py`, run as a step so it inherits that
+    job's required-check gating). The scan proves nothing was _found_;
+    the canary proves the scanner can still _find_. It writes one pinned
+    credential per shape we care about to a temp dir, scans it with the
+    repo's own `.gitleaks.toml`, and fails when any expected rule stops
+    firing — plus negative prose samples that must stay clean, so an
+    over-broad new rule is caught before it buries real findings. This
+    is the control that would have caught the stateless-token gap four
+    months earlier. Two design points, both learned the hard way:
+    the corpus is **pinned, never generated** (detection is
+    byte-sensitive — `aws-access-token` accepts one 20-char value and
+    rejects a near neighbour one character apart, so a reseed silently
+    flips cases and the canary then fails for reasons unrelated to the
+    rules); and every `expected_rule` was determined **empirically**
+    against the pinned binary, since several documented guesses were
+    wrong. On a gitleaks upgrade, re-verify the _sample_ before editing
+    a rule. The script declares `# scan-floor-exempt:` because it builds
+    its own corpus rather than walking the repo tree.
 - **`grafana-panels-lint` is `paths:`-gated** to
   `infrastructure/grafana/**` + the lint script + migrations — the
   model the others copy.

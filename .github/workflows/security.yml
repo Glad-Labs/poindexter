@@ -165,6 +165,21 @@ jobs:
             --redact \
             --exit-code=1
 
+      # POSITIVE CONTROL. The scan above proves nothing was found; this proves
+      # the scanner can still FIND. Every rule is a dated assertion about a
+      # third party's credential format, and when a provider rotates that
+      # format the regex does not fail -- it silently stops matching, and the
+      # gate stays green forever. gitleaks' bundled `github-app-token` rule
+      # went blind to stateless `ghs_<APPID>_<JWT>` tokens for four months
+      # exactly this way (stack#3451).
+      #
+      # Runs on `always()` so a run that catches a real leak still reports a
+      # blind rule -- the two failures are independent and you want both.
+      # Reuses the binary downloaded above rather than re-fetching.
+      - name: Positive control — secret-scan rules still fire
+        if: always()
+        run: GITLEAKS_BIN=./gitleaks python3 scripts/ci/gitleaks_canary.py
+
   trivy-fs:
     name: Trivy — filesystem vuln scan
     runs-on: ubuntu-latest
