@@ -281,6 +281,199 @@ def _cfg_bool(key: str, default: bool) -> bool:
         return default
 
 
+# ---------------------------------------------------------------------------
+# Device scoping (poindexter#3457 Phase 2)
+# ---------------------------------------------------------------------------
+#
+# The lock exists to stop two workloads contending for the SAME CARD's VRAM.
+# One global key therefore over-serialises: the QA judges are pinned to GPU 1
+# while renders run on GPU 0, yet they queue behind each other. Measured over
+# 7 days that cost 238 `gpu_lock_timeout` findings at the 45s admission budget
+# and 73 `qa_rail_degraded`.
+#
+# The invariant is: **serialise iff the device sets intersect.** Everything
+# here computes that. VRAM contention is a property of a CARD, not of what
+# serves on it — which is what makes this survive a swap from Ollama to vLLM,
+# a move to a managed API (empty set → no lock), or a second node.
+#
+# SHIPS INERT: `gpu_lock_per_device_enabled` defaults false, and even when
+# enabled the default scope map gives `llm_primary` both cards, so every scope
+# still overlaps and behaviour is unchanged. See
+# docs/superpowers/specs/2026-08-28-gpu-lock-device-scoping-design.md.
+
+#: Roles, not backends. `render`/`qa_judge`/`llm_primary` stay meaningful
+#: across Ollama → vLLM → Bedrock; only the card list changes.
+DEFAULT_GPU_LOCK_SCOPES: dict[str, list[int]] = {
+    "render": [0],
+    "qa_judge": [1],
+    # Unpinned today, so it overlaps both — which is why enabling scoping
+    # changes nothing until ollama-primary is actually pinned (Phase 3).
+    "llm_primary": [0, 1],
+}
+
+
+def _gpu_lock_scoping_enabled() -> bool:
+    return _cfg_bool("gpu_lock_per_device_enabled", False)
+
+
+def gpu_lock_node_id() -> str:
+    """Identity of the machine whose cards we are locking.
+
+    A GPU index is only unique WITHIN a host: node A's GPU 0 and node B's GPU 0
+    are different physical cards. Without this, two worker nodes sharing one
+    Postgres would serialise on the same key and the whole fleet would get one
+    GPU's worth of throughput. Single node today ⇒ a constant prefix ⇒
+    byte-identical keys; multi-node later ⇒ correct with no rewrite.
+    """
+    explicit = _sc_get("gpu_lock_node_id", "").strip()
+    if explicit:
+        return explicit
+    try:
+        import socket
+
+        return socket.gethostname() or "localhost"
+    except Exception:  # noqa: BLE001 — identity must never raise in the hot path
+        # NOT silent-ok: if one process resolves a hostname and another falls
+        # back here, the two compute DIFFERENT keys for the SAME card and lose
+        # mutual exclusion entirely. Rare, but it is the failure this whole
+        # design exists to prevent, so it must be visible. Set
+        # `gpu_lock_node_id` explicitly to remove the dependency.
+        logger.warning(
+            "[GPU] hostname lookup failed — falling back to node id "
+            "'localhost'. If another process on this host resolves a real "
+            "hostname it will derive different lock keys and the GPU lock "
+            "stops being mutually exclusive. Set app_settings.gpu_lock_node_id.",
+            exc_info=True,
+        )
+        return "localhost"
+
+
+def device_lock_key(node_id: str, gpu_index: int) -> int:
+    """Advisory-lock key for one physical card.
+
+    Derived rather than enumerated so a new card needs no new constant. Sits
+    far above the sibling int32 namespaces (`_SOCIAL_POST_LOCK_NS` 0x50AC,
+    `_MEDIA_DISPATCH_LOCK_NS` 0x4D44), matching the "stable arbitrary, distinct
+    from the others" convention.
+
+    A hash collision between two devices would merge their scopes — i.e.
+    OVER-serialise. That is the safe direction (costs throughput, never
+    correctness), which is why a plain crc32 is good enough here.
+    """
+    import zlib
+
+    digest = zlib.crc32(f"{node_id}:{gpu_index}".encode()) & 0xFFFFFFFF
+    return GPU_ADVISORY_LOCK_KEY + 1 + digest
+
+
+def _endpoint_pinned_models() -> frozenset[str]:
+    """Models routed to a non-default endpoint by the LiteLLM plugin config.
+
+    This is the SOURCE OF TRUTH for "this model is served somewhere else", so
+    reading it here is what makes the unpin case self-correcting: delete the
+    override and the model falls back to `llm_primary`, whose set overlaps
+    everything, and serialisation returns with no code change.
+
+    Any failure returns empty — every model then resolves to `llm_primary`,
+    which overlaps, which serialises. Fail closed.
+    """
+    raw = _sc_get("plugin.llm_provider.litellm", "")
+    if not raw:
+        return frozenset()
+    try:
+        import json
+
+        cfg = json.loads(raw) if isinstance(raw, str) else raw
+        overrides = (cfg or {}).get("config", {}).get("model_api_base_overrides")
+        if not isinstance(overrides, dict):
+            return frozenset()
+        # Compare on the bare model name: call sites pass `qwen3-vl:30b` while
+        # the override map is keyed `ollama/qwen3-vl:30b`.
+        names = set()
+        for key in overrides:
+            names.add(str(key))
+            names.add(str(key).split("/", 1)[-1])
+        return frozenset(names)
+    except Exception:  # noqa: BLE001 — see docstring; unknown ⇒ shared scope
+        # Fail-closed (every model then resolves to llm_primary, which
+        # overlaps everything and serialises), but a malformed plugin config
+        # is an operator problem and should not be inferred from a silent
+        # loss of judge/render concurrency.
+        logger.warning(
+            "[GPU] could not read model_api_base_overrides — every model will "
+            "use the shared scope, so device scoping is inert until this is "
+            "fixed", exc_info=True,
+        )
+        return frozenset()
+
+
+def resolve_lock_role(owner: str, model: str | None) -> str:
+    """Map a caller onto a scope role. Empty string ⇒ the whole-GPU lock.
+
+    Derived from arguments the 18 existing call sites ALREADY pass, so none of
+    them change.
+    """
+    if owner in ("image_gen", "video"):
+        return "render"
+    if owner == "ollama":
+        if model and model in _endpoint_pinned_models():
+            return "qa_judge"
+        return "llm_primary"
+    return ""
+
+
+def _configured_scopes() -> dict[str, list[int]]:
+    raw = _sc_get("gpu_lock_scopes", "").strip()
+    if not raw:
+        return DEFAULT_GPU_LOCK_SCOPES
+    try:
+        import json
+
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("gpu_lock_scopes must be a JSON object")
+        out: dict[str, list[int]] = {}
+        for role, idxs in parsed.items():
+            out[str(role)] = [int(i) for i in idxs]
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[GPU] gpu_lock_scopes unparseable (%s) — using defaults", exc
+        )
+        return DEFAULT_GPU_LOCK_SCOPES
+
+
+def resolve_lock_keys(owner: str, model: str | None) -> list[int]:
+    """Advisory-lock keys this caller must hold, ascending.
+
+    Returns ``[GPU_ADVISORY_LOCK_KEY]`` — today's exact behaviour — whenever
+    scoping is off or the scope cannot be resolved. An EMPTY list means the
+    caller occupies no GPU (managed API / serverless / CPU) and takes no lock
+    at all.
+
+    Fail closed: an unknown owner, an unknown role, or a malformed map all
+    fall back to the single whole-GPU key. Wrong-but-serialised costs
+    throughput; wrong-and-split costs a CUDA OOM.
+    """
+    if not _gpu_lock_scoping_enabled():
+        return [GPU_ADVISORY_LOCK_KEY]
+    role = resolve_lock_role(owner, model)
+    if not role:
+        return [GPU_ADVISORY_LOCK_KEY]
+    scopes = _configured_scopes()
+    if role not in scopes:
+        logger.warning(
+            "[GPU] role %r missing from gpu_lock_scopes — using the whole-GPU "
+            "lock (fail-closed)", role,
+        )
+        return [GPU_ADVISORY_LOCK_KEY]
+    indexes = scopes[role]
+    if not indexes:
+        return []  # no GPU: deliberately unserialised
+    node = gpu_lock_node_id()
+    return sorted({device_lock_key(node, int(i)) for i in indexes})
+
+
 def _emit_cfg_fetch_finding(
     kind: str, key: str, default: Any, exc: BaseException,
 ) -> None:
@@ -454,6 +647,14 @@ class GPUScheduler:
         # _PriorityGate is asyncio.Lock-surface-compatible; all legacy callers
         # enter at one rank so ordering stays strict FIFO (poindexter#914 P1).
         self._lock = _PriorityGate()
+        # Device scoping (#3457 Phase 2): one gate per advisory-lock key. The
+        # whole-GPU key maps to ``self._lock`` so the legacy attribute — which
+        # tests poke directly — stays the same object. With scoping off there
+        # is exactly one gate and one key, i.e. today's behaviour.
+        self._gates: dict[int, _PriorityGate] = {GPU_ADVISORY_LOCK_KEY: self._lock}
+        #: Keys held by the CURRENT session, ascending. Also the release order
+        #: (reversed) and what ``status`` reports.
+        self._held_keys: list[int] = []
         self._current_owner: str | None = None  # "ollama", "image_gen", or "video"
         self._current_model: str | None = None
         self._current_phase: str | None = None
@@ -469,6 +670,11 @@ class GPUScheduler:
         # session-level advisory locks are released when the connection
         # is returned to the pool.
         self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]  # noqa: UP037, F821
+        #: Advisory-lock keys currently held on that connection, ascending.
+        #: Released in reverse. Closing the connection would release them all
+        #: anyway (they are session-scoped) — the explicit unlock is for a
+        #: clean, observable release path.
+        self._pg_lock_keys: list[int] = []
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
         # (nvidia-smi exporter, Ollama /api/ps, image-gen /unload) — that's
@@ -513,12 +719,93 @@ class GPUScheduler:
                 # usable handle and there is nothing for an operator to act on.
                 pass
             self._pg_lock_conn = None
+            self._pg_lock_keys = []
 
     # ------------------------------------------------------------------
     # Cross-process pg_advisory_lock helpers (poindexter#731)
     # ------------------------------------------------------------------
 
-    async def _acquire_pg_advisory_lock(self, timeout_s: float | None = None) -> None:
+    def _gate_for(self, key: int) -> _PriorityGate:
+        """In-process gate for one advisory-lock key, created on first use."""
+        gate = self._gates.get(key)
+        if gate is None:
+            gate = self._gates[key] = _PriorityGate()
+        return gate
+
+    def _any_gate_locked(self) -> bool:
+        """True while any device gate is held.
+
+        Replaces the old ``self._lock.locked()`` reads. Identical when scoping
+        is off (one gate); under scoping "is the GPU busy" means "is ANY card
+        busy", which is what the console, the status surface and the
+        gaming/queue paths all actually mean.
+        """
+        return any(gate.locked() for gate in self._gates.values())
+
+    async def _acquire_gates(
+        self, keys: list[int], *, rank: int, timeout_s: float | None,
+    ) -> None:
+        """Acquire every in-process gate for ``keys``, ascending, or none.
+
+        **Ascending order is the deadlock proof.** Two callers whose device
+        sets overlap always contend on their lowest SHARED key first, so
+        neither can end up holding one half of the other's pair. Callers must
+        never acquire these gates in any other order.
+
+        **All-or-nothing.** If key *n* times out, the *n-1* already held are
+        released in reverse before raising — a partial acquisition would wedge
+        every later caller in this process on a lock nobody owns.
+
+        ``keys == []`` means the caller occupies no GPU (managed API,
+        serverless, CPU) and takes nothing. With scoping off this is a
+        one-element list and behaves exactly as the single gate always did.
+        """
+        acquired: list[int] = []
+        deadline = (
+            time.monotonic() + timeout_s if timeout_s and timeout_s > 0 else None
+        )
+        try:
+            for key in keys:  # already sorted by resolve_lock_keys
+                gate = self._gate_for(key)
+                if deadline is None:
+                    await gate.acquire(rank=rank)
+                else:
+                    # Floor at 0.1s: a spent budget still makes one honest
+                    # attempt rather than raising a zero-timeout that reads as
+                    # contention when it is really a slow predecessor.
+                    remaining = max(deadline - time.monotonic(), 0.1)
+                    await asyncio.wait_for(gate.acquire(rank=rank), timeout=remaining)
+                acquired.append(key)
+        except BaseException:
+            for key in reversed(acquired):
+                try:
+                    self._gates[key].release()
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "[GPU] rollback release of gate %d failed", key, exc_info=True
+                    )
+            raise
+        self._held_keys = list(keys)
+
+    def _release_gates(self) -> None:
+        """Release the current session's gates in reverse acquire order."""
+        for key in reversed(self._held_keys):
+            gate = self._gates.get(key)
+            if gate is None:
+                continue
+            try:
+                gate.release()
+            except Exception:  # noqa: BLE001 — release must never raise into
+                # the caller's finally block; a stuck gate is already logged
+                # and the pg barrier has been dropped by this point.
+                logger.warning(
+                    "[GPU] release of gate %d failed", key, exc_info=True
+                )
+        self._held_keys = []
+
+    async def _acquire_pg_advisory_lock(
+        self, timeout_s: float | None = None, keys: list[int] | None = None,
+    ) -> None:
         """Open a dedicated asyncpg connection and acquire the session-level
         GPU advisory lock.
 
@@ -560,17 +847,45 @@ class GPUScheduler:
 
         conn = None
         try:
-            if timeout_s and timeout_s > 0:
-                conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=timeout_s)
-                await asyncio.wait_for(
-                    conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY),
-                    timeout=timeout_s,
-                )
+            # Device scoping (#3457 Phase 2): take EVERY key this caller's
+            # scope covers, ascending. Ascending order is the deadlock proof —
+            # two callers whose sets overlap always contend on their lowest
+            # shared key first, so neither can hold one half of the other's
+            # pair. Default (scoping off) is a single-element list, i.e. the
+            # exact statement this used to run.
+            #
+            # Rollback is free on this path: session-level advisory locks are
+            # bound to the CONNECTION, so terminating/closing it below releases
+            # every key already taken. There is no partial-acquire state to
+            # unwind by hand.
+            want = sorted(keys) if keys is not None else [GPU_ADVISORY_LOCK_KEY]
+            deadline = (
+                time.monotonic() + timeout_s if timeout_s and timeout_s > 0 else None
+            )
+
+            def _remaining() -> float | None:
+                if deadline is None:
+                    return None
+                # Floor at 0.1s: a budget already spent must still make ONE
+                # honest attempt rather than raising a zero-timeout that looks
+                # like contention when it is really just a slow predecessor.
+                return max(deadline - time.monotonic(), 0.1)
+
+            if deadline is not None:
+                conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=_remaining())
             else:
                 conn = await asyncpg.connect(dsn)
-                await conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY)
+            for key in want:
+                if deadline is not None:
+                    await asyncio.wait_for(
+                        conn.execute("SELECT pg_advisory_lock($1)", key),
+                        timeout=_remaining(),
+                    )
+                else:
+                    await conn.execute("SELECT pg_advisory_lock($1)", key)
             self._pg_lock_conn = conn
-            logger.debug("[GPU] pg_advisory_lock acquired (key=%d)", GPU_ADVISORY_LOCK_KEY)
+            self._pg_lock_keys = list(want)
+            logger.debug("[GPU] pg_advisory_lock acquired (keys=%s)", want)
         except TimeoutError:
             # terminate() (not close()) — the session is mid-`pg_advisory_lock`
             # wait, so a graceful close would block behind the same wait.
@@ -618,23 +933,30 @@ class GPUScheduler:
         the session disconnects, so terminate-on-timeout is safe.
         """
         conn = self._pg_lock_conn
+        held_keys = list(self._pg_lock_keys)
         self._pg_lock_conn = None
+        # Cleared HERE, not after the unlocks: every exit path below (timeout,
+        # error, success) drops the connection, and a stale key list would be
+        # replayed against the NEXT session's connection.
+        self._pg_lock_keys = []
         if conn is None:
             return
         release_timeout = _cfg_int(
             "gpu_lock_release_timeout_seconds", _DEFAULT_LOCK_RELEASE_TIMEOUT_S
         )
         try:
-            if release_timeout > 0:
-                await asyncio.wait_for(
-                    conn.execute("SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY),
-                    timeout=release_timeout,
-                )
-            else:
-                await conn.execute(
-                    "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
-                )
-            logger.debug("[GPU] pg_advisory_lock released (key=%d)", GPU_ADVISORY_LOCK_KEY)
+            # Reverse of the acquire order. Defaults to the single whole-GPU
+            # key so an un-scoped session releases exactly what it took.
+            held = held_keys or [GPU_ADVISORY_LOCK_KEY]
+            for key in reversed(held):
+                if release_timeout > 0:
+                    await asyncio.wait_for(
+                        conn.execute("SELECT pg_advisory_unlock($1)", key),
+                        timeout=release_timeout,
+                    )
+                else:
+                    await conn.execute("SELECT pg_advisory_unlock($1)", key)
+            logger.debug("[GPU] pg_advisory_lock released (keys=%s)", held)
         except TimeoutError:
             logger.warning(
                 "[GPU] pg_advisory_unlock timed out after %ss — terminating "
@@ -787,7 +1109,7 @@ class GPUScheduler:
 
         waited = False
         queue_row_id: str | None = None
-        if self._lock.locked():
+        if self._any_gate_locked():
             logger.info(
                 "GPU busy — waiting",
                 waiting_for=owner,
@@ -840,11 +1162,18 @@ class GPUScheduler:
             rank = _PRIORITY_RANKS.get(priority, 0)
             acquire_started = time.monotonic()
 
+            # Which physical cards does this caller contend for? Derived from
+            # the owner/model args every call site already passes (#3457
+            # Phase 2). Returns the single whole-GPU key when scoping is off
+            # or unresolvable — today's exact behaviour — and [] when the
+            # caller occupies no GPU at all (managed API / serverless / CPU).
+            want_keys = resolve_lock_keys(owner, model)
+
             # Acquire in-process lock first (fast path for same-process callers)
             if acquire_timeout > 0:
                 try:
-                    await asyncio.wait_for(
-                        self._lock.acquire(rank=rank), timeout=acquire_timeout
+                    await self._acquire_gates(
+                        want_keys, rank=rank, timeout_s=acquire_timeout
                     )
                 except TimeoutError:
                     self._emit_lock_timeout_finding(
@@ -859,7 +1188,7 @@ class GPUScheduler:
                         f"{self._current_owner!r} ({self._current_model!r})"
                     ) from None
             else:
-                await self._lock.acquire(rank=rank)
+                await self._acquire_gates(want_keys, rank=rank, timeout_s=None)
 
             # Then acquire the cross-process pg advisory lock so a second
             # container blocks here until we release. Spend whatever remains of
@@ -871,11 +1200,16 @@ class GPUScheduler:
                     acquire_timeout - (time.monotonic() - acquire_started), 1.0
                 )
             try:
-                await self._acquire_pg_advisory_lock(timeout_s=pg_timeout)
+                if want_keys:
+                    await self._acquire_pg_advisory_lock(
+                        timeout_s=pg_timeout, keys=want_keys
+                    )
+                # else: no device, no cross-process barrier to raise. Opening a
+                # connection to take zero locks would be pure cost.
             except GpuLockTimeoutError:
-                # Never hold the in-process lock after a failed acquire — that
-                # would wedge every later caller in THIS process too.
-                self._lock.release()
+                # Never hold the in-process gates after a failed acquire —
+                # that would wedge every later caller in THIS process too.
+                self._release_gates()
                 self._emit_lock_timeout_finding(
                     owner=owner,
                     stage="pg_advisory",
@@ -930,7 +1264,7 @@ class GPUScheduler:
             # Release pg advisory lock BEFORE releasing the in-process lock
             # so that the cross-process barrier stays up until we are done.
             await self._release_pg_advisory_lock()
-            self._lock.release()
+            self._release_gates()
             _gpu_session_active.reset(token)
             # GPU-scheduler P0 (poindexter#914): fold this hold's duration
             # into the per-(owner, phase) rolling stats that feed the P1
@@ -1085,7 +1419,7 @@ class GPUScheduler:
         from services.gpu_admission import AdmissionInputs, CardVram
 
         holder_key = holder_elapsed = holder_stats = None
-        if self._lock.locked() and self._current_owner is not None:
+        if self._any_gate_locked() and self._current_owner is not None:
             h_owner = self._current_owner
             h_phase = self._current_phase or h_owner
             holder_key = (h_owner, h_phase)
@@ -1854,7 +2188,7 @@ class GPUScheduler:
 
     @property
     def is_busy(self) -> bool:
-        return self._lock.locked()
+        return self._any_gate_locked()
 
     @property
     def is_gaming(self) -> bool:
@@ -1864,16 +2198,22 @@ class GPUScheduler:
     def status(self) -> dict:
         current_pause = round(time.monotonic() - self._gaming_paused_since, 1) if self._gaming_detected else 0
         return {
-            "busy": self._lock.locked(),
+            "busy": self._any_gate_locked(),
             "owner": self._current_owner,
             "model": self._current_model,
-            "duration_s": round(time.monotonic() - self._acquired_at, 1) if self._lock.locked() else 0,
+            "duration_s": round(time.monotonic() - self._acquired_at, 1) if self._any_gate_locked() else 0,
             "gaming_detected": self._gaming_detected,
             "gaming_paused_s": current_pause,
             "total_gaming_paused_s": round(self._total_gaming_paused_s + current_pause, 1),
             # poindexter#731 — cross-process lock observability
             "pg_advisory_lock_held": self._pg_lock_conn is not None,
+            # The whole-GPU key stays the headline for backcompat (console +
+            # existing tests read it). `pg_advisory_lock_keys` is what the
+            # session ACTUALLY holds once device scoping is on — a list,
+            # because a caller spanning two cards holds two keys.
             "pg_advisory_lock_key": GPU_ADVISORY_LOCK_KEY,
+            "pg_advisory_lock_keys": list(self._pg_lock_keys),
+            "gpu_lock_scoping_enabled": _gpu_lock_scoping_enabled(),
             "config": {
                 "threshold_percent": _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),
                 "check_interval_s": _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL),

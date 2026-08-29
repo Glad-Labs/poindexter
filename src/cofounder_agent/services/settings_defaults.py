@@ -334,6 +334,18 @@ DEFAULTS: dict[str, str] = {
     # cooldown bounds restart frequency if the watermark is set below the
     # sidecar's healthy working set. Inert while the opt-in
     # `--profile comfyui` sidecar isn't running.
+    # GPU advisory-lock device scoping (poindexter#3457 Phase 2). OFF by
+    # default, and even ON it changes nothing until `llm_primary` stops
+    # holding both cards — see DEFAULT_GPU_LOCK_SCOPES in gpu_scheduler.py.
+    # Roles, not backends: `render`/`qa_judge`/`llm_primary` stay meaningful
+    # across Ollama -> vLLM -> a managed API (empty list = no GPU, no lock).
+    'gpu_lock_per_device_enabled': 'false',
+    'gpu_lock_scopes': '',
+    # Empty = use the hostname. A GPU index is only unique WITHIN a host, so
+    # two nodes sharing one Postgres would otherwise serialise on the same key
+    # and the fleet would get one GPU's worth of throughput.
+    'gpu_lock_node_id': '',
+
     'comfyui_ram_recycle_enabled': 'true',
     # 16, not 20: it is the floor of the 16-18 GB valley between comfyui's
     # normal post-render working set (12-16 GB) and its accumulated state
