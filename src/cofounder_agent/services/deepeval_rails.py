@@ -165,10 +165,20 @@ def _build_deepeval_judge_model(
                 model_name = judge_model[len(prefix):]
                 break
 
+        # num_predict is load-bearing for a thinking judge: without it the
+        # library default cuts the model off mid-reasoning, and raw Ollama
+        # returns an EMPTY content with the trace in a separate field — the
+        # rail then fails to parse "" and reports a judge error. See
+        # resolve_judge_num_predict for the 2026-08-28 blackout this fixes.
+        from services.llm_providers.thinking_models import resolve_judge_num_predict
+
         return OllamaModel(
             model=model_name,
             base_url=_resolve_local_llm_base_url(site_config),
             temperature=0.2,
+            generation_kwargs={
+                "num_predict": resolve_judge_num_predict(model_name, site_config),
+            },
         )
 
     return judge_model

@@ -281,6 +281,47 @@ def is_thinking_model(model: str, *, substrings: tuple[str, ...] | list[str] | N
     return any(s in needle for s in pool)
 
 
+def resolve_judge_num_predict(model: str, site_config: Any) -> int:
+    """Output-token budget for an LLM-judge call on ``model``.
+
+    A thinking model spends its budget on the reasoning trace BEFORE it emits
+    the answer, and raw Ollama returns that trace in a separate ``thinking``
+    field rather than inline. So an under-budgeted judge call does not come
+    back truncated — it comes back with ``content`` **empty** and
+    ``done_reason='length'``. The judge then runs ``json.loads("")`` and
+    reports ``JSONDecodeError: Expecting value: line 1 column 1 (char 0)``,
+    which reads like a malformed judgement and is actually starvation.
+
+    Not hypothetical. The 2026-08-27 QA-placement pass repointed the deepeval
+    and ragas judges at ``qwen3-vl:30b``. Those two rails were the only judge
+    paths that had never adopted this budget — the critic already had it — so
+    on 2026-08-28 all three LLM rails failed on **9 of 9** QA passes and the
+    advisory judge layer went dark while every deterministic rail stayed green.
+    Reproduced directly against the pinned model: it needs ~1800 tokens of
+    thinking before its first answer token, against a library default far below
+    that.
+
+    ``think: false`` does NOT fix this on the current Ollama build — the model
+    still emits thinking and still leaves ``content`` empty. Budget is the
+    lever, which is why this returns tokens rather than a suppression flag.
+
+    Reads the same two dials as the critic path so one setting governs every
+    judge in the system.
+    """
+    thinking_max, standard_max = 8000, 1500
+    if site_config is not None:
+        try:
+            # Both keys match the footgun lint's *token* heuristic by name only —
+            # these are output-token BUDGETS (ints), not credentials, and are the
+            # same two dials the critic path reads through SettingsService.
+            thinking_max = int(site_config.get("qa_thinking_model_max_tokens", thinking_max) or thinking_max)  # secret-get-ok: token BUDGET, not a credential
+            standard_max = int(site_config.get("qa_standard_max_tokens", standard_max) or standard_max)  # secret-get-ok: token BUDGET, not a credential
+        except Exception:  # noqa: BLE001 — defensive against test stubs
+            thinking_max, standard_max = 8000, 1500
+    substrings = resolve_thinking_substrings(site_config) if site_config is not None else None
+    return thinking_max if is_thinking_model(model, substrings=substrings) else standard_max
+
+
 def resolve_thinking_substrings(site_config: Any) -> tuple[str, ...]:
     """Resolve the configured thinking-model substring list.
 

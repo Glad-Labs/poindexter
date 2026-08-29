@@ -317,8 +317,17 @@ async def _build_ragas_models(
     # internal prompts (faithfulness_statements, nli_statements, etc.)
     # expect bare JSON, so JSON-mode is safe for all three metrics. See
     # Glad-Labs/glad-labs-stack#1910.
+    # num_predict is load-bearing for a thinking judge — the library default
+    # cuts it off mid-reasoning and Ollama returns EMPTY content, which Ragas
+    # surfaces as the -1.0 sentinel rather than as a starved call. See
+    # resolve_judge_num_predict for the 2026-08-28 blackout this fixes.
+    from services.llm_providers.thinking_models import resolve_judge_num_predict
+
     llm = LangchainLLMWrapper(
-        ChatOllama(model=judge_model, base_url=base_url, temperature=0.0, format="json")
+        ChatOllama(
+            model=judge_model, base_url=base_url, temperature=0.0, format="json",
+            num_predict=resolve_judge_num_predict(judge_model, site_config),
+        )
     )
     embeddings = LangchainEmbeddingsWrapper(
         OllamaEmbeddings(model=embed_model, base_url=base_url)
