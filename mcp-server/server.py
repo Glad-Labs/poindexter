@@ -993,12 +993,24 @@ async def search_memory(
         if not hits:
             return f'No results for "{query}" above similarity threshold {min_similarity}.'
 
+        # Window the one-line preview onto the query rather than head-slicing
+        # it. This tool is a locator — 200 chars per hit, to decide what to
+        # go and read — so those 200 chars should be the part that MATCHED.
+        # A chunk is up to 6000 chars; its opening frequently says nothing
+        # about why it came back.
+        try:
+            from services.rag_excerpt import excerpt_around_query as _excerpt
+        except Exception:  # pragma: no cover — services/ optional in CI shape
+            def _excerpt(text: str, _q: str, n: int) -> str:
+                return text[:n]
+
         lines = [f'Memory search: "{query}" ({len(hits)} results)\n']
         for i, hit in enumerate(hits, 1):
             meta = hit.metadata
             origin = meta.get("origin", hit.writer or hit.source_table)
             mtype = meta.get("type", meta.get("state", ""))
-            preview = (hit.text_preview or "")[:200].replace("\n", " ")
+            payload = hit.chunk_text or hit.text_preview or ""
+            preview = _excerpt(payload, query, 200).replace("\n", " ")
             lines.append(
                 f"{i}. [{hit.similarity:.4f}] [{hit.source_table}] {hit.source_id}"
                 + (f" (origin={origin}, type={mtype})" if mtype else f" (origin={origin})")

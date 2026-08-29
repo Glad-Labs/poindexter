@@ -486,6 +486,77 @@ class TestCrossEncoderRerank:
         assert results[2].score == pytest.approx(0.1)
 
     @pytest.mark.asyncio
+    async def test_rerank_scores_the_query_relevant_window(self):
+        """The most expensive stage in the stack was being fed the 500-char
+        preview. It now gets the full chunk — but ms-marco-MiniLM takes 512
+        tokens and head-truncates past that, so what reaches it is windowed
+        onto the query rather than sliced from the front."""
+        from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+
+        filler = "unrelated padding sentence about nothing in particular. " * 80
+        chunk = filler + " the cross encoder reranker budget " + filler
+        candidates = [
+            NodeWithScore(node=TextNode(text=chunk, id_="posts:A"), score=0.9),
+        ]
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(return_value=candidates)
+
+        seen: dict = {}
+        fake_model = MagicMock()
+
+        def _predict(pairs):
+            seen["pairs"] = pairs
+            return [0.5 for _ in pairs]
+
+        fake_model.predict = _predict
+
+        from services.rag_engine import (
+            _RERANKER_CACHE,
+            _build_rerank_retriever_class,
+        )
+        _RERANKER_CACHE.clear()
+        cls = _build_rerank_retriever_class()
+        r = cls(inner=inner, top_k=3, site_config=_site_config(
+            {"rag_rerank_max_chars": 500},
+        ))
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+
+        await r._aretrieve(QueryBundle(query_str="cross encoder reranker budget"))
+
+        scored_text = seen["pairs"][0][1]
+        assert len(scored_text.strip("…")) <= 500
+        assert "cross encoder reranker budget" in scored_text
+        # The node itself is untouched — only what the model SEES is windowed.
+        assert candidates[0].node.text == chunk
+
+    @pytest.mark.asyncio
+    async def test_rerank_max_chars_zero_hands_over_the_whole_chunk(self):
+        from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+
+        chunk = "word " * 3000
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(
+            return_value=[NodeWithScore(node=TextNode(text=chunk, id_="X:1"), score=1.0)]
+        )
+        seen: dict = {}
+        fake_model = MagicMock()
+        fake_model.predict = lambda pairs: (seen.update(pairs=pairs), [0.1])[1]
+
+        from services.rag_engine import (
+            _RERANKER_CACHE,
+            _build_rerank_retriever_class,
+        )
+        _RERANKER_CACHE.clear()
+        cls = _build_rerank_retriever_class()
+        r = cls(inner=inner, top_k=1, site_config=_site_config(
+            {"rag_rerank_max_chars": 0},
+        ))
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
+
+        await r._aretrieve(QueryBundle(query_str="word"))
+        assert seen["pairs"][0][1] == chunk
+
+    @pytest.mark.asyncio
     async def test_rerank_top_k_truncates_after_reorder(self):
         from llama_index.core.schema import (
             NodeWithScore,

@@ -650,6 +650,8 @@ def _build_rerank_retriever_class():
     from llama_index.core.retrievers import BaseRetriever
     from llama_index.core.schema import NodeWithScore, QueryBundle
 
+    from services.rag_excerpt import excerpt_around_query
+
     class CrossEncoderRerankRetriever(BaseRetriever):
         def __init__(
             self,
@@ -671,6 +673,32 @@ def _build_rerank_retriever_class():
                     "rag_rerank_model", "cross-encoder/ms-marco-MiniLM-L-6-v2",
                 ) or "cross-encoder/ms-marco-MiniLM-L-6-v2"
             )
+
+        def _max_chars(self) -> int:
+            """Per-candidate character budget handed to the cross-encoder.
+
+            poindexter#1033 gave the reranker the full chunk instead of the
+            500-char preview, but a bigger fragment is still a fragment:
+            ms-marco-MiniLM-L-6-v2 accepts 512 tokens (~2000 chars) and
+            head-truncates anything longer ITSELF, silently. Excerpting to the
+            same budget here spends those tokens on the passage that matched
+            rather than on whatever sits at the top of a 6000-char chunk —
+            which #3452 measured as the wrong window 40% of the time.
+            0 = uncapped (hand over the whole chunk and let the model clip).
+            """
+            if self._site_config is None:
+                return 2000
+            try:
+                return int(self._site_config.get_int("rag_rerank_max_chars", 2000))
+            except Exception as e:
+                # A garbage app_settings value must not silently restore the
+                # default and leave the operator believing their number is
+                # live (feedback_no_silent_defaults).
+                logger.warning(
+                    "[rag/rerank] rag_rerank_max_chars unreadable (%s) — "
+                    "falling back to 2000; fix the app_settings value.", e,
+                )
+                return 2000
 
         def _device(self) -> str:
             # CPU by default so the reranker stops stacking on the
@@ -735,7 +763,19 @@ def _build_rerank_retriever_class():
                 )
                 return candidates[: self._top_k]
 
-            pairs = [(query_bundle.query_str, c.node.text or "") for c in candidates]
+            # Window each candidate onto the query instead of handing the
+            # model a chunk it will head-truncate. Same tokens scored, but
+            # they are the ones that matched. See _max_chars above.
+            max_chars = self._max_chars()
+            pairs = [
+                (
+                    query_bundle.query_str,
+                    excerpt_around_query(
+                        c.node.text or "", query_bundle.query_str, max_chars
+                    ),
+                )
+                for c in candidates
+            ]
             try:
                 scores = model.predict(pairs)
             except Exception as e:

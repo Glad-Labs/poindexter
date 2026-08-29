@@ -172,6 +172,36 @@ def test_format_snippet_block_skips_empty_and_defaults_missing_source() -> None:
     assert "None" not in block
 
 
+def test_format_snippet_block_windows_onto_the_query() -> None:
+    """Snippets now carry the FULL retrieved chunk, so the per-snippet cap
+    (``writer_rag_context_snippet_max_chars``) is what keeps the block inside
+    num_ctx — and it is a live setting for the first time, because it used to
+    sit above the 500-char payload ceiling and could never bind.
+
+    Spending that budget on a head slice would reproduce the original defect
+    one layer up: the chunk was retrieved BECAUSE of a passage that can sit
+    anywhere in it. With the query threaded through, the budget lands on the
+    matching passage instead.
+    """
+    import modules.content.ai_content_generator as acg
+    filler = "unrelated background prose that mentions nothing relevant. " * 60
+    chunk = filler + " we moved inference on-prem to cut GPU cost. " + filler
+    block = acg._format_snippet_block(
+        [{"source": "posts", "snippet": chunk}], 400, "moved inference on-prem",
+    )
+    assert "we moved inference on-prem" in block
+    # Budget still holds — the window is capped, not the whole chunk.
+    assert len(block) < 600
+
+
+def test_format_snippet_block_without_a_query_head_slices() -> None:
+    """Back-compat: callers that pass no query get the previous behaviour."""
+    import modules.content.ai_content_generator as acg
+    chunk = "opening line. " + ("filler " * 400)
+    block = acg._format_snippet_block([{"source": "posts", "snippet": chunk}], 200)
+    assert "opening line." in block
+
+
 def test_generate_prompt_bans_footnotes_and_placeholder_urls() -> None:
     """The #1680 re-run (task 2b0255ad) passed the gate but the writer, denied
     its inline-label trick, switched to academic footnotes ([^1]) plus a bottom

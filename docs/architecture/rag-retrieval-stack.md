@@ -59,6 +59,54 @@ degrades honestly. No embedding calls; vectors are never touched. Verified
 docker exec poindexter-worker python /app/scripts/backfill_embeddings_chunk_text.py --dry-run
 ```
 
+### Lexical search reads the payload too
+
+`text_search` — the generated tsvector the hybrid retriever's BM25 half matches
+against — is `GENERATED ALWAYS AS (to_tsvector('simple', COALESCE(chunk_text,
+text_preview)))`. It indexed `text_preview` alone until migration
+`20260829_003232`, which left the _lexical_ half with the exact blind spot the
+vector half had just been cured of: a document whose matching term sits past
+character 500 was unfindable by BM25 no matter how well `chunk_text` served the
+consumer that finally received it. Verified against a throwaway database — a
+term planted at character 775 returns zero rows before the migration and one
+after.
+
+Redefining a generation expression needs drop + re-add, so the migration guards
+on the _expression_ rather than the column name: the column always exists, and a
+name check would rebuild the old definition on every re-run — a silent revert
+that logs as a successful apply.
+
+### Spending a capped budget on the right window
+
+Some consumers cannot afford a whole chunk. The writer's snippet block shares
+one `num_ctx` with the draft it is producing; the cross-encoder truncates at its
+own model window. Those call sites cap, and a naive `text[:max_chars]` recreates
+the original defect one layer up — the measurement behind #3452 found the best
+500-char window was **not** the first one 40% of the time.
+
+`services/rag_excerpt.py::excerpt_around_query` spends the same budget on the
+part of the chunk the query matched: lexical term-overlap scoring over sliding
+windows, no model call, deterministic, head-slice fallback when the query has no
+content words or none appear in the chunk. Applied at:
+
+| Call site                                      | Budget setting                         | Default                |
+| ---------------------------------------------- | -------------------------------------- | ---------------------- |
+| Writer snippet block (`_format_snippet_block`) | `writer_rag_context_snippet_max_chars` | `500`                  |
+| Cross-encoder reranker                         | `rag_rerank_max_chars`                 | `2000`                 |
+| MCP `search_memory`, cofounder chat lines      | fixed (200 / 180)                      | locators, not payloads |
+
+`rag_rerank_max_chars` defaults to roughly the 512 tokens
+`cross-encoder/ms-marco-MiniLM-L-6-v2` accepts. Past that **the model**
+head-truncates, silently — so handing it a 6000-char chunk does not mean it
+reads one. `0` disables the cap.
+
+> **`writer_rag_context_snippet_max_chars` is a live knob for the first time.**
+> It sat _above_ the old 500-char payload ceiling, so it could never bind. It is
+> now the writer's actual grounding budget. Raising it gives the writer more
+> evidence per snippet and grows the prompt by `snippet_limit × max_chars` —
+> raise `draft_generation_num_ctx` alongside it, or the draft loses the room it
+> needs to be written.
+
 ## Path A — Legacy inline pgvector (default)
 
 `poindexter.memory.MemoryClient.search` embeds the query once via
@@ -145,11 +193,11 @@ The reason for the wire-in isn't the base vector query (Path A
 already handles that fine). It's the retriever **wrappers** that
 LlamaIndex's `BaseRetriever` interface composes naturally:
 
-| Wrapper                      | Setting              | Default | What it does                                                                                                                                                     |
-| ---------------------------- | -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Hybrid (BM25 + vector + RRF) | `rag_hybrid_enabled` | `true`  | Wraps the vector retriever with a tsvector BM25 retriever; combines via Reciprocal Rank Fusion (constant `rag_rrf_k`, default 60). Catches lexical-only matches. |
-| Cross-encoder rerank         | `rag_rerank_enabled` | `true`  | Pulls `top_k * 4` candidates, re-scores with `rag_rerank_model` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`), returns the top `top_k` after re-ranking.      |
-| Source filter                | `rag_source_filter`  | empty   | CSV of `source_table` values; same effect as Path A's `source_table=` arg but applied uniformly across the retriever stack.                                      |
+| Wrapper                      | Setting              | Default | What it does                                                                                                                                                                                                                                                     |
+| ---------------------------- | -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hybrid (BM25 + vector + RRF) | `rag_hybrid_enabled` | `true`  | Wraps the vector retriever with a tsvector BM25 retriever; combines via Reciprocal Rank Fusion (constant `rag_rrf_k`, default 60). Catches lexical-only matches.                                                                                                 |
+| Cross-encoder rerank         | `rag_rerank_enabled` | `true`  | Pulls `top_k * 4` candidates, re-scores with `rag_rerank_model` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`), returns the top `top_k` after re-ranking. Each candidate is windowed onto the query at `rag_rerank_max_chars` — see the payload section above. |
+| Source filter                | `rag_source_filter`  | empty   | CSV of `source_table` values; same effect as Path A's `source_table=` arg but applied uniformly across the retriever stack.                                                                                                                                      |
 
 All three wrappers come from `services/rag_engine.py` —
 `_build_hybrid_retriever_class` and `_build_rerank_retriever_class`
@@ -213,6 +261,14 @@ A complementary deterministic **prompt-echo guard** in the same atom
 strips any prompt preamble the writer model regurgitates as content —
 see `docs/architecture/anti-hallucination.md` (Layer 1).
 
+Because it is a separate path, the poindexter#1033 payload fix did not reach
+it: the atom kept selecting `text_preview` while every `rag_engine` consumer
+moved to `chunk_text`, leaving the **largest** consumer of retrieved text
+grounding drafts in prefixes. It now selects
+`COALESCE(chunk_text, text_preview)` like the rest, and the truncation happens
+once — at prompt-build time, windowed onto `"{topic} — {angle}"`, the same
+string that was embedded to retrieve the snippets.
+
 #### Retrieval de-echo — MMR + near-duplicate ceiling
 
 Source-scoping fixed _ops-log_ pollution, but `posts` itself becomes the
@@ -269,10 +325,19 @@ All three knobs are DB-tunable app_settings. memory:
 
 ## Ground truth
 
-- Source: `services/rag_engine.py` (524 LOC), `poindexter/memory/client.py:418-690`
-- Migration: `services/migrations/0000_baseline.py` (originally `20260510_040315_seed_rag_engine_master_switch.py`, folded in by the 2026-06-22 squash)
-- Tests: `tests/unit/services/test_rag_engine.py` (15 cases),
-  `tests/unit/poindexter/memory/test_rag_engine_routing.py` (11 cases)
+- Source: `services/rag_engine.py`, `services/rag_excerpt.py`,
+  `poindexter/memory/client.py`
+- Migrations: `services/migrations/0000_baseline.py` (originally
+  `20260510_040315_seed_rag_engine_master_switch.py`, folded in by the
+  2026-06-22 squash);
+  `20260829_001056_add_embeddings_chunk_text_...py` (the payload column);
+  `20260829_003232_repoint_the_text_search_tsvector_at_chunk_text_...py`
+  (BM25 reads the payload too)
+- Tests: `tests/unit/services/test_rag_engine.py`,
+  `tests/unit/services/test_rag_chunk_text_payload.py`,
+  `tests/unit/services/test_rag_payload_followups.py`,
+  `tests/unit/services/test_rag_excerpt.py`,
+  `tests/unit/poindexter/memory/test_rag_engine_routing.py`
 - Issue: `Glad-Labs/glad-labs-stack#329` sub-issue 4 — third sub-issue
   closed in the Lane D push
 

@@ -332,6 +332,45 @@ class EmbeddingsDatabase(DatabaseServiceMixin):
             )
             return 0
 
+    async def delete_stale_chunks(
+        self,
+        source_type: str,
+        source_id: str,
+        embedding_model: str,
+        keep_count: int,
+    ) -> int:
+        """Drop chunks at or above ``keep_count`` for one source.
+
+        Called after a re-chunk: a source that shrank from 5 chunks to 3
+        would otherwise leave chunks 3 and 4 behind as orphans that still
+        answer searches with text the document no longer contains. Mirrors
+        ``services/taps/runner.py::_delete_stale_chunks`` — the tap path and
+        the service path re-chunk the same sources under the same key.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    DELETE FROM embeddings
+                     WHERE source_table = $1 AND source_id = $2
+                       AND embedding_model = $3 AND chunk_index >= $4
+                    """,
+                    source_type,
+                    source_id,
+                    embedding_model,
+                    keep_count,
+                )
+            return int(result.split()[-1])
+        except Exception as e:
+            logger.error(
+                "[delete_stale_chunks] Failed to prune chunks: %s",
+                e,
+                exc_info=True,
+                source_type=source_type,
+                source_id=source_id,
+            )
+            return 0
+
     async def needs_reembedding(
         self,
         source_type: str,

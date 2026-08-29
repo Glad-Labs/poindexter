@@ -717,7 +717,8 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         # cosine distance); it feeds the near-duplicate ceiling + MMR relevance.
         rows = await conn.fetch(
             """
-            SELECT source_table, source_id, text_preview, embedding,
+            SELECT source_table, source_id,
+                   COALESCE(chunk_text, text_preview) AS snippet_text, embedding,
                    1 - (embedding <=> $1::vector) AS relevance
               FROM embeddings
              WHERE source_table = ANY($3::text[])
@@ -732,7 +733,17 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         {
             "source": r["source_table"],
             "ref": str(r["source_id"]),
-            "snippet": r["text_preview"],
+            # The FULL matched chunk (poindexter#1033's payload column), not
+            # the 500-char preview. This query is the writer's own retrieval
+            # path — it does NOT go through rag_engine/MemoryClient, so the
+            # #3452 fix did not reach it, and the single largest consumer of
+            # retrieved text kept grounding drafts in prefixes. What the
+            # writer is finally SHOWN is capped, and windowed onto the query,
+            # at prompt-build time — see ai_content_generator's
+            # _format_snippet_block. Carrying the whole chunk this far is what
+            # lets that cap pick the relevant part rather than inheriting
+            # whatever the first 500 characters happened to be.
+            "snippet": r["snippet_text"],
             "relevance": float(r["relevance"]),
             "vec": _parse_vector(r["embedding"]),
         }

@@ -572,7 +572,10 @@ class TestGroupingMakesSense:
         # self-review block this span already contains. Bumped 416→428 for the
         # writer_self_review_thinking_* pair (2026-08-28), seated in that same
         # self-review block beside the pin whose thinking budget they set.
-        assert span < 428, (
+        # Bumped 428→434 for rag_rerank_max_chars, seated directly beside
+        # rag_rerank_device inside the RAG-section interleave noted above —
+        # it is the third knob of the same reranker.
+        assert span < 434, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.embedding_service import EmbeddingService
+from services.taps.published_posts import build_post_text
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -45,7 +46,12 @@ def ollama():
     v2.2b it's actually a Provider Protocol mock, not an OllamaClient."""
     mock = AsyncMock()
     mock.embed = AsyncMock(return_value=SAMPLE_EMBEDDING)
-    mock.embed_batch = AsyncMock(return_value=[SAMPLE_EMBEDDING, SAMPLE_EMBEDDING])
+    # One vector per input text, whatever the batch size — the chunker
+    # decides how many chunks a post makes, so a fixed-length return would
+    # pin the test to today's chunk boundaries.
+    mock.embed_batch = AsyncMock(
+        side_effect=lambda texts, **_kw: [SAMPLE_EMBEDDING for _ in texts]
+    )
     return mock
 
 
@@ -96,11 +102,22 @@ class TestEmbedPost:
         call_kwargs = embeddings_db.store_embedding.call_args
         assert call_kwargs.kwargs["source_type"] == "posts"
         assert call_kwargs.kwargs["source_id"] == "1"
-        assert call_kwargs.kwargs["metadata"] == {"title": "Test Title"}
+        # Chunk bookkeeping rides alongside the caller's metadata, matching
+        # what the tap runner writes for the same source.
+        assert call_kwargs.kwargs["metadata"] == {
+            "title": "Test Title", "chars": 40, "total_chunks": 1, "chunk_index": 0,
+        }
         # text_preview + writer added in the NOT NULL schema fix — verify
         # they're populated rather than dropped.
         assert call_kwargs.kwargs["text_preview"]  # non-empty
         assert call_kwargs.kwargs["writer"] == "worker"
+        # chunk_text is the retrieval payload — the whole chunk, not the
+        # 500-char display slice. A row written without it serves retrieval
+        # a prefix that need not contain what the query matched.
+        assert call_kwargs.kwargs["chunk_text"] == build_post_text(
+            title="Test Title", excerpt="Test excerpt", content="Test content",
+        )
+        assert call_kwargs.kwargs["chunk_index"] == 0
 
     @pytest.mark.asyncio
     async def test_skips_unchanged_post(self, service, ollama, embeddings_db):
@@ -113,16 +130,64 @@ class TestEmbedPost:
         embeddings_db.store_embedding.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_truncates_content_to_2000_chars(self, service, ollama, embeddings_db):
+    async def test_does_not_truncate_content(self, service, ollama, embeddings_db):
+        """Long posts are CHUNKED, not truncated.
+
+        This used to embed ``title\nexcerpt\ncontent[:2000]`` as one row at
+        chunk 0 — the same natural key ``PostsTap`` writes its real chunk 0
+        to, with a hash the tap never produces. The two writers overwrote
+        each other on every republish, and for part of every hour chunk 0
+        held a 2000-char whole-post truncation instead of a chunk.
+        """
         long_content = "x" * 5000
         post = _make_post(content=long_content)
 
         await service.embed_post(post)
 
-        # The text passed to ollama.embed should have content truncated at 2000
         embedded_text = ollama.embed.call_args[0][0]
-        expected = f"Test Title\nTest excerpt\n{'x' * 2000}"
-        assert embedded_text == expected
+        assert embedded_text == build_post_text(
+            title="Test Title", excerpt="Test excerpt", content=long_content,
+        )
+        assert "x" * 5000 in embedded_text
+
+    @pytest.mark.asyncio
+    async def test_oversize_post_is_split_into_chunks(
+        self, service, ollama, embeddings_db
+    ):
+        """Past the 6000-char chunk ceiling, one post becomes several rows
+        with distinct chunk_index values — same as the tap would write."""
+        await service.embed_post(_make_post(content="paragraph text. " * 1500))
+
+        indexes = [
+            c.kwargs["chunk_index"]
+            for c in embeddings_db.store_embedding.call_args_list
+        ]
+        assert len(indexes) > 1
+        assert indexes == sorted(set(indexes))
+        # Every chunk carries its own payload, and chunk 0 keeps the
+        # whole-document hash so either writer's dedup check agrees.
+        for call in embeddings_db.store_embedding.call_args_list:
+            assert call.kwargs["chunk_text"]
+        embeddings_db.delete_stale_chunks.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_agrees_with_the_tap_on_chunk0_hash(
+        self, service, ollama, embeddings_db
+    ):
+        """The collision guard: ``embed_post`` and ``PostsTap`` write the
+        same key, so they must derive the same chunk-0 content_hash from the
+        same post or they will clobber each other forever."""
+        from services.taps._chunking import content_hash as tap_hash
+        from services.taps.published_posts import PostsTap  # noqa: F401
+
+        post = _make_post(content="a real post body " * 50)
+        await service.embed_post(post)
+
+        tap_text = build_post_text(
+            title=post["title"], excerpt=post["excerpt"], content=post["content"],
+        )
+        chunk0 = embeddings_db.store_embedding.call_args_list[0].kwargs
+        assert chunk0["content_hash"] == tap_hash(tap_text)
 
     @pytest.mark.asyncio
     async def test_embed_post_raises_on_ollama_error(self, service, ollama, embeddings_db):
@@ -141,7 +206,9 @@ class TestEmbedPost:
     @pytest.mark.asyncio
     async def test_content_hash_passed_to_db(self, service, ollama, embeddings_db):
         post = _make_post()
-        combined = f"{post['title']}\n{post['excerpt']}\n{post['content'][:2000]}"
+        combined = build_post_text(
+            title=post["title"], excerpt=post["excerpt"], content=post["content"],
+        )
         expected_hash = _content_hash(combined)
 
         await service.embed_post(post)
@@ -166,7 +233,12 @@ class TestEmbedBrainKnowledge:
         call_kwargs = embeddings_db.store_embedding.call_args.kwargs
         assert call_kwargs["source_type"] == "brain_knowledge"
         assert call_kwargs["source_id"] == "Glad Labs::mission"
-        assert call_kwargs["metadata"] == {"entity": "Glad Labs", "attribute": "mission"}
+        assert call_kwargs["metadata"] == {
+            "entity": "Glad Labs", "attribute": "mission",
+        }
+        # Short rows carry the payload too — "it fits in the preview anyway"
+        # is how half a table ends up with a NULL retrieval column.
+        assert call_kwargs["chunk_text"] == "Glad Labs mission: democratize AI"
 
     @pytest.mark.asyncio
     async def test_skips_unchanged_knowledge(self, service, ollama, embeddings_db):

@@ -174,9 +174,15 @@ async def _memory_search_text(
     if not hits:
         scope = source_table or "memory"
         return f"No {scope} hits for {query!r} (min similarity 0.3)."
+    # 180 chars per hit, windowed onto the query rather than head-sliced: this
+    # is a locator — enough for the model to decide what to read next — so the
+    # chars should be the ones that MATCHED. A chunk runs to 6000 characters
+    # and its opening frequently says nothing about why it came back.
+    from services.rag_excerpt import excerpt_around_query
     lines = [
         f"- [{h.source_table}/{str(h.source_id)[:12]}] "
-        f"(sim {h.similarity:.2f}) {h.text_preview[:180]}"
+        f"(sim {h.similarity:.2f}) "
+        f"{excerpt_around_query(h.chunk_text or h.text_preview, query, 180)}"
         for h in hits
     ]
     return f"{len(lines)} hit(s) for {query!r}:\n" + "\n".join(lines)

@@ -1477,6 +1477,12 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_enabled': 'false',
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rerank_device': 'cpu',
+    # Per-candidate char budget handed to the cross-encoder. 2000 ~= the 512
+    # tokens ms-marco-MiniLM-L-6-v2 accepts; past that the MODEL truncates,
+    # silently and from the head. Excerpting to the same budget on our side
+    # (services/rag_excerpt.py) spends those tokens on the passage that
+    # matched. Raise it with a longer-window reranker model; 0 = uncapped.
+    'rag_rerank_max_chars': '2000',
     'rag_rrf_k': '60',
     # CSV of embeddings.source_table values RAG retrieval may draw from. MUST
     # default to content-only ('posts'): the corpus is ~⅔ claude_sessions /
@@ -4384,6 +4390,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
+    'rag_rerank_max_chars': {'owner': 'rag_engine', 'value_type': 'integer'},
     'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},

@@ -40,6 +40,7 @@ import httpx
 
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
+from services.rag_excerpt import excerpt_around_query
 
 # Phase-2c (#272): the module-global ``site_config`` + ``set_site_config``
 # shim + ``_resolve_module_site_config`` helper were removed.
@@ -1475,7 +1476,9 @@ async def _resolve_rag_writer_model(
     )
 
 
-def _format_snippet_block(snippets: list[dict[str, Any]], max_chars: int) -> str:
+def _format_snippet_block(
+    snippets: list[dict[str, Any]], max_chars: int, query: str = ""
+) -> str:
     """Render background snippets as plainly-labelled notes for the writer.
 
     Deliberately avoids the old ``[source/ref] text`` form. Weak/thinking
@@ -1487,9 +1490,18 @@ def _format_snippet_block(snippets: list[dict[str, Any]], max_chars: int) -> str
     work this is, for first- vs third-person voice) with no inline-bracket
     template to copy, and drops the ``ref`` slug entirely (it was the
     most-echoed token and the writer has no use for it).
+
+    ``max_chars`` is the per-snippet budget, and it is REAL now: snippets
+    carry the full retrieved chunk (up to 6000 chars) rather than the
+    500-char preview they used to, so this is what keeps the block inside
+    ``num_ctx``. Passing ``query`` spends that budget on the part of the
+    chunk the query matched instead of head-slicing — the retrieval reason
+    can sit anywhere in a chunk, so the opening need not contain it. Empty
+    ``query`` (older callers) falls back to the head slice unchanged.
     """
     return "\n\n".join(
-        f"From {s.get('source') or 'a prior note'}:\n{s['snippet'][:max_chars]}"
+        f"From {s.get('source') or 'a prior note'}:\n"
+        f"{excerpt_around_query(s['snippet'], query, max_chars)}"
         for s in snippets
         if s.get("snippet")
     )
@@ -1509,7 +1521,12 @@ async def generate_with_context(
     draft. Wraps the existing generation path; tests can monkeypatch here.
 
     Per-snippet length cap is operator-tunable via
-    ``writer_rag_context_snippet_max_chars``. Writer model is resolved
+    ``writer_rag_context_snippet_max_chars`` — and since snippets started
+    carrying the full retrieved chunk, that setting is the writer's actual
+    grounding budget rather than a cap that could never bind. Raising it
+    gives the writer more evidence per snippet; it also grows the prompt,
+    which shares ``num_ctx`` with the draft being generated, so raise
+    ``draft_generation_num_ctx`` alongside it. Writer model is resolved
     from the per-step ``app_settings.pipeline_writer_model`` pin (fails loud
     when unset; the cost_tier.* fallback was removed).
 
@@ -1535,7 +1552,11 @@ async def generate_with_context(
         "writer_rag_context_snippet_max_chars", 500,
     )
     model = await _resolve_rag_writer_model(site_config=_sc)
-    snippet_block = _format_snippet_block(snippets, snippet_max_chars)
+    # Same string ``_embed_and_fetch_snippets`` embedded to retrieve these
+    # chunks, so the window this picks is the one the vector search matched.
+    snippet_block = _format_snippet_block(
+        snippets, snippet_max_chars, f"{topic} — {angle}"
+    )
     instructions = extra_instructions or ""
     prompt = get_prompt_manager().get_prompt(
         "atoms.two_pass_writer.generate_with_context",

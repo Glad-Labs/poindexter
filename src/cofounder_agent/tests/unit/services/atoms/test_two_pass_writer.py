@@ -2635,9 +2635,9 @@ async def test_embed_and_fetch_mmr_suppresses_near_duplicate_sibling(monkeypatch
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
     rows = [
-        {"source_table": "posts", "source_id": "A", "text_preview": "alpha", "embedding": "[1,0]", "relevance": 0.90},
-        {"source_table": "posts", "source_id": "B", "text_preview": "beta", "embedding": "[1,0]", "relevance": 0.85},
-        {"source_table": "posts", "source_id": "C", "text_preview": "gamma", "embedding": "[0,1]", "relevance": 0.80},
+        {"source_table": "posts", "source_id": "A", "snippet_text": "alpha", "embedding": "[1,0]", "relevance": 0.90},
+        {"source_table": "posts", "source_id": "B", "snippet_text": "beta", "embedding": "[1,0]", "relevance": 0.85},
+        {"source_table": "posts", "source_id": "C", "snippet_text": "gamma", "embedding": "[0,1]", "relevance": 0.80},
     ]
     await two_pass.run(
         topic="t", angle="a", niche_id="n", pool=_pool_returning(rows),
@@ -2665,9 +2665,9 @@ async def test_embed_and_fetch_dedup_ceiling_drops_near_identical(monkeypatch):
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
     rows = [
-        {"source_table": "posts", "source_id": "dupe", "text_preview": "x", "embedding": "[1,0]", "relevance": 0.95},
-        {"source_table": "posts", "source_id": "ok1", "text_preview": "y", "embedding": "[0,1]", "relevance": 0.85},
-        {"source_table": "posts", "source_id": "ok2", "text_preview": "z", "embedding": "[1,1]", "relevance": 0.80},
+        {"source_table": "posts", "source_id": "dupe", "snippet_text": "x", "embedding": "[1,0]", "relevance": 0.95},
+        {"source_table": "posts", "source_id": "ok1", "snippet_text": "y", "embedding": "[0,1]", "relevance": 0.85},
+        {"source_table": "posts", "source_id": "ok2", "snippet_text": "z", "embedding": "[1,1]", "relevance": 0.80},
     ]
     await two_pass.run(
         topic="t", angle="a", niche_id="n", pool=_pool_returning(rows),

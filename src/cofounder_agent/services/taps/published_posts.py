@@ -16,6 +16,32 @@ from plugins.tap import Document
 logger = logging.getLogger(__name__)
 
 
+def build_post_text(
+    *, title: str | None, excerpt: str | None, content: str | None
+) -> str:
+    """The canonical embeddable text for one post.
+
+    Shared with ``services/embedding_service.py`` on purpose. Both write to
+    the SAME natural key — ``('posts', <post id>, chunk_index,
+    embedding_model)`` — so if they build the text differently they produce
+    different content hashes for the same row and take turns overwriting each
+    other on every republish. They used to: ``embed_post`` wrote
+    ``title\nexcerpt\ncontent[:2000]`` as one unchunked row at chunk 0, on
+    top of this tap's real chunk 0, and the next hourly tap pass put it back.
+    poindexter#1033 gave that truncation a ``chunk_text`` of its own, which
+    fixed the payload but not the flapping. One builder means one hash, so
+    the second writer to arrive dedups and skips instead of clobbering.
+    """
+    parts: list[str] = []
+    if title:
+        parts.append(f"# {title}")
+    if excerpt:
+        parts.append(excerpt)
+    if content:
+        parts.append(content)
+    return "\n\n".join(parts)
+
+
 class PostsTap:
     """One Document per published post. source_id = post UUID."""
 
@@ -43,14 +69,11 @@ class PostsTap:
         logger.info("PostsTap: %d published posts", len(rows))
 
         for post in rows:
-            parts: list[str] = []
-            if post["title"]:
-                parts.append(f"# {post['title']}")
-            if post["excerpt"]:
-                parts.append(post["excerpt"])
-            if post["content"]:
-                parts.append(post["content"])
-            text = "\n\n".join(parts)
+            text = build_post_text(
+                title=post["title"],
+                excerpt=post["excerpt"],
+                content=post["content"],
+            )
             if not text.strip():
                 continue
 
