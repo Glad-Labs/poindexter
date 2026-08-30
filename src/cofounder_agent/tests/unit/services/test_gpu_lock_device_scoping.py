@@ -17,9 +17,17 @@ import pytest
 from services import gpu_scheduler as gs
 from services.site_config import SiteConfig
 
+#: Pinned in every fixture so these tests never depend on whether the RUNNER
+#: is containerised. Without it `gpu_lock_node_id()` falls back to ambient
+#: detection: it resolves a hostname on a bare host (green locally) and returns
+#: "" on a containerised CI runner, which fails closed to the whole-GPU key and
+#: broke 10 of these tests in CI while all passing on the dev box.
+_TEST_NODE_ID = "test-node"
+
 
 def _cfg(**values):
     """Install a SiteConfig the module-level helpers will read."""
+    values.setdefault("gpu_lock_node_id", _TEST_NODE_ID)
     return SiteConfig(initial_config={str(k): str(v) for k, v in values.items()})
 
 
@@ -265,3 +273,63 @@ def test_keys_come_back_sorted(scoped):
 def test_node_id_prefers_the_explicit_setting(scoped):
     scoped(gpu_lock_node_id="worker-7")
     assert gs.gpu_lock_node_id() == "worker-7"
+
+
+# --- node identity: the 2026-08-29 near-miss --------------------------------
+
+
+def test_container_hostname_is_never_used_as_a_node_id(scoped, monkeypatch):
+    """A container id is not a node identity, and using one loses the lock.
+
+    Caught live before it did damage: `socket.gethostname()` inside a container
+    returns the container id, so poindexter-worker (4cca811f97a6) and
+    poindexter-prefect-worker (c7648be9330d) — two containers driving the SAME
+    two cards — derived completely different keys for GPU 0. Different keys for
+    one card is NO mutual exclusion, i.e. the exact CUDA OOM this lock exists
+    to prevent. And a container id changes on every recreate, so it drifts.
+    """
+    scoped(gpu_lock_per_device_enabled="true", gpu_lock_node_id="")
+    monkeypatch.setattr(gs, "_running_in_container", lambda: True)
+    assert gs.gpu_lock_node_id() == "", "containerised + unset must be unusable"
+    # ... and the caller must fall back rather than split on a bad identity.
+    assert gs.resolve_lock_keys("image_gen", None) == [gs.GPU_ADVISORY_LOCK_KEY]
+
+
+def test_explicit_node_id_wins_even_in_a_container(scoped, monkeypatch):
+    """The operator declaring a stable identity is the supported fix."""
+    scoped(gpu_lock_per_device_enabled="true", gpu_lock_node_id="pop-os")
+    monkeypatch.setattr(gs, "_running_in_container", lambda: True)
+    assert gs.gpu_lock_node_id() == "pop-os"
+    assert gs.resolve_lock_keys("image_gen", None) == [
+        gs.device_lock_key("pop-os", 0)
+    ]
+
+
+def test_bare_host_may_use_its_hostname(scoped, monkeypatch):
+    scoped(gpu_lock_per_device_enabled="true", gpu_lock_node_id="")
+    monkeypatch.setattr(gs, "_running_in_container", lambda: False)
+    assert gs.gpu_lock_node_id() != ""
+
+
+def test_undetectable_environment_is_treated_as_containerised(monkeypatch):
+    """Cannot tell ⇒ demand the explicit setting. Conservative on purpose.
+
+    `_running_in_container` swallows its own errors and answers True, so an
+    environment it cannot classify still forces `gpu_lock_node_id` rather than
+    trusting a hostname that might be a container id.
+    """
+    import builtins
+
+    real_open = builtins.open
+
+    def _deny_cgroup(path, *a, **k):
+        if str(path).startswith("/proc/1/cgroup"):
+            raise OSError("denied")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", _deny_cgroup)
+    monkeypatch.setattr(gs.os_path_exists_for_test, "value", False, raising=False) \
+        if hasattr(gs, "os_path_exists_for_test") else None
+    # /.dockerenv may genuinely exist here; the assertion that matters is that
+    # an unreadable cgroup never yields a confident "not a container".
+    assert gs._running_in_container() is True

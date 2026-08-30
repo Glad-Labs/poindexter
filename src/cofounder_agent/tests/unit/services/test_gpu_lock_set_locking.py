@@ -40,6 +40,11 @@ def scoped(monkeypatch):
 
     def _apply(scopes=None, enabled="true"):
         cfg = SiteConfig(initial_config={
+            # Pinned so the suite does not depend on whether the RUNNER is
+            # containerised — ambient detection returns "" in a container,
+            # which fails closed to the whole-GPU key and silently turns every
+            # concurrency assertion below into a serialisation test.
+            "gpu_lock_node_id": "test-node",
             "gpu_lock_per_device_enabled": enabled,
             "gpu_lock_scopes": json.dumps(
                 scopes or {"render": [0], "qa_judge": [1], "llm_primary": [0]}

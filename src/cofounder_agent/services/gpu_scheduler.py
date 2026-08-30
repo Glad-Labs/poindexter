@@ -319,18 +319,61 @@ def _gpu_lock_scoping_enabled() -> bool:
     return _cfg_bool("gpu_lock_per_device_enabled", False)
 
 
+def _running_in_container() -> bool:
+    """True when this process's hostname is a container id, not a host name."""
+    try:
+        import os
+
+        if os.path.exists("/.dockerenv"):
+            return True
+        with open("/proc/1/cgroup", encoding="utf-8") as fh:
+            blob = fh.read()
+        return "docker" in blob or "containerd" in blob or "kubepods" in blob
+    except Exception:  # noqa: BLE001
+        # silent-ok: this swallow PRODUCES the safe answer rather than hiding a
+        # hazard — "cannot classify" returns True, which forces the explicit
+        # gpu_lock_node_id and falls back to the whole-GPU lock. Warning here
+        # would also spam: this runs on every lock acquire.
+        return True
+
+
 def gpu_lock_node_id() -> str:
-    """Identity of the machine whose cards we are locking.
+    """Identity of the machine whose cards we are locking. Empty ⇒ unusable.
 
     A GPU index is only unique WITHIN a host: node A's GPU 0 and node B's GPU 0
-    are different physical cards. Without this, two worker nodes sharing one
-    Postgres would serialise on the same key and the whole fleet would get one
-    GPU's worth of throughput. Single node today ⇒ a constant prefix ⇒
-    byte-identical keys; multi-node later ⇒ correct with no rewrite.
+    are different physical cards, so the key must carry the node.
+
+    **A CONTAINER HOSTNAME IS NOT A NODE IDENTITY** — and defaulting to one was
+    a real bug, caught on 2026-08-29 before it did damage. `socket.gethostname()`
+    inside a container returns the container id, so poindexter-worker and
+    poindexter-prefect-worker — two containers driving the SAME two cards —
+    derived completely different keys:
+
+        pop-os        gpu0=10738779002   (the host)
+        4cca811f97a6  gpu0=9614431085    (worker)
+        c7648be9330d  gpu0=9052941511    (prefect-worker)
+
+    Different keys for one card means NO mutual exclusion between them, which
+    is precisely the CUDA OOM this lock exists to prevent. Worse, a container id
+    changes on every recreate, so the keys would drift silently.
+
+    So: an explicit ``gpu_lock_node_id`` wins; a bare host (no container) may
+    use its hostname; a containerised process with no explicit setting returns
+    "" and the caller must fall back to the whole-GPU key. Fail closed —
+    over-serialising costs throughput, mis-splitting costs a card.
     """
     explicit = _sc_get("gpu_lock_node_id", "").strip()
     if explicit:
         return explicit
+    if _running_in_container():
+        logger.warning(
+            "[GPU] device scoping needs an explicit app_settings."
+            "gpu_lock_node_id when running in a container — a container "
+            "hostname is per-container and changes on recreate, so sibling "
+            "containers would derive DIFFERENT keys for the SAME card and "
+            "lose mutual exclusion. Falling back to the whole-GPU lock."
+        )
+        return ""
     try:
         import socket
 
@@ -474,6 +517,9 @@ def resolve_lock_keys(owner: str, model: str | None) -> list[int]:
     if not indexes:
         return []  # no GPU: deliberately unserialised
     node = gpu_lock_node_id()
+    if not node:
+        # No trustworthy node identity ⇒ do not split. See gpu_lock_node_id.
+        return [GPU_ADVISORY_LOCK_KEY]
     return sorted({device_lock_key(node, int(i)) for i in indexes})
 
 
