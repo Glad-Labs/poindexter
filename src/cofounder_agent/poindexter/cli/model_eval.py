@@ -60,13 +60,16 @@ async def _load_cfg(pool: Any) -> Any:
 @model_eval_group.command("run")
 @click.option(
     "--slot",
-    type=click.Choice(["reranker", "critic"]),
+    type=click.Choice(["reranker", "critic", "self-review"]),
     default="reranker",
     show_default=True,
     help=(
         "Which model slot to evaluate. 'reranker' bakes off rag_rerank_model; "
         "'critic' calibrates the QA judge (pipeline_critic_model) on the "
-        "posts-derived critic golden set (poindexter#985)."
+        "posts-derived critic golden set (poindexter#985); 'self-review' "
+        "measures the contradiction DETECTOR "
+        "(writer_self_review_review_model) against real posts with an "
+        "injected contradiction (poindexter#1031)."
     ),
 )
 @click.option(
@@ -96,6 +99,12 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
         pool = await open_cli_pool()
         try:
             cfg = await _load_cfg(pool)
+            if slot == "self-review":
+                from services.model_eval.bakeoff import run_self_review_bakeoff
+
+                return await run_self_review_bakeoff(
+                    pool=pool, site_config=cfg, challengers=list(challengers),
+                )
             if slot == "critic":
                 from plugins.kernel_platform import KernelPlatform
                 from services.llm_providers.dispatcher import dispatch_complete

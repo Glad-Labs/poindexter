@@ -1314,6 +1314,10 @@ DEFAULTS: dict[str, str] = {
     # known-good cases (each also yields 2 deterministic corruptions as
     # known-bad), and the good-approve floor a judge must clear before a
     # pipeline_critic_model swap is trusted.
+    # Self-review detector golden set (poindexter#1031). Real published
+    # posts, each also used with an injected self-negating section, so a
+    # missed detection becomes a number instead of silence.
+    'model_eval_self_review_posts': '8',
     'model_eval_critic_good_posts': '8',
     'model_eval_critic_min_good_approve': '0.7',
     # Critic review window (poindexter#985). The judge previously saw a bare
@@ -4496,6 +4500,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'retrieval_eval_span_chars': {'owner': 'retrieval_eval', 'value_type': 'integer'},
     'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
+    'model_eval_self_review_posts': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_min_good_approve': {'owner': 'model_eval', 'value_type': 'float'},
     'qa_review_content_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
