@@ -875,6 +875,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 0-for-N rewrite streak so rescue burn is never silent again (the
         # 2026-07 collapse ran 0-for-116 unnoticed; poindexter#986).
         ("jobs", "services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
+        # ProbePipelineIdleJob — hourly watchdog on pipeline OUTPUT. Every
+        # other health signal is liveness (containers up, scheduler firing,
+        # jobs ok=True) and all of them stayed green through a 46-hour content
+        # outage: one unactioned topic batch blocks run_niche_topic_sweep, and
+        # its 7-day expiry meant the reaper would not free it either
+        # (poindexter#1036). Watching output catches every cause, not just that
+        # one.
+        ("jobs", "services.jobs.probe_pipeline_idle", "ProbePipelineIdleJob"),
         # ProbeHeroFallbackJob — 6-hourly watchdog for hero (i2v) animation:
         # per-shot hero_render_fallback findings are info-level and invisible
         # in aggregate, so a four-day outage shipped stills as "video" while

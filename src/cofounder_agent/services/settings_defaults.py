@@ -1292,6 +1292,17 @@ DEFAULTS: dict[str, str] = {
     # Interval (seconds) between confirm-poll /api/ps checks. Smaller =
     # tighter handoff (less wasted wait once the model frees), more polls.
     'pipeline_writer_unload_poll_interval_seconds': '0.5',
+
+    # ----- Pipeline-idle watchdog (probe_pipeline_idle, poindexter#1036) -----
+    # Hours without a new pipeline_tasks row before the probe emits a
+    # `pipeline_idle` finding — only while at least one niche is active, since
+    # an idle pipeline is correct when nothing is meant to be producing. 12h is
+    # three missed slots on the observed 4-hourly cadence: long enough not to
+    # fire on a normal gap, short enough that a stall is caught the same day
+    # rather than after ~46 hours, which is what actually happened.
+    'pipeline_idle_probe_enabled': 'true',
+    'pipeline_idle_max_hours': '12',
+
     # ----- Model-eval loop (champion–challenger; Plan 1 reranker slice) -----
     # Relative improvement a challenger must beat the champion by to be a
     # promotion candidate (0.02 = 2%), plus golden-set bootstrap sizing for
@@ -4514,6 +4525,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- QA thresholds -----
     'qa_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_rewrite_max_attempts': {'owner': 'qa_aggregate', 'value_type': 'integer'},
+    'pipeline_idle_probe_enabled': {'owner': 'probe_pipeline_idle', 'value_type': 'boolean'},
+    'pipeline_idle_max_hours': {'owner': 'probe_pipeline_idle', 'value_type': 'integer'},
     'qa_rescue_yield_probe_enabled': {'owner': 'probe_rescue_yield', 'value_type': 'boolean'},
     'qa_rescue_yield_window_days': {'owner': 'probe_rescue_yield', 'value_type': 'integer'},
     'qa_rescue_yield_min_attempts': {'owner': 'probe_rescue_yield', 'value_type': 'integer'},
