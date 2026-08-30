@@ -18,14 +18,61 @@ Promotion shape by slot:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from services.model_eval.runner import EvalReport
 
+logger = logging.getLogger(__name__)
+
 # Slots whose promotion is a pure setting flip with no data migration. Only
 # these are eligible for opt-in auto-swap; everything else is PR-only.
 _STATELESS_SLOTS = frozenset({"rag_rerank_model"})
+
+# Absolute floor a challenger must clear before it can be proposed at all,
+# per slot. The margin check alone is RELATIVE, so it happily promotes a
+# useless model over a worse one — which is not hypothetical: the first real
+# self-review bakeoff (2026-08-30) scored the champion 0.375 and a challenger
+# exactly 0.500, and 0.500 is the degenerate score for a balanced-accuracy
+# metric. A detector that flags every draft and one that flags none both score
+# 0.5; neither carries any information, and one of them "won" by a 33%
+# relative margin.
+#
+# Keyed by metric name rather than by slot, because the floor is a property of
+# what the number MEANS. Balanced accuracy over two classes has a known chance
+# line at 0.5, so anything at or below it is noise regardless of which slot
+# produced it. Metrics with no entry here have no floor — the same behaviour
+# as before — so this can only ever block a promotion that was already
+# meaningless, never a real one.
+_METRIC_FLOORS: dict[str, float] = {
+    "judge_balanced_accuracy": 0.5,
+    "self_review_balanced_accuracy": 0.5,
+}
+
+
+def _floor_for(metric_name: str, site_config: Any) -> float | None:
+    """Floor for this metric, operator-overridable per slot's metric.
+
+    ``model_eval_floor.<metric_name>`` wins when set, so an operator can raise
+    the bar (demand 0.7, not merely better-than-chance) or clear it with an
+    empty value without a code change.
+    """
+    override = site_config.get(f"model_eval_floor.{metric_name}", None)
+    if override is not None and str(override).strip() != "":
+        try:
+            return float(override)
+        except (TypeError, ValueError):
+            # Loud, not silent: falling back here means the operator's
+            # configured floor is NOT being applied, so a promotion they
+            # expected to be blocked may go through. Silence would hide a
+            # misconfiguration behind correct-looking behaviour.
+            logger.warning(
+                "[model_eval] model_eval_floor.%s is not a number (%r) — "
+                "ignoring it and using the built-in floor %r instead",
+                metric_name, override, _METRIC_FLOORS.get(metric_name),
+            )
+    return _METRIC_FLOORS.get(metric_name)
 
 
 @dataclass(frozen=True)
@@ -44,6 +91,14 @@ def propose_promotion(*, report: EvalReport, site_config: Any) -> PromotionPropo
     """Return a proposal when a challenger won, else ``None``."""
     best_score = report.best_challenger_score
     if not report.beats_margin or report.best_challenger is None or best_score is None:
+        return None
+
+    # Beating the champion is necessary but not sufficient: the winner must
+    # also clear the metric's absolute floor. Without this, "better than a
+    # broken champion" is enough to get promoted, and a metric's degenerate
+    # score can win outright.
+    floor = _floor_for(report.metric_name, site_config)
+    if floor is not None and best_score <= floor:
         return None
 
     slot = report.slot

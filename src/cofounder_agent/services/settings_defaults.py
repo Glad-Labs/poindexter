@@ -1318,6 +1318,17 @@ DEFAULTS: dict[str, str] = {
     # posts, each also used with an injected self-negating section, so a
     # missed detection becomes a number instead of silence.
     'model_eval_self_review_posts': '8',
+    # Absolute floor a challenger must CLEAR before propose_promotion will
+    # suggest it. The margin check is relative, so without a floor "better
+    # than a broken champion" is enough: the first real self-review bakeoff
+    # (2026-08-30) scored champion 0.375 vs challenger exactly 0.500 and would
+    # have opened a promotion PR — but 0.500 is the degenerate score for a
+    # balanced-accuracy metric (flag everything and flag nothing both score
+    # it). Keyed by METRIC name, because the floor is a property of what the
+    # number means, not of which slot produced it. Empty value = fall back to
+    # the code default; a metric with neither has no floor.
+    'model_eval_floor.self_review_balanced_accuracy': '0.5',
+    'model_eval_floor.judge_balanced_accuracy': '0.5',
     'model_eval_critic_good_posts': '8',
     'model_eval_critic_min_good_approve': '0.7',
     # Critic review window (poindexter#985). The judge previously saw a bare
@@ -4501,6 +4512,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_self_review_posts': {'owner': 'model_eval', 'value_type': 'integer'},
+    'model_eval_floor.self_review_balanced_accuracy': {'owner': 'model_eval', 'value_type': 'float'},
+    'model_eval_floor.judge_balanced_accuracy': {'owner': 'model_eval', 'value_type': 'float'},
     'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_min_good_approve': {'owner': 'model_eval', 'value_type': 'float'},
     'qa_review_content_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
