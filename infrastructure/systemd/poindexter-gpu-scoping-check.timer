@@ -1,0 +1,17 @@
+# Fires ONCE. The payoff question could not be answered at rollout because the
+# pipeline was idle (0 tasks for two days), so a zero skip-count proved nothing.
+# This waits for traffic to return and then answers it honestly.
+#
+# Persistent=true so a box that is off at the scheduled moment still runs the
+# check on next boot rather than silently skipping it — the whole point is that
+# the answer is not lost.
+[Unit]
+Description=Run the GPU scoping payoff check once, after traffic resumes
+
+[Timer]
+OnCalendar=2026-09-02 13:00:00 UTC
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

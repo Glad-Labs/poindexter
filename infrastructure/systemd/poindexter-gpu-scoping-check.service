@@ -1,0 +1,11 @@
+# Operators: set User= to your login and ExecStart to your checkout path.
+# One-off follow-up for poindexter#3457 — see the script header.
+[Unit]
+Description=GPU device-lock scoping payoff check (one-off, poindexter#3457)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=poindexter
+ExecStart=/home/poindexter/glad-labs-website/scripts/check_gpu_scoping_payoff.py
