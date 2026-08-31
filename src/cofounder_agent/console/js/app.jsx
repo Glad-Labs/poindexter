@@ -2149,7 +2149,7 @@ function App() {
 
         {mode === 'wall' && (
           // Wall is an ambient/TV view kept on the static PX.kpis: it has its
-          // own hardcoded scaffolding (date, deltas, "of $50 budget") and does a
+          // own hardcoded scaffolding (deltas, "of $50 budget") and does a
           // numeric .toFixed on the spend value that the live honest-empty '—'
           // would throw on. The live, action-first strip is console mode above;
           // wiring Wall to live is a separate, larger change.
@@ -2327,7 +2327,10 @@ function approvalToInbox(t) {
   // breakdown when the draft carries one, else parsed from qa_feedback so
   // every draft already in the queue gets the same card (PXQa, qa-helpers.js).
   const qa = window.PXQa
-    ? window.PXQa.summarize({ metadata: t.metadata || {}, qa_feedback: t.qa_feedback })
+    ? window.PXQa.summarize({
+        metadata: t.metadata || {},
+        qa_feedback: t.qa_feedback,
+      })
     : null;
   const sub = [
     [
@@ -2338,7 +2341,10 @@ function approvalToInbox(t) {
     ['TOPIC', t.topic || '—'],
   ];
   if (qaFlagged) {
-    sub.unshift(['QA', vetoedBy.length ? `vetoed: ${vetoedBy.join(', ')}` : 'flagged']);
+    sub.unshift([
+      'QA',
+      vetoedBy.length ? `vetoed: ${vetoedBy.join(', ')}` : 'flagged',
+    ]);
   }
   return {
     id: t.task_id,

@@ -467,7 +467,13 @@ function WallDisplay({
   const inFlight = pipeline.tasks.filter((t) => t.status === 'run').length;
   const down = services.filter((s) => s.status === 'err');
   const top = inbox[0];
-  const date = 'MON 08 JUN 2026';
+  // Live: today. Mock: the simulated PX.now epoch, so the zero-backend
+  // demo stays coherent with its feed timestamps instead of mixing a real
+  // date into mock data. Recomputed on every App render (≤30s via the
+  // health poll) — plenty for day granularity.
+  const date = window.PX.wallDate(
+    window.PX.api.isLive() ? new Date() : window.PX.now
+  );
 
   const cells = [
     {

@@ -6,6 +6,34 @@
 (function () {
   const now = new Date('2026-06-08T14:32:00');
   const hhmmss = (d) => d.toTimeString().slice(0, 8);
+  // The wall clock's second line ("MON 31 AUG 2026") — hhmmss's sibling.
+  // Local getters on purpose (same wall-clock basis as hhmmss), and fixed
+  // EN tokens rather than toLocaleDateString so the render can't vary
+  // with the browser locale. WallDisplay derives the line from this at
+  // render time: live gets `new Date()`, mock gets the simulated `now`.
+  const WALL_DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const WALL_MONTHS = [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ];
+  const wallDate = (d) =>
+    WALL_DAYS[d.getDay()] +
+    ' ' +
+    String(d.getDate()).padStart(2, '0') +
+    ' ' +
+    WALL_MONTHS[d.getMonth()] +
+    ' ' +
+    d.getFullYear();
   const ago = (mins) => {
     if (mins < 1) return 'now';
     if (mins < 60) return mins + 'm ago';
@@ -3139,6 +3167,7 @@
   window.PX = {
     now,
     hhmmss,
+    wallDate,
     ago,
     kpis,
     chatMock,
