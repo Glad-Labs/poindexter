@@ -130,11 +130,17 @@ def _make_creds(refresh_token: str = "fresh-rtok") -> MagicMock:
     return creds
 
 
-def _patch_consent(monkeypatch, integrations_module, creds: Any) -> list[tuple[str, str]]:
-    calls: list[tuple[str, str]] = []
+def _patch_consent(monkeypatch, integrations_module, creds: Any) -> list[tuple[str, str, bool]]:
+    """Record (client_id, client_secret, with_update) per consent call.
 
-    def fake_consent(cid: str, csecret: str) -> Any:
-        calls.append((cid, csecret))
+    ``with_update`` is what selects the wider youtube.force-ssl scope needed by
+    videos.update, so the tests assert on it rather than on the scope list the
+    real flow builds internally.
+    """
+    calls: list[tuple[str, str, bool]] = []
+
+    def fake_consent(cid: str, csecret: str, *, with_update: bool = False) -> Any:
+        calls.append((cid, csecret, with_update))
         return creds
 
     monkeypatch.setattr(integrations_module, "_run_consent_flow", fake_consent)
@@ -758,3 +764,54 @@ class TestModuleIsNeverLeftReloaded:
             f"module attributes were rebound since import: {rebound}. A test "
             "mutated or reloaded poindexter.cli.integrations without restoring it."
         )
+
+
+class TestSetupUpdateScope:
+    """``--with-update`` is what makes `youtube sync-metadata` possible.
+
+    The default grant (``youtube.upload``) is INSERT-ONLY — verified against
+    the live token 2026-08-31, which came back with exactly that one scope —
+    so editing a published video's metadata needs a deliberate re-consent.
+    """
+
+    def test_default_setup_requests_upload_only(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        calls = _patch_consent(monkeypatch, integrations_module, _make_creds())
+        _patch_verify(monkeypatch, integrations_module)
+
+        result = runner.invoke(
+            integrations_module.integrations_group,
+            ["youtube", "setup", "--client-id", "cid", "--client-secret", "csec"],
+            input="n\n",
+        )
+        assert result.exit_code == 0, result.output
+        assert calls[0][2] is False
+        # And the operator is told up front why sync-metadata will refuse.
+        assert "INSERT-ONLY" in result.output
+
+    def test_with_update_flag_requests_the_wider_scope(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        calls = _patch_consent(monkeypatch, integrations_module, _make_creds())
+        _patch_verify(monkeypatch, integrations_module)
+
+        result = runner.invoke(
+            integrations_module.integrations_group,
+            [
+                "youtube", "setup", "--client-id", "cid",
+                "--client-secret", "csec", "--with-update",
+            ],
+            input="n\n",
+        )
+        assert result.exit_code == 0, result.output
+        assert calls[0][2] is True
+        assert "force-ssl" in result.output
+
+    def test_scope_lists_are_a_superset_not_a_swap(self):
+        """The update grant must still cover uploading, or re-consenting to
+        edit metadata would break the upload path."""
+        from services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
+
+        assert set(_SCOPES).issubset(set(_SCOPES_WITH_UPDATE))
+        assert "youtube.force-ssl" in " ".join(_SCOPES_WITH_UPDATE)

@@ -161,7 +161,9 @@ def _build_client_config_dict(client_id: str, client_secret: str) -> dict[str, A
     }
 
 
-def _run_consent_flow(client_id: str, client_secret: str) -> Any:
+def _run_consent_flow(
+    client_id: str, client_secret: str, *, with_update: bool = False
+) -> Any:
     """Open the operator's browser, capture the OAuth redirect, return
     ``google.oauth2.credentials.Credentials``.
 
@@ -169,12 +171,17 @@ def _run_consent_flow(client_id: str, client_secret: str) -> Any:
     the ``youtube`` extra hasn't been installed (`poetry install
     --extras youtube` is the gate).
 
-    Per `feedback_oauth_scope_hygiene`: only requests
-    ``youtube.upload`` — the absolute minimum scope. We deliberately do
-    NOT add ``youtube.readonly`` just to support a channel read-back:
+    Per `feedback_oauth_scope_hygiene`: requests ``youtube.upload`` alone by
+    default — the absolute minimum. We deliberately do NOT add
+    ``youtube.readonly`` just to support a channel read-back:
     ``channels.list(mine=True)`` 403s under an upload-only token, so the
     setup flow treats that read-back as best-effort and proves the
     grant end-to-end via an actual upload (`youtube test`) instead.
+
+    ``with_update=True`` additionally requests ``youtube.force-ssl``, which is
+    what ``videos.update`` requires — an upload-only token is INSERT-ONLY and
+    cannot edit a published video's metadata. Opt-in rather than default so an
+    operator who only ever uploads keeps the narrower grant.
     """
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-not-found]
@@ -186,11 +193,11 @@ def _run_consent_flow(client_id: str, client_secret: str) -> Any:
 
     # Pull scopes from the adapter so we don't drift — single source
     # of truth for "what the operator consented to grant us".
-    from services.publish_adapters.youtube import _SCOPES
+    from services.publish_adapters.youtube import _SCOPES, _SCOPES_WITH_UPDATE
 
     flow = InstalledAppFlow.from_client_config(
         _build_client_config_dict(client_id, client_secret),
-        scopes=_SCOPES,
+        scopes=_SCOPES_WITH_UPDATE if with_update else _SCOPES,
     )
     # port=0 lets the OS pick a free port; google-auth-oauthlib hosts
     # a one-shot HTTP server there to catch the redirect with the
@@ -392,6 +399,15 @@ async def _set_enabled(value: bool) -> None:
     help="OAuth client_secret (use instead of --client-secret-file).",
 )
 @click.option(
+    "--with-update", "with_update", is_flag=True,
+    help=(
+        "Also request the youtube.force-ssl scope, which videos.update "
+        "requires. Needed for `youtube sync-metadata`; an upload-only token "
+        "is INSERT-ONLY and cannot edit a published video. Re-running setup "
+        "with this flag replaces the stored refresh_token."
+    ),
+)
+@click.option(
     "--yes", "assume_yes", is_flag=True,
     help=(
         "Skip the interactive 'flip enabled=true now?' prompt. "
@@ -402,6 +418,7 @@ def youtube_setup(
     client_secret_file: str | None,
     client_id: str | None,
     client_secret: str | None,
+    with_update: bool,
     assume_yes: bool,
 ) -> None:
     """Run the YouTube OAuth consent flow + write secrets.
@@ -434,14 +451,24 @@ def youtube_setup(
     )
 
     click.echo("Opening browser for YouTube OAuth consent...")
-    click.echo(
-        "  Scope requested: youtube.upload "
-        "(minimum required per feedback_oauth_scope_hygiene)"
-    )
+    if with_update:
+        click.echo(
+            "  Scopes requested: youtube.upload + youtube.force-ssl "
+            "(force-ssl is what videos.update needs)"
+        )
+    else:
+        click.echo(
+            "  Scope requested: youtube.upload "
+            "(minimum required per feedback_oauth_scope_hygiene)"
+        )
+        click.echo(
+            "  NOTE: upload-only is INSERT-ONLY — `youtube sync-metadata` "
+            "will refuse until you re-run with --with-update."
+        )
 
     # Step 2 — run the consent flow.
     try:
-        credentials = _run_consent_flow(cid, csecret)
+        credentials = _run_consent_flow(cid, csecret, with_update=with_update)
     except click.ClickException:
         raise
     except Exception as exc:
@@ -680,3 +707,76 @@ def youtube_test(
         "  poindexter settings set "
         "plugin.publish_adapter.youtube.enabled true"
     )
+
+
+@youtube_group.command("sync-metadata")
+@click.option(
+    "--post", "selector", default=None,
+    help="Limit to one post id or one YouTube video id. Default: every published upload.",
+)
+@click.option(
+    "--limit", default=None, type=int, help="Cap how many videos are processed.",
+)
+@click.option(
+    "--apply", "do_apply", is_flag=True,
+    help=(
+        "Actually push to YouTube. WITHOUT this the command only prints what "
+        "it would send — this writes to a public channel, so the default is a "
+        "dry run."
+    ),
+)
+def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: bool) -> None:
+    """Recompose title/description/tags for videos already on the channel.
+
+    The upload path composes metadata once and never revisits it, so a change
+    to the composition rules leaves already-published videos on the old rules.
+    This re-runs the CURRENT builders over the post rows and pushes the result.
+
+    Requires the youtube.force-ssl scope — an upload-only token is INSERT-ONLY.
+    Re-consent once with `poindexter integrations youtube setup --with-update`.
+    """
+    from poindexter.cli._dataplane import run_service
+    from services.site_config import SiteConfig
+    from services.youtube_metadata_sync import sync_youtube_metadata
+
+    async def _go(pool):
+        sc = SiteConfig(pool=pool)
+        await sc.load(pool)
+        return await sync_youtube_metadata(
+            pool, sc, selector=selector, apply=do_apply, limit=limit,
+        )
+
+    try:
+        outcomes = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    if not outcomes:
+        click.echo("No published YouTube uploads matched.")
+        return
+
+    mode = "APPLIED" if do_apply else "DRY RUN — nothing sent"
+    click.echo(f"YouTube metadata sync — {mode}\n")
+    click.echo(f"{'video':<14}{'desc':>7}{'tags':>6}  title")
+    click.echo("-" * 72)
+    failures = 0
+    for o in outcomes:
+        mark = "" if (o.applied or not do_apply) else "  ✗"
+        if o.error:
+            failures += 1
+        click.echo(
+            f"{o.video_id:<14}{o.description_chars:>7}{o.tag_count:>6}  "
+            f"{o.title[:38]}{mark}"
+        )
+    click.echo("-" * 72)
+    click.echo(f"{len(outcomes)} video(s); {failures} failed")
+
+    if failures:
+        # Print the first error in full — a scope refusal is the expected
+        # first failure and its remediation is the whole point of the message.
+        first = next(o for o in outcomes if o.error)
+        click.echo(f"\nFirst error ({first.video_id}):\n  {first.error}", err=True)
+        raise SystemExit(1)
+    if not do_apply:
+        click.echo("\nRe-run with --apply to push these to YouTube.")

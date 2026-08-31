@@ -702,3 +702,152 @@ class TestStreamProgress:
         assert len(snapshots) == 1
         assert snapshots[0].success is False
         assert "disabled" in (snapshots[0].error or "")
+
+
+# ---------------------------------------------------------------------------
+# videos.update — metadata edits on already-published videos
+# ---------------------------------------------------------------------------
+
+
+class _FakeVideos:
+    """Minimal googleapiclient videos() double recording the update body."""
+
+    def __init__(self, snippet, captured):
+        self._snippet = snippet
+        self._captured = captured
+
+    def list(self, **kwargs):
+        self._captured["list_kwargs"] = kwargs
+        items = [{"snippet": self._snippet}] if self._snippet is not None else []
+        return _FakeExec({"items": items})
+
+    def update(self, **kwargs):
+        self._captured["update_kwargs"] = kwargs
+        return _FakeExec({"id": kwargs.get("body", {}).get("id")})
+
+
+class _FakeExec:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def execute(self):
+        return self._payload
+
+
+def _run_update_blocking(snippet, **overrides):
+    """Drive _do_update_metadata_blocking against a fake YouTube client."""
+    from services.publish_adapters import youtube as yt
+
+    captured: dict = {}
+    fake = type("_FakeYT", (), {"videos": lambda self: _FakeVideos(snippet, captured)})()
+
+    import sys
+    import types as _types
+
+    mod = _types.ModuleType("googleapiclient.discovery")
+    mod.build = lambda *a, **k: fake  # type: ignore[attr-defined]
+    pkg = _types.ModuleType("googleapiclient")
+    pkg.discovery = mod  # type: ignore[attr-defined]
+    saved = {k: sys.modules.get(k) for k in ("googleapiclient", "googleapiclient.discovery")}
+    sys.modules["googleapiclient"] = pkg
+    sys.modules["googleapiclient.discovery"] = mod
+    try:
+        kwargs = {"video_id": "vid123", "title": None, "description": None, "tags": None}
+        kwargs.update(overrides)
+        yt.YouTubePublishAdapter._do_update_metadata_blocking(
+            credentials=object(), **kwargs
+        )
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    return captured
+
+
+def test_update_preserves_untouched_snippet_fields():
+    """videos.update REPLACES the snippet — a field left out is reset to its
+    default. Sending only a description must therefore still carry the live
+    title, tags and categoryId back, or the update silently blanks them."""
+    live = {
+        "title": "Original title",
+        "description": "old wall of text",
+        "tags": ["a", "b"],
+        "categoryId": "28",
+        "defaultLanguage": "en",
+    }
+    captured = _run_update_blocking(live, description="new short description")
+    body = captured["update_kwargs"]["body"]["snippet"]
+    assert body["description"] == "new short description"
+    assert body["title"] == "Original title"      # preserved
+    assert body["tags"] == ["a", "b"]             # preserved
+    assert body["categoryId"] == "28"             # required by the API
+    assert body["defaultLanguage"] == "en"
+
+
+def test_update_strips_read_only_snippet_members():
+    """channelId/publishedAt/thumbnails come back on the read and are rejected
+    on write-back."""
+    live = {
+        "title": "T", "categoryId": "28",
+        "channelId": "UC123", "channelTitle": "Glad Labs",
+        "publishedAt": "2026-08-31T00:00:00Z",
+        "thumbnails": {"default": {"url": "x"}},
+        "localized": {"title": "T"},
+    }
+    captured = _run_update_blocking(live, title="New")
+    body = captured["update_kwargs"]["body"]["snippet"]
+    for read_only in ("channelId", "channelTitle", "publishedAt", "thumbnails", "localized"):
+        assert read_only not in body
+    assert body["title"] == "New"
+    assert captured["update_kwargs"]["part"] == "snippet"
+
+
+def test_update_reads_before_writing():
+    captured = _run_update_blocking({"title": "T", "categoryId": "28"}, title="New")
+    assert captured["list_kwargs"] == {"part": "snippet", "id": "vid123"}
+
+
+def test_update_raises_lookup_error_when_video_is_gone():
+    import pytest as _pytest
+
+    with _pytest.raises(LookupError, match="not found"):
+        _run_update_blocking(None, title="New")
+
+
+def test_update_clamps_to_youtube_limits():
+    captured = _run_update_blocking(
+        {"title": "T", "categoryId": "28"},
+        title="x" * 300,
+        description="y" * 9000,
+        tags=[f"t{i}" for i in range(50)],
+    )
+    body = captured["update_kwargs"]["body"]["snippet"]
+    assert len(body["title"]) == 100
+    assert len(body["description"]) == 5000
+    assert len(body["tags"]) == 30
+
+
+def test_insufficient_scope_classifier_matches_the_real_403():
+    """The expected first failure: the live grant is upload-only (verified
+    2026-08-31). It must be recognised so the caller can print the
+    re-consent command instead of a raw Google error."""
+    from services.publish_adapters.youtube import _is_insufficient_scope
+
+    real = (
+        "<HttpError 403 when requesting https://youtube.googleapis.com/youtube/v3/"
+        'videos?part=snippet returned "Request had insufficient authentication '
+        'scopes.". Details: "insufficientPermissions">'
+    )
+    assert _is_insufficient_scope(Exception(real)) is True
+
+
+def test_insufficient_scope_classifier_ignores_unrelated_403s():
+    """A suspended channel is also a 403 and must NOT be mislabelled as
+    'go re-consent' — that would send the operator down the wrong path."""
+    from services.publish_adapters.youtube import _is_insufficient_scope
+
+    assert _is_insufficient_scope(Exception("HttpError 403 ... channelSuspended")) is False
+    assert _is_insufficient_scope(Exception("HttpError 404 videoNotFound")) is False
+    assert _is_insufficient_scope(Exception("connection reset")) is False

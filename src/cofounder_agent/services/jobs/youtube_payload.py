@@ -102,6 +102,65 @@ def _trim_at_sentence(text: str, limit: int) -> str:
     return head.rstrip()
 
 
+_YOUTUBE_TITLE_LIMIT = 100
+
+
+def _build_youtube_title(title: str, *, shorts: bool, site_config: Any) -> str:
+    """Compose the video title, distinguishing a Short from its long-form twin.
+
+    A post can produce BOTH a long-form video and a Short, and both took
+    ``posts.title`` verbatim — so a channel showing both had two videos under
+    one identical name, with nothing but the thumbnail to tell them apart.
+
+    The Short gets a suffix (``youtube_short_title_suffix``, default
+    ``" #Shorts"``), which does double duty: it separates the pair in every
+    listing, and ``#Shorts`` is one of the markers YouTube itself keys off for
+    Shorts classification.
+
+    Budget-aware rather than a bare append: YouTube caps titles at 100 chars,
+    so appending to a long title would push the suffix past the cap and the
+    adapter's clamp would cut off the very thing that distinguishes it. The
+    title is trimmed at a word boundary to make room first.
+
+    Empty suffix = no distinction, an operator's explicit choice.
+    """
+    clean = (title or "").strip()
+    if not shorts:
+        return clean[:_YOUTUBE_TITLE_LIMIT]
+
+    suffix = " #Shorts"
+    if site_config is not None:
+        try:
+            raw = site_config.get("youtube_short_title_suffix", suffix)
+            suffix = suffix if raw is None else str(raw)
+        except Exception as exc:  # noqa: BLE001 — must not block an upload
+            # Visible, not swallowed: falling back here means the Short ships
+            # under the DEFAULT suffix rather than the operator's configured
+            # one, which is a quiet difference on a public channel.
+            logger.warning(
+                "[YOUTUBE_PAYLOAD] youtube_short_title_suffix read failed "
+                "(%s) — using the default %r",
+                describe_exception(exc), suffix,
+            )
+    if not suffix.strip():
+        return clean[:_YOUTUBE_TITLE_LIMIT]
+
+    # Idempotent: never stack a second marker on a title that already carries
+    # one (an operator-written title, or a re-sync of an already-suffixed video).
+    if suffix.strip().lower() in clean.lower():
+        return clean[:_YOUTUBE_TITLE_LIMIT]
+
+    room = _YOUTUBE_TITLE_LIMIT - len(suffix)
+    if room <= 0:
+        return clean[:_YOUTUBE_TITLE_LIMIT]
+    head = clean[:room].rstrip()
+    if len(clean) > room:
+        cut = head.rfind(" ")
+        if cut > room // 2:
+            head = head[:cut].rstrip()
+    return f"{head}{suffix}"
+
+
 def _parse_seo_keywords(seo_keywords: str) -> list[str]:
     """Parse the comma-separated ``posts.seo_keywords`` column into tags.
 
@@ -231,6 +290,7 @@ def _build_youtube_description(
 
 __all__ = [
     "_build_youtube_description",
+    "_build_youtube_title",
     "_markdown_to_plain",
     "_parse_seo_keywords",
     "_strip_markup",

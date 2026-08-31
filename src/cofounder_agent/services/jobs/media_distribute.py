@@ -195,6 +195,7 @@ async def _dispatch_asset(
     from services.integrations.handlers import load_all
     from services.jobs.youtube_payload import (
         _build_youtube_description,
+        _build_youtube_title,
         _parse_seo_keywords,
     )
 
@@ -222,7 +223,12 @@ async def _dispatch_asset(
     tags = _parse_seo_keywords(row.get("seo_keywords") or "")
     payload = {
         "media_path": row["storage_path"],
-        "title": row.get("title") or "",
+        # Shorts get a distinguishing suffix — a post can produce BOTH a
+        # long-form video and a Short, and taking posts.title verbatim for
+        # each put two identically-named videos on the channel.
+        "title": _build_youtube_title(
+            row.get("title") or "", shorts=shorts, site_config=site_config,
+        ),
         "description": description,
         "tags": tags or None,
         "post_id": row["post_id"],

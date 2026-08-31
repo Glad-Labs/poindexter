@@ -62,6 +62,41 @@ _TOKEN_URI = "https://oauth2.googleapis.com/token"
 _VIDEO_URL_FMT = "https://www.youtube.com/watch?v={external_id}"
 _SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
+# ``youtube.upload`` is INSERT-ONLY. ``videos.update`` (and the ``videos.list``
+# read that must precede it) require one of youtube / youtube.force-ssl /
+# youtubepartner — verified empirically 2026-08-31 against the live grant,
+# which came back ``scope=…/auth/youtube.upload`` alone.
+#
+# Scopes live in the TOKEN, not in this constant: widening the list here grants
+# nothing on its own. An existing refresh token keeps exactly the scopes it was
+# consented with, so editing metadata needs a one-time re-consent
+# (``poindexter integrations youtube setup --with-update``). Kept as a separate
+# opt-in list rather than folded into _SCOPES so an operator who only ever
+# uploads still runs least-privilege, per feedback_oauth_scope_hygiene.
+_UPDATE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+_SCOPES_WITH_UPDATE = [*_SCOPES, _UPDATE_SCOPE]
+
+
+def _is_insufficient_scope(exc: Exception) -> bool:
+    """True when a Google API error is the missing-update-scope 403.
+
+    Matched on the response payload rather than the exception type so it works
+    whether googleapiclient raises HttpError or the transport surfaces
+    something else. Both the HTTP status and a scope-ish reason must be
+    present — a plain 403 (e.g. the channel is suspended) is a different
+    problem and must not be mislabelled as "go re-consent".
+    """
+    text = str(exc)
+    if "403" not in text and "401" not in text:
+        return False
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in ("insufficientpermissions", "insufficient authentication",
+                       "request had insufficient", "scope")
+    )
+
+
 
 class YouTubePublishAdapter:
     """Publish finished MP4s to YouTube via the Data API v3."""
@@ -174,7 +209,12 @@ class YouTubePublishAdapter:
             client_id=secrets["client_id"],
             client_secret=secrets["client_secret"],
             token_uri=_TOKEN_URI,
-            scopes=_SCOPES,
+            # Advertise the superset. This is a client-side hint only — the
+            # server enforces whatever the refresh token was actually granted,
+            # so listing the update scope here cannot escalate anything; it
+            # just stops google-auth from objecting locally on the update path
+            # when the operator HAS re-consented.
+            scopes=_SCOPES_WITH_UPDATE,
         )
 
     @staticmethod
@@ -430,6 +470,144 @@ class YouTubePublishAdapter:
         youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
         media = MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
         youtube.thumbnails().set(videoId=video_id, media_body=media).execute()
+
+    @staticmethod
+    def _do_update_metadata_blocking(
+        *,
+        credentials: Any,
+        video_id: str,
+        title: str | None,
+        description: str | None,
+        tags: list[str] | None,
+    ) -> dict[str, Any]:
+        """Read-modify-write the video's snippet. Runs in a worker thread.
+
+        **``videos.update`` REPLACES the whole part it is given.** Any mutable
+        snippet field left out of the request is reset to its default — so
+        sending only ``description`` would silently blank the title, tags and
+        categoryId of a live video. The read comes first for that reason, not
+        as an optimisation: we fetch the current snippet, overlay only the
+        fields the caller actually passed, and write the merged result back.
+
+        ``title`` and ``categoryId`` are additionally REQUIRED by the API on
+        any snippet update, which the merge satisfies by construction.
+
+        Quota: videos.list = 1 unit, videos.update = 50. Two orders of
+        magnitude under the 1,600-unit insert, so a full-channel metadata
+        resync is quota-cheap.
+        """
+        from googleapiclient.discovery import build  # type: ignore[import-not-found]
+
+        youtube = build(
+            "youtube", "v3", credentials=credentials, cache_discovery=False,
+        )
+
+        current = youtube.videos().list(part="snippet", id=video_id).execute()
+        items = current.get("items") or []
+        if not items:
+            raise LookupError(
+                f"video {video_id!r} not found on this channel — it may have "
+                "been deleted, or the token belongs to a different account"
+            )
+        snippet = dict(items[0].get("snippet") or {})
+
+        # Overlay only what the caller supplied; everything else rides through
+        # from the live snippet untouched.
+        if title is not None:
+            snippet["title"] = title.strip()[:100]
+        if description is not None:
+            snippet["description"] = description.strip()[:5000]
+        if tags is not None:
+            snippet["tags"] = [str(t).strip() for t in tags if str(t).strip()][:30]
+
+        # Drop read-only members the API rejects on write-back.
+        for read_only in ("channelId", "channelTitle", "publishedAt", "thumbnails", "localized"):
+            snippet.pop(read_only, None)
+
+        return youtube.videos().update(
+            part="snippet", body={"id": video_id, "snippet": snippet},
+        ).execute()
+
+    async def update_metadata(
+        self,
+        *,
+        video_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        tags: list[str] | None = None,
+        **kwargs: Any,
+    ) -> PublishResult:
+        """Update an already-published video's title / description / tags.
+
+        Only the fields passed as non-``None`` are changed; the rest of the
+        live snippet is preserved (see the read-modify-write note on
+        :meth:`_do_update_metadata_blocking`).
+
+        Returns a ``PublishResult`` mirroring :meth:`publish` so callers get
+        one shape from both paths. An insufficient-scope 403 — the expected
+        first failure, because the original consent was upload-only — comes
+        back with the exact remediation command rather than a raw Google
+        error.
+        """
+        force = bool(kwargs.get("_force", False))
+        ready, error, secrets = await self._check_gating(force=force)
+        if not ready:
+            return PublishResult(platform=self.name, success=False, error=error)
+
+        if not video_id:
+            return PublishResult(
+                platform=self.name, success=False, error="video_id is required",
+            )
+        if title is None and description is None and tags is None:
+            return PublishResult(
+                platform=self.name,
+                success=False,
+                error="nothing to update — pass at least one of title/description/tags",
+            )
+
+        try:
+            credentials = self._build_credentials(secrets)
+            await asyncio.to_thread(
+                self._do_update_metadata_blocking,
+                credentials=credentials,
+                video_id=video_id,
+                title=title,
+                description=description,
+                tags=tags,
+            )
+        except LookupError as exc:
+            return PublishResult(platform=self.name, success=False, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 — classified below, never swallowed
+            message = str(exc)
+            if _is_insufficient_scope(exc):
+                return PublishResult(
+                    platform=self.name,
+                    success=False,
+                    error=(
+                        "YouTube refused the update: the stored refresh token "
+                        "was granted 'youtube.upload', which is INSERT-ONLY. "
+                        "videos.update needs the "
+                        f"'{_UPDATE_SCOPE}' scope. Re-consent once with "
+                        "`poindexter integrations youtube setup --with-update` "
+                        "(opens a browser; replaces the stored refresh token), "
+                        "then re-run. Underlying error: " + message
+                    ),
+                )
+            logger.warning(
+                "[YOUTUBE] videos.update failed for %s: %s", video_id, message,
+            )
+            return PublishResult(
+                platform=self.name,
+                success=False,
+                error=f"videos.update failed: {type(exc).__name__}: {message}",
+            )
+
+        return PublishResult(
+            platform=self.name,
+            success=True,
+            external_id=video_id,
+            public_url=f"https://www.youtube.com/watch?v={video_id}",
+        )
 
     async def status(
         self,

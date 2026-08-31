@@ -171,3 +171,73 @@ def test_budget_cap_holds_with_huge_opt_in():
         slug="s",
     )
     assert len(out) <= 4800
+
+
+# ---------------------------------------------------------------------------
+# titles — separating a Short from its long-form twin
+# ---------------------------------------------------------------------------
+
+
+def test_long_form_title_is_the_post_title_verbatim():
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    assert _build_youtube_title("The Gap Nobody Names", shorts=False, site_config=_sc()) == (
+        "The Gap Nobody Names"
+    )
+
+
+def test_short_gets_a_distinguishing_suffix():
+    """A post can produce BOTH renders; taking posts.title verbatim for each
+    put two identically-named videos on the channel."""
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    long_form = _build_youtube_title("The Gap Nobody Names", shorts=False, site_config=_sc())
+    short = _build_youtube_title("The Gap Nobody Names", shorts=True, site_config=_sc())
+    assert short != long_form
+    assert short == "The Gap Nobody Names #Shorts"
+
+
+def test_short_suffix_survives_a_title_at_the_cap():
+    """Appending blindly would push the suffix past YouTube's 100-char limit
+    and the adapter's clamp would cut off the very thing that distinguishes
+    it — so the title is trimmed at a word boundary to make room first."""
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    long_title = "Why " + "extremely " * 12 + "long titles break naive appending"
+    out = _build_youtube_title(long_title, shorts=True, site_config=_sc())
+    assert len(out) <= 100
+    assert out.endswith(" #Shorts")
+    assert not out.replace(" #Shorts", "").endswith(" ")
+
+
+def test_short_suffix_is_idempotent():
+    """A re-sync of an already-suffixed video must not stack a second marker."""
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    once = _build_youtube_title("The Gap Nobody Names", shorts=True, site_config=_sc())
+    assert _build_youtube_title(once, shorts=True, site_config=_sc()) == once
+    # An operator-written title that already says #shorts is left alone too.
+    assert _build_youtube_title(
+        "Already #shorts here", shorts=True, site_config=_sc()
+    ) == "Already #shorts here"
+
+
+def test_empty_suffix_means_no_distinction():
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    sc = _sc(youtube_short_title_suffix="")
+    assert _build_youtube_title("T", shorts=True, site_config=sc) == "T"
+
+
+def test_custom_suffix_is_honoured():
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    sc = _sc(youtube_short_title_suffix=" (Short)")
+    assert _build_youtube_title("T", shorts=True, site_config=sc) == "T (Short)"
+
+
+def test_titles_are_clamped_to_the_api_limit():
+    from services.jobs.youtube_payload import _build_youtube_title
+
+    assert len(_build_youtube_title("x" * 400, shorts=False, site_config=_sc())) == 100
+    assert len(_build_youtube_title("x" * 400, shorts=True, site_config=_sc())) <= 100

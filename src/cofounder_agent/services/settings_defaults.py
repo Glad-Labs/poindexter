@@ -2097,6 +2097,12 @@ DEFAULTS: dict[str, str] = {
     # 4,800-char cap and every live video wore a one-paragraph markdown wall).
     # Positive = opt a sentence-trimmed plain-text snippet back in.
     'youtube_description_body_chars': '0',
+    # Appended to a Short's title so it doesn't collide with its long-form
+    # twin — a post can produce both, and each took posts.title verbatim, so
+    # the channel showed two identically-named videos. '#Shorts' also happens
+    # to be a marker YouTube keys off for Shorts classification. Empty = no
+    # distinction (an explicit operator choice, not an accident).
+    'youtube_short_title_suffix': ' #Shorts',
     # Per-request timeout (s) for the YouTube oEmbed lookup. Kept tight so a slow
     # YouTube doesn't stall the citation atom; a timeout just leaves the link as-is.
     'youtube_oembed_timeout_seconds': '8',
@@ -5573,6 +5579,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_self_review_thinking_timeout_seconds': {'owner': 'self_review', 'value_type': 'integer'},
     'youtube_attribution_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'youtube_description_body_chars': {'owner': 'media_distribute', 'value_type': 'integer'},
+    'youtube_short_title_suffix': {'owner': 'media_distribute', 'value_type': 'string'},
     'youtube_oembed_timeout_seconds': {'owner': 'content_reconcile_citations', 'value_type': 'integer'},
 
     # ----- Seed-gap audit, 2026-08-26 (see the matching DEFAULTS section) -----
