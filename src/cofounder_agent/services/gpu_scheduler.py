@@ -120,10 +120,10 @@ def _sc() -> SiteConfig:
     return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
 
 
-# Monotonic timestamp of the last queued ComfyUI restart, so a sidecar that
-# keeps squatting is not bounced on every ladder pass. In-process by design:
-# a worker restart clearing it is acceptable for a storm guard.
-_LAST_COMFYUI_RESTART_REQUEST: float | None = None
+# Monotonic timestamp of the last queued restart PER CONTAINER, so a sidecar
+# that keeps squatting is not bounced on every ladder pass. In-process by
+# design: a worker restart clearing it is acceptable for a storm guard.
+_LAST_RESTART_REQUEST: dict[str, float] = {}
 
 
 def _container_pool() -> Any:
@@ -2079,11 +2079,29 @@ class GPUScheduler:
             kwargs: dict = {"timeout": 10}
             if hard:
                 kwargs["json"] = {"hard": True}
+            # Read BEFORE the unload so the verifier can tell "released
+            # nothing" from "there was nothing to release".
+            before_gb = await self._render_free_vram_gb() if hard else None
+            declined = False
             resp = await client.post(f"{image_gen_url}/unload", **kwargs)
             if resp.status_code == 200:
+                declined = self._declined_nothing_to_reclaim(resp)
                 logger.info(
                     "[GPU] image-gen model unloaded via /unload endpoint%s",
                     " (hard)" if hard else "",
+                )
+            if hard:
+                # No busy_check: image-gen has no in-flight guard at all
+                # (poindexter#1024 — a reclaim mid-still-phase self-exits it
+                # and fails every remaining shot). This verification cannot
+                # make that worse: it only ever fires when the unload freed
+                # NOTHING, i.e. when the self-exit did not happen and there
+                # is no in-flight work to lose. Fixing the guard is #1024.
+                await self._verify_reclaim_or_restart(
+                    service="image-gen",
+                    container="poindexter-image-gen-server",
+                    before_gb=before_gb,
+                    declined=declined,
                 )
         except Exception as exc:
             # silent-ok: poindexter#455 — used to be `except: pass`. Log at
@@ -2186,12 +2204,24 @@ class GPUScheduler:
             kwargs: dict = {"timeout": 10}
             if hard:
                 kwargs["json"] = {"hard": True}
+            # Read BEFORE the unload so the verifier can tell "released
+            # nothing" from "there was nothing to release".
+            before_gb = await self._render_free_vram_gb() if hard else None
+            declined = False
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
+                declined = self._declined_nothing_to_reclaim(resp)
                 logger.info(
                     "[GPU] wan model unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",
                     (getattr(resp, "text", "") or "")[:120],
+                )
+            if hard:
+                await self._verify_reclaim_or_restart(
+                    service="wan",
+                    container="poindexter-wan-server",
+                    before_gb=before_gb,
+                    declined=declined,
                 )
         except Exception as exc:
             # silent-ok: same posture as _unload_image_gen — for hard=True a
@@ -2232,99 +2262,150 @@ class GPUScheduler:
             # (poindexter#3094). Failing safe IS the handling.
             return True
 
-    async def _comfyui_restart_if_still_squatting(
-        self, client: Any, base: str, before_gb: float | None,
-    ) -> None:
-        """Real hard rung: bounce the container when ``/free`` freed nothing.
+    @staticmethod
+    def _declined_nothing_to_reclaim(resp: Any) -> bool:
+        """True when a self-exit sidecar answered ``nothing_to_reclaim``.
 
-        ``/free`` returning 200 is not evidence it worked. Measured
-        2026-08-25 (poindexter#1019): ComfyUI held **20,700 MiB** with an
-        empty queue, ``/free`` returned 200 and released **0**, and a
+        wan / image-gen / stable-audio ``os._exit(0)`` on a real hard unload,
+        so a clean 200 is itself unusual — it means the server chose NOT to
+        exit because its reserved pool is below the floor. Treating that as a
+        failed reclaim would bounce a healthy service for correctly doing
+        nothing, so the verifier needs to see it.
+        """
+        try:
+            if getattr(resp, "status_code", None) != 200:
+                return False
+            body = resp.json()
+        except Exception:  # noqa: BLE001
+            # silent-ok: an unparseable body is NOT a decline — falling
+            # through to the VRAM measurement is the safe direction, since
+            # that can only decline the restart, never force one.
+            return False
+        return isinstance(body, dict) and body.get("status") == "nothing_to_reclaim"
+
+    async def _verify_reclaim_or_restart(
+        self,
+        *,
+        service: str,
+        container: str,
+        before_gb: float | None,
+        declined: bool = False,
+        busy_check: Any = None,
+    ) -> None:
+        """Bounce ``container`` when its hard unload freed nothing.
+
+        Shared by every hard rung, because the failure it catches has now
+        recurred four times across four different services and a per-rung
+        copy is how the ladder drifted apart before (poindexter#999: a rung
+        missing from "the ladder" is invisible precisely when it matters).
+
+        **The success signal differs per service, so the caller decides what
+        it saw and this function only measures the consequence.**
+
+        - ComfyUI answers ``/free`` with 200 whether or not it freed anything.
+        - wan / image-gen / stable-audio ``os._exit(0)`` on a real hard unload,
+          which fires BEFORE uvicorn flushes — so a *reset connection* is the
+          reclaim working, and a clean 200 carrying
+          ``status: nothing_to_reclaim`` is a legitimate decline below the
+          reserved-pool floor.
+
+        ``declined=True`` means the server correctly said there was nothing to
+        reclaim: restarting then would bounce a healthy service for doing its
+        job, which is the mistake this guard exists to avoid.
+
+        Measured 2026-08-25 (poindexter#1019): ComfyUI held **20,700 MiB**
+        with an empty queue, ``/free`` returned 200 and released **0**, and a
         ``docker restart`` freed ~20 GB immediately. What squats is the
         caching-allocator pool + CUDA context, which only a process exit
         returns — the identical lesson poindexter#999 recorded for
         stable-audio (soft unload freed 3 MiB, restart freed 10.96 GiB).
 
-        So this measures rather than trusting the status code, which is the
-        generalisable half: a rung that reports success without measuring is
-        how this class has now recurred four times.
-
         The worker has no docker.sock, so the bounce goes through the
         ``service_restart_requests`` queue that brain executes — the same
         mechanism the console restart button uses.
 
-        Fail-safe in three places, because a spurious restart kills renders:
-        an unreadable VRAM figure declines (never bounce blind), the queue is
-        re-checked after the settle (a render may have started), and an
-        in-process cooldown stops a squatting sidecar from being restarted on
-        every ladder pass.
+        Fail-safe in four places, because a spurious restart kills renders:
+        a legitimate ``nothing_to_reclaim`` decline is never restarted, an
+        unreadable VRAM figure declines (never bounce blind), an optional
+        ``busy_check`` is re-run after the settle (a render may have started),
+        and a per-container cooldown stops a squatting sidecar from being
+        restarted on every ladder pass.
         """
+        if declined:
+            logger.info(
+                "[GPU] %s declined the hard unload (nothing_to_reclaim) — "
+                "below its reserved-pool floor, nothing to verify",
+                service,
+            )
+            return
         if before_gb is None:
             logger.info(
-                "[GPU] comfyui hard rung: free-VRAM unreadable, cannot verify "
-                "/free — declining restart rather than bouncing blind",
+                "[GPU] %s hard rung: free-VRAM unreadable, cannot verify the "
+                "unload — declining restart rather than bouncing blind",
+                service,
             )
             return
 
         sc = _sc()
-        settle = sc.get_float("comfyui_reclaim_settle_seconds", 6.0) or 6.0
+        settle = sc.get_float("vram_reclaim_settle_seconds", 6.0) or 6.0
         await asyncio.sleep(settle)
 
         after_gb = await self._render_free_vram_gb()
         if after_gb is None:
-            logger.info("[GPU] comfyui hard rung: post-/free VRAM unreadable — declining restart")
+            logger.info(
+                "[GPU] %s hard rung: post-unload VRAM unreadable — declining restart",
+                service,
+            )
             return
 
         freed = after_gb - before_gb
-        min_freed = sc.get_float("comfyui_reclaim_min_freed_gb", 1.0) or 1.0
+        min_freed = sc.get_float("vram_reclaim_min_freed_gb", 1.0) or 1.0
         if freed >= min_freed:
             logger.info(
-                "[GPU] comfyui /free released %.1f GB (>= %.1f GB floor) — no restart needed",
-                freed, min_freed,
+                "[GPU] %s released %.1f GB (>= %.1f GB floor) — no restart needed",
+                service, freed, min_freed,
             )
             return
 
         # A render may have started during the settle window.
-        if await self._comfyui_busy(client, base):
+        if busy_check is not None and await busy_check():
             logger.info(
-                "[GPU] comfyui restart declined — render started during the "
-                "settle window (poindexter#3094 posture)",
+                "[GPU] %s restart declined — work started during the settle "
+                "window (poindexter#3094 posture)",
+                service,
             )
             return
 
-        cooldown_min = sc.get_float("comfyui_restart_cooldown_minutes", 30.0) or 30.0
+        cooldown_min = sc.get_float("vram_reclaim_restart_cooldown_minutes", 30.0) or 30.0
         now = time.monotonic()
-        global _LAST_COMFYUI_RESTART_REQUEST
-        if (
-            _LAST_COMFYUI_RESTART_REQUEST is not None
-            and (now - _LAST_COMFYUI_RESTART_REQUEST) < cooldown_min * 60
-        ):
+        last = _LAST_RESTART_REQUEST.get(container)
+        if last is not None and (now - last) < cooldown_min * 60:
             logger.info(
-                "[GPU] comfyui still squatting (%.1f GB freed) but a restart "
-                "was requested %.0fs ago — within the %.0f-minute cooldown",
-                freed, now - _LAST_COMFYUI_RESTART_REQUEST, cooldown_min,
+                "[GPU] %s still squatting (%.1f GB freed) but a restart was "
+                "requested %.0fs ago — within the %.0f-minute cooldown",
+                service, freed, now - last, cooldown_min,
             )
             return
 
         pool = _container_pool()
         if pool is None:
             logger.warning(
-                "[GPU] comfyui /free freed only %.1f GB and a restart is "
-                "warranted, but no DB pool is registered — cannot queue it",
-                freed,
+                "[GPU] %s freed only %.1f GB and a restart is warranted, but "
+                "no DB pool is registered — cannot queue it",
+                service, freed,
             )
             return
 
         from services.service_restart_requests import create_restart_request
 
         row = await create_restart_request(
-            pool, "poindexter-comfyui", requested_by="gpu_vram_reclaim",
+            pool, container, requested_by="gpu_vram_reclaim",
         )
-        _LAST_COMFYUI_RESTART_REQUEST = now
+        _LAST_RESTART_REQUEST[container] = now
         logger.warning(
-            "[GPU] comfyui /free returned 200 but freed only %.1f GB "
-            "(floor %.1f) — queued container restart %s",
-            freed, min_freed, row.get("id"),
+            "[GPU] %s hard unload freed only %.1f GB (floor %.1f) — queued "
+            "restart of %s (%s)",
+            service, freed, min_freed, container, row.get("id"),
         )
         try:
             from utils.findings import emit_finding
@@ -2431,8 +2512,11 @@ class GPUScheduler:
                     " (hard)" if hard else "",
                 )
                 if hard:
-                    await self._comfyui_restart_if_still_squatting(
-                        client, base, before_gb,
+                    await self._verify_reclaim_or_restart(
+                        service="comfyui",
+                        container="poindexter-comfyui",
+                        before_gb=before_gb,
+                        busy_check=lambda: self._comfyui_busy(client, base),
                     )
         except Exception as exc:
             # silent-ok: same posture as _unload_wan — the sidecar being
@@ -2477,12 +2561,24 @@ class GPUScheduler:
             kwargs: dict = {"timeout": 10}
             if hard:
                 kwargs["json"] = {"hard": True}
+            # Read BEFORE the unload so the verifier can tell "released
+            # nothing" from "there was nothing to release".
+            before_gb = await self._render_free_vram_gb() if hard else None
+            declined = False
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
+                declined = self._declined_nothing_to_reclaim(resp)
                 logger.info(
                     "[GPU] stable-audio unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",
                     (getattr(resp, "text", "") or "")[:120],
+                )
+            if hard:
+                await self._verify_reclaim_or_restart(
+                    service="stable-audio",
+                    container="poindexter-stable-audio",
+                    before_gb=before_gb,
+                    declined=declined,
                 )
         except Exception as exc:
             # silent-ok: identical posture to _unload_wan / _unload_image_gen —

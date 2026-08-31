@@ -1300,20 +1300,21 @@ DEFAULTS: dict[str, str] = {
     # three missed slots on the observed 4-hourly cadence: long enough not to
     # fire on a normal gap, short enough that a stall is caught the same day
     # rather than after ~46 hours, which is what actually happened.
-    # ----- ComfyUI hard VRAM reclaim (poindexter#1019) -----
-    # `/free` returning 200 is not evidence it worked: measured 2026-08-25,
-    # ComfyUI held 20,700 MiB with an empty queue, /free released 0, and a
-    # container restart freed ~20 GB. What squats is the caching-allocator
-    # pool + CUDA context, which only a process exit returns. The hard rung
-    # therefore MEASURES free VRAM either side of /free and queues a restart
-    # when nothing moved.
-    #   settle  — seconds to wait before re-reading (release is not instant)
-    #   min_freed — GB that must be released for /free to count as working
-    #   cooldown — minutes between queued restarts, so a persistently
-    #              squatting sidecar is not bounced on every ladder pass
-    'comfyui_reclaim_settle_seconds': '6.0',
-    'comfyui_reclaim_min_freed_gb': '1.0',
-    'comfyui_restart_cooldown_minutes': '30',
+    # ----- Hard VRAM reclaim verification (poindexter#1019) -----
+    # A hard unload reporting success is not evidence it worked: measured
+    # 2026-08-25, ComfyUI held 20,700 MiB with an empty queue, /free returned
+    # 200 and released 0, and a container restart freed ~20 GB. What squats is
+    # the caching-allocator pool + CUDA context, which only a process exit
+    # returns. Every hard rung (comfyui / wan / image-gen / stable-audio) now
+    # MEASURES free VRAM either side of its unload and queues a container
+    # restart when nothing moved.
+    #   settle   — seconds to wait before re-reading (release is not instant)
+    #   min_freed — GB that must be released for the unload to count as working
+    #   cooldown — minutes between queued restarts PER CONTAINER, so a
+    #              persistently squatting sidecar is not bounced every pass
+    'vram_reclaim_settle_seconds': '6.0',
+    'vram_reclaim_min_freed_gb': '1.0',
+    'vram_reclaim_restart_cooldown_minutes': '30',
 
     'pipeline_idle_probe_enabled': 'true',
     'pipeline_idle_max_hours': '12',
@@ -4596,9 +4597,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- QA thresholds -----
     'qa_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_rewrite_max_attempts': {'owner': 'qa_aggregate', 'value_type': 'integer'},
-    'comfyui_reclaim_settle_seconds': {'owner': 'gpu_scheduler', 'value_type': 'float'},
-    'comfyui_reclaim_min_freed_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
-    'comfyui_restart_cooldown_minutes': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
+    'vram_reclaim_settle_seconds': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'vram_reclaim_min_freed_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'vram_reclaim_restart_cooldown_minutes': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'pipeline_idle_probe_enabled': {'owner': 'probe_pipeline_idle', 'value_type': 'boolean'},
     'pipeline_idle_max_hours': {'owner': 'probe_pipeline_idle', 'value_type': 'integer'},
     'qa_rescue_yield_probe_enabled': {'owner': 'probe_rescue_yield', 'value_type': 'boolean'},

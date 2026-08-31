@@ -33,7 +33,7 @@ def _scheduler():
     import services.gpu_scheduler as gs
     from services.gpu_scheduler import GPUScheduler
 
-    gs._LAST_COMFYUI_RESTART_REQUEST = None  # cooldown is module state
+    gs._LAST_RESTART_REQUEST.clear()  # per-container cooldown is module state
     return GPUScheduler()
 
 
@@ -61,9 +61,9 @@ def _run_ctx(scheduler, client, vram_readings, pool=None, sc=None):
               return_value="http://comfyui:8188"),
         patch.object(scheduler, "_render_free_vram_gb", side_effect=_read),
         patch("services.gpu_scheduler._sc", return_value=sc or _SC({
-            "comfyui_reclaim_settle_seconds": 0.0,
-            "comfyui_reclaim_min_freed_gb": 1.0,
-            "comfyui_restart_cooldown_minutes": 30.0,
+            "vram_reclaim_settle_seconds": 0.0,
+            "vram_reclaim_min_freed_gb": 1.0,
+            "vram_reclaim_restart_cooldown_minutes": 30.0,
         })),
         patch("services.gpu_scheduler._container_pool", return_value=pool),
         patch("asyncio.sleep", new=AsyncMock()),
