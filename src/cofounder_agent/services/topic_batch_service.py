@@ -171,12 +171,35 @@ class TopicBatchService:
                 niche.slug,
             )
             return None
-        if await self._open_batch_exists(niche.id):
+        # An open batch used to end the sweep here, which meant a paused
+        # pipeline stopped discovering: the taps kept filling topic_pool but
+        # nothing drained it, so the backlog aged into the topic_pool TTL and
+        # was deleted (poindexter#1036). The halt on promotion is deliberate —
+        # it is what stops the operator being buried — but it should not also
+        # halt discovery.
+        #
+        # So an untouched open batch is REFRESHED in place rather than
+        # skipped: same batch row, re-swept candidates, incumbents carried
+        # forward with decay. Refreshing in place (rather than opening a
+        # second batch) keeps the one-open-batch-per-niche invariant that
+        # get_open_batch, topic_auto_resolve and the operator CLI all assume.
+        refresh_of = None
+        open_batch_id = await self._open_batch_id(niche.id)
+        if open_batch_id is not None:
+            if await self._operator_has_ranked(open_batch_id):
+                # Never redraw a batch a human is midway through judging.
+                logger.info(
+                    "Sweep skipped — operator has ranked the open batch for "
+                    "niche %s; leaving it alone",
+                    niche.slug,
+                )
+                return None
+            refresh_of = open_batch_id
             logger.info(
-                "Sweep skipped — open batch already exists for niche %s",
-                niche.slug,
+                "Refreshing open batch %s for niche %s (discovery continues "
+                "while promotion is throttled)",
+                open_batch_id, niche.slug,
             )
-            return None
 
         async with self._pool.acquire() as conn:
             run = await conn.fetchrow(
@@ -192,7 +215,12 @@ class TopicBatchService:
             # distill errors, dry sources) now happen in the tap runner and
             # can't sink a sweep; the sweep itself is a bounded SELECT.
             external, internal, pool_ids = await self._read_pool(niche)
-            carried = await self._load_carry_forward(niche.id)
+            # When refreshing, the incumbents ARE the open batch's own
+            # candidates — carrying from the last resolved batch instead
+            # would drop everything this batch already found.
+            carried = await self._load_carry_forward(
+                niche.id, from_batch_id=refresh_of,
+            )
 
             # Dedup BEFORE embed/pre-rank so duplicates never reach a batch
             # (and we don't pay to embed them). This mirrors the dedup pass
@@ -289,6 +317,7 @@ class TopicBatchService:
 
             batch = await self._write_batch(
                 niche, ranked, pool_external, pool_internal,
+                replace_batch_id=refresh_of,
             )
 
             # Flip the winners' pool rows to 'batched' so future sweeps
@@ -316,7 +345,14 @@ class TopicBatchService:
                     run_id,
                 )
 
-            await self._open_topic_decision_gate(batch, niche)
+            # Notify only when a batch is genuinely NEW. A refresh re-runs on
+            # the discovery cadence (every 30 min by default), so pinging on
+            # each one would turn a useful "a batch is waiting" signal into
+            # recurring noise about a batch the operator already knows about —
+            # and a notification people learn to ignore is worse than none
+            # (feedback_dont_silence_fix_dedup).
+            if refresh_of is None:
+                await self._open_topic_decision_gate(batch, niche)
             return batch
         except Exception as exc:
             async with self._pool.acquire() as conn:
@@ -393,6 +429,56 @@ class TopicBatchService:
         floor = timedelta(minutes=niche.discovery_cadence_minute_floor)
         return (datetime.now(timezone.utc) - last) >= floor
 
+    async def _open_batch_id(self, niche_id: UUID) -> UUID | None:
+        """Id of this niche's open batch, or None.
+
+        Ordered + LIMIT 1 rather than assuming uniqueness: the invariant is
+        maintained by convention, not a constraint, and a sweep must never
+        raise because history left two rows behind.
+        """
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT id FROM topic_batches WHERE niche_id = $1 "
+                "AND status = 'open' ORDER BY created_at DESC LIMIT 1",
+                niche_id,
+            )
+
+    async def _operator_has_ranked(self, batch_id: UUID) -> bool:
+        """True when a human has started judging this batch.
+
+        Guards the in-place refresh: redrawing a batch someone is midway
+        through reviewing would discard their work and change the list under
+        them. Edits count as well as ranks — an operator who rewrote a topic
+        or angle has invested in the batch even if they have not ordered it
+        yet.
+
+        ``topic_auto_resolve`` also writes ``operator_rank``, but only at
+        resolve time, after which the batch is no longer ``open`` — so its
+        bulk ranking cannot be mistaken for human review here. If it ever
+        did leave a ranked open batch behind (a crash between its ranking
+        step and ``resolve_batch``), this errs toward skipping, which is the
+        safe direction.
+        """
+        async with self._pool.acquire() as conn:
+            return bool(await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM topic_candidates
+                     WHERE batch_id = $1 AND (
+                        operator_rank IS NOT NULL
+                        OR operator_edited_topic IS NOT NULL
+                        OR operator_edited_angle IS NOT NULL)
+                    UNION ALL
+                    SELECT 1 FROM internal_topic_candidates
+                     WHERE batch_id = $1 AND (
+                        operator_rank IS NOT NULL
+                        OR operator_edited_topic IS NOT NULL
+                        OR operator_edited_angle IS NOT NULL)
+                )
+                """,
+                batch_id,
+            ))
+
     async def _open_batch_exists(self, niche_id: UUID) -> bool:
         async with self._pool.acquire() as conn:
             count = await conn.fetchval(
@@ -442,7 +528,9 @@ class TopicBatchService:
         )
         return external, internal, pool_ids
 
-    async def _load_carry_forward(self, niche_id: UUID) -> dict[str, list]:
+    async def _load_carry_forward(
+        self, niche_id: UUID, *, from_batch_id: UUID | None = None,
+    ) -> dict[str, list]:
         """Pull unpicked candidates from the most recent resolved batch and
         return them with ``decay_factor`` pre-multiplied by the configured
         carry-forward decay factor (default 0.7).
@@ -472,6 +560,32 @@ class TopicBatchService:
         decay = self._site_config.get_float(
             "niche_carry_forward_decay_factor", 0.7,
         )
+
+        # Refresh path: incumbents are the OPEN batch's own candidates, and
+        # none of them has been picked (an open batch has no winner yet), so
+        # every one carries. Sourcing from the last resolved batch here would
+        # silently drop everything the open batch had already found.
+        if from_batch_id is not None:
+            async with self._pool.acquire() as conn:
+                ext = await conn.fetch(
+                    "SELECT * FROM topic_candidates WHERE batch_id = $1",
+                    from_batch_id,
+                )
+                int_ = await conn.fetch(
+                    "SELECT * FROM internal_topic_candidates WHERE batch_id = $1",
+                    from_batch_id,
+                )
+            return {
+                "external": [
+                    {"row": dict(r), "decay_factor": float(r["decay_factor"]) * decay}
+                    for r in ext
+                ],
+                "internal": [
+                    {"row": dict(r), "decay_factor": float(r["decay_factor"]) * decay}
+                    for r in int_
+                ],
+            }
+
         async with self._pool.acquire() as conn:
             ext = await conn.fetch(
                 """
@@ -946,6 +1060,8 @@ class TopicBatchService:
         ranked: list[ScoredCandidate],
         all_external: list,
         all_internal: list,
+        *,
+        replace_batch_id: UUID | None = None,
     ) -> BatchSnapshot:
         """Create the topic_batches row + per-candidate rows in the
         appropriate table (external vs internal).
@@ -969,12 +1085,34 @@ class TopicBatchService:
 
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                batch_row = await conn.fetchrow(
-                    "INSERT INTO topic_batches (niche_id, status, expires_at) "
-                    "VALUES ($1, 'open', $2) RETURNING *",
-                    niche.id,
-                    expires,
-                )
+                if replace_batch_id is not None:
+                    # In-place refresh. Same row (so the one-open-batch
+                    # invariant holds and any external reference stays valid);
+                    # candidates are replaced wholesale because ranking is
+                    # relative — a merged set with stale ranks would order
+                    # incorrectly. expires_at is pushed out so a batch being
+                    # actively refreshed is not reaped as abandoned.
+                    await conn.execute(
+                        "DELETE FROM topic_candidates WHERE batch_id = $1",
+                        replace_batch_id,
+                    )
+                    await conn.execute(
+                        "DELETE FROM internal_topic_candidates WHERE batch_id = $1",
+                        replace_batch_id,
+                    )
+                    batch_row = await conn.fetchrow(
+                        "UPDATE topic_batches SET expires_at = $2 "
+                        "WHERE id = $1 RETURNING *",
+                        replace_batch_id,
+                        expires,
+                    )
+                else:
+                    batch_row = await conn.fetchrow(
+                        "INSERT INTO topic_batches (niche_id, status, expires_at) "
+                        "VALUES ($1, 'open', $2) RETURNING *",
+                        niche.id,
+                        expires,
+                    )
                 for c in ranked:
                     rank_in_batch += 1
                     is_internal = c.id in internal_ids
