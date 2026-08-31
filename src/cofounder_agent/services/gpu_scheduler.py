@@ -505,14 +505,16 @@ def resolve_lock_keys(owner: str, model: str | None) -> list[int]:
         return [GPU_ADVISORY_LOCK_KEY]
     role = resolve_lock_role(owner, model)
     if not role:
-        return [GPU_ADVISORY_LOCK_KEY]
+        # Unknown owner: block every card rather than take a key nobody else
+        # holds. See _all_device_keys.
+        return _all_device_keys()
     scopes = _configured_scopes()
     if role not in scopes:
         logger.warning(
-            "[GPU] role %r missing from gpu_lock_scopes — using the whole-GPU "
-            "lock (fail-closed)", role,
+            "[GPU] role %r missing from gpu_lock_scopes — taking EVERY device "
+            "key (fail-closed)", role,
         )
-        return [GPU_ADVISORY_LOCK_KEY]
+        return _all_device_keys()
     indexes = scopes[role]
     if not indexes:
         return []  # no GPU: deliberately unserialised
@@ -521,6 +523,26 @@ def resolve_lock_keys(owner: str, model: str | None) -> list[int]:
         # No trustworthy node identity ⇒ do not split. See gpu_lock_node_id.
         return [GPU_ADVISORY_LOCK_KEY]
     return sorted({device_lock_key(node, int(i)) for i in indexes})
+
+
+def _all_device_keys() -> list[int]:
+    """Every device key on this node — the maximally-exclusive set.
+
+    This is what an UNRESOLVABLE caller must take. Returning the whole-GPU key
+    instead was a real bug (observed live 2026-08-31): once some callers are
+    scoped, the base key excludes nobody — it is simply a third key, and a
+    caller holding it runs concurrently with a scoped render on the same card.
+    "Fail closed" has to mean "block everyone", not "take the old key".
+    """
+    node = gpu_lock_node_id()
+    if not node:
+        return [GPU_ADVISORY_LOCK_KEY]
+    idxs: set[int] = set()
+    for indexes in _configured_scopes().values():
+        idxs.update(int(i) for i in indexes)
+    if not idxs:
+        return [GPU_ADVISORY_LOCK_KEY]
+    return sorted({device_lock_key(node, i) for i in idxs})
 
 
 def _emit_cfg_fetch_finding(
@@ -724,6 +746,9 @@ class GPUScheduler:
         #: anyway (they are session-scoped) — the explicit unlock is for a
         #: clean, observable release path.
         self._pg_lock_keys: list[int] = []
+        #: True when this session also holds the whole-GPU key in SHARED mode
+        #: (every scoped session does — see _acquire_pg_advisory_lock).
+        self._pg_lock_shared_base: bool = False
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
         # (nvidia-smi exporter, Ollama /api/ps, image-gen /unload) — that's
@@ -769,6 +794,7 @@ class GPUScheduler:
                 pass
             self._pg_lock_conn = None
             self._pg_lock_keys = []
+            self._pg_lock_shared_base = False
 
     # ------------------------------------------------------------------
     # Cross-process pg_advisory_lock helpers (poindexter#731)
@@ -908,6 +934,28 @@ class GPUScheduler:
             # every key already taken. There is no partial-acquire state to
             # unwind by hand.
             want = sorted(keys) if keys is not None else [GPU_ADVISORY_LOCK_KEY]
+            # Cross-process transition safety (2026-08-31). Flipping
+            # `gpu_lock_per_device_enabled` is NOT atomic across processes:
+            # each reads its own SiteConfig cache, so for a window one worker
+            # takes device keys while another still takes the whole-GPU key —
+            # and two different keys exclude NOTHING. That was observed live,
+            # with poindexter-worker holding 7777777777 and 10738779002 at the
+            # same moment.
+            #
+            # Fix: a scoped session also holds the whole-GPU key in SHARED
+            # mode. Shared holders do not block each other, so two scoped
+            # callers on different cards still run concurrently — but an
+            # UNSCOPED caller takes that same key EXCLUSIVELY and therefore
+            # waits for them, and they for it. All four combinations are then
+            # correct:
+            #
+            #   unscoped vs unscoped   exclusive/exclusive  -> serialise
+            #   unscoped vs scoped     exclusive/shared     -> serialise
+            #   scoped   vs scoped     shared/shared, same device key
+            #                                               -> serialise
+            #   scoped   vs scoped     shared/shared, different device keys
+            #                                               -> CONCURRENT
+            scoped = want != [GPU_ADVISORY_LOCK_KEY]
             deadline = (
                 time.monotonic() + timeout_s if timeout_s and timeout_s > 0 else None
             )
@@ -924,16 +972,23 @@ class GPUScheduler:
                 conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=_remaining())
             else:
                 conn = await asyncpg.connect(dsn)
-            for key in want:
+            async def _take(sql: str, key: int) -> None:
                 if deadline is not None:
                     await asyncio.wait_for(
-                        conn.execute("SELECT pg_advisory_lock($1)", key),
-                        timeout=_remaining(),
+                        conn.execute(sql, key), timeout=_remaining()
                     )
                 else:
-                    await conn.execute("SELECT pg_advisory_lock($1)", key)
+                    await conn.execute(sql, key)
+
+            # Shared base FIRST, then the device keys ascending — one order for
+            # everyone, which is what keeps it deadlock-free.
+            if scoped:
+                await _take("SELECT pg_advisory_lock_shared($1)", GPU_ADVISORY_LOCK_KEY)
+            for key in want:
+                await _take("SELECT pg_advisory_lock($1)", key)
             self._pg_lock_conn = conn
             self._pg_lock_keys = list(want)
+            self._pg_lock_shared_base = scoped
             logger.debug("[GPU] pg_advisory_lock acquired (keys=%s)", want)
         except TimeoutError:
             # terminate() (not close()) — the session is mid-`pg_advisory_lock`
@@ -983,11 +1038,13 @@ class GPUScheduler:
         """
         conn = self._pg_lock_conn
         held_keys = list(self._pg_lock_keys)
+        shared_base = self._pg_lock_shared_base
         self._pg_lock_conn = None
         # Cleared HERE, not after the unlocks: every exit path below (timeout,
         # error, success) drops the connection, and a stale key list would be
         # replayed against the NEXT session's connection.
         self._pg_lock_keys = []
+        self._pg_lock_shared_base = False
         if conn is None:
             return
         release_timeout = _cfg_int(
@@ -997,6 +1054,19 @@ class GPUScheduler:
             # Reverse of the acquire order. Defaults to the single whole-GPU
             # key so an un-scoped session releases exactly what it took.
             held = held_keys or [GPU_ADVISORY_LOCK_KEY]
+            if shared_base:
+                if release_timeout > 0:
+                    await asyncio.wait_for(
+                        conn.execute(
+                            "SELECT pg_advisory_unlock_shared($1)",
+                            GPU_ADVISORY_LOCK_KEY,
+                        ),
+                        timeout=release_timeout,
+                    )
+                else:
+                    await conn.execute(
+                        "SELECT pg_advisory_unlock_shared($1)", GPU_ADVISORY_LOCK_KEY
+                    )
             for key in reversed(held):
                 if release_timeout > 0:
                     await asyncio.wait_for(

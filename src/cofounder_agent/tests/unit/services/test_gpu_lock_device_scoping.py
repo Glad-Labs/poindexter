@@ -55,18 +55,27 @@ def test_disabled_is_the_default(scoped):
     assert gs.resolve_lock_keys("image_gen", None) == [gs.GPU_ADVISORY_LOCK_KEY]
 
 
+# NOTE: these two USED to assert a fallback to the whole-GPU key. That was the
+# bug, not the contract — and because the tests agreed with the wrong design,
+# no amount of mutation testing could surface it. They now assert the
+# maximally-exclusive set; see the fail-closed tests at the end of this file.
 @pytest.mark.parametrize("owner", ["", "unknown_owner", "wan", None])
-def test_unknown_owner_falls_back_to_whole_gpu(scoped, owner):
+def test_unknown_owner_blocks_every_card(scoped, owner):
     scoped(gpu_lock_per_device_enabled="true")
-    assert gs.resolve_lock_keys(owner or "", None) == [gs.GPU_ADVISORY_LOCK_KEY]
+    keys = set(gs.resolve_lock_keys(owner or "", None))
+    assert gs.GPU_ADVISORY_LOCK_KEY not in keys
+    assert set(gs.resolve_lock_keys("image_gen", None)) <= keys
+    assert set(gs.resolve_lock_keys("ollama", "qwen3-vl:30b")) <= keys
 
 
-def test_role_missing_from_the_map_falls_back_to_whole_gpu(scoped):
+def test_role_missing_from_the_map_blocks_every_card(scoped):
     scoped(
         gpu_lock_per_device_enabled="true",
-        gpu_lock_scopes=json.dumps({"render": [0]}),  # qa_judge/llm_primary absent
+        gpu_lock_scopes=json.dumps({"render": [0]}),
     )
-    assert gs.resolve_lock_keys("ollama", None) == [gs.GPU_ADVISORY_LOCK_KEY]
+    keys = set(gs.resolve_lock_keys("ollama", None))
+    assert gs.GPU_ADVISORY_LOCK_KEY not in keys
+    assert set(gs.resolve_lock_keys("image_gen", None)) <= keys
 
 
 def test_malformed_scope_map_falls_back_to_defaults(scoped):
@@ -333,3 +342,37 @@ def test_undetectable_environment_is_treated_as_containerised(monkeypatch):
     # /.dockerenv may genuinely exist here; the assertion that matters is that
     # an unreadable cgroup never yields a confident "not a container".
     assert gs._running_in_container() is True
+
+
+# --- fail-closed must BLOCK, not pick a third key (live bug, 2026-08-31) -----
+
+
+def test_unresolvable_caller_takes_every_device_key_not_the_base_key(scoped):
+    """The bug that shipped: fail-closed returned the whole-GPU key.
+
+    Once ANY caller is scoped, the base key excludes nobody — it is simply a
+    third key. Observed live with poindexter-worker holding 7777777777 and
+    10738779002 at the same moment, i.e. two GPU workloads with no mutual
+    exclusion. Fail closed has to mean "block every card".
+    """
+    scoped(gpu_lock_per_device_enabled="true")
+    keys = gs.resolve_lock_keys("some_unknown_owner", None)
+    assert gs.GPU_ADVISORY_LOCK_KEY not in keys, (
+        "the base key excludes nobody once others are scoped"
+    )
+    render = set(gs.resolve_lock_keys("image_gen", None))
+    judge = set(gs.resolve_lock_keys("ollama", "qwen3-vl:30b"))
+    assert render <= set(keys) and judge <= set(keys), (
+        "an unresolvable caller must block BOTH cards"
+    )
+
+
+def test_missing_role_also_takes_every_device_key(scoped):
+    scoped(
+        gpu_lock_per_device_enabled="true",
+        gpu_lock_scopes=json.dumps({"render": [0], "qa_judge": [1]}),
+    )
+    keys = set(gs.resolve_lock_keys("ollama", "writer"))  # llm_primary absent
+    assert gs.GPU_ADVISORY_LOCK_KEY not in keys
+    assert set(gs.resolve_lock_keys("image_gen", None)) <= keys
+    assert set(gs.resolve_lock_keys("ollama", "qwen3-vl:30b")) <= keys

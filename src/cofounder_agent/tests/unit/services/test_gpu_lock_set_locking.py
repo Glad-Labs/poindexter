@@ -257,3 +257,97 @@ async def test_nested_lock_still_does_not_deadlock(scoped):
                 return "ok"
 
     assert await asyncio.wait_for(nested(), timeout=2.0) == "ok"
+
+
+# --- the scoped/unscoped transition (the gap that let the live bug through) --
+
+
+class _FakeConn:
+    """Records the advisory-lock SQL the REAL _acquire_pg_advisory_lock runs.
+
+    Deliberately stubs at the asyncpg boundary, not at
+    `_acquire_pg_advisory_lock` — an earlier version of these tests replaced
+    that method with a fake and then asserted on the fake, so removing the
+    shared-base acquire entirely still "passed".
+    """
+
+    def __init__(self):
+        self.calls: list[tuple[str, int]] = []
+
+    async def execute(self, sql, *args):
+        mode = (
+            "shared" if "advisory_lock_shared" in sql
+            else "unlock_shared" if "unlock_shared" in sql
+            else "unlock" if "unlock" in sql
+            else "exclusive"
+        )
+        self.calls.append((mode, args[0] if args else None))
+
+    async def close(self):
+        pass
+
+    def terminate(self):
+        pass
+
+
+async def _record_acquire(gpu, keys):
+    conn = _FakeConn()
+    import services.gpu_scheduler as _gs
+
+    async def _connect(dsn):
+        return conn
+
+    orig_connect = None
+    import asyncpg as _asyncpg
+
+    orig_connect = _asyncpg.connect
+    _asyncpg.connect = _connect
+    try:
+        _gs.resolve_database_url = lambda: "postgres://stub"  # noqa: ARG005
+        await gpu._acquire_pg_advisory_lock(timeout_s=None, keys=keys)
+    finally:
+        _asyncpg.connect = orig_connect
+    return conn.calls
+
+
+@pytest.mark.asyncio
+async def test_scoped_session_also_holds_the_base_key_in_shared_mode(scoped):
+    """Flipping the setting is NOT atomic across processes.
+
+    Each process reads its own SiteConfig cache, so for a window one worker
+    takes device keys while another still takes the whole-GPU key — and two
+    different keys exclude nothing. A scoped session therefore also holds the
+    base key SHARED: shared holders do not block each other (scoped
+    concurrency survives) but an unscoped EXCLUSIVE holder blocks them and is
+    blocked by them.
+
+    Verified against real Postgres semantics: exclusive try-lock fails while a
+    shared holder exists, and two shared holders coexist.
+    """
+    scoped()
+    gpu = _scheduler()
+    del gpu._acquire_pg_advisory_lock  # use the REAL implementation
+    calls = await _record_acquire(gpu, [111, 222])
+    assert ("shared", GPU_ADVISORY_LOCK_KEY) in calls, (
+        "a scoped session must hold the base key SHARED so an unscoped caller "
+        "still serialises against it"
+    )
+    assert ("exclusive", GPU_ADVISORY_LOCK_KEY) not in calls, (
+        "taking the base key exclusively would serialise every scoped caller"
+    )
+    assert [c for c in calls if c[0] == "exclusive"] == [
+        ("exclusive", 111), ("exclusive", 222)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_unscoped_session_takes_the_base_key_exclusively(scoped):
+    """With scoping off there is one key and it is exclusive — today's shape."""
+    scoped(enabled="false")
+    gpu = _scheduler()
+    del gpu._acquire_pg_advisory_lock
+    calls = await _record_acquire(gpu, [GPU_ADVISORY_LOCK_KEY])
+    assert calls == [("exclusive", GPU_ADVISORY_LOCK_KEY)], (
+        "an unscoped session must NOT take the shared base — it has to block "
+        "scoped sessions, not coexist with them"
+    )
