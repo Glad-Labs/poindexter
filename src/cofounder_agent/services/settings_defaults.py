@@ -2083,6 +2083,13 @@ DEFAULTS: dict[str, str] = {
     # (runs even without research). Fail-soft: a dead/private/unresolvable video
     # is left untouched. On by default.
     'youtube_attribution_enabled': 'true',
+    # How many characters of article body the YouTube description carries after
+    # the excerpt + tagged back-link. 0 (default) = none — the description is
+    # the hook and the link, the article stays on the site (operator decision
+    # 2026-08-31; the prior behaviour dumped the whole stripped body to the
+    # 4,800-char cap and every live video wore a one-paragraph markdown wall).
+    # Positive = opt a sentence-trimmed plain-text snippet back in.
+    'youtube_description_body_chars': '0',
     # Per-request timeout (s) for the YouTube oEmbed lookup. Kept tight so a slow
     # YouTube doesn't stall the citation atom; a timeout just leaves the link as-is.
     'youtube_oembed_timeout_seconds': '8',
@@ -5557,6 +5564,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_self_review_thinking_max_tokens': {'owner': 'self_review', 'value_type': 'integer'},
     'writer_self_review_thinking_timeout_seconds': {'owner': 'self_review', 'value_type': 'integer'},
     'youtube_attribution_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
+    'youtube_description_body_chars': {'owner': 'media_distribute', 'value_type': 'integer'},
     'youtube_oembed_timeout_seconds': {'owner': 'content_reconcile_citations', 'value_type': 'integer'},
 
     # ----- Seed-gap audit, 2026-08-26 (see the matching DEFAULTS section) -----
