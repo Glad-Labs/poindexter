@@ -13,27 +13,29 @@ type = "ratelimit"
 namespace_id = "2001"
 simple = { limit = 120, period = 60 }
 
-[vars]
-# Comma-separated public-site origins checked against the browser Origin
-# header. Empty (the default here) disables origin enforcement — safe for local
-# dev, but operators MUST set this in production.
-# Example: "https://gladlabs.io,https://www.gladlabs.io"
-ALLOWED_ORIGINS = ""
-
-# Comma-separated GlitchTip project IDs the relay will forward (the open-proxy
-# guard). Empty (default) = fail closed: the relay forwards nothing until an
-# operator sets it. Example: "1"
-ALLOWED_PROJECT_IDS = ""
-
-# GLITCHTIP_INGEST_ORIGIN is intentionally NOT a [vars] entry — set it as a
-# Worker secret so the operator's tailnet hostname never lands in this repo or
-# in browser source:
+# Operator config — ALL of it lives as Worker SECRETS, none as [vars]
+# (set each after the first deploy):
 #
-#   wrangler secret put GLITCHTIP_INGEST_ORIGIN
+#   echo "https://example.com,https://www.example.com" | npx wrangler secret put ALLOWED_ORIGINS
+#   echo "1" | npx wrangler secret put ALLOWED_PROJECT_IDS
+#   echo "https://<host>.<tailnet>.ts.net" | npx wrangler secret put GLITCHTIP_INGEST_ORIGIN
 #
-# Value is the path-scoped Tailscale Funnel base URL that fronts GlitchTip's
-# ingest, e.g. "https://<host>.<tailnet>.ts.net". The Worker forwards envelopes
-# to ${GLITCHTIP_INGEST_ORIGIN}/api/<project_id>/envelope/.
+# Secrets survive `wrangler deploy`; plain-text vars do not — deploys are
+# declarative about [vars], so a dashboard-set var is wiped on the next
+# deploy and a committed var clobbers a same-named secret. (The
+# page-views-beacon ran with origin enforcement silently off until
+# 2026-08-31 for exactly this reason.)
+#
+# ALLOWED_ORIGINS — comma-separated public-site origins checked against the
+#   browser Origin header. Unset disables the check: dev only, MUST be set
+#   in production.
+# ALLOWED_PROJECT_IDS — comma-separated GlitchTip project ids the relay
+#   forwards (the open-proxy guard). Unset = fail closed: forwards nothing.
+# GLITCHTIP_INGEST_ORIGIN — path-scoped Tailscale Funnel base URL fronting
+#   GlitchTip's ingest, e.g. "https://<host>.<tailnet>.ts.net". A secret
+#   also for privacy: the operator's tailnet hostname never lands in this
+#   repo or in browser source. The Worker forwards envelopes to
+#   ${GLITCHTIP_INGEST_ORIGIN}/api/<project_id>/envelope/.
 
 # Custom domain — route your own subdomain (e.g. sentry-relay.example.com) to
 # this Worker via the CF dashboard or `wrangler routes add`. Don't commit a

@@ -68,17 +68,36 @@ fill those in at deploy time via the steps below.
    `wrangler deploy` will print the workers.dev URL it published to
    (e.g. `https://page-views-beacon.<your-subdomain>.workers.dev`).
 
-5. **Map your own subdomain (optional but recommended).**
+5. **Set the origin allowlist (production requirement).**
+   Without it, any page on the web can POST beacons from visitors'
+   browsers and inflate your view counts — only the 60 req/min/IP rate
+   limiter would stand in the way. Set it as a Worker **secret** (a
+   secret survives future deploys; a plain-text var set in the dashboard
+   would be wiped by the next `wrangler deploy`, and a `[vars]` entry in
+   `wrangler.toml` would clobber the secret — which is why the file
+   deliberately declares neither):
+
+   ```bash
+   echo "https://example.com,https://www.example.com" \
+     | npx wrangler secret put ALLOWED_ORIGINS
+   ```
+
+   Use your public-site origins (scheme + host, no trailing slash, no
+   path). The check only applies to requests that carry an `Origin`
+   header — i.e. browsers — so curl smoke tests and uptime monitors
+   keep working.
+
+6. **Map your own subdomain (optional but recommended).**
    In the Cloudflare dashboard → your zone → Workers Routes → add a
    route mapping `<your-beacon-hostname>/*` → `page-views-beacon`.
    Avoids leaking the workers.dev origin in browser DevTools.
 
-6. **Wire the public site at the beacon URL.**
+7. **Wire the public site at the beacon URL.**
    In Vercel project settings → Environment Variables, set
-   `NEXT_PUBLIC_BEACON_URL` to the Worker URL from step 4 or 5. Redeploy
+   `NEXT_PUBLIC_BEACON_URL` to the Worker URL from step 4 or 6. Redeploy
    the public site so the new env baked in.
 
-7. **Tell the backend where to read from.**
+8. **Tell the backend where to read from.**
    On the operator host:
 
    ```bash
@@ -96,6 +115,23 @@ fill those in at deploy time via the steps below.
    (`https://dash.cloudflare.com/<account_id>`).
 
 ## Verification
+
+Origin enforcement (run after step 5 — all three must hold):
+
+```bash
+BEACON=https://<your-beacon-url>
+
+# Browser POST from a foreign origin is refused:
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Origin: https://evil.example' "$BEACON"          # → 403
+
+# Browser POST from your public site passes:
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Origin: https://www.example.com' "$BEACON"       # → 204
+
+# No Origin header (curl, uptime monitors) still passes:
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BEACON"   # → 204
+```
 
 After the public site redeploys, hit any post page and watch:
 

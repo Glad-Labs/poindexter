@@ -13,10 +13,13 @@ export interface Env {
   // in wrangler.toml under [[unsafe.bindings]].
   RATE_LIMITER: RateLimit;
   // Comma-separated list of allowed Origin header values, e.g.
-  // "https://gladlabs.io,https://www.gladlabs.io". Set via wrangler secret or
-  // dashboard. Empty string (default) disables origin enforcement — safe for
-  // local dev but operators MUST set this in production.
-  ALLOWED_ORIGINS: string;
+  // "https://example.com,https://www.example.com". Set via
+  // `wrangler secret put ALLOWED_ORIGINS` (a secret survives deploys; a
+  // [vars] entry of the same name would clobber it on the next deploy, so
+  // wrangler.toml deliberately declares none — the binding is absent until
+  // the operator sets the secret). Unset/empty disables origin enforcement —
+  // safe for local dev but operators MUST set this in production.
+  ALLOWED_ORIGINS?: string;
 }
 
 export default {

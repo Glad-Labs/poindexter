@@ -71,20 +71,27 @@ npm install
 # Tokens → custom token, scope: Account → Workers Scripts → Edit.
 export CLOUDFLARE_API_TOKEN=<token>
 
-# Set the Funnel base URL as a SECRET (keeps the tailnet hostname out of the
-# repo and browser source). Value is the origin only, no trailing path:
-echo "https://<host>.<tailnet>.ts.net" | npx wrangler secret put GLITCHTIP_INGEST_ORIGIN
-
 npm run deploy   # prints the workers.dev URL it published to
 ```
 
-Then set the non-secret vars (CF dashboard → the Worker → Settings → Variables,
-or edit `wrangler.toml` and redeploy):
+Then set the operator config — **all three as Worker secrets** (`wrangler
+secret put` needs the Worker to exist, hence deploy first). Secrets survive
+future deploys; a dashboard-set plain-text var would be wiped by the next
+`wrangler deploy`, and a `[vars]` entry in `wrangler.toml` would clobber a
+same-named secret — which is why the file deliberately declares none:
 
-- `ALLOWED_ORIGINS` = your public-site origins, e.g.
-  `https://gladlabs.io,https://www.gladlabs.io`
-- `ALLOWED_PROJECT_IDS` = your GlitchTip project id(s), e.g. `1`
-  (find it in the GlitchTip project's DSN: `https://<key>@.../<project_id>`)
+```bash
+# The Funnel base URL (keeps the tailnet hostname out of the repo and
+# browser source). Value is the origin only, no trailing path:
+echo "https://<host>.<tailnet>.ts.net" | npx wrangler secret put GLITCHTIP_INGEST_ORIGIN
+
+# Your public-site origins (scheme + host, no trailing slash):
+echo "https://example.com,https://www.example.com" | npx wrangler secret put ALLOWED_ORIGINS
+
+# Your GlitchTip project id(s) — find it in the project's DSN,
+# https://<key>@.../<project_id>. Unset fails closed (forwards nothing):
+echo "1" | npx wrangler secret put ALLOWED_PROJECT_IDS
+```
 
 ### 3. Map a subdomain (recommended)
 

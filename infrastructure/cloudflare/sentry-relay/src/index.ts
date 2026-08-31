@@ -22,19 +22,24 @@
 export interface Env {
   // Workers rate-limiting binding (wrangler.toml [[unsafe.bindings]]).
   RATE_LIMITER: RateLimit;
+  // The three below are Worker SECRETS (`wrangler secret put <NAME>`), so
+  // each binding is absent until the operator sets it — wrangler.toml
+  // deliberately declares no [vars]: a plain-text var of the same name
+  // would clobber the secret on the next deploy, silently reverting config.
+  //
   // Comma-separated allowed browser Origin values, e.g.
-  // "https://gladlabs.io,https://www.gladlabs.io". Empty disables the check
+  // "https://example.com,https://www.example.com". Unset disables the check
   // (dev only — operators MUST set this in production).
-  ALLOWED_ORIGINS: string;
+  ALLOWED_ORIGINS?: string;
   // Comma-separated GlitchTip project IDs the relay will forward. The
-  // open-proxy guard: an envelope for any other project is rejected. Empty =
+  // open-proxy guard: an envelope for any other project is rejected. Unset =
   // fail closed (forward nothing).
-  ALLOWED_PROJECT_IDS: string;
+  ALLOWED_PROJECT_IDS?: string;
   // GlitchTip ingest origin reachable from the CF edge — a path-scoped
-  // Tailscale Funnel base URL, e.g. "https://host.tailnet.ts.net". Set as a
-  // Worker SECRET (`wrangler secret put GLITCHTIP_INGEST_ORIGIN`) so the
-  // operator's tailnet hostname never lands in browser source or this repo.
-  GLITCHTIP_INGEST_ORIGIN: string;
+  // Tailscale Funnel base URL, e.g. "https://host.tailnet.ts.net". A secret
+  // also for privacy: the operator's tailnet hostname never lands in
+  // browser source or this repo.
+  GLITCHTIP_INGEST_ORIGIN?: string;
 }
 
 /** Parse the first NDJSON line of a Sentry envelope (its header), or null. */
@@ -78,7 +83,7 @@ export function extractDsnParts(
  */
 export function projectAllowed(
   projectId: string,
-  allowlistCsv: string
+  allowlistCsv: string | undefined
 ): boolean {
   const allowed = (allowlistCsv || '')
     .split(',')
@@ -116,7 +121,8 @@ export default {
       return new Response(null, { status: 429 });
     }
 
-    if (!env.GLITCHTIP_INGEST_ORIGIN) {
+    const ingestOrigin = env.GLITCHTIP_INGEST_ORIGIN;
+    if (!ingestOrigin) {
       // Fail loud — the relay isn't wired. Matches the stack's "no silent
       // fallbacks" posture: the operator sees 503s, not a silent black hole.
       return new Response('relay not configured', { status: 503 });
@@ -139,7 +145,7 @@ export default {
     // relay only chooses the destination project from the (allowlisted) id.
     // Trim trailing slashes without a regex — an unanchored `/\/+$/` scan is
     // polynomial on slash-heavy strings (CodeQL js/polynomial-redos).
-    let base = env.GLITCHTIP_INGEST_ORIGIN;
+    let base = ingestOrigin;
     while (base.endsWith('/')) base = base.slice(0, -1);
     const upstream = `${base}/api/${parts.projectId}/envelope/`;
     try {
