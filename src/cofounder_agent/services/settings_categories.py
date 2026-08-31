@@ -209,6 +209,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("voice", "media"),
     ("tts", "media"),
     ("vision", "media"),
+    ("comfyui", "media"),
     ("stable_audio", "media"),
     ("audio", "media"),
     ("sdxl", "media"),

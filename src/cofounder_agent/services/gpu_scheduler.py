@@ -120,6 +120,25 @@ def _sc() -> SiteConfig:
     return container.site_config if container is not None else _FALLBACK_SITE_CONFIG
 
 
+# Monotonic timestamp of the last queued ComfyUI restart, so a sidecar that
+# keeps squatting is not bounced on every ladder pass. In-process by design:
+# a worker restart clearing it is acceptable for a storm guard.
+_LAST_COMFYUI_RESTART_REQUEST: float | None = None
+
+
+def _container_pool() -> Any:
+    """The active container's DB pool, or None when nothing is registered.
+
+    Mirrors ``_sc()``: the reclaim ladder is reachable from CLI/test paths
+    that never bootstrap a container, and a missing pool must degrade the
+    hard rung to soft rather than raise inside a best-effort lever.
+    """
+    from services.container_registry import get_container
+
+    container = get_container()
+    return getattr(container, "pool", None) if container is not None else None
+
+
 def _sc_get(key: str, default: str = "") -> str:
     return _sc().get(key, default)
 
@@ -2187,22 +2206,199 @@ class GPUScheduler:
                 type(exc).__name__, exc,
             )
 
+    async def _comfyui_busy(self, client: Any, base: str) -> bool:
+        """True when ComfyUI has work running or queued.
+
+        Unparseable/absent queue reads as BUSY: skipping one reclaim is far
+        cheaper than evicting a render we could not see (poindexter#3094).
+        """
+        try:
+            queue = await client.get(f"{base}/queue", timeout=10)
+        except Exception:  # noqa: BLE001
+            # silent-ok: the profile-gated sidecar being down is the common
+            # case, and the caller's own /free attempt reports it. "Not busy"
+            # is the right answer for a server that isn't running.
+            return False
+        if queue.status_code != 200:
+            return False
+        try:
+            q = queue.json()
+            return bool(
+                (q.get("queue_running") or []) or (q.get("queue_pending") or []),
+            )
+        except Exception:  # noqa: BLE001
+            # silent-ok: an unparseable queue must read as BUSY — skipping one
+            # reclaim is far cheaper than evicting a render we couldn't see
+            # (poindexter#3094). Failing safe IS the handling.
+            return True
+
+    async def _comfyui_restart_if_still_squatting(
+        self, client: Any, base: str, before_gb: float | None,
+    ) -> None:
+        """Real hard rung: bounce the container when ``/free`` freed nothing.
+
+        ``/free`` returning 200 is not evidence it worked. Measured
+        2026-08-25 (poindexter#1019): ComfyUI held **20,700 MiB** with an
+        empty queue, ``/free`` returned 200 and released **0**, and a
+        ``docker restart`` freed ~20 GB immediately. What squats is the
+        caching-allocator pool + CUDA context, which only a process exit
+        returns — the identical lesson poindexter#999 recorded for
+        stable-audio (soft unload freed 3 MiB, restart freed 10.96 GiB).
+
+        So this measures rather than trusting the status code, which is the
+        generalisable half: a rung that reports success without measuring is
+        how this class has now recurred four times.
+
+        The worker has no docker.sock, so the bounce goes through the
+        ``service_restart_requests`` queue that brain executes — the same
+        mechanism the console restart button uses.
+
+        Fail-safe in three places, because a spurious restart kills renders:
+        an unreadable VRAM figure declines (never bounce blind), the queue is
+        re-checked after the settle (a render may have started), and an
+        in-process cooldown stops a squatting sidecar from being restarted on
+        every ladder pass.
+        """
+        if before_gb is None:
+            logger.info(
+                "[GPU] comfyui hard rung: free-VRAM unreadable, cannot verify "
+                "/free — declining restart rather than bouncing blind",
+            )
+            return
+
+        sc = _sc()
+        settle = sc.get_float("comfyui_reclaim_settle_seconds", 6.0) or 6.0
+        await asyncio.sleep(settle)
+
+        after_gb = await self._render_free_vram_gb()
+        if after_gb is None:
+            logger.info("[GPU] comfyui hard rung: post-/free VRAM unreadable — declining restart")
+            return
+
+        freed = after_gb - before_gb
+        min_freed = sc.get_float("comfyui_reclaim_min_freed_gb", 1.0) or 1.0
+        if freed >= min_freed:
+            logger.info(
+                "[GPU] comfyui /free released %.1f GB (>= %.1f GB floor) — no restart needed",
+                freed, min_freed,
+            )
+            return
+
+        # A render may have started during the settle window.
+        if await self._comfyui_busy(client, base):
+            logger.info(
+                "[GPU] comfyui restart declined — render started during the "
+                "settle window (poindexter#3094 posture)",
+            )
+            return
+
+        cooldown_min = sc.get_float("comfyui_restart_cooldown_minutes", 30.0) or 30.0
+        now = time.monotonic()
+        global _LAST_COMFYUI_RESTART_REQUEST
+        if (
+            _LAST_COMFYUI_RESTART_REQUEST is not None
+            and (now - _LAST_COMFYUI_RESTART_REQUEST) < cooldown_min * 60
+        ):
+            logger.info(
+                "[GPU] comfyui still squatting (%.1f GB freed) but a restart "
+                "was requested %.0fs ago — within the %.0f-minute cooldown",
+                freed, now - _LAST_COMFYUI_RESTART_REQUEST, cooldown_min,
+            )
+            return
+
+        pool = _container_pool()
+        if pool is None:
+            logger.warning(
+                "[GPU] comfyui /free freed only %.1f GB and a restart is "
+                "warranted, but no DB pool is registered — cannot queue it",
+                freed,
+            )
+            return
+
+        from services.service_restart_requests import create_restart_request
+
+        row = await create_restart_request(
+            pool, "poindexter-comfyui", requested_by="gpu_vram_reclaim",
+        )
+        _LAST_COMFYUI_RESTART_REQUEST = now
+        logger.warning(
+            "[GPU] comfyui /free returned 200 but freed only %.1f GB "
+            "(floor %.1f) — queued container restart %s",
+            freed, min_freed, row.get("id"),
+        )
+        try:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="services.gpu_scheduler",
+                kind="comfyui_vram_squat",
+                title=(
+                    f"ComfyUI held its VRAM through /free — restart queued "
+                    f"(only {freed:.1f} GB freed)"
+                ),
+                body=(
+                    f"`POST /free` returned 200 and released {freed:.1f} GB, "
+                    f"below the {min_freed:.1f} GB floor, with an empty queue. "
+                    f"What squats is the caching-allocator pool + CUDA context, "
+                    f"which only a process exit returns (poindexter#1019, and "
+                    f"#999 before it for stable-audio).\n\n"
+                    f"Free VRAM {before_gb:.1f} GB -> {after_gb:.1f} GB. A "
+                    f"restart of `poindexter-comfyui` is queued on "
+                    f"`service_restart_requests` for the brain daemon to "
+                    f"execute; renders resume once it is back.\n\n"
+                    f"Repeated firings mean something re-loads ComfyUI between "
+                    f"reclaims — check the media pipeline cadence."
+                ),
+                severity="warn",
+                dedup_key="comfyui_vram_squat",
+                extra={
+                    "freed_gb": round(freed, 2),
+                    "before_gb": round(before_gb, 2),
+                    "after_gb": round(after_gb, 2),
+                    "min_freed_gb": min_freed,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            # silent-ok: the restart is already queued and logged at WARNING by
+            # this point; a findings-emit failure must not undo it. The
+            # operator-visible outcome does not depend on this call.
+            logger.debug("[GPU] comfyui squat finding failed", exc_info=True)
+
+    async def _render_free_vram_gb(self) -> float | None:
+        """Free VRAM on the render GPU, or None when unreadable."""
+        try:
+            from services.render_vram import render_gpu_free_vram_gb
+
+            return await render_gpu_free_vram_gb(_sc())
+        except Exception:  # noqa: BLE001
+            # silent-ok: None is a MEANINGFUL return the caller acts on — it
+            # declines the restart rather than bouncing blind. Escalating here
+            # would page on an unreachable Prometheus, which is already its
+            # own signal.
+            logger.debug("[GPU] render free-VRAM read failed", exc_info=True)
+            return None
+
     async def _unload_comfyui(self, hard: bool = False):
         """Ask the ComfyUI sidecar to release models + free its torch cache.
 
         ComfyUI's native ``POST /free {"unload_models": true, "free_memory":
-        true}`` both drops the loaded models AND empties the CUDA caching
-        allocator, so unlike the bespoke sidecars there is no soft-vs-hard
-        split — ``hard`` is accepted for ladder-signature symmetry and does
-        the same thing (ComfyUI exposes no self-exit endpoint; if a wedged
-        CUDA context ever needs a process bounce, that's Docker's restart
-        policy via a manual ``docker restart``, not this rung).
+        true}`` is supposed to drop the loaded models AND empty the CUDA
+        caching allocator. **It is not reliable.** Measured 2026-08-25
+        (poindexter#1019): 20,700 MiB held with an empty queue, ``/free``
+        returned 200 and released 0, ``docker restart`` freed ~20 GB.
+
+        So ``hard=True`` now has a real hard path: measure free VRAM before
+        and after, and if ``/free`` did not actually release anything, queue
+        a container restart through ``service_restart_requests`` (the worker
+        has no docker.sock). ``hard=False`` is unchanged — soft callers get
+        exactly the old best-effort ``/free``.
 
         **Declines while a render is in flight** (poindexter#3094's lesson,
         learned on wan: a running renderer IS the "unhealthy GPU" state the
         reclaim fires for, and unloading it mid-generation kills the render
         this ladder exists to enable): checks ``/queue`` first and no-ops
-        when anything is running or pending.
+        when anything is running or pending — and re-checks it after the
+        settle window before any restart.
 
         URL resolution reuses the provider's chain
         (``video_comfyui_server_url`` → default ``:8188``) so the reclaim
@@ -2215,24 +2411,15 @@ class GPUScheduler:
         base = _resolve_server_url({}, _sc()).rstrip("/")
         try:
             client = self._get_http_client()
-            queue = await client.get(f"{base}/queue", timeout=10)
-            if queue.status_code == 200:
-                try:
-                    q = queue.json()
-                    busy = bool(
-                        (q.get("queue_running") or [])
-                        or (q.get("queue_pending") or []),
-                    )
-                except Exception:  # noqa: BLE001 — unparseable queue: treat
-                    # as busy; skipping one reclaim is cheaper than killing a
-                    # render we couldn't see.
-                    busy = True
-                if busy:
-                    logger.info(
-                        "[GPU] comfyui /free declined — render in flight "
-                        "(poindexter#3094 posture)",
-                    )
-                    return
+            if await self._comfyui_busy(client, base):
+                logger.info(
+                    "[GPU] comfyui /free declined — render in flight "
+                    "(poindexter#3094 posture)",
+                )
+                return
+            # Read BEFORE /free so the hard rung can tell "released nothing"
+            # from "there was nothing to release".
+            before_gb = await self._render_free_vram_gb() if hard else None
             resp = await client.post(
                 f"{base}/free",
                 json={"unload_models": True, "free_memory": True},
@@ -2243,6 +2430,10 @@ class GPUScheduler:
                     "[GPU] comfyui models unloaded + cache freed via /free%s",
                     " (hard)" if hard else "",
                 )
+                if hard:
+                    await self._comfyui_restart_if_still_squatting(
+                        client, base, before_gb,
+                    )
         except Exception as exc:
             # silent-ok: same posture as _unload_wan — the sidecar being
             # down between renders is the common case (profile-gated), not
