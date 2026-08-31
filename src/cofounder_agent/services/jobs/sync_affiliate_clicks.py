@@ -10,6 +10,17 @@ dataset; this job pulls them via the CF SQL HTTP API every 5 min into
 Config (``plugin.job.sync_affiliate_clicks``):
 - ``enabled`` (default ``true``), ``interval_seconds`` (default 300)
 - ``config.batch_size`` (default 5000), ``config.lookback_hours`` (default 24)
+- ``config.ingestion_lag_seconds`` (default 300) — how far behind wall-clock
+  the high-water mark may advance. CF Analytics Engine makes a data point
+  queryable some time AFTER ``writeDataPoint`` returns, so a poll that
+  advances the cursor to ``now()`` buries every click still in flight —
+  permanently, and without erroring (stack#3523; the sibling page-views
+  ingest lost 40 real August views to exactly this). The rule lives in
+  ``services/watermark_cursor.py`` and is SHARED with that ingest, so a
+  re-tune can never reach only half the surface. The re-pull overlap it
+  creates is free here because inserts dedup on ``(code, clicked_at, ua)``
+  and ``_rollup_clicks`` recomputes ``affiliate_links.clicks`` from
+  ``affiliate_link_clicks`` rather than incrementing it — keep both.
 
 Settings (``app_settings``, reused from the page-views ingest):
 - ``cloudflare_account_id`` — non-secret account ID that owns the dataset.
@@ -31,6 +42,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from services.watermark_cursor import (
+    DEFAULT_INGESTION_LAG_SECONDS,
+    is_future_cursor,
+    next_high_water,
+)
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -190,6 +206,10 @@ class SyncAffiliateClicksJob:
 
         batch_size = int(config.get("batch_size", 5000))
         lookback_hours = int(config.get("lookback_hours", 24))
+        # Bounds the AE ingestion-delay race — see the module docstring.
+        lag_margin_seconds = int(
+            config.get("ingestion_lag_seconds", DEFAULT_INGESTION_LAG_SECONDS)
+        )
 
         try:
             import httpx
@@ -219,9 +239,23 @@ class SyncAffiliateClicksJob:
                     _WATERMARK_KEY,
                     last,
                 )
+            else:
+                # A cursor ahead of wall-clock is corrupt (usually a typo on
+                # the recovery runbook). The rule is monotonic, so it can never
+                # walk back on its own — left alone it wedges the ingest
+                # silently forever. Treat it like an unparseable value.
+                if is_future_cursor(since, datetime.now(timezone.utc)):
+                    logger.warning(
+                        "[SYNC_AFFILIATE] %s is in the future (%r) — using "
+                        "lookback window",
+                        _WATERMARK_KEY,
+                        last,
+                    )
+                    since = None
         if since is None:
             since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        since_str = since.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        since_utc = since.astimezone(timezone.utc)
+        since_str = since_utc.strftime("%Y-%m-%d %H:%M:%S")
 
         url = _SQL_API_URL.format(account_id=account_id)
         sql = _QUERY_TEMPLATE.format(since=since_str, limit=batch_size)
@@ -299,19 +333,37 @@ class SyncAffiliateClicksJob:
 
         rows = payload.get("data") or []
         if not rows:
-            # Advance the watermark to now so a quiet period doesn't force an
-            # ever-growing rescan window each cycle (matches the sibling ingest).
-            await self._update_high_water_mark(pool, datetime.now(timezone.utc).isoformat())
+            # Advance the watermark so a quiet period doesn't force an
+            # ever-growing rescan window each cycle — but NEVER past the
+            # ingestion horizon. Jumping to a bare `now()` here is what made
+            # this the permanent-loss path on the sibling ingest: clicks are
+            # sparse, so almost every poll is empty (stack#3523).
+            new_high_water = next_high_water(
+                since=since_utc,
+                observed_max=None,
+                now=datetime.now(timezone.utc),
+                lag_margin_seconds=lag_margin_seconds,
+            )
+            if new_high_water > since_utc:
+                await self._update_high_water_mark(
+                    pool, new_high_water.isoformat()
+                )
             return JobResult(ok=True, detail="no new rows", changes_made=0)
 
         # ------------------------------------------------------------------
-        # Insert (dedup) + rollup + advance watermark to the max ts observed.
+        # Insert (dedup) + rollup + advance watermark to the newest ts SEEN.
         # ------------------------------------------------------------------
         try:
             inserted = 0
             bot_rows = 0
             skipped_bad_ts = 0
-            max_ts: datetime | None = None
+            # Newest timestamp this batch SAW — not merely inserted. A row
+            # skipped as a replay has been processed just as surely as one we
+            # wrote, so it must move the cursor; tracking inserts only would
+            # pin the cursor on a fully-deduped batch, and with the ingestion
+            # horizon in play a pinned cursor becomes a SKIP past rows the
+            # LIMIT never reached. That is the backfill shape exactly.
+            max_seen_ts: datetime | None = None
             # Operator-tunable so a new crawler can be excluded without a
             # release; falls back to the vetted built-in when unset.
             bot_pattern = (
@@ -338,6 +390,8 @@ class SyncAffiliateClicksJob:
                                     c["created_at_raw"],
                                 )
                                 continue
+                        if max_seen_ts is None or ts > max_seen_ts:
+                            max_seen_ts = ts
 
                         # Dedup at the row level — CF AE can replay a row across
                         # batches. (code, created_at, user_agent) is enough to
@@ -373,8 +427,6 @@ class SyncAffiliateClicksJob:
                         inserted += 1
                         if is_bot:
                             bot_rows += 1
-                        if max_ts is None or ts > max_ts:
-                            max_ts = ts
 
             # Roll per-code counts into affiliate_links.clicks (deterministic;
             # safe to re-run — it recomputes from affiliate_link_clicks). SQL
@@ -382,8 +434,22 @@ class SyncAffiliateClicksJob:
             # job talks to the DB (spinal cord), not module Python (#666).
             if inserted:
                 await self._rollup_clicks(pool)
-            if max_ts is not None:
-                await self._update_high_water_mark(pool, max_ts.isoformat())
+            # Cap at the ingestion horizon too: AE visibility is not strictly
+            # ordered, so a click written just before `max_ts` can surface
+            # AFTER it, and an uncapped jump would step over it. `max_seen_ts` is
+            # None only when NOTHING in the batch had a usable timestamp, in
+            # which case the batch was unreadable anyway (`skipped_bad_ts`
+            # raises a finding for exactly that).
+            new_high_water = next_high_water(
+                since=since_utc,
+                observed_max=max_seen_ts,
+                now=datetime.now(timezone.utc),
+                lag_margin_seconds=lag_margin_seconds,
+            )
+            if new_high_water > since_utc:
+                await self._update_high_water_mark(
+                    pool, new_high_water.isoformat()
+                )
 
             _emit_bad_timestamp_finding(skipped_bad_ts)
 

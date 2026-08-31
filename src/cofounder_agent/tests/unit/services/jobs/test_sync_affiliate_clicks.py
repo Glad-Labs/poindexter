@@ -4,6 +4,13 @@ The AE → DB glue (CF SQL API, dedup insert, rollup, watermark) is edge-runtime
 integration verified in staging. What has real logic worth locking down is
 `_row_to_click`: it drops codeless rows and derives the source post slug from
 the referrer's `/posts/<slug>` path.
+
+The one piece of that glue with a real correctness contract — the high-water
+mark, which must never advance past CF Analytics Engine's visibility horizon
+or clicks still in flight are lost permanently (stack#3523) — is shared with
+the page-views ingest and tested in
+`tests/unit/services/test_watermark_cursor.py`, which also asserts THIS job
+binds the shared rule rather than growing its own copy.
 """
 
 from services.jobs.sync_affiliate_clicks import (

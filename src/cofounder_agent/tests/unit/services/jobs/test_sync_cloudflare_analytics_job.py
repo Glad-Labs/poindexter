@@ -9,13 +9,17 @@ fake ``httpx`` module, fake asyncpg pool.
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.sync_cloudflare_analytics import SyncCloudflareAnalyticsJob
+from services.jobs.sync_cloudflare_analytics import (
+    SyncCloudflareAnalyticsJob,
+    _parse_iso,
+)
 
 
 def _sc(
@@ -252,8 +256,16 @@ class TestSyncCloudflareAnalyticsHappyPath:
 
     async def test_watermark_advances_on_success(self):
         """The cloudflare_analytics_last_sync row is upserted with the max
-        timestamp from the batch."""
-        pool, conn = _make_pool()
+        timestamp from the batch.
+
+        The stored watermark has to sit BELOW the batch — since stack#3523 the
+        cursor is monotonic, so a batch whose newest row predates the current
+        watermark leaves it alone rather than rewinding it into an
+        ever-widening re-scan (see ``TestNextHighWater``).
+        """
+        pool, conn = _make_pool(
+            last_sync_row={"value": "2026-05-28T20:00:00+00:00"}
+        )
         rows = [
             _row(ts="2026-05-28 21:00:00"),
             _row(ts="2026-05-28 22:30:00"),  # max
@@ -528,3 +540,324 @@ class TestTransientNetworkDeferral:
         assert "is_transient_network_error" in src
         assert "transient_retry_transport" in src
         assert '"network_unreachable:cloudflare"' in src
+
+
+# ---------------------------------------------------------------------------
+# Ingestion-lag race (stack#3523)
+# ---------------------------------------------------------------------------
+
+
+def _at(hhmmss: str) -> datetime:
+    """2026-08-31 <hh:mm:ss> UTC — the day the loss was caught in the wild."""
+    return datetime.strptime(
+        f"2026-08-31 {hhmmss}", "%Y-%m-%d %H:%M:%S"
+    ).replace(tzinfo=timezone.utc)
+
+
+def _frozen_datetime(now_value: datetime):
+    """A ``datetime`` subclass whose ``now()`` is pinned.
+
+    Subclass rather than MagicMock because the job also calls
+    ``datetime.strptime`` / ``fromisoformat`` on the same module-level name.
+    """
+
+    class _Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return now_value if tz is not None else now_value.replace(tzinfo=None)
+
+    return _Frozen
+
+
+class _FakeAnalyticsEngine:
+    """Cloudflare AE with its ingestion delay modelled explicitly.
+
+    A data point is *written* at ``ts`` but is only *queryable* from
+    ``visible_at``. That gap — not any error — is what silently drops rows:
+    a poll in the gap sees nothing, and if it then advances the high-water
+    mark past ``ts`` the row is below the cursor forever once it appears.
+    """
+
+    def __init__(self) -> None:
+        self._points: list[tuple[datetime, datetime, dict]] = []
+        self.queries: list[datetime] = []
+
+    def write(self, row: dict, *, visible_at: datetime) -> None:
+        ts = datetime.strptime(row["created_at"], "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+        self._points.append((ts, visible_at, row))
+
+    def query(self, sql: str, now: datetime) -> list[dict]:
+        m = re.search(r"toDateTime\('([^']+)'", sql)
+        assert m, f"could not find the since-clause in {sql!r}"
+        since = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+        self.queries.append(since)
+        return [
+            row
+            for ts, visible_at, row in sorted(self._points, key=lambda p: p[0])
+            if ts > since and now >= visible_at
+        ]
+
+
+class _StatefulPool:
+    """asyncpg-shaped pool that PERSISTS the high-water mark across runs, so a
+    test can drive several 5-minute cycles the way the scheduler does."""
+
+    def __init__(self, watermark: str | None = None) -> None:
+        self.watermark = watermark
+        self.inserted: list[tuple] = []
+        conn = AsyncMock()
+
+        async def _execute(sql, *args):
+            if "cloudflare_analytics_last_sync" in sql:
+                self.watermark = args[0]
+            elif "INSERT INTO page_views" in sql:
+                self.inserted.append(args)
+            return "OK"
+
+        async def _fetchrow(sql, *args):
+            if "cloudflare_analytics_last_sync" in sql:
+                return {"value": self.watermark} if self.watermark else None
+            return None
+
+        async def _fetchval(sql, *args):
+            # Dedup probe: a row already ingested must not be inserted twice.
+            if "SELECT 1 FROM page_views" in sql:
+                slug, path, ts, ua = args
+                return 1 if any(
+                    row[0] == path and row[1] == slug and row[4] == ts
+                    for row in self.inserted
+                ) else None
+            return None
+
+        conn.execute = AsyncMock(side_effect=_execute)
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+        conn.fetchval = AsyncMock(side_effect=_fetchval)
+
+        tx = AsyncMock()
+        tx.__aenter__ = AsyncMock(return_value=None)
+        tx.__aexit__ = AsyncMock(return_value=False)
+        conn.transaction = MagicMock(return_value=tx)
+
+        acquire = AsyncMock()
+        acquire.__aenter__ = AsyncMock(return_value=conn)
+        acquire.__aexit__ = AsyncMock(return_value=False)
+        self.acquire = MagicMock(return_value=acquire)
+        self.conn = conn
+
+    @property
+    def paths(self) -> list:
+        return [row[0] for row in self.inserted]
+
+
+async def _run_cycle(pool, ae: _FakeAnalyticsEngine, now: datetime, **cfg):
+    """One scheduler fire at wall-clock ``now``, against the fake AE."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = ""
+
+    client = AsyncMock()
+
+    async def _post(url, headers=None, content=None):
+        resp.json = MagicMock(return_value={"data": ae.query(content, now)})
+        return resp
+
+    client.post = AsyncMock(side_effect=_post)
+
+    class _AsyncClient:
+        def __init__(self, *a: Any, **k: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> Any:
+            return client
+
+        async def __aexit__(self, *a: Any) -> None:
+            return None
+
+    fake_httpx = MagicMock()
+    fake_httpx.AsyncClient = _AsyncClient
+
+    with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
+        "services.jobs.sync_cloudflare_analytics.datetime", _frozen_datetime(now)
+    ):
+        return await SyncCloudflareAnalyticsJob().run(
+            pool, {"_site_config": _sc(), **cfg}
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestIngestionLagRace:
+    """stack#3523 — the permanent data-loss window.
+
+    Reproduces the 2026-08-31 incident exactly. Two identical beacons to
+    ``/__origin-enforcement-e2e``: the 19:32:46 write landed 23 s before an
+    empty poll and was lost forever; the 19:45:04 write landed after its
+    preceding poll and survived. 40 genuine reader page views were missing
+    from August for the same reason.
+    """
+
+    @staticmethod
+    def _lost_row() -> dict:
+        return _row(
+            slug="",
+            path="/__origin-enforcement-e2e",
+            referrer="",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) origin-enforcement-e2e-check",
+            ts="2026-08-31 19:32:46",
+        )
+
+    async def test_row_written_before_an_empty_poll_is_still_ingested(self):
+        """THE regression test. The row is written at 19:32:46 but is not
+        queryable until 19:34:30. The 19:33:09 poll therefore sees nothing;
+        the row must still be ingested on a later cycle."""
+        ae = _FakeAnalyticsEngine()
+        ae.write(self._lost_row(), visible_at=_at("19:34:30"))
+        pool = _StatefulPool(watermark="2026-08-31T19:28:00+00:00")
+
+        # Cycle 1 — inside the ingestion delay: AE returns nothing.
+        r1 = await _run_cycle(pool, ae, _at("19:33:09"))
+        assert r1.ok is True
+        assert r1.changes_made == 0
+        assert pool.paths == []
+
+        # Cycle 2 — the row is visible now. The watermark must NOT have been
+        # advanced past 19:32:46, or this poll can never select it.
+        r2 = await _run_cycle(pool, ae, _at("19:38:09"))
+        assert r2.changes_made == 1
+        assert pool.paths == ["/__origin-enforcement-e2e"]
+
+        # Cycle 3 — re-pull overlap is expected; the insert-time dedup is what
+        # makes it free. The row must not be counted twice.
+        r3 = await _run_cycle(pool, ae, _at("19:43:09"))
+        assert r3.changes_made == 0
+        assert pool.paths == ["/__origin-enforcement-e2e"]
+
+    async def test_margin_zero_reproduces_the_loss(self):
+        """Pins the MECHANISM, not just the fix: with the margin disabled the
+        same row is lost forever — the empty poll advances past its timestamp
+        and no later cycle can ever select it again."""
+        ae = _FakeAnalyticsEngine()
+        ae.write(self._lost_row(), visible_at=_at("19:34:30"))
+        pool = _StatefulPool(watermark="2026-08-31T19:28:00+00:00")
+
+        await _run_cycle(pool, ae, _at("19:33:09"), ingestion_lag_seconds=0)
+        for minute in ("19:38:09", "19:43:09", "19:48:09"):
+            await _run_cycle(pool, ae, _at(minute), ingestion_lag_seconds=0)
+
+        assert pool.paths == []
+        # The cursor is the reason: it stepped past the row's own timestamp.
+        assert _parse_iso(pool.watermark) > _at("19:32:46")
+
+    async def test_empty_poll_advances_but_stops_short_of_now(self):
+        ae = _FakeAnalyticsEngine()
+        pool = _StatefulPool(watermark="2026-08-31T19:20:00+00:00")
+
+        result = await _run_cycle(pool, ae, _at("19:33:09"))
+
+        assert result.detail == "no new rows"
+        assert _parse_iso(pool.watermark) == _at("19:28:09")
+
+    async def test_all_rows_filtered_still_advances_the_cursor(self):
+        """A batch of pure bot traffic inserts nothing, but the cursor must
+        still move past what it READ — otherwise the window grows every cycle
+        and the same bots are re-scanned forever."""
+        ae = _FakeAnalyticsEngine()
+        ae.write(
+            _row(
+                slug="post-a",
+                ts="2026-08-31 19:25:00",
+                user_agent="Mozilla/5.0 (compatible; bingbot/2.0)",
+            ),
+            visible_at=_at("19:26:00"),
+        )
+        pool = _StatefulPool(watermark="2026-08-31T19:20:00+00:00")
+
+        result = await _run_cycle(pool, ae, _at("19:33:09"))
+
+        assert result.changes_made == 0
+        assert pool.paths == []
+        # Past the bot row it read, and no further — nothing between 19:25:00
+        # and the horizon has been examined yet.
+        assert _parse_iso(pool.watermark) == _at("19:25:00")
+
+    async def test_fully_deduped_batch_does_not_skip_the_unread_remainder(self):
+        """The backfill shape, and the sharpest edge on the horizon cap.
+
+        Rewind the cursor and re-pull a mostly-ingested window: the batch is
+        entirely dedup-skips, so nothing is inserted. If the cursor took its
+        position from INSERTS it would read ``None`` here, the horizon would
+        apply, and every row the batch had not yet reached would be jumped —
+        turning a recovery into a fresh loss. It must advance only as far as
+        it actually read.
+        """
+        ae = _FakeAnalyticsEngine()
+        old_row = _row(slug="post-a", path="/posts/post-a", ts="2026-08-31 18:00:00")
+        later_row = _row(slug="post-b", path="/posts/post-b", ts="2026-08-31 19:20:00")
+        ae.write(old_row, visible_at=_at("18:01:00"))
+        pool = _StatefulPool(watermark="2026-08-31T17:00:00+00:00")
+
+        # Cycle 1 ingests the old row and leaves the cursor on it.
+        assert (await _run_cycle(pool, ae, _at("18:30:00"))).changes_made == 1
+
+        # Now rewind (the documented recovery) and add a row the first pass
+        # never saw. The re-pull is all dedup for the row it already has.
+        pool.watermark = "2026-08-31T17:00:00+00:00"
+        ae.write(later_row, visible_at=_at("19:21:00"))
+
+        r = await _run_cycle(pool, ae, _at("19:25:00"))
+
+        # The previously-unseen row is recovered, not skipped, and the already
+        # ingested one is not duplicated.
+        assert pool.paths == ["/posts/post-a", "/posts/post-b"]
+        assert r.changes_made == 1
+        assert _parse_iso(pool.watermark) == _at("19:20:00")
+
+    async def test_future_watermark_does_not_wedge_the_ingest(self):
+        """A cursor ahead of wall-clock — a typo on the documented recovery
+        command — must not wedge the ingest.
+
+        The rule is monotonic, so the cursor can never walk back on its own;
+        the pre-fix code repaired such a value by accident, overwriting it with
+        `now()` on the next empty poll. It is now rejected at read time
+        instead, and the job falls back to its lookback window.
+        """
+        ae = _FakeAnalyticsEngine()
+        ae.write(
+            _row(slug="post-a", path="/posts/post-a", ts="2026-08-31 19:20:00"),
+            visible_at=_at("19:21:00"),
+        )
+        # Fat-fingered a year on `poindexter settings set`.
+        pool = _StatefulPool(watermark="2027-08-31T19:00:00+00:00")
+
+        result = await _run_cycle(pool, ae, _at("19:33:09"))
+
+        assert result.changes_made == 1
+        assert pool.paths == ["/posts/post-a"]
+        assert _parse_iso(pool.watermark) == _at("19:20:00")
+
+    async def test_second_beacon_after_its_poll_was_never_at_risk(self):
+        """The incident's control: the 19:45:04 write landed AFTER the
+        19:43:09 poll, so no empty poll ever stepped over it. Same job, same
+        config — only the timing differs."""
+        ae = _FakeAnalyticsEngine()
+        ae.write(
+            _row(
+                slug="",
+                path="/__origin-enforcement-e2e",
+                referrer="",
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) origin-enforcement-e2e-check",
+                ts="2026-08-31 19:45:04",
+            ),
+            visible_at=_at("19:47:00"),
+        )
+        pool = _StatefulPool(watermark="2026-08-31T19:38:00+00:00")
+
+        await _run_cycle(pool, ae, _at("19:43:09"))
+        result = await _run_cycle(pool, ae, _at("19:48:16"))
+
+        assert result.changes_made == 1
+        assert pool.paths == ["/__origin-enforcement-e2e"]

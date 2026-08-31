@@ -16,6 +16,26 @@ Config (``plugin.job.sync_cloudflare_analytics``):
 - ``config.batch_size`` (default 5000) — rows per fetch
 - ``config.lookback_hours`` (default 24) — first-run window (only used
   when ``cloudflare_analytics_last_sync`` is unset / 1970)
+- ``config.ingestion_lag_seconds`` (default 300) — how far behind
+  wall-clock the high-water mark is allowed to advance. See
+  "Ingestion lag" below; ``0`` restores the pre-2026-08-31 behaviour.
+
+Ingestion lag (stack#3523)
+--------------------------
+The high-water mark deliberately trails wall-clock: CF Analytics Engine
+makes a data point queryable some time AFTER ``writeDataPoint`` returns,
+so a poll that advances the cursor to ``now()`` buries every row still in
+flight — permanently, and without erroring. 40 genuine August page views
+were lost this way before the fix (7.3% of what should have been
+ingested). ``services/watermark_cursor.py`` owns the rule and the full
+explanation; it is shared with ``sync_affiliate_clicks`` so a re-tune can
+never reach only half the ingest surface.
+
+The re-pull overlap the margin creates is free HERE because of two
+properties that must not regress: the insert-time ``(slug, path,
+created_at, user_agent)`` dedup probe, and ``posts.view_count`` being a
+full recompute from ``page_views_human`` (owned by ``FlagBotPageViewsJob``)
+rather than an increment — so a re-pulled row cannot double-count.
 
 Settings (``app_settings``, read via the secret-aware SiteConfig seam):
 - ``cloudflare_account_id`` — non-secret, ID for the CF account that
@@ -35,6 +55,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from services.watermark_cursor import (
+    DEFAULT_INGESTION_LAG_SECONDS,
+    is_future_cursor,
+    next_high_water,
+)
 from utils.exception_format import describe_exception
 from utils.findings import emit_finding
 
@@ -196,6 +221,11 @@ class SyncCloudflareAnalyticsJob:
 
         batch_size = int(config.get("batch_size", 5000))
         lookback_hours = int(config.get("lookback_hours", 24))
+        # How far behind wall-clock the watermark may advance. Bounds the
+        # AE ingestion-delay race — see the "Ingestion lag" section above.
+        lag_margin_seconds = int(
+            config.get("ingestion_lag_seconds", DEFAULT_INGESTION_LAG_SECONDS)
+        )
 
         try:
             import httpx
@@ -230,6 +260,7 @@ class SyncCloudflareAnalyticsJob:
             return JobResult(ok=False, detail=f"db precheck failed: {describe_exception(e)}", changes_made=0)
 
         last_sync_raw = (row["value"] if row and row["value"] else "").strip()
+        since = None
         if last_sync_raw:
             try:
                 since = _parse_iso(last_sync_raw)
@@ -239,8 +270,19 @@ class SyncCloudflareAnalyticsJob:
                     "(%r) — falling back to lookback window",
                     last_sync_raw,
                 )
-                since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        else:
+            else:
+                # A cursor ahead of wall-clock is corrupt (usually a typo on
+                # the recovery runbook). The rule is monotonic, so it can
+                # never walk back on its own — left alone it wedges the ingest
+                # silently forever. Treat it like an unparseable value.
+                if is_future_cursor(since, datetime.now(timezone.utc)):
+                    logger.warning(
+                        "[SYNC_CF_AE] cloudflare_analytics_last_sync is in the "
+                        "future (%r) — falling back to lookback window",
+                        last_sync_raw,
+                    )
+                    since = None
+        if since is None:
             since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
 
         # CF AE wants "YYYY-MM-DD HH:MM:SS" UTC; coerce to UTC then format.
@@ -332,22 +374,45 @@ class SyncCloudflareAnalyticsJob:
         rows = payload.get("data") or []
 
         if not rows:
-            # No rows — advance high-water mark to "now" so the next pull
-            # bounds itself sensibly even if traffic is sparse. Empty
-            # response is the happy-path no-op, not a failure.
-            new_high_water = datetime.now(timezone.utc).isoformat()
-            await self._update_high_water_mark(pool, new_high_water)
+            # No rows — advance the high-water mark so the next pull bounds
+            # itself sensibly even if traffic is sparse, but NEVER past the
+            # ingestion horizon. Advancing to a bare ``now()`` here is what
+            # made this the permanent-data-loss path: on a low-traffic site
+            # nearly every poll is empty, so nearly every real page view was
+            # exposed to the race (stack#3523, 2026-08-31).
+            new_high_water = next_high_water(
+                since=since_utc,
+                observed_max=None,
+                now=datetime.now(timezone.utc),
+                lag_margin_seconds=lag_margin_seconds,
+            )
+            if new_high_water > since_utc:
+                await self._update_high_water_mark(
+                    pool, new_high_water.isoformat()
+                )
             return JobResult(ok=True, detail="no new rows", changes_made=0)
 
         # ------------------------------------------------------------------
-        # Insert + bump posts.view_count + advance high-water mark, in one
-        # transaction so the watermark only moves on full success.
+        # Insert (deduped) in one transaction, then advance the high-water
+        # mark, so the watermark only moves on full success. NOTE: no
+        # posts.view_count bump — FlagBotPageViewsJob owns that column and
+        # recomputes it from page_views_human, which is exactly why the
+        # ingestion-lag margin's re-pull overlap can't double-count.
         # ------------------------------------------------------------------
         try:
             inserted = 0
             skipped_bad_ts = 0
             seen_slugs: dict[str, int] = {}
-            max_ts: datetime | None = None
+            # Newest timestamp this batch SAW — not merely inserted. A row we
+            # deliberately dropped (bot) or skipped (already present) has been
+            # processed just as surely as one we wrote, so it must move the
+            # cursor. Tracking inserts only would pin the cursor on a batch
+            # that was entirely filtered — and with the ingestion horizon in
+            # play that pinned cursor turns into a SKIP: the horizon would
+            # advance past rows the LIMIT never reached. That is precisely the
+            # backfill shape (rewind the watermark, re-pull a mostly-ingested
+            # window), so it is not hypothetical.
+            max_seen_ts: datetime | None = None
 
             async with pool.acquire() as conn:
                 async with conn.transaction():
@@ -364,12 +429,10 @@ class SyncCloudflareAnalyticsJob:
                         ts_raw = raw.get("created_at") or ""
                         if not (slug or path):
                             continue
-                        ua_lower = ua.lower()
-                        if any(
-                            tok in ua_lower
-                            for tok in ("bot/", "crawler", "spider", "slurp", "facebookexternalhit")
-                        ):
-                            continue
+                        # Parse the timestamp BEFORE the bot filter: a bot row
+                        # still marks how far the cursor has been carried, and
+                        # dropping it before we read its position is what makes
+                        # an all-bot batch look like an empty one.
                         try:
                             # CF AE returns "YYYY-MM-DD HH:MM:SS" UTC
                             ts = datetime.strptime(
@@ -386,6 +449,15 @@ class SyncCloudflareAnalyticsJob:
                                     ts_raw,
                                 )
                                 continue
+                        if max_seen_ts is None or ts > max_seen_ts:
+                            max_seen_ts = ts
+
+                        ua_lower = ua.lower()
+                        if any(
+                            tok in ua_lower
+                            for tok in ("bot/", "crawler", "spider", "slurp", "facebookexternalhit")
+                        ):
+                            continue
 
                         # Dedup at the row level: same (slug, path, created_at, ua)
                         # already in page_views means CF AE replayed a row across
@@ -419,19 +491,33 @@ class SyncCloudflareAnalyticsJob:
                         inserted += 1
                         if slug:
                             seen_slugs[slug] = seen_slugs.get(slug, 0) + 1
-                        if max_ts is None or ts > max_ts:
-                            max_ts = ts
 
                     # posts.view_count is owned by FlagBotPageViewsJob (recompute
                     # from page_views_human) so bot inflation never reaches it.
                     # The sync ingest deliberately does NOT bump view_count.
 
-            # Advance the high-water mark to the max timestamp we
-            # observed. Done outside the transaction (app_settings is
+            # Advance the high-water mark toward the max timestamp we
+            # seen, still capped at the ingestion horizon: visibility is
+            # not strictly ordered, so a row written just before ``max_ts``
+            # can surface AFTER it, and an uncapped jump to ``max_ts`` would
+            # step over it. Done outside the transaction (app_settings is
             # operator-visible; a successful batch must not be re-pulled
             # even if the watermark write somehow rolls back).
-            if max_ts is not None:
-                await self._update_high_water_mark(pool, max_ts.isoformat())
+            #
+            # ``max_seen_ts`` is None only when NOTHING in the batch had a
+            # usable timestamp, in which case the horizon applies and the
+            # batch was unreadable anyway (``skipped_bad_ts`` raises a finding
+            # for exactly that).
+            new_high_water = next_high_water(
+                since=since_utc,
+                observed_max=max_seen_ts,
+                now=datetime.now(timezone.utc),
+                lag_margin_seconds=lag_margin_seconds,
+            )
+            if new_high_water > since_utc:
+                await self._update_high_water_mark(
+                    pool, new_high_water.isoformat()
+                )
 
             _emit_bad_timestamp_finding(skipped_bad_ts)
 

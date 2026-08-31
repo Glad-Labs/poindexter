@@ -1,5 +1,10 @@
 # page_views bot-flag & the raw-vs-human boundary
 
+> Upstream of everything here: the ingest cursor must never advance past
+> `now() - ingestion_lag_seconds`, or rows still inside CF Analytics Engine's
+> write→queryable delay are lost permanently —
+> [analytics-ingestion-lag.md](analytics-ingestion-lag.md).
+
 The first-party beacon (`CF Analytics Engine → sync_cloudflare_analytics →
 page_views`) is inflated by stealth scrapers that present a browser
 `User-Agent` and slip the ingest UA drop-filter. `FlagBotPageViewsJob`
