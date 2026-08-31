@@ -19,6 +19,10 @@
 
 This is not a demo repo. Poindexter is the production system behind [gladlabs.io](https://www.gladlabs.io) — 166 live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
 
+<img src="docs/assets/readme/console.gif" alt="Operator console, live: a post mid-pipeline in the system pulse, KPI row, approval inbox with QA verdicts, then the TRACE view and the animated system map" width="100%">
+
+_The operator console (ships with the repo, served by the worker at `/console/`), recorded live: a post mid-generation, the approval inbox with per-task QA verdicts, pipeline traces, and the system map._
+
 <img src="docs/assets/readme/grafana-pipeline.png" alt="Grafana Pipeline dashboard — approval queue with average quality 93, 8 approved, 4 auto-rejected, live pipeline activity" width="100%">
 
 _The Pipeline dashboard (ships with the repo): drafts arrive scored, weak ones are auto-rejected, survivors wait for your one-click approval._

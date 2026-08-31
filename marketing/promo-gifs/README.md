@@ -13,7 +13,9 @@ All files ≤10 MB so they render inline on GitHub; all fit X/LinkedIn limits.
 
 This directory is stripped from the public poindexter mirror (whole `marketing/`
 tree), so the GIFs and harness never land in the OSS repo — copy a GIF out
-deliberately when one is wanted there (e.g. embedded in the poindexter README).
+deliberately when one is wanted there. **`console.gif` has such a copy at
+`docs/assets/readme/console.gif`** (embedded in the root README, which ships to
+the mirror) — refresh both copies when re-shooting that scene.
 
 ## Re-shooting (harness/)
 
