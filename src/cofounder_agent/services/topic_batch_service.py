@@ -452,6 +452,22 @@ class TopicBatchService:
         has decayed to factor^3 of its original score (0.7^3 ≈ 0.343 at
         the default). Tunable via
         ``niche_carry_forward_decay_factor`` (migration 0119).
+
+        **Eligibility is "was not picked", not "was not ranked".** The
+        original filter was ``operator_rank IS NULL``, which encoded the
+        MANUAL flow's assumption: an operator ranks only the candidates they
+        care about and leaves the rest NULL, so unranked meant unwanted-but-
+        reusable. ``topic_auto_resolve`` then arrived and set
+        ``operator_rank = rank_in_batch`` on **every** candidate in the batch
+        so it could resolve without an operator — which silently made every
+        auto-resolved batch's losers permanently ineligible.
+
+        Measured 2026-08-30: **0 of 1,077 candidates had ever been carried
+        forward** and every ``decay_factor`` in both tables was still 1.0. The
+        whole carry-forward mechanism was dead columns, and every sweep was
+        discarding four good candidates to keep one. Filtering on the batch's
+        own ``picked_candidate_id`` instead is what the name always meant, and
+        it works under both flows.
         """
         decay = self._site_config.get_float(
             "niche_carry_forward_decay_factor", 0.7,
@@ -459,24 +475,34 @@ class TopicBatchService:
         async with self._pool.acquire() as conn:
             ext = await conn.fetch(
                 """
-                SELECT * FROM topic_candidates
-                 WHERE niche_id = $1 AND operator_rank IS NULL
-                   AND batch_id IN (
+                SELECT tc.* FROM topic_candidates tc
+                  JOIN topic_batches b ON b.id = tc.batch_id
+                 WHERE tc.niche_id = $1
+                   AND b.id = (
                        SELECT id FROM topic_batches
                         WHERE niche_id = $1 AND status = 'resolved'
                      ORDER BY resolved_at DESC LIMIT 1
+                   )
+                   AND NOT (
+                       b.picked_candidate_id = tc.id
+                       AND COALESCE(b.picked_candidate_kind, 'external') = 'external'
                    )
                 """,
                 niche_id,
             )
             int_ = await conn.fetch(
                 """
-                SELECT * FROM internal_topic_candidates
-                 WHERE niche_id = $1 AND operator_rank IS NULL
-                   AND batch_id IN (
+                SELECT ic.* FROM internal_topic_candidates ic
+                  JOIN topic_batches b ON b.id = ic.batch_id
+                 WHERE ic.niche_id = $1
+                   AND b.id = (
                        SELECT id FROM topic_batches
                         WHERE niche_id = $1 AND status = 'resolved'
                      ORDER BY resolved_at DESC LIMIT 1
+                   )
+                   AND NOT (
+                       b.picked_candidate_id = ic.id
+                       AND b.picked_candidate_kind = 'internal'
                    )
                 """,
                 niche_id,
