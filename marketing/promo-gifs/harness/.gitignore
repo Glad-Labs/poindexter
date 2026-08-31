@@ -1,0 +1,9 @@
+video/
+shots/
+frames/
+gif/
+*.out
+creds.env
+client.txt
+tok.json
+terminal.html
