@@ -81,7 +81,14 @@ function App() {
   const [mode, setMode] = useS('console');
   const [traceTaskId, setTraceTaskId] = useS(null);
   const [paletteOpen, setPaletteOpen] = useS(false);
-  const [clock, setClock] = useS('14:32:00');
+  // Topbar + WALL clock. Live seeds from the real time at first paint (the
+  // old '14:32:00' literal — the formatted mock epoch — showed until the
+  // first pipeline event landed) and ticks via the dedicated interval effect
+  // below; mock seeds from the simulated PX.now, which the feed simulator
+  // advances (PX.nextTs) — same live/mock split as the wall date (#3510).
+  const [clock, setClock] = useS(() =>
+    PX.hhmmss(PX.api.isLive() ? new Date() : PX.now)
+  );
   const [toastNode, pushToast] = useToasts();
   const mainRef = useR(null);
   const feedKey = useR(0);
@@ -336,10 +343,23 @@ function App() {
     };
   }, []);
 
+  // ── Live: wall clock tick ─────────────────────────────────────────────
+  // Dedicated 1s interval so the clock advances on a QUIET system too. It
+  // used to piggyback on the pipeline-events poll below, which setClock'd
+  // only when NEW events arrived — the displayed time froze at the last
+  // event's arrival (observed 2026-08-31, sibling of the #3510 wall-date
+  // freeze). Mock stays simulator-driven: the feed timer above advances
+  // the simulated PX.now and sets the clock from it.
+  useE(() => {
+    if (!PX.api.isLive()) return undefined;
+    const id = setInterval(() => setClock(PX.hhmmss(new Date())), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Live: real audit feed (GET /api/pipeline/events) ──────────────────
   // Task 9 exception (stays a bespoke effect): not a clean fetch→setState —
-  // it dedups against a seen-id ref, prepends+slices a rolling buffer, runs a
-  // fresh-flag fade animation, and drives setClock. No <Freshness> badge (the
+  // it dedups against a seen-id ref, prepends+slices a rolling buffer, and
+  // runs a fresh-flag fade animation. No <Freshness> badge (the
   // feed is a live stream, not a snapshot panel).
   // Mock keeps the local simulator above. On live we poll the real pipeline
   // events (QA decisions, rewrites, task lifecycle), map them to feed lines in
@@ -363,7 +383,6 @@ function App() {
           fresh: true,
           key: 'ev' + l.id,
         }));
-        setClock(PX.hhmmss(new Date()));
         setFeed((f) => [...add, ...f].slice(0, 40));
         add.forEach((l) =>
           setTimeout(() => {
