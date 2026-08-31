@@ -12,15 +12,30 @@ compatibility_date = "2026-05-01"
 binding = "ANALYTICS_ENGINE"
 dataset = "affiliate_clicks"
 
-# Config vars.
-#   LINKS_URL — the code→url map published by the static export
-#     (services/static_export_service.py::_export_affiliate_links) under the R2
-#     `static/` prefix. Set the real R2 public host per-operator — do NOT commit
-#     an operator-specific hostname.
-#   HOME_URL  — fallback redirect for a blank or unknown code.
-[vars]
-LINKS_URL = "https://<r2-public-host>/static/affiliate-links.json"
-HOME_URL = "https://www.gladlabs.io"
+# Operator config — BOTH values live as Worker SECRETS, neither as [vars]
+# (set them on the deployed Worker; `wrangler secret put` needs it to exist):
+#
+#   echo "https://<r2-public-host>/static/affiliate-links.json" | npx wrangler secret put LINKS_URL
+#   echo "https://www.example.com" | npx wrangler secret put HOME_URL
+#
+# Secrets survive `wrangler deploy`; plain-text vars do not — deploys are
+# declarative about [vars], so a dashboard-set var is wiped on the next deploy
+# and a committed var clobbers a same-named secret. This file used to commit
+# `[vars] LINKS_URL = "https://<r2-public-host>/static/affiliate-links.json"`
+# — a placeholder — while the live Worker carried the real R2 host as a var
+# that was never committed anywhere. Any `npm run deploy` from a clean checkout
+# would have overwritten the working binding with an unparseable URL and taken
+# every /go/<code> link down. (The page-views beacon ran with origin
+# enforcement silently off until 2026-08-31 for exactly this reason.)
+#
+# LINKS_URL — public URL of the code→url map published by the static export
+#   (services/static_export_service.py::_export_affiliate_links) under the R2
+#   `static/` prefix. Unset = the Worker fails loud (503) rather than serving
+#   redirects that are indistinguishable from a healthy unknown-code fallback.
+# HOME_URL  — fallback redirect for a blank or unknown code. A secret rather
+#   than a [vars] entry so no operator's hostname is committed to this repo
+#   (it reaches the public mirror — infrastructure/cloudflare/ is not stripped)
+#   and so the next deploy cannot silently revert it.
 
 # Route — operator wires either `/go/*` on the site zone or a `go.` subdomain to
 # this Worker via the CF dashboard or `wrangler routes add`. Don't commit a
