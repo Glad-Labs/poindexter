@@ -1807,6 +1807,12 @@ DEFAULTS: dict[str, str] = {
     # to awaiting_approval instead of discarded), then flipped on prod + here so
     # fresh installs default to never-discard. 'false' restores legacy discard.
     'qa_flag_instead_of_reject': 'true',
+    # May a THINKING judge use JSON mode (response_format -> Ollama
+    # format:json)? Default false: under constrained decoding it stops at
+    # ~30 tokens with EMPTY content, which took all three LLM rails dark on
+    # 100% of passes from 2026-08-28. Budget is NOT the lever; see
+    # thinking_models.judge_json_mode_supported. Inert for non-thinking judges.
+    'qa_judge_json_mode_thinking_enabled': 'false',
 
     # --- Title variety / avoidance (stack#3209) -------------------------
     # Strategy for steering the title model away from the recent corpus:
@@ -4428,6 +4434,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'content_originality_chunk_min_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_chunk_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'content_originality_excluded_series': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_judge_json_mode_thinking_enabled': {'owner': 'thinking_models', 'value_type': 'boolean'},
     'qa_title_coherence_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'qa_self_claim_product_names': {'owner': 'multi_model_qa', 'value_type': 'string'},

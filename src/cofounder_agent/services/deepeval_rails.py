@@ -184,7 +184,9 @@ def _build_deepeval_judge_model(
     return judge_model
 
 
-def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
+def _build_dispatcher_judge_model(
+    judge_model: str, *, pool: Any, site_config: Any = None
+) -> Any:
     """Wrap the judge in a DeepEval model that routes through the dispatcher.
 
     Poindexter#826: DeepEval's stock ``OllamaModel`` owns its own HTTP
@@ -212,6 +214,7 @@ def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
     import re as _re
 
     from services.llm_providers.dispatcher import dispatch_complete
+    from services.llm_providers.thinking_models import judge_json_mode_supported
 
     class _DispatcherJudgeLLM(DeepEvalBaseLLM):
         def __init__(self):
@@ -226,10 +229,15 @@ def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
 
         async def a_generate(self, prompt: str, schema: Any = None) -> Any:
             kwargs: dict[str, Any] = {}
-            if schema is not None:
+            if schema is not None and judge_json_mode_supported(
+                judge_model, site_config
+            ):
                 # json_object keeps weaker local judges inside JSON mode
                 # (LiteLLM maps it to Ollama's format=json) — same
                 # constrained-decoding fix as the Ragas rail (#1910).
+                # SKIPPED for a thinking judge: under the constraint it stops
+                # after ~30 tokens with EMPTY content, which surfaced as the
+                # JSONDecodeError below. See judge_json_mode_supported.
                 kwargs["response_format"] = {"type": "json_object"}
             # poindexter#914 P2 — bounded wait (see qa_rail_wait_budget_s).
             # Fail-soft rail: GpuBusyError surfaces as a degraded rail with a
@@ -248,6 +256,16 @@ def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
                 **kwargs,
             )
             text = (getattr(completion, "text", "") or "").strip()
+            if not text:
+                # Name the cause rather than letting json.loads("") raise a
+                # bare JSONDecodeError, which reads like a malformed
+                # judgement instead of an empty response (2026-08-31).
+                raise ValueError(
+                    f"judge {judge_model} returned EMPTY content "
+                    f"(json_mode={'response_format' in kwargs}) — "
+                    "constrained decoding vs a thinking model, or a "
+                    "starved token budget"
+                )
             if schema is None:
                 return text
             cleaned = text
@@ -660,7 +678,9 @@ async def evaluate_g_eval(
     # audit's "g_eval always errors" finding).
     resolved_model = None
     if pool is not None:
-        resolved_model = _build_dispatcher_judge_model(judge_model, pool=pool)
+        resolved_model = _build_dispatcher_judge_model(
+            judge_model, pool=pool, site_config=site_config
+        )
     if resolved_model is None:
         resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
 
@@ -740,7 +760,9 @@ async def evaluate_faithfulness(
 
     resolved_model = None
     if pool is not None:
-        resolved_model = _build_dispatcher_judge_model(judge_model, pool=pool)
+        resolved_model = _build_dispatcher_judge_model(
+            judge_model, pool=pool, site_config=site_config
+        )
     if resolved_model is None:
         resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
     try:

@@ -292,18 +292,19 @@ def resolve_judge_num_predict(model: str, site_config: Any) -> int:
     reports ``JSONDecodeError: Expecting value: line 1 column 1 (char 0)``,
     which reads like a malformed judgement and is actually starvation.
 
-    Not hypothetical. The 2026-08-27 QA-placement pass repointed the deepeval
-    and ragas judges at ``qwen3-vl:30b``. Those two rails were the only judge
-    paths that had never adopted this budget — the critic already had it — so
-    on 2026-08-28 all three LLM rails failed on **9 of 9** QA passes and the
-    advisory judge layer went dark while every deterministic rail stayed green.
-    Reproduced directly against the pinned model: it needs ~1800 tokens of
-    thinking before its first answer token, against a library default far below
-    that.
-
     ``think: false`` does NOT fix this on the current Ollama build — the model
-    still emits thinking and still leaves ``content`` empty. Budget is the
-    lever, which is why this returns tokens rather than a suppression flag.
+    still emits thinking and still leaves ``content`` empty.
+
+    **This budget is NOT what broke the deepeval/ragas rails on 2026-08-28.**
+    That was originally diagnosed here as starvation and is recorded that way
+    in several places; measurement on 2026-08-31 disproved it. The rails were
+    failing under ``response_format={"type": "json_object"}``, and raising the
+    budget to 8000 left ``content`` just as empty (``finish_reason='stop'`` at
+    30 completion tokens, not ``'length'``). Dropping JSON mode fixed all
+    three rails outright — see :func:`judge_json_mode_supported`. Keep the two
+    apart when reading a judge failure: an empty ``content`` with
+    ``finish_reason='length'`` is this budget; with ``'stop'`` after a few
+    tokens it is the JSON constraint.
 
     Reads the same two dials as the critic path so one setting governs every
     judge in the system.
@@ -320,6 +321,51 @@ def resolve_judge_num_predict(model: str, site_config: Any) -> int:
             thinking_max, standard_max = 8000, 1500
     substrings = resolve_thinking_substrings(site_config) if site_config is not None else None
     return thinking_max if is_thinking_model(model, substrings=substrings) else standard_max
+
+
+def judge_json_mode_supported(model: str, site_config: Any) -> bool:
+    """Whether an LLM-judge call on ``model`` may use JSON mode.
+
+    ``response_format={"type": "json_object"}`` maps to Ollama's constrained
+    decoding (``format: json``). A THINKING model has to emit its reasoning
+    trace before the answer, and that trace is not valid JSON — so under the
+    constraint the model emits a few tokens and stops with ``content`` EMPTY
+    and ``finish_reason='stop'``. The judge then runs ``json.loads("")`` and
+    reports ``JSONDecodeError: Expecting value: line 1 column 1 (char 0)``.
+
+    Measured against the pinned judge (``qwen3-vl:30b``, 2026-08-31), same
+    prompt, only ``response_format`` differing:
+
+        json_object  -> len(content) [0, 0, 0]        completion_tokens=30
+        plain        -> len(content) [147, 242, 234]  completion_tokens=960+
+
+    Raising the token budget does NOT help — ``max_tokens=8000`` still
+    returned empty under JSON mode. The constraint is the lever, which is why
+    this returns a capability flag rather than a budget. The prompt already
+    asks for JSON and the model complies without the constraint, so dropping
+    it costs nothing for a thinking judge.
+
+    Non-thinking judges KEEP JSON mode: it is load-bearing for weaker local
+    models (poindexter#1910's constrained-decoding fix), which is why this is
+    conditional rather than a blanket removal.
+
+    Operators can force JSON mode back on for thinking judges by setting
+    ``qa_judge_json_mode_thinking_enabled=true`` (e.g. after an Ollama build
+    that interleaves reasoning and constrained output correctly).
+    """
+    if not is_thinking_model(model, substrings=resolve_thinking_substrings(site_config)
+                             if site_config is not None else None):
+        return True
+    if site_config is None:
+        return False
+    try:
+        raw = site_config.get("qa_judge_json_mode_thinking_enabled", "false")
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: fail CLOSED. False means "withhold JSON mode", which is
+        # the behaviour that keeps a thinking judge working; a settings blip
+        # must never re-enable the constraint that took the rails dark.
+        return False
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def resolve_thinking_substrings(site_config: Any) -> tuple[str, ...]:

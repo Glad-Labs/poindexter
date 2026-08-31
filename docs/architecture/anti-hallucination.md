@@ -1324,6 +1324,52 @@ unavailability and are dropped from `scored_reviews`. Combined with the
 the validator running still produces a coherent score, instead of
 artificially passing because all the critics returned 0.
 
+### Judge transport — JSON mode is unsafe for a THINKING judge
+
+The three LLM-judge rails (`deepeval_g_eval`, `deepeval_faithfulness`,
+`ragas_eval`) route through the LiteLLM dispatcher (poindexter#826) so judge
+calls get `cost_logs` rows, Langfuse traces, and per-model `api_base`
+overrides. Those adapters used to send `response_format={"type":
+"json_object"}` unconditionally — the #1910 constrained-decoding fix that keeps
+weaker local judges emitting parseable JSON.
+
+**That constraint is fatal to a thinking judge.** `response_format` maps to
+Ollama's `format: json`; a thinking model must emit its reasoning trace before
+the answer, and that trace is not valid JSON. Under the constraint the model
+emits ~30 tokens and returns **empty `content`** with `finish_reason='stop'`.
+DeepEval then ran `json.loads("")` and reported `JSONDecodeError: Expecting
+value: line 1 column 1 (char 0)`; Ragas recorded the `-1.0` sentinel for all
+three metrics.
+
+Measured against the pinned judge (`qwen3-vl:30b`, 2026-08-31), same prompt,
+only `response_format` differing:
+
+| call          | `completion_tokens` | `len(content)`    |
+| ------------- | ------------------- | ----------------- |
+| `json_object` | 30                  | `[0, 0, 0]`       |
+| plain         | 960+                | `[147, 242, 234]` |
+
+**The token budget is NOT the lever** — `max_tokens=8000` under JSON mode still
+returned empty. `services/llm_providers/thinking_models.py::judge_json_mode_supported`
+therefore withholds JSON mode from a thinking judge and keeps it for everyone
+else; the prompt already asks for JSON and the model complies without the
+constraint. `qa_judge_json_mode_thinking_enabled=true` forces it back on.
+
+**Why it stayed invisible for four days.** All three rails are advisory, so a
+QA pass still reported a `final_score` — computed from fewer reviewers than a
+reader would assume. The 2026-08-27 QA-placement pass repointed both judges at
+`qwen3-vl:30b`, and the failure _reason_ changed cleanly at that boundary:
+
+    08-12 -> 08-26   GpuLockTimeoutError / GpuBusyError   (lock contention)
+    08-27            both reasons (repoint day)
+    08-28 -> 08-31   JSONDecodeError only, 100% of passes
+
+Two distinct causes stacked. The contention half is what device-scoped GPU
+locking addresses; this section is the other half. Diagnose with the _reason_
+field on the `qa_rail_degraded` finding, not the fire count — and measure rail
+presence per PASS (`audit_log.details->'reviews'`), because an advisory rail
+that never ran leaves no trace in the score it was supposed to inform.
+
 ### Rewrite loop (legacy — removed in atom-cutover #355)
 
 > **Retired stage — live path has a bounded rescue cycle instead.** The

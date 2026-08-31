@@ -126,7 +126,7 @@ async def _resolve_judge_model(site_config: Any = None) -> str:
 
 
 def _build_dispatcher_ragas_wrappers(
-    *, pool: Any, judge_model: str, embed_model: str,
+    *, pool: Any, judge_model: str, embed_model: str, site_config: Any = None,
 ) -> tuple[Any, Any]:
     """LangChain-shaped adapters that route Ragas through the dispatcher.
 
@@ -162,6 +162,9 @@ def _build_dispatcher_ragas_wrappers(
 
     from services.gpu_scheduler import qa_rail_wait_budget_s
     from services.llm_providers.dispatcher import dispatch_complete, dispatch_embed
+    from services.llm_providers.thinking_models import judge_json_mode_supported
+
+    json_mode_ok = judge_json_mode_supported(judge_model, site_config)
 
     class _DispatcherChatModel(BaseChatModel):
         judge_model_name: str
@@ -201,7 +204,12 @@ def _build_dispatcher_ragas_wrappers(
                 tier="standard",
                 phase="qa_ragas_judge",
                 temperature=0.0,
-                response_format={"type": "json_object"},
+                # SKIPPED for a thinking judge: constrained decoding makes it
+                # stop after ~30 tokens with EMPTY content, which Ragas turns
+                # into the -1.0 sentinel for every metric. See
+                # judge_json_mode_supported (2026-08-31).
+                **({"response_format": {"type": "json_object"}}
+                   if json_mode_ok else {}),
                 max_wait_s=qa_rail_wait_budget_s(),
                 priority="background",
             )
@@ -308,6 +316,7 @@ async def _build_ragas_models(
     if pool is not None:
         return _build_dispatcher_ragas_wrappers(
             pool=pool, judge_model=judge_model, embed_model=embed_model,
+            site_config=site_config,
         )
 
     # format="json" is required: without Ollama's constrained decoding,
