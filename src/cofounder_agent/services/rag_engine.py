@@ -41,9 +41,11 @@ import asyncio
 import json
 import random
 from collections.abc import Iterable
+from contextlib import suppress
 from typing import Any
 
 from services.logger_config import get_logger
+from utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -788,10 +790,57 @@ def _build_rerank_retriever_class():
                 )
                 return candidates[: self._top_k]
             except Exception as e:
-                logger.warning(
-                    "[rag/rerank] cross-encoder unavailable, returning "
-                    "candidates unchanged: %s", e,
-                )
+                # Distinguish an OPERATOR MISCONFIGURATION from an environmental
+                # gap. Setting rag_rerank_device='cuda' on a worker whose torch
+                # is CPU-only (2.13.0+cpu — CUDA torch was deliberately moved
+                # out of this image) raises here, and the old broad warning
+                # meant retrieval quietly fell back to hybrid-only on EVERY
+                # query while looking like a GPU optimisation. That is not a
+                # small degradation: the cross-encoder more than doubles
+                # recall@1 on our golden set (0.067 -> 0.150), so a silent
+                # passthrough is a material quality regression the operator has
+                # no reason to suspect. Page on it.
+                device = self._device()
+                # describe_exception, never a bare str(e): str() on a
+                # timeout-class exception is the EMPTY STRING, which is how a
+                # render failure logged "render failed ()" and named no cause
+                # for weeks (poindexter#3229). A finding that pages an operator
+                # with no cause is worse than no finding.
+                cause = describe_exception(e)
+                if "CUDA" in cause or "device" in cause.lower():
+                    logger.error(
+                        "[rag/rerank] rag_rerank_device=%r is not usable in "
+                        "this runtime (%s) — reranking is DISABLED and every "
+                        "query is degrading to hybrid-only. Set it back to "
+                        "'cpu', or ship a CUDA-enabled torch in the worker "
+                        "image.", device, cause,
+                    )
+                    # The ERROR above is the operator-facing signal; the
+                    # finding only upgrades it. emit_finding is documented
+                    # fire-and-forget, but its import can fail in a bootstrap
+                    # context, and losing a retrieval query over a telemetry
+                    # import would be worse than losing the finding.
+                    with suppress(Exception):  # silent-ok: telemetry only, ERROR already logged
+                        from utils.findings import emit_finding
+
+                        emit_finding(
+                            source="rag_engine",
+                            kind="rag_rerank_device_unusable",
+                            title=f"rag_rerank_device={device!r} unusable — reranking disabled",
+                            body=(
+                                f"CrossEncoder failed to load on device {device!r}: {cause}. "
+                                "Retrieval is silently degrading to hybrid-only, which "
+                                "roughly halves recall@1. Revert rag_rerank_device to 'cpu' "
+                                "or provide a CUDA-enabled torch build."
+                            ),
+                            severity="warn",
+                            dedup_key=f"rag_rerank_device:{device}",
+                        )
+                else:
+                    logger.warning(
+                        "[rag/rerank] cross-encoder unavailable, returning "
+                        "candidates unchanged: %s", cause,
+                    )
                 return candidates[: self._top_k]
 
             # Window each candidate onto the query instead of handing the

@@ -1,5 +1,12 @@
 """knowledge_graph — extract and traverse relationships between indexed documents.
 
+Two origins feed this table today, and both are already-authored structure
+rather than anything an LLM had to infer:
+
+- ``memory_wikilink`` — ``[[slug]]`` links between memory files.
+- ``post_internal_link`` — ``/posts/<slug>`` links the writer places between
+  published posts (poindexter#1036).
+
 The premise (poindexter#1035): the memory corpus is **already a knowledge
 graph**. Memory files link to each other with ``[[wiki-link]]`` slugs — 938
 resolved edges across 375 files at time of writing — written by hand as part of
@@ -48,6 +55,12 @@ _WIKILINK = re.compile(r"\[\[([a-z0-9_\-]+)\]\]", re.IGNORECASE)
 
 DEFAULT_RELATION = "links_to"
 ORIGIN_MEMORY = "memory_wikilink"
+ORIGIN_POST = "post_internal_link"
+
+# The writer emits root-relative internal links. ``/blog/`` is the legacy
+# prefix and still appears in older posts; ``/go/`` is the affiliate
+# redirector and is deliberately NOT a content relationship.
+_POST_LINK = re.compile(r"\]\((/(?:posts|blog)/[^)#?\s]+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -173,6 +186,104 @@ def build_edges(
     return edges, stats
 
 
+@dataclass
+class PostEdgeStats:
+    scanned: int = 0
+    edges: int = 0
+    dead_slug: int = 0
+    self_links: int = 0
+    unpublished_target: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "scanned": self.scanned,
+            "edges": self.edges,
+            "dead_slug": self.dead_slug,
+            "self_links": self.self_links,
+            "unpublished_target": self.unpublished_target,
+        }
+
+
+def extract_post_links(content: str) -> list[str]:
+    """Return the distinct internal-link slugs in a post body, order-preserved.
+
+    Matches ``](/posts/<slug>)`` and the legacy ``](/blog/<slug>)``. Anchors and
+    query strings are trimmed so ``/posts/x#section`` and ``/posts/x?utm=…``
+    both resolve to ``x`` rather than reading as separate documents.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _POST_LINK.finditer(content or ""):
+        slug = m.group(1).rstrip("/").rsplit("/", 1)[-1].lower()
+        if slug and slug not in seen:
+            seen.add(slug)
+            out.append(slug)
+    return out
+
+
+async def load_posts(pool: Any) -> list[dict[str, Any]]:
+    """Every post with a slug — published and not.
+
+    Unpublished rows are loaded on purpose: they are needed to tell a link
+    pointing at a real-but-unpublished post (a legitimate skip, counted) apart
+    from one pointing at a slug that does not exist at all (a dead link worth
+    surfacing). Loading only published posts would collapse the two.
+    """
+    rows = await pool.fetch(
+        "SELECT id, slug, status, content FROM posts WHERE slug IS NOT NULL"
+    )
+    return [dict(r) for r in rows]
+
+
+def build_post_edges(posts: list[dict[str, Any]]) -> tuple[list[Edge], PostEdgeStats]:
+    """Turn published-post bodies into ``posts -> posts`` edges.
+
+    Only PUBLISHED posts are sources, and only published posts are targets:
+    ``PostsTap`` indexes ``status='published'`` alone, so an edge to anything
+    else points at a document retrieval cannot return — it would expand to a
+    row that does not exist and quietly waste a slot.
+    """
+    stats = PostEdgeStats()
+    by_slug = {
+        str(p["slug"]).lower(): (str(p["id"]), str(p.get("status") or ""))
+        for p in posts
+        if p.get("slug")
+    }
+
+    edges: list[Edge] = []
+    seen: set[tuple[str, str]] = set()
+    for post in posts:
+        if str(post.get("status") or "") != "published":
+            continue
+        stats.scanned += 1
+        src_id = str(post["id"])
+        for slug in extract_post_links(post.get("content") or ""):
+            target = by_slug.get(slug)
+            if target is None:
+                stats.dead_slug += 1
+                continue
+            dst_id, dst_status = target
+            if dst_id == src_id:
+                stats.self_links += 1
+                continue
+            if dst_status != "published":
+                stats.unpublished_target += 1
+                continue
+            key = (src_id, dst_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append(
+                Edge(
+                    src_table="posts", src_id=src_id,
+                    dst_table="posts", dst_id=dst_id,
+                    origin=ORIGIN_POST,
+                )
+            )
+    stats.edges = len(edges)
+    return edges, stats
+
+
 async def load_memory_docs(pool: Any) -> dict[str, str]:
     """Reassemble each memory document from its indexed chunks.
 
@@ -283,10 +394,14 @@ async def neighbours(
 __all__ = [
     "Edge",
     "ExtractStats",
+    "PostEdgeStats",
     "build_edges",
+    "build_post_edges",
+    "extract_post_links",
     "extract_wikilinks",
     "project_of",
     "load_memory_docs",
+    "load_posts",
     "neighbours",
     "replace_edges",
     "stem_of",
