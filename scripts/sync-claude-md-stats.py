@@ -30,11 +30,13 @@ rather than passing silently as "already correct" (#2832).
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -78,6 +80,12 @@ README_ANCHORS: OrderedDict[str, str] = OrderedDict([
     ("test_functions_badge", r"tests-[\d%C]+%2B-brightgreen"),
     ("test_functions_feature_row", r"\*\*[\d,]+\+ tests\*\*"),
     ("test_functions_status_bullet", r"[\d,]+\+ unit tests passing in CI"),
+    # The canonical_blog graph's shape. NOT floored (see apply_to_readme):
+    # these are exact structural facts, and "40+ nodes" would be vaguer AND
+    # less true than "46".
+    ("canonical_blog_nodes", r"[\d,]+ nodes covering"),
+    ("qa_rails_curation", r"survive [\d,]+ QA rails"),
+    ("qa_rails_dag", r"the [\d,]+ QA rails"),
 ])
 
 
@@ -108,6 +116,55 @@ def _count_test_functions(test_files: list[Path]) -> int:
     )
 
 
+def _load_canonical_blog_spec() -> dict[str, Any]:
+    """Read ``CANONICAL_BLOG_GRAPH_DEF`` out of its module without importing it.
+
+    The spec's own docstring promises "pure data — NO imports beyond typing",
+    which is what makes an ``ast.literal_eval`` safe here. Parsing rather than
+    importing is deliberate: this script runs on a bare ``setup-python`` step
+    with no ``pip install``, so ``import services.canonical_blog_spec`` would
+    drag the package's dependency tree into a job that has none.
+
+    Raises rather than returning a default. A spec that cannot be read must
+    not quietly become "0 nodes covering …" in the public README — a red CI
+    job is the correct outcome (`feedback_no_silent_defaults`).
+    """
+    path = ROOT / "src/cofounder_agent/services/canonical_blog_spec.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets: list[ast.expr] = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if any(
+            isinstance(t, ast.Name) and t.id == "CANONICAL_BLOG_GRAPH_DEF"
+            for t in targets
+        ):
+            value = ast.literal_eval(node.value)
+            if not isinstance(value, dict) or "nodes" not in value:
+                raise ValueError(f"CANONICAL_BLOG_GRAPH_DEF in {path} is not a graph spec")
+            return value
+    raise ValueError(f"no CANONICAL_BLOG_GRAPH_DEF assignment found in {path}")
+
+
+# qa.aggregate is the gate DECISION and qa.rewrite is the rescue revision —
+# neither is a rail that scores the draft, so neither counts toward the rail
+# total the README advertises. Keep this in step with CLAUDE.md's
+# "canonical_blog wires 14 of them".
+_NON_RAIL_QA_ATOMS = frozenset({"qa.aggregate", "qa.rewrite"})
+
+
+def _count_qa_rails(spec: dict[str, Any]) -> int:
+    return sum(
+        1
+        for node in spec["nodes"]
+        if str(node.get("atom", "")).startswith("qa.")
+        and node["atom"] not in _NON_RAIL_QA_ATOMS
+    )
+
+
 def collect_stats() -> OrderedDict[str, int | str]:
     """Pull every source-truth metric in one pass."""
     services_dir = ROOT / "src/cofounder_agent/services"
@@ -118,6 +175,7 @@ def collect_stats() -> OrderedDict[str, int | str]:
         p for p in tests_dir.rglob("test_*.py")
         if p.name != "test_helpers.py"
     ]
+    spec = _load_canonical_blog_spec()
     return OrderedDict([
         ("service_py_files", len(list(services_dir.rglob("*.py")))),
         ("test_files", len(test_files)),
@@ -128,6 +186,8 @@ def collect_stats() -> OrderedDict[str, int | str]:
         ("grafana_dashboards", _glob_count(
             "infrastructure/grafana/dashboards/*.json",
         )),
+        ("canonical_blog_nodes", len(spec["nodes"])),
+        ("canonical_blog_qa_rails", _count_qa_rails(spec)),
     ])
 
 
@@ -175,16 +235,26 @@ def apply_to_readme(
 ) -> tuple[str, list[str]]:
     """Return ``(new_text, changes)`` for the README claims this script owns.
 
-    Only the test count: everything else in README's stat surface is
-    DB-derived and belongs to ``sync_claude_md_db_stats.py``. The value is
-    floored to a round ``N+`` (see ``scripts/lib_readme_stats``), so this is
-    a no-op on all but the handful of nights that cross a thousand.
+    Two kinds, and they are formatted differently on purpose:
+
+    * The **test count** is floored to a round ``N+`` (see
+      ``scripts/lib_readme_stats``) — it moves every day, and a claim to
+      strangers should understate rather than churn.
+    * The **canonical_blog graph shape** (node count, QA-rail count) is
+      written EXACTLY. Flooring a small structural fact would make it both
+      vaguer and less true: "40+ nodes" is a worse sentence than "46 nodes",
+      and the graph changes a few times a year, so there is no churn to damp.
+
+    Everything else in README's stat surface is DB-derived and belongs to
+    ``sync_claude_md_db_stats.py``.
 
     Pass ``text`` to operate on a string in-memory (used by tests);
     otherwise the on-disk README.md is read.
     """
     current = README_MD.read_text(encoding="utf-8") if text is None else text
     claim = floored(int(stats["test_functions"]), FLOOR_STEPS["test_functions"])
+    nodes = stats["canonical_blog_nodes"]
+    rails = stats["canonical_blog_qa_rails"]
     return substitute_anchored(current, [
         # [![Tests](https://img.shields.io/badge/tests-17%2C000%2B-brightgreen)]
         (
@@ -203,6 +273,24 @@ def apply_to_readme(
             "test_functions_status_bullet",
             README_ANCHORS["test_functions_status_bullet"],
             f"{claim} unit tests passing in CI",
+        ),
+        # "… stored in the database — 46 nodes covering research, writing, …"
+        (
+            "canonical_blog_nodes",
+            README_ANCHORS["canonical_blog_nodes"],
+            f"{nodes} nodes covering",
+        ),
+        # "… then makes each one survive 14 QA rails — cross-model critics, …"
+        (
+            "qa_rails_curation",
+            README_ANCHORS["qa_rails_curation"],
+            f"survive {rails} QA rails",
+        ),
+        # "… image generation, the 14 QA rails, SEO, and publish."
+        (
+            "qa_rails_dag",
+            README_ANCHORS["qa_rails_dag"],
+            f"the {rails} QA rails",
         ),
     ])
 

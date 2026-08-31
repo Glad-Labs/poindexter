@@ -74,8 +74,8 @@ def test_patterns_are_imported_from_the_sync_scripts():
         assert sources[(repo_owner, "CLAUDE.md", name)] == pat
     for name, pat in repo_sync.README_ANCHORS.items():
         assert sources[(repo_owner, "README.md", name)] == pat
-    # 5 DB counts + header + 5 DB README claims + 3 repo stats + 3 repo README
-    assert len(sources) == 17
+    # 5 DB counts + header + 5 DB README claims + 3 repo stats + 6 repo README
+    assert len(sources) == 20
 
 
 def test_both_target_files_are_actually_covered():
