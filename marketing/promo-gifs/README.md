@@ -8,7 +8,7 @@ All files ≤10 MB so they render inline on GitHub; all fit X/LinkedIn limits.
 | ------------- | ------------------------------------------------------------------------------------------------------------- | -------------------- |
 | `site.gif`    | gladlabs.io: hero → article grid → into a post                                                                | 14s · 800px · 7.1 MB |
 | `console.gif` | Operator Console live: system pulse (task mid-pipeline), KPIs, approval inbox → TRACE → animated system MAP   | 13s · 840px · 5.3 MB |
-| `grafana.gif` | Cost & Analytics (per-model spend) → Hardware & Power (GPU util/VRAM, per-pin 5090 current)                   | 19s · 840px · 6.0 MB |
+| `grafana.gif` | Cost & Analytics @ 30d (per-model spend) → Pipeline @ 30d (quality, approvals) → Hardware & Power @ 7d        | 24s · 820px · 7.1 MB |
 | `cli.gif`     | `poindexter costs budget` → `posts list` → `doctor`, replayed in a branded terminal from captured real output | 17s · 900px · 2.4 MB |
 
 This directory is stripped from the public poindexter mirror (whole `marketing/`
@@ -28,7 +28,7 @@ cd marketing/promo-gifs/harness
 
 # public site + Grafana (Grafana allows anonymous viewing — no creds needed)
 node record.cjs site    && bash convert.sh site    800 10 "bayer:bayer_scale=5"
-node record.cjs grafana && bash convert.sh grafana 840 8  "bayer:bayer_scale=5" 0.5 112
+node record.cjs grafana && bash convert.sh grafana 820 7  "bayer:bayer_scale=5" 0.5 104
 ```
 
 **Console scene** needs a throwaway read-only OAuth client (console mints its own
@@ -65,6 +65,10 @@ plain Playwright.
 
 ## Keeping GIFs small (learned the hard way)
 
+- Time ranges are per board in `record.cjs`: Postgres-backed boards (cost,
+  pipeline) show 30d; Prometheus-backed boards are capped by its ~15d
+  retention, so hardware runs at 7d to keep the window full. Longer ranges =
+  denser charts = bigger GIFs; budget fps/colors accordingly.
 - Holds are nearly free; **continuous scrolling and full-frame animation are the
   expensive part** — scroll in short bursts with pauses, don't glide for 5s.
 - Terminal scenes: **clear the screen between commands** — scrolled text redraws

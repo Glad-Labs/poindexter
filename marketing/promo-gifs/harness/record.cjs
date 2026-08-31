@@ -154,19 +154,22 @@ const scenes = {
     viewport: { width: 1440, height: 860 },
     cursor: false,
     async run(page, shot) {
+      // Range per board: Postgres-backed boards can show 30d; Prometheus-backed
+      // boards are capped by its ~15d retention, so 7d keeps the window full.
       const boards = [
-        ['cost-analytics', 'cost'],
-        ['hardware-power', 'hardware'],
+        ['cost-analytics', 'cost', '30d'],
+        ['pipeline-merged', 'pipeline', '30d'],
+        ['hardware-power', 'hardware', '7d'],
       ];
       let i = 0;
-      for (const [uid, label] of boards) {
-        await page.goto(`http://localhost:3000/d/${uid}?kiosk&from=now-24h&to=now`, {
+      for (const [uid, label, range] of boards) {
+        await page.goto(`http://localhost:3000/d/${uid}?kiosk&from=now-${range}&to=now`, {
           waitUntil: 'domcontentloaded',
         });
-        await sleep(6000); // panels render
+        await sleep(4500); // panels render
         await shot(`0${++i}-${label}`);
         await smoothScroll(page, { by: 800, ms: 2200 });
-        await sleep(1500);
+        await sleep(1300);
       }
     },
   },
