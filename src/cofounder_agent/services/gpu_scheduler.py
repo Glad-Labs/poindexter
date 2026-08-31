@@ -125,6 +125,12 @@ def _sc() -> SiteConfig:
 # design: a worker restart clearing it is acceptable for a storm guard.
 _LAST_RESTART_REQUEST: dict[str, float] = {}
 
+# The only two statuses that mean a self-exit sidecar ACTED on a hard unload.
+# Everything else it can answer — nothing_to_reclaim / busy_generation_in_flight
+# / already_unloaded / degraded — is a deliberate decline, and restarting on a
+# decline would bounce a healthy (often actively rendering) service.
+_UNLOAD_ACTED_STATUSES = frozenset({"unloaded", "exiting"})
+
 
 def _container_pool() -> Any:
     """The active container's DB pool, or None when nothing is registered.
@@ -2085,7 +2091,7 @@ class GPUScheduler:
             declined = False
             resp = await client.post(f"{image_gen_url}/unload", **kwargs)
             if resp.status_code == 200:
-                declined = self._declined_nothing_to_reclaim(resp)
+                declined = self._declined_hard_unload(resp)
                 logger.info(
                     "[GPU] image-gen model unloaded via /unload endpoint%s",
                     " (hard)" if hard else "",
@@ -2210,7 +2216,7 @@ class GPUScheduler:
             declined = False
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
-                declined = self._declined_nothing_to_reclaim(resp)
+                declined = self._declined_hard_unload(resp)
                 logger.info(
                     "[GPU] wan model unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",
@@ -2263,25 +2269,50 @@ class GPUScheduler:
             return True
 
     @staticmethod
-    def _declined_nothing_to_reclaim(resp: Any) -> bool:
-        """True when a self-exit sidecar answered ``nothing_to_reclaim``.
+    def _declined_hard_unload(resp: Any) -> bool:
+        """True when a self-exit sidecar answered WITHOUT acting.
 
         wan / image-gen / stable-audio ``os._exit(0)`` on a real hard unload,
-        so a clean 200 is itself unusual — it means the server chose NOT to
-        exit because its reserved pool is below the floor. Treating that as a
-        failed reclaim would bounce a healthy service for correctly doing
-        nothing, so the verifier needs to see it.
+        and that fires before uvicorn flushes — so for these three **a 200 at
+        all means they did not exit**. Only ``unloaded`` / ``exiting`` say
+        they acted; every other status is the server deliberately declining:
+
+            nothing_to_reclaim         below the reserved-pool floor
+            busy_generation_in_flight  a render is running (poindexter#992,
+                                       #1024) — the one case where obeying
+                                       destroys the very GPU work the reclaim
+                                       is trying to make room for
+            already_unloaded           nothing left to drop
+            degraded                   stable-audio in its degraded state
+
+        Enumerating only ``nothing_to_reclaim`` was not enough and would have
+        been actively harmful: wan and stable-audio ALREADY return
+        ``busy_generation_in_flight``, so a verifier that missed it would
+        measure no VRAM change and restart a service **mid-render** — exactly
+        the failure #3094 fixed.
+
+        Unknown/unparseable 200 also counts as a decline. The asymmetry is
+        deliberate: a spurious restart costs GPU-minutes and a piece's
+        re-dispatch cap, while a missed restart just leaves VRAM squatting
+        until the next ladder pass ~10 minutes later, which retries.
+
+        ComfyUI does not use this — its ``/free`` is a native endpoint with no
+        status field, and its in-flight protection is the ``/queue`` check.
         """
+        if getattr(resp, "status_code", None) != 200:
+            # Not a 200: the server errored rather than declining. Fall
+            # through to the VRAM measurement, which decides on evidence.
+            return False
         try:
-            if getattr(resp, "status_code", None) != 200:
-                return False
             body = resp.json()
         except Exception:  # noqa: BLE001
-            # silent-ok: an unparseable body is NOT a decline — falling
-            # through to the VRAM measurement is the safe direction, since
-            # that can only decline the restart, never force one.
-            return False
-        return isinstance(body, dict) and body.get("status") == "nothing_to_reclaim"
+            # silent-ok: for a self-exit sidecar a 200 means it did NOT exit,
+            # so an unreadable reason is still a decline. Failing toward "do
+            # not restart" is the safe direction (see the asymmetry above).
+            return True
+        if not isinstance(body, dict):
+            return True
+        return body.get("status") not in _UNLOAD_ACTED_STATUSES
 
     async def _verify_reclaim_or_restart(
         self,
@@ -2567,7 +2598,7 @@ class GPUScheduler:
             declined = False
             resp = await client.post(f"{base}/unload", **kwargs)
             if resp.status_code == 200:
-                declined = self._declined_nothing_to_reclaim(resp)
+                declined = self._declined_hard_unload(resp)
                 logger.info(
                     "[GPU] stable-audio unloaded via /unload endpoint%s (%s)",
                     " (hard)" if hard else "",

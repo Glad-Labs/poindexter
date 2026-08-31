@@ -242,3 +242,116 @@ def test_idle_unloader_tick_keeps_warm_pipeline():
         assert refreshed
 
     asyncio.run(body())
+
+
+# ---------------------------------------------------------------------------
+# In-flight guard (poindexter#1024)
+# ---------------------------------------------------------------------------
+
+
+def test_hard_unload_declines_while_a_render_is_in_flight():
+    """The incident: a reclaim landed mid still-phase on task 4ab9b89b and
+    6 of 12 shots lost their renders in one pass — ReadTimeout, then `Name or
+    service not known` as the container restarted, then `All connection
+    attempts failed`. The run produced no output and burned the piece's
+    re-dispatch cap.
+
+    Obeying is strictly worse than declining: the reclaim wants VRAM to START
+    a render, and the render already running is what that VRAM is for. wan was
+    fixed for exactly this in poindexter#992/#3094.
+    """
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+        img_gen_server.state.inflight = 1
+        try:
+            # Well above the reserved floor, so ONLY the in-flight guard can
+            # stop the exit here.
+            reserved, threshold = _patch_reserved(20_000)
+            with reserved, threshold, patch.object(os, "_exit") as mock_exit:
+                result = await img_gen_server.unload(
+                    img_gen_server.UnloadRequest(hard=True),
+                )
+            mock_exit.assert_not_called()
+            assert result["status"] == "busy_generation_in_flight"
+            assert result["inflight"] == 1
+        finally:
+            img_gen_server.state.inflight = 0
+
+    asyncio.run(body())
+
+
+def test_soft_unload_also_declines_while_in_flight():
+    """A soft unload drops the pipeline object mid-generation, which fails the
+    render just as surely as an exit does."""
+    async def body():
+        called = {"n": 0}
+
+        def _unload():
+            called["n"] += 1
+
+        img_gen_server.unload_pipeline = _unload
+        img_gen_server.state.inflight = 2
+        try:
+            result = await img_gen_server.unload(None)
+            assert result["status"] == "busy_generation_in_flight"
+            assert result["inflight"] == 2
+            assert called["n"] == 0, "must not touch the pipeline while busy"
+        finally:
+            img_gen_server.state.inflight = 0
+
+    asyncio.run(body())
+
+
+def test_hard_unload_proceeds_once_the_render_finishes():
+    """The guard must not become a permanent block — inflight returning to 0
+    restores the normal contract."""
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+        img_gen_server.state.inflight = 0
+
+        reserved, threshold = _patch_reserved(20_000)
+        with reserved, threshold, patch.object(os, "_exit") as mock_exit:
+            await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
+
+
+def test_generate_brackets_the_whole_request_in_the_counter():
+    """Split from the body (mirroring wan-server) so the counter covers
+    response construction too — a hard unload landing between the last GPU op
+    and the response would still lose the render."""
+    async def body():
+        seen = []
+
+        async def _inner(req):
+            seen.append(img_gen_server.state.inflight)
+            return {"ok": True}
+
+        img_gen_server._generate_inner = _inner
+        img_gen_server.state.inflight = 0
+        await img_gen_server.generate(object())
+
+        assert seen == [1], "counter must be raised for the duration"
+        assert img_gen_server.state.inflight == 0, "and released afterwards"
+
+    asyncio.run(body())
+
+
+def test_counter_is_released_even_when_generation_raises():
+    """A failed render must not leave the server permanently un-unloadable."""
+    async def body():
+        async def _boom(req):
+            raise RuntimeError("cuda oom")
+
+        img_gen_server._generate_inner = _boom
+        img_gen_server.state.inflight = 0
+        try:
+            await img_gen_server.generate(object())
+        except RuntimeError:
+            pass
+        assert img_gen_server.state.inflight == 0
+
+    asyncio.run(body())

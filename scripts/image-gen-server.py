@@ -528,6 +528,10 @@ class ServerState:
         self.pipeline: Any | None = None
         self.config: ModelConfig | None = None
         self.last_used: float = 0.0
+        # Generation requests currently in flight. The hard unload self-exits
+        # the process, so it MUST NOT fire while a render is running — see the
+        # decline in /unload (poindexter#1024).
+        self.inflight: int = 0
         self.degraded: bool = False
         self.degraded_reason: str | None = None
         self.ocr_gate: OcrGateConfig = DEFAULT_OCR_GATE_CONFIG
@@ -936,6 +940,23 @@ async def reload():
 
 @app.post("/generate", response_model=GenerateResponse)
 async def generate(req: GenerateRequest):
+    """Bracket the whole request in the in-flight counter, then delegate.
+
+    Split from the body (mirroring wan-server) so the counter covers response
+    construction too, not just inference — a hard unload landing between the
+    last GPU op and the response would still lose the render.
+    """
+    state.inflight += 1
+    try:
+        return await _generate_inner(req)
+    finally:
+        # Stamp on the way OUT as well: the idle unloader's window must start
+        # when the response is done, or a slow response could still race it.
+        state.last_used = time.time()
+        state.inflight -= 1
+
+
+async def _generate_inner(req: GenerateRequest):
     if state.degraded:
         raise HTTPException(
             status_code=503,
@@ -1186,6 +1207,32 @@ async def unload(req: UnloadRequest | None = None):
     5-minute cadence whether or not the reclaim could help — observed
     2026-07-27, ~24 consecutive exits that each freed nothing.
     """
+    # Decline while a render is running. The hard path self-exits, so obeying
+    # here destroys the very GPU work the reclaim is trying to make room for —
+    # and the reclaim wants VRAM to START a render, while the render already
+    # running is what that VRAM is for.
+    #
+    # Observed 2026-08-25 (poindexter#1024): a reclaim landed mid still-phase
+    # on task 4ab9b89b and 6 of 12 shots lost their renders in one pass —
+    # ReadTimeout, then `Name or service not known` as the container
+    # restarted, then `All connection attempts failed`. The run produced no
+    # output and burned the piece's re-dispatch cap.
+    #
+    # wan-server was fixed for exactly this in poindexter#992/#3094; image-gen
+    # had the reserved-MB floor but no in-flight guard, so a concurrent
+    # dispatcher tick could kill it mid-generation. Callers already tolerate a
+    # declined unload — they treat it like the reserved-floor skip.
+    if state.inflight > 0:
+        logger.warning(
+            "[UNLOAD] declining %s unload — %d generation(s) in flight; "
+            "unloading now would destroy the in-flight image AND its response",
+            "hard" if (req and req.hard) else "soft", state.inflight,
+        )
+        return {
+            "status": "busy_generation_in_flight",
+            "inflight": state.inflight,
+        }
+
     if req and req.hard:
         unload_pipeline()
         # NOT memory_allocated: unload_pipeline() just dropped every live

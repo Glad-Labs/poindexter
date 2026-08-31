@@ -54,27 +54,51 @@ def _resp(status=200, body=None):
 
 @pytest.mark.unit
 class TestDeclineDetection:
-    """`nothing_to_reclaim` is a healthy answer, not a failed reclaim."""
+    """For a self-exit sidecar, a 200 AT ALL means it did not exit.
 
-    def test_nothing_to_reclaim_is_recognised(self):
-        assert GPUScheduler._declined_nothing_to_reclaim(
-            _resp(200, {"status": "nothing_to_reclaim", "vram_reserved_mb": 0}),
+    Only `unloaded` / `exiting` say it acted. Every other status is the server
+    deliberately declining, and restarting on a decline bounces a healthy —
+    often actively rendering — service.
+    """
+
+    @pytest.mark.parametrize("status", [
+        "nothing_to_reclaim",         # below the reserved-pool floor
+        "busy_generation_in_flight",  # a render is running (#992, #1024)
+        "already_unloaded",           # nothing left to drop
+        "degraded",                   # stable-audio degraded state
+    ])
+    def test_every_decline_status_is_recognised(self, status):
+        assert GPUScheduler._declined_hard_unload(_resp(200, {"status": status})) is True
+
+    def test_busy_specifically_must_not_restart(self):
+        """The regression this guards: wan and stable-audio ALREADY return
+        busy_generation_in_flight. A verifier that only knew
+        nothing_to_reclaim would measure no VRAM change and restart the
+        service MID-RENDER — exactly the failure #3094 fixed."""
+        assert GPUScheduler._declined_hard_unload(
+            _resp(200, {"status": "busy_generation_in_flight", "inflight": 1}),
         ) is True
 
-    def test_a_real_unload_response_is_not_a_decline(self):
-        assert GPUScheduler._declined_nothing_to_reclaim(
-            _resp(200, {"status": "unloaded", "freed_mb": 10952}),
+    @pytest.mark.parametrize("status", ["unloaded", "exiting"])
+    def test_acting_statuses_are_not_declines(self, status):
+        assert GPUScheduler._declined_hard_unload(
+            _resp(200, {"status": status, "freed_mb": 10952}),
         ) is False
 
-    def test_unparseable_body_is_not_treated_as_a_decline(self):
-        """Falling through to the VRAM measurement is the safe direction — it
-        can only decline a restart, never force one."""
+    def test_unknown_200_status_is_treated_as_a_decline(self):
+        """Asymmetry on purpose: a spurious restart costs GPU-minutes and a
+        piece's re-dispatch cap; a missed one just leaves VRAM squatting until
+        the next ladder pass, which retries."""
+        assert GPUScheduler._declined_hard_unload(_resp(200, {"status": "who_knows"})) is True
+
+    def test_unparseable_200_is_treated_as_a_decline(self):
         r = MagicMock(status_code=200)
         r.json = MagicMock(side_effect=ValueError("not json"))
-        assert GPUScheduler._declined_nothing_to_reclaim(r) is False
+        assert GPUScheduler._declined_hard_unload(r) is True
 
-    def test_non_200_is_not_a_decline(self):
-        assert GPUScheduler._declined_nothing_to_reclaim(_resp(503, {})) is False
+    def test_non_200_falls_through_to_the_measurement(self):
+        """An error is not a decline — let the VRAM evidence decide."""
+        assert GPUScheduler._declined_hard_unload(_resp(503, {})) is False
 
 
 @pytest.mark.unit
