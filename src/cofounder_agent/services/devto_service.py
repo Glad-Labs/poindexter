@@ -25,9 +25,11 @@ import re
 import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 
+from services.distribution_ref import tag_for
 from services.logger_config import get_logger
 from utils.exception_format import describe_exception
 
@@ -101,6 +103,54 @@ def _devto_api_base(site_config: Any) -> str:
     )
 
 
+def _append_origin_backlink(body: str, canonical_url: str, site_config: Any) -> str:
+    """Append the tagged "originally published at" footer to a syndicated body.
+
+    Dev.to renders its own "Originally published at …" line from the article's
+    ``canonical_url``, but that URL must stay UNTAGGED — it is the
+    canonicalisation signal search engines consolidate on, and a query string
+    there is a different URL. So the attributable path is a second, explicit
+    link in the body, which is also the more visible one: the platform's own
+    line is small print above the title, this sits where a reader who finished
+    the piece is looking.
+
+    Template lives in ``devto_origin_backlink_template`` so the wording is the
+    operator's. An empty template is a real choice — "no footer" — not a
+    fallback; it is spelled out in ``settings_defaults`` so nobody has to guess
+    whether blank means off or means default.
+
+    Idempotent: a retried cross-post must not stack two footers, so an existing
+    tagged link to the same post short-circuits.
+    """
+    sc = _resolve_site_config(site_config)
+    template = str(sc.get("devto_origin_backlink_template", "") or "")
+    if not template.strip():
+        return body
+
+    tagged = tag_for(site_config, canonical_url, surface="devto")
+    if tagged in body:
+        return body
+
+    try:
+        host = urlparse(canonical_url).netloc or "the original"
+    except Exception:  # noqa: BLE001 — a malformed URL must not block the crosspost
+        host = "the original"
+
+    try:
+        footer = template.format(url=tagged, site_host=host)
+    except (KeyError, IndexError) as exc:
+        # A typo'd placeholder is an operator config error, not a reason to
+        # publish a broken footer or to lose the crosspost. Log it and ship the
+        # body unchanged so the failure is visible in the absence of a link.
+        logger.warning(
+            "[DEVTO] devto_origin_backlink_template has an unknown placeholder "
+            "(%s) — publishing without the origin back-link", exc,
+        )
+        return body
+
+    return f"{body.rstrip()}\n\n{footer.strip()}\n"
+
+
 def _site_url(site_config: Any) -> str:
     """Return the canonical site URL. Fails loud (RuntimeError) if the
     setting is missing — an empty canonical URL silently produces
@@ -156,14 +206,26 @@ class DevToCrossPostService:
         """
         site_url = _site_url(site_config)
 
-        # Convert relative links like [text](/posts/slug) to absolute
+        # Convert relative links like [text](/posts/slug) to absolute, tagged
+        # so a reader who follows an internal link out of the syndicated copy
+        # is counted against Dev.to. These are the real click path: the
+        # canonical_url Dev.to renders as "Originally published at …" is a
+        # single link at the top, while a long post carries several of these.
+        # ``(?<!!)`` is load-bearing now that the replacement differs by kind:
+        # ``![alt](/x.png)`` ALSO matches a bare ``\[…\]\(…\)`` (the ``!`` sits
+        # outside the match), so without the lookbehind this branch would claim
+        # every image too and the image branch below would be dead code —
+        # which is exactly how it behaved before, harmlessly, when both
+        # branches produced the same absolute URL.
         content = re.sub(
-            r'\[([^\]]+)\]\((/[^)]+)\)',
-            lambda m: f'[{m.group(1)}]({site_url}{m.group(2)})',
+            r'(?<!!)\[([^\]]+)\]\((/[^)]+)\)',
+            lambda m: f'[{m.group(1)}]({tag_for(site_config, site_url + m.group(2), surface="devto")})',
             content,
         )
 
-        # Convert relative image paths to absolute
+        # Convert relative image paths to absolute. NOT tagged — an <img> src
+        # is fetched by the platform, never clicked, so a tag here would only
+        # manufacture phantom "devto" traffic against our own asset URLs.
         content = re.sub(
             r'!\[([^\]]*)\]\((/[^)]+)\)',
             lambda m: f'![{m.group(1)}]({site_url}{m.group(2)})',
@@ -259,6 +321,9 @@ class DevToCrossPostService:
             return CrossPostResult(status="skipped")
 
         cleaned_content = self._clean_markdown(content_markdown, self._site_config)
+        cleaned_content = _append_origin_backlink(
+            cleaned_content, canonical_url, self._site_config
+        )
         normalized_tags = self._normalize_tags(tags or [])
 
         # Auto-publish on Dev.to if configured (default: True — one approval is enough).

@@ -482,8 +482,15 @@ class TestGenerateSocialPosts:
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
         by_platform = {p.platform: p.text for p in posts}
-        assert by_platform["bluesky"] == by_platform["twitter"]
-        assert by_platform["mastodon"] == by_platform["twitter"]
+        # The PROSE is shared (one LLM call feeds three short-form platforms),
+        # but the attribution is not: each sibling carries its own surface tag
+        # so a Bluesky click is never counted as an X click.
+        assert by_platform["bluesky"] != by_platform["twitter"]
+        for sibling in ("bluesky", "mastodon"):
+            assert by_platform[sibling].replace(
+                f"utm_source={sibling}", "utm_source=twitter"
+            ) == by_platform["twitter"]
+            assert f"utm_source={sibling}" in by_platform[sibling]
 
     @pytest.mark.asyncio
     async def test_posts_have_correct_url(self):
@@ -493,7 +500,10 @@ class TestGenerateSocialPosts:
         )
         for post in posts:
             assert SAMPLE_SLUG in post.post_url
-            assert post.post_url.endswith(f"/posts/{SAMPLE_SLUG}")
+            # The URL now carries the surface that placed it — the bare path is
+            # still the prefix, the tag is the suffix.
+            assert f"/posts/{SAMPLE_SLUG}?" in post.post_url
+            assert f"utm_source={post.platform}" in post.post_url
 
     @pytest.mark.asyncio
     async def test_posts_are_social_post_instances(self):

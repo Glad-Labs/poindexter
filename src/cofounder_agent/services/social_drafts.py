@@ -13,6 +13,7 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
+from services.distribution_ref import tag_for
 from services.integrations.operator_notify import notify_operator
 from services.integrations.postiz_client import PostizClient
 from services.site_config import SiteConfig
@@ -396,12 +397,24 @@ class SocialDraftsService:
                 ),
             }
 
+        platform = row["platform"]
+
         # Verify/repair the promoted URL against the live posts row, then
         # persist the repair + the post_id link on the draft before pushing.
+        #
+        # This is the last place the outbound link is touched, so it is where
+        # the attribution tag is settled: whatever surface the copy was drafted
+        # for, the URL that actually ships carries THIS draft's platform. That
+        # is what corrects the short-form copy Bluesky and Mastodon inherit
+        # from the tweet, and what back-fills a tag onto drafts generated
+        # before tagging existed.
         content = row["content"]
+        canonical_url = ""
         site_url = (site_config.get("site_url", "") or "").rstrip("/")
         if site_url:
-            canonical_url = f"{site_url}/posts/{post['slug']}"
+            canonical_url = tag_for(
+                site_config, f"{site_url}/posts/{post['slug']}", surface=platform
+            )
             content = _ensure_post_url(content, canonical_url, site_url)
         if content != row["content"] or row["post_id"] is None:
             async with pool.acquire() as conn:
@@ -416,13 +429,13 @@ class SocialDraftsService:
                     post["id"],
                 )
             if content != row["content"]:
+                # Log the URL that actually shipped, tag and all — the whole
+                # point of the tag is that it is auditable after the fact.
                 logger.info(
-                    "[social_drafts] draft %s: repaired promoted URL → "
-                    "%s/posts/%s",
-                    draft_id[:8], site_url, post["slug"],
+                    "[social_drafts] draft %s: repaired promoted URL → %s",
+                    draft_id[:8], canonical_url,
                 )
 
-        platform = row["platform"]
         platform_config = _parse_jsonb(row["platform_config"])
         integration_key = _INTEGRATION_KEY.get(platform)
         integration_id = site_config.get(integration_key or "", "") if integration_key else ""
@@ -1406,7 +1419,11 @@ def _ensure_post_url(content: str, canonical_url: str, site_url: str) -> str:
             rf"https?://(?:www\.)?{re.escape(host)}/posts/[^\s\"'<>()\[\]]*"
         )
         if pattern.search(content):
-            return pattern.sub(canonical_url, content)
+            # Literal replacement: canonical_url is data, not a template, so it
+            # must not be scanned for backreferences (\g, \1). Harmless for a
+            # bare slug URL, but the tag appended by distribution_ref makes this
+            # a URL with operator-configurable content.
+            return pattern.sub(lambda _m: canonical_url, content)
     if canonical_url in content:
         return content
     return f"{content.rstrip()} {canonical_url}".strip()

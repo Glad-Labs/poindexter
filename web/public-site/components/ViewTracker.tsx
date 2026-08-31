@@ -7,6 +7,42 @@ interface ViewTrackerProps {
 }
 
 /**
+ * Parameter names that may carry a distribution surface tag, in priority
+ * order. `utm_source` is the default the backend emits (Google Analytics
+ * parses it for free, so one tag feeds two systems); `ref` and `source` are
+ * accepted so an operator who shortened `distribution_ref_source_param` — or
+ * a hand-placed link — still lands attributed.
+ */
+const REF_PARAMS = ['utm_source', 'ref', 'source'] as const;
+
+/** A surface token as the backend emits it — see services/distribution_ref.py. */
+const REF_TOKEN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+/**
+ * Pull the distribution surface out of the query string, or '' when there
+ * isn't one (a direct visit, or a link nobody tagged).
+ *
+ * Validated against the same token shape the backend produces rather than
+ * forwarded verbatim: this value reaches a `GROUP BY` and a Grafana legend, so
+ * an arbitrary visitor-supplied string would be both a cardinality bomb and a
+ * needless injection surface. Anything that isn't a recognisable token is
+ * dropped, which reads downstream as "untagged" — the honest answer.
+ */
+export function readRefSource(search: string): string {
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(search || '');
+  } catch {
+    return '';
+  }
+  for (const name of REF_PARAMS) {
+    const raw = (params.get(name) || '').trim().toLowerCase();
+    if (raw && REF_TOKEN.test(raw)) return raw;
+  }
+  return '';
+}
+
+/**
  * ViewTracker — own-analytics beacon. Fires once per post mount and POSTs
  * to a Cloudflare Worker beacon (Analytics Engine), which the backend
  * `sync_cloudflare_analytics` job pulls into the local `page_views` table
@@ -26,11 +62,15 @@ interface ViewTrackerProps {
  */
 export function ViewTracker({ slug }: ViewTrackerProps) {
   useEffect(() => {
-    // Fire once on mount.
+    // Fire once on mount. `path` stays the bare pathname — every downstream
+    // consumer (posts.view_count, lab outcomes, the slug joins) keys on it, so
+    // the surface tag travels as its own field rather than smuggled into the
+    // path where it would fragment every one of those groupings.
     const payload = JSON.stringify({
       path: window.location.pathname,
       slug,
       referrer: document.referrer || '',
+      ref: readRefSource(window.location.search),
     });
 
     let url = process.env.NEXT_PUBLIC_BEACON_URL || '/api/page-views';

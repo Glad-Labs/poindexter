@@ -15,6 +15,7 @@ import logging
 import re
 from typing import Any
 
+from services.distribution_ref import tag_for
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,12 @@ def _build_youtube_description(
             )
             site_url = ""
     if site_url and slug:
-        backlink = f"Read the full post: {site_url}/posts/{slug}"
+        # Tagged so a click from the description is attributable to YouTube
+        # rather than landing in the "(direct)" bucket — a video description is
+        # exactly the kind of link a browser sends no referrer for.
+        backlink = "Read the full post: " + tag_for(
+            site_config, f"{site_url}/posts/{slug}", surface="youtube"
+        )
     elif not slug:
         logger.info(
             "[YOUTUBE_PAYLOAD] slug missing — omitting YouTube back-link",

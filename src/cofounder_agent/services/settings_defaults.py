@@ -2768,6 +2768,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # `poindexter settings set` / the operator overlay (e.g. ai-ml,founder-meta).
     'devto_syndicate_content_types': '',
     'devto_syndicate_min_quality': '80',
+    # Footer appended to the syndicated Dev.to body. Dev.to's own "Originally
+    # published at …" line comes from the article's canonical_url, which must
+    # stay UNTAGGED (it is the canonicalisation signal) — so this is the
+    # attributable path back, and the more visible one. Placeholders: {url}
+    # (already carrying the devto tag) and {site_host}. Empty = no footer,
+    # which is a real choice rather than an off-by-default accident.
+    'devto_origin_backlink_template':
+        '---\n\n*Originally published at [{site_host}]({url}).*',
     # ----- Content-type classification (spec 2026-07-13) -----
     # An additive, multi-label content-type axis populated by
     # ClassifyContentTypesJob into the post_content_types table. The classifier
@@ -4176,6 +4184,29 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # backfill-less on purpose: bare UA strings are shared across real humans.
     'beacon_sweep_max_distinct_paths': '25',
 
+    # --- Distribution attribution (services/distribution_ref.py) ---
+    # Every outbound link Poindexter places on another platform carries a
+    # surface tag, so a click on the Dev.to back-link is distinguishable from a
+    # click on a Bluesky promo from someone typing the address. Without it the
+    # only signal is document.referrer, which social apps and in-app browsers
+    # suppress — 77 posted promos + 146 crossposts produced 3 identifiable
+    # referrals in the 90 days to 2026-08-31, and "delivers nothing" was
+    # indistinguishable from "delivers invisibly".
+    #
+    # Defaults ON, unlike most new switches. A default-off attribution feature
+    # ships inert and nobody notices for months (the devto_syndicate_* gate did
+    # exactly that), and the cost of being wrong here is a query parameter on a
+    # page that already emits <link rel="canonical"> at its untagged URL.
+    'distribution_ref_enabled': 'true',
+    # UTM vocabulary by default: Google Analytics parses it for free, so one
+    # tag feeds both our own beacon and GA4's acquisition reports. ViewTracker
+    # reads an allow-list of parameter names, so a shorter 'ref' also arrives.
+    'distribution_ref_source_param': 'utm_source',
+    # Empty = tag the source only. The medium is the surface CLASS (social /
+    # syndication / video / audio), which is what makes "what did social
+    # deliver in total" one query instead of a list of every platform.
+    'distribution_ref_medium_param': 'utm_medium',
+
     # Social media distribution — Postiz integration
     'social_drafts_enabled': 'false',
     'social_draft_platforms': '',
@@ -4791,10 +4822,14 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'default_ollama_model': {'value_type': 'model'},
     'development_mode': {'value_type': 'boolean'},
     'devto_api_base': {'owner': 'devto_service', 'value_type': 'url'},
+    'devto_origin_backlink_template': {'owner': 'devto_service', 'value_type': 'string'},
     'devto_syndicate_content_types': {'owner': 'crosspost_to_devto'},
     'devto_syndicate_min_quality': {'owner': 'crosspost_to_devto', 'value_type': 'integer'},
     'disable_auth_for_dev': {'owner': 'token_validation', 'value_type': 'boolean'},
     'disabled_capabilities_probe_enabled': {'owner': 'probe_disabled_capabilities', 'value_type': 'boolean'},
+    'distribution_ref_enabled': {'owner': 'distribution_ref', 'value_type': 'boolean'},
+    'distribution_ref_medium_param': {'owner': 'distribution_ref', 'value_type': 'string'},
+    'distribution_ref_source_param': {'owner': 'distribution_ref', 'value_type': 'string'},
     'docker_port_forward_alert_only_backoff_minutes': {'owner': 'docker_port_forward_probe', 'value_type': 'integer'},
     'docker_port_forward_max_failed_recoveries_before_alert_only': {'owner': 'docker_port_forward_probe', 'value_type': 'integer'},
     'docker_port_forward_pg_auth_check_enabled': {'owner': 'docker_port_forward_probe', 'value_type': 'boolean'},

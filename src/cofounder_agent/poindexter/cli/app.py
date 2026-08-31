@@ -17,6 +17,7 @@ from .backup import backup_group
 from .community import community_group
 from .costs import costs_group
 from .dev_diary import dev_diary_group
+from .distribution import distribution_group
 from .doctor import doctor_group
 from .experiments import experiments_group
 from .firefighter import firefighter_group
@@ -123,6 +124,7 @@ main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(affiliate_group, name="affiliate")
 main.add_command(game_group, name="game")
 main.add_command(community_group, name="community")
+main.add_command(distribution_group, name="distribution")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")
 main.add_command(social_group, name="social")

@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from services.distribution_ref import tag_for
 from services.integrations.operator_notify import notify_operator
 from services.llm_providers.dispatcher import dispatch_complete
 from services.llm_providers.thinking_models import strip_think_blocks
@@ -181,6 +182,25 @@ def _resolve_social_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
         return fallback.format(**kwargs)
 
 
+def _post_url_for(slug: str, *, platform: str, site_config: SiteConfig) -> str:
+    """The promoted blog URL, carrying this platform's attribution tag.
+
+    Every caller that needs the URL goes through here — the prompt (which hands
+    the model the exact string), the prose-budget arithmetic, and the
+    deterministic repair — so the three can never disagree about how long the
+    link is. That matters: ``_polish_social_copy`` reserves ``char_limit −
+    len(url) − 1`` for prose, so a URL that grows after the budget was computed
+    is prose the operator loses.
+
+    ``approve_draft`` re-tags with the draft's own platform at post time, which
+    is what corrects the short-form copy Bluesky and Mastodon inherit from the
+    tweet. The tags are within a character of each other in length, so that
+    swap cannot meaningfully overrun a limit this budget already reserved for.
+    """
+    base = f"{_site_base_url(site_config=site_config)}/posts/{slug}"
+    return tag_for(site_config, base, surface=platform)
+
+
 def _build_twitter_prompt(
     title: str,
     slug: str,
@@ -190,7 +210,7 @@ def _build_twitter_prompt(
     site_config: SiteConfig,
 ) -> str:
     _sc = site_config
-    post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
+    post_url = _post_url_for(slug, platform="twitter", site_config=_sc)
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     char_limit = _twitter_char_limit(site_config=_sc)
     return _resolve_social_prompt(
@@ -221,7 +241,7 @@ def _build_linkedin_prompt(
     site_config: SiteConfig,
 ) -> str:
     _sc = site_config
-    post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
+    post_url = _post_url_for(slug, platform="linkedin", site_config=_sc)
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     char_limit = _linkedin_char_limit(site_config=_sc)
     return _resolve_social_prompt(
@@ -476,7 +496,12 @@ async def generate_social_posts(
     """
     _sc = site_config
     keywords = keywords or []
-    post_url = f"{_site_base_url(site_config=_sc)}/posts/{slug}"
+    # One URL per platform, each carrying its own attribution tag, so a click
+    # from Bluesky is distinguishable from a click from X. Built here as well
+    # as inside the prompt builders because the deterministic repair
+    # (_polish_social_copy) has to append the SAME string the model was handed.
+    twitter_url = _post_url_for(slug, platform="twitter", site_config=_sc)
+    linkedin_url = _post_url_for(slug, platform="linkedin", site_config=_sc)
     posts: list[SocialPost] = []
 
     # --- Twitter ---
@@ -487,17 +512,31 @@ async def generate_social_posts(
         "twitter",
         ollama,
         site_config=_sc,
-        post_url=post_url,
+        post_url=twitter_url,
     )
     if twitter_text:
-        posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
+        posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=twitter_url))
         logger.info("[social_poster] Twitter post generated (%d chars)", len(twitter_text))
         # Bluesky (300 chars) and Mastodon (500) are X-style short-form, so the
         # ≤280-char tweet copy fits both — reuse it instead of authoring a
         # separate prompt + spending another LLM call. The draft atom filters
         # these down to whatever social_draft_platforms actually requests.
-        posts.append(SocialPost(platform="bluesky", text=twitter_text, post_url=post_url))
-        posts.append(SocialPost(platform="mastodon", text=twitter_text, post_url=post_url))
+        #
+        # The copy is shared but the ATTRIBUTION must not be: swap the tweet's
+        # tag for each sibling's before the draft is stored, so the operator's
+        # preview shows the link that will actually go out and a Bluesky click
+        # is never counted as an X click. _polish_social_copy guarantees the
+        # exact twitter_url is present (it re-appends it last), so the
+        # substring swap is exact rather than a regex guess.
+        for sibling in ("bluesky", "mastodon"):
+            sibling_url = _post_url_for(slug, platform=sibling, site_config=_sc)
+            posts.append(
+                SocialPost(
+                    platform=sibling,
+                    text=twitter_text.replace(twitter_url, sibling_url),
+                    post_url=sibling_url,
+                )
+            )
     else:
         logger.error("[social_poster] Twitter post generation failed — empty result")
 
@@ -509,10 +548,10 @@ async def generate_social_posts(
         "linkedin",
         ollama,
         site_config=_sc,
-        post_url=post_url,
+        post_url=linkedin_url,
     )
     if linkedin_text:
-        posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=post_url))
+        posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=linkedin_url))
         logger.info("[social_poster] LinkedIn post generated (%d chars)", len(linkedin_text))
     else:
         logger.error("[social_poster] LinkedIn post generation failed — empty result")

@@ -54,6 +54,12 @@ _QUERY_TEMPLATE = (
     "blob2 AS path, "
     "blob3 AS referrer, "
     "blob5 AS user_agent, "
+    # blob6 — the distribution surface that placed the link
+    # (services/distribution_ref.py). Reads as '' for every data point the
+    # Worker wrote before it carried the blob, and for every untagged visit,
+    # so no backfill is needed and none is possible: attribution starts the
+    # day the tagged links go out.
+    "blob6 AS ref_source, "
     "timestamp AS created_at "
     "FROM analytics_events "
     "WHERE timestamp > toDateTime('{since}', 'UTC') "
@@ -350,6 +356,11 @@ class SyncCloudflareAnalyticsJob:
                         path = (raw.get("path") or "")[:500]
                         referrer = (raw.get("referrer") or "")[:1000]
                         ua = (raw.get("user_agent") or "")[:500]
+                        # Tolerate the key being absent entirely: the Worker is
+                        # deployed independently of this job (wrangler, not the
+                        # compose stack), so a window where the worker predates
+                        # blob6 is the NORMAL rollout order, not a fault.
+                        ref_source = (raw.get("ref_source") or "")[:32]
                         ts_raw = raw.get("created_at") or ""
                         if not (slug or path):
                             continue
@@ -396,13 +407,14 @@ class SyncCloudflareAnalyticsJob:
 
                         await conn.execute(
                             "INSERT INTO page_views "
-                            "(path, slug, referrer, user_agent, created_at) "
-                            "VALUES ($1, $2, $3, $4, $5)",
+                            "(path, slug, referrer, user_agent, created_at, ref_source) "
+                            "VALUES ($1, $2, $3, $4, $5, $6)",
                             path or None,
                             slug or None,
                             referrer or None,
                             ua or None,
                             ts,
+                            ref_source or None,
                         )
                         inserted += 1
                         if slug:

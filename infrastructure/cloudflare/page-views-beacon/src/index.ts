@@ -1,5 +1,5 @@
 // Cloudflare Worker — page-views beacon for Glad Labs / Poindexter.
-// POST {slug, path, referrer} → writes one data point to Analytics Engine.
+// POST {slug, path, referrer, ref} → writes one data point to Analytics Engine.
 // Returns 204 on success, 405 for non-POST, 403 for wrong origin, 429 on rate limit.
 //
 // Read back via the CF AE SQL HTTP API:
@@ -51,7 +51,12 @@ export default {
       return new Response(null, { status: 429 });
     }
 
-    let body: { slug?: string; path?: string; referrer?: string } = {};
+    let body: {
+      slug?: string;
+      path?: string;
+      referrer?: string;
+      ref?: string;
+    } = {};
     try {
       const text = await req.text();
       if (text) body = JSON.parse(text);
@@ -67,6 +72,15 @@ export default {
 
     const cf = (req.cf as Record<string, unknown> | undefined) ?? {};
 
+    // Distribution surface tag (?utm_source=devto & friends), already
+    // shape-validated client-side by ViewTracker. Re-validated here anyway:
+    // this endpoint is public, so the client is not a trust boundary, and a
+    // free-text blob would blow up the cardinality of every downstream
+    // GROUP BY. Anything unrecognised becomes '' — i.e. "untagged".
+    const ref = /^[a-z0-9][a-z0-9_-]{0,31}$/.test(body.ref || '')
+      ? (body.ref as string)
+      : '';
+
     env.ANALYTICS_ENGINE.writeDataPoint({
       blobs: [
         slug, // blob1: post slug (lab join key)
@@ -74,6 +88,7 @@ export default {
         (body.referrer || '').slice(0, 500), // blob3: referrer
         ((cf.country as string) || '').slice(0, 8), // blob4: country
         (req.headers.get('user-agent') || '').slice(0, 200), // blob5: UA
+        ref, // blob6: distribution surface (services/distribution_ref.py)
       ],
       doubles: [],
       indexes: [slug || path], // index by slug for fast slug-group queries

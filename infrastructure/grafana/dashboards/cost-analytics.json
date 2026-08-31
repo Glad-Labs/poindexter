@@ -1852,6 +1852,161 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 154
+      },
+      "id": 229,
+      "panels": [],
+      "title": "Distribution — surfaces & yield",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 155
+      },
+      "id": 230,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, ref_source AS metric, count(*) AS views FROM page_views_human WHERE $__timeFilter(created_at) AND ref_source IS NOT NULL AND ref_source <> '' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Tagged arrivals by surface",
+      "type": "timeseries",
+      "description": "Readers who arrived through a link Poindexter placed, by the surface that placed it (services/distribution_ref.py). Empty before the tagged links went out — attribution starts then and cannot be backfilled, because the evidence was never recorded."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 155
+      },
+      "id": 231,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "WITH placements AS (  SELECT platform AS surface, count(*)::bigint AS placements    FROM social_post_drafts   WHERE status = 'posted' AND $__timeFilter(posted_at) GROUP BY platform  UNION ALL  SELECT 'devto', count(*)::bigint FROM posts   WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)  UNION ALL  SELECT target, count(*)::bigint FROM pipeline_distributions   WHERE status = 'published' AND target <> 'gladlabs.io' AND $__timeFilter(created_at)   GROUP BY target), sent AS (  SELECT surface, sum(placements)::bigint AS placements FROM placements GROUP BY surface), arrived AS (  SELECT ref_source AS surface, count(*)::bigint AS arrivals FROM page_views_human   WHERE $__timeFilter(created_at) AND ref_source IS NOT NULL AND ref_source <> ''   GROUP BY ref_source) SELECT COALESCE(s.surface, a.surface) AS surface,       COALESCE(s.placements, 0) AS placements,       COALESCE(a.arrivals, 0) AS arrivals,       CASE WHEN COALESCE(s.placements, 0) > 0            THEN round(100.0 * COALESCE(a.arrivals, 0) / s.placements, 1)            END AS arrivals_per_100  FROM sent s FULL OUTER JOIN arrived a ON a.surface = s.surface ORDER BY arrivals DESC, placements DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Placements vs arrivals by surface",
+      "type": "table",
+      "description": "What we sent to each surface against what came back. arrivals_per_100 is NULL rather than 0 when nothing was placed — 'we posted nothing there' and 'we posted and nobody came' are different findings and must not collapse into the same zero."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 164
+      },
+      "id": 232,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT lower(regexp_replace(regexp_replace(split_part(referrer, '/', 3), '^www\\.', ''), ':\\d+$', '')) AS referrer_host, count(*) AS views FROM page_views_human WHERE $__timeFilter(created_at) AND referrer IS NOT NULL AND referrer <> '' AND referrer NOT LIKE '%gladlabs.io%' GROUP BY 1 ORDER BY 2 DESC LIMIT 25",
+          "refId": "A"
+        }
+      ],
+      "title": "Referrer hosts — the pre-tag signal",
+      "type": "table",
+      "description": "The older, lossier signal, kept alongside the tag because it is the only evidence covering the period before tagging. Social apps suppress or rewrite it (X collapses to t.co, Bluesky to go.bsky.app, Dev.to sends nothing), which is exactly why the tag exists. Own-site referrers are excluded — internal navigation is not distribution."
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 164
+      },
+      "id": 233,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE ref_source IS NULL OR ref_source = '') / NULLIF(count(*), 0), 1) AS untagged_pct FROM page_views_human WHERE $__timeFilter(created_at)",
+          "refId": "A"
+        }
+      ],
+      "title": "Untagged share of arrivals",
+      "type": "stat",
+      "description": "Share of reader views carrying no surface tag. Expected to be high — organic search and direct traffic are untagged by nature — so read it as a trend, not a target. A jump toward 100% after tagging shipped means the chain broke: check distribution_ref_enabled, and whether the beacon Worker is deployed with the ref blob.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 164
+      },
+      "id": 234,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT (  SELECT count(*) FROM social_post_drafts WHERE status = 'posted' AND $__timeFilter(posted_at)) + (  SELECT count(*) FROM posts WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)) + (  SELECT count(*) FROM pipeline_distributions WHERE status = 'published'   AND target <> 'gladlabs.io' AND $__timeFilter(created_at)) AS placements",
+          "refId": "A"
+        }
+      ],
+      "title": "Placements (window)",
+      "type": "stat",
+      "description": "Total outbound links Poindexter placed in the window, across every surface. The denominator for everything else on this row."
     }
   ],
   "refresh": "5m",

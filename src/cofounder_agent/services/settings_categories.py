@@ -231,6 +231,10 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("backfill_media_scripts", "media"),
     ("backfill_video_shot_lists", "media"),
     # distribution
+    # Outbound-link attribution (services/distribution_ref.py) — the tag every
+    # surface's back-link carries. Spelled out rather than left to fall through
+    # to "general", where a distribution knob is unfindable.
+    ("distribution_ref", "distribution"),
     ("social", "distribution"),
     ("publishing", "distribution"),
     ("postiz", "distribution"),

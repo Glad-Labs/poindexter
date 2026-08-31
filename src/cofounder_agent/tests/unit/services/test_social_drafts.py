@@ -980,8 +980,11 @@ async def test_approve_draft_appends_url_when_missing():
         await svc.approve_draft("d-1", pool, sc)
 
     pushed = mock_cls.return_value.create_post.call_args.kwargs["content"]
+    # Appended with THIS draft's surface tag — approve is the last place the
+    # outbound link is touched, so it is where attribution is settled.
     assert pushed.endswith(
         "https://gladlabs.io/posts/why-vram-bandwidth-matters-f3a71ef6"
+        "?utm_source=twitter&utm_medium=social"
     )
 
 

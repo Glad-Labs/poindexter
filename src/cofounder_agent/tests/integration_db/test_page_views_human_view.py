@@ -42,14 +42,24 @@ async def test_is_bot_defaults_false(test_pool) -> None:
 
 
 async def test_page_views_human_hides_is_bot_column(test_pool) -> None:
-    """The human view exposes only the original page_views columns, not is_bot."""
+    """The human view hides the bot-flag machinery, nothing else.
+
+    Asserted as "bot columns absent" + "data columns present" rather than as a
+    frozen equality set: the view legitimately widens when page_views grows a
+    reader-facing dimension (ref_source, 20260831), and an equality assertion
+    turns every such widening into a false failure. What this test actually
+    guards is that the flagging apparatus never leaks to reader surfaces.
+    """
     async with test_pool.acquire() as conn:
         cols = await conn.fetch(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name = 'page_views_human'"
         )
     names = {r["column_name"] for r in cols}
-    assert names == {"id", "path", "slug", "referrer", "user_agent", "created_at"}
+    assert names.isdisjoint({"is_bot", "bot_reason", "flagged_at"})
+    assert {
+        "id", "path", "slug", "referrer", "user_agent", "created_at", "ref_source",
+    } <= names
 
 
 async def test_lab_outcomes_v1_still_queryable(test_pool) -> None:
