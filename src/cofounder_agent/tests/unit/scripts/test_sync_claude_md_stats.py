@@ -1,0 +1,156 @@
+"""Tests for ``scripts/sync-claude-md-stats.py``'s README half.
+
+The script already owned CLAUDE.md's repo-derived counts; it grew the root
+README's test-count claims when those were found stale (the shields.io
+badge read ``tests-11,400+`` on 2026-08-31 against ~17,200 real test
+functions — hand-typed, correct on the day, watched by nothing).
+
+Covered here: the static test-function counter, and the three README
+rewrites (badge, Key-features row, Project-status bullet). The CLAUDE.md
+half's anchors are covered by ``test_claude_md_anchor_lint.py``.
+
+The hyphenated filename is not a legal module name, so it loads via
+importlib the same way the anchor lint does.
+"""
+
+from __future__ import annotations
+
+import sys
+from collections import OrderedDict
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.unit
+
+
+def _repo_root() -> Path:
+    return next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
+
+
+def _load(script_rel: str, name: str):
+    script = _repo_root() / script_rel
+    spec = spec_from_file_location(name, script)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+SYNC = _load("scripts/sync-claude-md-stats.py", "sync_claude_md_stats_readme_t")
+
+# The three shapes the test count appears in, reproduced verbatim from README
+# plus decoy numbers that MUST survive untouched — a bare ``\d+`` pattern
+# would eat the release badge and the Python version.
+SAMPLE = (
+    "[![Release](https://img.shields.io/github/v/release/Glad-Labs/poindexter)]"
+    "(https://github.com/Glad-Labs/poindexter/releases)\n"
+    "[![Tests](https://img.shields.io/badge/tests-11%2C400%2B-brightgreen)]"
+    "(https://github.com/Glad-Labs/poindexter/actions)\n"
+    "| **OAuth 2.1 throughout**     | Every consumer mints scoped JWTs.  |\n"
+    "| **11,400+ tests**            | Unit coverage across all services. |\n"
+    "- Python 3.13+ and 8 GB+ VRAM.\n"
+    "- 11,400+ unit tests passing in CI on every push, plus link-rot CI.\n"
+)
+
+FRESH: OrderedDict[str, int | str] = OrderedDict([
+    ("service_py_files", 470),
+    ("test_files", 1108),
+    ("test_functions", 17_238),
+    ("grafana_dashboards", 12),
+])
+
+
+class TestCountTestFunctions:
+    """Counting by filename undercounts the suite by ~15x; counting ``def
+    test_`` only at column 0 undercounts it too, because most tests live
+    inside classes and their def is indented."""
+
+    def test_counts_indented_and_async_defs(self, tmp_path):
+        f = tmp_path / "test_x.py"
+        f.write_text(
+            "def test_top_level():\n    pass\n\n"
+            "class TestGroup:\n"
+            "    def test_indented(self):\n        pass\n\n"
+            "    async def test_async_indented(self):\n        pass\n",
+            encoding="utf-8",
+        )
+        assert SYNC._count_test_functions([f]) == 3
+
+    def test_ignores_non_test_defs_and_prose_mentions(self, tmp_path):
+        f = tmp_path / "test_y.py"
+        f.write_text(
+            '"""A docstring that says def test_ but declares nothing."""\n'
+            "def helper():\n    pass\n"
+            "def testing_not_a_test():\n    pass\n"
+            "def test_real():\n    pass\n",
+            encoding="utf-8",
+        )
+        assert SYNC._count_test_functions([f]) == 1
+
+    def test_sums_across_files(self, tmp_path):
+        a, b = tmp_path / "test_a.py", tmp_path / "test_b.py"
+        a.write_text("def test_one():\n    pass\n", encoding="utf-8")
+        b.write_text(
+            "def test_two():\n    pass\ndef test_three():\n    pass\n",
+            encoding="utf-8",
+        )
+        assert SYNC._count_test_functions([a, b]) == 3
+
+    def test_real_repo_count_is_in_the_right_order_of_magnitude(self):
+        """Guards a regex regression that would silently return ~0 and floor
+        the public badge to "0+"."""
+        stats = SYNC.collect_stats()
+        assert stats["test_functions"] > 10 * stats["test_files"]
+
+
+class TestApplyToReadme:
+    def test_rewrites_all_three_test_claims_floored(self):
+        new, changes = SYNC.apply_to_readme(FRESH, text=SAMPLE)
+
+        # shields.io needs the comma and plus percent-encoded
+        assert "tests-17%2C000%2B-brightgreen" in new
+        assert "| **17,000+ tests**" in new
+        assert "17,000+ unit tests passing in CI" in new
+        assert len(changes) == 3
+        assert not any(c.startswith("WARNING:") for c in changes)
+
+    def test_leaves_unrelated_numbers_alone(self):
+        new, _ = SYNC.apply_to_readme(FRESH, text=SAMPLE)
+        assert "img.shields.io/github/v/release/Glad-Labs/poindexter" in new
+        assert "Python 3.13+ and 8 GB+ VRAM." in new
+        assert "**OAuth 2.1 throughout**" in new
+
+    def test_claim_is_floored_not_exact(self):
+        """17,238 must publish as "17,000+", never as the exact count: the
+        claim has to stay true if the sync ever stops running."""
+        new, _ = SYNC.apply_to_readme(FRESH, text=SAMPLE)
+        assert "17,238" not in new
+        assert "17,000+" in new
+
+    def test_is_idempotent_on_already_fresh_text(self):
+        once, _ = SYNC.apply_to_readme(FRESH, text=SAMPLE)
+        twice, changes = SYNC.apply_to_readme(FRESH, text=once)
+        assert twice == once
+        assert changes == []
+
+    def test_dead_anchor_is_reported_not_silently_skipped(self):
+        """A copy edit that drops "unit tests passing in CI" must surface,
+        not freeze the bullet at whatever it last said (#2832)."""
+        reworded = SAMPLE.replace(
+            "11,400+ unit tests passing in CI", "a large suite running in CI"
+        )
+        _, changes = SYNC.apply_to_readme(FRESH, text=reworded)
+        warnings = [c for c in changes if c.startswith("WARNING:")]
+        assert len(warnings) == 1
+        assert "test_functions_status_bullet" in warnings[0]
+
+    def test_every_anchor_matches_the_real_checked_in_readme(self):
+        """Acceptance: the patterns work against the file they ship for."""
+        _, changes = SYNC.apply_to_readme(SYNC.collect_stats())
+        assert not [c for c in changes if c.startswith("WARNING:")]

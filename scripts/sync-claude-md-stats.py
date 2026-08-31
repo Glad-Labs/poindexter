@@ -15,10 +15,16 @@ Idempotent: re-running on already-fresh state produces zero changes.
 Diff-only mode (``--check``) exits non-zero if drift would happen,
 which the CI workflow uses to decide whether to open a sync PR.
 
+This script also owns the repo-derived half of the root **README.md**
+marketing stats (the test-count badge and its two prose restatements).
+README claims are floored to a round ``N+`` rather than written exactly —
+rationale and the shared helpers live in ``scripts/lib_readme_stats.py``.
+
 Stat patterns are anchored on prose context so they only match the
 sentence we want — a bare ``\d+`` regex would catch any number in the
 file. Each replacement is logged so the PR description can list what
-changed.
+changed, and an anchor that matches nothing is reported as a ``WARNING:``
+rather than passing silently as "already correct" (#2832).
 """
 
 from __future__ import annotations
@@ -31,6 +37,22 @@ from collections import OrderedDict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# The repo root has to be importable before ``scripts.lib_readme_stats``
+# resolves: this script is launched by path (``python scripts/sync-...``),
+# which puts ``scripts/`` — not the root — on sys.path.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib_readme_stats import (  # noqa: E402  (needs the path bootstrap above)
+    FLOOR_STEPS,
+    README_MD,
+    floored,
+    is_warning,
+    shield_escape,
+    substitute_anchored,
+)
+
 CLAUDE_MD = ROOT / "CLAUDE.md"
 
 # The prose anchors each repo-derived stat rides on, keyed to match
@@ -45,9 +67,45 @@ STAT_ANCHORS: OrderedDict[str, str] = OrderedDict([
     ("grafana_dashboards", r"\d+ Grafana dashboards"),
 ])
 
+# The README.md anchors this script owns — the test count, which appears
+# three times (a shields.io badge, a Key-features row, a Project-status
+# bullet). Same lint contract as STAT_ANCHORS: module-level so
+# ``scripts/ci/claude_md_anchor_lint.py`` imports and runs them against the
+# checked-in README, so a reword fails CI on the PR that breaks it instead
+# of freezing the number. The badge pattern matches the percent-encoded
+# form shields.io needs (``17%2C000%2B``); the other two match plain prose.
+README_ANCHORS: OrderedDict[str, str] = OrderedDict([
+    ("test_functions_badge", r"tests-[\d%C]+%2B-brightgreen"),
+    ("test_functions_feature_row", r"\*\*[\d,]+\+ tests\*\*"),
+    ("test_functions_status_bullet", r"[\d,]+\+ unit tests passing in CI"),
+])
+
 
 def _glob_count(pattern: str) -> int:
     return len(list(ROOT.glob(pattern)))
+
+
+# ``def test_x`` / ``async def test_x`` at any indentation — most tests live
+# inside classes, so the def is indented and a column-0 grep undercounts badly.
+_TEST_DEF_RE = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+test_", re.MULTILINE)
+
+
+def _count_test_functions(test_files: list[Path]) -> int:
+    """Approximate the suite size by counting ``def test_`` declarations.
+
+    A static count, not a pytest collection: it can't expand
+    ``@pytest.mark.parametrize`` (so it undercounts what actually runs) and
+    it counts a commented-out or skipped def (so it overcounts a little the
+    other way). Both errors are fractions of a percent — the real 2026-08-12
+    run collected 17,212 against 17,238 declarations here — and the only
+    consumer floors to the nearest thousand, so precision beyond this buys
+    nothing. Collecting for real would need the full test dependency tree
+    installed in CI, which is exactly the cost this avoids.
+    """
+    return sum(
+        len(_TEST_DEF_RE.findall(p.read_text(encoding="utf-8", errors="replace")))
+        for p in test_files
+    )
 
 
 def collect_stats() -> OrderedDict[str, int | str]:
@@ -55,9 +113,7 @@ def collect_stats() -> OrderedDict[str, int | str]:
     services_dir = ROOT / "src/cofounder_agent/services"
     tests_dir = ROOT / "src/cofounder_agent/tests/unit"
     # Test files = files named test_*.py under tests/unit (pytest's
-    # default discovery pattern). Counting by filename, not by ``def
-    # test_`` lines, because most tests live inside classes and the
-    # def is indented — a content-grep would undercount badly.
+    # default discovery pattern).
     test_files = [
         p for p in tests_dir.rglob("test_*.py")
         if p.name != "test_helpers.py"
@@ -65,6 +121,7 @@ def collect_stats() -> OrderedDict[str, int | str]:
     return OrderedDict([
         ("service_py_files", len(list(services_dir.rglob("*.py")))),
         ("test_files", len(test_files)),
+        ("test_functions", _count_test_functions(test_files)),
         # No migration count: CLAUDE.md carries no "N migration files" claim
         # to sync, and the "Latest as of …: <file>.py" line needs narrative
         # reasoning (handled by the claude-md-sync session, not regex).
@@ -82,36 +139,25 @@ def apply_to_claude_md(stats: OrderedDict[str, int | str]) -> tuple[str, list[st
     rewrite an unrelated ``\d+`` elsewhere in the file.
     """
     text = CLAUDE_MD.read_text(encoding="utf-8")
-    changes: list[str] = []
 
-    def _sub(pattern: str, repl: str, label: str) -> None:
-        nonlocal text
-        new, n = re.subn(pattern, repl, text, count=1)
-        if n and new != text:
-            changes.append(label)
-            text = new
-
-    # Patterns live in STAT_ANCHORS (module level, lint-imported — #2832).
-    # "329 Python files under `src/cofounder_agent/services/`"
-    _sub(
-        STAT_ANCHORS["service_py_files"],
-        f"{stats['service_py_files']} Python files under `src/cofounder_agent/services/`",
-        f"service_py_files ->{stats['service_py_files']}",
-    )
-
-    # "8,400+ Python unit tests across 369 test files"
-    _sub(
-        STAT_ANCHORS["test_files"],
-        f"{stats['test_files']} test files",
-        f"test_files ->{stats['test_files']}",
-    )
-
-    # "8 Grafana dashboards (Mission Control / …)"
-    _sub(
-        STAT_ANCHORS["grafana_dashboards"],
-        f"{stats['grafana_dashboards']} Grafana dashboards",
-        f"grafana_dashboards ->{stats['grafana_dashboards']}",
-    )
+    # Patterns live in STAT_ANCHORS (module level, lint-imported — #2832):
+    #   "329 Python files under `src/cofounder_agent/services/`"
+    #   "8,400+ Python unit tests across 369 test files"
+    #   "8 Grafana dashboards (Mission Control / …)"
+    text, changes = substitute_anchored(text, [
+        (
+            "service_py_files",
+            STAT_ANCHORS["service_py_files"],
+            f"{stats['service_py_files']} Python files under "
+            "`src/cofounder_agent/services/`",
+        ),
+        ("test_files", STAT_ANCHORS["test_files"], f"{stats['test_files']} test files"),
+        (
+            "grafana_dashboards",
+            STAT_ANCHORS["grafana_dashboards"],
+            f"{stats['grafana_dashboards']} Grafana dashboards",
+        ),
+    ])
 
     # Note: ``Latest as of YYYY-MM-DD: `<migration>.py``` is NOT auto-
     # synced. The surrounding prose ("closes #N", "Lane X cutover seam",
@@ -123,11 +169,49 @@ def apply_to_claude_md(stats: OrderedDict[str, int | str]) -> tuple[str, list[st
     return text, changes
 
 
+def apply_to_readme(
+    stats: OrderedDict[str, int | str],
+    text: str | None = None,
+) -> tuple[str, list[str]]:
+    """Return ``(new_text, changes)`` for the README claims this script owns.
+
+    Only the test count: everything else in README's stat surface is
+    DB-derived and belongs to ``sync_claude_md_db_stats.py``. The value is
+    floored to a round ``N+`` (see ``scripts/lib_readme_stats``), so this is
+    a no-op on all but the handful of nights that cross a thousand.
+
+    Pass ``text`` to operate on a string in-memory (used by tests);
+    otherwise the on-disk README.md is read.
+    """
+    current = README_MD.read_text(encoding="utf-8") if text is None else text
+    claim = floored(int(stats["test_functions"]), FLOOR_STEPS["test_functions"])
+    return substitute_anchored(current, [
+        # [![Tests](https://img.shields.io/badge/tests-17%2C000%2B-brightgreen)]
+        (
+            "test_functions_badge",
+            README_ANCHORS["test_functions_badge"],
+            f"tests-{shield_escape(claim)}-brightgreen",
+        ),
+        # | **17,000+ tests** | Unit coverage across all services, … |
+        (
+            "test_functions_feature_row",
+            README_ANCHORS["test_functions_feature_row"],
+            f"**{claim} tests**",
+        ),
+        # - 17,000+ unit tests passing in CI on every push, …
+        (
+            "test_functions_status_bullet",
+            README_ANCHORS["test_functions_status_bullet"],
+            f"{claim} unit tests passing in CI",
+        ),
+    ])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check", action="store_true",
-        help="Exit non-zero if CLAUDE.md would change; don't write.",
+        help="Exit non-zero if CLAUDE.md or README.md would change; don't write.",
     )
     parser.add_argument(
         "--json", action="store_true",
@@ -140,26 +224,50 @@ def main() -> int:
         print(json.dumps(stats, indent=2))
         return 0
 
-    new_text, changes = apply_to_claude_md(stats)
-    original = CLAUDE_MD.read_text(encoding="utf-8")
-    drift = new_text != original
+    results: list[tuple[Path, str, list[str]]] = [
+        (CLAUDE_MD, *apply_to_claude_md(stats)),
+    ]
+    if README_MD.is_file():
+        results.append((README_MD, *apply_to_readme(stats)))
+    else:
+        # Not expected on glad-labs-stack (README.md is tracked). Loud rather
+        # than silent: a vanished target must never read as "already in sync".
+        print(f"WARNING: {README_MD.name} not found — its stats were not synced.")
+
+    changes: list[str] = []
+    dirty: list[tuple[Path, str]] = []
+    for path, new_text, file_changes in results:
+        changes.extend(file_changes)
+        if new_text != path.read_text(encoding="utf-8"):
+            dirty.append((path, new_text))
+
+    # A dead anchor produces no diff by construction, so it would otherwise be
+    # reported as "in sync" — the exact #2832 failure. Surface it on every
+    # path. The hard gate is scripts/ci/claude_md_anchor_lint.py, which fails
+    # CI on the PR that breaks the wording; this is the runtime echo of it.
+    warnings = [c for c in changes if is_warning(c)]
+    names = " + ".join(path.name for path, _, _ in results)
 
     if args.check:
-        if drift:
-            print("CLAUDE.md drift detected:")
-            for c in changes:
-                print(f"  - {c}")
+        for warning in warnings:
+            print(warning)
+        if dirty:
+            print("Stat drift detected:")
+            for change in changes:
+                print(f"  - {change}")
             return 1
-        print("CLAUDE.md is in sync.")
+        print(f"{names} stats are in sync.")
         return 0
 
-    if drift:
-        CLAUDE_MD.write_text(new_text, encoding="utf-8")
-        print("CLAUDE.md updated:")
-        for c in changes:
-            print(f"  - {c}")
+    for path, new_text in dirty:
+        path.write_text(new_text, encoding="utf-8")
+
+    if dirty:
+        print(f"{', '.join(path.name for path, _ in dirty)} updated:")
     else:
-        print("CLAUDE.md is in sync (no changes).")
+        print(f"{names} stats are in sync (no changes).")
+    for change in changes:
+        print(f"  - {change}")
     return 0
 
 

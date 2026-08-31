@@ -1,4 +1,4 @@
-"""Refresh CLAUDE.md DB counts + surface migration drift. Deterministic, worktree.
+"""Refresh CLAUDE.md + README DB counts + surface migration drift. Deterministic, worktree.
 
 Lands its own PR. CLAUDE.md's DB-derived counts are *generated* output, so when
 ``main`` moves under an open PR this session does not rebase — it throws the
@@ -120,11 +120,20 @@ def rebase_onto_fresh_main(root: str, branch: str, log) -> bool:
     return True
 
 
-def regenerate_db_counts(root: str, pkg: str, stats: Path, log) -> tuple[bool, bool]:
-    """Run the DB-count generator. Returns ``(ok, changed_claude_md)``."""
+def regenerate_db_counts(
+    root: str, pkg: str, stats: Path, log,
+) -> tuple[bool, bool, str]:
+    """Run the DB-count generator. Returns ``(ok, changed_any_doc, output)``.
+
+    The generator writes CLAUDE.md *and* the DB-derived half of README.md,
+    so "changed" means either moved. ``output`` is the generator's stdout,
+    carried back so the PR body can show any ``WARNING: anchor not found``
+    line — a dead anchor produces no diff, so it would otherwise be visible
+    only in a session log nobody opens.
+    """
     if not stats.exists():
         log.info("%s missing — skipping DB-count refresh", stats)
-        return True, False
+        return True, False, ""
     # sys.executable = the main env python that launched us (has asyncpg);
     # the worktree has no provisioned venv.
     proc = c.run([sys.executable, str(stats)], cwd=pkg)
@@ -132,8 +141,15 @@ def regenerate_db_counts(root: str, pkg: str, stats: Path, log) -> tuple[bool, b
     # crash (asyncpg.connect against a wedged port-forward) or any other
     # non-zero exit read identically to "already in sync", so CLAUDE.md's
     # DB-derived counts silently froze for a month behind a green session.
-    if proc.stdout.strip():
-        log.info("sync_claude_md_db_stats.py: %s", proc.stdout.strip())
+    output = (proc.stdout or "").strip()
+    if output:
+        log.info("sync_claude_md_db_stats.py: %s", output)
+    # A dead prose anchor exits 0 and changes nothing, so it can only be seen
+    # by reading the output (#2832). Re-log those lines at WARNING so they
+    # stand out, and hand them to the PR body below.
+    for line in output.splitlines():
+        if "WARNING:" in line:
+            log.warning("sync_claude_md_db_stats.py: %s", line.strip(" -"))
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "no output captured").strip()[:1500]
         log.error(
@@ -145,9 +161,9 @@ def regenerate_db_counts(root: str, pkg: str, stats: Path, log) -> tuple[bool, b
             f"DB-derived counts were NOT refreshed today.\n{detail}",
             "claude_md_sync",
         )
-        return False, False
-    status = c.git("status", "--porcelain", "CLAUDE.md", cwd=root)
-    return True, bool(status.stdout.strip())
+        return False, False, output
+    status = c.git("status", "--porcelain", "CLAUDE.md", "README.md", cwd=root)
+    return True, bool(status.stdout.strip()), output
 
 
 def reap_superseded_prs(keep_branch: str, *, cwd: str, log) -> list[int]:
@@ -224,7 +240,7 @@ def main() -> int:
         # Recomputed per attempt: the migrations dir is whatever fresh main says.
         drift_note = migration_drift_note(root, log)
 
-        ok, changed = regenerate_db_counts(roots, pkg, stats, log)
+        ok, changed, sync_output = regenerate_db_counts(roots, pkg, stats, log)
         if not ok:
             return 1
         if not changed:
@@ -233,7 +249,7 @@ def main() -> int:
                 # already carries these counts, so there is nothing left to push.
                 log.info("main already carries today's counts (%s landed)", pr_url)
             else:
-                log.info("no CLAUDE.md changes")
+                log.info("no CLAUDE.md / README.md changes")
                 if drift_note:
                     c.notify_fail("CLAUDE.md migration drift", drift_note, "claude_md_sync")
             return 0
@@ -241,10 +257,17 @@ def main() -> int:
         pr_url = c.commit_and_open_pr(
             cwd=roots,
             repo=REPO,
-            paths=["CLAUDE.md"],
-            message="docs(CLAUDE.md): sync DB-derived counts (ops)",
-            title="docs(CLAUDE.md): sync DB-derived counts (ops)",
-            body=f"Automated DB-count refresh.\n\n{drift_note}".strip(),
+            paths=["CLAUDE.md", "README.md"],
+            message="docs: sync DB-derived counts in CLAUDE.md + README (ops)",
+            title="docs: sync DB-derived counts in CLAUDE.md + README (ops)",
+            body="\n\n".join(
+                part for part in (
+                    "Automated DB-count refresh (CLAUDE.md + the README "
+                    "marketing stats that ride the same probe).",
+                    drift_note,
+                    f"Generator output:\n```\n{sync_output}\n```" if sync_output else "",
+                ) if part
+            ),
             log=log,
             source="claude_md_sync",
             auto_merge=True,

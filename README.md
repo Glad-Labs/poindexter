@@ -7,7 +7,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Unit tests](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
 [![Release](https://img.shields.io/github/v/release/Glad-Labs/poindexter)](https://github.com/Glad-Labs/poindexter/releases)
-[![Tests](https://img.shields.io/badge/tests-11%2C400%2B-brightgreen)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
+[![Tests](https://img.shields.io/badge/tests-17%2C000%2B-brightgreen)](https://github.com/Glad-Labs/poindexter/actions/workflows/unit-tests.yml)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#project-status)
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
@@ -17,7 +17,7 @@
 
 ---
 
-This is not a demo repo. Poindexter is the production system behind [gladlabs.io](https://www.gladlabs.io) — 166 live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
+This is not a demo repo. Poindexter is the production system behind [gladlabs.io](https://www.gladlabs.io) — 190+ live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
 
 <img src="docs/assets/readme/console.gif" alt="Operator console, live: a post mid-pipeline in the system pulse, KPI row, approval inbox with QA verdicts, then the TRACE view and the animated system map" width="100%">
 
@@ -168,7 +168,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 1,300+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
+| **DB-as-config**             | 1,600+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
 | **LangGraph pipelines**      | Declarative DAGs with Postgres checkpointing — resumable mid-run                            |
 | **Multi-modal output**       | Markdown posts, AI images, podcast audio, text-to-video (alpha)                             |
 | **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
@@ -176,7 +176,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **Self-healing**             | Watchdog daemon monitors all services, restarts failures, alerts via Telegram/Discord       |
 | **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry-compatible (GlitchTip)         |
 | **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, scripts) mints scoped JWTs. No static API keys.                   |
-| **11,400+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
+| **17,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
 
 ## Stack
 
@@ -256,8 +256,8 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
-- 166 live posts on [gladlabs.io](https://www.gladlabs.io) (340 posts total, 2,000+ pipeline runs).
-- 11,400+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
+- 190+ live posts on [gladlabs.io](https://www.gladlabs.io) (370+ posts total, 2,000+ pipeline runs).
+- 17,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
 - Multi-model QA with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.

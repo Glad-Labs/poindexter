@@ -144,7 +144,10 @@ class TestMainSurfacesPrFailure:
         _, pr_mock = self._run(tmp_path, monkeypatch, pr_url="https://github.com/x/y/pull/1")
         kwargs = pr_mock.call_args.kwargs
         assert kwargs["cwd"] == str(tmp_path)
-        assert kwargs["paths"] == ["CLAUDE.md"]
+        # README.md rides the same DB probe (live/total posts, pipeline runs,
+        # app_settings), so an un-staged README means the marketing stats the
+        # public mirror shows go stale behind a green session.
+        assert kwargs["paths"] == ["CLAUDE.md", "README.md"]
         assert kwargs["repo"] == cms.REPO
 
 

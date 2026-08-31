@@ -19,6 +19,15 @@ timer) invokes it, then opens the CLAUDE.md PR. (It used to name
 ``scripts/claude-sessions.ps1`` — dead since the Pop!_OS migration moved
 scheduling to systemd.)
 
+It also owns the DB-derived half of the root **README.md** marketing
+stats — the live/total post counts, lifetime pipeline runs, and the
+``app_settings`` key count. Those had rotted badly by 2026-08-31 (the
+intro still read "166 live posts" against a real 198) for the same reason
+CLAUDE.md's did before #2832: hand-typed, correct on the day, watched by
+nothing. README claims are floored to a round ``N+`` instead of written
+exactly; rationale and shared helpers live in
+``scripts/lib_readme_stats.py``.
+
 Design mirrors the sibling script on purpose:
 
 * **Idempotent** — re-running on already-fresh state produces zero changes.
@@ -60,6 +69,14 @@ CLAUDE_MD = ROOT / "CLAUDE.md"
 # a scheduled-session worktree). ``brain.bootstrap`` owns DSN resolution.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from scripts.lib_readme_stats import (  # noqa: E402  (needs the path bootstrap above)
+    FLOOR_STEPS,
+    README_MD,
+    floored,
+    is_warning,
+    substitute_anchored,
+)
 
 # Canonical count queries. Keyed to match ``apply_to_claude_md`` anchors.
 COUNT_QUERIES: OrderedDict[str, str] = OrderedDict([
@@ -103,6 +120,20 @@ COUNT_ANCHORS: OrderedDict[str, str] = OrderedDict([
     ("pipeline_tasks", r"[\d,]+ pipeline_tasks across"),
     ("app_settings", r"[\d,]+ (app_settings keys[^(\n]*)\(\d+ secret"),
     ("embeddings", r"[\d,]+ embeddings across"),
+])
+
+# The README.md anchors this script owns. Same lint contract as
+# COUNT_ANCHORS — module-level so ``scripts/ci/claude_md_anchor_lint.py``
+# imports and runs them against the checked-in README, making a reword fail
+# CI on the PR that breaks it rather than freezing the number. ``\+?`` on the
+# post counts because README carries a floored "190+" where CLAUDE.md carries
+# an exact "198"; the pattern has to re-match its own previous output.
+README_ANCHORS: OrderedDict[str, str] = OrderedDict([
+    ("live_posts_intro", r"[\d,]+\+? live posts and counting"),
+    ("live_posts_status", r"[\d,]+\+? live posts on \[gladlabs\.io\]"),
+    ("total_posts_status", r"\([\d,]+\+? posts total,"),
+    ("pipeline_tasks_status", r"[\d,]+\+? pipeline runs"),
+    ("app_settings_feature_row", r"[\d,]+\+? settings in PostgreSQL"),
 ])
 
 
@@ -250,6 +281,58 @@ def apply_to_claude_md(
     return current, changes
 
 
+def apply_to_readme(
+    stats: OrderedDict[str, int],
+    text: str | None = None,
+) -> tuple[str, list[str]]:
+    """Return ``(new_text, changes)`` for the README claims this script owns.
+
+    The DB-derived ones only: the test count is repo-derived and belongs to
+    ``sync-claude-md-stats.py``. Every value is floored to a round ``N+``
+    (see ``scripts/lib_readme_stats``), so this is a no-op on all but the
+    handful of nights that cross a threshold — roughly every ten days for
+    posts, monthly for settings.
+
+    Pass ``text`` to operate on a string in-memory (used by tests);
+    otherwise the on-disk README.md is read.
+    """
+    current = README_MD.read_text(encoding="utf-8") if text is None else text
+
+    def claim(key: str) -> str:
+        return floored(stats[key], FLOOR_STEPS[key])
+
+    return substitute_anchored(current, [
+        # "… behind gladlabs.io — 190+ live posts and counting, every one …"
+        (
+            "live_posts_intro",
+            README_ANCHORS["live_posts_intro"],
+            f"{claim('live_posts')} live posts and counting",
+        ),
+        # "- 190+ live posts on [gladlabs.io](…) (370+ posts total, 2,000+ …)"
+        (
+            "live_posts_status",
+            README_ANCHORS["live_posts_status"],
+            f"{claim('live_posts')} live posts on [gladlabs.io]",
+        ),
+        (
+            "total_posts_status",
+            README_ANCHORS["total_posts_status"],
+            f"({claim('total_posts')} posts total,",
+        ),
+        (
+            "pipeline_tasks_status",
+            README_ANCHORS["pipeline_tasks_status"],
+            f"{claim('pipeline_tasks')} pipeline runs",
+        ),
+        # "| **DB-as-config** | 1,600+ settings in PostgreSQL. …"
+        (
+            "app_settings_feature_row",
+            README_ANCHORS["app_settings_feature_row"],
+            f"{claim('app_settings')} settings in PostgreSQL",
+        ),
+    ])
+
+
 def _resolve_dsn(explicit: str | None) -> str:
     """Resolve the prod DSN via the brain's canonical resolver; exit 2 if none."""
     from brain.bootstrap import (
@@ -291,26 +374,49 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(stats, indent=2))
         return 0
 
-    new_text, changes = apply_to_claude_md(stats)
-    original = CLAUDE_MD.read_text(encoding="utf-8")
-    drift = new_text != original
+    results: list[tuple[Path, str, list[str]]] = [
+        (CLAUDE_MD, *apply_to_claude_md(stats)),
+    ]
+    if README_MD.is_file():
+        results.append((README_MD, *apply_to_readme(stats)))
+    else:
+        # Not expected on glad-labs-stack (README.md is tracked). Loud rather
+        # than silent: a vanished target must never read as "already in sync".
+        print(f"WARNING: {README_MD.name} not found — its counts were not synced.")
+
+    changes: list[str] = []
+    dirty: list[tuple[Path, str]] = []
+    for path, new_text, file_changes in results:
+        changes.extend(file_changes)
+        if new_text != path.read_text(encoding="utf-8"):
+            dirty.append((path, new_text))
+
+    # A dead anchor produces no diff by construction, so it would otherwise be
+    # reported as "in sync" — the exact failure #2832 exists to prevent.
+    # Surface warnings on every path, drift or not.
+    warnings = [c for c in changes if is_warning(c)]
+    names = " + ".join(path.name for path, _, _ in results)
 
     if args.check:
-        if drift:
-            print("CLAUDE.md DB-stat drift detected:")
-            for c in changes:
-                print(f"  - {c}")
+        for warning in warnings:
+            print(warning)
+        if dirty:
+            print("DB-stat drift detected:")
+            for change in changes:
+                print(f"  - {change}")
             return 1
-        print("CLAUDE.md DB stats are in sync.")
+        print(f"{names} DB stats are in sync.")
         return 0
 
-    if drift:
-        CLAUDE_MD.write_text(new_text, encoding="utf-8")
-        print("CLAUDE.md updated:")
-        for c in changes:
-            print(f"  - {c}")
+    for path, new_text in dirty:
+        path.write_text(new_text, encoding="utf-8")
+
+    if dirty:
+        print(f"{', '.join(path.name for path, _ in dirty)} updated:")
     else:
-        print("CLAUDE.md DB stats are in sync (no changes).")
+        print(f"{names} DB stats are in sync (no changes).")
+    for change in changes:
+        print(f"  - {change}")
     return 0
 
 
