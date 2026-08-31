@@ -154,6 +154,28 @@ class _DedupCandidate:
         self.item = item
 
 
+def _carried_origin(item: Any, row: Any) -> str | None:
+    """Origin batch id when ``item`` is a carry-forward, else None.
+
+    A carry-forward arrives as ``{"row": <db row dict>, "decay_factor": ...}``
+    and its row carries the ``batch_id`` it came from. A freshly-pooled
+    candidate arrives as ``{"kind": ..., "data": ...}`` with no batch_id —
+    that absence IS the distinction, so this reads the shape rather than
+    needing a separate flag threaded through scoring.
+    """
+    if not (isinstance(item, dict) and "row" in item):
+        return None
+    if not isinstance(row, dict):
+        return None
+    # Preserve the FIRST batch this candidate appeared in, not the last hop.
+    # An in-place refresh re-reads the same open batch, so recording the
+    # immediate source would just point at the batch the row is already in —
+    # true but useless. The original answers the question that matters:
+    # "how long has this topic been going round?"
+    origin = row.get("carried_from_batch_id") or row.get("batch_id")
+    return str(origin) if origin else None
+
+
 class TopicBatchService:
     def __init__(self, pool, *, site_config: SiteConfig):
         self._pool = pool
@@ -984,6 +1006,10 @@ class TopicBatchService:
                     embedding_score=score,
                     score_breakdown=breakdown,
                     grounding_match=grounding_match,
+                    # Only a carry-forward item carries a batch_id — a fresh
+                    # pool row has none, which is exactly the distinction.
+                    carried_from_batch_id=_carried_origin(item, row),
+                    decay_factor=decay,
                 )
             )
 
@@ -1016,6 +1042,8 @@ class TopicBatchService:
                     summary=angle or None,
                     embedding_score=score,
                     score_breakdown=breakdown,
+                    carried_from_batch_id=_carried_origin(item, data),
+                    decay_factor=decay,
                 )
             )
 
@@ -1122,8 +1150,9 @@ class TopicBatchService:
                             INSERT INTO internal_topic_candidates
                               (batch_id, niche_id, source_kind, primary_ref,
                                supporting_refs, distilled_topic, distilled_angle,
-                               score, score_breakdown, rank_in_batch, decay_factor)
-                            VALUES ($1, $2, $3, $4, '[]'::jsonb, $5, $6, $7, $8::jsonb, $9, $10)
+                               score, score_breakdown, rank_in_batch, decay_factor,
+                               carried_from_batch_id)
+                            VALUES ($1, $2, $3, $4, '[]'::jsonb, $5, $6, $7, $8::jsonb, $9, $10, $11)
                             """,
                             batch_row["id"],
                             niche.id,
@@ -1134,7 +1163,8 @@ class TopicBatchService:
                             c.llm_score or 0,
                             _json(c.score_breakdown or {}),
                             rank_in_batch,
-                            1.0,
+                            c.decay_factor,
+                            c.carried_from_batch_id,
                         )
                     else:
                         await conn.execute(
@@ -1142,8 +1172,8 @@ class TopicBatchService:
                             INSERT INTO topic_candidates
                               (batch_id, niche_id, source_name, source_ref, title, summary,
                                score, score_breakdown, rank_in_batch, decay_factor,
-                               grounding_ref)
-                            VALUES ($1, $2, 'external', $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb)
+                               grounding_ref, carried_from_batch_id)
+                            VALUES ($1, $2, 'external', $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11)
                             """,
                             batch_row["id"],
                             niche.id,
@@ -1153,9 +1183,10 @@ class TopicBatchService:
                             c.llm_score or 0,
                             _json(c.score_breakdown or {}),
                             rank_in_batch,
-                            1.0,
+                            c.decay_factor,
                             _json(asdict(c.grounding_match))
                             if c.grounding_match else None,
+                            c.carried_from_batch_id,
                         )
 
         return BatchSnapshot(

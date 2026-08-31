@@ -174,6 +174,17 @@ class ScoredCandidate:
     # (poindexter#822). None for internal candidates and ungrounded /
     # fail-open external candidates.
     grounding_match: GroundingMatch | None = None
+    # Carry-forward provenance. ``carried_from_batch_id`` is the batch this
+    # candidate was competing in previously; None for a freshly-discovered
+    # one. ``decay_factor`` is the multiplier already folded into
+    # ``embedding_score`` — kept alongside so the persisted row can say how
+    # much handicap produced that score rather than only the result.
+    #
+    # These were columns on both candidate tables that nothing ever wrote
+    # (0 of 1,077 rows), so a carried candidate was indistinguishable from a
+    # new one and "why does this topic keep reappearing?" was unanswerable.
+    carried_from_batch_id: str | None = None
+    decay_factor: float = 1.0
 
 
 from services.langfuse_shim import langfuse_context, observe
