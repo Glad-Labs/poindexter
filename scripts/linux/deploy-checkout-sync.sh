@@ -136,6 +136,40 @@ write_status() { # write_status <result> <head> <prev> <restarted-csv> <detail>
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" \
     "$(echo "${4:-}" | sed 's/[^,]\+/"&"/g')" \
     "$(echo "${5:-}" | tr '"' "'")" "$(hostname)" > "$STATUS_FILE" 2>/dev/null || true
+  emit_run_heartbeat "$@"
+}
+
+# Mirror the status into audit_log so the deploy path has a LIVENESS signal
+# something else can read (poindexter#977).
+#
+# The status file alone cannot serve that purpose: it lives at the
+# ~/.poindexter root, and the brain container mounts only subdirectories of
+# that root (backups/, deploy/, logs/). Mounting the root to expose one JSON
+# file would also expose bootstrap.toml — the master key — to a container that
+# has no business reading it, and a single-file bind mount goes stale when the
+# writer replaces the inode. The DB is already the bus every other component
+# reports through, and this script already reaches it (see gpu_work_running),
+# so the heartbeat goes there.
+#
+# Fail-open on EVERY path: a deploy must never be blocked, delayed, or failed
+# by the reporting of it. Postgres being unreachable is itself often WHY a
+# deploy is failing, and a heartbeat that could hang would turn a bad minute
+# into a bad hour. `docker exec` inherits no timeout, hence the explicit one.
+emit_run_heartbeat() { # emit_run_heartbeat <result> <head> <prev> <restarted-csv> <detail>
+  local result="$1" head="$2" detail="${5:-}"
+  # `$` would terminate the $$-quoted literal below; newlines would break the
+  # single-statement -c form. Same defusing the offsite backup runner does.
+  detail="$(printf '%s' "${detail}" | tr '\n$' ' _' | cut -c1-500)"
+  timeout 10 docker exec poindexter-postgres-local psql -U poindexter \
+    -d poindexter_brain -tA -c \
+    "INSERT INTO audit_log (event_type, source, details, severity)
+     VALUES ('deploy_sync_run', 'deploy-checkout-sync',
+             jsonb_build_object('result', \$\$${result}\$\$,
+                                'head', \$\$${head}\$\$,
+                                'detail', \$\$${detail}\$\$,
+                                'host', \$\$$(hostname)\$\$),
+             CASE WHEN \$\$${result}\$\$ = 'error' THEN 'warning' ELSE 'info' END)" \
+    >/dev/null 2>&1 || true
 }
 
 # single-backup rotation

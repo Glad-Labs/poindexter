@@ -4,7 +4,26 @@ Description=Timer for the Poindexter deploy-checkout sync
 
 [Timer]
 OnBootSec=3min
-OnUnitActiveSec=10min
+# Wall-clock schedule, NOT OnUnitActiveSec (poindexter#977).
+#
+# OnUnitActiveSec chains the next fire off the last ACTIVATION of the service.
+# On 2026-08-02 host DNS dropped, the service failed repeatedly (correctly),
+# and after one of those failures the timer stopped scheduling altogether
+# (`NEXT: -`) — merged main then sat undeployed for ~45 minutes and recovery
+# needed a manual `systemctl start`. Making the schedule absolute removes the
+# dependency on the previous run's outcome entirely: the next fire is a
+# property of the clock, not of whether the last pass succeeded.
+#
+# Deliberately NOT `Restart=on-failure` on the service: during an outage that
+# would hammer a failing `git fetch` continuously, and the retry it buys is
+# already covered by the next tick arriving on schedule.
+OnCalendar=*:0/10
+# Run once promptly if fires were missed while the host was off/asleep, rather
+# than idling until the next aligned slot.
+Persistent=true
+# Spread the fire off the exact minute boundary so it does not contend with
+# every other :00/:10 job on the host.
+RandomizedDelaySec=30
 
 [Install]
 WantedBy=timers.target

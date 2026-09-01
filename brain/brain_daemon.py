@@ -410,6 +410,22 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_CLOCK_SKEW_PROBE = False
 
 try:
+    # Deploy-sync freshness probe (poindexter#977). Reads the `deploy_sync_run`
+    # heartbeat that scripts/linux/deploy-checkout-sync.sh writes each pass and
+    # pages when the deploy path stops running (stale) or stops succeeding
+    # (error streak). Catches the 2026-08-02 class: a systemd timer that
+    # stopped scheduling after a failed run, leaving merged main undeployed for
+    # 45 minutes with no signal at all. See brain/deploy_sync_probe.py.
+    from deploy_sync_probe import run_deploy_sync_probe
+    _HAS_DEPLOY_SYNC_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.deploy_sync_probe import run_deploy_sync_probe
+        _HAS_DEPLOY_SYNC_PROBE = True
+    except ImportError:
+        _HAS_DEPLOY_SYNC_PROBE = False
+
+try:
     # PR staleness probe — every cycle, pull open PRs from GitHub and
     # flag any that have been sitting >24h with green CI but no merge.
     # Catches the "agent shipped a PR and the operator forgot" failure
@@ -554,6 +570,9 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
     ("_HAS_CLOCK_SKEW_PROBE", "brain/clock_skew_probe.py",
      "DB wall-clock skew detection offline — a WSL2 sleep/resume clock "
      "excursion can silently poison every DB timestamp undetected (#2212)"),
+    ("_HAS_DEPLOY_SYNC_PROBE", "brain/deploy_sync_probe.py",
+     "Deploy-path dead-man's switch offline — a frozen deploy-sync timer "
+     "leaves merged main undeployed with no signal (#977)"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
      "Stale PR detection offline — agent PRs sit unmerged forever"),
     ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
@@ -3256,6 +3275,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] clock_skew probe failed: %s", e)
+
+    # Deploy-sync freshness probe (poindexter#977) — a dead-man's switch on the
+    # deploy path itself. The sync produces no output when it does not run, so
+    # a timer that stops scheduling is indistinguishable from a quiet one; this
+    # reads the heartbeat each pass writes and pages when it goes stale, or
+    # when the last N runs all errored. See brain/deploy_sync_probe.py.
+    if _HAS_DEPLOY_SYNC_PROBE:
+        try:
+            ds_summary = await run_deploy_sync_probe(pool)
+            probe_results["deploy_sync"] = {
+                "ok": bool(ds_summary.get("ok", False)),
+                "detail": ds_summary.get("detail", ""),
+                "summary": ds_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] deploy_sync probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on

@@ -247,6 +247,15 @@ DEFAULTS: dict[str, str] = {
     # Mercury and any other source-IP-allowlisted integration 401s from an
     # unrecognised address, indistinguishable from an expired token. This
     # host is on a residential WAN with no static guarantee.
+    # ----- Deploy-path dead-man's switch (brain/deploy_sync_probe.py, #977) --
+    # scripts/linux/deploy-checkout-sync.sh writes a `deploy_sync_run` audit_log
+    # heartbeat each pass; the probe pages when that goes stale (the deploy path
+    # stopped RUNNING) or when the last N runs all errored (it stopped
+    # SUCCEEDING). The timer fires every 10 min, so 35 allows three missed fires
+    # plus slack for a long rebuild pass.
+    'deploy_sync_probe_enabled': 'true',
+    'deploy_sync_max_age_minutes': '35',
+    'deploy_sync_error_streak_threshold': '3',
     'wan_ip_probe_enabled': 'true',
     # Plain-text IP echo. Must return a BARE address and nothing else — the
     # probe rejects any non-IP payload rather than storing it as a baseline.
@@ -3229,6 +3238,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.anomaly.min_severity': 'critical',
     # db_clock_skew: a wrong DB wall-clock corrupts every timestamp and all
     # real-time correlation — page it like anomaly (telegram/critical).
+    # deploy_sync_stale: merged main is silently not shipping. Nothing else
+    # reports it — the sync emits nothing at all when it does not run.
+    'findings.deploy_sync_stale.delivery': 'telegram',
+    'findings.deploy_sync_stale.fallback': 'discord',
+    'findings.deploy_sync_stale.cooldown_minutes': '60',
+    'findings.deploy_sync_stale.min_severity': 'critical',
+    # deploy_sync_failing: the path runs but cannot finish. The timer keeps
+    # retrying on its own, so this informs rather than pages.
+    'findings.deploy_sync_failing.delivery': 'discord',
+    'findings.deploy_sync_failing.fallback': 'discord',
+    'findings.deploy_sync_failing.cooldown_minutes': '120',
+    'findings.deploy_sync_failing.min_severity': 'warning',
     'findings.db_clock_skew.delivery': 'telegram',
     'findings.db_clock_skew.fallback': 'discord',
     'findings.db_clock_skew.cooldown_minutes': '60',
@@ -4894,6 +4915,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'citation_strip_unlinked_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'classify_content_types_enabled': {'owner': 'classify_content_types', 'value_type': 'boolean'},
     'clock_skew_probe_enabled': {'owner': 'clock_skew_probe', 'value_type': 'boolean'},
+    'deploy_sync_error_streak_threshold': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},
+    'deploy_sync_max_age_minutes': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},
+    'deploy_sync_probe_enabled': {'owner': 'deploy_sync_probe', 'value_type': 'boolean'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'clock_skew_sample_retention_days': {'owner': 'clock_skew_probe', 'value_type': 'integer'},

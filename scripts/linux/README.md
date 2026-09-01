@@ -40,3 +40,49 @@ already user-agnostic (`$HOME`-relative), so only the `*.service` `User=` /
 Host services bind `0.0.0.0` (not loopback) so containers can reach them via
 `host.docker.internal` (`extra_hosts: host-gateway` on `docker-ce`); gate
 external access with `ufw`.
+
+### The deploy path watches itself (poindexter#977)
+
+`deploy-checkout-sync.sh` writes a `deploy_sync_run` heartbeat into
+`audit_log` on every pass, and `brain/deploy_sync_probe.py` reads it each
+brain cycle. Two conditions, deliberately separated:
+
+| Condition                                                      | Finding               | Severity   |
+| -------------------------------------------------------------- | --------------------- | ---------- |
+| newest heartbeat older than `deploy_sync_max_age_minutes` (35) | `deploy_sync_stale`   | `critical` |
+| last `deploy_sync_error_streak_threshold` (3) runs all errored | `deploy_sync_failing` | `warning`  |
+
+The first means the deploy path stopped **running** — merged `main` is
+silently not shipping, and nothing else reports it because a sync that does
+not run emits nothing at all. The second means it is running and cannot
+finish, which the timer will keep retrying on its own, so it informs rather
+than pages. A `deferred-active-flow` pass (the sync waiting out an in-flight
+render instead of restarting a busy worker) counts as **healthy** liveness —
+treating deferral as an error would page every busy evening.
+
+The heartbeat goes to the DB rather than being read from
+`~/.poindexter/deploy-checkout-sync.status.json`, because the brain container
+mounts only subdirectories of `~/.poindexter`; exposing the root to read one
+JSON file would also hand `bootstrap.toml` — the master key — to a container
+with no need for it, and a single-file bind mount goes stale when the writer
+replaces the inode.
+
+> **The timer schedules on the clock, not on the last run.** It was
+> `OnUnitActiveSec=10min`, which chains the next fire off the last
+> activation. On 2026-08-02 host DNS dropped, the service failed repeatedly
+> (correctly), and after one of those failures the timer stopped scheduling
+> altogether (`NEXT: -`) — merged `main` sat undeployed for ~45 minutes and
+> recovery needed a manual `systemctl start`. It is now `OnCalendar=*:0/10`
+> with `Persistent=true`, so the next fire cannot depend on whether the last
+> pass succeeded. Deliberately _not_ `Restart=on-failure`: during an outage
+> that hammers a failing `git fetch`, and the next tick already provides the
+> retry.
+
+Applying a change to the unit needs a re-copy plus a reload — editing the
+repo file alone does nothing to a host that already has it installed:
+
+```bash
+sudo cp infrastructure/systemd/poindexter-deploy-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl restart poindexter-deploy-sync.timer
+systemctl list-timers poindexter-deploy-sync.timer   # NEXT must not be "-"
+```
