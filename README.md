@@ -105,9 +105,9 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 14 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
 
-<img src="docs/assets/readme/grafana-qa-reviewers.png" alt="Grafana QA Rails panel — average score per reviewer across 18 signals, from web_factcheck at 100 down to strict originality rails" width="100%">
+<img src="docs/assets/readme/grafana-qa-reviewers.png" alt="Grafana QA Rails panel — average score per reviewer across 17 signals, from internal_consistency at 100 down to content_originality at 19.1" width="100%">
 
-_Real 30-day per-reviewer averages from the QA Rails dashboard. The strict rails at the bottom are why the output doesn't read like AI slop — speed comes from generating more candidates and filtering hard, not from lowering the bar._
+_Real 30-day per-reviewer averages from the QA Rails dashboard — more reviewers than rails, because the DeepEval rail scores three and the citation rail two. The strict rails at the bottom are why the output doesn't read like AI slop — speed comes from generating more candidates and filtering hard, not from lowering the bar._
 
 Every rail is DB-configurable: advisory or blocking per rail, thresholds tunable at runtime, and a bounded rescue cycle gives near-miss drafts one revision pass before the hard reject.
 

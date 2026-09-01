@@ -11,6 +11,17 @@
  * qa-reviewers, site. Review every image before committing — Grafana
  * panels can surface strings the public-mirror leak guard cannot see inside
  * pixels (hostnames, tailnet IPs).
+ *
+ * RE-READ THE ALT TEXT AFTER EVERY SHOT. README's `alt=` attributes quote
+ * what is *in* the picture ("across 17 signals, from internal_consistency at
+ * 100 down to content_originality at 19.1"), so a re-shoot silently
+ * invalidates them. This is the one README stat class the nightly
+ * anchored-regex sync (scripts/sync-claude-md-stats.py) deliberately does
+ * NOT own: auto-updating the number to today's value would desync the words
+ * from the committed pixels, which is worse than leaving it stale. Caught
+ * 2026-09-01, when the panel had gone 18 signals -> 17 (`opening_originality`
+ * was renamed to `content_originality` back in July) while the alt text still
+ * described the old shot.
  */
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
@@ -235,4 +246,8 @@ if (want('site'))
   });
 
 await browser.close();
-console.log('done — review every PNG for private strings before committing.');
+console.log(
+  'done — review every PNG for private strings, and re-read the README alt\n' +
+    'text for any shot you retook: `alt=` quotes counts and values that are\n' +
+    'only true of the previous picture (see the header comment).'
+);
