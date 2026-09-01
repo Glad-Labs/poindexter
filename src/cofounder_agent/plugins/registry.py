@@ -698,6 +698,18 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.probe_cloudflare_beacon",
             "ProbeCloudflareBeaconJob",
         ),
+        # Sibling detector for the /go affiliate Worker. Two tiers: an
+        # unknown-code request every run exercises config + map load with
+        # ZERO Analytics Engine writes (the Worker only logs a click once a
+        # target resolves), and a throttled daily request for a real code
+        # catches a Worker resolving against a stale or foreign link map.
+        # Sets poindexter_affiliate_redirect_healthy (->
+        # PoindexterAffiliateRedirectDown) and emits a finding on failure.
+        (
+            "jobs",
+            "services.jobs.probe_affiliate_redirect",
+            "ProbeAffiliateRedirectJob",
+        ),
         # Records this host's public egress IP and emits a finding when it
         # moves. Several integrations (Mercury) authorise by source-IP
         # allowlist, and a re-leased residential WAN address makes them 401

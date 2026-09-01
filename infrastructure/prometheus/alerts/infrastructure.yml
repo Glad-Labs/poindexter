@@ -87,6 +87,31 @@ groups:
             (Workers & Pages → page-views-beacon) and `wrangler tail`, and
             verify the `cloudflare_beacon_url` app_setting is correct.
 
+      # --- Affiliate /go redirect Worker ---
+      # Static (not DB-rendered): binary up/down, no tunable threshold. Gauge
+      # is set out-of-band by ProbeAffiliateRedirectJob (every 15m), so
+      # `for: 31m` requires ~2 consecutive failed probes before firing.
+      # severity=warning → Discord: revenue ATTRIBUTION stops, the site does
+      # not, so this wants attention today rather than at 3am.
+      - alert: PoindexterAffiliateRedirectDown
+        expr: poindexter_affiliate_redirect_healthy == 0
+        for: 31m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Affiliate /go redirect Worker is not resolving links"
+          description: |
+            ProbeAffiliateRedirectJob has failed for 31+ minutes (≥2
+            consecutive 15-min probes). Every affiliate link in every
+            published post is sending readers to the homepage instead of the
+            merchant, and no click is being recorded — revenue attribution is
+            stopped with no other error anywhere. Check
+            `npx wrangler deployments list` then `wrangler versions view <id>`
+            (LINKS_URL and HOME_URL must be present as SECRETS, not vars) and
+            `wrangler secret list`. Runbook:
+            infrastructure/cloudflare/affiliate-redirect/README.md.
+
       # --- Node exporter ---
       # Must be static (not DB-rendered): binary up/down, no tunable thresholds,
       # and must fire even when the DB is down (when dynamic rendering fails).

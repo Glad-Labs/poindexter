@@ -223,6 +223,19 @@ CLOUDFLARE_BEACON_REACHABLE = Gauge(
 )
 CLOUDFLARE_BEACON_REACHABLE.set(1)
 
+# Set out-of-band by ProbeAffiliateRedirectJob (every 15m). Defaults to 1 so
+# the window before the first run reads healthy rather than "no data", and so
+# an install with no affiliate links configured never alerts (the job also
+# re-asserts 1 when there is nothing to probe).
+AFFILIATE_REDIRECT_HEALTHY = Gauge(
+    "poindexter_affiliate_redirect_healthy",
+    "1 if the affiliate /go redirect Worker still resolves links to their "
+    "merchant URLs; 0 if it is unconfigured, cannot load its link map, or "
+    "resolves a known code to the wrong destination. Affiliate revenue "
+    "attribution stops while this is 0.",
+)
+AFFILIATE_REDIRECT_HEALTHY.set(1)
+
 EMBEDDINGS_TOTAL = Gauge(
     "poindexter_embeddings_total",
     "Total embeddings rows, labeled by source_table",

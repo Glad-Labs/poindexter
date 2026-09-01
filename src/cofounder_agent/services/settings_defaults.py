@@ -2081,6 +2081,15 @@ DEFAULTS: dict[str, str] = {
     # this to exclude a newly-spotted crawler without a release. An invalid
     # regex logs loud and falls back to the built-in pattern rather than
     # letting bots through as human.
+    # How often ProbeAffiliateRedirectJob resolves a REAL affiliate code end
+    # to end. The cheap unknown-code tier runs every cycle for free; this tier
+    # costs exactly one Analytics Engine data point per run, so it is throttled
+    # to daily. The resulting click is bot-classified by the pattern below and
+    # never reaches affiliate_link_clicks_human. 0 disables the deep tier.
+    'affiliate_redirect_probe_deep_interval_hours': '24',
+    # Watermark for the above (written by the job; seeded empty so the first
+    # run performs a deep check).
+    'affiliate_redirect_probe_last_deep_check': '',
     'affiliate_click_bot_ua_pattern': (
         r'(bot|crawler|spider|slurp|bingpreview|facebookexternalhit|headless|'
         r'python-requests|python-urllib|curl|wget|scrapy|monitor|uptime|'
@@ -3498,6 +3507,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # reports slow-changing operator-toggle state, not an actionable list
     # that shrinks as items get fixed, so a daily repeat would just be
     # nagging about unchanged state.
+    # Affiliate /go Worker liveness (ProbeAffiliateRedirectJob). Discord, not
+    # Telegram: it stops revenue ATTRIBUTION rather than the site, so it wants
+    # attention today, not at 3am. Short cooldown because every hour it stays
+    # broken is affiliate clicks that are served but never recorded.
+    'findings.affiliate_redirect_unhealthy.delivery': 'discord',
+    'findings.affiliate_redirect_unhealthy.fallback': 'log_only',
+    'findings.affiliate_redirect_unhealthy.cooldown_minutes': '120',
+    'findings.affiliate_redirect_unhealthy.min_severity': 'warn',
     'findings.disabled_capabilities.delivery': 'discord',
     'findings.disabled_capabilities.fallback': 'log_only',
     'findings.disabled_capabilities.cooldown_minutes': '10080',
@@ -4833,6 +4850,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # keys whose consumer was individually confirmed to split on ',' — prose
     # that merely contains a comma is a `string`.
     'affiliate_click_bot_ua_pattern': {'owner': 'sync_affiliate_clicks', 'value_type': 'string'},
+    'affiliate_redirect_probe_deep_interval_hours': {'owner': 'probe_affiliate_redirect', 'value_type': 'integer'},
+    'affiliate_redirect_probe_last_deep_check': {'owner': 'probe_affiliate_redirect', 'value_type': 'string'},
+    'findings.affiliate_redirect_unhealthy.cooldown_minutes': {'value_type': 'integer'},
+    'findings.affiliate_redirect_unhealthy.delivery': {'value_type': 'string'},
+    'findings.affiliate_redirect_unhealthy.fallback': {'value_type': 'string'},
+    'findings.affiliate_redirect_unhealthy.min_severity': {'value_type': 'string'},
     'affiliate_disclosure_text': {'owner': 'static_export_service', 'value_type': 'string'},
     'affiliate_import_llm_model': {'owner': 'affiliate_import'},
     'affiliate_import_llm_timeout_seconds': {'owner': 'affiliate_import', 'value_type': 'integer'},
