@@ -432,7 +432,7 @@ All three knobs are DB-tunable app_settings. memory:
   `tests/unit/services/test_rag_payload_followups.py`,
   `tests/unit/services/test_rag_excerpt.py`,
   `tests/unit/poindexter/memory/test_rag_engine_routing.py`
-- Issue: `Glad-Labs/glad-labs-stack#329` sub-issue 4 — third sub-issue
+- Issue: `Glad-Labs/poindexter#329` sub-issue 4 — third sub-issue
   closed in the Lane D push
 
 ## Writer prompt-size observability (poindexter#868)
