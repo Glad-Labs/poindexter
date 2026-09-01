@@ -96,12 +96,51 @@ service (alpine + restic, reusing `scripts/Dockerfile.backup`). On its cron
 it:
 
 - streams a fresh **uncompressed** `pg_dump --format=custom -Z0` straight
-  into `restic backup --stdin`, stamping an `audit_log` heartbeat
-  (`offsite_backup_succeeded`) on success;
+  into `restic backup --stdin` **for each database in
+  `offsite_backup_databases`** (CSV, default `poindexter_brain`), stamping an
+  `audit_log` heartbeat (`offsite_backup_succeeded`) per database;
 - backs up the **config surface** as a second snapshot in the same repo
   (`--tag config`), stamping `offsite_config_backup_succeeded`;
+- **verifies coverage every tick** — that each path in
+  `offsite_backup_verify_config_artifacts` (default
+  `/config/poindexter/bootstrap.toml`) is actually present in that newest
+  config snapshot and hashes the same as the on-disk file — stamping
+  `offsite_config_coverage_verified`;
 - once a week runs `restic check --read-data-subset=<pct>%` against the
   remote to catch **bit-rot**, stamping `offsite_backup_verified`.
+
+> **Each database gets its own `<db>.dump` stream path.** restic picks a
+> parent snapshot by `(host, paths)`, so the `--stdin-filename` _is_ the
+> identity of the lineage. Sharing one filename across databases would make
+> every night's dump look like a total rewrite of the previous database's.
+> For the same reason the default stays `poindexter_brain` alone: widening
+> the list adds lineages, it never renames the existing one.
+>
+> **One failing database does not stop the others**, and does not suppress
+> the config snapshot or the coverage check — those need only a reachable,
+> writable repo, and the coverage check matters _more_ on a bad night, not
+> less. Each failed database raises its own critical alert naming itself.
+
+> **Why coverage verification is separate from `restic check`
+> (poindexter#891).** They are different claims, and only one of them
+> expires. `restic check` proves the repo's stored bytes are **readable**. It
+> cannot notice that `bootstrap.toml` stopped being **among** them — which is
+> what happens when a credential rotates, a mount is dropped, or one glob in
+> `offsite_backup_config_excludes` is widened. The config backup keeps saving
+> cleanly, `restic snapshots` keeps reporting fresh daily snapshots
+> (truthfully — the databases really are fresh), and the repo goes on
+> reporting healthy while the property it is trusted for has quietly stopped
+> being true. The useful alarm is **"your backup stopped being sufficient"**,
+> not "your backup stopped running". A missing artifact is `critical` (it
+> never self-heals); a hash mismatch is `warning` (a copy exists, and the
+> config backup runs immediately before the check, so a single tick's
+> mismatch is usually a mid-tick edit).
+>
+> The artifacts are secret-bearing, so their contents are piped straight into
+> `sha256sum` and never logged, quoted into an alert, or written to a temp
+> file. Only 12-character hash **prefixes** are logged — a one-way digest is
+> not content, and it is what makes "which version is stored" answerable when
+> the check fires.
 
 > **Why the config snapshot exists (poindexter#889).** Until 2026-08-27 this
 > runner shipped exactly one thing — a `pg_dump`. Everything else that is
@@ -246,22 +285,31 @@ credentials are stored as encrypted `app_settings` rows
 (`offsite_backup_restic_password`, `offsite_backup_s3_access_key_id`,
 `offsite_backup_s3_secret_access_key`) — that is, **inside the database the
 backup contains** — and the key that decrypts them (`poindexter_secret_key`)
-lives only in `~/.poindexter/bootstrap.toml`, which **the runner does not back
-up**. The runner streams exactly one `pg_dump` and nothing else.
+lives in `~/.poindexter/bootstrap.toml`.
+
+Since 2026-08-27 that file **is** carried offsite, in the `--tag config`
+snapshot, and the coverage check above asserts every tick that it still is. So
+once you can _open_ the repo, the master key comes back with it. What the
+config snapshot does **not** do is get you in: opening the repo still needs the
+restic password and S3 credentials, and those live encrypted inside the very
+database the repo contains. That is the #889 cycle, and only an out-of-band
+copy breaks it.
 
 So after a total loss the only surviving artifact is the restic repository, and
-opening it requires three values that existed only on the machine you lost:
+opening it requires two values that existed only on the machine you lost:
 
-| Needed to open the repo                      | Where it lives today           | Survives total loss? |
-| -------------------------------------------- | ------------------------------ | -------------------- |
-| restic password                              | encrypted `app_settings` row   | ❌ inside the backup |
-| S3 access key id / secret                    | encrypted `app_settings` rows  | ❌ inside the backup |
-| `poindexter_secret_key` (decrypts the above) | `~/.poindexter/bootstrap.toml` | ❌ never backed up   |
+| Needed to open the repo                      | Where it lives today           | Survives total loss?                                               |
+| -------------------------------------------- | ------------------------------ | ------------------------------------------------------------------ |
+| restic password                              | encrypted `app_settings` row   | ❌ inside the backup                                               |
+| S3 access key id / secret                    | encrypted `app_settings` rows  | ❌ inside the backup                                               |
+| `poindexter_secret_key` (decrypts the above) | `~/.poindexter/bootstrap.toml` | ✅ in the `config` snapshot — but only readable _after_ you are in |
 
 This is easy to miss because **every signal stays green**: `backup run` succeeds,
-snapshots are created and retained, and `backup verify` passes. Those prove the
-repo is _writable and intact_ — never that it is _reachable without this
-machine_.
+snapshots are created and retained, `backup verify` passes, and the coverage
+check confirms the master key is in the repo. Those prove the repo is
+_writable, intact, and sufficient_ — never that it is _reachable without this
+machine_. No check running on this machine can prove that, because every one of
+them authenticates with credentials this machine already has.
 
 **Copy the restic password, the S3 key pair, and the repository URL into a
 password manager (or print them) the day you run `backup setup`.**

@@ -253,6 +253,13 @@ DEFAULTS: dict[str, str] = {
     'wan_ip_probe_url': 'https://api.ipify.org',
     # Written by the job; '' means "not yet observed", never "it changed".
     'wan_ip_last_seen': '',
+    # CSV of databases to dump, one `restic backup --stdin` each under its own
+    # `<db>.dump` stream path (poindexter#891). Default is the single database
+    # the tier covered before the list existed, so an existing install's restic
+    # parent chain — which is keyed on that filename — is unchanged until an
+    # operator widens it. Distinct from PG_DATABASE, which is the database the
+    # runner reads app_settings FROM.
+    'offsite_backup_databases': 'poindexter_brain',
     'offsite_backup_config_enabled': 'true',
     'offsite_backup_config_paths': '/config/poindexter,/config/claude',
     'offsite_backup_config_excludes': (
@@ -280,6 +287,16 @@ DEFAULTS: dict[str, str] = {
     'offsite_backup_restic_image': 'restic/restic:0.16.4',
     'offsite_backup_s3_region': '',
     'offsite_backup_source_tier': 'daily',
+    # Coverage verification (poindexter#891 fix 3): assert every tick that the
+    # artifacts making a restore USABLE are actually in the newest config
+    # snapshot and match the on-disk file. `restic check`
+    # (offsite_backup_verify_enabled, below) proves the stored bytes are
+    # readable; it cannot notice that bootstrap.toml stopped being among them
+    # after a widened exclude or a dropped mount, which is the failure that
+    # leaves the repo reporting healthy while a restore can no longer decrypt
+    # app_settings secrets (#889). In-container paths, like the config paths.
+    'offsite_backup_verify_config_enabled': 'true',
+    'offsite_backup_verify_config_artifacts': '/config/poindexter/bootstrap.toml',
     'offsite_backup_verify_enabled': 'true',
     'offsite_backup_verify_interval_hours': '168',
     'offsite_backup_verify_read_data_subset_percent': '5',

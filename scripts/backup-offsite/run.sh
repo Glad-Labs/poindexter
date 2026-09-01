@@ -35,9 +35,18 @@ PG_DATABASE="${PG_DATABASE:-poindexter_brain}"
 
 DEFAULT_INTERVAL="24h"
 DEFAULT_SOURCE_TIER="daily"
+# Databases to dump, as a CSV. Defaults to the single database the runner
+# covered before poindexter#891 so an existing install's behaviour (and its
+# restic parent chain, which is keyed on --stdin-filename) is unchanged until
+# an operator widens it. NOT the same thing as PG_DATABASE, which is the
+# database this runner READS app_settings from and must stay a single name.
+DEFAULT_DATABASES="poindexter_brain"
 DEFAULT_VERIFY_INTERVAL_HOURS="168"
 DEFAULT_VERIFY_SUBSET_PCT="5"
 DEFAULT_RESTIC_HOST="poindexter"
+# In-container paths whose presence in the newest `config` snapshot is what
+# makes a restore actually usable (see verify_config_coverage).
+DEFAULT_VERIFY_CONFIG_ARTIFACTS="/config/poindexter/bootstrap.toml"
 # In-container mount points for the config surface (see run_config_backup).
 # These are the paths the compose file binds ~/.poindexter and ~/.claude to,
 # read-only — NOT host paths.
@@ -48,6 +57,13 @@ DEFAULT_CONFIG_PATHS="/config/poindexter,/config/claude"
 DEFAULT_CONFIG_EXCLUDES="/config/poindexter/backups,/config/poindexter/video,/config/poindexter/generated-images,/config/poindexter/generated-videos,/config/poindexter/podcast,/config/poindexter/demo-clips,/config/poindexter/singer-venv,/config/poindexter/deploy,/config/poindexter/build,/config/poindexter/logs,/config/poindexter/*.log,/config/poindexter/*.log.1,/config/claude/shell-snapshots,/config/claude/session-env,/config/claude/cache,/config/claude/uploads"
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# Set by run_backup: true once ANY database has been written to the repo this
+# tick. tick() gates the config/verify/prune work on this rather than on
+# "every database succeeded", because what those steps actually need is proof
+# the repo is reachable and writable — one failing 15 MB database must not
+# suppress the config tier or the coverage check.
+BACKUP_ANY_OK=false
 
 # --- app_settings reads (copy of scripts/backup/run.sh::read_setting) -------
 read_setting() {
@@ -74,6 +90,18 @@ to_seconds() {
     else
         printf '%d' "${default_secs}"
     fi
+}
+
+# Split a CSV app_setting into one trimmed, non-empty element per line.
+#
+# `printf '%s\n'` (not '%s') is load-bearing: without the trailing newline the
+# final element is unterminated and `while read` silently DROPS it. Caught in
+# review of the config-excludes loop, where it swallowed the last exclude
+# pattern — i.e. the list quietly did less than it read as doing. Centralised
+# here so a fourth CSV consumer cannot reintroduce it.
+csv_to_lines() {
+    printf '%s\n' "$1" | tr ',' '\n' \
+        | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true
 }
 
 # Seconds since the newest audit_log event of a given type, or -1 if none.
@@ -133,9 +161,9 @@ emit_alert() {
 # pipeline's rc reflect a pg_dump failure even when restic exits 0 on
 # truncated input, so a half-streamed dump alerts + returns non-zero
 # instead of silently saving a short snapshot.
-run_backup() {
-    local repo="$1" source_tier="$2" restic_host="${3:-${DEFAULT_RESTIC_HOST}}"
-    log "restic backup (streamed pg_dump -Z0 of ${PG_DATABASE}) → ${repo} (host=${restic_host})"
+run_db_backup() {
+    local repo="$1" source_tier="$2" restic_host="$3" db="$4"
+    log "restic backup (streamed pg_dump -Z0 of ${db}) → ${repo} (host=${restic_host})"
     # Capture rc on the same statement: a fall-through `if` resets $? to 0,
     # which made the 2026-06-23 failure alert claim "rc=0" and return success.
     local rc=0
@@ -154,19 +182,19 @@ run_backup() {
     # parent snapshot found" and re-ingests the full dump instead of a delta.
     PGPASSWORD="${PGPASSWORD}" pg_dump \
         -h "${PG_HOST}" -p "${PG_PORT}" \
-        -U "${PG_USER}" -d "${PG_DATABASE}" \
+        -U "${PG_USER}" -d "${db}" \
         --format=custom -Z0 \
         --no-owner --no-acl \
       | restic -r "${repo}" backup --stdin \
-            --stdin-filename "poindexter_brain.dump" \
+            --stdin-filename "${db}.dump" \
             --host "${restic_host}" \
             --tag poindexter --tag "${source_tier}" \
             2>"${err_file}" || rc=$?
     [[ -s "${err_file}" ]] && cat "${err_file}" >&2
     if [[ "${rc}" -eq 0 ]]; then
-        log "offsite backup OK"
+        log "offsite backup OK (${db})"
         emit_heartbeat "offsite_backup_succeeded" \
-            "restic --stdin backup of ${PG_DATABASE} complete"
+            "restic --stdin backup of ${db} complete"
         rm -f "${err_file}"
         return 0
     fi
@@ -175,11 +203,67 @@ run_backup() {
     local err_tail
     err_tail=$(tail -c 600 "${err_file}" 2>/dev/null | tr '\n$' ' _')
     rm -f "${err_file}"
-    log "offsite backup FAILED rc=${rc}"
+    log "offsite backup FAILED rc=${rc} (${db})"
     emit_alert "critical" \
-        "Offsite restic backup failed (rc=${rc})" \
-        "streamed pg_dump -Z0 of ${PG_DATABASE} | restic backup --stdin → ${repo} returned ${rc}. Check creds, network, postgres reachability, and the repo URL. restic stderr: ${err_tail:-<none captured>}"
+        "Offsite restic backup failed for ${db} (rc=${rc})" \
+        "streamed pg_dump -Z0 of ${db} | restic backup --stdin → ${repo} returned ${rc}. Check creds, network, postgres reachability, and the repo URL. restic stderr: ${err_tail:-<none captured>}"
     return "${rc}"
+}
+
+# Dump every database named by `offsite_backup_databases` (CSV) into the repo,
+# one `restic backup --stdin` each (poindexter#891 fix 1).
+#
+# Before this, the tier streamed exactly one database, so a full-stack restore
+# was impossible from the offsite copy alone. Each database gets its OWN
+# `--stdin-filename "<db>.dump"`: restic picks a parent snapshot by
+# (host, paths), so sharing one filename across databases would make each
+# night's dump look like a total rewrite of the previous database's — the
+# same dedup collapse the -Z0 fix was about, in a different disguise.
+#
+# One database failing does not stop the others: each alerts on its own and
+# the loop continues, so a broken 15 MB database cannot cost you the 1.6 GB
+# one. The return code is "everything succeeded"; BACKUP_ANY_OK is "the repo
+# is reachable", which is what tick() needs to decide whether to continue.
+run_backup() {
+    local repo="$1" source_tier="$2" restic_host="${3:-${DEFAULT_RESTIC_HOST}}"
+    local dbs_csv
+    dbs_csv=$(read_setting offsite_backup_databases "${DEFAULT_DATABASES}")
+
+    local -a dbs=()
+    local db d seen
+    while IFS= read -r db; do
+        # Dedupe: a repeated entry dumps the same database twice per tick and
+        # splits its parent chain across two identical paths.
+        seen=0
+        for d in ${dbs[@]+"${dbs[@]}"}; do
+            if [[ "${d}" == "${db}" ]]; then seen=1; break; fi
+        done
+        if [[ "${seen}" -eq 0 ]]; then dbs+=("${db}"); fi
+    done < <(csv_to_lines "${dbs_csv}")
+
+    BACKUP_ANY_OK=false
+    if [[ "${#dbs[@]}" -eq 0 ]]; then
+        log "offsite backup: offsite_backup_databases resolved to nothing — dumped NOTHING"
+        emit_alert "critical" \
+            "Offsite backup has no source databases" \
+            "offsite_backup_databases='${dbs_csv}' resolved to zero database names, so this tick dumped nothing at all while still reporting a completed run. Set it to a CSV of database names (the shipped default is '${DEFAULT_DATABASES}')."
+        return 1
+    fi
+
+    local failed=0
+    for db in "${dbs[@]}"; do
+        if run_db_backup "${repo}" "${source_tier}" "${restic_host}" "${db}"; then
+            BACKUP_ANY_OK=true
+        else
+            failed=$((failed + 1))
+        fi
+    done
+    if [[ "${failed}" -gt 0 ]]; then
+        log "offsite backup: ${failed}/${#dbs[@]} database(s) failed"
+        return 1
+    fi
+    log "offsite backup: all ${#dbs[@]} database(s) OK"
+    return 0
 }
 
 # Back up the machine-config surface (bootstrap.toml + the Claude memory
@@ -256,11 +340,7 @@ run_config_backup() {
         else
             present+=("${p}")
         fi
-        # NOTE: `printf '%s\n'` (not '%s') — without the trailing newline the
-        # final CSV element is unterminated and `while read` silently DROPS
-        # it. Caught in review: it swallowed the last exclude pattern, i.e.
-        # the list quietly did less than it read as doing.
-    done < <(printf '%s\n' "${paths_csv}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    done < <(csv_to_lines "${paths_csv}")
 
     if [[ "${#missing[@]}" -gt 0 ]]; then
         log "WARN: config path(s) not mounted, skipping: ${missing[*]}"
@@ -287,9 +367,7 @@ run_config_backup() {
     while IFS= read -r p; do
         [[ -z "${p}" ]] && continue
         exclude_args+=(--exclude "${p}")
-        # '%s\n' for the same reason as the path loop above — a bare '%s'
-        # drops the final exclude pattern.
-    done < <(printf '%s\n' "${excludes_csv}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    done < <(csv_to_lines "${excludes_csv}")
 
     log "restic backup (config surface) ${present[*]} → ${repo} (host=${restic_host})"
     local rc=0 err_file
@@ -315,6 +393,120 @@ run_config_backup() {
         "Offsite config backup failed (rc=${rc})" \
         "restic backup of ${present[*]} → ${repo} returned ${rc}. The DB snapshot succeeded; bootstrap.toml + memory are NOT covered this tick. restic stderr: ${err_tail:-<none captured>}"
     return 0
+}
+
+# Assert the recovery property; don't assume it (poindexter#891 fix 3).
+#
+# maybe_verify's `restic check` proves the repo's stored bytes are READABLE.
+# It says nothing about whether the bytes that make recovery possible are IN
+# it. Those are different claims, and only the second one expires: rotate a
+# credential, re-run `poindexter setup`, drop a mount, or widen one glob in
+# offsite_backup_config_excludes, and run_config_backup keeps saving cleanly
+# while no longer carrying bootstrap.toml. `restic snapshots` still reports
+# fresh daily snapshots — truthfully — so the repo goes on reporting healthy
+# while the property it is trusted for has quietly stopped being true. That
+# is the failure this function exists to catch: not "your backup stopped
+# running", but "your backup stopped being sufficient".
+#
+# Why it is load-bearing: without bootstrap.toml's `poindexter_secret_key`,
+# the encrypted app_settings rows inside the DB snapshot cannot be decrypted,
+# so a "successful" restore hands the operator a partially-readable database
+# — the #889 trap. A backup you believe is self-sufficient and isn't is worse
+# than one you know is partial, because it retires the worry without retiring
+# the risk.
+#
+# Runs EVERY tick, not on maybe_verify's weekly cadence: it costs one `ls`
+# plus a dump of a ~5 KB file, and it is the assertion the whole tier exists
+# to support.
+#
+# SECRETS: the artifacts are secret-bearing (master key, DB URL, service
+# credentials). Contents are piped straight into sha256sum and are never
+# logged, quoted into an alert, or written to a temp file. The 12-char hash
+# PREFIXES are logged — a one-way digest is not content, and it is what makes
+# "which version is stored" answerable when this fires.
+verify_config_coverage() {
+    local repo="$1" restic_host="$2"
+    [[ "$(read_setting offsite_backup_verify_config_enabled true)" == "true" ]] || {
+        log "config coverage verification disabled — skipping"
+        return 0
+    }
+    local artifacts_csv
+    artifacts_csv=$(read_setting offsite_backup_verify_config_artifacts \
+        "${DEFAULT_VERIFY_CONFIG_ARTIFACTS}")
+
+    # One listing for the whole snapshot, reused for every artifact. `latest`
+    # resolves against the --tag/--host filters, so this is the same snapshot
+    # run_config_backup just wrote.
+    local listing rc=0
+    listing=$(restic -r "${repo}" ls latest --tag config --host "${restic_host}" 2>/dev/null) || rc=$?
+    if [[ "${rc}" -ne 0 || -z "${listing}" ]]; then
+        log "config coverage: no readable config snapshot (rc=${rc})"
+        emit_alert "critical" \
+            "Offsite repo has no readable config snapshot" \
+            "restic ls latest --tag config --host ${restic_host} on ${repo} returned rc=${rc} with no listing, so nothing in the offsite repo carries bootstrap.toml. A restore from this repo cannot decrypt the app_settings secrets inside the DB snapshot (#889). The database snapshots themselves are unaffected."
+        return 1
+    fi
+
+    local artifact stored disk missing=0 drifted=0 checked=0
+    while IFS= read -r artifact; do
+        if [[ ! -e "${artifact}" ]]; then
+            # Not mounted here — run_config_backup already alerts on that, and
+            # verifying a path this container cannot see says nothing.
+            log "config coverage: ${artifact} not present on disk — skipping"
+            continue
+        fi
+        checked=$((checked + 1))
+        # -x -F: whole-line, fixed-string. A path is not a regex.
+        if ! printf '%s\n' "${listing}" | grep -qxF "${artifact}"; then
+            log "config coverage: MISSING from newest config snapshot: ${artifact}"
+            missing=$((missing + 1))
+            emit_alert "critical" \
+                "Offsite config snapshot is missing ${artifact}" \
+                "The newest snapshot tagged 'config' on ${repo} does not contain ${artifact}, even though the file exists on disk and the config backup reported success. Check offsite_backup_config_excludes for a glob that now matches it, and offsite_backup_config_paths for a dropped mount. Until this is fixed a restore cannot decrypt app_settings secrets (#889)."
+            continue
+        fi
+        # Contents go straight into sha256sum — never to a log, alert, or file.
+        stored=$(restic -r "${repo}" dump latest --tag config --host "${restic_host}" \
+            "${artifact}" 2>/dev/null | sha256sum | cut -c1-12) || stored=""
+        disk=$(sha256sum < "${artifact}" | cut -c1-12) || disk=""
+        if [[ -z "${stored}" || -z "${disk}" ]]; then
+            log "config coverage: could not hash ${artifact} — treating as drift"
+            drifted=$((drifted + 1))
+            emit_alert "warning" \
+                "Offsite config coverage could not hash ${artifact}" \
+                "The file is listed in the newest 'config' snapshot on ${repo}, but reading it back (restic dump) or hashing the on-disk copy produced nothing, so the stored copy could not be compared to the live one. Coverage is unverified for this artifact."
+            continue
+        fi
+        if [[ "${stored}" != "${disk}" ]]; then
+            log "config coverage: DRIFT ${artifact} stored=${stored} disk=${disk}"
+            drifted=$((drifted + 1))
+            # warning, not critical: SOME recent copy exists, and the config
+            # backup runs immediately before this check, so a single tick's
+            # mismatch is usually a mid-tick edit that self-heals next tick.
+            # A MISSING artifact is critical because it never self-heals.
+            emit_alert "warning" \
+                "Offsite config copy of ${artifact} is stale" \
+                "The newest 'config' snapshot on ${repo} holds a different ${artifact} than the one on disk (stored sha256 ${stored}..., on-disk ${disk}...). The config backup runs immediately before this check, so a one-off is usually a mid-tick edit. If it persists past the next tick the offsite copy is genuinely stale, and a restore would return an outdated ${artifact} — an old poindexter_secret_key cannot decrypt current app_settings secrets."
+            continue
+        fi
+        log "config coverage: ${artifact} present and current (sha256 ${disk}...)"
+    done < <(csv_to_lines "${artifacts_csv}")
+
+    # A check that scanned nothing has not passed.
+    if [[ "${checked}" -eq 0 ]]; then
+        log "config coverage: no configured artifacts present on disk — verified NOTHING"
+        emit_alert "warning" \
+            "Offsite config coverage verified nothing" \
+            "offsite_backup_verify_config_artifacts='${artifacts_csv}' but none of those paths exist in this container, so the recovery property was not checked at all this tick. Either the mounts are wrong or the setting names paths that no longer exist."
+        return 1
+    fi
+    if [[ "${missing}" -eq 0 && "${drifted}" -eq 0 ]]; then
+        log "config coverage OK (${checked} artifact(s))"
+        emit_heartbeat "offsite_config_coverage_verified" \
+            "${checked} config artifact(s) present in newest config snapshot and matching on-disk"
+        return 0
+    fi
+    return 1
 }
 
 maybe_prune() {
@@ -378,10 +570,19 @@ tick() {
     source_tier=$(read_setting offsite_backup_source_tier "${DEFAULT_SOURCE_TIER}")
     local restic_host
     restic_host=$(read_setting offsite_backup_restic_host "${DEFAULT_RESTIC_HOST}")
-    if run_backup "${repo}" "${source_tier}" "${restic_host}"; then
+    # Gate on BACKUP_ANY_OK, not on run_backup's rc: the rc means "every
+    # database succeeded", while what the steps below need is only "the repo
+    # is reachable and writable". With several databases configured, one
+    # failing dump must not suppress the config tier or — especially — the
+    # coverage check, which is what notices the repo has stopped being
+    # sufficient. Each failed database has already alerted for itself.
+    run_backup "${repo}" "${source_tier}" "${restic_host}" || true
+    if [[ "${BACKUP_ANY_OK}" == "true" ]]; then
         # Non-fatal by contract (see run_config_backup) — it returns 0 even on
         # restic failure, so prune/verify still run against a good DB snapshot.
         run_config_backup "${repo}" "${restic_host}"
+        # Immediately after the write, so the listing it reads is this tick's.
+        verify_config_coverage "${repo}" "${restic_host}" || true
         maybe_prune "${repo}"
         maybe_verify "${repo}"
     fi

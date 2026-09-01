@@ -52,7 +52,13 @@ source "${RUN_SH}"
 #   restic   — drains stdin, echoes its args to stdout for flag assertions,
 #              and exits FAKE_RESTIC_RC.
 #   emit_*   — print markers instead of hitting psql.
-pg_dump() { echo "PGDUMP_ARGS $*" >&2; printf 'FAKE_DUMP_BYTES'; return "${FAKE_PGDUMP_RC:-0}"; }
+pg_dump() {
+    echo "PGDUMP_ARGS $*" >&2
+    printf 'FAKE_DUMP_BYTES'
+    # FAIL_DB fails exactly one database, so a mixed tick can be tested.
+    if [[ -n "${FAIL_DB:-}" && "$*" == *"-d ${FAIL_DB} "* ]]; then return 1; fi
+    return "${FAKE_PGDUMP_RC:-0}"
+}
 restic() {
     cat >/dev/null 2>&1 || true
     echo "RESTIC_ARGS $*"
@@ -63,15 +69,27 @@ restic() {
 }
 emit_heartbeat() { echo "HEARTBEAT event=$1"; }
 emit_alert() { echo "ALERT severity=$1 summary=$2 description=$3"; }
+# Settings come from the env so each test can vary one key without psql
+# (same convention as _CONFIG_HARNESS below).
+read_setting() {
+    local key="$1" default="$2" var
+    var="SETTING_${key}"
+    if [[ -n "${!var:-}" ]]; then printf '%s' "${!var}"; else printf '%s' "${default}"; fi
+}
 
 rc=0
-if [[ -n "${HOST_ARG:-}" ]]; then
+if [[ -n "${DIRECT_DB:-}" ]]; then
+    # Call the single-database worker directly. The exact-rc contract lives
+    # here (see test_failure_alert_reports_real_exit_code).
+    run_db_backup "s3:example.test/repo" "daily" "poindexter" "${DIRECT_DB}" || rc=$?
+elif [[ -n "${HOST_ARG:-}" ]]; then
     run_backup "s3:example.test/repo" "daily" "${HOST_ARG}" || rc=$?
 else
     # Two-arg call — exercises the in-function default under `set -u`.
     run_backup "s3:example.test/repo" "daily" || rc=$?
 fi
 echo "RUN_BACKUP_RC=${rc}"
+echo "BACKUP_ANY_OK=${BACKUP_ANY_OK}"
 """
 
 
@@ -81,6 +99,9 @@ def _run_backup_harness(
     restic_host: str | None = None,
     pgdump_rc: int = 0,
     restic_stderr: str | None = None,
+    databases: str | None = None,
+    direct_db: str | None = None,
+    fail_db: str | None = None,
 ) -> subprocess.CompletedProcess:
     assert _BASH is not None  # guarded by the module-level skipif
     env = {
@@ -95,6 +116,12 @@ def _run_backup_harness(
         env["HOST_ARG"] = restic_host
     if restic_stderr is not None:
         env["FAKE_RESTIC_STDERR"] = restic_stderr
+    if databases is not None:
+        env["SETTING_offsite_backup_databases"] = databases
+    if direct_db is not None:
+        env["DIRECT_DB"] = direct_db
+    if fail_db is not None:
+        env["FAIL_DB"] = fail_db
     return subprocess.run(
         [_BASH, "-c", _HARNESS],
         capture_output=True,
@@ -140,8 +167,18 @@ def test_backup_streams_uncompressed_dump_into_restic_stdin(tmp_path):
 
 @pytest.mark.parametrize("restic_rc", [1, 3])
 def test_failure_alert_reports_real_exit_code(tmp_path, restic_rc):
-    """A restic failure must alert with the actual rc — never 'rc=0'."""
-    result = _run_backup_harness(tmp_path, restic_rc=restic_rc)
+    """A restic failure must alert with the actual rc — never 'rc=0'.
+
+    Exercised against `run_db_backup`, which is where this contract lives
+    since poindexter#891 made the source set a list: an aggregate rc over N
+    databases cannot represent "one failed with 3 and another with 5", so
+    `run_backup` returns a plain 1 and each database alerts with its own real
+    rc. The 2026-06-23 regression was in the *annotation*, and that is still
+    pinned here, one layer down.
+    """
+    result = _run_backup_harness(
+        tmp_path, restic_rc=restic_rc, direct_db="poindexter_brain"
+    )
     assert "HEARTBEAT" not in result.stdout
     assert "ALERT severity=critical" in result.stdout
     assert f"(rc={restic_rc})" in result.stdout
@@ -155,7 +192,9 @@ def test_pgdump_failure_is_not_silent_success(tmp_path):
     short input. `set -o pipefail` must surface the pg_dump failure so the
     runner alerts + returns non-zero instead of saving a truncated snapshot
     and stamping a success heartbeat."""
-    result = _run_backup_harness(tmp_path, restic_rc=0, pgdump_rc=3)
+    result = _run_backup_harness(
+        tmp_path, restic_rc=0, pgdump_rc=3, direct_db="poindexter_brain"
+    )
     assert "HEARTBEAT" not in result.stdout
     assert "ALERT severity=critical" in result.stdout
     assert "RUN_BACKUP_RC=0" not in result.stdout
@@ -496,3 +535,264 @@ def test_config_backup_failure_is_warning_and_non_fatal(tmp_path):
     assert "HEARTBEAT" not in result.stdout
     # Non-fatal: returns 0 so tick() still runs prune + verify.
     assert "CONFIG_RC=0" in result.stdout
+
+
+# --- poindexter#891: multi-database source set --------------------------------
+
+
+def test_default_database_list_preserves_the_single_stream_path(tmp_path):
+    """Back-compat: with the shipped default, the tick must produce exactly the
+    one `poindexter_brain.dump` stream it produced before the list existed.
+
+    restic selects a parent snapshot by (host, paths), so the --stdin-filename
+    IS the identity of the lineage. Changing it on an existing install would
+    orphan every prior snapshot and re-ingest the full database as new data.
+    """
+    result = _run_backup_harness(tmp_path, restic_rc=0)
+    out = _combined(result)
+    assert out.count("--stdin-filename poindexter_brain.dump") == 1
+    assert out.count("RESTIC_ARGS") == 1
+    assert "RUN_BACKUP_RC=0" in result.stdout
+
+
+def test_each_database_gets_its_own_stream_path(tmp_path):
+    """One restic --stdin backup per database, each under its own filename."""
+    result = _run_backup_harness(
+        tmp_path, restic_rc=0, databases="poindexter_brain,langfuse,prefect"
+    )
+    out = _combined(result)
+    for db in ("poindexter_brain", "langfuse", "prefect"):
+        assert f"--stdin-filename {db}.dump" in out
+        assert f"-d {db} " in out  # pg_dump targeted the right database
+    assert out.count("RESTIC_ARGS") == 3
+    assert "RUN_BACKUP_RC=0" in result.stdout
+
+
+def test_database_list_is_whitespace_tolerant_and_deduped(tmp_path):
+    """A repeated entry would dump twice and split that database's parent
+    chain across two identical paths."""
+    result = _run_backup_harness(
+        tmp_path, restic_rc=0, databases=" langfuse , langfuse ,prefect"
+    )
+    out = _combined(result)
+    assert out.count("--stdin-filename langfuse.dump") == 1
+    assert out.count("--stdin-filename prefect.dump") == 1
+    assert out.count("RESTIC_ARGS") == 2
+
+
+def test_empty_database_list_alerts_instead_of_silently_dumping_nothing(tmp_path):
+    """The whole point of the tier is that it produces something. An empty
+    setting must not read as a clean run."""
+    result = _run_backup_harness(tmp_path, restic_rc=0, databases="  , ,")
+    out = _combined(result)
+    assert "RESTIC_ARGS" not in out
+    assert "ALERT severity=critical" in out
+    assert "no source databases" in out
+    assert "HEARTBEAT" not in out
+    assert "RUN_BACKUP_RC=0" not in result.stdout
+    assert "BACKUP_ANY_OK=false" in result.stdout
+
+
+def test_one_database_failing_does_not_stop_the_others(tmp_path):
+    """A broken 15 MB database must not cost you the 1.6 GB one, and must not
+    suppress the config tier — hence BACKUP_ANY_OK stays true."""
+    # FAKE_RESTIC_RC applies to every call, so drive the failure through
+    # pg_dump on a database that does not exist in the stub's success path.
+    result = _run_backup_harness(
+        tmp_path, restic_rc=0, pgdump_rc=1, databases="a,b,c"
+    )
+    out = _combined(result)
+    # All three were attempted even though every one failed.
+    assert out.count("PGDUMP_ARGS") == 3
+    assert out.count("ALERT severity=critical") == 3
+    assert "RUN_BACKUP_RC=0" not in result.stdout
+
+
+def test_partial_success_keeps_the_config_tier_reachable(tmp_path):
+    """BACKUP_ANY_OK is the gate tick() uses; it means "the repo is writable",
+    not "everything succeeded".
+
+    This is the behaviour change that matters: before the source set was a
+    list, any failure skipped the config tier and the coverage check. With
+    several databases, letting one failed dump suppress the check that
+    notices the repo has stopped carrying bootstrap.toml would be exactly
+    backwards — that check matters MORE on a bad night, not less.
+    """
+    result = _run_backup_harness(
+        tmp_path,
+        restic_rc=0,
+        databases="poindexter_brain,langfuse,prefect",
+        fail_db="langfuse",
+    )
+    out = _combined(result)
+    # The failure did not stop the run: all three were attempted...
+    assert out.count("PGDUMP_ARGS") == 3
+    # ...exactly one alerted, naming itself...
+    assert out.count("ALERT severity=critical") == 1
+    assert "langfuse" in out
+    # ...the two healthy ones still reached the repo...
+    assert out.count("HEARTBEAT event=offsite_backup_succeeded") == 2
+    # ...the tick reports failure...
+    assert "RUN_BACKUP_RC=0" not in result.stdout
+    # ...but the config tier + coverage check still run.
+    assert "BACKUP_ANY_OK=true" in result.stdout
+
+
+def test_per_database_alert_names_the_database(tmp_path):
+    """An alert that does not say WHICH database failed makes the operator
+    re-derive it from logs."""
+    result = _run_backup_harness(
+        tmp_path, restic_rc=2, databases="langfuse"
+    )
+    out = _combined(result)
+    assert "ALERT severity=critical" in out
+    assert "langfuse" in out
+    assert "(rc=2)" in out
+
+
+# --- poindexter#891 fix 3: config coverage verification -----------------------
+
+_COVERAGE_HARNESS = """
+source "${RUN_SH}"
+
+# restic stub dispatching on the subcommand (args are: -r <repo> <sub> ...).
+restic() {
+    shift 2
+    case "$1" in
+        ls)   printf '%s\\n' "${FAKE_LS_OUTPUT:-}"; return "${FAKE_LS_RC:-0}" ;;
+        dump) printf '%s' "${FAKE_DUMP_CONTENT:-}"; return "${FAKE_DUMP_RC:-0}" ;;
+    esac
+    return 0
+}
+read_setting() {
+    local key="$1" default="$2" var
+    var="SETTING_${key}"
+    if [[ -n "${!var:-}" ]]; then printf '%s' "${!var}"; else printf '%s' "${default}"; fi
+}
+emit_heartbeat() { echo "HEARTBEAT event=$1 detail=$2"; }
+emit_alert() { echo "ALERT severity=$1 summary=$2 description=$3"; }
+
+rc=0
+verify_config_coverage "s3:example.test/repo" "poindexter" || rc=$?
+echo "COVERAGE_RC=${rc}"
+"""
+
+_SECRET_BODY = "poindexter_secret_key = 'SUPERSECRET-DO-NOT-LOG'"
+
+
+def _run_coverage_harness(
+    tmp_path: Path,
+    *,
+    on_disk: str | None = _SECRET_BODY,
+    stored: str | None = _SECRET_BODY,
+    listed: bool = True,
+    ls_rc: int = 0,
+    settings: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess, Path]:
+    assert _BASH is not None
+    artifact = tmp_path / "bootstrap.toml"
+    if on_disk is not None:
+        artifact.write_text(on_disk)
+    env = {
+        "PATH": os.environ["PATH"],  # needs sha256sum/grep/sed/tr from coreutils
+        "RUN_SH": _RUN_SH.as_posix(),
+        "BACKUP_DIR": (tmp_path / "backups").as_posix(),
+        "PGPASSWORD": "test",
+        "FAKE_LS_RC": str(ls_rc),
+        "FAKE_LS_OUTPUT": artifact.as_posix() if listed else "/config/other/file",
+        "FAKE_DUMP_CONTENT": stored if stored is not None else "",
+        "SETTING_offsite_backup_verify_config_artifacts": artifact.as_posix(),
+    }
+    for k, v in (settings or {}).items():
+        env[f"SETTING_{k}"] = v
+    result = subprocess.run(
+        [_BASH, "-c", _COVERAGE_HARNESS],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+    return result, artifact
+
+
+def test_coverage_passes_when_artifact_is_present_and_current(tmp_path):
+    result, _ = _run_coverage_harness(tmp_path)
+    assert "HEARTBEAT event=offsite_config_coverage_verified" in result.stdout
+    assert "ALERT" not in result.stdout
+    assert "COVERAGE_RC=0" in result.stdout
+
+
+def test_coverage_never_prints_the_secret_it_verifies(tmp_path):
+    """The artifacts are secret-bearing (master key, DB URL, credentials).
+    Contents go straight into sha256sum and must never reach a log or an
+    alert — on the success path OR on any failure path."""
+    for kwargs in (
+        {},                                    # match
+        {"stored": "DIFFERENT-CONTENT"},       # drift
+        {"listed": False},                     # missing from snapshot
+        {"ls_rc": 1},                          # no snapshot at all
+    ):
+        result, _ = _run_coverage_harness(tmp_path, **kwargs)
+        combined = result.stdout + result.stderr
+        assert "SUPERSECRET-DO-NOT-LOG" not in combined, kwargs
+        assert "DIFFERENT-CONTENT" not in combined, kwargs
+
+
+def test_coverage_flags_artifact_missing_from_the_snapshot_as_critical(tmp_path):
+    """The silent-decay case: the backup reported success, but the file that
+    makes the restore usable is not in it (a widened exclude, a dropped
+    mount). It never self-heals, so it is critical."""
+    result, _ = _run_coverage_harness(tmp_path, listed=False)
+    assert "ALERT severity=critical" in result.stdout
+    assert "missing" in result.stdout.lower()
+    assert "HEARTBEAT" not in result.stdout
+    assert "COVERAGE_RC=0" not in result.stdout
+
+
+def test_coverage_flags_stale_stored_copy_as_warning(tmp_path):
+    """Drift is a warning, not critical: a copy exists, the config backup runs
+    immediately before this check, and a single tick's mismatch is usually a
+    mid-tick edit that self-heals."""
+    result, _ = _run_coverage_harness(tmp_path, stored="OLD-KEY-CONTENT")
+    assert "ALERT severity=warning" in result.stdout
+    assert "stale" in result.stdout.lower()
+    assert "HEARTBEAT" not in result.stdout
+    assert "COVERAGE_RC=0" not in result.stdout
+
+
+def test_coverage_alerts_when_there_is_no_config_snapshot(tmp_path):
+    result, _ = _run_coverage_harness(tmp_path, ls_rc=1)
+    assert "ALERT severity=critical" in result.stdout
+    assert "no readable config snapshot" in result.stdout
+    assert "COVERAGE_RC=0" not in result.stdout
+
+
+def test_coverage_that_scanned_nothing_does_not_pass(tmp_path):
+    """A check whose configured artifacts are all absent has verified nothing;
+    reporting success there is how the tier goes quietly blind."""
+    result, _ = _run_coverage_harness(tmp_path, on_disk=None)
+    assert "ALERT severity=warning" in result.stdout
+    assert "verified nothing" in result.stdout
+    assert "HEARTBEAT" not in result.stdout
+    assert "COVERAGE_RC=0" not in result.stdout
+
+
+def test_coverage_can_be_disabled(tmp_path):
+    result, _ = _run_coverage_harness(
+        tmp_path, settings={"offsite_backup_verify_config_enabled": "false"}
+    )
+    assert "ALERT" not in result.stdout
+    assert "HEARTBEAT" not in result.stdout
+    assert "COVERAGE_RC=0" in result.stdout
+
+
+def test_default_verified_artifact_is_the_master_key_file():
+    """bootstrap.toml holds poindexter_secret_key; without it the app_settings
+    secrets inside the DB snapshot cannot be decrypted (#889)."""
+    assert _default_setting("DEFAULT_VERIFY_CONFIG_ARTIFACTS") == (
+        "/config/poindexter/bootstrap.toml"
+    )
+
+
+def test_default_database_list_matches_the_pre_891_behaviour():
+    assert _default_setting("DEFAULT_DATABASES") == "poindexter_brain"
