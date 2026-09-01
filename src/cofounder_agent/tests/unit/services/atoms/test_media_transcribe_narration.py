@@ -258,7 +258,11 @@ async def test_run_diffs_against_voiced_text_script_plus_cta(monkeypatch):
         "site_config": site_config,
     })
     # Label stripped, per-lane CTA appended — exactly what TTS voiced.
-    assert seen["long"] == "Long-form body.\n\nSubscribe to the channel."
+    # "Long-form" arrives de-hyphenated because the reference is the TTS
+    # INPUT, and the render boundary spaces compound hyphens (the engine
+    # breathes at them). Fidelity itself is unaffected either way: the ratio
+    # tokenizer strips punctuation before diffing.
+    assert seen["long"] == "Long form body.\n\nSubscribe to the channel."
     assert seen["short"] == "Short summary body.\n\nFollow for more."
 
 

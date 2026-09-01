@@ -2762,6 +2762,19 @@ DEFAULTS: dict[str, str] = {
     # glued to a leading digit → "negative 5", and YYYY-MM-DD → "May 4,
     # 2026". Word-word compounds ("state-of-the-art") are untouched.
     'tts_dash_normalization_enabled': 'true',
+    # Word-word hyphens ("state-of-the-art") → a space at the render boundary.
+    # Chatterbox gives a compound hyphen a small breath rather than running the
+    # words together, so compound-dense narration comes out choppy: measured
+    # 2026-09-01 with ffmpeg silencedetect over matched renders, de-hyphenating
+    # cut 0.10-0.86s of internal silence per real script sentence and roughly
+    # halved the internal pause runs. Pervasive rather than dramatic — 9,406
+    # word-word hyphens across 953 stored scripts. A space (not a deletion)
+    # keeps the words identical: "re-sign" → "re sign", never "resign".
+    # Engine-specific: this exists because Chatterbox has no text-norm front
+    # end. Kokoro's G2P already handles hyphens (measured neutral), so a
+    # Kokoro install can set this false without losing anything.
+    # Set false to send compounds to the engine hyphenated.
+    'tts_compound_hyphen_to_space_enabled': 'true',
     # Spoken word for a glued leading minus: "negative 5". Operators who
     # prefer broadcast/weather style can set "minus".
     'tts_negative_number_word': 'negative',

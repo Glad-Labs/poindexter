@@ -222,7 +222,11 @@ _SPOKEN_REGEX_STATIC = [
     # trillion dollars" — the episode's central figure, gone. Money, versions
     # and stats are the whole point of a sentence; a filename is noise. Prefer
     # leaving a stray "2024.csv" spoken over deleting a number.
-    (re.compile(r"[\w/\\]*[A-Za-z][\w/\\]*\.[A-Za-z]{2,4}(?:\s|$)"), " "),
+    # The class includes '-': without it "my-notes.md" matched only the
+    # "notes.md" tail and left a dangling "my-" for the engine to read aloud
+    # (likewise "src/my-module/thing.py" → "src/my-"). The stem must still
+    # contain a letter, so this cannot eat the "1.65" in "$1.65 trillion".
+    (re.compile(r"[\w/\\-]*[A-Za-z][\w/\\-]*\.[A-Za-z]{2,4}(?:\s|$)"), " "),
     # Version numbers — say naturally (v2.0 → version 2.0)
     (re.compile(r"\bv(\d)"), r"version \1"),
     # Acronym with expansion in parentheses — use plain language instead
@@ -416,6 +420,27 @@ def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
 #   5". Runs after the range pass, so the "5" in "9-5" can never read as
 #   negative. An optional currency symbol may sit between ("-$3 million").
 #
+# - a word-word hyphen ("state-of-the-art") → a SPACE. Chatterbox gives the
+#   hyphen a small breath instead of running the compound together, so a
+#   compound-dense sentence comes out choppy. Measured 2026-09-01 by rendering
+#   matched pairs at the prod voice/cfg and running ffmpeg `silencedetect`
+#   over the audio (n=6-10 per variant): on real stored-script sentences,
+#   de-hyphenating cut internal silence by 0.10-0.86s and total duration by
+#   0.33-1.25s, and it roughly HALVED the number of internal pause runs.
+#   The effect is real but modest — a comma adds ~0.5s of silence per
+#   instance, a hyphen ~0.05s — so this reads as choppiness, not as a comma.
+#   It is also pervasive: 9,406 word-word hyphens across 953 stored scripts
+#   (~10 per script). A space is word-identical to the engine ("re-sign" →
+#   "re sign", never "resign"), which is why the rule inserts a space rather
+#   than deleting the hyphen.
+#
+#   NOTE for future probes: a TTS→STT round-trip CANNOT see this failure —
+#   whisper writes a pause back as nothing, so the 2026-08-24 round-trip that
+#   cleared compounds as "verbatim" was structurally blind to it. Measure the
+#   AUDIO (silencedetect), not the transcript. The transcript is still the
+#   right instrument for the complementary question — that the WORDS survive
+#   de-hyphenation unchanged.
+#
 # Letter-digit hyphens ("COVID-19", "top-10", "RTX 5090-class") are left
 # alone — engines speak those acceptably. A model pin like "wan2.1-14B" WOULD
 # trip the range rule, which is one more reason model identifiers belong in
@@ -423,13 +448,18 @@ def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
 #
 # The spoken words are DB-tunable (`tts_number_range_word` default "to",
 # `tts_negative_number_word` default "negative" — "through"/"minus" for
-# operators who prefer them); `tts_dash_normalization_enabled` (default true)
-# is the master switch. Runs at the TTS render boundary only — stored scripts
-# keep the written forms, per the 2026-08-01 generation/speech split.
+# operators who prefer them), as is the compound rule
+# (`tts_compound_hyphen_to_space_enabled`, default true);
+# `tts_dash_normalization_enabled` (default true) is the master switch over
+# all of them. Runs at the TTS render boundary only — stored scripts keep the
+# written forms, per the 2026-08-01 generation/speech split.
 _ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _RANGE_ASCII_DASH_RE = re.compile(r"(?<=\d)\s*[-−]\s*(?=\d)")
 _RANGE_TYPOGRAPHIC_DASH_RE = re.compile(r"(?<=\d)[–—](?=\d)")
 _NEGATIVE_NUMBER_RE = re.compile(r"(?<![\w.,\-−–—])[-−](?=[$€£]?\d)")
+# Word-word only: the lookarounds keep every digit-adjacent hyphen (handled
+# above, or deliberately left alone) out of this rule's reach.
+_COMPOUND_HYPHEN_RE = re.compile(r"(?<=[A-Za-z])-(?=[A-Za-z])")
 
 _MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June", "July",
@@ -465,6 +495,26 @@ def _normalize_dashes(text: str, *, site_config: "SiteConfig | None" = None) -> 
     text = _RANGE_TYPOGRAPHIC_DASH_RE.sub(f" {range_word} ", text)
     text = _NEGATIVE_NUMBER_RE.sub(f"{negative_word} ", text)
     return text
+
+
+def _space_compound_hyphens(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    r"""Turn word-word hyphens into spaces (see the compound rule above).
+
+    Deliberately NOT part of ``_normalize_dashes``: this must run at the very
+    END of the speech pass, because everything before it matches on the
+    WRITTEN form. Run it early and it breaks two things — the URL/filename
+    strip (``https?://\S+`` stops at the injected space, stranding half a
+    URL) and any hyphenated key an operator adds to ``tts_pronunciations`` /
+    ``tts_acronym_replacements``, which would silently stop matching.
+    """
+    _sc = _resolve_site_config(site_config)
+    master = str(_sc.get("tts_dash_normalization_enabled", "") or "").strip().lower()
+    if master and master not in ("true", "1", "yes", "on"):
+        return text
+    own = str(_sc.get("tts_compound_hyphen_to_space_enabled", "") or "").strip().lower()
+    if own and own not in ("true", "1", "yes", "on"):
+        return text
+    return _COMPOUND_HYPHEN_RE.sub(" ", text)
 
 
 # Emoji / pictograph ranges — models decorate short-form scripts with these
@@ -548,6 +598,10 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
     for pattern, replacement in _get_acronym_regex(site_config=site_config):
         text = pattern.sub(replacement, text)  # type: ignore[call-overload]
+    # Compound hyphens LAST — every pass above matches on the written form
+    # (URLs, filenames, pronunciation keys), so spacing compounds any earlier
+    # pulls those matches apart. See _space_compound_hyphens.
+    text = _space_compound_hyphens(text, site_config=site_config)
     return text
 
 

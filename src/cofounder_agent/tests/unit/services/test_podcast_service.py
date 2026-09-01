@@ -1748,7 +1748,15 @@ class TestNormalizerSplit:
 # round-trip against the live Chatterbox sidecar: the engine silently DROPPED
 # the minus in "-5"/"-500" (meaning inverted) and MERGED digit ranges into one
 # wrong number ("9-5 job" → "ninety-five job", "8-16 GB" → "816 GB"); ISO
-# dates came out garbled; word-word compounds round-tripped verbatim.
+# dates came out garbled.
+#
+# That probe read word-word compounds back verbatim and they were recorded as
+# fine. They were not: a TTS→STT round-trip is BLIND to a pause, because
+# whisper writes one back as nothing. An ffmpeg silencedetect pass over the
+# audio (2026-09-01) showed the engine breathes at a compound hyphen —
+# 0.10-0.86s of extra internal silence per real script sentence, roughly
+# double the pause runs — so compounds now become spaces too. Measure the
+# audio for timing questions and the transcript for word questions.
 # ---------------------------------------------------------------------------
 
 
@@ -1811,8 +1819,12 @@ class TestNormalizeDashes:
 
     # -- what must NOT change -----------------------------------------------
     @pytest.mark.parametrize("text", [
-        # Word-word compounds round-tripped verbatim on the live engine.
-        "It was a state-of-the-art, self-hosted setup.",
+        # Word-word compounds USED to be listed here as untouched, on the
+        # strength of a TTS→STT round-trip that read them back verbatim. That
+        # probe could not see the actual failure — whisper writes a pause back
+        # as nothing — and an ffmpeg silencedetect pass over the audio later
+        # showed the engine does breathe at a compound hyphen. They now become
+        # spaces; see the compound-hyphen tests below.
         # Letter-digit hyphens are spoken acceptably; leave them.
         "the COVID-19 era",
         "a top-10 list",
@@ -1833,6 +1845,72 @@ class TestNormalizeDashes:
         full = _normalize_for_speech(text, site_config=_TEST_SC)
         assert " to " not in full
         assert "," in full
+
+    # -- compound hyphens ---------------------------------------------------
+    # These live in _space_compound_hyphens, NOT _normalize_dashes, because
+    # they must run after every pass that matches on the written form.
+    @pytest.mark.parametrize("text,expected", [
+        ("a state-of-the-art setup", "a state of the art setup"),
+        ("a self-hosted, low-cost stack", "a self hosted, low cost stack"),
+        ("our decision-making process", "our decision making process"),
+        # A space, never a deletion: joining these would say "resign".
+        ("re-sign the contract", "re sign the contract"),
+        ("e-mail and X-ray", "e mail and X ray"),
+    ])
+    def test_compound_hyphen_becomes_a_space(self, text, expected):
+        from services.podcast_service import _space_compound_hyphens
+        assert _space_compound_hyphens(text, site_config=_TEST_SC) == expected
+
+    @pytest.mark.parametrize("text", [
+        # Digit-adjacent hyphens belong to _normalize_dashes, not this rule.
+        "the COVID-19 era",
+        "a top-10 list",
+        "an RTX 5090-class GPU",
+        "the pre-2026 baseline",
+    ])
+    def test_compound_rule_never_touches_digit_adjacent_hyphens(self, text):
+        from services.podcast_service import _space_compound_hyphens
+        assert _space_compound_hyphens(text, site_config=_TEST_SC) == text
+
+    def test_compound_and_digit_rules_compose(self):
+        """Both fire in the full pass without eating each other's dashes."""
+        out = _normalize_for_speech("a 9-5 job in a self-hosted rack", site_config=_TEST_SC)
+        assert out == "a 9 to 5 job in a self hosted rack"
+
+    def test_compound_rule_has_its_own_switch(self):
+        sc = SiteConfig(initial_config={
+            "tts_compound_hyphen_to_space_enabled": "false",
+        })
+        # Own switch off: compounds keep their hyphen, digit rules still run.
+        assert _normalize_for_speech("a 9-5 state-of-the-art job", site_config=sc) == (
+            "a 9 to 5 state-of-the-art job"
+        )
+
+    def test_master_switch_also_disables_the_compound_rule(self):
+        from services.podcast_service import _space_compound_hyphens
+        sc = SiteConfig(initial_config={"tts_dash_normalization_enabled": "false"})
+        text = "a self-hosted rack"
+        assert _space_compound_hyphens(text, site_config=sc) == text
+
+    def test_compound_rule_is_idempotent(self):
+        once = _normalize_for_speech("a state-of-the-art setup", site_config=_TEST_SC)
+        assert _normalize_for_speech(once, site_config=_TEST_SC) == once
+
+    def test_compound_rule_runs_after_the_url_and_filename_strip(self):
+        r"""Ordering guard. Spacing compounds BEFORE the structural pass breaks
+        `https?://\S+` and the filename rule, stranding half a token for the
+        engine to read aloud."""
+        assert _normalize_for_speech(
+            "Visit https://my-site.com today", site_config=_TEST_SC
+        ).strip() == "Visit today"
+        # Pre-existing bug fixed alongside: the filename class omitted '-', so
+        # "my-notes.md" matched only "notes.md" and left "my-" spoken.
+        assert _normalize_for_speech(
+            "read my-notes.md now", site_config=_TEST_SC
+        ).strip() == "read now"
+        assert _normalize_for_speech(
+            "the file src/my-module/thing.py is here", site_config=_TEST_SC
+        ).strip() == "the file is here"
 
     # -- config surface -----------------------------------------------------
     def test_disabled_flag_leaves_text_alone(self):
