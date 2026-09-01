@@ -3286,6 +3286,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.deploy_sync_failing.fallback': 'discord',
     'findings.deploy_sync_failing.cooldown_minutes': '120',
     'findings.deploy_sync_failing.min_severity': 'warning',
+    # retention_backlog: advisory. A policy that runs clean but does not drain
+    # is a slow leak, not an outage — Discord, not a page.
+    'findings.retention_backlog.delivery': 'discord',
+    'findings.retention_backlog.fallback': 'discord',
+    'findings.retention_backlog.cooldown_minutes': '720',
+    'findings.retention_backlog.min_severity': 'warn',
     'findings.db_clock_skew.delivery': 'telegram',
     'findings.db_clock_skew.fallback': 'discord',
     'findings.db_clock_skew.cooldown_minutes': '60',
@@ -3678,6 +3684,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # the per-minute UPDATE only touches rows whose last_read_at is NULL or older
     # than this, so a constantly-read key is written ~1×/hour, not 60×.
     'settings_read_telemetry_min_restamp_seconds': '3600',
+    # ----- Retention correctness probe (probe_retention_backlog, #933) -----
+    # Liveness telemetry (last_error / last_run_at / total_deleted) reads
+    # identically for an idle policy and a misconfigured one — stack#2871 pruned
+    # nothing for months behind all-green signals. This measures the backlog each
+    # policy's own invariant says should be gone. A single non-zero reading is
+    # just inflow since the last pass (live_activity showed 1,699 overdue right
+    # after deleting 2,953), so PERSISTENCE across consecutive probes is the
+    # signal, not magnitude.
+    'retention_backlog_probe_enabled': 'true',
+    'retention_backlog_row_threshold': '100',
+    'retention_backlog_consecutive_probes': '3',
     'settings_zero_reader_probe_enabled': 'true',
     # ProbeDisabledCapabilitiesJob (#2133): daily check of a curated list of
     # opt-in capability flags (writer self-review, self-consistency QA,
@@ -4960,6 +4977,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'deploy_sync_error_streak_threshold': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},
     'deploy_sync_max_age_minutes': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},
     'deploy_sync_probe_enabled': {'owner': 'deploy_sync_probe', 'value_type': 'boolean'},
+    'retention_backlog_consecutive_probes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
+    'retention_backlog_probe_enabled': {'owner': 'probe_retention_backlog', 'value_type': 'boolean'},
+    'retention_backlog_row_threshold': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'clock_skew_sample_retention_days': {'owner': 'clock_skew_probe', 'value_type': 'integer'},

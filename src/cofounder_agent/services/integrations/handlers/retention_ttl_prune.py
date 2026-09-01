@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from services.integrations.registry import register_handler
+from services.integrations.retention_backlog import BacklogQuery, register_backlog
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +132,50 @@ async def ttl_prune(
         row.get("name"), total_deleted, table_name, ttl_days,
     )
     return {"deleted": total_deleted, "table": table_name, "ttl_days": ttl_days}
+
+
+@register_backlog("ttl_prune")
+def ttl_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
+    """Rows this policy's own predicate still matches (poindexter#933).
+
+    For a TTL pruner the policy row IS the invariant — "rows older than
+    ``ttl_days`` matching ``filter_sql`` should be gone" — so counting what its
+    own WHERE clause matches is exactly the right question. A correct policy
+    drains this to ~0 each run; a broken one accumulates.
+
+    A non-zero reading is NOT itself a fault: it is also just inflow since the
+    last pass, and a short-TTL high-volume table like ``live_activity``
+    legitimately shows hundreds of rows minutes after a successful prune.
+    Persistence across consecutive probes is the signal, which is the caller's
+    job (see ``services/jobs/probe_retention_backlog.py``).
+
+    A ``dry_run`` policy deletes nothing by design, so its backlog is
+    meaningless as a fault signal and it declares none rather than alarming
+    forever.
+    """
+    config = row.get("config") or {}
+    if not isinstance(config, dict):
+        config = {}
+    if bool(config.get("dry_run", False)):
+        return None
+
+    ttl_days = row.get("ttl_days")
+    if ttl_days is None:
+        return None
+    ttl_days = int(ttl_days)
+
+    # Same validation the handler applies — a backlog query is still SQL built
+    # from row fields, so it gets the identical identifier whitelist.
+    table_name = _validate_identifier(row.get("table_name") or "", "table_name")
+    age_column = _validate_identifier(row.get("age_column") or "created_at", "age_column")
+
+    where_parts = [f"{age_column} < now() - make_interval(days => $1)"]
+    filter_sql = row.get("filter_sql") or ""
+    if filter_sql.strip():
+        where_parts.append(f"({filter_sql})")
+    where_clause = " AND ".join(where_parts)
+
+    return BacklogQuery(
+        sql=f"SELECT COUNT(*)::bigint FROM {table_name} WHERE {where_clause}",  # nosec B608  # identifiers validated above; filter_sql is an operator-controlled migration seed (see module docstring)
+        params=(ttl_days,),
+    )

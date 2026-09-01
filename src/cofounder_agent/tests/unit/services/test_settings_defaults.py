@@ -308,9 +308,9 @@ class TestRegistryShape:
         # crept to 797 against an 800 ceiling, so the next handful of keys
         # tripped it. Headroom restored rather than nudged, since a
         # ceiling that needs raising every PR is measuring the wrong thing.
-        assert 150 <= len(DEFAULTS) <= 1200, (
+        assert 150 <= len(DEFAULTS) <= 1300, (
             f"Registry size {len(DEFAULTS)} outside expected range "
-            f"(150-1200). Did the AST extractor regression?"
+            f"(150-1300). Did the AST extractor regression?"
         )
 
 

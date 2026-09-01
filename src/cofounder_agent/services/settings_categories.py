@@ -336,6 +336,10 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("compose", "infrastructure"),
     ("restore", "infrastructure"),
     ("backup", "infrastructure"),
+    # Deploy-path dead-man's switch (#977) and the retention correctness
+    # probe (#933) — both are infra health, not content or pipeline config.
+    ("deploy_sync", "infrastructure"),
+    ("retention_backlog", "infrastructure"),
     ("migration", "infrastructure"),
     ("clock", "infrastructure"),
     ("rate_limit", "infrastructure"),

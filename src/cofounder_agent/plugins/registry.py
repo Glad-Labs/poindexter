@@ -875,6 +875,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # app_settings keys whose last_read_at is still NULL past the grace
         # window are emitted as an advisory settings_zero_reader_keys finding
         # (orphan candidates -> Discord ops). poindexter#756 item 3.
+        ("jobs", "services.jobs.probe_retention_backlog", "ProbeRetentionBacklogJob"),
         ("jobs", "services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
         # ProbeDisabledCapabilitiesJob — daily check of a curated list of
         # opt-in capability flags (writer self-review, self-consistency QA,

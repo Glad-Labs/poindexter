@@ -60,9 +60,11 @@ on this install) the handler skips it silently — same guard used by
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from services.integrations.registry import register_handler
+from services.integrations.retention_backlog import BacklogQuery, register_backlog
 
 logger = logging.getLogger(__name__)
 
@@ -227,3 +229,83 @@ async def checkpoint_prune(
         "tasks_processed": len(task_rows),
         "thread_ids_checked": len(thread_ids),
     }
+
+
+# Statuses meaning the run is STILL GOING. Everything else is finished and its
+# checkpoint should have been reaped.
+#
+# This is deliberately the COMPLEMENT of terminal, not a second copy of
+# ``_DEFAULT_TERMINAL_STATUSES`` — and that inversion is the whole point of the
+# backlog expression (poindexter#933).
+#
+# Glad-Labs/glad-labs-stack#2871 was a bug IN this handler's ``terminal_statuses``
+# config: it omitted ``rejected`` and ``rejected_final``, the two largest
+# terminal buckets, so ~20k checkpoint rows accumulated unreachable while the
+# policy reported success every run. A backlog computed from the policy's own
+# predicate would have returned 0 throughout and caught nothing.
+#
+# Phrasing the invariant as "not active" makes a NEWLY ADDED terminal status
+# count as backlog automatically, which is exactly the drift a copied terminal
+# list cannot detect. Being generous here (listing a status as active when it
+# is really terminal) makes the probe under-report rather than false-alarm,
+# which is the correct direction for an alarm to be wrong in.
+_ACTIVE_STATUSES = [
+    "pending",
+    "claimed",
+    "in_progress",
+    "awaiting_approval",
+    "approved",
+    "scheduled",
+    # A run going around again still needs its checkpoint.
+    "rejected_retry",
+]
+
+
+@register_backlog("checkpoint_prune")
+def checkpoint_prune_backlog(row: Mapping[str, Any]) -> BacklogQuery | None:
+    """Checkpoints whose source task has finished and aged out, but survive.
+
+    Counts distinct ``checkpoints.thread_id`` values that map to a
+    ``pipeline_tasks`` row which is no longer active and whose ``updated_at``
+    is older than ``ttl_days``. Prefix-stripping mirrors the handler's
+    ``thread_prefixes`` so ``media-``/``podcast-`` threads are matched too.
+
+    Deliberately measured against the task lifecycle rather than this policy's
+    ``terminal_statuses`` config — see :data:`_ACTIVE_STATUSES`.
+
+    True orphans (a checkpoint whose task row no longer exists at all) are NOT
+    counted here; they are #932's subject and this handler cannot reach them,
+    so folding them in would report a backlog that pruning can never drain.
+    """
+    ttl_days = row.get("ttl_days")
+    if ttl_days is None:
+        return None
+    ttl_days = int(ttl_days)
+
+    config = row.get("config") or {}
+    if not isinstance(config, dict):
+        config = {}
+    if bool(config.get("dry_run", False)):
+        return None
+
+    prefixes = config.get("thread_prefixes") or _DEFAULT_THREAD_PREFIXES
+    if not isinstance(prefixes, list) or not prefixes:
+        prefixes = _DEFAULT_THREAD_PREFIXES
+
+    return BacklogQuery(
+        # Built by CONCATENATION, the same way the handler builds thread_ids
+        # (prefix || task_id), rather than by regex-stripping the prefix back
+        # off. That keeps the two in step, avoids interpolating operator
+        # config into a regex, and lets the planner hash-join: measured on the
+        # live 7.1k-row table, the strip-and-match form took 9.5s and this one
+        # takes 0.05s for the identical answer.
+        sql="""
+            SELECT COUNT(DISTINCT c.thread_id)::bigint
+              FROM checkpoints c
+              CROSS JOIN LATERAL unnest($2::text[]) AS p(prefix)
+              JOIN pipeline_tasks pt ON c.thread_id = p.prefix || pt.task_id
+             WHERE pt.status <> ALL ($3::text[])
+               AND pt.updated_at < now() - make_interval(days => $1)
+        """,
+        params=(ttl_days, list(prefixes), list(_ACTIVE_STATUSES)),
+    )
