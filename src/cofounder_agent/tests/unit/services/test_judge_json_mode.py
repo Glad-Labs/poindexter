@@ -155,3 +155,67 @@ class TestRagasDispatcherJudge:
         )
         await llm.langchain_llm._agenerate([HumanMessage(content="judge this")])
         assert captured[0]["response_format"] == {"type": "json_object"}
+
+
+class TestRailsGetSyncSiteConfig:
+    """The rails must receive SiteConfig, not the async SettingsService.
+
+    `deepeval_rails` calls `.get()` / `.get_bool()` synchronously throughout.
+    `MultiModelQA` passed `self.settings` (a SettingsService, whose `.get` is
+    a coroutine) to the two deepeval rails while passing `self._site_config`
+    everywhere else. Nothing raised: the coroutine fell through
+    `resolve_thinking_substrings`' parse guard to the DEFAULT substrings, and
+    through `judge_json_mode_supported`'s except to False — the right answer
+    for the pinned judge, by luck, twice.
+
+    The cost was invisible: an operator's custom `thinking_model_substrings`
+    never reached the deepeval path, and
+    `qa_judge_json_mode_thinking_enabled=true` was a silent no-op there.
+    """
+
+    @staticmethod
+    def _call_args(src: str, needle: str) -> str:
+        """Text between the call's parens — balanced, not a fixed window.
+
+        A fixed char window silently truncated once a comment was added above
+        the kwarg, which made the assertion pass for the wrong reason.
+        """
+        i = src.index(needle) + len(needle) - 1
+        depth = 0
+        for j in range(i, len(src)):
+            if src[j] == "(":
+                depth += 1
+            elif src[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    return src[i + 1:j]
+        raise AssertionError(f"unbalanced parens after {needle}")
+
+    def test_deepeval_rails_are_passed_site_config_not_settings_service(self):
+        from pathlib import Path as _P
+
+        import modules.content.multi_model_qa as mmqa
+
+        src = _P(mmqa.__file__).read_text(encoding="utf-8")
+        for call in ("evaluate_g_eval", "evaluate_faithfulness"):
+            args = self._call_args(src, f"deepeval_rails.{call}(")
+            assert "site_config=self._site_config" in args, (
+                f"{call} must get the sync SiteConfig"
+            )
+            assert "site_config=self.settings" not in args, (
+                f"{call} is passing the async SettingsService again"
+            )
+
+    def test_async_settings_service_would_degrade_silently(self):
+        """Why the mismatch was invisible — documents the failure mode."""
+
+        class _AsyncSettings:
+            async def get(self, key, default=None):
+                return "true"
+
+        svc = _AsyncSettings()
+        # A thinking judge still loses JSON mode (fail-closed saves us) ...
+        assert judge_json_mode_supported(THINKING, svc) is False
+        # ... but the operator's explicit "true" never takes effect.
+        coro = svc.get("qa_judge_json_mode_thinking_enabled")
+        coro.close()  # avoid an un-awaited-coroutine warning

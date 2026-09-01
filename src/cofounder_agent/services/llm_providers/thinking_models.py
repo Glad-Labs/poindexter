@@ -393,7 +393,11 @@ def resolve_thinking_substrings(site_config: Any) -> tuple[str, ...]:
         return _DEFAULT_SUBSTRINGS
     try:
         parsed = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # TypeError matters: an async SettingsService returns a COROUTINE from
+        # .get(), and json.loads(coroutine) raises TypeError, not ValueError.
+        # This helper is documented as never raising and sits on every
+        # LLM-call hot path, so it must absorb that too (stack#3520).
         return _DEFAULT_SUBSTRINGS
     if not isinstance(parsed, list) or not parsed:
         return _DEFAULT_SUBSTRINGS

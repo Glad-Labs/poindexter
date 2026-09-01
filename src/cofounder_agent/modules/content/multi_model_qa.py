@@ -1883,7 +1883,11 @@ class MultiModelQA:
                 criterion=criterion,
                 judge_model=judge_model,
                 threshold=threshold,
-                site_config=self.settings,
+                # SiteConfig (sync .get), NOT the async settings_service:
+                # deepeval_rails calls .get()/.get_bool() synchronously
+                # throughout, and a coroutine here silently degrades
+                # judge_json_mode_supported to its fallback (stack#3519).
+                site_config=self._site_config,
                 pool=self.pool,
             )
         except Exception as exc:
@@ -2012,7 +2016,11 @@ class MultiModelQA:
                 chunks,
                 judge_model=judge_model,
                 threshold=threshold,
-                site_config=self.settings,
+                # SiteConfig (sync .get), NOT the async settings_service:
+                # deepeval_rails calls .get()/.get_bool() synchronously
+                # throughout, and a coroutine here silently degrades
+                # judge_json_mode_supported to its fallback (stack#3519).
+                site_config=self._site_config,
                 pool=self.pool,
             )
         except Exception as exc:
