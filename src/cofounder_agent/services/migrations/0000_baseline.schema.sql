@@ -1285,15 +1285,15 @@ CREATE OR REPLACE VIEW public.content_tasks AS
          LIMIT 1) AS human_feedback,
     ( SELECT pd.post_id
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS post_id,
     ( SELECT pd.post_slug
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS post_slug,
     ( SELECT pd.published_at
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS published_at,
     pt.awaiting_gate,
     pt.gate_artifact,
@@ -2631,15 +2631,15 @@ CREATE OR REPLACE VIEW public.pipeline_tasks_view AS
          LIMIT 1) AS human_feedback,
     ( SELECT pd.post_id
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS post_id,
     ( SELECT pd.post_slug
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS post_slug,
     ( SELECT pd.published_at
            FROM public.pipeline_distributions pd
-          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = 'gladlabs.io'::text))
+          WHERE (((pd.task_id)::text = (pt.task_id)::text) AND ((pd.target)::text = ANY (ARRAY['site'::text, 'gladlabs.io'::text])))
          LIMIT 1) AS published_at
    FROM (public.pipeline_tasks pt
      LEFT JOIN public.pipeline_versions pv ON ((((pv.task_id)::text = (pt.task_id)::text) AND (pv.version = ( SELECT max(pipeline_versions.version) AS max

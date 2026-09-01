@@ -28,6 +28,33 @@ from asyncpg import Pool
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# pipeline_distributions.target — the own-site sentinel
+# ---------------------------------------------------------------------------
+# ``target`` names WHERE an artifact of a task landed. Every value is a
+# platform ("youtube", "devto"), with exactly one exception: the row recording
+# that the post itself went live on the site this install publishes.
+#
+# That row used to be stamped with the literal ``"gladlabs.io"`` — the source
+# operator's own domain — hardcoded at three write sites and matched by name in
+# two SQL views, the yield query and two Grafana panels. It was self-consistent,
+# so a fork was never *broken* by it, but every install's own-site rows carried
+# one operator's brand, and the operator's real domain is DB config
+# (``app_settings.site_domain``) that a view has no way to read. A sentinel is
+# the honest encoding: the row describes a relationship ("published to self"),
+# not a hostname.
+SITE_TARGET = "site"
+
+# What that same row was stamped with before the sentinel (poindexter#1038).
+# Readers accept it so a row written by pre-cutover code still resolves —
+# a DB restored from an older dump, or the window around a code rollback.
+# Writers never produce it.
+LEGACY_SITE_TARGETS: tuple[str, ...] = ("gladlabs.io",)
+
+# Everything a reader should treat as "the site itself". Bind this (rather than
+# inlining a list) wherever SQL has to include or exclude the own-site rows.
+SITE_TARGETS: tuple[str, ...] = (SITE_TARGET, *LEGACY_SITE_TARGETS)
+
 
 class PipelineDB:
     """Dual-write target for the new pipeline tables."""
@@ -205,6 +232,10 @@ class PipelineDB:
         status: str = "published", medium: str = "default",
     ) -> None:
         """Record a distribution (publish) event.
+
+        ``target`` names a platform, or :data:`SITE_TARGET` for the post going
+        live on the site this install publishes. Never a hostname — see the
+        note on that constant.
 
         ``medium`` names WHICH artifact of the task reached this target, and is
         part of the row's unique key. ``'default'`` — the value every caller

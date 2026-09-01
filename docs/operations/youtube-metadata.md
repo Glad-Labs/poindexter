@@ -59,8 +59,9 @@ simply invisible to it. They kept their 4,800-char description, never got the
 The table now carries a `medium` column and is keyed
 `UNIQUE (task_id, target, medium)`. `medium` reuses the `media_approvals`
 vocabulary (`video` / `video_short` / `podcast`); `'default'` is the sentinel
-for a target that gets one undifferentiated artifact, which is every
-`gladlabs.io` row.
+for a target that gets one undifferentiated artifact, which is every own-site
+row (`target='site'` — see
+[distribution-target-vocabulary](../architecture/distribution-target-vocabulary.md)).
 
 `sync-metadata` also cross-checks itself against `media_assets` on every run
 and prints a warning naming any handle that has no distribution row. It should

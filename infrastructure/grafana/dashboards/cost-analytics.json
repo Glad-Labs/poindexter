@@ -1912,7 +1912,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "WITH placements AS (  SELECT platform AS surface, count(*)::bigint AS placements    FROM social_post_drafts   WHERE status = 'posted' AND $__timeFilter(posted_at) GROUP BY platform  UNION ALL  SELECT 'devto', count(*)::bigint FROM posts   WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)  UNION ALL  SELECT target, count(*)::bigint FROM pipeline_distributions   WHERE status = 'published' AND target <> 'gladlabs.io' AND $__timeFilter(created_at)   GROUP BY target), sent AS (  SELECT surface, sum(placements)::bigint AS placements FROM placements GROUP BY surface), arrived AS (  SELECT ref_source AS surface, count(*)::bigint AS arrivals FROM page_views_human   WHERE $__timeFilter(created_at) AND ref_source IS NOT NULL AND ref_source <> ''   GROUP BY ref_source) SELECT COALESCE(s.surface, a.surface) AS surface,       COALESCE(s.placements, 0) AS placements,       COALESCE(a.arrivals, 0) AS arrivals,       CASE WHEN COALESCE(s.placements, 0) > 0            THEN round(100.0 * COALESCE(a.arrivals, 0) / s.placements, 1)            END AS arrivals_per_100  FROM sent s FULL OUTER JOIN arrived a ON a.surface = s.surface ORDER BY arrivals DESC, placements DESC",
+          "rawSql": "WITH placements AS (  SELECT platform AS surface, count(*)::bigint AS placements    FROM social_post_drafts   WHERE status = 'posted' AND $__timeFilter(posted_at) GROUP BY platform  UNION ALL  SELECT 'devto', count(*)::bigint FROM posts   WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)  UNION ALL  SELECT target, count(*)::bigint FROM pipeline_distributions   WHERE status = 'published' AND target NOT IN ('site', 'gladlabs.io') AND $__timeFilter(created_at)   GROUP BY target), sent AS (  SELECT surface, sum(placements)::bigint AS placements FROM placements GROUP BY surface), arrived AS (  SELECT ref_source AS surface, count(*)::bigint AS arrivals FROM page_views_human   WHERE $__timeFilter(created_at) AND ref_source IS NOT NULL AND ref_source <> ''   GROUP BY ref_source) SELECT COALESCE(s.surface, a.surface) AS surface,       COALESCE(s.placements, 0) AS placements,       COALESCE(a.arrivals, 0) AS arrivals,       CASE WHEN COALESCE(s.placements, 0) > 0            THEN round(100.0 * COALESCE(a.arrivals, 0) / s.placements, 1)            END AS arrivals_per_100  FROM sent s FULL OUTER JOIN arrived a ON a.surface = s.surface ORDER BY arrivals DESC, placements DESC",
           "refId": "A"
         }
       ],
@@ -2000,7 +2000,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT (  SELECT count(*) FROM social_post_drafts WHERE status = 'posted' AND $__timeFilter(posted_at)) + (  SELECT count(*) FROM posts WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)) + (  SELECT count(*) FROM pipeline_distributions WHERE status = 'published'   AND target <> 'gladlabs.io' AND $__timeFilter(created_at)) AS placements",
+          "rawSql": "SELECT (  SELECT count(*) FROM social_post_drafts WHERE status = 'posted' AND $__timeFilter(posted_at)) + (  SELECT count(*) FROM posts WHERE metadata->>'devto_status' = 'posted' AND $__timeFilter(published_at)) + (  SELECT count(*) FROM pipeline_distributions WHERE status = 'published'   AND target NOT IN ('site', 'gladlabs.io') AND $__timeFilter(created_at)) AS placements",
           "refId": "A"
         }
       ],

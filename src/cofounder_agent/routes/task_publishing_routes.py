@@ -630,12 +630,12 @@ async def approve_task(
                     # Record the distribution so `content_tasks` view's
                     # post_id / post_slug / published_at columns resolve
                     # non-NULL. The view pulls from pipeline_distributions
-                    # where target = 'gladlabs.io'.
+                    # where target is the own-site sentinel.
                     try:
-                        from services.pipeline_db import PipelineDB
+                        from services.pipeline_db import SITE_TARGET, PipelineDB
                         await PipelineDB(db_service.pool).add_distribution(
                             task_id=task_id,
-                            target="gladlabs.io",
+                            target=SITE_TARGET,
                             post_id=pub_result.post_id,
                             post_slug=pub_result.post_slug,
                             external_url=pub_result.published_url,
@@ -855,10 +855,10 @@ async def publish_task(
         # Record the distribution so `content_tasks` view resolves
         # post_id / post_slug / published_at non-NULL.
         try:
-            from services.pipeline_db import PipelineDB
+            from services.pipeline_db import SITE_TARGET, PipelineDB
             await PipelineDB(db_service.pool).add_distribution(
                 task_id=task_id,
-                target="gladlabs.io",
+                target=SITE_TARGET,
                 post_id=pub_result.post_id,
                 post_slug=pub_result.post_slug,
                 external_url=pub_result.published_url,

@@ -23,6 +23,7 @@ import pytest
 # The real dispatcher statement, so this test fails if the upsert and the key
 # ever drift apart.
 from services.jobs.dispatch_handles import _RECORD_DISTRIBUTION_SQL
+from services.pipeline_db import SITE_TARGET as _SITE_TARGET
 
 pytestmark = [
     pytest.mark.integration_db,
@@ -30,9 +31,6 @@ pytestmark = [
 ]
 
 _TASK = "task-medium-key-test"
-# Stands in for the operator's own site target; the medium default is
-# target-agnostic, so no real domain belongs in an OSS test.
-_SITE_TARGET = "operator-site"
 
 
 async def _seed_task(conn) -> None:
@@ -68,8 +66,8 @@ async def test_medium_defaults_so_existing_writers_need_no_change(test_txn) -> N
     undifferentiated artifact. The default has to make those rows correct
     without the caller naming a medium.
 
-    The target here stands in for the operator's own site — whatever
-    ``PipelineDB.add_distribution`` is called with on publish.
+    The target is the own-site sentinel — what ``PipelineDB.add_distribution``
+    is actually called with on publish.
     """
     await _seed_task(test_txn)
     await test_txn.execute(

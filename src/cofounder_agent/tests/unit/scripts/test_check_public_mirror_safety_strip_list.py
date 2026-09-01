@@ -109,6 +109,7 @@ _MIRROR_TOOLING_STRIP = (
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_distribution_target.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",

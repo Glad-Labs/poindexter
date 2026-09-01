@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from services.distribution_ref import SURFACE_MEDIUM
+from services.pipeline_db import SITE_TARGETS
 
 # Referrer host → surface, for the pre-tag signal. Matched against the host
 # with any leading ``www.`` removed. Suffix-matched, so ``go.bsky.app`` and
@@ -105,11 +106,14 @@ _PLACEMENTS_SQL = """
 
     UNION ALL
 
-    -- Video uploads that returned a platform handle.
+    -- Video uploads that returned a platform handle. The own-site sentinel is
+    -- excluded because the post going live on our own site is not an outbound
+    -- placement; $2 carries the legacy spelling of it too, so a row written
+    -- before the sentinel does not read as a surface named after a domain.
     SELECT target AS surface, count(*)::bigint
       FROM pipeline_distributions
      WHERE status = 'published'
-       AND target <> 'gladlabs.io'
+       AND target <> ALL ($2::text[])
        AND created_at >= $1
      GROUP BY target
 """
@@ -176,7 +180,7 @@ async def surface_yield(pool, *, days: int = 30) -> list[SurfaceYield]:
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     async with pool.acquire() as conn:
-        placement_rows = await conn.fetch(_PLACEMENTS_SQL, since)
+        placement_rows = await conn.fetch(_PLACEMENTS_SQL, since, list(SITE_TARGETS))
         tagged_rows = await conn.fetch(_TAGGED_VIEWS_SQL, since)
         referrer_rows = await conn.fetch(_REFERRER_VIEWS_SQL, since)
 

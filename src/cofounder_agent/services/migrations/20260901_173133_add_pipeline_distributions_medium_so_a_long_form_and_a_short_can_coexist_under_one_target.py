@@ -30,7 +30,7 @@ the ``#Shorts`` title suffix from #3518, leaving each one byte-identically
 titled to its long-form twin on the channel.
 
 **Why ``medium`` and not ``(task_id, target, external_id)``.** ``external_id`` is
-nullable — every ``target='gladlabs.io'`` row has it NULL, and NULLs are distinct
+nullable — every own-site row has it NULL, and NULLs are distinct
 in a unique index, so that key would let the blog-publish upsert insert an
 unbounded pile of duplicate rows instead of updating in place. It would also
 break the far more important case: a genuine RE-dispatch of the same render mints
@@ -41,13 +41,13 @@ re-dispatch, so the upsert keeps its "same render updates in place" contract.
 ``medium`` reuses the ``media_approvals.medium`` vocabulary (``video`` /
 ``video_short`` / ``podcast``) so the dispatcher can pass through the value it
 already holds. ``'default'`` is the sentinel for a target with exactly one
-undifferentiated artifact — every ``gladlabs.io`` row, and any future target that
+undifferentiated artifact — every own-site row, and any future target that
 delivers the post itself rather than a render of it.
 
 Four steps, all idempotent:
 
 1. Add the column with a ``'default'`` NOT NULL default (so the 179 existing
-   ``gladlabs.io`` rows are correct by construction).
+   own-site rows are correct by construction).
 2. Backfill ``medium`` on the existing ``youtube`` rows from
    ``media_assets.type``, matched on the handle. This matters beyond tidiness:
    one surviving row (``fh4p6Y73LKA``) is a Short, and leaving it ``'default'``

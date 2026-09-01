@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.pipeline_db import PipelineDB
+from services.pipeline_db import (
+    LEGACY_SITE_TARGETS,
+    SITE_TARGET,
+    SITE_TARGETS,
+    PipelineDB,
+)
 
 
 @pytest.fixture
@@ -107,7 +112,7 @@ class TestClearQaApprovedSnapshot:
 class TestAddDistribution:
     @pytest.mark.asyncio
     async def test_add_distribution(self, pdb, mock_pool):
-        await pdb.add_distribution("test-123", "gladlabs.io", post_slug="test-post")
+        await pdb.add_distribution("test-123", SITE_TARGET, post_slug="test-post")
         mock_pool.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -120,9 +125,41 @@ class TestAddDistribution:
         """A blog publish delivers one undifferentiated artifact, so callers here
         never name a medium — but the column is part of the row's unique key, so
         the write has to supply the sentinel explicitly."""
-        await pdb.add_distribution("test-123", "gladlabs.io")
+        await pdb.add_distribution("test-123", SITE_TARGET)
         sql, *args = mock_pool.execute.await_args.args
-        assert args[:3] == ["test-123", "gladlabs.io", "default"]
+        assert args[:3] == ["test-123", SITE_TARGET, "default"]
+
+    @pytest.mark.asyncio
+    async def test_own_site_target_is_a_sentinel_not_a_hostname(self, pdb, mock_pool):
+        """poindexter#1038 — the own-site row carried the source operator's own
+        domain, at three write sites and five read sites.
+
+        A fresh install was never *broken* by it (the literal matched on both
+        sides), which is why it survived: the damage is that every fork labels
+        its own publishes with someone else's brand, and every "not the site
+        itself" filter reads as ``target <> '<one operator's domain>'``.
+
+        The read side is a SQL view, so it cannot consult
+        ``app_settings.site_domain`` — a sentinel is the only encoding that
+        works on both ends.
+        """
+        assert "." not in SITE_TARGET, (
+            f"{SITE_TARGET!r} looks like a hostname — the own-site target names "
+            f"a relationship (published to self), not a domain"
+        )
+        await pdb.add_distribution("test-123", SITE_TARGET)
+        _sql, *args = mock_pool.execute.await_args.args
+        assert args[1] == "site"
+
+    def test_readers_still_accept_the_pre_cutover_spelling(self):
+        """Writers only ever produce the sentinel now, but a row carrying the old
+        literal can still arrive — an older dump restored, or a task published
+        inside a rollback window. Those rows must keep resolving their
+        post_id / post_slug / published_at rather than reading as unpublished.
+        """
+        assert SITE_TARGETS[0] == SITE_TARGET
+        assert "gladlabs.io" in LEGACY_SITE_TARGETS
+        assert set(SITE_TARGETS) == {SITE_TARGET, *LEGACY_SITE_TARGETS}
 
     @pytest.mark.asyncio
     async def test_upsert_keys_on_medium_so_two_renders_coexist(self, pdb, mock_pool):

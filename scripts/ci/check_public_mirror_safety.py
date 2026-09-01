@@ -224,6 +224,7 @@ _STRIP_FILES = (
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_distribution_target.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
     # Added 2026-08-25: shipped for 16 days after #3147 introduced it, turning
@@ -644,6 +645,40 @@ _LEAK_PATTERNS = (
         "install must NOT inherit Matt's site URL / email defaults — "
         "the operator sets these via `poindexter setup`.",
         multiline=True,
+    ),
+    LeakPattern(
+        # The operator's own domain used as a distribution TARGET — i.e. as an
+        # identifier the code writes and matches on, not as a URL it links to.
+        # ``pipeline_distributions.target`` named the source operator's domain
+        # at three write sites and five read sites until poindexter#1038; the
+        # VALUES rule above never saw it, because a kwarg
+        # (``target="<domain>"``) and a predicate (``target = '<domain>'``) are
+        # neither of them a seed tuple. A fresh install was not broken by it —
+        # the literal matched on both sides — which is exactly why it survived
+        # so long: the failure is that every fork labels its own publishes with
+        # someone else's brand.
+        #
+        # Scoped to a domain-SHAPED value so the legitimate targets keep
+        # passing: ``target="youtube"`` and ``target = 'site'`` are names, not
+        # hostnames, and only a hostname is operator identity. Deliberately not
+        # gladlabs.io-specific — any domain in this position is the same bug.
+        # Both directions: the write side sets it (``target="<domain>"``) and
+        # the read side compares against it (``target <> '<domain>'`` was the
+        # "not the site itself" filter in the yield query and two Grafana
+        # panels). A membership test (``NOT IN (...)`` / ``<> ALL ($n)``) is
+        # NOT flagged — that is how the widened readers keep accepting the
+        # pre-cutover value.
+        re.compile(
+            r"""\btarget\s*(?:=|==|!=|<>)\s*(?P<q>['"])"""
+            r"""[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"""
+            r"""(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?P=q)""",
+        ),
+        "operator domain used as a distribution target",
+        "A target names a platform, or the own-site sentinel "
+        "(services.pipeline_db.SITE_TARGET). Never a hostname — the read side "
+        "is a SQL view that cannot consult app_settings.site_domain, so a "
+        "hardcoded domain makes every install's own-site rows carry the source "
+        "operator's brand.",
     ),
     LeakPattern(
         # Telegram chat_id seeded into a webhook_endpoints config JSONB (the

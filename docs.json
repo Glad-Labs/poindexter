@@ -39,6 +39,7 @@
             "group": "Architecture deep dives",
             "pages": [
               "docs/architecture/database-schema",
+              "docs/architecture/distribution-target-vocabulary",
               "docs/architecture/rag-retrieval-stack",
               "docs/architecture/niches-and-rag-modes",
               "docs/architecture/cost-tier-routing",

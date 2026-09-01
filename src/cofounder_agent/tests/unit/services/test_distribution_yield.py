@@ -10,14 +10,17 @@ broadcasting into a void.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import pytest
 
 from services.distribution_yield import (
+    _PLACEMENTS_SQL,
     SurfaceYield,
     _surface_for_referrer,
     surface_yield,
 )
+from services.pipeline_db import LEGACY_SITE_TARGETS, SITE_TARGET
 
 
 class _FakeConn:
@@ -172,10 +175,31 @@ async def test_views_per_placement_is_none_when_nothing_went_out():
 async def test_window_is_bound_not_interpolated():
     pool = _FakePool(placements=[], tagged=[], referrer=[])
     await surface_yield(pool, days=7)
-    # Every query got exactly one bound argument — the cutoff — rather than a
-    # window spliced into the SQL text.
-    assert all(len(args) == 1 for args in pool.conn.bound_args)
+    # Nothing is spliced into the SQL text: the cutoff is bound on all three
+    # queries, and the placements query binds the own-site target list too.
     assert len(pool.conn.bound_args) == 3
+    assert [len(args) for args in pool.conn.bound_args] == [2, 1, 1]
+    assert all(isinstance(args[0], datetime) for args in pool.conn.bound_args)
+
+
+@pytest.mark.asyncio
+async def test_own_site_is_excluded_by_sentinel_and_its_legacy_spelling():
+    """The site itself is not an outbound placement, and the row saying so used
+    to be stamped with the source operator's domain (poindexter#1038).
+
+    Both spellings have to be excluded: a fork running the sentinel would
+    otherwise report a surface literally named ``gladlabs.io`` the moment it
+    restored a pre-cutover row.
+    """
+    pool = _FakePool(placements=[], tagged=[], referrer=[])
+    await surface_yield(pool, days=30)
+
+    excluded = pool.conn.bound_args[0][1]
+    assert SITE_TARGET in excluded
+    assert set(LEGACY_SITE_TARGETS) <= set(excluded)
+    # Bound as a list, not interpolated — the SQL names a parameter, not a value.
+    assert "gladlabs.io" not in _PLACEMENTS_SQL
+    assert "$2" in _PLACEMENTS_SQL
 
 
 @pytest.mark.asyncio

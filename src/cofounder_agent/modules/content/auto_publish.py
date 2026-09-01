@@ -281,11 +281,11 @@ async def auto_publish_task(
                 default=str,
             ),
         )
-        from services.pipeline_db import PipelineDB
+        from services.pipeline_db import SITE_TARGET, PipelineDB
 
         await PipelineDB(database_service.pool).add_distribution(
             task_id=task_id,
-            target="gladlabs.io",
+            target=SITE_TARGET,
             post_id=result.post_id,
             post_slug=result.post_slug,
             external_url=result.published_url,

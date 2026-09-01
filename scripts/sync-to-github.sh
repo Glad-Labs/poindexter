@@ -212,6 +212,7 @@ git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_sentry_dsn.py 2>/dev/null || true
+git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_distribution_target.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc_guard.py 2>/dev/null || true
