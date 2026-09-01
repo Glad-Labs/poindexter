@@ -124,23 +124,43 @@ class TestRoundingContract:
 
 
 class TestDerivation:
-    def test_a_percentage_derived_from_two_source_numbers_is_supported(self):
+    def test_derivation_is_OFF_by_default(self):
+        """Measured 2026-09-01: against a 35-value fact block, 81 of 99
+        INVENTED percentages were "explained" by some pair of corpus numbers
+        (~3N^2 candidate results chasing ~100 two-digit buckets). The feature
+        blinds the rail to the fabrication it exists to catch. Cost of the
+        default, measured over 40 posts: one extra false positive."""
         res = verify("the benchmark shows an 80% tax", ["124.7 and 25.3"])
+        assert res.verdicts[0].status == "unsupported"
+
+    def test_a_percentage_derived_from_two_source_numbers_is_supported_when_enabled(self):
+        res = verify(
+            "the benchmark shows an 80% tax", ["124.7 and 25.3"], allow_derived=True,
+        )
         assert res.verdicts[0].status == "derived"
         # The relation is RECORDED so an operator can judge a coincidence.
         assert "/" in res.verdicts[0].explanation
 
-    def test_derivation_can_be_disabled(self):
-        res = verify(
-            "the benchmark shows an 80% tax", ["124.7 and 25.3"],
-            allow_derived=False,
+    def test_a_rich_corpus_explains_almost_any_percentage(self):
+        """Pins the reason for the default: this is a property of the search,
+        not a bug in one case. If this ever stops holding, the default can be
+        revisited."""
+        corpus = [" ".join(str(v) for v in (
+            124.7, 25.3, 235.1, 64.2, 162.8, 84.8, 62.2, 36.1, 177.0, 172.2,
+            8872, 2756, 2636, 5322, 591, 243, 90, 940, 804, 34, 2194,
+        ))]
+        explained = sum(
+            1 for pct in range(1, 100)
+            if verify(
+                f"the survey found {pct}% of runs", corpus, allow_derived=True,
+            ).verdicts[0].status == "derived"
         )
-        assert res.verdicts[0].status == "unsupported"
+        assert explained > 50, f"only {explained}/99 — re-check the default"
 
     def test_derivation_never_applies_to_plain_quantities(self):
         """Only percentages and multipliers may be derived — a raw quantity
         must be stated, or any number would match some pair."""
-        res = verify("the report lists 3 posts", ["12 and 4 things"])
+        res = verify("the report lists 3 posts", ["12 and 4 things"], allow_derived=True)
         assert res.verdicts[0].status == "unsupported"
 
 
@@ -173,6 +193,15 @@ class TestVerifyScoring:
 
 
 class TestCorpusExtraction:
+    def test_identifier_digits_are_not_corpus_values(self):
+        """Regression: "phi4:14b" contributed 4 and 14 to the corpus, and the
+        derivation search duly explained a fabricated 91% as 1 - 14/162.8.
+        A name is not a value."""
+        nums = extract_corpus_numbers("phi4:14b hit 124.7 tokens/second on 32GB")
+        assert 124.7 in nums
+        assert 32.0 in nums          # a real quantity: trailing letters are a unit
+        assert 14.0 not in nums and 4.0 not in nums
+
     def test_corpus_extraction_is_deliberately_loose(self):
         """A false negative here would flag a TRUE claim as fabricated."""
         nums = extract_corpus_numbers("about 42 things, 1,000 more, and 0.5 again")
@@ -184,5 +213,5 @@ class TestCorpusExtraction:
 
     def test_zero_in_the_corpus_never_divides(self):
         """Guards the derivation search against a divide-by-zero."""
-        res = verify("the study reports 50%", ["0 and 0 and 0"])
+        res = verify("the study reports 50%", ["0 and 0 and 0"], allow_derived=True)
         assert res.verdicts[0].status == "unsupported"

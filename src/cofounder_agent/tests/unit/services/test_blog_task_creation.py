@@ -18,6 +18,7 @@ import services.blog_task_creation as btc
 import services.pipeline_throttle as pipeline_throttle
 import services.topic_dedup_guard as topic_dedup_guard
 from schemas.task_schemas import UnifiedTaskRequest
+from services import topic_pool as topic_pool_mod
 from services.blog_task_creation import (
     BlogTaskCreationError,
     create_blog_post_task,
@@ -170,3 +171,61 @@ class TestResolveNicheForTopics:
             asyncio.run(btc.resolve_niche_for_topics(object(), None))
         assert exc_info.value.status_code == 422
         assert "a, b" in exc_info.value.detail
+
+
+@pytest.mark.unit
+class TestPooledSummaryBecomesResearchContext:
+    """The claimed pool row's summary must reach the task as caller-attached
+    research (layer 1 of writer_core._collect_research_context).
+
+    It was fetched and dropped for the whole life of the auto path — 804 of
+    1,815 topic_pool rows carry one — and benchmark_findings puts its entire
+    measured fact block there, so dropping it would leave that source
+    proposing a topic with its evidence stripped off.
+    """
+
+    def _run(self, monkeypatch, summary, initial_metadata=None):
+        async def no_dup(topic, *, site_config=None, force=False):
+            return None
+
+        async def claim(pool, *, niche_id=None, site_config=None):
+            return {"id": "pool-1", "title": "Measured throughput",
+                    "summary": summary, "source": "benchmark_findings"}
+
+        class _Niche:
+            id = "n1"
+            slug = "glad-labs"
+
+        async def niche(pool, slug):
+            return _Niche()
+
+        monkeypatch.setattr(topic_dedup_guard, "assert_topic_not_duplicate", no_dup)
+        monkeypatch.setattr(topic_pool_mod, "claim_best_pooled_topic", claim)
+        monkeypatch.setattr(btc, "resolve_niche_for_topics", niche)
+        db = FakeDb()
+        req = _request(topic="auto")
+        if initial_metadata is not None:
+            req.metadata = initial_metadata
+        asyncio.run(create_blog_post_task(
+            req, db_service=db, site_config=None,
+        ))
+        return req
+
+    def test_summary_lands_in_metadata_research_context(self, monkeypatch):
+        req = self._run(monkeypatch, "MEASURED DATA — decode 124.7 tokens/second.")
+        assert "124.7" in req.metadata["research_context"]
+
+    def test_caller_supplied_context_is_preserved_after_the_pool_summary(self, monkeypatch):
+        req = self._run(
+            monkeypatch, "POOL FACTS", initial_metadata={"research_context": "CALLER"},
+        )
+        rc = req.metadata["research_context"]
+        assert rc.startswith("POOL FACTS") and "CALLER" in rc
+
+    def test_an_empty_summary_attaches_nothing(self, monkeypatch):
+        req = self._run(monkeypatch, "   ")
+        assert not (req.metadata or {}).get("research_context")
+
+    def test_discovered_by_records_the_source(self, monkeypatch):
+        req = self._run(monkeypatch, "FACTS")
+        assert req.metadata["discovered_by"] == "benchmark_findings"

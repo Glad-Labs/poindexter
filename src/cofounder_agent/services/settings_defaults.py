@@ -1819,9 +1819,13 @@ DEFAULTS: dict[str, str] = {
     # about the research than the draft — the rail skips instead of guessing.
     'qa_numeric_fidelity_min_corpus_numbers': '3',
     # Allow a claim to be satisfied by a RECORDED derivation over a pair of
-    # corpus numbers (ratio / inverse-ratio / percent-change). Disable to
-    # require every attributed figure to appear literally in the sources.
-    'qa_numeric_fidelity_allow_derived': 'true',
+    # corpus numbers (ratio / inverse-ratio / percent-change). OFF: measured
+    # against a 35-value fact block, 81 of 99 INVENTED percentages were
+    # "explained" by some pair (~3N^2 candidates chasing ~100 buckets), which
+    # blinds the rail to the fabrication it exists to catch. Cost of disabling,
+    # measured over 40 posts: one extra false positive. Only sound on a small,
+    # unit-homogeneous corpus.
+    'qa_numeric_fidelity_allow_derived': 'false',
     # Checkable unit vocabulary (CSV). Empty = the code's DEFAULT_UNITS. What a
     # niche measures in is per-install, so it is a setting, not a constant.
     'qa_numeric_fidelity_units': '',
@@ -4300,6 +4304,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # `seeds` is intentionally empty — guessing an operator's niche would be
     # worse than doing nothing, and seed_from_gsc_clicks grows the list from
     # queries that already earn clicks once the GSC tap has data.
+    # enabled=false for the same reason as search_autocomplete below: the
+    # runner defaults a MISSING plugin row to enabled=True, so shipping inert
+    # REQUIRES a seeded row. This source proposes real pipeline work off our
+    # own measured telemetry — an operator should read one proposal first.
+    'plugin.topic_source.benchmark_findings': (
+        '{"enabled": false, "config": {"window_days": 30, "min_calls": 30, '
+        '"min_models": 3, "min_spread_pct": 25, "cooldown_days": 30, '
+        '"new_model_days": 30, "max_topics": 2}}'
+    ),
     'plugin.topic_source.search_autocomplete': (
         '{"enabled": false, "config": {"seeds": [], "seed_from_gsc_clicks": true}}'
     ),

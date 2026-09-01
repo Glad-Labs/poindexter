@@ -1109,6 +1109,17 @@ def get_core_samples() -> dict[str, list[Any]]:
         # queries as new topic candidates (poindexter#764). Ships inert:
         # gated on app_settings.seo.query_ingestion.enabled (default false).
         ("topic_sources", "services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
+        # BenchmarkFindingsSource — the only topic source that reads our OWN
+        # instrumentation instead of the outside world. Proposes a post only
+        # when cost_logs supports a claim nobody else can make, and carries the
+        # measurements along as the task's research_context so the writer is
+        # grounded on them and qa.numeric_fidelity can check the draft against
+        # them. Ships disabled.
+        (
+            "topic_sources",
+            "services.topic_sources.benchmark_findings",
+            "BenchmarkFindingsSource",
+        ),
         # RssSource — generic RSS/Atom ingestion (poindexter#1017). One plugin,
         # N feeds: every feed is an external_taps row with tap_type='rss' and
         # config.feed_url. No engagement signal by design — a feed's signal is

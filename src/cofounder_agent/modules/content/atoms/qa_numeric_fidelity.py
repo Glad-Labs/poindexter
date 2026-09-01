@@ -168,7 +168,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         DEFAULT_ATTRIBUTION_MARKERS,
     )
     allow_derived = str(
-        _cfg(site_config, "qa_numeric_fidelity_allow_derived", "true"),
+        _cfg(site_config, "qa_numeric_fidelity_allow_derived", "false"),
     ).lower() in ("true", "1", "yes")
 
     from modules.content.multi_model_qa import MultiModelQA, ReviewerResult

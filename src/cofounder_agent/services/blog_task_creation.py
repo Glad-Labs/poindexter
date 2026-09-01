@@ -143,6 +143,31 @@ async def create_blog_post_task(
             "[create_blog_post_task] Resolved 'auto' topic -> %r (pool row %s, source %s)",
             resolved_topic, claimed["id"], claimed["source"],
         )
+        # Carry the pool row's summary into the task as caller-attached
+        # research. Layer 1 of writer_core._collect_research_context reads
+        # metadata["research_context"], which is the same seam the seed_url
+        # path uses ("that's how we get it in front of the LLM without adding
+        # new pipeline wiring") — the auto path simply never used it, so every
+        # source's summary was discarded at the moment of task creation. 804 of
+        # 1,815 topic_pool rows carry one (internal_rag ~118 chars, rss ~150),
+        # and benchmark_findings puts its whole measured fact block there, so
+        # dropping it would leave that source proposing a topic with its
+        # evidence stripped off.
+        summary = (claimed.get("summary") or "").strip()
+        if summary:
+            merged = dict(request.metadata or {})
+            existing = merged.get("research_context", "")
+            # Prepend, matching the seed_url precedent: pool context leads,
+            # anything the caller supplied is preserved after it.
+            merged["research_context"] = (
+                f"{summary}\n\n{existing}" if existing else summary
+            )
+            merged.setdefault("discovered_by", claimed["source"])
+            request.metadata = merged
+            logger.info(
+                "[create_blog_post_task] Attached %d chars of pool summary as "
+                "research_context (source %s)", len(summary), claimed["source"],
+            )
 
     # Pre-enqueue semantic dedup guard — closes the create_post / POST
     # /api/tasks near-duplicate gap. AUTO topics were already deduped by

@@ -41,15 +41,24 @@ reconciles against a source value of 235.1, because rounding a source figure
 for prose is normal writing, not fabrication. The rule is
 ``round(source, decimals_written) == claimed``.
 
-**Derivation is bounded and explained, never open-ended.** Prose routinely
+**Derivation is OFF by default, and the measurement is why.** Prose routinely
 states a figure the corpus implies rather than contains — "an 80% tax" from
-124.7 and 25.3. Searching every arithmetic combination would make the rail
-meaningless (with enough candidate values, any two-digit number matches
-something), so only four relations over *pairs* of corpus numbers are tried —
-ratio, inverse-ratio, percent-of, percent-change — the pair budget is capped,
-and the winning relation is recorded in the verdict. An operator reading
-"80% <- 1 - 25.3/124.7" can judge for themselves whether the rail was fooled;
-a silent pass would tell them nothing.
+124.7 and 25.3 — so the library can satisfy a claim from four relations over
+*pairs* of corpus numbers, recording the winning relation in the verdict.
+
+That feature does not survive contact with a real corpus. Against a 35-value
+fact block, **81 of 99 invented percentages (1%..99%) were "explained" by some
+pair** — including a fabricated 91% matched as ``1 - 243/2756``, a call count
+over a millisecond figure. The arithmetic is sound and the explanation is
+recorded, but with N corpus values there are ~3N² candidate results competing
+for ~100 two-digit buckets, so a collision is near-certain and the rail goes
+blind to exactly the fabrication it exists to catch.
+
+Measured cost of switching it off: across 40 published posts, **one** claim was
+satisfied only by derivation. One extra false positive per 40 posts buys back
+an 82% blind spot. ``allow_derived=True`` remains available for a small,
+unit-homogeneous corpus; it is not sound over free text, and making it sound
+needs unit-tagged operands, not a bigger pair budget.
 
 Pure and I/O-free by design, so the extraction rules, the rounding contract
 and the derivation search are all unit-testable without a database, a browser
@@ -302,16 +311,38 @@ def extract_claims(
     return claims
 
 
-def extract_corpus_numbers(*texts: str, max_numbers: int = 400) -> list[float]:
-    """Every number the ground truth states. Deliberately looser than claim
-    extraction — a source may express a figure in any shape, and a false
-    negative here would flag a true claim as fabricated."""
+def extract_corpus_numbers(
+    *texts: str,
+    units: tuple[str, ...] | list[str] = DEFAULT_UNITS,
+    max_numbers: int = 400,
+) -> list[float]:
+    """Every VALUE the ground truth states.
+
+    Looser than claim extraction — a source may express a figure in any shape,
+    and a false negative here would flag a true claim as fabricated. But not
+    *unbounded*: digits fused to letters are identifiers, and admitting them
+    manufactures arithmetic operands out of model names. ``phi4:14b`` once
+    contributed 4 and 14 to the corpus, and the derivation search duly
+    "explained" a fabricated 91% as ``1 - 14/162.8``. A name is not a value.
+
+    A digit run touching a letter is therefore skipped unless the trailing
+    letters are a known unit (``32GB`` is a quantity; ``14b`` is a name).
+    """
+    unit_set = {u.strip().lower() for u in units if u and u.strip()}
     seen: dict[float, None] = {}
     token_re = re.compile(_NUM)
     for text in texts:
         if not text:
             continue
         for m in token_re.finditer(text):
+            start, end = m.start(), m.end()
+            # Fused to a preceding letter -> identifier (qwen2.5, GPT4).
+            if start > 0 and _IDENTIFIER_PREFIX.search(text[start - 1]):
+                continue
+            # Fused to trailing letters -> identifier unless they are a unit.
+            trailing = re.match(r"[A-Za-z/]+", text[end:])
+            if trailing and trailing.group(0).lower().rstrip("/") not in unit_set:
+                continue
             value = _to_float(m.group(0))
             if value is None:
                 continue
@@ -385,7 +416,7 @@ def verify(
     *,
     units: tuple[str, ...] | list[str] = DEFAULT_UNITS,
     markers: tuple[str, ...] | list[str] = DEFAULT_ATTRIBUTION_MARKERS,
-    allow_derived: bool = True,
+    allow_derived: bool = False,
     score_unattributed: bool = False,
     max_pairs: int = 20000,
     max_claims: int = 400,
@@ -410,7 +441,9 @@ def verify(
             )
             for c in claims
         ]
-    corpus = extract_corpus_numbers(*corpus_texts, max_numbers=max_corpus_numbers)
+    corpus = extract_corpus_numbers(
+        *corpus_texts, units=units, max_numbers=max_corpus_numbers,
+    )
     result = FidelityResult(corpus_numbers=len(corpus))
 
     for claim in claims:
