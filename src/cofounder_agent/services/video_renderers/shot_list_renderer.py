@@ -248,7 +248,7 @@ async def _log_shot_audit(
         logger.warning(
             "[SHOT_LIST] audit_log insert failed for shot %d (the render itself "
             "is unaffected; the per-source success-rate view will under-report): %s",
-            shot_result.idx, exc,
+            shot_result.idx, describe_exception(exc),
         )
 
 
@@ -310,7 +310,7 @@ async def _render_image_gen_image(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_LIST] image-gen render failed for %s: %s",
-            os.path.basename(output_path), exc,
+            os.path.basename(output_path), describe_exception(exc),
         )
         return False
 
@@ -362,7 +362,7 @@ async def _render_pexels_image(
             },
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[SHOT_LIST] Pexels search failed for %r: %s", query, exc)
+        logger.warning("[SHOT_LIST] Pexels search failed for %r: %s", query, describe_exception(exc))
         return False
 
     if not results:
@@ -379,7 +379,7 @@ async def _render_pexels_image(
             with open(output_path, "wb") as fh:
                 fh.write(resp.content)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[SHOT_LIST] Pexels download failed for %s: %s", url, exc)
+        logger.warning("[SHOT_LIST] Pexels download failed for %s: %s", url, describe_exception(exc))
         return False
 
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
@@ -428,7 +428,7 @@ async def _render_pexels_video(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[SHOT_LIST] Pexels video search failed for %r: %s", query, exc,
+            "[SHOT_LIST] Pexels video search failed for %r: %s", query, describe_exception(exc),
         )
         return False
 
@@ -447,7 +447,7 @@ async def _render_pexels_video(
                 fh.write(resp.content)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[SHOT_LIST] Pexels video download failed for %s: %s", url, exc,
+            "[SHOT_LIST] Pexels video download failed for %s: %s", url, describe_exception(exc),
         )
         return False
 
@@ -648,7 +648,7 @@ async def _fit_hero_dims_to_free_vram(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_LIST] free-VRAM probe failed (%s) — keeping %dx%d",
-            exc, width, height,
+            describe_exception(exc), width, height,
         )
         return width, height
     if free_gb is None:
@@ -798,7 +798,7 @@ async def _clear_image_gen_for_hero(site_config: Any) -> None:
         # unload is visible, but never allowed to block the render attempt.
         logger.warning(
             "[SHOT_LIST] pre-hero co-resident clear failed (%s) — attempting "
-            "the hero render anyway", exc,
+            "the hero render anyway", describe_exception(exc),
         )
 
 
@@ -922,7 +922,7 @@ async def _clip_has_motion(
         return delta >= min_delta
     except Exception as exc:  # noqa: BLE001  # silent-ok: fail-open by
         # contract — a broken checker must never fail a rendered clip.
-        logger.debug("[SHOT_LIST] motion check errored for %s: %s", clip_path, exc)
+        logger.debug("[SHOT_LIST] motion check errored for %s: %s", clip_path, describe_exception(exc))
         return True
 
 
@@ -976,7 +976,7 @@ async def _clear_wan_for_stills(shots: list[Shot], site_config: Any) -> None:
         # pre-fix odds, never blocks the render.
         logger.warning(
             "[SHOT_LIST] wan pre-still unload failed (%s) — rendering anyway",
-            exc,
+            describe_exception(exc),
         )
 
 
@@ -1065,7 +1065,7 @@ async def _render_generative_clip(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_LIST] generative render raised for %s: %s",
-            os.path.basename(output_path), exc,
+            os.path.basename(output_path), describe_exception(exc),
         )
         return False, f"{type(exc).__name__}: {exc}"
 
@@ -1176,12 +1176,12 @@ def _render_brand_card(
         # solid navy card still saves below (the never-fail floor), so the card's
         # guarantee holds and there is nothing to escalate — debug is right here.
         logger.debug(
-            "[SHOT_LIST] card wordmark draw failed, using solid field: %s", exc,
+            "[SHOT_LIST] card wordmark draw failed, using solid field: %s", describe_exception(exc),
         )
     try:
         img.save(output_path, format="PNG")
     except OSError as exc:
-        logger.warning("[SHOT_LIST] card save failed for %s: %s", output_path, exc)
+        logger.warning("[SHOT_LIST] card save failed for %s: %s", output_path, describe_exception(exc))
         return False
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
@@ -2202,7 +2202,7 @@ async def _safe_progress(
     except Exception as exc:  # noqa: BLE001 — best-effort progress, never fatal
         # silent-ok: a progress callback is an observability heartbeat for the
         # live_activity pulse; its failure must never take the render down.
-        logger.debug("[SHOT_LIST] progress_cb swallowed: %s", exc)
+        logger.debug("[SHOT_LIST] progress_cb swallowed: %s", describe_exception(exc))
 
 
 async def _render_pass(
@@ -2881,7 +2881,7 @@ async def _probe_duration_s(path: str, *, ffprobe: str = "ffprobe") -> float | N
         dur = float(fmt.get("duration", 0.0))
         return dur if dur > 0 else None
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        logger.debug("[SHOT_LIST] narration ffprobe failed for %s: %s", path, exc)
+        logger.debug("[SHOT_LIST] narration ffprobe failed for %s: %s", path, describe_exception(exc))
         return None
 
 
