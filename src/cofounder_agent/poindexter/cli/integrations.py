@@ -90,6 +90,7 @@ def _load_client_config(
     client_id: str | None,
     client_secret_file: str | None,
     client_secret: str | None,
+    stored: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     """Resolve the OAuth client_id + client_secret from CLI inputs.
 
@@ -99,7 +100,15 @@ def _load_client_config(
       client), OR
     - ``--client-id ID --client-secret SECRET`` (raw values).
 
-    Fails loudly with a clear message if neither is supplied or the
+    ...or, when neither is supplied, the ``stored`` pair already in
+    app_settings from a previous setup. That fallback is what makes
+    RE-consent (``--with-update``, after the upload-only grant turned out to
+    be insert-only) a single command instead of a hunt for the original
+    client-secret JSON — the OAuth *client* is unchanged, only the scopes
+    being requested differ. It also keeps a long-lived secret off the shell
+    command line and out of shell history.
+
+    Fails loudly with a clear message if nothing resolves or the
     file shape doesn't match Google's published schema.
     """
     if client_secret_file:
@@ -134,11 +143,22 @@ def _load_client_config(
     if client_id and client_secret:
         return client_id.strip(), client_secret.strip()
 
+    stored_id = str((stored or {}).get("client_id") or "").strip()
+    stored_secret = str((stored or {}).get("client_secret") or "").strip()
+    if stored_id and stored_secret:
+        click.echo(
+            "Reusing the OAuth client already stored in app_settings "
+            "(pass --client-secret-file to use a different one)."
+        )
+        return stored_id, stored_secret
+
     raise click.ClickException(
         "Provide --client-secret-file <path> (recommended) OR "
         "--client-id + --client-secret. "
         "Create a Desktop OAuth client in Google Cloud Console → "
-        "APIs & Services → Credentials, then download the JSON."
+        "APIs & Services → Credentials, then download the JSON. "
+        "(No client_id/client_secret is stored in app_settings yet either, "
+        "so there is nothing to reuse.)"
     )
 
 
@@ -443,11 +463,30 @@ def youtube_setup(
     Pre-requisites: a Desktop OAuth client in Google Cloud Console
     with the YouTube Data API v3 enabled on the project.
     """
-    # Step 1 — resolve client credentials from inputs.
+    # Step 1 — resolve client credentials from inputs, falling back to the
+    # pair already in app_settings. Best-effort: a fresh install has no DB
+    # secrets yet, and that must surface as the "provide --client-*" message
+    # below rather than as a connection error from this lookup.
+    stored: dict[str, str] = {}
+    if not (client_secret_file or (client_id and client_secret)):
+        # Only touch the DB when the CLI did not supply a client — an operator
+        # who named one gets no benefit from the lookup, and doing it anyway
+        # made a pure input-validation path depend on Postgres being up.
+        try:
+            stored = _run(_read_secrets())
+        except Exception as exc:  # noqa: BLE001
+            # Visible, not swallowed: on a re-consent this is the difference
+            # between "reused your stored client" and the confusing
+            # "provide --client-id" below.
+            click.echo(
+                f"  (could not read stored OAuth client: {type(exc).__name__}: {exc})",
+                err=True,
+            )
     cid, csecret = _load_client_config(
         client_id=client_id,
         client_secret_file=client_secret_file,
         client_secret=client_secret,
+        stored=stored,
     )
 
     click.echo("Opening browser for YouTube OAuth consent...")

@@ -174,14 +174,29 @@ def _patch_verify(
 
 
 class TestSetupInputResolution:
-    def test_missing_inputs_fails_loudly(self, runner, integrations_module):
-        """Neither --client-secret-file nor --client-id/--client-secret."""
+    def test_missing_inputs_fails_loudly(
+        self, runner, integrations_module, monkeypatch,
+    ):
+        """Nothing on the CLI AND nothing stored — the fresh-install case.
+
+        Setup now falls back to the OAuth client already in app_settings (so a
+        re-consent needs no flags), which means "no inputs" alone is no longer
+        a failure. The stub represents an install that has never been set up.
+        """
+
+        async def no_stored_secrets() -> dict[str, str]:
+            return {}
+
+        monkeypatch.setattr(
+            integrations_module, "_read_secrets", no_stored_secrets,
+        )
         result = runner.invoke(
             integrations_module.integrations_group,
             ["youtube", "setup"],
         )
         assert result.exit_code != 0
         assert "Provide --client-secret-file" in result.output
+        assert "nothing to reuse" in result.output
 
     def test_client_secret_file_missing_path_fails(
         self, runner, integrations_module, tmp_path,
@@ -815,3 +830,72 @@ class TestSetupUpdateScope:
 
         assert set(_SCOPES).issubset(set(_SCOPES_WITH_UPDATE))
         assert "youtube.force-ssl" in " ".join(_SCOPES_WITH_UPDATE)
+
+
+class TestSetupReusesStoredClient:
+    """Re-consent must not require re-supplying the OAuth client.
+
+    The client_id/client_secret are already in app_settings from the first
+    setup; only the SCOPES differ on a `--with-update` re-consent. Demanding
+    them again sent the operator hunting for the original client-secret JSON
+    and pushed a long-lived secret onto the shell command line.
+    """
+
+    def test_falls_back_to_the_stored_client(self, integrations_module):
+        cid, csec = integrations_module._load_client_config(
+            client_id=None,
+            client_secret_file=None,
+            client_secret=None,
+            stored={"client_id": "stored-id", "client_secret": "stored-secret"},
+        )
+        assert (cid, csec) == ("stored-id", "stored-secret")
+
+    def test_explicit_flags_win_over_stored(self, integrations_module):
+        """An operator naming a client means it — swapping to a NEW OAuth
+        client must not be silently overridden by the old stored one."""
+        cid, csec = integrations_module._load_client_config(
+            client_id="cli-id",
+            client_secret="cli-secret",
+            client_secret_file=None,
+            stored={"client_id": "stored-id", "client_secret": "stored-secret"},
+        )
+        assert (cid, csec) == ("cli-id", "cli-secret")
+
+    def test_partial_stored_pair_does_not_resolve(self, integrations_module):
+        """Half a credential is not a credential — fail with the actionable
+        message rather than starting a flow that cannot complete."""
+        with pytest.raises(Exception) as exc:
+            integrations_module._load_client_config(
+                client_id=None,
+                client_secret_file=None,
+                client_secret=None,
+                stored={"client_id": "stored-id", "client_secret": ""},
+            )
+        assert "nothing to reuse" in str(exc.value)
+
+    def test_no_input_and_nothing_stored_says_so(self, integrations_module):
+        with pytest.raises(Exception) as exc:
+            integrations_module._load_client_config(
+                client_id=None, client_secret_file=None, client_secret=None, stored={}
+            )
+        assert "nothing to reuse" in str(exc.value)
+
+    def test_setup_end_to_end_with_only_the_with_update_flag(
+        self, runner, integrations_module, stub_db_calls, monkeypatch,
+    ):
+        """The whole point: `setup --with-update` and nothing else."""
+        calls = _patch_consent(monkeypatch, integrations_module, _make_creds())
+        _patch_verify(monkeypatch, integrations_module)
+        stub_db_calls["read_returns"].update(
+            client_id="stored-id", client_secret="stored-secret"
+        )
+
+        result = runner.invoke(
+            integrations_module.integrations_group,
+            ["youtube", "setup", "--with-update"],
+            input="n\n",
+        )
+        assert result.exit_code == 0, result.output
+        assert calls[0][:2] == ("stored-id", "stored-secret")
+        assert calls[0][2] is True  # wider scope requested
+        assert "Reusing the OAuth client" in result.output

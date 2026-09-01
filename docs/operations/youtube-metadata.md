@@ -55,6 +55,11 @@ nothing. Re-consent once:
 poindexter integrations youtube setup --with-update
 ```
 
+No flags beyond that: when no client is named on the command line, setup reuses
+the OAuth client already in `app_settings` from the first run — only the scopes
+being requested differ on a re-consent. Pass `--client-secret-file` to switch to
+a different OAuth client.
+
 That opens a browser, requests `youtube.upload` + `youtube.force-ssl`, and
 replaces the stored `refresh_token`. It is a superset — uploading keeps
 working. Until you run it, `sync-metadata --apply` fails on the first video
