@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+## [0.131.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.130.0...v0.131.0) (2026-09-01)
+
+
+### Features
+
+* **brain:** dead-man's switch for scheduled CI — nothing else watches a cron ([#3464](https://github.com/Glad-Labs/glad-labs-stack/issues/3464)) ([e537d80](https://github.com/Glad-Labs/glad-labs-stack/commit/e537d80b99f7c5819dd37b73f3b14a842b5eae32))
+* **distribution:** tag every outbound link with its surface so clicks are attributable ([#3508](https://github.com/Glad-Labs/glad-labs-stack/issues/3508)) ([6674186](https://github.com/Glad-Labs/glad-labs-stack/commit/667418654398a2f667a970be2225a5f5904fea4b))
+* **gpu:** pin ollama-primary to GPU 0, and make the lock split real ([#3470](https://github.com/Glad-Labs/glad-labs-stack/issues/3470)) ([04b1a9a](https://github.com/Glad-Labs/glad-labs-stack/commit/04b1a9a23a84302d8bc46462372f651bfe1f79e9))
+* **gpu:** set-based device locking — ships inert, self-corrects on unpin ([#3467](https://github.com/Glad-Labs/glad-labs-stack/issues/3467)) ([90f8d84](https://github.com/Glad-Labs/glad-labs-stack/commit/90f8d84af5cc80e5e79e031d4e1e246a44297569))
+* **image:** surface the fan-out judge-loss rate, and age out retained candidates ([#3462](https://github.com/Glad-Labs/glad-labs-stack/issues/3462)) ([128d4f5](https://github.com/Glad-Labs/glad-labs-stack/commit/128d4f59b19a8db9bb7fa5a73a349264b6e062d6))
+* **marketing:** add promotional product GIFs + reusable capture harness ([#3509](https://github.com/Glad-Labs/glad-labs-stack/issues/3509)) ([3b6ec3a](https://github.com/Glad-Labs/glad-labs-stack/commit/3b6ec3a130bd9859abff5f9827a79e38ee96a6c6))
+* **marketing:** re-shoot grafana promo GIF over 30d/7d ranges ([#3511](https://github.com/Glad-Labs/glad-labs-stack/issues/3511)) ([8f2372d](https://github.com/Glad-Labs/glad-labs-stack/commit/8f2372d93ecfcfe6af2ae5546e5245f4fd897222))
+* **model-eval:** make the self-review detector measurable ([#3487](https://github.com/Glad-Labs/glad-labs-stack/issues/3487)) ([e58fa97](https://github.com/Glad-Labs/glad-labs-stack/commit/e58fa97887177d791b2c86147320baa6366e9bb9))
+* **ops:** alert when the pipeline stops PRODUCING, not just when it stops running ([#3485](https://github.com/Glad-Labs/glad-labs-stack/issues/3485)) ([beef815](https://github.com/Glad-Labs/glad-labs-stack/commit/beef815be5a6ecf01900980a9bf1929c0f9f2781))
+* **rag:** extend the knowledge graph to post internal links ([#3469](https://github.com/Glad-Labs/glad-labs-stack/issues/3469)) ([6cd74cf](https://github.com/Glad-Labs/glad-labs-stack/commit/6cd74cf24b48301722039a9ef14f9809f0e861ab))
+* **rag:** make the curated memory wiki-link graph traversable (default off) ([#3466](https://github.com/Glad-Labs/glad-labs-stack/issues/3466)) ([c178cc9](https://github.com/Glad-Labs/glad-labs-stack/commit/c178cc965294a1787befd1e6e4e1cbdae1c7722d))
+* **security:** positive control for the secret-scan gate — prove it can still see ([#3458](https://github.com/Glad-Labs/glad-labs-stack/issues/3458)) ([f6153af](https://github.com/Glad-Labs/glad-labs-stack/commit/f6153afe3fd48dc8606235de3c807870d4b76df5))
+* **topics:** keep discovering while promotion is throttled ([#3491](https://github.com/Glad-Labs/glad-labs-stack/issues/3491)) ([89f1811](https://github.com/Glad-Labs/glad-labs-stack/commit/89f181110a632b6949442ae9a6134838de16c763))
+* **youtube:** add a videos.update capability so published metadata can be fixed ([#3518](https://github.com/Glad-Labs/glad-labs-stack/issues/3518)) ([77af9f2](https://github.com/Glad-Labs/glad-labs-stack/commit/77af9f2483d5948b2619c99988cfa1bd761cc821))
+* **youtube:** stop dumping the whole article into video descriptions ([#3517](https://github.com/Glad-Labs/glad-labs-stack/issues/3517)) ([a72d83d](https://github.com/Glad-Labs/glad-labs-stack/commit/a72d83db9e591bf85668c4a70b6945063dafd6a0))
+
+
+### Bug Fixes
+
+* **affiliate:** /go Worker config moves to deploy-proof secrets ([#3520](https://github.com/Glad-Labs/glad-labs-stack/issues/3520)) ([8077880](https://github.com/Glad-Labs/glad-labs-stack/commit/807788069fc22ef97e6074e11d75d979afbb859c))
+* **analytics:** cap the CF ingest cursor at the visibility horizon ([#3523](https://github.com/Glad-Labs/glad-labs-stack/issues/3523)) ([5b78fc7](https://github.com/Glad-Labs/glad-labs-stack/commit/5b78fc7a938e36e380881d43c41d9d2763d5dc7e))
+* **brain:** the scheduled-CI watchdog must be audible, and must not claim health it never checked ([#3468](https://github.com/Glad-Labs/glad-labs-stack/issues/3468)) ([28e67b9](https://github.com/Glad-Labs/glad-labs-stack/commit/28e67b96bbff46e4f592a989f8a9b057bcaf3632))
+* **ci:** one issue per incident, closed by the fix — not one per failed run ([#3472](https://github.com/Glad-Labs/glad-labs-stack/issues/3472)) ([bff3df6](https://github.com/Glad-Labs/glad-labs-stack/commit/bff3df695327e2a78438556eb95206b6bb03afb8))
+* **console:** live wall clock only ticked on new pipeline events — give it a real 1s interval ([#3513](https://github.com/Glad-Labs/glad-labs-stack/issues/3513)) ([d784860](https://github.com/Glad-Labs/glad-labs-stack/commit/d78486053fe7fc33d1379d5dc7e7248c0f44a5ed))
+* **console:** wall date was frozen at the mock epoch — derive it from the clock ([#3510](https://github.com/Glad-Labs/glad-labs-stack/issues/3510)) ([cb19612](https://github.com/Glad-Labs/glad-labs-stack/commit/cb196125e98b89f56c09798d897c2e38ae3e8a0a))
+* **e2e:** the glm-4.7 thinking-model test was flaky by construction ([#3471](https://github.com/Glad-Labs/glad-labs-stack/issues/3471)) ([3a6bec1](https://github.com/Glad-Labs/glad-labs-stack/commit/3a6bec11dd90dd4fadd42dd64f16f848cd0b2fff))
+* **gpu:** a container hostname is not a node identity — fail closed ([#3473](https://github.com/Glad-Labs/glad-labs-stack/issues/3473)) ([74185a0](https://github.com/Glad-Labs/glad-labs-stack/commit/74185a056a1f03f9473c3faadec63e6cf01eba33))
+* **gpu:** fail-closed must BLOCK, and scoped sessions must hold a shared base ([#3507](https://github.com/Glad-Labs/glad-labs-stack/issues/3507)) ([5c8e9ba](https://github.com/Glad-Labs/glad-labs-stack/commit/5c8e9babe2b1dea94da0b05cd1ff5bc765d3ea12))
+* **gpu:** give the ComfyUI reclaim rung a real hard path ([#3512](https://github.com/Glad-Labs/glad-labs-stack/issues/3512)) ([f2246d1](https://github.com/Glad-Labs/glad-labs-stack/commit/f2246d1a81459d9651c9df6230f70d352f68d84c))
+* **gpu:** pin the advisory-lock key across trees, and ratchet new copies ([#3463](https://github.com/Glad-Labs/glad-labs-stack/issues/3463)) ([4503622](https://github.com/Glad-Labs/glad-labs-stack/commit/4503622860510a2e3c39ffc9cfd06e559b1dbdc3))
+* **gpu:** verify every hard reclaim rung, not just ComfyUI ([#3516](https://github.com/Glad-Labs/glad-labs-stack/issues/3516)) ([28044c2](https://github.com/Glad-Labs/glad-labs-stack/commit/28044c2b94c2f3ec4987acc1f5e9adbfb0c42d1e))
+* **image-gen:** decline /unload while a render is in flight ([#3524](https://github.com/Glad-Labs/glad-labs-stack/issues/3524)) ([9812ab1](https://github.com/Glad-Labs/glad-labs-stack/commit/9812ab192eae0afd233db6b99cb5211c9ae98b57))
+* **image:** stop the fan-out judge losing 1-in-5 scores, and retain what it judged ([#3455](https://github.com/Glad-Labs/glad-labs-stack/issues/3455)) ([91e297c](https://github.com/Glad-Labs/glad-labs-stack/commit/91e297c71f7486edfe02263cafbd3cbd74c1bc30))
+* **model-eval:** a challenger must clear an absolute floor, not just beat the champion ([#3488](https://github.com/Glad-Labs/glad-labs-stack/issues/3488)) ([51640cc](https://github.com/Glad-Labs/glad-labs-stack/commit/51640cc5bdaea903500db53e5cfc433c6a4fce7b))
+* **ops:** alert-triage closes what it files — a stale issue was suppressing it ([#3474](https://github.com/Glad-Labs/glad-labs-stack/issues/3474)) ([30a0627](https://github.com/Glad-Labs/glad-labs-stack/commit/30a062709b2c72ba338c0313247eb9376375fed7))
+* **ops:** don't re-file an alert whose triage already concluded elsewhere ([#3478](https://github.com/Glad-Labs/glad-labs-stack/issues/3478)) ([c46250b](https://github.com/Glad-Labs/glad-labs-stack/commit/c46250bfc53ee4949562606ed14e4cea6433ca20))
+* **qa:** budget the judge rails for a thinking model's reasoning trace ([#3477](https://github.com/Glad-Labs/glad-labs-stack/issues/3477)) ([16d9e38](https://github.com/Glad-Labs/glad-labs-stack/commit/16d9e384e924577e09ead11fc822ad745b8a8fd7))
+* **qa:** withhold JSON mode from thinking judges — revives all three LLM rails ([#3519](https://github.com/Glad-Labs/glad-labs-stack/issues/3519)) ([3c2f68f](https://github.com/Glad-Labs/glad-labs-stack/commit/3c2f68f382d948863d7b52400ffeb8ffae1b1376))
+* **rag:** finish the chunk_text payload — BM25, the writer, and the reranker ([#3453](https://github.com/Glad-Labs/glad-labs-stack/issues/3453)) ([c130abb](https://github.com/Glad-Labs/glad-labs-stack/commit/c130abbdff292b2ed893e8061162ad052910c3fc))
+* **rag:** return the full chunk from retrieval, not the 500-char preview ([#3452](https://github.com/Glad-Labs/glad-labs-stack/issues/3452)) ([e0f5dd5](https://github.com/Glad-Labs/glad-labs-stack/commit/e0f5dd5cc4a8c97eb6a195042809f6a708f685b2))
+* **readme:** graph node + QA-rail counts were stale, and unwatched ([#3526](https://github.com/Glad-Labs/glad-labs-stack/issues/3526)) ([20f859d](https://github.com/Glad-Labs/glad-labs-stack/commit/20f859d7fcb9cbaf398780fe125895ac3be7056d))
+* **readme:** stale marketing stats, and put them on the nightly sync ([#3522](https://github.com/Glad-Labs/glad-labs-stack/issues/3522)) ([10949f8](https://github.com/Glad-Labs/glad-labs-stack/commit/10949f8b3c63568633b327c283477d21b7cc0c50))
+* **scripts:** backfill script crashed on import and double-counted taps ([#3454](https://github.com/Glad-Labs/glad-labs-stack/issues/3454)) ([639886c](https://github.com/Glad-Labs/glad-labs-stack/commit/639886cee6e88e45ae47f32f557696e20e1983c3))
+* **security:** CF Worker origin allowlists move to deploy-proof secrets ([#3514](https://github.com/Glad-Labs/glad-labs-stack/issues/3514)) ([ca83100](https://github.com/Glad-Labs/glad-labs-stack/commit/ca83100633081874ac4bfcfd1dc0a3f5890142cc))
+* **security:** stateless GitHub App tokens scanned clean — ghs_ patterns missed the JWT format ([#3451](https://github.com/Glad-Labs/glad-labs-stack/issues/3451)) ([30db206](https://github.com/Glad-Labs/glad-labs-stack/commit/30db2062c5410afe2c92c3813b89db24cbecde77))
+* **topics:** carry-forward means "was not picked", not "was not ranked" ([#3489](https://github.com/Glad-Labs/glad-labs-stack/issues/3489)) ([ba8a9f1](https://github.com/Glad-Labs/glad-labs-stack/commit/ba8a9f14d8875733a20e80925733bed1b2a6937d))
+* **topics:** record carry-forward provenance, and make decay actually compound ([#3506](https://github.com/Glad-Labs/glad-labs-stack/issues/3506)) ([ec197b9](https://github.com/Glad-Labs/glad-labs-stack/commit/ec197b9ae6282deb5bb00d7f7346d132c2c52ade))
+* **writer:** bound naming a PERSON separately from naming a product ([#3475](https://github.com/Glad-Labs/glad-labs-stack/issues/3475)) ([4b3813f](https://github.com/Glad-Labs/glad-labs-stack/commit/4b3813fd2740a3b7e25821b78fb418b3da1c8588))
+
 ## [0.130.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.129.0...v0.130.0) (2026-08-28)
 
 
