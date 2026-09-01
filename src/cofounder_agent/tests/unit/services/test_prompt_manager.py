@@ -105,6 +105,10 @@ class TestGetPrompt:
             # KeyError on an unmatched placeholder, so every var in the template
             # must be supplied here — that is what this test is for.
             screenshot_targets="none configured",
+            # The [CHART: …] allowlist — same contract as screenshot_targets
+            # above: an unsupplied template var is a KeyError, not a silent
+            # literal, which is exactly what this test guards.
+            chart_targets="none available",
         )
         assert "Machine Learning" in result
         assert "1500" in result

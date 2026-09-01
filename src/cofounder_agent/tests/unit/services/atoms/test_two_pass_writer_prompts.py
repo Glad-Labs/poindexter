@@ -84,6 +84,9 @@ class TestTwoPassGenerateWithContextPrompt:
             "atoms.two_pass_writer.generate_with_context",
             topic="T", angle="A", instructions="I", snippet_block="S",
             target_length=2500,
+            # str.format raises KeyError on an unmatched placeholder, so every
+            # template var must be supplied — the [CHART:] allowlist included.
+            chart_targets="none available",
         )
         # The requested word budget must appear in the rendered prompt so
         # the model is actually told how long to write.

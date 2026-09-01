@@ -2,8 +2,10 @@
 
 The writer (blog-generation SKILL.md) emits ``[IMAGE: subject]`` inline, one
 ``[HERO-IMAGE: subject]`` first line, and — on posts about Poindexter itself —
-``[SCREENSHOT: target-key]``. These functions extract the hero and number the
-inline markers into the ``[IMAGE-N: …]`` form the rest of the pipeline parses.
+``[SCREENSHOT: target-key]``, and ``[CHART: chart-key]`` where a section makes
+a claim our own measurements can plot. These functions extract the hero and
+number the inline markers into the ``[IMAGE-N: …]`` form the rest of the
+pipeline parses.
 No I/O — trivially unit-testable.
 
 Screenshot markers share ONE numbering sequence with ordinary image markers,
@@ -21,6 +23,7 @@ import re
 
 #: Description prefix that marks a numbered placeholder as a screenshot slot.
 SCREENSHOT_PREFIX = "screenshot:"
+CHART_PREFIX = "chart:"
 
 _HERO_RE = re.compile(
     r"^[ \t]*\[HERO-IMAGE:\s*([^\]]*)\][ \t]*\n?", re.IGNORECASE | re.MULTILINE
@@ -28,7 +31,7 @@ _HERO_RE = re.compile(
 # Matches [IMAGE: …] and [SCREENSHOT: …] in one pass so the two share a single
 # document-order counter. Group 1 is the keyword, group 2 the payload.
 _UNNUMBERED_RE = re.compile(
-    r"\[(IMAGE|SCREENSHOT):\s*([^\]]*)\]", re.IGNORECASE,
+    r"\[(IMAGE|SCREENSHOT|CHART):\s*([^\]]*)\]", re.IGNORECASE,
 )
 
 
@@ -60,14 +63,27 @@ def number_inline_markers(content: str, max_inline: int) -> str:
             return ""  # strip extras beyond the cap
         keyword = (match.group(1) or "").upper()
         payload = (match.group(2) or "").strip()
-        desc = (
-            f"{SCREENSHOT_PREFIX}{payload}"
-            if keyword == "SCREENSHOT"
-            else payload
-        )
+        # Each keyword carries its own prefix so the plan builder can route
+        # the slot without re-parsing the original marker.
+        prefix = {"SCREENSHOT": SCREENSHOT_PREFIX, "CHART": CHART_PREFIX}.get(keyword, "")
+        desc = f"{prefix}{payload}"
         return f"[IMAGE-{counter['n']}: {desc}]"
 
     return _UNNUMBERED_RE.sub(_sub, content)
+
+
+def split_chart_target(desc: str) -> tuple[str, str | None]:
+    """Return ``(desc_without_prefix, chart_target_or_None)``.
+
+    ``"chart:llm-decode-vs-delivered"`` → ``("llm-decode-vs-delivered",
+    "llm-decode-vs-delivered")``. Mirrors :func:`split_screenshot_target`; the
+    description is kept equal to the key so a logged plan still reads.
+    """
+    stripped = (desc or "").strip()
+    if not stripped.lower().startswith(CHART_PREFIX):
+        return stripped, None
+    target = stripped[len(CHART_PREFIX):].strip()
+    return target, (target or None)
 
 
 def split_screenshot_target(desc: str) -> tuple[str, str | None]:
@@ -85,8 +101,10 @@ def split_screenshot_target(desc: str) -> tuple[str, str | None]:
 
 
 __all__ = [
+    "CHART_PREFIX",
     "SCREENSHOT_PREFIX",
     "extract_hero_subject",
     "number_inline_markers",
+    "split_chart_target",
     "split_screenshot_target",
 ]

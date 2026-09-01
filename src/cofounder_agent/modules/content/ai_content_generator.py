@@ -55,6 +55,25 @@ from services.rag_excerpt import excerpt_around_query
 logger = get_logger(__name__)
 
 
+def _describe_chart_targets(site_config: Any) -> str:
+    """Render the ``[CHART: …]`` allowlist for the writer prompt.
+
+    Thin wrapper over ``services.chart_catalog`` — the writer can only name a
+    catalogued key, so the prompt must enumerate them or the model invents
+    plausible ones that each resolve to an empty slot.
+    """
+    from services.chart_catalog import describe_for_prompt
+
+    try:
+        return describe_for_prompt(site_config)
+    except Exception as e:  # noqa: BLE001
+        # A catalog problem must not take the whole draft down with a
+        # KeyError-shaped prompt failure; the resolver logs loudly on its own
+        # when a marker actually tries to resolve.
+        logger.warning("[chart_targets] catalog unreadable: %s", e)
+        return "none available — do not use [CHART: …] markers"
+
+
 def _describe_screenshot_targets(site_config: Any) -> str:
     """Render the ``[SCREENSHOT: …]`` allowlist for the writer prompt.
 
@@ -490,6 +509,7 @@ class AIContentGenerator:
                 research_context=research_context,
                 internal_link_titles=internal_links_str,
                 screenshot_targets=_describe_screenshot_targets(self._site_config),
+                chart_targets=_describe_chart_targets(self._site_config),
                 target_length=target_length,
                 word_count=target_length,  # legacy alias for premium override
                 style=style,
@@ -1565,6 +1585,15 @@ async def generate_with_context(
         instructions=instructions,
         snippet_block=snippet_block,
         target_length=target_length,
+        # The [CHART:] allowlist. two_pass is the writer canonical_blog
+        # actually runs, so a chart marker offered ONLY on the initial_draft
+        # prompt would never fire — which is precisely what happened to
+        # [SCREENSHOT:] (poindexter#1002): zero image.screenshot assets have
+        # ever been produced, because this prompt offers no markers at all.
+        # Only the CHART marker is added here; image placement stays with the
+        # decision agent, so the blast radius is one allowlisted, code-defined
+        # chart rather than a change to how every post gets illustrated.
+        chart_targets=_describe_chart_targets(_sc),
     )
     if prompt_metrics is not None:
         prompt_metrics["prompt_chars"] = len(prompt)

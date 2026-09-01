@@ -197,6 +197,9 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     # media
     ("media", "media"),
     ("image", "media"),
+    # charts are images — same subsystem, same bucket (chart_catalog_*,
+    # plugin.image_provider.chart.* already lands here via the plugin rule)
+    ("chart", "media"),
     ("post_edit", "media"),
     ("short_video", "media"),
     ("inline_image", "media"),

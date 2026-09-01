@@ -68,6 +68,20 @@ Lead with what you (the publisher) have actually built, run, or found here; use
 outside sources to corroborate, not to carry the whole article:
 {snippet_block}
 
+CHARTS — the one marker this prompt accepts:
+- When a section states a NUMERIC claim that our own measurements can plot — a
+  comparison across models, a rate, a spread — you may place [CHART: chart-key]
+  on its own line. It draws the real figures to scale, so the reader sees the
+  measurements instead of a diffusion model's impression of a graph.
+- Use a key from this list EXACTLY, or omit the marker entirely. An unlisted key
+  renders nothing, so never invent one, and never put data, numbers, or a
+  description inside the brackets — the chart's contents come from the
+  measurements, not from you. Available charts:
+{chart_targets}
+- Place at most one chart, and only where the surrounding prose actually
+  discusses those numbers. Do not add other image markers; illustrations are
+  chosen for you after the draft is written.
+
 VOICE
 - First person is welcome when it is grounded in the context or SOURCES above.
   Use "we"/"our" for work, tests, or results that actually appear there

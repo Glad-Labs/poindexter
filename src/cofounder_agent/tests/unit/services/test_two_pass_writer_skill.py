@@ -50,6 +50,10 @@ def test_two_pass_templates_have_placeholders() -> None:
     # Soft length target — the draft prompt tells the model the requested
     # word budget so output length tracks the picked target.
     assert "{target_length}" in generate
+    # The [CHART:] allowlist must stay on the writer canonical_blog actually
+    # runs — offered only on initial_draft it would never fire, which is what
+    # happened to [SCREENSHOT:] (zero image.screenshot assets, ever).
+    assert "{chart_targets}" in generate
 
 
 def test_two_pass_templates_end_with_single_newline() -> None:
@@ -73,6 +77,7 @@ def test_two_pass_templates_render_without_stray_braces() -> None:
         instructions="SOURCES: ...",
         snippet_block="[posts/1] we ran it on a 32GB card",
         target_length=1500,
+        chart_targets="- llm-decode-vs-delivered: decode vs delivered",
     )
     assert "RTX 5090 local LLM inference" in generate
     revise = pm.get_prompt(

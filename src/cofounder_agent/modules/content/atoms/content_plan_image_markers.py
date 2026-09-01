@@ -40,8 +40,9 @@ ATOM_META = AtomMeta(
         FieldSpec(
             name="image_plans", type="list",
             description=(
-                "[{num, desc, screenshot_target?}, ...] — one entry per placeholder. "
-                "screenshot_target is present only for [SCREENSHOT: key] markers "
+                "[{num, desc, screenshot_target?, chart_target?}, ...] — one entry per placeholder. "
+                "screenshot_target is present only for [SCREENSHOT: key] markers, "
+                "chart_target only for [CHART: key] markers "
                 "and routes that slot to the ScreenshotProvider."
             ),
         ),
@@ -146,18 +147,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # refuses to over-subscribe, and it fails loudly on its own.
         logger.debug("[content.plan_image_markers] VRAM guard skipped: %s", exc)
 
-    # Split the `screenshot:` prefix back out of the description (see
-    # _writer_markers). Plans carrying a screenshot_target are routed to the
-    # ScreenshotProvider by content.generate_images instead of image-gen.
-    from modules.content.atoms._writer_markers import split_screenshot_target
+    # Split the `screenshot:` / `chart:` prefixes back out of the description
+    # (see _writer_markers). Plans carrying a screenshot_target are routed to
+    # the ScreenshotProvider by content.generate_images, and a chart_target to
+    # the ChartProvider — both instead of image-gen, because diffusion renders
+    # axis labels and dashboards as garbled glyphs.
+    from modules.content.atoms._writer_markers import (
+        split_chart_target,
+        split_screenshot_target,
+    )
 
     image_plans = []
     for num, desc in placeholders:
         plan_desc, screenshot_target = split_screenshot_target(desc)
-        plan: dict[str, Any] = {"num": num, "desc": plan_desc}
+        chart_target = None
+        if not screenshot_target:
+            plan_desc, chart_target = split_chart_target(plan_desc)
+        # Named `entry`, not `plan` — `plan` is already bound above by
+        # plan_and_inject_placeholders and mypy (correctly) rejects the shadow.
+        entry: dict[str, Any] = {"num": num, "desc": plan_desc}
         if screenshot_target:
-            plan["screenshot_target"] = screenshot_target
-        image_plans.append(plan)
+            entry["screenshot_target"] = screenshot_target
+        elif chart_target:
+            entry["chart_target"] = chart_target
+        image_plans.append(entry)
 
     result: dict[str, Any] = {
         "content": content_text,

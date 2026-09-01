@@ -1503,6 +1503,13 @@ DEFAULTS: dict[str, str] = {
     # provider's target allowlist).
     # Device pixel ratio. 2 keeps axis text crisp through the shared uploader's
     # WebP transcode + 1920px fit.
+    # Per-install allowlist for [CHART: key] markers (CSV of catalog keys).
+    # EMPTY = every catalogued chart, which is the safe default here precisely
+    # because a chart is CODE-defined and read-only: the operator lever exists
+    # to narrow the list, not to switch on something that could surprise them.
+    # Charts are deliberately not definable in settings — that would mean
+    # operator-authored SQL reachable from an LLM-chosen key.
+    'chart_catalog_enabled_keys': '',
     'plugin.image_provider.chart.scale': '2',
     # Spec width in points; a spec's own `width` wins when present.
     'plugin.image_provider.chart.width': '1200',
@@ -5450,6 +5457,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'pipeline_writer_unload_confirm_timeout_seconds': {'value_type': 'integer'},
     'pipeline_writer_unload_grace_seconds': {'owner': 'ollama_unload', 'value_type': 'integer'},
     'pipeline_writer_unload_poll_interval_seconds': {'value_type': 'float'},
+    'chart_catalog_enabled_keys': {'owner': 'chart_catalog'},
     'plugin.image_provider.chart.scale': {'owner': 'chart', 'value_type': 'integer'},
     'plugin.image_provider.chart.timeout_ms': {'owner': 'chart', 'value_type': 'integer'},
     'plugin.image_provider.chart.upload_to': {'owner': 'chart'},

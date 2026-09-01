@@ -11,6 +11,7 @@ import pytest
 from modules.content.atoms._writer_markers import (
     extract_hero_subject,
     number_inline_markers,
+    split_chart_target,
 )
 
 
@@ -171,3 +172,43 @@ async def test_screenshot_slot_with_no_url_strips_placeholder():
         }],
     })
     assert "[IMAGE-1" not in injected["content"]
+
+
+class TestChartMarkers:
+    """``[CHART: key]`` mirrors ``[SCREENSHOT: key]``: the writer names a
+    catalogued key and never the data, because a chart's contents come from
+    measurements, not from the model."""
+
+    def test_chart_marker_gets_its_own_prefix(self):
+        out = number_inline_markers("[CHART: llm-decode-vs-delivered]", 5)
+        assert out == "[IMAGE-1: chart:llm-decode-vs-delivered]"
+
+    def test_all_three_marker_kinds_share_one_numbering_sequence(self):
+        """Regression: an early version dropped the chart prefix entirely
+        because the keyword→prefix branch only knew about SCREENSHOT."""
+        out = number_inline_markers(
+            "[IMAGE: a desk]\n[CHART: llm-decode-vs-delivered]\n[SCREENSHOT: qa-rails]",
+            5,
+        )
+        assert "[IMAGE-1: a desk]" in out
+        assert "[IMAGE-2: chart:llm-decode-vs-delivered]" in out
+        assert "[IMAGE-3: screenshot:qa-rails]" in out
+
+    def test_chart_markers_respect_the_inline_cap(self):
+        out = number_inline_markers("[CHART: a]\n[CHART: b]\n[CHART: c]", 2)
+        assert "chart:a" in out and "chart:b" in out and "chart:c" not in out
+
+    def test_split_chart_target_round_trips(self):
+        assert split_chart_target("chart:llm-decode-vs-delivered") == (
+            "llm-decode-vs-delivered", "llm-decode-vs-delivered",
+        )
+
+    def test_split_chart_target_ignores_a_plain_description(self):
+        assert split_chart_target("a desk by a window") == ("a desk by a window", None)
+
+    def test_split_chart_target_ignores_a_screenshot_payload(self):
+        """The two prefixes must not consume each other's markers."""
+        assert split_chart_target("screenshot:qa-rails") == ("screenshot:qa-rails", None)
+
+    def test_an_empty_chart_key_yields_no_target(self):
+        assert split_chart_target("chart:") == ("", None)

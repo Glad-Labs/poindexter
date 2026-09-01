@@ -72,6 +72,49 @@ the **entire** category/series matrix into the alt attribute. A screen reader
 gets the numbers, and so does any later LLM pass re-reading the published post.
 The provider puts that string on `ImageResult.alt_text` automatically.
 
+## The `[CHART:]` marker path
+
+`ChartProvider` now has a caller. The writer places a marker naming a
+catalogued **key**, and three hops carry it to a rendered image — the same
+plumbing `[SCREENSHOT:]` already uses:
+
+```
+[CHART: llm-decode-vs-delivered]        <- writer, in the draft
+  |- [IMAGE-N: chart:llm-decode-vs-delivered]   _writer_markers
+       |- plan["chart_target"]                   content.plan_image_markers
+            |- chart_catalog.resolve(key, pool)  <- the SERVICE owns the query
+                 |- ChartProvider.fetch(spec)     <- receives finished data
+```
+
+**The writer picks which chart, never what it says.** `services/chart_catalog.py`
+maps a key to a `ChartSpec` built from live rows; the provider is handed
+finished JSON. That split is the whole security property — a query surface
+reachable from a writer-emitted marker would be an injection seam, which is why
+the provider still has no SQL in it and a test still says it never will.
+
+Charts are **code-defined**, not settings-defined: an operator-authored query
+reachable from an LLM-chosen key is exactly what this avoids. The per-install
+lever is the allowlist (`chart_catalog_enabled_keys`, empty = whole catalog),
+not the query.
+
+Every failure collapses to the same empty slot the screenshot branch produces —
+unknown key, key disabled here, too few models to compare, a query that raised,
+a render that returned nothing. **A wrong chart is worse than no chart.**
+
+### Catalogued charts
+
+| key                       | what it draws                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `llm-decode-vs-delivered` | per-model raw decode speed vs the throughput the application actually receives, from `cost_logs` |
+
+It shares `benchmark_findings.measure_models` with the
+[topic source](benchmark-findings.md) that proposes these posts, so the chart
+and the prose come from one query rather than two that can drift apart.
+
+Adding a chart means adding a builder function — one read-only query returning
+a fully-populated `ChartSpec`, including the `source` line, because a published
+chart must always say what produced it.
+
 ## The provider takes data, never a query
 
 `ChartProvider` accepts a JSON **chart spec** — categories and values already

@@ -75,6 +75,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     site_config = state.get("site_config")
     platform = state.get("platform")
     image_service = state.get("image_service") or get_image_service(site_config=site_config)  # type: ignore[arg-type]
+    # Charts are drawn from live rows, so this branch needs a pool. Resolved
+    # once here rather than per-plan; None simply means no chart renders.
+    from modules.content.atoms._pool import resolve_pool
+
+    pool = resolve_pool(state, atom="content.generate_images")
     # Per-run override from `rebuild-images --allow-stock`; absent (False) on
     # the ordinary canonical_blog path, where the global setting governs.
     allow_stock = bool(state.get("allow_stock", False))
@@ -82,7 +87,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Screenshot slots never reach the diffusion batch: they resolve against
     # an allow-listed URL, cost no GPU, and a diffusion "impression of a
     # dashboard" is exactly the output the marker exists to avoid.
-    gen_plans = [p for p in image_plans if not p.get("screenshot_target")]
+    gen_plans = [
+        p for p in image_plans
+        if not p.get("screenshot_target") and not p.get("chart_target")
+    ]
 
     # poindexter#733 / poindexter#841 — one Ollama lock + one image-gen lock
     # for ALL plans in this call, instead of 2N per-plan lock acquisitions.
@@ -123,6 +131,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 num=num,
             )
             image_results.append(shot)
+            continue
+
+        chart_target = str(plan.get("chart_target") or "").strip()
+        if chart_target:
+            chart = await _render_chart(
+                chart_target,
+                site_config=site_config, task_id=task_id, post_id=post_id,
+                num=num, pool=pool,
+            )
+            image_results.append(chart)
             continue
 
         image_gen_url = gen_url_by_num.get(num)
@@ -348,3 +366,101 @@ def _build_alt_text(desc: str, topic: str, site_config: Any) -> str:
 
 
 __all__ = ["ATOM_META", "run"]
+
+
+async def _render_chart(
+    key: str,
+    *,
+    site_config: Any,
+    task_id: Any,
+    post_id: Any,
+    num: str,
+    pool: Any = None,
+) -> dict[str, Any]:
+    """Resolve a catalogued chart key to real data and render it.
+
+    The key → data step happens HERE, in a service call, never inside the image
+    provider: ``ChartProvider`` takes a finished data spec and has no query
+    surface, because a query surface reachable from a writer-emitted marker is
+    an injection seam (the ScreenshotProvider allowlist lesson).
+
+    Every failure — unknown key, key disabled here, too little data, a render
+    that returned nothing — resolves to the same empty slot the screenshot
+    branch produces. A wrong chart is worse than no chart.
+    """
+    from modules.content.atoms._image_helpers import record_inline_image_asset
+    from services.chart_catalog import resolve as resolve_chart
+
+    spec = await resolve_chart(key, pool=pool, site_config=site_config)
+    if spec is None:
+        logger.warning(
+            "[content.generate_images] chart key %r did not resolve — "
+            "leaving the slot empty", key,
+        )
+        return {"num": num, "url": None, "alt_text": "", "source": "none"}
+
+    import json
+
+    from plugins.registry import get_image_providers
+
+    provider = next(
+        (p for p in get_image_providers() if getattr(p, "name", "") == "chart"),
+        None,
+    )
+    if provider is None:  # pragma: no cover - registry always carries it
+        logger.warning("[content.generate_images] chart provider not registered")
+        return {"num": num, "url": None, "alt_text": "", "source": "none"}
+
+    payload = json.dumps({
+        "form": spec.form,
+        "title": spec.title,
+        "subtitle": spec.subtitle,
+        "categories": spec.categories,
+        "series": [{"label": s.label, "values": s.values} for s in spec.series],
+        "value_label": spec.value_label,
+        "value_suffix": spec.value_suffix,
+        "source": spec.source,
+        "width": spec.width,
+    })
+    try:
+        results = await provider.fetch(payload, {"_site_config": site_config})
+    except Exception as e:  # noqa: BLE001 — a chart must never break the post
+        logger.warning(
+            "[content.generate_images] chart %r raised: %s", key, e,
+        )
+        results = []
+
+    if not results:
+        logger.warning(
+            "[content.generate_images] chart %r rendered nothing", key,
+        )
+        return {"num": num, "url": None, "alt_text": "", "source": "none"}
+
+    chart = results[0]
+    await record_inline_image_asset(
+        site_config=site_config,
+        post_id=post_id,
+        public_url=chart.url,
+        provider_plugin="image.chart",
+        # R2UploadService converts PNG→WebP at upload time (#732).
+        width=int(chart.width or 0), height=int(chart.height or 0),
+        mime_type="image/webp",
+        metadata={
+            "placeholder_num": num,
+            "alt_text": chart.alt_text,
+            "task_id": str(task_id or ""),
+            "chart_target": key,
+            "chart_source": chart.metadata.get("chart_source", ""),
+        },
+    )
+    return {
+        "num": num,
+        "url": chart.url,
+        # The alt text carries the full data matrix (chart_alt_text) — a PNG
+        # has no table view, so this is where the numbers live for a screen
+        # reader and for any later pass over the post.
+        "alt_text": chart.alt_text,
+        "source": "chart",
+        "width": chart.width,
+        "height": chart.height,
+    }
