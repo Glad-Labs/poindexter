@@ -1470,6 +1470,18 @@ DEFAULTS: dict[str, str] = {
     'plugin.image_provider.screenshot.targets': '',
     'plugin.image_provider.screenshot.timeout_ms': '60000',
     'plugin.image_provider.screenshot.upload_to': 'r2',
+    # ----- chart image provider (services/image_providers/chart.py) -----
+    # Draws a chart from a DATA SPEC supplied by whatever computed the numbers.
+    # There is deliberately no query surface here: the writer must never be able
+    # to make an image plugin fetch its own data (same lesson as the screenshot
+    # provider's target allowlist).
+    # Device pixel ratio. 2 keeps axis text crisp through the shared uploader's
+    # WebP transcode + 1920px fit.
+    'plugin.image_provider.chart.scale': '2',
+    # Spec width in points; a spec's own `width` wins when present.
+    'plugin.image_provider.chart.width': '1200',
+    'plugin.image_provider.chart.timeout_ms': '30000',
+    'plugin.image_provider.chart.upload_to': 'r2',
     'plugin.llm_provider.gemini.enabled': 'false',
     # Refuse paid base_url targets unless explicitly opted in. The default
     # base_url is host.docker.internal:11434/v1 (Ollama) so most installs
@@ -3588,6 +3600,27 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # embed / audit_log row.
     'settings_zero_reader_max_report': '50',
 
+    # ----- Ollama decode/prefill split capture (ProbeDecodeSplitCoverageJob) -----
+    # cost_logs.decode_duration_ms is populated by a fail-open monkey-patch over
+    # LiteLLM's Ollama transform_response (services/llm_providers/ollama_timings.py).
+    # Fail-open is correct for the call path but means the capture can stop
+    # SILENTLY on a litellm upgrade — this probe is the watcher for that.
+    'llm_decode_split_probe_enabled': 'true',
+    # Alert window. Coverage is judged over the last N hours only: a wider window
+    # keeps re-reporting the pre-2026-08-26 rows that predate the capture and can
+    # never be backfilled.
+    'llm_decode_split_window_hours': '24',
+    # Learning window for the self-calibrating denominator — a model counts as
+    # Ollama-routed (and is therefore entitled to a split) if it reported one at
+    # least once in this many days. Avoids hardcoding a local-model name list.
+    'llm_decode_split_learn_days': '30',
+    # Coverage below this percentage on a learned model raises the finding.
+    # Healthy prod sits at 100%; the headroom absorbs a single odd row.
+    'llm_decode_split_min_coverage_pct': '90',
+    # Below this many eligible calls in the window the percentage is noise
+    # (0/1 = 0%), so the probe reports without a verdict instead of paging.
+    'llm_decode_split_min_sample': '50',
+
     # ----- Findings issue labels (content-derived from kind; cite-or-surface) -----
     # Comma-separated labels stamped on the GitHub issue a github_issue-delivery
     # finding opens. Derived from the finding KIND (its content), not a default.
@@ -5267,6 +5300,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'pipeline_writer_unload_confirm_timeout_seconds': {'value_type': 'integer'},
     'pipeline_writer_unload_grace_seconds': {'owner': 'ollama_unload', 'value_type': 'integer'},
     'pipeline_writer_unload_poll_interval_seconds': {'value_type': 'float'},
+    'plugin.image_provider.chart.scale': {'owner': 'chart', 'value_type': 'integer'},
+    'plugin.image_provider.chart.timeout_ms': {'owner': 'chart', 'value_type': 'integer'},
+    'plugin.image_provider.chart.upload_to': {'owner': 'chart'},
+    'plugin.image_provider.chart.width': {'owner': 'chart', 'value_type': 'integer'},
     'plugin.image_provider.flux_schnell.server_url': {'owner': 'flux_schnell'},
     'plugin.image_provider.screenshot.targets': {'owner': 'screenshot'},
     'plugin.image_provider.screenshot.timeout_ms': {'owner': 'screenshot', 'value_type': 'integer'},
@@ -5466,6 +5503,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'settings_read_telemetry_min_restamp_seconds': {'owner': 'flush_settings_read_telemetry', 'value_type': 'integer'},
     'settings_zero_reader_grace_days': {'owner': 'probe_zero_reader_settings', 'value_type': 'integer'},
     'settings_zero_reader_max_report': {'owner': 'probe_zero_reader_settings', 'value_type': 'integer'},
+    'llm_decode_split_learn_days': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
+    'llm_decode_split_min_coverage_pct': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
+    'llm_decode_split_min_sample': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
+    'llm_decode_split_probe_enabled': {'owner': 'probe_decode_split_coverage', 'value_type': 'boolean'},
+    'llm_decode_split_window_hours': {'owner': 'probe_decode_split_coverage', 'value_type': 'integer'},
     'settings_zero_reader_probe_enabled': {'owner': 'probe_zero_reader_settings', 'value_type': 'boolean'},
     'shared_http_client_max_connections': {'value_type': 'integer'},
     'shared_http_client_max_keepalive': {'value_type': 'integer'},

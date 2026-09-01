@@ -583,8 +583,14 @@ class TestGroupingMakesSense:
         # rag_hybrid_enabled (graph expansion is a retrieval stage stacked with
         # hybrid and rerank), and the retrieval_eval_* block seated beside
         # rag_rerank_max_chars. Both sit inside the RAG-section interleave this
-        # span already tolerates rather than opening a new one.
-        assert span < 460, (
+        # span already tolerates rather than opening a new one. Bumped 460->470
+        # for the 12-line plugin.image_provider.chart.* block: the chart
+        # provider's four keys belong beside plugin.image_provider.screenshot.*
+        # (same capability, adjacent for grep/review), and those already sit
+        # inside this tolerated interleave — moving them out to shrink the
+        # number would separate siblings, which is the readability cost this
+        # test exists to prevent.
+        assert span < 470, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

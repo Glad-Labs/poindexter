@@ -875,6 +875,18 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 0-for-N rewrite streak so rescue burn is never silent again (the
         # 2026-07 collapse ran 0-for-116 unnoticed; poindexter#986).
         ("jobs", "services.jobs.probe_rescue_yield", "ProbeRescueYieldJob"),
+        # ProbeDecodeSplitCoverageJob — watchdog on the Ollama decode/prefill
+        # capture. That seam is a fail-open monkey-patch over LiteLLM internals,
+        # so a version bump can stop it SILENTLY while every call still
+        # succeeds; the signature-pin test only catches an upgrade in CI. The
+        # denominator self-calibrates (a model that ever reported a split is
+        # entitled to one) rather than hardcoding a local-model list that would
+        # rot on the next pin change.
+        (
+            "jobs",
+            "services.jobs.probe_decode_split_coverage",
+            "ProbeDecodeSplitCoverageJob",
+        ),
         # ProbePipelineIdleJob — hourly watchdog on pipeline OUTPUT. Every
         # other health signal is liveness (containers up, scheduler firing,
         # jobs ok=True) and all of them stayed green through a 46-hour content
@@ -1120,6 +1132,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Poindexter itself. Diffusion cannot draw a real dashboard, so a
         # [SCREENSHOT: target] marker routes here instead. poindexter#1002.
         ("image_providers", "services.image_providers.screenshot", "ScreenshotProvider"),
+        # ChartProvider — the other half of the same gap: for a MEASUREMENT
+        # post the honest illustration is the numbers drawn to scale. Takes a
+        # data spec and renders it; deliberately has no query surface, so a
+        # writer-emitted marker can never make it fetch its own data.
+        ("image_providers", "services.image_providers.chart", "ChartProvider"),
         # Core VideoProviders. Imperative load until the packaging issue
         # (entry_points discovery in Docker) is resolved — same pattern
         # as the image_providers above.
