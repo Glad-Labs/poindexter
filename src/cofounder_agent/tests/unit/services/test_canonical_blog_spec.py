@@ -111,7 +111,12 @@ class TestCanonicalBlogSpec:
         assert ("qa_topic_delivery", "qa_citations") in edges
         # qa_unlinked_attribution (#765) is inserted between citations and
         # consistency — so the old qa_citations → qa_consistency edge is gone.
-        assert ("qa_citations", "qa_unlinked_attribution") in edges
+        # qa_numeric_fidelity (2026-09-01) then splits the citations →
+        # unlinked_attribution hop: it belongs beside the other
+        # source-grounding rails, after citation repair has run.
+        assert ("qa_citations", "qa_numeric_fidelity") in edges
+        assert ("qa_numeric_fidelity", "qa_unlinked_attribution") in edges
+        assert ("qa_citations", "qa_unlinked_attribution") not in edges
         assert ("qa_unlinked_attribution", "qa_consistency") in edges
         assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
@@ -221,7 +226,7 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_46(self):
+    def test_node_count_is_47(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
         # + social.generate_drafts + qa.content_originality (RAG self-echo net)
         # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
@@ -230,4 +235,5 @@ class TestCanonicalBlogSpec:
         # + qa.self_claim (our-own-system claim verification, poindexter#1007)
         # +1 net: stage.writer_self_review (1 node) -> content.detect_contradictions
         #   + content.revise_contradictions (2 nodes), 2026-08-28
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 46
+        # + qa.numeric_fidelity (arithmetic source-grounding rail, 2026-09-01)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 47

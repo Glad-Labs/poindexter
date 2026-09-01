@@ -589,8 +589,12 @@ class TestGroupingMakesSense:
         # (same capability, adjacent for grep/review), and those already sit
         # inside this tolerated interleave — moving them out to shrink the
         # number would separate siblings, which is the readability cost this
-        # test exists to prevent.
-        assert span < 470, (
+        # test exists to prevent. Bumped 470->500 for the six
+        # qa_numeric_fidelity_* keys: they are qa_ keys seated directly beside
+        # their sibling deterministic rail's qa_self_claim_* block, i.e. INSIDE
+        # the cluster this test wants them in — the span grew because the
+        # cluster did, which is the healthy direction.
+        assert span < 500, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

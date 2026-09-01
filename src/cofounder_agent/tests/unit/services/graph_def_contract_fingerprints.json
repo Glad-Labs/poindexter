@@ -41,6 +41,7 @@
   "qa.content_originality": "52b8807a41d2",
   "qa.critic": "52b8807a41d2",
   "qa.deepeval": "52b8807a41d2",
+  "qa.numeric_fidelity": "2c973baa6e4f",
   "qa.programmatic": "9ab77dd4d9f1",
   "qa.ragas": "52b8807a41d2",
   "qa.rewrite": "3b7215ac5657",

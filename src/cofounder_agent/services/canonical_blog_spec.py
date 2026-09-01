@@ -121,6 +121,14 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_vision", "atom": "qa.vision"},
         {"id": "qa_topic_delivery", "atom": "qa.topic_delivery"},
         {"id": "qa_citations", "atom": "qa.citations"},
+        # Arithmetic, not judgement (the only rail of that kind here): every
+        # number the draft presents as SOURCED FACT must reconcile with a
+        # number in the research corpus, at the precision the author wrote.
+        # Attribution-gated because a corpus run showed unattributed numbers in
+        # ordinary prose are years, hypotheticals and figures of speech —
+        # scoring them all flagged 33%, every one a false positive.
+        # Advisory-first (DB-gated via qa_gates.numeric_fidelity).
+        {"id": "qa_numeric_fidelity", "atom": "qa.numeric_fidelity"},
         # Advisory rail (#765): flags named-source attributions left unlinked +
         # unmatched against the corpus AFTER reconcile_citations did its repair.
         {"id": "qa_unlinked_attribution", "atom": "qa.unlinked_attribution"},
@@ -215,7 +223,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_ragas", "to": "qa_vision"},
         {"from": "qa_vision", "to": "qa_topic_delivery"},
         {"from": "qa_topic_delivery", "to": "qa_citations"},
-        {"from": "qa_citations", "to": "qa_unlinked_attribution"},
+        {"from": "qa_citations", "to": "qa_numeric_fidelity"},
+        {"from": "qa_numeric_fidelity", "to": "qa_unlinked_attribution"},
         {"from": "qa_unlinked_attribution", "to": "qa_consistency"},
         {"from": "qa_consistency", "to": "qa_self_consistency"},
         {"from": "qa_self_consistency", "to": "qa_content_originality"},
