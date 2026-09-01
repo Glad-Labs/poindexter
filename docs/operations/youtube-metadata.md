@@ -42,6 +42,62 @@ path uses**, so a future change to the composition rules reaches new and old
 videos through one code path instead of two that can disagree. Dry run is the
 default because this writes to a public channel.
 
+### What it can reach
+
+`pipeline_distributions` is the list of uploads, and until 2026-09-01 it could
+not hold all of them. The table was keyed `UNIQUE (task_id, target)`, but one
+post ships **two** renders — a long-form `video` and a `video_short` — to the
+same `target='youtube'` under the same `task_id`, so the second upsert
+overwrote the first. Five of the twelve YouTube rows on prod were collisions;
+in every one the Short inserted first and the long form clobbered it, leaving
+the Short with no row at all. Nothing was lost outright —
+`media_assets.platform_video_ids` keeps one handle per asset row and never
+collided — but the sync reads the distribution table, so those Shorts were
+simply invisible to it. They kept their 4,800-char description, never got the
+`#Shorts` suffix, and stayed byte-identically titled to their long-form twin.
+
+The table now carries a `medium` column and is keyed
+`UNIQUE (task_id, target, medium)`. `medium` reuses the `media_approvals`
+vocabulary (`video` / `video_short` / `podcast`); `'default'` is the sentinel
+for a target that gets one undifferentiated artifact, which is every
+`gladlabs.io` row.
+
+`sync-metadata` also cross-checks itself against `media_assets` on every run
+and prints a warning naming any handle that has no distribution row. It should
+stay permanently silent — `media_distribute` writes both records in one
+transaction, and the key now admits every render — but "should be impossible"
+is exactly what was believed about the old key, and the failure mode is a sync
+that covers N-1 videos and reports success.
+
+`pipeline_distributions` remains the source it _reads_: it is the row the
+dispatcher writes transactionally with the upload, and the only one carrying a
+`status`, so it is the only place a deleted upload can be recorded.
+`media_assets` is the cross-check, not a second source of truth.
+
+**Why the medium and not the video id.** `(task_id, target, external_id)` looks
+like the obvious key and is the wrong one twice over: `external_id` is NULL for
+every blog-publish row and NULLs are distinct in a unique index, so those would
+duplicate without bound — and a genuine re-dispatch mints a _new_ video id, so
+it would append a second row rather than superseding the one it replaces. The
+medium is stable across re-dispatch, which is what keeps the upsert's
+"same render updates in place" contract.
+
+### Videos that are no longer there
+
+`--apply` also reconciles in the one direction the upload path never did. When
+YouTube reports a video is not on the channel, the sync demotes its row to
+`status='deleted'` and raises a `youtube_upload_vanished` finding.
+
+Nothing else revisits that row, so before this a deleted upload claimed to be
+published forever: it inflated the published count and failed every subsequent
+`--apply`. Two rows on prod were in exactly that state, both uploaded
+2026-06-15.
+
+Only the API's own "not found" demotes a row — never a string match on the
+error text, and never a dry run, which makes no call and so has no evidence. An
+oembed 404 is _not_ sufficient either: a private video returns one too. The
+demotion is keyed on the video handle, so a task's other render stays published.
+
 ### It needs a scope you probably don't have yet
 
 `videos.update` requires `youtube.force-ssl`. The original consent requested
@@ -126,7 +182,12 @@ appended. It does double duty: it separates the pair in every listing, and
 The append is budget-aware — a title already near the 100-char cap is trimmed
 at a word boundary to make room, so the adapter's clamp can't cut off the very
 thing that distinguishes it. It is idempotent (a re-sync never stacks a second
-marker), and `sync-metadata` carries the asset type through so re-syncing a
-Short doesn't rebuild its title as long-form and re-collide the pair.
+marker), and `sync-metadata` reads `pipeline_distributions.medium` so re-syncing
+a Short doesn't rebuild its title as long-form and re-collide the pair.
+
+That read used to be a correlated subquery back into `media_assets`, because the
+distribution row had no idea which render it described. The column that fixed
+the overwrite bug above is the same column that gives this one source of truth
+instead of two that can disagree.
 
 Set the suffix empty to opt out.

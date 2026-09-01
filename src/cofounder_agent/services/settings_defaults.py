@@ -3274,6 +3274,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.social_post_delivery_failed.fallback': 'log_only',
     'findings.social_post_delivery_failed.cooldown_minutes': '360',
     'findings.social_post_delivery_failed.min_severity': 'warn',
+    # A YouTube upload we recorded as published is no longer on the channel
+    # (youtube_metadata_sync demoted the row to status='deleted'). Routine
+    # Discord traffic per feedback_telegram_vs_discord — the row is already
+    # reconciled by the time this fires, and the video is usually gone because
+    # a human deleted it. It is still worth seeing: nothing else in the system
+    # would ever have told us a public surface went away. 24h cooldown, and the
+    # dedup_key is per-video so one deletion never mutes another's.
+    'findings.youtube_upload_vanished.delivery': 'discord',
+    'findings.youtube_upload_vanished.fallback': 'log_only',
+    'findings.youtube_upload_vanished.cooldown_minutes': '1440',
+    'findings.youtube_upload_vanished.min_severity': 'warn',
     'findings.topic_gap.delivery': 'discord',
     'findings.topic_gap.fallback': 'log_only',
     'findings.topic_gap.cooldown_minutes': '1440',

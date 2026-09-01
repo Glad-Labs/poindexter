@@ -59,6 +59,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CATEGORY = "28"  # Science & Technology
 _DEFAULT_PRIVACY = "public"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+# ``PublishResult.status`` marker for "the platform says this video does not
+# exist on this channel". Distinguishes a permanent verdict from every other
+# update failure (scope refusal, quota, transient 5xx), all of which are worth
+# retrying and none of which mean the upload is gone.
+STATUS_NOT_FOUND = "not_found"
 _VIDEO_URL_FMT = "https://www.youtube.com/watch?v={external_id}"
 _SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
@@ -596,7 +602,18 @@ class YouTubePublishAdapter:
                 tags=tags,
             )
         except LookupError as exc:
-            return PublishResult(platform=self.name, success=False, error=str(exc))
+            # The video is not on this channel — a verdict, not a window. Flagged
+            # structurally (``status``) rather than left for the caller to
+            # string-match the message, because acting on it means demoting a
+            # durable row: ``youtube_metadata_sync`` marks the distribution
+            # ``status='deleted'`` so a vanished upload stops being retried
+            # forever and stops counting as published.
+            return PublishResult(
+                platform=self.name,
+                success=False,
+                status=STATUS_NOT_FOUND,
+                error=str(exc),
+            )
         except Exception as exc:  # noqa: BLE001 — classified below, never swallowed
             message = str(exc)
             if _is_insufficient_scope(exc):

@@ -12,9 +12,11 @@ Two things the ``media_distribute`` and ``podcast_distribute`` jobs both need:
    successful video upload, capture the platform's external handles: the video id
    is merged into ``media_assets.platform_video_ids`` (a non-clobbering jsonb
    ``||`` merge) and a ``pipeline_distributions`` row is upserted
-   (``status='published'``) for observability + re-upload dedupe. This module
-   single-sources the :class:`PlatformDispatchResult` value type, the two SQL
-   statements, and the per-platform merge+insert loop.
+   (``status='published'``) for observability + re-upload dedupe. Both writes are
+   scoped by ``medium``, so the long form and the Short of one post land as two
+   rows rather than one overwriting the other. This module single-sources the
+   :class:`PlatformDispatchResult` value type, the two SQL statements, and the
+   per-platform merge+insert loop.
 
    (The handle-capture piece was originally extracted after #1584 / #1601 to
    de-duplicate byte-identical copies shared with the post-keyed
@@ -176,13 +178,22 @@ _MERGE_PLATFORM_VIDEO_ID_SQL = """
 
 # Record the external delivery for observability + dedupe. ``task_id`` is the
 # media_assets task key (== posts.metadata->>'pipeline_task_id', the FK target
-# for pipeline_distributions). Upserted on the (task_id, target) unique key so a
-# re-dispatch refreshes the same row rather than duplicating it.
+# for pipeline_distributions).
+#
+# **``medium`` is part of the key, and that is the whole point.** One task
+# produces BOTH a long-form ``video`` and a ``video_short`` and dispatches both
+# to ``target='youtube'``; under the old ``(task_id, target)`` key the second
+# upsert overwrote the first and one YouTube handle was silently lost — five of
+# the twelve rows on prod, unreachable by ``youtube_metadata_sync`` ever since
+# (migration 20260901_173133). Keying on the medium instead of the external id
+# keeps the "same render updates in place" contract: a re-dispatch mints a NEW
+# video id but the same medium, so it refreshes its row rather than appending a
+# second one that claims the first is still live.
 _RECORD_DISTRIBUTION_SQL = """
     INSERT INTO pipeline_distributions
-        (task_id, target, status, external_id, external_url, post_id, published_at)
-    VALUES ($1, $2, 'published', $3, $4, $5::uuid, NOW())
-    ON CONFLICT (task_id, target) DO UPDATE SET
+        (task_id, target, medium, status, external_id, external_url, post_id, published_at)
+    VALUES ($1, $2, $3, 'published', $4, $5, $6::uuid, NOW())
+    ON CONFLICT (task_id, target, medium) DO UPDATE SET
         status       = EXCLUDED.status,
         external_id  = COALESCE(EXCLUDED.external_id, pipeline_distributions.external_id),
         external_url = COALESCE(EXCLUDED.external_url, pipeline_distributions.external_url),
@@ -195,6 +206,7 @@ async def persist_platform_handles(
     conn: Any,
     *,
     post_id: str,
+    medium: str,
     asset_id: str | None,
     task_id: str | None,
     results: list[PlatformDispatchResult],
@@ -210,6 +222,12 @@ async def persist_platform_handles(
     2. upsert a ``pipeline_distributions`` row (``status='published'``) carrying
        ``external_id`` / ``external_url`` when a ``task_id`` is known (it's the
        NOT NULL FK key); the row is logged-and-skipped otherwise.
+
+    ``medium`` is which render this dispatch delivered (``video`` /
+    ``video_short`` / ``podcast`` — the ``media_approvals.medium`` vocabulary the
+    caller already holds). It is part of the distribution row's unique key, so a
+    post's long form and its Short each get their own row instead of the second
+    overwriting the first; see :data:`_RECORD_DISTRIBUTION_SQL`.
 
     Results that failed or carry no ``external_id`` are skipped. This is the loop
     ONLY — the caller owns the transaction and the ``record_dispatched`` stamp,
@@ -229,13 +247,13 @@ async def persist_platform_handles(
         if task_id:
             await conn.execute(
                 _RECORD_DISTRIBUTION_SQL,
-                task_id, r.platform, r.external_id, r.url, post_id,
+                task_id, r.platform, medium, r.external_id, r.url, post_id,
             )
         else:
             logger.warning(
-                "%s delivered post %s (external_id=%s) but no task_id — "
+                "%s delivered post %s (%s, external_id=%s) but no task_id — "
                 "skipping pipeline_distributions row",
-                r.platform, post_id, r.external_id,
+                r.platform, post_id, medium, r.external_id,
             )
 
 

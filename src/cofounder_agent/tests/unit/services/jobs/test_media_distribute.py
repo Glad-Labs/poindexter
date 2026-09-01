@@ -321,6 +321,57 @@ async def test_dispatches_approved_assets_with_correct_shorts_flag(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_both_renders_of_one_task_land_two_distribution_rows(tmp_path):
+    """The bug this whole change exists to close.
+
+    One task ships a long-form video AND a Short to the same target under the
+    same task_id. Under the old ``UNIQUE (task_id, target)`` key the second
+    upsert overwrote the first, so one YouTube handle was silently lost from
+    ``pipeline_distributions`` — five of twelve prod rows — and the orphaned
+    Short became invisible to ``youtube_metadata_sync``. Both renders must now
+    write their own row, distinguished by medium.
+    """
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    job = MediaDistributeJob()
+    base = {
+        "post_id": "p1", "title": "T", "content": "c", "excerpt": "e",
+        "seo_keywords": "", "slug": "s", "storage_path": str(f),
+        "asset_id": "asset-1", "task_id": "task-1",
+    }
+    pool = _FakePool(
+        unlinked=[],
+        approved=[
+            {**base, "medium": "video", "asset_id": "asset-long"},
+            {**base, "medium": "video_short", "asset_id": "asset-short"},
+        ],
+    )
+
+    async def _dispatch(_pool, _sc_, row, *, shorts):
+        vid = "SHORT" if shorts else "LONG"
+        return [md._PlatformDispatchResult(
+            platform="youtube", success=True, external_id=vid,
+            url=f"https://www.youtube.com/watch?v={vid}",
+        )]
+
+    with patch.object(md, "_dispatch_asset", _dispatch):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+
+    assert out.changes_made == 2
+    dists = [
+        c for c in pool.conn.execute.await_args_list
+        if "pipeline_distributions" in c.args[0]
+    ]
+    # Two rows, same (task, target), different medium + handle.
+    assert [(d.args[1], d.args[2], d.args[3], d.args[4]) for d in dists] == [
+        ("task-1", "youtube", "video", "LONG"),
+        ("task-1", "youtube", "video_short", "SHORT"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_long_form_dispatch_rebuilds_the_video_rss_feed(tmp_path):
     """Delivering a long-form video must refresh video/feed.xml.
 
@@ -503,14 +554,17 @@ async def test_persist_dispatch_result_records_id_and_url():
     assert merge.args[1] == "asset-1"
     assert json.loads(merge.args[2]) == {"youtube": "VID123"}
 
-    # pipeline_distributions row: task_id, target, external_id, external_url,
-    # post_id (status 'published' is literal in the SQL).
+    # pipeline_distributions row: task_id, target, medium, external_id,
+    # external_url, post_id (status 'published' is literal in the SQL). The
+    # medium is in the row's unique key, so it has to be threaded from the
+    # dispatch — a long form and a Short of one post are two rows.
     dist = next(c for c in calls if "pipeline_distributions" in c.args[0])
     assert dist.args[1] == "task-1"
     assert dist.args[2] == "youtube"
-    assert dist.args[3] == "VID123"
-    assert dist.args[4] == "https://youtu.be/VID123"
-    assert dist.args[5] == "post-1"
+    assert dist.args[3] == "video"
+    assert dist.args[4] == "VID123"
+    assert dist.args[5] == "https://youtu.be/VID123"
+    assert dist.args[6] == "post-1"
 
 
 @pytest.mark.asyncio
@@ -559,7 +613,8 @@ async def test_run_persists_distribution_for_successful_dispatch(tmp_path):
     assert json.loads(merge.args[2]) == {"youtube": "VID9"}
     dist = next(c for c in calls if "pipeline_distributions" in c.args[0])
     assert dist.args[1] == "task-9"
-    assert dist.args[3] == "VID9"
+    assert dist.args[3] == "video"
+    assert dist.args[4] == "VID9"
 
 
 def test_job_protocol_shape():

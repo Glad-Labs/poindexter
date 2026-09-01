@@ -1,20 +1,33 @@
 """Unit tests for the shared media/podcast dispatch helpers.
 
-Focus: :func:`claim_media_dispatch`, the per-``(post, medium)`` single-flight
-advisory-lock guard both dispatch lanes wrap their irreversible upload in. The
-concurrency behaviour (two overlapping passes upload once) is exercised
-end-to-end in ``test_media_distribute`` / ``test_podcast_distribute``; here we
-pin the guard's own contract in isolation.
+Two contracts:
+
+* :func:`claim_media_dispatch`, the per-``(post, medium)`` single-flight
+  advisory-lock guard both dispatch lanes wrap their irreversible upload in. The
+  concurrency behaviour (two overlapping passes upload once) is exercised
+  end-to-end in ``test_media_distribute`` / ``test_podcast_distribute``; here we
+  pin the guard's own contract in isolation.
+* :func:`persist_platform_handles`, which captures what landed on the platform.
+  Its distribution row is keyed ``(task_id, target, medium)`` — the medium is
+  load-bearing, not decoration: one task delivers BOTH a long-form video and a
+  Short to ``target='youtube'``, and the old two-column key made the second
+  upsert overwrite the first (five of twelve prod rows; migration
+  20260901_173133).
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
 from services.jobs import dispatch_handles as dh
-from services.jobs.dispatch_handles import claim_media_dispatch
+from services.jobs.dispatch_handles import (
+    PlatformDispatchResult,
+    claim_media_dispatch,
+    persist_platform_handles,
+)
 
 
 class _LockConn:
@@ -170,3 +183,108 @@ async def test_guard_is_exported_and_used_by_both_lanes():
     assert media_distribute.claim_media_dispatch is claim_media_dispatch
     assert podcast_distribute.claim_media_dispatch is claim_media_dispatch
     assert "claim_media_dispatch" in dh.__all__
+
+
+# --------------------------------------------------------------------------
+# persist_platform_handles
+# --------------------------------------------------------------------------
+
+
+class _RecordingConn:
+    """Captures every ``execute`` so the two writes can be told apart by SQL."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def execute(self, sql: str, *args: Any) -> None:
+        self.calls.append((sql, *args))
+
+    def _of(self, needle: str) -> list[tuple[Any, ...]]:
+        return [c for c in self.calls if needle in c[0]]
+
+
+def _ok(platform: str = "youtube", external_id: str = "VID1") -> PlatformDispatchResult:
+    return PlatformDispatchResult(
+        platform=platform, success=True, external_id=external_id,
+        url=f"https://www.youtube.com/watch?v={external_id}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_distribution_row_carries_the_medium():
+    """The medium the caller dispatched is written to the row, in the position
+    the upsert's conflict target reads."""
+    conn = _RecordingConn()
+    await persist_platform_handles(
+        conn, post_id="post-1", medium="video_short",
+        asset_id="asset-1", task_id="task-1", results=[_ok()],
+    )
+    sql, *args = conn._of("pipeline_distributions")[0]
+    assert args[:3] == ["task-1", "youtube", "video_short"]
+    assert args[3] == "VID1"
+
+
+@pytest.mark.asyncio
+async def test_upsert_conflict_target_includes_medium():
+    """The regression guard. ``ON CONFLICT (task_id, target)`` is what made a
+    post's Short overwrite its long form; the key must name the medium."""
+    assert "ON CONFLICT (task_id, target, medium)" in dh._RECORD_DISTRIBUTION_SQL
+    assert "ON CONFLICT (task_id, target)" not in dh._RECORD_DISTRIBUTION_SQL
+
+
+@pytest.mark.asyncio
+async def test_long_form_and_short_write_two_distinct_rows():
+    """One task, one target, two renders → two distribution writes that differ
+    only in medium + handle. Under the old key these were one row and the
+    second upload's id was lost."""
+    conn = _RecordingConn()
+    await persist_platform_handles(
+        conn, post_id="post-1", medium="video",
+        asset_id="asset-long", task_id="task-1", results=[_ok(external_id="LONG")],
+    )
+    await persist_platform_handles(
+        conn, post_id="post-1", medium="video_short",
+        asset_id="asset-short", task_id="task-1", results=[_ok(external_id="SHORT")],
+    )
+    rows = conn._of("pipeline_distributions")
+    assert [(r[1], r[2], r[3], r[4]) for r in rows] == [
+        ("task-1", "youtube", "video", "LONG"),
+        ("task-1", "youtube", "video_short", "SHORT"),
+    ]
+    # …and each render's handle lands on its OWN asset row, not one shared one.
+    merges = conn._of("platform_video_ids")
+    assert [m[1] for m in merges] == ["asset-long", "asset-short"]
+    assert [json.loads(m[2]) for m in merges] == [
+        {"youtube": "LONG"}, {"youtube": "SHORT"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_failed_or_handleless_results_write_nothing():
+    """No id means nothing to record — a failed upload must not leave a row
+    claiming it published."""
+    conn = _RecordingConn()
+    await persist_platform_handles(
+        conn, post_id="post-1", medium="video", asset_id="a", task_id="t",
+        results=[
+            PlatformDispatchResult(platform="youtube", success=False),
+            PlatformDispatchResult(platform="youtube", success=True, external_id=None),
+        ],
+    )
+    assert conn.calls == []
+
+
+@pytest.mark.asyncio
+async def test_missing_task_id_still_merges_the_asset_handle(caplog):
+    """task_id is the distribution row's NOT NULL FK, so without it the row is
+    skipped — but the handle must still reach media_assets, which is the source
+    that did not lose data when the distribution rows collided."""
+    conn = _RecordingConn()
+    with caplog.at_level("WARNING"):
+        await persist_platform_handles(
+            conn, post_id="post-1", medium="video_short",
+            asset_id="asset-1", task_id=None, results=[_ok()],
+        )
+    assert conn._of("pipeline_distributions") == []
+    assert len(conn._of("platform_video_ids")) == 1
+    assert "video_short" in caplog.text

@@ -202,25 +202,37 @@ class PipelineDB:
     async def add_distribution(
         self, task_id: str, target: str, post_id: str | None = None,
         post_slug: str | None = None, external_url: str | None = None,
-        status: str = "published"
+        status: str = "published", medium: str = "default",
     ) -> None:
-        """Record a distribution (publish) event."""
+        """Record a distribution (publish) event.
+
+        ``medium`` names WHICH artifact of the task reached this target, and is
+        part of the row's unique key. ``'default'`` — the value every caller
+        here uses — is the sentinel for a target that receives one
+        undifferentiated artifact, which is what publishing the post to the
+        site itself is. The media lane passes a real render
+        (``video`` / ``video_short`` / ``podcast``) through
+        ``services/jobs/dispatch_handles.py`` instead, because one task delivers
+        two of them to the same target and the key has to tell them apart
+        (migration 20260901_173133).
+        """
         try:
             from uuid import UUID
             pid = UUID(post_id) if post_id else None
             await self.pool.execute(
                 """
                 INSERT INTO pipeline_distributions (
-                    task_id, target, status, post_id, post_slug, external_url, published_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                ON CONFLICT (task_id, target) DO UPDATE SET
+                    task_id, target, medium, status, post_id, post_slug,
+                    external_url, published_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (task_id, target, medium) DO UPDATE SET
                     status = EXCLUDED.status,
                     post_id = COALESCE(EXCLUDED.post_id, pipeline_distributions.post_id),
                     post_slug = COALESCE(EXCLUDED.post_slug, pipeline_distributions.post_slug),
                     external_url = COALESCE(EXCLUDED.external_url, pipeline_distributions.external_url),
                     published_at = COALESCE(EXCLUDED.published_at, pipeline_distributions.published_at)
                 """,
-                task_id, target, status, pid, post_slug, external_url,
+                task_id, target, medium, status, pid, post_slug, external_url,
             )
         except Exception as e:
             logger.warning("[pipeline_db] add_distribution failed for %s: %s", task_id, e)

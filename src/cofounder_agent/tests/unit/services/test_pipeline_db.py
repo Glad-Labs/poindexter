@@ -114,3 +114,22 @@ class TestAddDistribution:
     async def test_add_distribution_handles_error(self, pdb, mock_pool):
         mock_pool.execute = AsyncMock(side_effect=Exception("DB down"))
         await pdb.add_distribution("test-123", "dev.to")
+
+    @pytest.mark.asyncio
+    async def test_medium_defaults_to_the_single_artifact_sentinel(self, pdb, mock_pool):
+        """A blog publish delivers one undifferentiated artifact, so callers here
+        never name a medium — but the column is part of the row's unique key, so
+        the write has to supply the sentinel explicitly."""
+        await pdb.add_distribution("test-123", "gladlabs.io")
+        sql, *args = mock_pool.execute.await_args.args
+        assert args[:3] == ["test-123", "gladlabs.io", "default"]
+
+    @pytest.mark.asyncio
+    async def test_upsert_keys_on_medium_so_two_renders_coexist(self, pdb, mock_pool):
+        """The conflict target must include medium. Under the old
+        (task_id, target) key a task's Short overwrote its long-form YouTube row
+        and one handle was lost — see migration 20260901_173133."""
+        await pdb.add_distribution("test-123", "youtube", medium="video_short")
+        sql, *args = mock_pool.execute.await_args.args
+        assert "ON CONFLICT (task_id, target, medium)" in sql
+        assert args[2] == "video_short"

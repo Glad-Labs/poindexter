@@ -776,20 +776,42 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     """
     from poindexter.cli._dataplane import run_service
     from services.site_config import SiteConfig
-    from services.youtube_metadata_sync import sync_youtube_metadata
+    from services.youtube_metadata_sync import (
+        find_unrecorded_uploads,
+        sync_youtube_metadata,
+    )
 
     async def _go(pool):
         sc = SiteConfig(pool=pool)
         await sc.load(pool)
-        return await sync_youtube_metadata(
-            pool, sc, selector=selector, apply=do_apply, limit=limit,
+        return (
+            await sync_youtube_metadata(
+                pool, sc, selector=selector, apply=do_apply, limit=limit,
+            ),
+            # Completeness cross-check against the other record of what landed
+            # on the channel. Reported even on a narrowed run: the whole failure
+            # mode is a sync that quietly covers a subset.
+            await find_unrecorded_uploads(pool),
         )
 
     try:
-        outcomes = run_service(_go)
+        outcomes, unrecorded = run_service(_go)
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         raise SystemExit(1) from exc
+
+    if unrecorded:
+        click.echo(
+            f"WARNING: {len(unrecorded)} YouTube upload(s) are recorded in "
+            "media_assets but have no pipeline_distributions row, so this "
+            "command cannot reach them:",
+            err=True,
+        )
+        for u in unrecorded:
+            click.echo(
+                f"  {u['video_id']}  ({u['medium']}, task {u['task_id']})", err=True,
+            )
+        click.echo("", err=True)
 
     if not outcomes:
         click.echo("No published YouTube uploads matched.")
@@ -799,22 +821,34 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
     click.echo(f"YouTube metadata sync — {mode}\n")
     click.echo(f"{'video':<14}{'desc':>7}{'tags':>6}  title")
     click.echo("-" * 72)
-    failures = 0
+    # A video YouTube says is gone is NOT a failure of this run: the row was
+    # demoted to status='deleted' and will not be offered again. Counting it
+    # with the retryable errors would exit non-zero on a run that fixed itself.
+    vanished = [o for o in outcomes if o.reconciled_deleted]
+    failures = [o for o in outcomes if o.error and not o.reconciled_deleted]
     for o in outcomes:
-        mark = "" if (o.applied or not do_apply) else "  ✗"
-        if o.error:
-            failures += 1
+        if o.reconciled_deleted:
+            mark = "  — gone from channel, marked deleted"
+        elif o.applied or not do_apply:
+            mark = ""
+        else:
+            mark = "  ✗"
         click.echo(
             f"{o.video_id:<14}{o.description_chars:>7}{o.tag_count:>6}  "
             f"{o.title[:38]}{mark}"
         )
     click.echo("-" * 72)
-    click.echo(f"{len(outcomes)} video(s); {failures} failed")
+    click.echo(f"{len(outcomes)} video(s); {len(failures)} failed")
+    if vanished:
+        click.echo(
+            f"{len(vanished)} no longer on the channel — demoted to "
+            "status='deleted'; they will not be retried."
+        )
 
     if failures:
         # Print the first error in full — a scope refusal is the expected
         # first failure and its remediation is the whole point of the message.
-        first = next(o for o in outcomes if o.error)
+        first = failures[0]
         click.echo(f"\nFirst error ({first.video_id}):\n  {first.error}", err=True)
         raise SystemExit(1)
     if not do_apply:

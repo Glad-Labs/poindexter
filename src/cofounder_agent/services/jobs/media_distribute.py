@@ -20,8 +20,11 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
    upload the handler's external video id + public url are persisted via
    ``_persist_dispatch_result`` — merged into ``media_assets.platform_video_ids``
    (``{"youtube": "<videoId>"}``, a non-clobbering jsonb merge) and upserted as a
-   ``pipeline_distributions`` row (``target='youtube'``, ``external_id``,
-   ``external_url``, ``status='published'``) in the same transaction as the
+   ``pipeline_distributions`` row (``target='youtube'``, ``medium`` = which
+   render this was, ``external_id``, ``external_url``, ``status='published'``)
+   — the medium is part of that row's key, so a post that ships both a long form
+   and a Short lands two rows instead of one clobbering the other (migration
+   20260901_173133) — in the same transaction as the
    ``record_dispatched`` stamp. Without this the id/url were discarded and there
    was no record of what landed on YouTube (or any handle to dedupe re-uploads).
    Runs the same cycle as link/seed so a freshly-approved asset can reach YouTube
@@ -303,6 +306,11 @@ async def _persist_dispatch_result(
     ``asset_id`` / ``task_id`` on the approved-undispatched row, so it passes them
     straight through (no resolve query). ``record_dispatched`` still records a
     failed attempt so the row stays re-dispatchable.
+
+    ``medium`` is threaded into the distribution row, not just the dispatch
+    stamp: a post's long form and its Short are two deliveries to the same
+    ``(task_id, target)``, and until the row was keyed by medium the second one
+    overwrote the first (migration 20260901_173133).
     """
     ok = any(r.success for r in results)
     async with pool.acquire() as conn:
@@ -311,6 +319,7 @@ async def _persist_dispatch_result(
             await persist_platform_handles(
                 conn,
                 post_id=post_id,
+                medium=medium,
                 asset_id=asset_id,
                 task_id=task_id,
                 results=results,

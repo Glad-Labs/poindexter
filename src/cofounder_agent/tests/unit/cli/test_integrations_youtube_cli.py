@@ -899,3 +899,116 @@ class TestSetupReusesStoredClient:
         assert calls[0][:2] == ("stored-id", "stored-secret")
         assert calls[0][2] is True  # wider scope requested
         assert "Reusing the OAuth client" in result.output
+
+
+# ---------------------------------------------------------------------------
+# sync-metadata reporting
+# ---------------------------------------------------------------------------
+#
+# The adapter's contract is covered in tests/unit/services/test_youtube_metadata_sync;
+# what's asserted here is the CLI's own judgement — which outcomes are a failure
+# the operator has to act on, and which the run already handled itself.
+
+
+def _stub_sync(monkeypatch, outcomes, unrecorded=()):
+    """Patch the service seam ``sync-metadata`` reaches through.
+
+    The command imports both names inside its body, so patching them on the
+    service module is what the CLI actually resolves.
+    """
+    import services.youtube_metadata_sync as svc
+
+    async def _sync(_pool, _sc, **_kw):
+        return list(outcomes)
+
+    async def _unrecorded(_pool):
+        return list(unrecorded)
+
+    monkeypatch.setattr(svc, "sync_youtube_metadata", _sync)
+    monkeypatch.setattr(svc, "find_unrecorded_uploads", _unrecorded)
+
+    import poindexter.cli._dataplane as dp
+
+    class _Pool:
+        """Enough pool for SiteConfig.load; every query the command cares about
+        is stubbed above."""
+
+        async def fetch(self, *_a, **_kw):
+            return []
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(_Pool()))
+
+    monkeypatch.setattr(dp, "run_service", _run_service)
+
+
+def _outcome(**kw: Any):
+    from services.youtube_metadata_sync import SyncOutcome
+
+    base = dict(video_id="vid1", post_id="p1", title="T", applied=True)
+    base.update(kw)
+    return SyncOutcome(**base)  # type: ignore[arg-type]
+
+
+def test_vanished_upload_is_reported_but_does_not_fail_the_run(runner, monkeypatch):
+    """A row demoted to status='deleted' is a run that reconciled itself. Exiting
+    non-zero on it would train the operator to ignore the exit code — and there
+    is nothing left for them to do."""
+    _stub_sync(monkeypatch, [
+        _outcome(video_id="goneVid", applied=False, error="not found on this channel",
+                 reconciled_deleted=True),
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "sync-metadata", "--apply"],
+    )
+    assert res.exit_code == 0, res.output
+    assert "0 failed" in res.output
+    assert "gone from channel, marked deleted" in res.output
+
+
+def test_retryable_failure_still_exits_non_zero(runner, monkeypatch):
+    """A scope refusal is the expected first failure and its remediation is the
+    whole point — it must not be softened by the vanished-upload handling."""
+    _stub_sync(monkeypatch, [
+        _outcome(applied=False, error="youtube.upload is INSERT-ONLY; re-consent"),
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "sync-metadata", "--apply"],
+    )
+    assert res.exit_code == 1
+    assert "1 failed" in res.output
+    assert "INSERT-ONLY" in res.output
+
+
+def test_first_error_skips_the_reconciled_ones(runner, monkeypatch):
+    """The printed 'first error' must be one the operator can act on, not the
+    vanished video that happened to sort first."""
+    _stub_sync(monkeypatch, [
+        _outcome(video_id="goneVid", applied=False, error="not found on this channel",
+                 reconciled_deleted=True),
+        _outcome(video_id="realFail", applied=False, error="quota exceeded"),
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "sync-metadata", "--apply"],
+    )
+    assert res.exit_code == 1
+    assert "First error (realFail)" in res.output
+
+
+def test_unrecorded_uploads_are_named_even_when_nothing_matched(runner, monkeypatch):
+    """The warning matters MOST when the target list is empty — that is the
+    shape the bug had: a sync that reached nothing and said so cheerfully."""
+    _stub_sync(monkeypatch, [], unrecorded=[
+        {"video_id": "orphanVid", "medium": "video_short",
+         "task_id": "t1", "post_id": "p1"},
+    ])
+    res = runner.invoke(
+        _integrations_mod.integrations_group, ["youtube", "sync-metadata"],
+    )
+    assert "orphanVid" in res.output
+    assert "no pipeline_distributions row" in res.output
