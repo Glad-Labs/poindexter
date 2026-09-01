@@ -851,3 +851,67 @@ def test_insufficient_scope_classifier_ignores_unrelated_403s():
     assert _is_insufficient_scope(Exception("HttpError 403 ... channelSuspended")) is False
     assert _is_insufficient_scope(Exception("HttpError 404 videoNotFound")) is False
     assert _is_insufficient_scope(Exception("connection reset")) is False
+
+
+def test_credentials_do_not_pin_a_scope_list():
+    """Regression guard for the #3518 refresh break.
+
+    google-auth forwards ``Credentials(scopes=…)`` as the ``scope`` parameter
+    of the refresh request, and Google rejects the entire refresh with
+    ``invalid_scope`` when it exceeds the grant. Naming the update superset
+    here broke token refresh outright — uploads included — on a channel whose
+    consent was upload-only. Verified live: upload-only → OK, superset →
+    RefreshError(invalid_scope), None → OK.
+
+    ``None`` is also the only value correct in both states, so this must stay
+    unset even after the operator re-consents.
+    """
+    from services.publish_adapters.youtube import YouTubePublishAdapter
+
+    captured = {}
+
+    class _Creds:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import sys
+    import types as _types
+
+    mod = _types.ModuleType("google.oauth2.credentials")
+    mod.Credentials = _Creds  # type: ignore[attr-defined]
+    pkg_o = _types.ModuleType("google.oauth2")
+    pkg_o.credentials = mod  # type: ignore[attr-defined]
+    pkg_g = _types.ModuleType("google")
+    pkg_g.oauth2 = pkg_o  # type: ignore[attr-defined]
+    keys = ("google", "google.oauth2", "google.oauth2.credentials")
+    saved = {k: sys.modules.get(k) for k in keys}
+    sys.modules.update({
+        "google": pkg_g, "google.oauth2": pkg_o, "google.oauth2.credentials": mod,
+    })
+    try:
+        YouTubePublishAdapter._build_credentials(
+            {"client_id": "cid", "client_secret": "csec", "refresh_token": "rtok"}
+        )
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+    assert captured["scopes"] is None, (
+        "Credentials must not pin a scope list — google-auth sends it in the "
+        "refresh request and Google rejects the whole refresh with invalid_scope"
+    )
+
+
+def test_insufficient_scope_classifier_matches_the_refresh_time_shape():
+    """The refresh-time refusal carries no HTTP status, so a status-only check
+    misses it — which is what happened the first time this ran live."""
+    from services.publish_adapters.youtube import _is_insufficient_scope
+
+    real = (
+        "RefreshError: ('invalid_scope: Bad Request', {'error': 'invalid_scope', "
+        "'error_description': 'Bad Request'})"
+    )
+    assert _is_insufficient_scope(Exception(real)) is True

@@ -63,6 +63,29 @@ with the remediation printed in full rather than a raw Google 403.
 Plain `setup` (no flag) still requests upload-only, so an operator who never
 edits metadata keeps the narrower grant.
 
+## Never pin a scope list on the Credentials object
+
+`Credentials(scopes=…)` is **not** a local hint. google-auth forwards the list
+as the `scope` parameter of the refresh request, and Google rejects the entire
+refresh with `invalid_scope` when it exceeds what the token was granted — so
+naming the update superset there breaks token refresh outright, **uploads
+included**, on a channel whose consent was upload-only. Measured against the
+live token:
+
+| `scopes=`                     | refresh result                |
+| ----------------------------- | ----------------------------- |
+| upload-only                   | OK                            |
+| upload + force-ssl (superset) | `RefreshError: invalid_scope` |
+| `None`                        | OK                            |
+
+`None` is also the only value correct in both states: Google returns a token
+carrying everything the refresh token actually holds, so uploads keep working
+today and `videos.update` starts working the moment the operator re-consents,
+with no second code change. Pinning a _subset_ would be worse than useless —
+it mints a token missing force-ssl and 403s the update forever.
+
+Pinned by `test_credentials_do_not_pin_a_scope_list`.
+
 ## Two traps worth knowing
 
 **`videos.update` replaces the whole snippet.** Any mutable field left out of

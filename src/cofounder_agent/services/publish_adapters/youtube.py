@@ -86,10 +86,17 @@ def _is_insufficient_scope(exc: Exception) -> bool:
     present — a plain 403 (e.g. the channel is suspended) is a different
     problem and must not be mislabelled as "go re-consent".
     """
-    text = str(exc)
-    if "403" not in text and "401" not in text:
+    lowered = str(exc).lower()
+    # Refresh-time shape. Google rejects the token exchange itself with
+    # ``invalid_scope`` (no HTTP status in the message) when the requested
+    # scopes exceed the grant. Checked FIRST because it carries no 403/401 and
+    # the status-code branch below would miss it — which is exactly what
+    # happened the first time this ran against the live token.
+    if "invalid_scope" in lowered:
+        return True
+    # Call-time shape: the API itself refuses the request.
+    if "403" not in lowered and "401" not in lowered:
         return False
-    lowered = text.lower()
     return any(
         marker in lowered
         for marker in ("insufficientpermissions", "insufficient authentication",
@@ -209,12 +216,25 @@ class YouTubePublishAdapter:
             client_id=secrets["client_id"],
             client_secret=secrets["client_secret"],
             token_uri=_TOKEN_URI,
-            # Advertise the superset. This is a client-side hint only — the
-            # server enforces whatever the refresh token was actually granted,
-            # so listing the update scope here cannot escalate anything; it
-            # just stops google-auth from objecting locally on the update path
-            # when the operator HAS re-consented.
-            scopes=_SCOPES_WITH_UPDATE,
+            # scopes=None ON PURPOSE — do not "helpfully" name a scope list here.
+            #
+            # google-auth does NOT treat this as a local hint: it forwards the
+            # list as the ``scope`` parameter of the refresh request, and Google
+            # rejects the WHOLE refresh with ``invalid_scope`` when it exceeds
+            # what the token was granted. Naming the update superset here (the
+            # first cut of #3518) therefore broke token refresh outright —
+            # uploads included, not just updates — for a channel whose consent
+            # was upload-only. Verified against the live token: upload-only list
+            # → refresh OK, superset list → RefreshError(invalid_scope),
+            # None → refresh OK.
+            #
+            # Omitting it is also the only value correct in BOTH states: Google
+            # returns a token carrying everything the refresh token actually
+            # holds, so uploads keep working today and videos.update starts
+            # working the moment the operator re-consents — with no second edit
+            # here. Pinning a subset would instead mint a token missing
+            # force-ssl and 403 the update forever.
+            scopes=None,
         )
 
     @staticmethod
