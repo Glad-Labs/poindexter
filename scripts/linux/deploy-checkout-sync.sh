@@ -265,12 +265,39 @@ log "Code advanced $last_short -> $short_head; deploying."
 # path-regex -> compose services (image-baked build inputs). Restarts and
 # rebuilds are safe by design; when in doubt about the diff, rebuild brain
 # defensively like the ps1 did.
+#
+# EVERY service whose Dockerfile COPYs source needs an entry here, because
+# the compose-apply below runs `--no-build`: without one, a merged change to
+# that source is live in the repo and DEAD in the container, with nothing
+# saying so. Verified 2026-08-31 — poindexter-auto-embed was running stale
+# `services/` code, and the image-gen in-flight guard (poindexter#1024) sat
+# merged-but-inert until it was rebuilt by hand.
+#
+# `tests/unit/scripts/test_deploy_rebuild_map_coverage.py` derives the
+# expected set from the Dockerfiles themselves and fails when a baked service
+# has no entry, so the next sidecar cannot re-open this gap silently.
 declare -A REBUILD_MAP=(
-  ['^brain/']="brain-daemon"
+  # gpu-exporter COPYs brain/ too — found by the coverage test, not by hand.
+  ['^brain/']="brain-daemon auto-embed gpu-exporter"
   ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^scripts/Dockerfile\.worker$']="worker prefect-worker"
   ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
-  ['^scripts/Dockerfile\.backup$|^scripts/backup/']="backup-daily backup-hourly backup-offsite"
+  # backup-offsite/ is a SIBLING of backup/, so '^scripts/backup/' never
+  # matched it — the offsite runner could change without a rebuild.
+  ['^scripts/Dockerfile\.backup$|^scripts/backup/|^scripts/backup-offsite/']="backup-daily backup-hourly backup-offsite"
+  # GPU sidecars — each bakes ONE server .py, which is the whole reason they
+  # need a rebuild at all (the images themselves exist for torch/CUDA deps).
+  ['^scripts/(Dockerfile\.image-gen|image-gen-server\.py)$']="image-gen-server"
+  ['^scripts/(Dockerfile\.wan|wan-server\.py)$']="wan-server"
+  ['^scripts/(Dockerfile\.stable-audio|stable-audio-server\.py)$']="stable-audio-server"
+  ['^scripts/Dockerfile\.chatterbox$|^scripts/tts_sidecars/']="chatterbox"
+  ['^scripts/(Dockerfile\.comfyui|comfyui-extra-model-paths\.yaml)$']="comfyui"
+  # auto-embed bakes a hand-picked SUBSET of the backend tree into a minimal
+  # image (short pip list, no poetry deps). It cannot bind-mount the tree the
+  # worker does: adding a single COPY once let three LLM providers register
+  # whose SDKs the image lacks, and every embedding store failed. So it is
+  # baked on purpose — and therefore must rebuild when that subset changes.
+  ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/(poindexter|plugins|services|modules|schemas|utils)/']="auto-embed"
 )
 rebuild_services=""; diff_ok=0
 if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_sha" 2>/dev/null)"; then
