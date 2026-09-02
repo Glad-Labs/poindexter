@@ -162,6 +162,34 @@ Routing is `findings.retention_backlog.*` — Discord, 12h cooldown, advisory
 `warn`. A policy that runs clean but does not drain is a slow leak, not an
 outage.
 
+## Thread ids the prune cannot construct
+
+`retention.checkpoint_prune` discovers checkpoints by building
+`prefix || task_id`. Any thread named after something else is invisible to
+**every** retention policy — there is no query path from the checkpoint back to
+a policy decision.
+
+That, not deleted task rows, is what produced the residue in
+[#932](https://github.com/Glad-Labs/poindexter/issues/932). Measured on prod
+2026-09-02, of 7,846 unreachable rows:
+
+| thread shape                    | threads | rows  | cause                                    |
+| ------------------------------- | ------- | ----- | ---------------------------------------- |
+| `two_pass-{niche}-{topic[:32]}` | 28      | 7,763 | writer subgraph keyed on topic, not task |
+| `media-<task>-revalidate-1`     | 1       | 10    | one-off suffixed thread                  |
+| task-shaped, task row gone      | 1       | 6     | a genuine orphan                         |
+
+The issue's diagnosis — checkpoints whose source `pipeline_tasks` row was
+deleted — accounts for **6 of 7,846 rows**, and nothing prunes `pipeline_tasks`
+at all. The writer's key was also not unique per run: 176 distinct 32-char
+topic prefixes are shared by more than one task, the worst by 201 of them.
+
+Keying the writer's inner graph on `task_id` fixes the dominant case at the
+source and brings it under the existing handler via one new
+`thread_prefixes` entry. **A new subgraph that invents its own thread id
+inherits this problem** — if it is not `prefix || task_id`, nothing will ever
+delete its checkpoints.
+
 ## Related
 
 - #932 — orphaned checkpoints (a checkpoint whose task row is gone entirely).

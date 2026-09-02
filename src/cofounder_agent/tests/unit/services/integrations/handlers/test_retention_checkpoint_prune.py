@@ -15,7 +15,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.integrations.handlers.retention_checkpoint_prune import checkpoint_prune
+from services.integrations.handlers.retention_checkpoint_prune import (
+    _DEFAULT_THREAD_PREFIXES,
+    checkpoint_prune,
+)
 
 # ---------------------------------------------------------------------------
 # Fake pool / connection helpers
@@ -177,6 +180,9 @@ class TestDeletePath:
         assert "abc-123" in thread_ids
         assert "media-abc-123" in thread_ids
         assert "podcast-abc-123" in thread_ids
+        # The writer's inner graph (poindexter#932) — without this prefix its
+        # checkpoints are unreachable by every retention policy.
+        assert "two_pass-abc-123" in thread_ids
 
     @pytest.mark.asyncio
     async def test_result_includes_task_and_thread_id_counts(self) -> None:
@@ -185,8 +191,11 @@ class TestDeletePath:
         pool = _FakePool(conn)
         result = await checkpoint_prune(None, site_config=None, row=_row(), pool=pool)
         assert result["tasks_processed"] == 2
-        # 2 tasks × 3 prefixes = 6 thread_ids
-        assert result["thread_ids_checked"] == 6
+        # One thread id per (task, prefix). Derived from the constant rather
+        # than hardcoded: adding a prefix is how a subgraph's checkpoints
+        # become reachable at all (poindexter#932 added `two_pass-`), so this
+        # should track it instead of failing every time one is added.
+        assert result["thread_ids_checked"] == 2 * len(_DEFAULT_THREAD_PREFIXES)
 
 
 # ---------------------------------------------------------------------------

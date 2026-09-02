@@ -89,7 +89,11 @@ _DEFAULT_TERMINAL_STATUSES = [
     "superseded",
     "archived",
 ]
-_DEFAULT_THREAD_PREFIXES = ["", "media-", "podcast-"]
+# "" = the canonical_blog graph (thread_id == task_id); the rest are the
+# subgraphs that prefix it. `two_pass-` joined the list in poindexter#932,
+# when the writer's inner graph moved off a (niche, topic) key onto the task
+# id — before that its checkpoints were unreachable by any retention policy.
+_DEFAULT_THREAD_PREFIXES = ["", "media-", "podcast-", "two_pass-"]
 _DEFAULT_BATCH_SIZE = 1000
 
 

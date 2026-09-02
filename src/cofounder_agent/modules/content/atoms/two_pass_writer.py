@@ -2183,7 +2183,31 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
     might echo from training data gets rewritten to ``(PR #N)`` plain
     text before the caller persists the post.
     """
-    thread_id = f"two_pass-{niche_id}-{topic[:32]}"
+    # Key the inner writer graph's checkpoint thread on the TASK, not on
+    # (niche, topic) (poindexter#932).
+    #
+    # The old key was `two_pass-{niche_id}-{topic[:32]}`, which is not unique
+    # per run: 176 distinct 32-char topic prefixes are shared by more than one
+    # `pipeline_tasks` row on prod, the worst by 201 of them. Every one of
+    # those runs wrote into a single ever-growing checkpoint thread.
+    #
+    # Two consequences, both fixed by keying on task_id:
+    #
+    # 1. `retention.checkpoint_prune` discovers checkpoints by building
+    #    `prefix || task_id`, so a thread named after a topic was unreachable
+    #    by ANY retention policy — 7,846 rows across 30 threads had
+    #    accumulated with nothing able to delete them.
+    # 2. `_POOL_REGISTRY` / `_SITE_CONFIG_REGISTRY` / `_MODEL_OVERRIDE_REGISTRY`
+    #    are keyed on this same thread id, so two concurrent runs on the same
+    #    topic overwrote each other's pool and site_config entries.
+    #
+    # `task_id` is optional on this entry point (the lab harness and unit
+    # tests call without one), so the legacy key remains the fallback — it is
+    # correct, just not prunable, and those paths do not run in production.
+    thread_id = (
+        f"two_pass-{task_id}" if task_id
+        else f"two_pass-{niche_id}-{topic[:32]}"
+    )
     _POOL_REGISTRY[thread_id] = pool
     _SITE_CONFIG_REGISTRY[thread_id] = kw.get("site_config")
     writer_model_override = kw.get("writer_model_override")
