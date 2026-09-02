@@ -168,7 +168,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 1,600+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
+| **DB-as-config**             | 1,700+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
 | **LangGraph pipelines**      | Declarative DAGs with Postgres checkpointing — resumable mid-run                            |
 | **Multi-modal output**       | Markdown posts, AI images, podcast audio, text-to-video (alpha)                             |
 | **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
