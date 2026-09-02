@@ -3849,7 +3849,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # weekly playwright job never in 11 — both silent for months.
     #
     # Ships EMPTY on purpose, for two reasons. A useful default would have to
-    # name this operator's repos, and a `Glad-Labs/glad-labs-stack` literal
+    # name this operator's repos, and a `Glad-Labs/poindexter` literal
     # here would ship to the public mirror and trip the private-repo leak
     # guard. And repo/workflow names are install-specific anyway — there is no
     # value that is right for a second operator.
