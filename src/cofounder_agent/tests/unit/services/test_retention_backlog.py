@@ -385,3 +385,92 @@ def test_window_is_configurable():
     rows = [_policy("p", minutes_since_run=120.0)]
     assert eligible_for_sampling(rows, {}, window_minutes=90)[0] == []
     assert [r["name"] for r in eligible_for_sampling(rows, {}, window_minutes=180)[0]] == ["p"]
+
+
+# --- a probe that can never sample must not report ok ------------------------
+#
+# The first version of the sampling fix shipped exactly this bug. The class
+# attribute said `schedule = "every 30 minutes"`, but the schedule is DB-backed
+# (`plugin.job.<name>.config.schedule`) and seeded ONCE at first registration —
+# the row still said "every 6 hours". Retention ran at :41 and the probe at
+# :15, so it sat permanently 5h34m outside the 90-minute window, sampled
+# nothing on every tick, and returned ok=True while doing it.
+
+
+class _BlindPool:
+    """Pool whose policies all ran long ago and whose last sample is ancient."""
+
+    def __init__(self, hours_since_sample):
+        self._hours = hours_since_sample
+        self.executed = []
+
+    def acquire(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def fetch(self, sql, *params):
+        if "retention_policies" in sql:
+            return [{
+                "name": "p", "handler_name": "ttl_prune", "table_name": "t",
+                "age_column": "created_at", "ttl_days": 7, "filter_sql": "",
+                "config": {}, "last_run_at": datetime.now(UTC) - timedelta(hours=6),
+                "minutes_since_run": 360.0,
+            }]
+        return []
+
+    async def fetchval(self, sql, *params):
+        return self._hours
+
+    async def execute(self, sql, *params):
+        self.executed.append(sql)
+        return "INSERT 0 1"
+
+
+class _SC:
+    def get_bool(self, k, d):
+        return d
+
+    def get_int(self, k, d):
+        return d
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_never_samples_reports_not_ok():
+    """Never landing in a window is a phase fault, not a quiet pass."""
+    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+
+    res = await ProbeRetentionBacklogJob().run(
+        _BlindPool(hours_since_sample=48.0), {"_site_config": _SC()},
+    )
+    assert res.ok is False
+    assert "NOT SAMPLING" in res.detail
+    assert "schedule" in res.detail
+    assert res.metrics["hours_since_last_sample"] == 48.0
+
+
+@pytest.mark.asyncio
+async def test_a_single_out_of_window_tick_is_still_fine():
+    """The common case must stay quiet, or the alarm is worthless."""
+    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+
+    res = await ProbeRetentionBacklogJob().run(
+        _BlindPool(hours_since_sample=2.0), {"_site_config": _SC()},
+    )
+    assert res.ok is True
+    assert "NOT SAMPLING" not in res.detail
+
+
+@pytest.mark.asyncio
+async def test_no_history_at_all_is_not_yet_a_fault():
+    """A fresh install has no baseline to call anything wrong."""
+    from services.jobs.probe_retention_backlog import ProbeRetentionBacklogJob
+
+    res = await ProbeRetentionBacklogJob().run(
+        _BlindPool(hours_since_sample=None), {"_site_config": _SC()},
+    )
+    assert res.ok is True

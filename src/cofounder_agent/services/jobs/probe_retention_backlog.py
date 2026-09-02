@@ -89,6 +89,12 @@ _DEFAULT_CONSECUTIVE = 3
 # Wide enough to survive a slow tick or a long retention pass, far narrower
 # than the 6h gap that let a pre-run reading masquerade as a backlog.
 _DEFAULT_WINDOW_MINUTES = 90
+# How long a probe may go without ever landing inside a post-run window before
+# that is itself the fault. A single out-of-window tick is normal; never
+# catching one means the probe's cadence and the retention cadence are out of
+# phase and it is measuring nothing at all.
+_BLIND_KEY = "retention_backlog_blind_after_hours"
+_DEFAULT_BLIND_AFTER_HOURS = 12
 
 _FINDING_KIND = "retention_backlog"
 _SAMPLE_EVENT = "retention_backlog_sample"
@@ -130,6 +136,28 @@ def _as_dict(raw: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             return {}
     return {}
+
+
+async def _hours_since_last_sample(pool: Any) -> float | None:
+    """Hours since this probe last RECORDED a reading, or None if never.
+
+    None means "no history yet", which on a fresh install is not a fault — the
+    blind check needs a baseline before it can call anything wrong.
+    """
+    try:
+        async with pool.acquire() as conn:
+            val = await conn.fetchval(
+                'SELECT EXTRACT(EPOCH FROM (now() - MAX("timestamp")))/3600.0 '
+                "FROM audit_log WHERE event_type = $1",
+                _SAMPLE_EVENT,
+            )
+    except Exception as e:  # noqa: BLE001 — a probe must never crash a cycle
+        logger.warning(
+            "[probe_retention_backlog] sample-age query failed: %s",
+            describe_exception(e),
+        )
+        return None
+    return float(val) if val is not None else None
 
 
 def eligible_for_sampling(
@@ -300,21 +328,47 @@ class ProbeRetentionBacklogJob:
             rows, newest_runs, window_minutes=window,
         )
         if not to_measure:
-            # Not a pass and not a failure — no policy has run recently enough
-            # for its backlog to mean anything yet. Say so rather than writing
-            # an empty sample, which would break every persistence streak.
+            # One out-of-window tick is normal: nothing has run recently enough
+            # for its backlog to mean anything. Writing an empty sample would
+            # break every persistence streak, so nothing is recorded.
+            #
+            # But NEVER landing in a window is not a quiet pass — it means this
+            # probe's cadence and the retention cadence are out of phase and it
+            # is measuring nothing at all. That is how the first version of
+            # this fix shipped: the class attribute said "every 30 minutes"
+            # while the DB-backed `plugin.job.<name>.config.schedule` row, which
+            # is seeded ONCE at first registration and never re-read from the
+            # class, still said "every 6 hours". Retention ran at :41 and the
+            # probe at :15, so it was permanently 5h34m stale — and reported
+            # ok=True the whole time.
+            blind_after = _cfg_int(site_config, _BLIND_KEY, _DEFAULT_BLIND_AFTER_HOURS)
+            last_sample_age = await _hours_since_last_sample(pool)
+            blind = last_sample_age is not None and last_sample_age > blind_after
+            detail = (
+                f"no policy ran within {window}m — nothing sampled "
+                f"({len(out_of_window)} out of window, "
+                f"{len(already)} already sampled this pass)"
+            )
+            if blind:
+                detail = (
+                    f"NOT SAMPLING: no reading in {last_sample_age:.0f}h "
+                    f"(> {blind_after}h). This probe's schedule is out of phase "
+                    f"with the retention runner, so it is measuring nothing. "
+                    f"Check plugin.job.probe_retention_backlog.config.schedule "
+                    f"against RunRetentionJob's cadence."
+                )
+                logger.warning("[probe_retention_backlog] %s", detail)
             return JobResult(
-                ok=True,
-                detail=(
-                    f"no policy ran within {window}m — nothing sampled "
-                    f"({len(out_of_window)} out of window, "
-                    f"{len(already)} already sampled this pass)"
-                ),
+                ok=not blind,
+                detail=detail,
                 changes_made=0,
                 metrics={
                     "policies": len(rows), "sampled": 0,
                     "out_of_window": len(out_of_window),
                     "already_sampled": len(already),
+                    "hours_since_last_sample": (
+                        round(last_sample_age, 1) if last_sample_age is not None else -1
+                    ),
                 },
             )
 

@@ -3712,6 +3712,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # run) produced a false live_activity finding. A reading counts only
     # within this many minutes of the policy's own last_run_at.
     'retention_backlog_sample_window_minutes': '90',
+    # A probe that never lands inside a post-run window is measuring nothing.
+    # One out-of-window tick is normal; going this long without a single
+    # recorded reading means its schedule is out of phase with the retention
+    # runner, and it reports NOT ok rather than a quiet pass.
+    'retention_backlog_blind_after_hours': '12',
     'settings_zero_reader_probe_enabled': 'true',
     # ProbeDisabledCapabilitiesJob (#2133): daily check of a curated list of
     # opt-in capability flags (writer self-review, self-consistency QA,
@@ -5006,6 +5011,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'retention_backlog_consecutive_probes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'retention_backlog_probe_enabled': {'owner': 'probe_retention_backlog', 'value_type': 'boolean'},
     'retention_backlog_row_threshold': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
+    'retention_backlog_blind_after_hours': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'retention_backlog_sample_window_minutes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},

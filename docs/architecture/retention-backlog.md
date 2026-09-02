@@ -115,6 +115,31 @@ A policy that has never run is not a backlog signal either: `RunRetentionJob`'s
 own liveness covers a policy that is not executing at all, and reporting a
 backlog for it would blame the wrong mechanism.
 
+### The schedule is DB-backed, and seeding is once
+
+Changing `schedule` on the job class does **not** change a deployment that has
+already registered it. The cadence lives in
+`app_settings.plugin.job.probe_retention_backlog.config.schedule`, seeded at
+first registration and never re-read from the class.
+
+The sampling fix shipped with exactly that gap: the class said
+`every 30 minutes`, the row still said `every 6 hours`, and with retention
+running at `:41` and this probe at `:15` it sat permanently 5h34m outside the
+90-minute window — sampling nothing on every tick, and reporting `ok=True`
+while doing it.
+
+So a probe that has recorded **no** reading for
+`retention_backlog_blind_after_hours` (12) now reports **not ok** and names the
+setting to check. One out-of-window tick is normal and stays quiet; never
+landing in a window is a phase fault. Changing the cadence in code requires
+updating the row too:
+
+```sql
+UPDATE app_settings
+   SET value = jsonb_set(value::jsonb, '{config,schedule}', '"every 30 minutes"')::text
+ WHERE key = 'plugin.job.probe_retention_backlog';
+```
+
 ## Persistence is the signal, not magnitude
 
 A single non-zero reading means nothing. `live_activity` has a 2-day TTL and
