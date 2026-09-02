@@ -26,6 +26,12 @@ audio = [
     "livekit>=1.0,<2.0",
     "livekit-api>=1.0.5,<2.0",
     "faster-whisper>=1.1,<2.0",
+    # Floored, not wanted directly: pipecat/faster-whisper pull
+    # transformers transitively and resolved 5.8.0, which carries
+    # CVE-2026-9856 (save_pretrained path traversal -> arbitrary file
+    # write, HIGH). Fixed in 5.10.0. Remove this line once the
+    # upstream extras floor it themselves.
+    "transformers>=5.10.0",
     "kokoro>=0.7,<1.0",
     "websockets>=16.0",
 ]
