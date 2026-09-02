@@ -1,55 +1,23 @@
 {
   "items": [
     {
-      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
-      "medium": "video",
-      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
-      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
-      "quality_score": 75,
-      "created_at": "2026-08-28T15:23:01.542599Z"
-    },
-    {
-      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
-      "medium": "video_short",
-      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
-      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
-      "quality_score": 85,
-      "created_at": "2026-08-28T15:22:26.862568Z"
-    },
-    {
-      "post_id": "761b176b-ff19-43e7-9c6a-79dc0401ac45",
+      "post_id": "31fcb445-09a8-44ea-93f0-45262a9b9526",
       "medium": "podcast",
-      "title": "Spring Boot's 53.7% Admiration Score Explains Java's 2026 Framework Landscape",
-      "slug": "spring-boots-537-admiration-score-explains-javas-2-b643a498",
-      "quality_score": 98,
-      "created_at": "2026-08-28T01:56:15.521567Z"
-    },
-    {
-      "post_id": "3d5fc894-c92b-41d8-8aeb-71b93cfc2abd",
-      "medium": "podcast",
-      "title": "A Morse Code Headline Slipped Past Our Content Filter",
-      "slug": "a-morse-code-headline-slipped-past-our-content-fil-28431849",
+      "title": "A 4-Bit Model Just Beat Its Full-Precision Original",
+      "slug": "a-4-bit-model-just-beat-its-full-precision-origina-421ec269",
       "quality_score": 100,
-      "created_at": "2026-08-27T13:22:24.236340Z"
+      "created_at": "2026-08-31T00:32:34.607572Z"
     },
     {
-      "post_id": "46ffb1ce-92fd-4767-a206-0b28a911292e",
+      "post_id": "60e38985-90d4-464f-a02a-a81cceddec75",
       "medium": "podcast",
-      "title": "Fix the Tool, Not the Bank Balance: Why Builders Who Ignore Money Make More of It",
-      "slug": "fix-the-tool-not-the-bank-balance-why-builders-who-5c4f21b8",
+      "title": "Why Great Content Dies Without an Amplification System",
+      "slug": "why-great-content-dies-without-an-amplification-sy-e311bcc1",
       "quality_score": 100,
-      "created_at": "2026-08-27T03:41:26.625169Z"
-    },
-    {
-      "post_id": "2435c2f7-8656-4d35-b3f9-bac797e35577",
-      "medium": "podcast",
-      "title": "97 Gigawatts, $3 Trillion, Zero Vacancy: Inside the 2025 Data Center Crunch",
-      "slug": "97-gigawatts-3-trillion-zero-vacancy-inside-the-20-bc6f5fc9",
-      "quality_score": 100,
-      "created_at": "2026-08-27T03:21:26.638566Z"
+      "created_at": "2026-08-30T22:42:34.597037Z"
     }
   ],
-  "total": 6,
+  "total": 2,
   "limit": 50,
   "offset": 0
 }
