@@ -1607,6 +1607,28 @@ class TopicBatchService:
             "metadata": {
                 "angle": angle,
                 "summary": winner.summary,
+                # The candidate's summary ALSO under the key the writer reads.
+                #
+                # ``writer_core._extract_caller_research`` looks for exactly
+                # ``research_context`` — it does not fall back to ``summary``
+                # or ``angle``. Without this key the writer gets no grounding
+                # corpus at all, and ``qa.numeric_fidelity`` has nothing to
+                # check the finished draft against.
+                #
+                # That is not hypothetical. The first benchmark-grounded post
+                # (task e043649f, 2026-09-02) carried a 673-char measured fact
+                # block all the way into ``topic_candidates.summary`` and then
+                # lost it here — so the writer invented every throughput figure
+                # (34-36 / 47-50 / 48 / 24-26 tok/s against real values of
+                # decode 124.6 and delivered 99.2 over 83 calls) and the post
+                # reached ``awaiting_approval`` at quality_score 98.
+                #
+                # The seam is the one the seed_url path documents: "that's how
+                # we get it in front of the LLM without adding new pipeline
+                # wiring". The auto path (``create_blog_post_task``) sets it
+                # from the claimed pool row; the BATCH path is the one that
+                # actually runs for pooled topics, and it never did.
+                "research_context": winner.summary or "",
                 "source": "topic_batch",
                 # discovered_by mirrors source — write-only provenance now.
                 # The deleted task_executor's off-brand gate used to exempt

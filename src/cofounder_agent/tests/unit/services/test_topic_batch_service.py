@@ -859,6 +859,56 @@ class TestHandoffToPipelineSQL:
         assert "pipeline_versions" in joined
         assert "INSERT INTO content_tasks" not in joined
 
+    async def test_handoff_carries_the_summary_as_research_context(self):
+        """The measured fact block must reach the writer, not just the angle.
+
+        ``writer_core._extract_caller_research`` reads exactly
+        ``metadata.research_context`` — it does NOT fall back to ``summary`` or
+        ``angle``. This assertion is the one that would have caught the
+        2026-09-02 incident: task e043649f carried a 673-char measured fact
+        block into ``topic_candidates.summary``, lost it here, and the writer
+        invented every throughput figure in a post that reached
+        ``awaiting_approval`` at quality_score 98.
+        """
+        import json
+
+        captured: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+        winner = _make_candidate()
+        winner.summary = "MEASURED DATA — decode 124.6 tokens/second."
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        versions = [a for sql, a in captured if "pipeline_versions" in sql]
+        assert versions, "no pipeline_versions INSERT captured"
+        blob = json.dumps(versions[0], default=str)
+        assert "research_context" in blob, (
+            "the handoff must write metadata.research_context — the writer "
+            "reads that key and nothing else"
+        )
+        assert "124.6" in blob, "the fact block itself must survive the handoff"
+
+    async def test_a_summaryless_winner_still_hands_off(self):
+        """Most topics carry no summary; research_context is then empty, which
+        is honest — the writer simply has no caller-attached corpus."""
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+        winner = _make_candidate()
+        winner.summary = None
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+        assert conn.execute.await_count == 2
+
     async def test_emits_two_inserts_per_handoff(self):
         # One INSERT into pipeline_tasks + one into pipeline_versions.
         pool, conn = _make_mock_pool()
