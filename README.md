@@ -103,7 +103,7 @@ Run it on your machine. Own your data. No cloud lock-in.
 
 ## Built to reject its own work
 
-Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 14 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
+Most AI content tools optimize for output volume. Poindexter optimizes for **curation**: it generates candidates, then makes each one survive 15 QA rails — cross-model LLM critics, DeepEval and Ragas evaluations, deterministic anti-hallucination validators, citation verification against the research corpus, and vision QA on every generated image. Roughly half of all drafts don't make it.
 
 <img src="docs/assets/readme/grafana-qa-reviewers.png" alt="Grafana QA Rails panel — average score per reviewer across 17 signals, from internal_consistency at 100 down to content_originality at 19.1" width="100%">
 
@@ -159,7 +159,7 @@ flowchart LR
     kernel --> store --> fe
 ```
 
-The content pipeline itself is a declarative LangGraph DAG stored in the database — 46 nodes covering research, writing, image generation, the 14 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
+The content pipeline itself is a declarative LangGraph DAG stored in the database — 47 nodes covering research, writing, image generation, the 15 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
 
 ## Key features
 
