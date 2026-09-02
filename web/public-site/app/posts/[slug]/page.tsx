@@ -108,13 +108,25 @@ export async function generateMetadata({
       images: [imageUrl],
       creator: '@GladLabsAI',
     },
-    robots: {
-      index: true,
-      follow: true,
-      'max-snippet': -1,
-      'max-image-preview': 'large',
-      'max-video-preview': -1,
-    },
+    // Dev diaries are noindex. Measured 2026-09-02: 85 of 199 published posts
+    // (43%) produced 92 Google impressions and ZERO clicks between them, against
+    // ~43 impressions per canonical post. They are an internal build log, kept
+    // browsable at /dev-diary, but asking Google to index 85 near-zero-value
+    // pages is site-level quality drag for no upside.
+    //
+    // `follow` stays TRUE: the pages should still pass link equity onward and
+    // the crawler should keep discovering what they reference. This removes
+    // them from the index, not from the web.
+    robots:
+      post.niche_slug === 'dev_diary'
+        ? { index: false, follow: true }
+        : {
+            index: true,
+            follow: true,
+            'max-snippet': -1,
+            'max-image-preview': 'large',
+            'max-video-preview': -1,
+          },
   };
 }
 

@@ -125,3 +125,53 @@ describe('sitemap()', () => {
     expect(home.priority).toBe(1);
   });
 });
+
+/**
+ * Dev diaries are noindex, so listing them here would ask the crawler to fetch
+ * a page it is then told to discard.
+ *
+ * Measured 2026-09-02: 85 of 199 published posts (43%) were dev diaries, and
+ * between them they had produced 92 Google impressions and ZERO clicks —
+ * against ~43 impressions per canonical post. They stay reachable at
+ * /dev-diary; they are simply not submitted for indexing.
+ *
+ * Pinned because the failure is silent: the filter keys on `niche_slug`, which
+ * the posts table does NOT have — the static export derives it by joining
+ * pipeline_tasks. If that join or field name changes, dev diaries quietly
+ * return to the sitemap and nothing else breaks.
+ */
+describe('sitemap() — dev diary exclusion', () => {
+  const devDiary = {
+    slug: 'dev-diary-post',
+    niche_slug: 'dev_diary',
+    published_at: '2026-09-01T00:00:00Z',
+  };
+  const article = {
+    slug: 'real-article',
+    niche_slug: 'glad-labs',
+    published_at: '2026-09-01T00:00:00Z',
+  };
+
+  it('omits dev_diary posts but keeps everything else', async () => {
+    mockStaticJsonFetches({ posts: [devDiary, article] });
+
+    const sitemap = await loadSitemap();
+    const urls = (await sitemap()).map((e) => e.url);
+
+    expect(urls).toContain('https://example.com/posts/real-article');
+    expect(urls).not.toContain('https://example.com/posts/dev-diary-post');
+  });
+
+  it('keeps a post whose niche_slug is missing', async () => {
+    // 53 published posts have no niche at all. Absence must not be read as
+    // "dev diary" — that would silently deindex a third of the real site.
+    mockStaticJsonFetches({
+      posts: [{ slug: 'no-niche', published_at: '2026-09-01T00:00:00Z' }],
+    });
+
+    const sitemap = await loadSitemap();
+    const urls = (await sitemap()).map((e) => e.url);
+
+    expect(urls).toContain('https://example.com/posts/no-niche');
+  });
+});

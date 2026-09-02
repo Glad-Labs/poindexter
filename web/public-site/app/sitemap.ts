@@ -17,6 +17,9 @@ interface Post {
   // Legacy camelCase variants (in case API format changes)
   updatedAt?: string;
   publishedAt?: string;
+  // Derived by the static export (posts has no such column — it joins
+  // pipeline_tasks). Used to keep noindexed dev diaries out of the sitemap.
+  niche_slug?: string;
 }
 
 interface Category {
@@ -161,9 +164,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // Blog posts — API returns snake_case fields (updated_at, published_at)
-  const postPages: MetadataRoute.Sitemap = (allPosts || []).map(
-    (post: Post) => ({
+  // Blog posts — API returns snake_case fields (updated_at, published_at).
+  //
+  // Dev diaries are excluded: they carry `noindex` (see posts/[slug]/page.tsx),
+  // and listing a noindexed URL in the sitemap asks the crawler to fetch a page
+  // it is then told to discard. Measured 2026-09-02: 85 of 199 posts, 92 Google
+  // impressions, 0 clicks. They stay reachable at /dev-diary.
+  const postPages: MetadataRoute.Sitemap = (allPosts || [])
+    .filter((post: Post) => post.niche_slug !== 'dev_diary')
+    .map((post: Post) => ({
       url: `${baseUrl}/posts/${post.slug}`,
       lastModified:
         post.updated_at || post.updatedAt
@@ -171,8 +180,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           : new Date(post.published_at || post.publishedAt || new Date()),
       changeFrequency: 'weekly' as const,
       priority: 0.7,
-    })
-  );
+    }));
 
   // Category pages
   const categoryPages: MetadataRoute.Sitemap = (allCategories || []).map(
