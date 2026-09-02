@@ -63,7 +63,15 @@ CODE_ROOTS = [
     REPO / "scripts",
     REPO / "web" / "public-site",
 ]
-CODE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+# Shell / SQL count as code here (poindexter#915). scripts/backup-offsite/run.sh
+# reads five `offsite_backup_*` keys through its own `read_setting` psql helper
+# — a reader that touches neither SiteConfig nor Python. With .sh excluded those
+# keys looked dead to BOTH detectors at once: no literal in the scanned corpus,
+# and no `last_read_at` because nothing went through SiteConfig.
+CODE_EXTS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".sh", ".bash", ".ps1", ".sql",
+}
 PRUNE_DIRS = {"node_modules", ".next", ".git", "dist", "build", "__pycache__", ".venv", "coverage"}
 # Files that merely *declare/seed* keys must not count as "referenced".
 CORPUS_EXCLUDE = {DEFAULTS_PY.resolve(), BASELINE_SEEDS.resolve()}
@@ -71,6 +79,13 @@ CORPUS_EXCLUDE = {DEFAULTS_PY.resolve(), BASELINE_SEEDS.resolve()}
 _SEED_KEY_RE = re.compile(r"INTO app_settings[^;]*?VALUES\s*\(\s*'([^']+)'", re.I)
 _JOB_SAMPLE_RE = re.compile(r'\(\s*"jobs"\s*,\s*"services\.jobs\.([a-z0-9_]+)"')
 _JOB_STATE_RE = re.compile(r"^plugin_job_last_(?:run|status)_(.+)$")
+# Bulk raw-SQL readers (poindexter#915). `findings_alert_router.py` does
+#   WHERE key LIKE 'findings.%.%'
+# and `findings_read.py` does LIKE 'findings.%.delivery'. Those read 59 live
+# keys that no literal in the corpus mentions, and raw SQL never stamps
+# `last_read_at` — so both detectors called them dead at once. Deleting them
+# would have silently dropped operator alert routing to defaults.
+_SQL_LIKE_RE = re.compile(r"LIKE\s+'([^']*%[^']*)'", re.I)
 
 
 def _dict_keys(name: str, tree: ast.Module) -> set[str]:
@@ -121,13 +136,45 @@ def _valid_job_names() -> set[str]:
 
 
 def _static_prefixes(key: str) -> list[str]:
-    """Static prefixes a constructed key would share with its f-string."""
-    out = []
-    if "." in key:
-        out.append(key.rsplit(".", 1)[0] + ".")
-    if "_" in key:
-        out.append(key.rsplit("_", 1)[0] + "_")
-    return [p for p in out if len(p) >= 8]
+    """Static prefixes a constructed key could share with its f-string.
+
+    Every separator boundary, longest first — not just the last one
+    (poindexter#915). `memory_stale_threshold_seconds_collapse_job` is built as
+    f"memory_stale_threshold_seconds_{writer}", and splitting on the LAST `_`
+    yields `memory_stale_threshold_seconds_collapse_`, which appears nowhere.
+    A two-word dynamic suffix evaded the heuristic entirely, and read telemetry
+    proved the key live the same day it was reported dead.
+
+    Longest-first matters for the reported reason: the narrowest prefix that
+    matches is the most informative one to show a human.
+    """
+    out: list[str] = []
+    for sep in (".", "_"):
+        parts = key.split(sep)
+        # Drop one trailing segment at a time: a-b-c -> "a-b-", "a-".
+        for cut in range(len(parts) - 1, 0, -1):
+            out.append(sep.join(parts[:cut]) + sep)
+    # Longest first, de-duplicated, and long enough not to match everything.
+    return sorted({p for p in out if len(p) >= 8}, key=len, reverse=True)
+
+
+def _sql_like_patterns(corpus: str) -> list[str]:
+    """SQL LIKE patterns in the corpus that could address app_settings keys."""
+    out = set()
+    for pat in _SQL_LIKE_RE.findall(corpus):
+        # Anchor on something specific: a bare '%' would swallow every key.
+        if len(pat.replace("%", "").replace("_", "")) >= 6:
+            out.add(pat)
+    return sorted(out)
+
+
+def _matches_sql_like(key: str, pattern: str) -> bool:
+    """SQL LIKE semantics: % = any run, _ = any single char."""
+    rx = "".join(
+        ".*" if ch == "%" else ("." if ch == "_" else re.escape(ch))
+        for ch in pattern
+    )
+    return re.fullmatch(rx, key) is not None
 
 
 @dataclass
@@ -151,6 +198,7 @@ def classify(tsv: Path) -> list[Row]:
     blessed = defaults | baseline
     jobs = _valid_job_names()
     corpus = _walk(CODE_ROOTS)
+    sql_likes = _sql_like_patterns(corpus)
 
     rows: list[Row] = []
     for line in tsv.read_text(encoding="utf-8").splitlines():
@@ -163,14 +211,31 @@ def classify(tsv: Path) -> list[Row]:
         )
         k = r.key
         m_state = _JOB_STATE_RE.match(k)
-        if k in blessed:
-            r.bucket, r.reason = "LIVE-SEEDED", "in DEFAULTS/baseline"
-        elif k.startswith("plugin.job."):
-            job = k[len("plugin.job."):]
-            if job in jobs:
+        # NOTE: being seeded is deliberately NOT a short-circuit any more
+        # (poindexter#915). The tool used to bucket any seeded key as
+        # LIVE-SEEDED without ever computing a reference — which is exactly the
+        # class #913 lived in, so it structurally could not find another
+        # `daily_spend_limit`. Seeded keys now fall through the same reference
+        # checks and land in SEEDED-UNREFERENCED when nothing reads them.
+        if k.startswith("plugin.job."):
+            # `plugin.job.<name>` AND `plugin.job.<name>.<attr>` — the suffix
+            # form is real config (`plugin.job.sync_affiliate_clicks.enabled`,
+            # `.interval_seconds`). Matching the whole remainder against the
+            # job set reported LIVE jobs as removed: a FALSE DEAD, which is
+            # worse than the false-live misses in poindexter#915 because
+            # acting on it deletes working config. Longest first, so a job
+            # whose own name contains a dot would still win.
+            rest = k[len("plugin.job."):]
+            parts = rest.split(".")
+            job = next(
+                (".".join(parts[:n]) for n in range(len(parts), 0, -1)
+                 if ".".join(parts[:n]) in jobs),
+                None,
+            )
+            if job is not None:
                 r.bucket, r.reason = "LIVE-JOB-CONFIG", f"job '{job}' registered"
             else:
-                r.bucket, r.reason = "DEAD", f"config for removed job '{job}'"
+                r.bucket, r.reason = "DEAD", f"config for removed job '{rest}'"
         elif m_state:
             job = m_state.group(1)
             if job in jobs:
@@ -182,8 +247,17 @@ def classify(tsv: Path) -> list[Row]:
         elif any(p in corpus for p in _static_prefixes(k)):
             hit = next(p for p in _static_prefixes(k) if p in corpus)
             r.bucket, r.reason = "LIVE-DYNAMIC", f"constructed; prefix '{hit}' in code"
+        elif (sql_hit := next(
+            (pat for pat in sql_likes if _matches_sql_like(k, pat)), None
+        )) is not None:
+            r.bucket, r.reason = "LIVE-SQL-LIKE", f"read in bulk by LIKE '{sql_hit}'"
         elif r.is_secret:
             r.bucket, r.reason = "SECRET-ORPHAN", "secret; provisioned by setup"
+        elif k in blessed:
+            # Seeded, documented, and nothing reads it. Not proof of death —
+            # a shell or raw-SQL reader outside the scanned roots would look
+            # the same — but it is the bucket worth reviewing by hand.
+            r.bucket, r.reason = "SEEDED-UNREFERENCED", "seeded but no reader found"
         else:
             r.bucket, r.reason = "DEAD", "no literal/prefix reference in code"
         rows.append(r)
@@ -193,6 +267,7 @@ def classify(tsv: Path) -> list[Row]:
 def report(rows: list[Row]) -> None:
     buckets = Counter(r.bucket for r in rows)
     order = ["LIVE-SEEDED", "LIVE-JOB-CONFIG", "RUNTIME-STATE", "LIVE-DYNAMIC",
+             "LIVE-SQL-LIKE", "SEEDED-UNREFERENCED",
              "LIVE-REFERENCED", "SECRET-ORPHAN", "UNSURE", "DEAD"]
     print(f"Total keys: {len(rows)}\n")
     for b in order:
@@ -210,6 +285,18 @@ def report(rows: list[Row]) -> None:
         print(f"\n  [{len(rs)}] {kind}:")
         for r in sorted(rs, key=lambda r: r.key):
             print(f"    - {r.key}  [{r.category}]  upd={r.updated_at}  ({r.reason})")
+
+    # The bucket this tool previously could not produce at all (poindexter#915):
+    # seeded keys used to short-circuit to LIVE-SEEDED without a reference
+    # check, which is the class #913 lived in. Listed in full, because a
+    # count alone is not reviewable and this is the bucket a human must read.
+    seeded = [r for r in rows if r.bucket == "SEEDED-UNREFERENCED"]
+    if seeded:
+        print(f"\n=== SEEDED-UNREFERENCED ({len(seeded)}) — seeded, no reader found ===")
+        print("  (NOT proof of death: a reader outside the scanned roots looks")
+        print("   identical. Verify each against shell/raw-SQL/dynamic use.)")
+        for r in sorted(seeded, key=lambda r: r.key):
+            print(f"    - {r.key}  [{r.category}]  upd={r.updated_at}")
 
     state = [r for r in rows if r.bucket == "RUNTIME-STATE"]
     if state:
