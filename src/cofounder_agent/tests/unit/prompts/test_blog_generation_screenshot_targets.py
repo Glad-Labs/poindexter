@@ -114,16 +114,40 @@ def test_two_pass_writer_prompt_also_offers_the_chart_marker():
         topic="T", angle="A", instructions="", snippet_block="S",
         target_length=1200,
         chart_targets="- llm-decode-vs-delivered: decode vs delivered",
+        screenshot_targets="- qa-rails: The QA Rails board",
     )
     assert "[CHART: chart-key]" in rendered
     assert "{chart_targets}" not in rendered
     assert "llm-decode-vs-delivered" in rendered
 
 
-def test_two_pass_prompt_does_not_open_the_other_image_markers():
-    """Only CHART is added there. Image placement stays with the decision
-    agent, so the blast radius is one allowlisted, code-defined chart rather
-    than a change to how every post gets illustrated."""
+def test_two_pass_prompt_offers_the_screenshot_marker():
+    """poindexter#1002 shipped inert and stayed that way for a month.
+
+    ``[SCREENSHOT:]`` lived only on ``blog_generation.initial_draft`` while
+    canonical_blog runs two_pass, so measured on 2026-09-01: zero
+    ``image.screenshot`` media assets EVER, and 0 of 199 recent drafts carried
+    the marker — despite a ``qa-rails`` target being configured the whole time.
+    """
+    from services.prompt_manager import UnifiedPromptManager
+
+    rendered = UnifiedPromptManager().get_prompt(
+        "atoms.two_pass_writer.generate_with_context",
+        topic="T", angle="A", instructions="", snippet_block="S",
+        target_length=1200,
+        chart_targets="- llm-decode-vs-delivered: decode vs delivered",
+        screenshot_targets="- qa-rails: The QA Rails board",
+    )
+    assert "[SCREENSHOT: target-key]" in rendered
+    assert "{screenshot_targets}" not in rendered
+    assert "qa-rails" in rendered
+
+
+def test_two_pass_prompt_opens_only_the_two_evidence_markers():
+    """CHART and SCREENSHOT both show the reader something REAL. Ordinary
+    illustrations stay with the Image Decision Agent, so this prompt must not
+    grow [IMAGE:] / [HERO-IMAGE:] as well — that would change how every post
+    is illustrated, which is a different decision."""
     from pathlib import Path
 
     import services  # noqa: F401 — locate the package root
@@ -134,5 +158,6 @@ def test_two_pass_prompt_does_not_open_the_other_image_markers():
     )
     body = skill.read_text(encoding="utf-8")
     assert "[CHART: chart-key]" in body
+    assert "[SCREENSHOT: target-key]" in body
     assert "[HERO-IMAGE:" not in body
-    assert "[SCREENSHOT:" not in body
+    assert "[IMAGE:" not in body

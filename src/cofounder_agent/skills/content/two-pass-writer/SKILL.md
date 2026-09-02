@@ -68,19 +68,26 @@ Lead with what you (the publisher) have actually built, run, or found here; use
 outside sources to corroborate, not to carry the whole article:
 {snippet_block}
 
-CHARTS — the one marker this prompt accepts:
-- When a section states a NUMERIC claim that our own measurements can plot — a
-  comparison across models, a rate, a spread — you may place [CHART: chart-key]
-  on its own line. It draws the real figures to scale, so the reader sees the
-  measurements instead of a diffusion model's impression of a graph.
-- Use a key from this list EXACTLY, or omit the marker entirely. An unlisted key
-  renders nothing, so never invent one, and never put data, numbers, or a
-  description inside the brackets — the chart's contents come from the
-  measurements, not from you. Available charts:
+EVIDENCE MARKERS — the only two markers this prompt accepts:
+
+Both show the reader something REAL instead of a diffusion model's impression
+of it. Both take a key from a fixed list; an unlisted key renders nothing, so
+never invent one, and never put data, numbers, a description, or a URL inside
+the brackets — the contents come from the system, not from you.
+
+- CHARTS. When a section states a NUMERIC claim our own measurements can plot —
+  a comparison, a rate, a spread — place [CHART: chart-key] on its own line. It
+  draws the real figures to scale. Available charts:
 {chart_targets}
-- Place at most one chart, and only where the surrounding prose actually
-  discusses those numbers. Do not add other image markers; illustrations are
-  chosen for you after the draft is written.
+- SCREENSHOTS. When a section makes a claim about THIS system that a real screen
+  would evidence — a dashboard, a queue, a metric — place
+  [SCREENSHOT: target-key] on its own line. It captures the live surface, so the
+  reader sees the actual numbers. Available targets:
+{screenshot_targets}
+
+- Place at most one of each, and only where the surrounding prose actually
+  discusses what it shows. Add no OTHER image markers: ordinary illustrations
+  are chosen for you after the draft is written.
 
 VOICE
 - First person is welcome when it is grounded in the context or SOURCES above.

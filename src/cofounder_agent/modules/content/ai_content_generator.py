@@ -1594,6 +1594,13 @@ async def generate_with_context(
         # decision agent, so the blast radius is one allowlisted, code-defined
         # chart rather than a change to how every post gets illustrated.
         chart_targets=_describe_chart_targets(_sc),
+        # [SCREENSHOT:] was offered ONLY on blog_generation.initial_draft, but
+        # canonical_blog runs THIS writer — so poindexter#1002 shipped inert:
+        # zero image.screenshot media assets have ever been produced and 0 of
+        # 199 recent drafts carried the marker, despite a qa-rails target being
+        # configured the whole time. A marker the live writer is never told
+        # about is indistinguishable from one it declined to use.
+        screenshot_targets=_describe_screenshot_targets(_sc),
     )
     if prompt_metrics is not None:
         prompt_metrics["prompt_chars"] = len(prompt)

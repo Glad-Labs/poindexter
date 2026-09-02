@@ -54,6 +54,9 @@ def test_two_pass_templates_have_placeholders() -> None:
     # runs — offered only on initial_draft it would never fire, which is what
     # happened to [SCREENSHOT:] (zero image.screenshot assets, ever).
     assert "{chart_targets}" in generate
+    # Same reason: [SCREENSHOT:] was dormant for a month because it lived only
+    # on initial_draft while canonical_blog runs two_pass (poindexter#1002).
+    assert "{screenshot_targets}" in generate
 
 
 def test_two_pass_templates_end_with_single_newline() -> None:
@@ -78,6 +81,7 @@ def test_two_pass_templates_render_without_stray_braces() -> None:
         snippet_block="[posts/1] we ran it on a 32GB card",
         target_length=1500,
         chart_targets="- llm-decode-vs-delivered: decode vs delivered",
+        screenshot_targets="- qa-rails: The QA Rails board",
     )
     assert "RTX 5090 local LLM inference" in generate
     revise = pm.get_prompt(
