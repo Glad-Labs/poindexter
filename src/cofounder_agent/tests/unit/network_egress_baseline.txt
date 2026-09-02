@@ -9,10 +9,25 @@
 #
 # ENVIRONMENT-DEPENDENT — this is a UNION, not a snapshot. Host and CI reach
 # different services, so they take different code paths and produce different
-# offenders. 7 files here egress ONLY in CI (image-gen 9836, wan 9840,
+# offenders.
+#
+# THE HOST UNDER-REPORTS, and the mechanism matters when you trust a local run:
+# the guard hooks socket.connect, but a connection whose hostname fails DNS
+# never REACHES connect. `http://host.docker.internal:11434` fails resolution
+# on the host (silent) and resolves to the docker bridge in CI (fires). To
+# measure host-side under CI-like conditions, point the name at a literal IP:
+#   OLLAMA_BASE_URL=http://127.0.0.1:11434 pytest tests/unit ...
+# That reproduced the whole CI-only failure set for
+# test_llm_providers_dispatcher.py locally. 7 files here egress ONLY in CI (image-gen 9836, wan 9840,
 # chatterbox 9839, ollama 11434 on the docker bridge) and never on the host.
 # A baseline regenerated from one environment alone will be wrong in the other:
 # regenerate from BOTH and take the per-file max.
+#
+# The report sink is TRUNCATED at session start (conftest pytest_sessionstart),
+# so consecutive report runs no longer accumulate. Before that, a second run
+# showed the union of both — a test you had just fixed still appeared in the
+# summary. Measured the confusing way round: a fixed file reported 52 stale
+# pairs and 0 real ones.
 #
 # REGENERATE with one report-mode run, which is the only way to see ALL of it:
 #   EGRESS_GUARD_MODE=report pytest tests/unit/ ...   # then grep '[egress-guard] EGRESS'
@@ -27,7 +42,6 @@
 1 tests/unit/modules/content/test_writer_core_silent_failures.py
 3 tests/unit/modules/content/test_writer_markers.py
 1 tests/unit/modules/finance/test_finance_probe.py
-17 tests/unit/routes/test_task_routes.py
 1 tests/unit/services/flows/test_content_generation_flow.py
 1 tests/unit/services/flows/test_content_generation_trace.py
 1 tests/unit/services/jobs/test_backfill_post_performance_gsc_job.py
@@ -43,7 +57,6 @@
 2 tests/unit/services/test_image_captioner.py
 5 tests/unit/services/test_image_service.py
 3 tests/unit/services/test_image_service_activity.py
-16 tests/unit/services/test_llm_providers_dispatcher.py
 1 tests/unit/services/test_ollama_client_resilience.py
 3 tests/unit/services/test_publish_service_bg_exceptions.py
 2 tests/unit/services/test_qa_rail_gpu_budgets.py

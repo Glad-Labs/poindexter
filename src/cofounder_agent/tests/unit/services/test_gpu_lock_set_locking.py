@@ -311,6 +311,7 @@ async def _record_acquire(gpu, keys):
 
 
 @pytest.mark.asyncio
+@pytest.mark.gpu_lock_real_db
 async def test_scoped_session_also_holds_the_base_key_in_shared_mode(scoped):
     """Flipping the setting is NOT atomic across processes.
 
@@ -341,6 +342,7 @@ async def test_scoped_session_also_holds_the_base_key_in_shared_mode(scoped):
 
 
 @pytest.mark.asyncio
+@pytest.mark.gpu_lock_real_db
 async def test_unscoped_session_takes_the_base_key_exclusively(scoped):
     """With scoping off there is one key and it is exclusive — today's shape."""
     scoped(enabled="false")

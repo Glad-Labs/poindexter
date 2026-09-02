@@ -332,6 +332,7 @@ async def test_batch_skips_empty_description_without_using_topic():
 
 
 @pytest.mark.asyncio
+@pytest.mark.gpu_lock_real_db
 async def test_gpu_task_session_recorded_with_task_id():
     """``gpu_scheduler._record_task_session`` writes the task_id to the DB.
 

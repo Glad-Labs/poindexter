@@ -1046,6 +1046,7 @@ class TestPgAdvisoryLock:
     """poindexter#731 — cross-process GPU lock via pg_advisory_lock."""
 
     @pytest.mark.asyncio
+    @pytest.mark.gpu_lock_real_db
     async def test_acquire_calls_pg_advisory_lock_with_correct_key(self):
         """_acquire_pg_advisory_lock opens a dedicated conn and calls pg_advisory_lock."""
         mock_conn = _make_mock_pg_conn()
@@ -1296,6 +1297,7 @@ class TestGpuLockAcquireTimeout:
         assert not gpu.is_busy
 
     @pytest.mark.asyncio
+    @pytest.mark.gpu_lock_real_db
     async def test_pg_acquire_timeout_terminates_conn_and_raises(self):
         from services.gpu_scheduler import GpuLockTimeoutError
 

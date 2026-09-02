@@ -628,6 +628,8 @@ markers = [
     # rerank-import-guard workflow).
     "rerank: real cross-encoder / sentence-transformers import guard (opt-in `rerank` extra)",
     "allow_network: test deliberately opens a socket (poindexter#1011 egress guard escape hatch)",
+    "gpu_lock_real_db: test asserts on the GPU lock's own DB calls; opts out of _isolate_gpu_lock_direct_db (it stubs asyncpg itself)",
+    "real_model_arch: test exercises services.vram_budget.read_model_arch directly; opts out of _isolate_ollama_model_arch_probe",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

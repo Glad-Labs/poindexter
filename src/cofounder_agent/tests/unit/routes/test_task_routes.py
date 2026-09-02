@@ -48,6 +48,35 @@ def _set_pool(mock_db, fetch_rows):
 
 
 @pytest.fixture(autouse=True)
+def _stub_topic_dedup_guard(monkeypatch):
+    """Keep task-creation route tests off the real embeddings index.
+
+    `create_blog_task` calls `assert_topic_not_duplicate`, which builds its own
+    `MemoryClient` when none is injected — real Postgres on :5432. The guard
+    swallows failures (fail-open by design), so the connection never surfaced
+    as an error; on this box it simply SUCCEEDED, and these tests were grading
+    the live published corpus. A published post similar enough to a test topic
+    would turn them red for a reason found nowhere in the diff.
+
+    Patched on `services.topic_dedup_guard`, not on `blog_task_creation`: the
+    caller imports it INSIDE the function, so the name is never bound at the
+    caller's module level and patching there would silently no-op — the exact
+    "patch the first call in the chain, not the one you expect" trap from
+    poindexter#1011.
+
+    These tests cover the HTTP contract of task creation; dedup has its own
+    tests in tests/unit/services/test_topic_dedup_guard.py.
+    """
+    import services.topic_dedup_guard as guard
+
+    async def _allow(*_a, **_kw):
+        return None
+
+    monkeypatch.setattr(guard, "assert_topic_not_duplicate", _allow)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limiter():
     """Slowapi's Limiter is a module-level singleton; it would leak 429s
     between unrelated tests once enough /api/tasks POSTs land in one run.

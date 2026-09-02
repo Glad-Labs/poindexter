@@ -473,6 +473,112 @@ def _isolate_gpu_ollama_unload():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_gpu_lock_direct_db(request):
+    """Keep unit tests off the real Postgres via the GPU lock's own connections.
+
+    Companion to ``_isolate_gpu_ollama_unload`` above, which neutralises the
+    HTTP half of ``gpu.lock()`` and says in its own docstring that "the lock
+    still serializes (asyncio + pg)". That remaining pg half is a real socket:
+    ``GPUScheduler._acquire_pg_advisory_lock`` calls ``asyncpg.connect(dsn)``
+    directly — its own connection, deliberately outside any injected pool,
+    because a cross-PROCESS barrier cannot use a per-process pool.
+
+    In a unit test there is no second process to serialize against, so the
+    barrier buys nothing and costs a live connection. The asyncio lock still
+    provides the in-process serialization these tests actually observe.
+
+    This is the seam poindexter#1011 is about: a file can carry several
+    autouse fixtures neutralising the network and still egress through the one
+    nobody enumerated. ``dispatch_complete`` reaches it via
+    ``gpu.lock("ollama", ...)``, which is three frames from anything the test
+    mentions.
+
+    There are TWO such connections, one at each end of the lock lifecycle, and
+    finding the second only after stubbing the first is the whole lesson:
+
+    - ``_acquire_pg_advisory_lock`` on acquire (the cross-process barrier);
+    - ``_record_task_session`` on release (a ``gpu_task_sessions`` telemetry
+      row, best-effort, also its own connection).
+
+    Opt out with ``@pytest.mark.gpu_lock_real_db`` to assert on the real
+    methods. Those tests already stub at the ``asyncpg`` boundary themselves
+    ("Hermetic: no real asyncpg connection"), so they are safe from egress —
+    they just need the methods present to observe.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    if request.node.get_closest_marker("gpu_lock_real_db"):
+        yield
+        return
+
+    patchers = []
+    for target in (
+        "services.gpu_scheduler.GPUScheduler._acquire_pg_advisory_lock",
+        "services.gpu_scheduler.GPUScheduler._record_task_session",
+    ):
+        try:
+            patcher = patch(target, new=AsyncMock(return_value=None))
+            patcher.start()
+            patchers.append(patcher)
+        except (ImportError, AttributeError, ModuleNotFoundError):
+            # gpu_scheduler unimportable in a minimal env — don't gate the suite.
+            continue
+    try:
+        yield
+    finally:
+        for patcher in patchers:
+            patcher.stop()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ollama_model_arch_probe(request):
+    """Keep unit tests off the real Ollama via the VRAM-clamp geometry probe.
+
+    ``dispatch_complete`` calls ``services.vram_budget.read_model_arch`` to
+    size the KV cache, which does ``GET /api/tags`` + ``POST /api/show``
+    against ``ollama_base_url`` — defaulting to
+    ``http://host.docker.internal:11434``.
+
+    This is the seam that made the egress baseline environment-dependent, and
+    the mechanism is worth stating because it also limits what a host-only
+    measurement can see: on the host that hostname fails **DNS**, and a
+    connection that never resolves never reaches ``socket.connect``, so the
+    guard stays silent. In CI the same name resolves to the docker bridge
+    (``172.17.0.1``), the connect happens, and the guard fires. The host
+    therefore UNDER-reports egress — a file can look clean here and fail in
+    CI, which is exactly what happened to
+    ``test_llm_providers_dispatcher.py``.
+
+    ``read_model_arch`` returns ``None`` when unreachable and the caller fails
+    open with a finding, so returning None is the documented degraded path,
+    not a fiction invented for tests.
+
+    Opt out with ``@pytest.mark.real_model_arch``. Nothing needs it today —
+    ``test_vram_budget.py`` covers the surrounding maths and never calls this
+    function — so the hatch exists for a future test that wants the real probe
+    with its own stubbed client, not because something currently depends on it.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    if request.node.get_closest_marker("real_model_arch"):
+        yield
+        return
+    try:
+        patcher = patch(
+            "services.vram_budget.read_model_arch",
+            new=AsyncMock(return_value=None),
+        )
+        patcher.start()
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        patcher = None
+    try:
+        yield
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_coldload_reclaim_guard():
     """Keep unit tests off the real host Ollama via the cold-load guard.
 
@@ -962,6 +1068,29 @@ def _no_network_egress(request, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect_ex", _connect_ex, raising=False)
     monkeypatch.setattr(socket, "create_connection", _create_connection, raising=False)
     yield
+
+def pytest_sessionstart(session):  # noqa: ARG001
+    """Truncate the report sink so a run cannot inherit an older run's results.
+
+    ``record_egress`` APPENDS, and the sink is a fixed path
+    (``/tmp/egress_report.txt`` by default). Without this, a second report-mode
+    run shows the union of both — so a test you have just FIXED still appears
+    in the summary, and a file you have just broken hides among old lines.
+    Measured the confusing way round: a cleared-then-rerun file reported 52
+    stale pairs and 0 real ones.
+
+    Enforce mode leaves the file alone; it neither reads nor writes it.
+    """
+    if guard_is_enforcing():
+        return
+    try:
+        report_sink().unlink(missing_ok=True)
+    except OSError:
+        # A sink we cannot clear is worse than none, but it must not stop a
+        # run whose entire purpose is gathering information.
+        pass
+
+
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
