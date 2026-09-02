@@ -3706,6 +3706,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'retention_backlog_probe_enabled': 'true',
     'retention_backlog_row_threshold': '100',
     'retention_backlog_consecutive_probes': '3',
+    # A backlog only means "failed to drain" if it is read AFTER the policy
+    # ran. Read before a pass it measures inflow, which is why the first
+    # version's fixed 6-hourly clock (landing 26 min BEFORE the retention
+    # run) produced a false live_activity finding. A reading counts only
+    # within this many minutes of the policy's own last_run_at.
+    'retention_backlog_sample_window_minutes': '90',
     'settings_zero_reader_probe_enabled': 'true',
     # ProbeDisabledCapabilitiesJob (#2133): daily check of a curated list of
     # opt-in capability flags (writer self-review, self-consistency QA,
@@ -5000,6 +5006,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'retention_backlog_consecutive_probes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'retention_backlog_probe_enabled': {'owner': 'probe_retention_backlog', 'value_type': 'boolean'},
     'retention_backlog_row_threshold': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
+    'retention_backlog_sample_window_minutes': {'owner': 'probe_retention_backlog', 'value_type': 'integer'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'clock_skew_sample_retention_days': {'owner': 'clock_skew_probe', 'value_type': 'integer'},

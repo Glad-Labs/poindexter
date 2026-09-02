@@ -29,6 +29,30 @@ for ``retention_backlog_consecutive_probes`` consecutive readings. A correct
 policy drains; a broken one accumulates, and only the broken one can hold a
 backlog across probes.
 
+Sample AFTER the run, not on a fixed clock
+------------------------------------------
+
+The backlog only means "failed to drain" if it is measured once the policy has
+had its chance to drain. Measured just BEFORE a pass it means "accumulated
+since last time", which for any healthy high-inflow policy is large by
+definition.
+
+The first version scheduled this ``every 6 hours`` and asserted in a comment
+that it was offset from ``RunRetentionJob`` "so a reading is taken shortly
+after a pass". It was not. Both jobs registered as ``every 6 hours`` from
+worker start and landed 26 minutes apart in the wrong direction — retention at
+:41, this probe at :15 — so every sample was taken 5h34m after the previous
+pass and 26 minutes before the next, i.e. at near-maximum backlog. It produced
+a false ``retention_backlog`` finding for ``live_activity`` on its third
+reading (2738 -> 2746 -> 2751) while that policy was in fact draining
+completely every run (``last_run_deleted=2961``, no error).
+
+So phase is not something to assert and hope for. This probe now ticks often
+and records a reading for a policy ONLY when that policy has run within
+``retention_backlog_sample_window_minutes``, and only once per pass (keyed on
+the policy's own ``last_run_at``). Two schedules can drift; a policy's own
+``last_run_at`` cannot lie about when it last ran.
+
 Readings are kept as ``retention_backlog_sample`` rows in ``audit_log`` rather
 than in a new table — the same store the job-metrics sink already uses, and it
 gives the history for free.
@@ -57,16 +81,22 @@ logger = logging.getLogger(__name__)
 _ENABLED_KEY = "retention_backlog_probe_enabled"
 _THRESHOLD_KEY = "retention_backlog_row_threshold"
 _CONSECUTIVE_KEY = "retention_backlog_consecutive_probes"
+_WINDOW_KEY = "retention_backlog_sample_window_minutes"
 
 _DEFAULT_THRESHOLD = 100
 _DEFAULT_CONSECUTIVE = 3
+# How soon after a policy's own run its backlog still means "did not drain".
+# Wide enough to survive a slow tick or a long retention pass, far narrower
+# than the 6h gap that let a pre-run reading masquerade as a backlog.
+_DEFAULT_WINDOW_MINUTES = 90
 
 _FINDING_KIND = "retention_backlog"
 _SAMPLE_EVENT = "retention_backlog_sample"
 
 _POLICY_QUERY = """
     SELECT name, handler_name, table_name, age_column, ttl_days,
-           filter_sql, config
+           filter_sql, config, last_run_at,
+           EXTRACT(EPOCH FROM (now() - last_run_at))/60.0 AS minutes_since_run
       FROM retention_policies
      WHERE enabled
      ORDER BY name
@@ -100,6 +130,44 @@ def _as_dict(raw: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             return {}
     return {}
+
+
+def eligible_for_sampling(
+    rows: list[dict[str, Any]],
+    last_sample: dict[str, Any],
+    *,
+    window_minutes: int,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Split policies into (measure now, out of window, already sampled).
+
+    A policy is measured only when it has run within ``window_minutes`` — a
+    backlog read before the pass measures inflow, not failure to drain — and
+    only once per pass, keyed on its own ``last_run_at`` so a fast tick cannot
+    stack three readings of the same post-run state and call them a trend.
+
+    ``last_sample`` is the newest recorded sample's ``runs`` map
+    (``{policy: last_run_at_iso}``).
+    """
+    measure: list[dict[str, Any]] = []
+    out_of_window: list[str] = []
+    already: list[str] = []
+    for row in rows:
+        name = str(row.get("name") or "<unnamed>")
+        run_at = row.get("last_run_at")
+        mins = row.get("minutes_since_run")
+        if run_at is None or mins is None:
+            # Never run. Not a backlog signal — RunRetentionJob's own liveness
+            # covers a policy that is not executing at all.
+            out_of_window.append(name)
+            continue
+        if float(mins) > window_minutes:
+            out_of_window.append(name)
+            continue
+        if last_sample.get(name) == run_at.isoformat():
+            already.append(name)
+            continue
+        measure.append(row)
+    return measure, out_of_window, already
 
 
 def breaching_policies(
@@ -147,9 +215,9 @@ def build_body(
 ) -> str:
     lines = [
         f"{len(breaching)} retention policy(ies) have held a backlog above "
-        f"{threshold} rows for {consecutive} consecutive probes — they are "
-        f"running without error but not draining what they are supposed to "
-        f"remove.",
+        f"{threshold} rows across {consecutive} consecutive passes, measured "
+        f"AFTER each run — they are running without error but not draining "
+        f"what they are supposed to remove.",
         "",
         "A retention policy reports `last_error=NULL`, a current `last_run_at` "
         "and a non-zero `total_deleted` whether it is idle or misconfigured, so "
@@ -187,9 +255,11 @@ class ProbeRetentionBacklogJob:
         "persists — the correctness signal liveness telemetry cannot give "
         "(poindexter#933)"
     )
-    # Offset from RunRetentionJob's cadence so a reading is taken shortly
-    # after a pass, when a healthy policy should have drained.
-    schedule = "every 6 hours"
+    # Ticks often and samples selectively: a reading is only recorded once a
+    # policy has actually run (see eligible_for_sampling), so this cadence sets
+    # how promptly the post-run window is caught, not how often a policy is
+    # measured. Measuring all 29 live policies takes ~0.03s.
+    schedule = "every 30 minutes"
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
@@ -202,6 +272,7 @@ class ProbeRetentionBacklogJob:
 
         threshold = _cfg_int(site_config, _THRESHOLD_KEY, _DEFAULT_THRESHOLD)
         consecutive = max(1, _cfg_int(site_config, _CONSECUTIVE_KEY, _DEFAULT_CONSECUTIVE))
+        window = _cfg_int(site_config, _WINDOW_KEY, _DEFAULT_WINDOW_MINUTES)
 
         try:
             async with pool.acquire() as conn:
@@ -222,21 +293,51 @@ class ProbeRetentionBacklogJob:
                 changes_made=0,
             )
 
-        results = await measure_all(pool, rows)
+        prior = [_as_dict(r["details"]) for r in raw_samples]
+        newest_runs = _as_dict(prior[0].get("runs")) if prior else {}
+
+        to_measure, out_of_window, already = eligible_for_sampling(
+            rows, newest_runs, window_minutes=window,
+        )
+        if not to_measure:
+            # Not a pass and not a failure — no policy has run recently enough
+            # for its backlog to mean anything yet. Say so rather than writing
+            # an empty sample, which would break every persistence streak.
+            return JobResult(
+                ok=True,
+                detail=(
+                    f"no policy ran within {window}m — nothing sampled "
+                    f"({len(out_of_window)} out of window, "
+                    f"{len(already)} already sampled this pass)"
+                ),
+                changes_made=0,
+                metrics={
+                    "policies": len(rows), "sampled": 0,
+                    "out_of_window": len(out_of_window),
+                    "already_sampled": len(already),
+                },
+            )
+
+        results = await measure_all(pool, to_measure)
         measured = [r for r in results if r.status == "measured"]
         unmonitored = [r for r in results if r.status == "unmonitored"]
         errored = [r for r in results if r.status == "error"]
 
-        prior_samples = [
-            _as_dict(_as_dict(r["details"]).get("backlogs")) for r in raw_samples
-        ]
+        prior_samples = [_as_dict(d.get("backlogs")) for d in prior]
         breaching = breaching_policies(
             results, prior_samples, threshold=threshold, consecutive=consecutive,
         )
 
         # Record this reading regardless of outcome — it is the history the
-        # next probe's persistence test depends on.
+        # next probe's persistence test depends on. `runs` carries each
+        # policy's last_run_at so the next tick can tell a NEW pass from the
+        # one it already sampled.
         sample = {r.policy: r.count for r in measured}
+        runs = dict(newest_runs)
+        for row in to_measure:
+            run_at = row.get("last_run_at")
+            if run_at is not None:
+                runs[str(row.get("name"))] = run_at.isoformat()
         try:
             async with pool.acquire() as conn:
                 await conn.execute(
@@ -245,7 +346,9 @@ class ProbeRetentionBacklogJob:
                     _SAMPLE_EVENT,
                     json.dumps({
                         "backlogs": sample,
+                        "runs": runs,
                         "threshold": threshold,
+                        "window_minutes": window,
                         "unmonitored": [r.policy for r in unmonitored],
                         "errored": [r.policy for r in errored],
                     }),
@@ -257,7 +360,10 @@ class ProbeRetentionBacklogJob:
             )
 
         metrics = {
-            "policies": len(results),
+            "policies": len(rows),
+            "sampled": len(results),
+            "out_of_window": len(out_of_window),
+            "already_sampled": len(already),
             "measured": len(measured),
             "unmonitored": len(unmonitored),
             "errored": len(errored),
@@ -269,9 +375,10 @@ class ProbeRetentionBacklogJob:
             return JobResult(
                 ok=True,
                 detail=(
-                    f"{len(measured)} policy(ies) measured, none holding a "
-                    f"backlog over {threshold} for {consecutive} probes "
-                    f"({len(unmonitored)} unmonitored, {len(errored)} errored)"
+                    f"{len(measured)} policy(ies) sampled after their run, "
+                    f"none holding a backlog over {threshold} across "
+                    f"{consecutive} passes ({len(unmonitored)} unmonitored, "
+                    f"{len(errored)} errored, {len(out_of_window)} not yet run)"
                 ),
                 changes_made=0,
                 metrics=metrics,

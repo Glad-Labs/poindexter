@@ -79,6 +79,42 @@ and lets the planner hash-join: measured on the live 7,123-row table, the
 strip-and-match form took **9.5s** and this one takes **0.05s** for the
 identical answer.
 
+## Sample AFTER the run, not on a fixed clock
+
+A backlog only means "failed to drain" if it is read once the policy has had
+its chance to drain. Read _before_ a pass it means "accumulated since last
+time", which for any healthy high-inflow policy is large by definition.
+
+The first version of this probe scheduled itself `every 6 hours` and asserted
+in a code comment that it was offset from `RunRetentionJob` "so a reading is
+taken shortly after a pass". **It was not.** Both jobs registered as
+`every 6 hours` from worker start and landed 26 minutes apart in the wrong
+direction — retention at `:41`, the probe at `:15` — so every sample was taken
+5h34m after the previous pass and 26 minutes before the next, at near-maximum
+backlog.
+
+It filed a false `retention_backlog` finding for `live_activity` on its third
+reading (2738 → 2746 → 2751) while that policy was draining **completely**
+every run: `last_run_deleted=2961`, `last_error` NULL. The probe built to
+distinguish a broken policy from an idle one had begun reporting a healthy one
+as broken, for the same underlying reason — it was measuring the wrong moment.
+
+So phase is not something to assert and hope for. The probe now ticks every 30
+minutes and records a reading for a policy **only** when:
+
+- that policy has run within `retention_backlog_sample_window_minutes` (90), and
+- it has not already been sampled for that pass — keyed on the policy's own
+  `last_run_at`, so a fast tick cannot stack three readings of one post-run
+  state and let the persistence rule call them a trend.
+
+Two schedules can drift apart; a policy's own `last_run_at` cannot lie about
+when it last ran. A tick where no policy is in-window records **nothing** and
+says so — writing an empty sample would break every persistence streak.
+
+A policy that has never run is not a backlog signal either: `RunRetentionJob`'s
+own liveness covers a policy that is not executing at all, and reporting a
+backlog for it would blame the wrong mechanism.
+
 ## Persistence is the signal, not magnitude
 
 A single non-zero reading means nothing. `live_activity` has a 2-day TTL and
@@ -115,11 +151,12 @@ design, so a backlog is meaningless as a fault signal and would alarm forever.
 
 ## Settings
 
-| key                                    | default | meaning                                         |
-| -------------------------------------- | ------- | ----------------------------------------------- |
-| `retention_backlog_probe_enabled`      | `true`  | master switch                                   |
-| `retention_backlog_row_threshold`      | `100`   | rows above which a reading counts as breaching  |
-| `retention_backlog_consecutive_probes` | `3`     | consecutive breaching readings before a finding |
+| key                                       | default | meaning                                                  |
+| ----------------------------------------- | ------- | -------------------------------------------------------- |
+| `retention_backlog_probe_enabled`         | `true`  | master switch                                            |
+| `retention_backlog_row_threshold`         | `100`   | rows above which a reading counts as breaching           |
+| `retention_backlog_consecutive_probes`    | `3`     | consecutive breaching readings before a finding          |
+| `retention_backlog_sample_window_minutes` | `90`    | how soon after a policy's own run a reading still counts |
 
 Routing is `findings.retention_backlog.*` — Discord, 12h cooldown, advisory
 `warn`. A policy that runs clean but does not drain is a slow leak, not an

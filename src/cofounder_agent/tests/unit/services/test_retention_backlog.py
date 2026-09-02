@@ -303,3 +303,85 @@ def test_body_reports_failed_measurements_as_unknown():
     )
     assert "never as zero" in body
     assert "boom" in body
+
+
+# --- sampling phase: measure AFTER the run, not on a fixed clock -------------
+#
+# The first version scheduled this `every 6 hours` and asserted in a comment
+# that it was offset from RunRetentionJob "so a reading is taken shortly after
+# a pass". It was not: both landed as `every 6 hours` from worker start, 26
+# minutes apart in the WRONG direction (retention :41, probe :15), so every
+# sample was taken 5h34m after the previous pass and 26 min before the next —
+# at near-maximum backlog. It filed a false `retention_backlog` finding for
+# `live_activity` on its third reading while that policy was draining
+# completely every run.
+
+from datetime import UTC, datetime, timedelta
+
+from services.jobs.probe_retention_backlog import eligible_for_sampling
+
+
+def _policy(name, *, minutes_since_run=5.0, run_at=None):
+    if minutes_since_run is None:
+        return {"name": name, "last_run_at": None, "minutes_since_run": None}
+    run_at = run_at or (datetime.now(UTC) - timedelta(minutes=minutes_since_run))
+    return {"name": name, "last_run_at": run_at, "minutes_since_run": minutes_since_run}
+
+
+def test_a_policy_that_just_ran_is_measured():
+    measure, out, already = eligible_for_sampling(
+        [_policy("live_activity", minutes_since_run=5.0)], {}, window_minutes=90,
+    )
+    assert [r["name"] for r in measure] == ["live_activity"]
+    assert out == [] and already == []
+
+
+def test_a_reading_taken_before_the_next_run_is_not_sampled():
+    """The exact false positive. 5h34m after its last pass, `live_activity`
+    legitimately holds thousands of overdue rows — that is inflow waiting for
+    the next run, not a failure to drain, and it must never be recorded."""
+    measure, out, already = eligible_for_sampling(
+        [_policy("live_activity", minutes_since_run=334.0)], {}, window_minutes=90,
+    )
+    assert measure == []
+    assert out == ["live_activity"]
+
+
+def test_a_policy_is_sampled_once_per_pass():
+    """Ticking every 30 min against a 6-hourly retention run would otherwise
+    stack several readings of the SAME post-run state and let the persistence
+    rule call them a trend."""
+    run_at = datetime.now(UTC) - timedelta(minutes=10)
+    rows = [_policy("p", minutes_since_run=10.0, run_at=run_at)]
+    measure, _, already = eligible_for_sampling(
+        rows, {"p": run_at.isoformat()}, window_minutes=90,
+    )
+    assert measure == []
+    assert already == ["p"]
+
+
+def test_a_new_pass_is_sampled_again():
+    previous = datetime.now(UTC) - timedelta(hours=6)
+    latest = datetime.now(UTC) - timedelta(minutes=10)
+    rows = [_policy("p", minutes_since_run=10.0, run_at=latest)]
+    measure, _, already = eligible_for_sampling(
+        rows, {"p": previous.isoformat()}, window_minutes=90,
+    )
+    assert [r["name"] for r in measure] == ["p"]
+    assert already == []
+
+
+def test_a_policy_that_has_never_run_is_not_a_backlog_signal():
+    """RunRetentionJob's own liveness covers a policy that is not executing;
+    reporting a backlog for it would blame the wrong mechanism."""
+    measure, out, _ = eligible_for_sampling(
+        [_policy("never", minutes_since_run=None)], {}, window_minutes=90,
+    )
+    assert measure == []
+    assert out == ["never"]
+
+
+def test_window_is_configurable():
+    rows = [_policy("p", minutes_since_run=120.0)]
+    assert eligible_for_sampling(rows, {}, window_minutes=90)[0] == []
+    assert [r["name"] for r in eligible_for_sampling(rows, {}, window_minutes=180)[0]] == ["p"]
