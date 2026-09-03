@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## [0.132.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.131.0...v0.132.0) (2026-09-03)
+
+
+### Features
+
+* **affiliate:** active liveness probe for the /go redirect Worker ([#3533](https://github.com/Glad-Labs/glad-labs-stack/issues/3533)) ([bbdb2b8](https://github.com/Glad-Labs/glad-labs-stack/commit/bbdb2b82314f99c7e4c73c9e11c958d6c2be3ed0))
+* **content:** give ChartProvider a caller — the [CHART: key] marker path ([#3544](https://github.com/Glad-Labs/glad-labs-stack/issues/3544)) ([79332da](https://github.com/Glad-Labs/glad-labs-stack/commit/79332daaae43e8b4621ff25812e0d29efa5f2ea1))
+* **instrumentation:** guard the decode-split capture + render charts from data ([#3535](https://github.com/Glad-Labs/glad-labs-stack/issues/3535)) ([ccb219d](https://github.com/Glad-Labs/glad-labs-stack/commit/ccb219ddd3f5fb4b793c3ca746de53b25f2f3930))
+* **ops:** put a dead-man's switch on the deploy path itself ([#3539](https://github.com/Glad-Labs/glad-labs-stack/issues/3539)) ([4b2efb5](https://github.com/Glad-Labs/glad-labs-stack/commit/4b2efb581deb34d83bcdf49e284a462048ebb239))
+* **qa:** add qa.numeric_fidelity — the first anti-hallucination rail that is arithmetic ([#3542](https://github.com/Glad-Labs/glad-labs-stack/issues/3542)) ([bd5a0d1](https://github.com/Glad-Labs/glad-labs-stack/commit/bd5a0d181bacd9a15d229a4ff37a39bd9254cf47))
+* **retention:** give policies a correctness signal, not just a liveness one ([#3540](https://github.com/Glad-Labs/glad-labs-stack/issues/3540)) ([02beb1f](https://github.com/Glad-Labs/glad-labs-stack/commit/02beb1fed217e1f4634b5a9be4de2602015dea9f))
+* **seo:** noindex the dev diaries and drop them from the sitemap ([#3566](https://github.com/Glad-Labs/glad-labs-stack/issues/3566)) ([c0dbab2](https://github.com/Glad-Labs/glad-labs-stack/commit/c0dbab20af898e637cce8a3ea0a4f609ecda30e8))
+* **topics:** propose posts from our own instrumentation + fix the pool-summary drop ([#3543](https://github.com/Glad-Labs/glad-labs-stack/issues/3543)) ([eb10e0a](https://github.com/Glad-Labs/glad-labs-stack/commit/eb10e0afdf572eaae7b9937aed4f0f9a24f43072))
+
+
+### Bug Fixes
+
+* **backup:** dump every configured database, and assert the offsite copy is still sufficient ([#3537](https://github.com/Glad-Labs/glad-labs-stack/issues/3537)) ([5b12a14](https://github.com/Glad-Labs/glad-labs-stack/commit/5b12a14ed54a2024714acbb4fb2e2c048e73846b))
+* **content:** put [SCREENSHOT:] on the writer that actually runs ([#3556](https://github.com/Glad-Labs/glad-labs-stack/issues/3556)) ([a0e66b0](https://github.com/Glad-Labs/glad-labs-stack/commit/a0e66b05d1babca12bce8ec54684d00f2a42e65c))
+* **deploy:** rebuild every image-baked service, not just five of them ([#3531](https://github.com/Glad-Labs/glad-labs-stack/issues/3531)) ([cf0121c](https://github.com/Glad-Labs/glad-labs-stack/commit/cf0121c1cfbf554a9507d944ffda31c1c3027947))
+* **deps:** floor transformers to 5.10.0 — CVE-2026-9856 (HIGH) ([#3559](https://github.com/Glad-Labs/glad-labs-stack/issues/3559)) ([58f6199](https://github.com/Glad-Labs/glad-labs-stack/commit/58f6199f1e9b73d4ddff03dec04b4a783d1ca709))
+* **distribution:** make the own-site target a sentinel, not one operator's domain ([#3541](https://github.com/Glad-Labs/glad-labs-stack/issues/3541)) ([734e423](https://github.com/Glad-Labs/glad-labs-stack/commit/734e4239d07b9ee633283f2e1a7c3e4abdbfc3dd))
+* **qa:** hand the deepeval rails SiteConfig, not the async SettingsService ([#3525](https://github.com/Glad-Labs/glad-labs-stack/issues/3525)) ([d660c5f](https://github.com/Glad-Labs/glad-labs-stack/commit/d660c5ff9f744eb09a22ad4b0b7e9719976ed9c8))
+* **readme:** re-shoot the QA reviewers panel; alt text described a stale image ([#3530](https://github.com/Glad-Labs/glad-labs-stack/issues/3530)) ([1b24fcc](https://github.com/Glad-Labs/glad-labs-stack/commit/1b24fcc601aeb9ff0f69b2a9d15d2641140b8d73))
+* **retention:** a probe that can never sample must not report ok ([#3564](https://github.com/Glad-Labs/glad-labs-stack/issues/3564)) ([cae7487](https://github.com/Glad-Labs/glad-labs-stack/commit/cae7487c10a5eb3bf6284cc8fbf0bc1dca6ccf34))
+* **retention:** key the writer subgraph's checkpoints on the task, not the topic ([#3557](https://github.com/Glad-Labs/glad-labs-stack/issues/3557)) ([854cbec](https://github.com/Glad-Labs/glad-labs-stack/commit/854cbec5e4f60865b1041c9193d6f84eb985bd72))
+* **retention:** sample the backlog AFTER the run, not on a fixed clock ([#3555](https://github.com/Glad-Labs/glad-labs-stack/issues/3555)) ([c8ada51](https://github.com/Glad-Labs/glad-labs-stack/commit/c8ada513a672c2e6137be3de9cd1ec49ef945b65))
+* **settings-audit:** close four blind spots, and one false DEAD found doing it ([#3563](https://github.com/Glad-Labs/glad-labs-stack/issues/3563)) ([4c9b528](https://github.com/Glad-Labs/glad-labs-stack/commit/4c9b5287964190abf55f3d48beaeddacb833d15d))
+* **topics:** carry the candidate summary into research_context at batch handoff ([#3565](https://github.com/Glad-Labs/glad-labs-stack/issues/3565)) ([a3ef590](https://github.com/Glad-Labs/glad-labs-stack/commit/a3ef590f93025bceb7cd411cd5d3f888b3435c79))
+* **tts:** stop the engine breathing at every compound hyphen ([#3538](https://github.com/Glad-Labs/glad-labs-stack/issues/3538)) ([edea368](https://github.com/Glad-Labs/glad-labs-stack/commit/edea368f6e0767664a454b2312fe50864c4feb1f))
+* **youtube:** key pipeline_distributions on the medium so a Short survives ([#3536](https://github.com/Glad-Labs/glad-labs-stack/issues/3536)) ([147f292](https://github.com/Glad-Labs/glad-labs-stack/commit/147f2921b8ebc0439d224d33215c5da36f98771f))
+* **youtube:** let `setup --with-update` reuse the stored OAuth client ([#3532](https://github.com/Glad-Labs/glad-labs-stack/issues/3532)) ([53ddcec](https://github.com/Glad-Labs/glad-labs-stack/commit/53ddcec759844bfa29c6c72c62c32f0c4b435b92))
+* **youtube:** stop pinning a scope list on Credentials — it broke token refresh ([#3529](https://github.com/Glad-Labs/glad-labs-stack/issues/3529)) ([e357a8d](https://github.com/Glad-Labs/glad-labs-stack/commit/e357a8d63d5ce2e08a15693d220ad0900c7fdc4c))
+
 ## [0.131.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.130.0...v0.131.0) (2026-09-01)
 
 
