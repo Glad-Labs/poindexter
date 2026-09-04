@@ -40,7 +40,7 @@
     },
     {
       "key": "affiliate_clicks_last_sync",
-      "value": "2026-09-02T12:18:15.718436+00:00",
+      "value": "2026-09-04T12:18:21.736220+00:00",
       "data_type": "string",
       "category": "cost",
       "environment": "production",
@@ -50,8 +50,8 @@
       "tags": [],
       "id": 941770,
       "created_at": "2026-07-11T23:23:22.616038Z",
-      "updated_at": "2026-09-02T12:23:15.718645Z",
-      "value_preview": "2026-09-02T12:18:15.718436+00:00",
+      "updated_at": "2026-09-04T12:23:21.736650Z",
+      "value_preview": "2026-09-04T12:18:21.736220+00:00",
       "owner": null,
       "value_type": null,
       "deprecated": false,
@@ -192,7 +192,7 @@
     },
     {
       "key": "affiliate_redirect_probe_last_deep_check",
-      "value": "2026-09-01T18:13:13.854556+00:00",
+      "value": "2026-09-03T18:13:20.125472+00:00",
       "data_type": "string",
       "category": "cost",
       "environment": "production",
@@ -202,8 +202,8 @@
       "tags": [],
       "id": 1878541,
       "created_at": "2026-09-01T18:08:26.952173Z",
-      "updated_at": "2026-09-01T18:13:13.854673Z",
-      "value_preview": "2026-09-01T18:13:13.854556+00:00",
+      "updated_at": "2026-09-03T18:13:20.125561Z",
+      "value_preview": "2026-09-03T18:13:20.125472+00:00",
       "owner": null,
       "value_type": null,
       "deprecated": false,
@@ -1901,7 +1901,7 @@
       "superseded_by": null
     }
   ],
-  "total": 1731,
+  "total": 1733,
   "limit": 100,
   "offset": 0
 }
