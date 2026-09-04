@@ -146,7 +146,7 @@ diffusers = { version = ">=0.39.0,<0.40", optional = true }
 # `peft` removed — zero imports in tracked code. Was optional ml extra.
 
 # Content Processing
-markdown = "^3.5"
+markdown = "^3.10"
 
 # Utilities
 slowapi = "^0.1.9"
