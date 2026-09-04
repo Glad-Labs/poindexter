@@ -5649,14 +5649,14 @@ virtualenv = ">=20.10.0"
 
 [[package]]
 name = "prefect"
-version = "3.7.4"
+version = "3.7.7"
 description = "Workflow orchestration and management."
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["main"]
 files = [
-    {file = "prefect-3.7.4-py3-none-any.whl", hash = "sha256:1ab7c5e9d418eb6e7dbb870b08704a2cce9ff054369c3bd1a9e9b0f8ec0d1257"},
-    {file = "prefect-3.7.4.tar.gz", hash = "sha256:65a143310a42850caa1d7f21c2d9be5dfd18ee4b7baa1ce6dd8c6b421bc3e4ea"},
+    {file = "prefect-3.7.7-py3-none-any.whl", hash = "sha256:c406c2ecba126f228ce150613179a9dbf542f0342a9f3d85bcfe2babad5802e7"},
+    {file = "prefect-3.7.7.tar.gz", hash = "sha256:816fd64369927916d88480fda24a6c2104f8f53e5adcaee9d6a638f553c023db"},
 ]
 
 [package.dependencies]
@@ -9934,4 +9934,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "33e22b3c693c4dc54eb626e33454ffe502a6b27de8f4125d6d0954c73460b9e1"
+content-hash = "322a9da4c45bc440591a23a42d3b7185d38fffde74f1510aa2005dc8f382d1aa"
