@@ -202,7 +202,7 @@ langgraph-checkpoint = ">=4.2.0,<5.0"
 # the libpq toolchain. v3.x is the current line; depends transitively
 # on langgraph-checkpoint>=2.1.2,<5.0 which is a subset of the >=4.0
 # floor we already declare above.
-langgraph-checkpoint-postgres = ">=3.1.1,<4.0"
+langgraph-checkpoint-postgres = ">=3.1.2,<4.0"
 psycopg = { version = ">=3.2.0,<4.0", extras = ["binary", "pool"] }
 # datasets pinned to ^3.0 to override the legacy 1.1.1 transitive dep
 # pulled in by ragas — 1.1.1 calls `pyarrow.PyExtensionType` which was
