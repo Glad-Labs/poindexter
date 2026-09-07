@@ -160,6 +160,27 @@ def test_shelly_emits_wall_power_from_apower():
     assert series["psu_line_current_amps"] == "2.918"
 
 
+def test_shelly_emits_relay_state_gauge():
+    on = _series(
+        EXPORTER.get_shelly_psu_metrics(
+            "http://10.0.0.5", _fetch=lambda url: {"apower": 300.0, "output": True}
+        )
+    )
+    assert on["psu_outlet_output_on"] == "1"
+    # The 2026-09-06 shape: relay open, mains still on the input, 0 W.
+    off = _series(
+        EXPORTER.get_shelly_psu_metrics(
+            "http://10.0.0.5",
+            _fetch=lambda url: {"apower": 0.0, "voltage": 121.2, "output": False},
+        )
+    )
+    assert off["psu_outlet_output_on"] == "0"
+    assert off["psu_line_voltage_volts"] == "121.2"
+    # No `output` field (older firmware) → no gauge, never a fabricated 0.
+    none = EXPORTER.get_shelly_psu_metrics("http://10.0.0.5", _fetch=lambda url: {"apower": 1.0})
+    assert "psu_outlet_output_on" not in none
+
+
 def test_shelly_unconfigured_is_noop():
     assert EXPORTER.get_shelly_psu_metrics("") == ""
 

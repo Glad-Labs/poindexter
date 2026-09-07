@@ -70,7 +70,7 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py secret_reader.py oauth_client.py glitchtip_triage_probe.py prefect_stuck_flow_probe.py backup_watcher.py restore_test_probe.py offsite_backup_watch.py auto_embed_watch.py postiz_queue_watch.py comfyui_ram_watch.py ram_recycle_common.py sidecar_ram_watch.py ollama_runner_ram_watch.py smart_monitor.py docker_port_forward_probe.py pr_staleness_probe.py discord_bot_probe.py mcp_http_probe.py branch_drift_probe.py psu_power.py post_performance_probe.py data_freshness_probe.py scheduled_workflow_watch.py clock_skew_probe.py deploy_sync_probe.py service_restart.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py secret_reader.py oauth_client.py glitchtip_triage_probe.py prefect_stuck_flow_probe.py backup_watcher.py restore_test_probe.py offsite_backup_watch.py auto_embed_watch.py postiz_queue_watch.py comfyui_ram_watch.py ram_recycle_common.py sidecar_ram_watch.py ollama_runner_ram_watch.py smart_monitor.py docker_port_forward_probe.py pr_staleness_probe.py discord_bot_probe.py mcp_http_probe.py branch_drift_probe.py psu_power.py post_performance_probe.py data_freshness_probe.py scheduled_workflow_watch.py clock_skew_probe.py deploy_sync_probe.py service_restart.py outlet_guard_probe.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # Firefighter remediation package (brain/remediation/) — a SUBPACKAGE, so the
@@ -114,6 +114,7 @@ RUN mkdir -p /app/brain && \
     cp /app/pr_staleness_probe.py /app/brain/pr_staleness_probe.py && \
     cp /app/discord_bot_probe.py /app/brain/discord_bot_probe.py && \
     cp /app/mcp_http_probe.py /app/brain/mcp_http_probe.py && \
+    cp /app/outlet_guard_probe.py /app/brain/outlet_guard_probe.py && \
     cp /app/branch_drift_probe.py /app/brain/branch_drift_probe.py && \
     cp /app/psu_power.py /app/brain/psu_power.py && \
     cp /app/post_performance_probe.py /app/brain/post_performance_probe.py && \

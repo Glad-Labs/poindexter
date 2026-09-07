@@ -4154,6 +4154,38 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
+    # ----- Outlet guard (brain/outlet_guard_probe.py, 2026-09-06) -----
+    # The Shelly plug that meters the PC's wall power (bootstrap
+    # `shelly_psu_url` → SHELLY_PSU_URL) opened its relay with mains present;
+    # NUT shut the host down 18 minutes later and it sat dark for 12 hours.
+    # The brain now turns that outlet back on when: outlet off AND input
+    # voltage >= min_line_voltage (mains present, so not a real outage) AND
+    # the UPS is on battery (we ARE the load behind it). Unset SHELLY_PSU_URL
+    # = no-op. Kill-switch is fail-closed.
+    'outlet_guard_enabled': 'true',
+    # Below this input voltage the relay being open is a real outage — nothing
+    # to restore. 90 V is well under any 120 V nominal brownout and well over
+    # the ~0 V a dead feed reads.
+    'outlet_guard_min_line_voltage_volts': '90',
+    # Require the NUT exporter to report the UPS on battery before acting.
+    # 'false' only for a plug-only install with no UPS to cross-check (the
+    # guard will then restore on outlet-off + mains-present alone).
+    'outlet_guard_require_ups_on_battery': 'true',
+    # NUT exporter exposition (nut-exporter, profile `ups`, host network):
+    # /ups_metrics?ups=<name> — /metrics is only its Go runtime. Match the
+    # `nut` Prometheus job's target + ups name.
+    'outlet_guard_ups_metrics_url': 'http://host.docker.internal:9199/ups_metrics?ups=cyberpower',
+    'outlet_guard_http_timeout_seconds': '3',
+    # Restore attempts per rolling window; past the cap the guard stops
+    # switching and pages critical instead (a relay that keeps dropping is a
+    # hardware problem, not a software one).
+    'outlet_guard_restore_cap_per_window': '3',
+    'outlet_guard_restore_window_minutes': '60',
+    # Shelly switch component id (single-outlet plugs are always 0).
+    'outlet_guard_switch_id': '0',
+    # Per-alertname repeat suppression.
+    'outlet_guard_dedup_hours': '6',
+
     # ----- Compose-drift host-routed recovery (brain/compose_drift_probe.py) -----
     # Docker Compose project name the brain pins (COMPOSE_PROJECT_NAME) during
     # compose-drift auto-recover, so the recreate joins the stack's real project
@@ -5350,6 +5382,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'max_log_backup_count': {'value_type': 'integer'},
     'max_log_size_mb': {'value_type': 'integer'},
     'mcp_http_probe_min_consecutive_failures': {'owner': 'mcp_http_probe', 'value_type': 'integer'},
+    'outlet_guard_enabled': {'owner': 'outlet_guard_probe', 'value_type': 'boolean'},
+    'outlet_guard_min_line_voltage_volts': {'owner': 'outlet_guard_probe', 'value_type': 'float'},
+    'outlet_guard_require_ups_on_battery': {'owner': 'outlet_guard_probe', 'value_type': 'boolean'},
+    'outlet_guard_ups_metrics_url': {'owner': 'outlet_guard_probe', 'value_type': 'url'},
+    'outlet_guard_http_timeout_seconds': {'owner': 'outlet_guard_probe', 'value_type': 'integer'},
+    'outlet_guard_restore_cap_per_window': {'owner': 'outlet_guard_probe', 'value_type': 'integer'},
+    'outlet_guard_restore_window_minutes': {'owner': 'outlet_guard_probe', 'value_type': 'integer'},
+    'outlet_guard_switch_id': {'owner': 'outlet_guard_probe', 'value_type': 'integer'},
+    'outlet_guard_dedup_hours': {'owner': 'outlet_guard_probe', 'value_type': 'integer'},
     'media.caption.fidelity_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},
     'media.caption.script_alignment_enabled': {'owner': 'media_transcribe_narration', 'value_type': 'boolean'},
     'media.caption.alignment_min_ratio': {'owner': 'media_transcribe_narration', 'value_type': 'float'},

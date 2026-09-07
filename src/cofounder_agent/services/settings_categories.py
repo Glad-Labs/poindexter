@@ -306,6 +306,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("firefighter", "self_healing"),
     ("self_heal", "self_healing"),
     ("mcp_http_probe", "self_healing"),
+    ("outlet_guard", "self_healing"),
     ("notification", "self_healing"),
     ("anticipation", "self_healing"),
     # plugins

@@ -835,6 +835,18 @@ def get_shelly_psu_metrics(base_url: str | None = None, *, _fetch=None) -> str:
             "# TYPE psu_line_current_amps gauge",
             f"psu_line_current_amps {float(current):.3f}",
         ]
+    output = data.get("output")
+    if isinstance(output, bool):
+        # Relay state. 2026-09-06: the plug opened with mains present and the
+        # only trace was `apower` going to 0 — indistinguishable from "PC
+        # idle-off" on the board. Exposing the relay makes "outlet off, line
+        # voltage present" a first-class series (brain/outlet_guard_probe.py
+        # is the actor; this is the visibility).
+        lines += [
+            "# HELP psu_outlet_output_on Smart-plug relay state: 1 = outlet passing power, 0 = relay open",
+            "# TYPE psu_outlet_output_on gauge",
+            f"psu_outlet_output_on {1 if output else 0}",
+        ]
     return "\n".join(lines) + "\n"
 
 

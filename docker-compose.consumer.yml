@@ -263,6 +263,10 @@ services:
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
+      # Outlet guard (brain/outlet_guard_probe.py): the PC's own wall-plug
+      # address, from the same bootstrap `shelly_psu_url` key the gpu-exporter
+      # reads. Unset = the guard no-ops.
+      SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

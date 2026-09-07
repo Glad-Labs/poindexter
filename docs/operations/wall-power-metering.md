@@ -281,3 +281,11 @@ is reboot-proof and never needs this feed. A drop that happens overnight still
 stays dark until the operator re-enables iCUE logging by hand — only auto-recovery
 would close that gap, and iCUE offers no reliable hook for it. Tune or disable the
 feed via `app_settings.data_freshness_feeds`.
+
+## The plug is also a switch
+
+The same Shelly relay that meters the PC can open with mains still present
+(it did, 2026-09-06 03:04 EDT — 12 hours dark). `psu_outlet_output_on` exposes
+the relay state, and `brain/outlet_guard_probe.py` turns the outlet back on when
+it is off, mains is present on its input, and the UPS is on battery. Details in
+[ups-monitoring.md § Outlet guard](ups-monitoring.md#outlet-guard--the-brain-turns-our-own-outlet-back-on).

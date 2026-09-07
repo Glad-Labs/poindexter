@@ -484,6 +484,23 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_MCP_HTTP_PROBE = False
 
 try:
+    # 2026-09-06 — outlet guard. The Shelly plug metering the PC's wall
+    # power opened its relay with mains present; the UPS carried the host
+    # for 18 minutes and NUT shut it down, then it sat dark for 12 hours.
+    # This probe turns our own outlet back on (Switch.Set via the plug's
+    # local RPC) when the outlet is off, mains is present on its input,
+    # and the UPS is on battery — capped per window, forensic `source`
+    # snapshot carried in the page. See brain/outlet_guard_probe.py.
+    from outlet_guard_probe import run_outlet_guard_probe
+    _HAS_OUTLET_GUARD_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.outlet_guard_probe import run_outlet_guard_probe
+        _HAS_OUTLET_GUARD_PROBE = True
+    except ImportError:
+        _HAS_OUTLET_GUARD_PROBE = False
+
+try:
     # poindexter#520 Stage 4 — post-performance probe. Reads the latest
     # post_performance snapshot per published post, classifies into
     # broken / fading / performing buckets, and pages on broken posts
@@ -579,6 +596,10 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Discord bot uptime monitor offline"),
     ("_HAS_MCP_HTTP_PROBE", "brain/mcp_http_probe.py",
      "MCP HTTP server reachability monitor offline"),
+    ("_HAS_OUTLET_GUARD_PROBE", "brain/outlet_guard_probe.py",
+     "Outlet guard offline — a metered wall plug that opens with mains present "
+     "drains the UPS to a clean shutdown and stays dark until a human presses "
+     "the button (2026-09-06: 12 hours)"),
     ("_HAS_BRANCH_DRIFT_PROBE", "brain/branch_drift_probe.py",
      "Branch-drift deploy canary offline — prod checkout falling behind origin/main goes undetected (#942)"),
     ("_HAS_POST_PERFORMANCE_PROBE", "brain/post_performance_probe.py",
@@ -3393,6 +3414,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] mcp_http probe failed: %s", e)
+
+    # Outlet guard (2026-09-06). Reads the PC's own Shelly plug every cycle;
+    # if the relay is OFF with mains present on its input and the UPS is on
+    # battery, turns it back on and pages critical with the plug's pre-restore
+    # `source`/`errors` snapshot. Fail-closed when the UPS can't be
+    # confirmed; capped per window. No-op when SHELLY_PSU_URL is unset.
+    if _HAS_OUTLET_GUARD_PROBE:
+        try:
+            og_summary = await run_outlet_guard_probe(pool)
+            probe_results["outlet_guard"] = {
+                "ok": bool(og_summary.get("ok", False)),
+                "detail": og_summary.get("detail", ""),
+                "summary": og_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] outlet_guard probe failed: %s", e)
 
     # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
     # from app_settings → bind-mounted password_file paths so the next

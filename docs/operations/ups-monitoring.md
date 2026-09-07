@@ -140,3 +140,50 @@ input tap are **two independent meters on the same supply story** — the
 Keep both: they cross-check each other, and the plug can move (or die) without
 blinding the undervoltage watch. The UPS adds what no plug can see — transfer
 events, inverter load margin, and battery state.
+
+## Outlet guard — the brain turns our own outlet back on
+
+Earned 2026-09-06. The Shelly plug feeding the UPS opened its relay at
+03:04 EDT with 121 V still on its input. The UPS carried the PC on battery
+for 18 minutes, `UpsOnBattery` + `UpsLowBattery` paged Telegram, NUT then
+shut the host down cleanly — and it sat dark for 12 hours because the plug's
+`initial_state` was `off`. Every probe was green throughout: at 03:21 the
+brain reported 0 issues with the battery at 21%, because nothing looked at
+whether _our own outlet was switched on_. Two fixes:
+
+1. **The plug's `initial_state` is now `on`** (`Switch.SetConfig`, config rev
+   17), so a plug reboot (crash, firmware update, momentary outlet contact
+   loss) brings the outlet straight back instead of parking it off.
+2. **`brain/outlet_guard_probe.py`** runs every brain cycle and issues
+   `Switch.Set on` over the plug's local RPC when all three hold:
+   - the relay is off (`Switch.GetStatus.output == false`);
+   - mains is present on the plug's INPUT (`voltage >=
+outlet_guard_min_line_voltage_volts`, default 90 V) — a relay open at
+     0 V is a real outage, nothing to restore;
+   - the UPS is on battery (NUT exporter `ups_status{flag="OB"} 1`, read from
+     `outlet_guard_ups_metrics_url`) — that is what proves _we_ are the load
+     behind that outlet. On line + outlet off = the plug meters something
+     else, so it pages (warning) and leaves it alone. Exporter unreachable or
+     no `ups_status` series = **unknown, not "on line"**: pages, does not act.
+
+   Restores are capped (`outlet_guard_restore_cap_per_window`, default 3 per
+   60 min); past the cap the guard stops switching and pages critical — a
+   relay that keeps dropping is hardware. Every restore pages **critical**
+   (Telegram + Discord) carrying the plug's pre-restore `source` (`button` /
+   `cloud` / `matter` / `init` …), `errors` and temperature, because
+   `Switch.Set` overwrites `source` and that field is the only record of
+   _why_ the outlet opened. The 2026-09-06 event lost it to the operator's
+   button press.
+
+   The plug address is `SHELLY_PSU_URL` — the same env compose hands the
+   `gpu-exporter`, exported by `start-stack.sh` from the bootstrap
+   `shelly_psu_url` key. Unset = the guard no-ops. Kill-switch
+   `outlet_guard_enabled` is fail-closed. The exporter also emits
+   `psu_outlet_output_on` now, so "relay open, line voltage present" is a
+   first-class series on the Hardware & Power board rather than an
+   `apower` that merely reads 0.
+
+   Latency is one brain cycle (5 min) worst case against ~18 min of battery
+   at the PC's idle load. A plug-only install with no UPS can set
+   `outlet_guard_require_ups_on_battery=false` and the guard restores on
+   relay-off + mains-present alone.

@@ -166,6 +166,7 @@ npm run type:check            # Python mypy (backend poetry env)
 - Logs all decisions (brain_decisions table)
 - Alerts via Telegram when services are down
 - Auto-restarts local services when running on Matt's PC
+- **Outlet guard** (`brain/outlet_guard_probe.py`, 2026-09-06): turns the PC's own Shelly wall plug back on when its relay is open with mains present and the UPS is on battery — the plug opened at 03:04 with 121 V on its input and the box sat dark 12 h behind a green board. Fail-closed without a confirmed UPS-on-battery, capped per window, pages critical with the plug's pre-restore `source`. Plug `initial_state` is now `on`. See `docs/operations/ups-monitoring.md`.
 
 ### Backend (`src/cofounder_agent/`)
 
