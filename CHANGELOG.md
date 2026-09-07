@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.133.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.132.0...v0.133.0) (2026-09-07)
+
+
+### Features
+
+* **brain:** outlet guard — restore the PC's own wall plug when its relay opens ([#3576](https://github.com/Glad-Labs/glad-labs-stack/issues/3576)) ([4af8d51](https://github.com/Glad-Labs/glad-labs-stack/commit/4af8d51113a368ad05970c2fd4e43f0eaad31537))
+
 ## [0.132.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.131.0...v0.132.0) (2026-09-03)
 
 
