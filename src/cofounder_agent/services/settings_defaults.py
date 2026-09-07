@@ -1926,6 +1926,14 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
+    # Per-source multiplier on the batch pre-rank embedding score (2026-09-07),
+    # CSV of source_name=factor. The embedding score measures fit to the
+    # niche's goals and nothing about search demand; the 2026-08-09 GSC audit
+    # found the site reliably picked on-goal topics nobody searches for, and
+    # the only demand-measuring sources (search_autocomplete, gsc_query_gap)
+    # contributed 0 topics. 1.5 is a nudge, not a lock: an off-goal demand
+    # topic still loses to a strongly on-goal one. Unlisted source = 1.0.
+    'topic_source_rank_weights': 'search_autocomplete=1.5,gsc_query_gap=1.5',
     'niche_carry_forward_decay_factor': '0.7',
     'niche_embedding_model': 'nomic-embed-text',
     'niche_goal_descriptions': '{"TRAFFIC": "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.", "EDUCATION": "Topic that teaches the reader something concrete and useful they didn\'t know before.", "BRAND": "Topic that reinforces the operator\'s positioning and unique perspective.", "AUTHORITY": "Topic that demonstrates the operator\'s depth and expertise on something specific.", "REVENUE": "Topic that drives a commercial outcome: signups, sales, conversions, paid feature awareness.", "COMMUNITY": "Topic that resonates with the operator\'s existing audience; sparks discussion, shares, replies.", "NICHE_DEPTH": "Topic that goes deep on the operator\'s niche specialty rather than broad-audience content."}',
@@ -2051,6 +2059,16 @@ DEFAULTS: dict[str, str] = {
     # specific metrics…"). 0 disables the retry — junk falls straight
     # through to the H1/topic fallback in choose_canonical_title.
     'title_junk_regen_max_retries': '1',
+    # ----- Title searchability gate (services/title_searchability.py, 2026-09-07) -----
+    # August 2026 cohort: 18 posts, 3.4 first-21-day impressions each, 0
+    # clicks; titles like "The Gap Nobody Names" carry no noun anyone types.
+    # The gate requires at least one searchable entity in the canonical title
+    # (a digit-bearing token, a proper noun/product name, or a word from the
+    # article's own keyword set). mode: 'regenerate' = one corrective retry
+    # that names the article's concrete terms, then ship the better candidate
+    # + finding; 'advisory' = finding only, never regenerate.
+    'title_searchable_entity_enabled': 'true',
+    'title_searchable_entity_mode': 'regenerate',
     # Content-validator per-category promotion thresholds. 0 = never promote
     # this warning category to a hard critical (Glad-Labs/poindexter#692):
     # both rules are pattern heuristics that can't tell a fabricated external
@@ -5446,6 +5464,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'newsletter_from_name': {'owner': 'newsletter_service'},
     'newsletter_provider': {'owner': 'newsletter_service', 'value_type': 'string'},
     'niche_batch_expires_days': {'owner': 'topic_batch_service', 'value_type': 'integer'},
+    'topic_source_rank_weights': {'owner': 'topic_batch_service', 'value_type': 'csv'},
+    'title_searchable_entity_enabled': {'owner': 'title_generation', 'value_type': 'boolean'},
+    'title_searchable_entity_mode': {'owner': 'title_generation', 'value_type': 'enum'},
     'niche_carry_forward_decay_factor': {'owner': 'topic_batch_service', 'value_type': 'float'},
     'niche_goal_descriptions': {'owner': 'topic_ranking', 'value_type': 'json'},
     'niche_internal_rag_batch_share_cap': {'owner': 'topic_batch_service', 'value_type': 'float'},

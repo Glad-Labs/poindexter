@@ -164,6 +164,28 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             else:
                 logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
 
+    # Searchability gate (2026-09-07). A title with no noun anyone types has
+    # no query to match: the August 2026 cohort ("The Gap Nobody Names",
+    # "The Stuck Task") drew 3.4 impressions per post in three weeks and zero
+    # clicks. Deterministic check (services.title_searchability); on failure,
+    # ONE corrective regeneration that names the article's concrete terms,
+    # then ship whichever candidate is searchable — and always leave a
+    # finding when the shipped title still is not, because a silent miss is
+    # how this cohort happened.
+    title, originality = await _apply_searchability_gate(
+        title=title,
+        originality=originality,
+        topic=topic,
+        primary_keyword=primary_keyword,
+        tags=state.get("tags") or [],
+        content_text=content_text,
+        content_digest=content_digest,
+        avoidance_block=avoidance_block,
+        site_config=site_config,
+        pool=pool,
+        task_id=task_id,
+    )
+
     # A duplicate that SURVIVED regeneration ships anyway (a near-duplicate
     # title beats no post), but it must not ship silently — this is the signal
     # that the threshold or the avoidance prompt needs attention.
@@ -207,6 +229,131 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "title_originality": originality,
     }
+
+
+def _heading_terms(content_text: str, limit: int = 6) -> list[str]:
+    """Proper nouns / digit tokens from the article's own headings — the
+    concrete things the regeneration directive may name. Never invents."""
+    from services.title_searchability import find_searchable_entities
+
+    terms: list[str] = []
+    for line in (content_text or "").splitlines():
+        if not line.startswith("#"):
+            continue
+        for ent in find_searchable_entities(line.lstrip("# ").strip()).entities:
+            if ent not in terms:
+                terms.append(ent)
+        if len(terms) >= limit:
+            break
+    return terms[:limit]
+
+
+async def _apply_searchability_gate(
+    *,
+    title: str,
+    originality: dict[str, Any],
+    topic: str,
+    primary_keyword: str,
+    tags: list[str],
+    content_text: str,
+    content_digest: str,
+    avoidance_block: str,
+    site_config: Any,
+    pool: Any,
+    task_id: Any,
+) -> tuple[str, dict[str, Any]]:
+    """Enforce "the title names something searchable"; see module notes."""
+    from services.title_generation import (
+        check_title_originality as _check_title_originality,
+    )
+    from services.title_generation import (
+        generate_canonical_title as _generate_canonical_title,
+    )
+    from services.title_searchability import (
+        has_searchable_entity,
+        render_entity_directive,
+    )
+    from utils.findings import emit_finding
+
+    enabled = True
+    mode = "regenerate"
+    if site_config is not None:
+        try:
+            enabled = site_config.get_bool("title_searchable_entity_enabled", True)
+            mode = (site_config.get("title_searchable_entity_mode", "regenerate") or "regenerate").strip().lower()
+        except Exception:  # noqa: BLE001 — stubbed site_config
+            enabled, mode = True, "regenerate"
+    if not enabled:
+        return title, originality
+
+    report = has_searchable_entity(
+        title, primary_keyword=primary_keyword, tags=tags, topic=topic,
+    )
+    if report.ok:
+        return title, originality
+
+    logger.warning(
+        "[TITLE] No searchable entity in %r (keyword terms: %s)",
+        title, ", ".join(report.keyword_terms[:6]) or "-",
+    )
+    regen_title: str | None = None
+    regen_report = None
+    if mode == "regenerate":
+        directive = render_entity_directive(
+            primary_keyword=primary_keyword,
+            tags=tags,
+            topic=topic,
+            rejected_title=title,
+            heading_terms=_heading_terms(content_text),
+        )
+        block = f"{avoidance_block}\n\n{directive}" if avoidance_block else directive
+        regen_title = await _generate_canonical_title(
+            topic, primary_keyword, content_digest,
+            avoidance_block=block,
+            site_config=site_config,
+            pool=pool,
+        )
+        if regen_title:
+            regen_report = has_searchable_entity(
+                regen_title, primary_keyword=primary_keyword, tags=tags, topic=topic,
+            )
+            if regen_report.ok:
+                regen_originality = await _check_title_originality(
+                    regen_title, site_config=site_config,
+                    pool=pool, exclude_task_id=str(task_id) if task_id else None,
+                )
+                logger.info(
+                    "[TITLE] Regenerated for searchability: %r -> %r (entities: %s)",
+                    title, regen_title, ", ".join(regen_report.entities),
+                )
+                return regen_title, regen_originality
+
+    # Still unsearchable (advisory mode, regen failed, or regen also blank).
+    emit_finding(
+        source="content.generate_title",
+        kind="title_no_searchable_entity",
+        title=f"Title names nothing searchable: {title!r}",
+        body=(
+            f"{title!r} contains no digit token, proper noun, or article keyword "
+            f"(keyword terms: {', '.join(report.keyword_terms[:8]) or 'none'}). "
+            + (
+                f"Regeneration produced {regen_title!r}, also unsearchable. "
+                if regen_title else
+                ("Regeneration returned nothing. " if mode == "regenerate" else "Advisory mode — not regenerated. ")
+            )
+            + "The post ships with this title; a reader has no query that reaches it."
+        ),
+        severity="info",
+        dedup_key=f"title_no_searchable_entity:{task_id}",
+        extra={
+            "task_id": str(task_id) if task_id else None,
+            "title": title,
+            "regenerated_title": regen_title,
+            "mode": mode,
+            "keyword_terms": list(report.keyword_terms[:8]),
+        },
+    )
+    return title, originality
 
 
 __all__ = ["ATOM_META", "run"]

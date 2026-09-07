@@ -510,6 +510,44 @@ def _emit_rank_degrade_finding(
     )
 
 
+def parse_rank_weights(raw: str | None) -> dict[str, float]:
+    """Parse ``app_settings.topic_source_rank_weights`` — a CSV of
+    ``source_name=factor`` pairs, e.g.
+    ``search_autocomplete=1.5,gsc_query_gap=1.5,hackernews=0.9``.
+
+    Tolerant by design: a malformed pair is skipped with a warning rather
+    than disabling every weight, and a non-positive factor is ignored (a
+    weight of 0 would silently erase a whole source from ranking — if that
+    is wanted, disable its tap). Returns ``{}`` for empty input.
+    """
+    weights: dict[str, float] = {}
+    for pair in (raw or "").split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        name, sep, value = pair.partition("=")
+        name = name.strip()
+        try:
+            factor = float(value.strip())
+        except ValueError:
+            factor = float("nan")
+        if not sep or not name or factor != factor or factor <= 0:
+            logger.warning(
+                "topic_source_rank_weights: skipping malformed pair %r "
+                "(want source_name=positive_number)", pair,
+            )
+            continue
+        weights[name] = factor
+    return weights
+
+
+def source_rank_weight(source_name: str | None, weights: dict[str, float]) -> float:
+    """The multiplier for one candidate's source; ``1.0`` when unlisted."""
+    if not source_name:
+        return 1.0
+    return float(weights.get(str(source_name), 1.0))
+
+
 def apply_decay(*, score: float, decay_factor: float) -> float:
     """Effective score = raw score × decay_factor. Used both at insertion time
     (decay_factor=1.0 for fresh, <1.0 for carried-forward) and at re-rank time

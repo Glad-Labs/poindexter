@@ -60,6 +60,14 @@ frame. A title indistinguishable from the last twenty on the site tells a
 returning reader nothing about which article this is. Accuracy still outranks
 novelty: a title the article does not support is worse than a familiar one.
 
+Name the searchable thing. A reader finds this article by typing a concrete
+noun into a search box — the product, model, tool, library, standard, number,
+or exact technical term the article is about — so the title must contain at
+least one, spelled the way people type it ("RTX 5090", "FastAPI", "GGUF
+Q4_K_M", "Chatterbox"). A title that is only a mood or a mystery ("The Gap
+Nobody Names", "The five days nobody was watching") has no query to match and
+is never found; keep the intrigue if you like, but anchor it to the thing.
+
 Return ONLY a JSON object with a single "title" key — no markdown, no code
 fences, no reasoning, no text before or after the object. The first character
 of your reply is `{{` and the last is `}}`:

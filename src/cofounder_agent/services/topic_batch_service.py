@@ -947,6 +947,11 @@ class TopicBatchService:
         penalty_factor = self._site_config.get_float(
             "niche_external_grounding_penalty_factor", 0.6,
         )
+        from services.topic_ranking import parse_rank_weights, source_rank_weight
+
+        rank_weights = parse_rank_weights(
+            self._site_config.get("topic_source_rank_weights", ""),
+        )
 
         async def score_one(
             text: str, decay: float,
@@ -979,6 +984,18 @@ class TopicBatchService:
             text = (row.get("title") or "") + " " + (row.get("summary") or "")
             decay = item.get("decay_factor", 1.0) if isinstance(item, dict) else 1.0
             score, breakdown, vec = await score_one(text, decay)
+            # Per-source rank weight (2026-09-07). The embedding score only
+            # measures how well a candidate matches the niche's GOALS; it is
+            # blind to whether anyone would ever search for it. Sources that
+            # measure demand (search_autocomplete, gsc_query_gap) get a
+            # multiplier here so a demand-backed candidate outranks an equally
+            # on-goal HackerNews thread. Missing source -> 1.0; the factor is
+            # recorded in the breakdown so the candidate row shows it. See
+            # services.topic_ranking.source_rank_weight.
+            source_weight = source_rank_weight(row.get("source_name"), rank_weights)
+            if source_weight != 1.0:
+                score *= source_weight
+                breakdown["_source_weight"] = source_weight
 
             grounding_match = None
             if grounding_enabled and vec:

@@ -397,6 +397,39 @@ def _bundle_is_empty(bundle: dict[str, Any]) -> bool:
     return not (bundle.get("merged_prs") or bundle.get("notable_commits"))
 
 
+def _record_unsearchable_title(
+    title: str, *, bundle: dict[str, Any], task_id: Any = None,
+) -> None:
+    """Emit an advisory finding when the dev_diary headline names nothing
+    searchable. Pure observation — never changes the title. Best-effort."""
+    try:
+        from services.title_searchability import find_searchable_entities, keyword_terms
+
+        pr_titles = [
+            str(p.get("title") or "") for p in (bundle.get("merged_prs") or [])
+        ]
+        kw = keyword_terms(tags=pr_titles)
+        report = find_searchable_entities(title, keyword_terms=kw)
+        if report.ok:
+            return
+        emit_finding(
+            source="atoms.narrate_bundle",
+            kind="title_no_searchable_entity",
+            title=f"Dev-diary title names nothing searchable: {title!r}",
+            body=(
+                f"{title!r} contains no digit token, proper noun, or term from "
+                f"the day's PR titles. Advisory on the dev_diary path (the title "
+                f"is one line of the prose call, not regenerated); the post "
+                f"ships as-is."
+            ),
+            severity="info",
+            dedup_key=f"title_no_searchable_entity:{task_id}",
+            extra={"task_id": str(task_id) if task_id else None, "title": title},
+        )
+    except Exception as exc:  # noqa: BLE001 — observability must not break the writer
+        logger.warning("[NARRATE_BUNDLE] searchability finding skipped: %s", exc)
+
+
 def _parse_title_and_prose(raw: str, bundle: dict[str, Any], date: str) -> tuple[str, str]:
     """Split the model's ``TITLE: ...\\n\\nprose`` output into (title, prose).
 
@@ -688,6 +721,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     cleaned_raw = _scrub_private_repo_refs(_maybe_unwrap_json(raw).strip())
     post_title, prose = _parse_title_and_prose(cleaned_raw, bundle, date)
+    # Searchability (2026-09-07), advisory on this path: the dev_diary title
+    # is one line of the same call that writes the prose, so there is no
+    # cheap regeneration here. A headline naming no PR, tool, model or
+    # number ("The five days nobody was watching") is recorded as a finding
+    # so the pattern is visible on the Findings board instead of only in
+    # Search Console three weeks later. canonical_blog enforces + regenerates
+    # in content.generate_title.
+    _record_unsearchable_title(post_title, bundle=bundle, task_id=state.get("task_id"))
     if not prose:
         # Graceful fallback so the post still ships. Instead of a single
         # "we shipped N PRs" sentence (which produced visibly thin posts

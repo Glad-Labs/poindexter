@@ -288,6 +288,61 @@ ships rather than an empty title; only regeneration fixes those.
 Flipping to `body_heading` re-opens the gap — it exists so a bad rollout is one
 setting away from reverting, not as a supported mode.
 
+## Searchability gate — the title must name a thing (2026-09-07)
+
+Search Console, August 2026 cohort: 18 posts, **3.4 impressions per post in the
+first 21 days, zero clicks** — a tenth of the May/June baseline. Subject was not
+the discriminator (internal-story posts averaged 5 impressions, external-topic
+posts 3). The titles were:
+
+    The Gap Nobody Names            The Stuck Task
+    The five days nobody was watching
+    Why 'Make More Money' Isn't a Goal -- It's an Antigoal Waiting to Be Defined
+
+None contains a noun anyone types, so Google has no query to match them to.
+The month's best internal post was "Chatterbox swallows minus signs" (11
+impressions) because _Chatterbox_ is a name people search. Every page that
+earned a click in the trailing 60 days names a concrete thing: "DDR5 6400 vs
+8000 on Ryzen 9", "RTX 5090 … 32GB", "GGUF Q4_K_M", "FastAPI".
+
+This is a **third axis**, separate from both originality checks: a title can
+be perfectly original, un-echoed, and still invisible. `services/title_searchability.py`
+answers one deterministic question — does the title carry at least one
+_searchable entity_ — where an entity is any of:
+
+1. a digit-bearing token (`5090`, `DDR5`, `Q4_K_M`, `4-bit`, `2026`);
+2. a proper noun / product name — a capitalised token that is not the first
+   word of the title or of a subtitle (`FastAPI`, `Ryzen`, `Chatterbox`;
+   internal capitals and ALL-CAPS count anywhere);
+3. a word from the article's own keyword set (primary keyword, tags, topic
+   tokens), so a lowercase technical term the article is about
+   (`quantization`) counts without a capital.
+
+Calibrated on the real titles: every clicked page passes, every August
+zero-click title fails (`tests/unit/services/test_title_searchability.py`).
+
+**Where it acts.** `content.generate_title` (canonical_blog) runs it after the
+originality loop. On failure and `title_searchable_entity_mode=regenerate`
+(default) it makes **one** corrective call whose prompt names the article's
+concrete terms — primary keyword, tags, and entities lifted from the draft's
+own headings, never invented — and ships the regenerated title if that one is
+searchable (re-running the originality check on it). If both candidates fail,
+the original ships and a `title_no_searchable_entity` finding is emitted; a
+silent miss is exactly how the August cohort happened. `advisory` mode records
+the finding without regenerating; `title_searchable_entity_enabled=false`
+turns it off. The `seo.generate_title` prompt pack now carries the directive
+up front, so the retry is the backstop rather than the mechanism.
+
+The dev_diary path (`atoms.narrate_bundle`) is **advisory only**: its title is
+one line of the same call that writes the prose, so there is no cheap
+regeneration — it emits the same finding, keyed on the day's PR titles as the
+keyword set.
+
+**What it does not do.** It does not judge quality or demand — "The 32GB
+Threshold" and "32GB of Nothing" both pass. Demand is the topic layer's job
+(`topic_source_rank_weights`, the `search_autocomplete` tap); this gate only
+guarantees the topic layer's work survives into the string a searcher sees.
+
 ## Where the prompts live
 
 Per `feedback_prompts_must_be_db_configurable`, the standing directives are in
