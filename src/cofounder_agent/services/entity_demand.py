@@ -79,7 +79,7 @@ DEFAULT_CACHE_DAYS = 7
 DEFAULT_TIMEOUT_S = 5.0
 DEFAULT_DUAL_FACTOR = 1.25
 DEFAULT_GOOGLE_SOURCES = "search_autocomplete,gsc_query_gap"
-DEFAULT_CONCURRENCY = 4
+DEFAULT_CONCURRENCY = 2
 
 # Wikimedia asks for a descriptive UA with contact info; anonymous UAs get
 # throttled or blocked. The code default is deliberately unbranded (OSS seed
@@ -211,12 +211,26 @@ _GENERIC_SINGLE_WORDS = frozenset(
 _ENTITY_DIGIT_RE = re.compile(r"^(?=.*\d)(?:[a-z]*\d{3,}[a-z]*|[a-z]{2,}\d+[a-z]*|\d+[a-z]{2,})$")
 
 
+_ORDINAL_RE = re.compile(r"^\d+(st|nd|rd|th)$")
+
+
 def _is_entity_digit(low: str) -> bool:
     """A digit token that names a thing: ≥3 digits ("5090", "6400"), or
     letters+digits with ≥2 letters ("ddr5", "16gb", "rtx4090"). Excludes
-    bare years, prices and versions ("2026", "13b", "3.0", "27") — the first
-    live sweep resolved "$13b" to *13B (film)* and "3.0" to *0.0.0.0*."""
-    return bool(_ENTITY_DIGIT_RE.match(low)) and not _YEAR_RE.match(low)
+    bare years, prices, versions and ordinals ("2026", "13b", "3.0", "27",
+    "9th") — live sweeps resolved "$13b" to *13B (film)*, "3.0" to
+    *0.0.0.0* and "9th circuit" to *9th Division*."""
+    return (
+        bool(_ENTITY_DIGIT_RE.match(low))
+        and not _YEAR_RE.match(low)
+        and not _ORDINAL_RE.match(low)
+    )
+
+
+# Article titles that are never THE entity: disambiguation pages and "List
+# of …" aggregates (the latter carry the readership of every item on them —
+# "DDR5 6400 … Ryzen 9" landed on *List of AMD Ryzen processors*, 73k views).
+_NON_ENTITY_TITLE_RE = re.compile(r"^(list of |lists of )|\(disambiguation\)\s*$", re.IGNORECASE)
 
 
 def resolution_candidates(title: str, *, max_candidates: int = 6) -> list[tuple[str, str]]:
@@ -265,8 +279,15 @@ def resolution_candidates(title: str, *, max_candidates: int = 6) -> list[tuple[
         if _is_entity_digit(low):
             if i > 0:
                 _add(f"{content[i - 1][1]} {low}", "digit")
-            _add(low, "digit")
+            # A pure number alone ("6400", "8000") is a number article, not a
+            # product; only alphanumerics ("ddr5", "16gb") stand on their own.
+            if any(c.isalpha() for c in low):
+                _add(low, "digit")
     for tok, low in content:
+        if any(c.isdigit() for c in low):
+            # Digit-bearing tokens are the digit rule's business: "$13B" is
+            # ALL-CAPS but a price, and it resolved to *13B (film)* live.
+            continue
         if any(c in low for c in ".+") or (tok.isupper() and len(tok) >= 2) or (
             tok[:1].isupper() and any(c.isupper() for c in tok[1:]) and not tok.isupper()
         ):
@@ -309,8 +330,11 @@ def accept_hit(candidate: str, hit_title: str, mode: str = "phrase") -> bool:
     in the article head ("spring boot" → "Spring Boot" passes, "dark screen"
     → "Dark fantasy" and "minus signs" → "Plus and minus signs" do not).
     Hyphen/dot compounds compare by their first part
-    ("Retrieval-augmented" → "retrieval").
+    ("Retrieval-augmented" → "retrieval"). Disambiguation pages and "List
+    of …" aggregates are never accepted.
     """
+    if _NON_ENTITY_TITLE_RE.search(hit_title or ""):
+        return False
     shared = content_tokens(candidate) & distinctive_tokens(hit_title)
     if not (shared - _GENERIC_SINGLE_WORDS):
         return False

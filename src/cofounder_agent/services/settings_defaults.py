@@ -1947,7 +1947,10 @@ DEFAULTS: dict[str, str] = {
     'topic_demand_wiki_lang': 'en',
     'topic_demand_wiki_cache_days': '7',
     'topic_demand_wiki_timeout_seconds': '5',
-    'topic_demand_wiki_concurrency': '4',
+    # 2, not 4: Wikipedia's search API answered 429 at 4 with six candidates
+    # per title; a 429 is a transport failure (not cached), so the sweep loses
+    # the lookup rather than the batch — but it loses it.
+    'topic_demand_wiki_concurrency': '2',
     # Wikimedia requires a descriptive User-Agent with a contact/URL. Unbranded
     # code default (OSS seed hygiene) — operators set their own name + contact.
     'topic_demand_wiki_user_agent': 'topic-demand-scorer/1.0 (set topic_demand_wiki_user_agent to identify your install to Wikimedia)',

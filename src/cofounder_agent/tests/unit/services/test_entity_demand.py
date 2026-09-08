@@ -85,7 +85,8 @@ def _cands(title):
 
 def test_resolution_candidates_are_entity_shaped_first():
     c = ed.resolution_candidates("Rtx 5090 Local Llm Performance")
-    assert c[:3] == [("rtx 5090 llm performance", "phrase"), ("rtx 5090", "digit"), ("5090", "digit")]
+    assert c[:2] == [("rtx 5090 llm performance", "phrase"), ("rtx 5090", "digit")]
+    assert ("5090", "digit") not in c  # a bare number is a number article
     assert "performance" not in _cands("Rtx 5090 Local Llm Performance")
     assert _cands("Llama.Cpp Vs Vllm Vs Sglang")[:2] == ["llama.cpp vllm sglang", "llama.cpp"]
     assert _cands("FastAPI best practices")[:2] == ["fastapi practices", "fastapi"]
@@ -104,6 +105,14 @@ def test_prices_versions_and_short_numbers_are_not_entity_digits():
     assert ("ddr5 6400", "digit") in ed.resolution_candidates("DDR5 6400 vs 8000 on Ryzen 9")
     assert ed._is_entity_digit("16gb") and ed._is_entity_digit("ddr5") and ed._is_entity_digit("6400")
     assert not ed._is_entity_digit("13b") and not ed._is_entity_digit("3.0") and not ed._is_entity_digit("2026")
+    assert not ed._is_entity_digit("9th") and not ed._is_entity_digit("21st")
+    # "$13B" is ALL-CAPS but a price: never an entity-shaped token either.
+    assert not any(c == "13b" for c, _ in ed.resolution_candidates("Nvidia agrees to acquire Hugging Face for $13B"))
+    # A pure number never stands alone; it rides with its preceding word.
+    c = ed.resolution_candidates("DDR5 6400 vs 8000 on Ryzen 9")
+    assert ("ddr5 6400", "digit") in c and ("6400", "digit") not in c and ("8000", "digit") not in c
+    assert ("ddr5", "digit") in c
+    assert not any(m == "digit" for _, m in ed.resolution_candidates("9th Circuit sides with states"))
 
 
 def test_years_are_dates_not_entities():
@@ -137,6 +146,10 @@ def test_accept_hit_rules():
     assert not ed.accept_hit("llm performance", "Performance", "window")
     assert not ed.accept_hit("gap names", "Gap Inc.", "phrase")
     assert not ed.accept_hit("five days watching", "Five Days (film)", "phrase")
+    # Disambiguation pages and "List of …" aggregates are never the entity.
+    assert not ed.accept_hit("dhs", "DHS (disambiguation)", "token")
+    assert not ed.accept_hit("ryzen 9", "List of AMD Ryzen processors", "digit")
+    assert not ed.accept_hit("nvidia gpus", "List of Nvidia graphics processing units", "window")
 
 
 def test_content_tokens_keep_digits_and_drop_stopwords():
