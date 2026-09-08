@@ -208,25 +208,42 @@ _GENERIC_SINGLE_WORDS = frozenset(
 )
 
 
-def resolution_candidates(title: str, *, max_candidates: int = 6) -> list[str]:
-    """Search queries to try for a title, most entity-shaped first.
+_ENTITY_DIGIT_RE = re.compile(r"^(?=.*\d)(?:[a-z]*\d{3,}[a-z]*|[a-z]{2,}\d+[a-z]*|\d+[a-z]{2,})$")
+
+
+def _is_entity_digit(low: str) -> bool:
+    """A digit token that names a thing: ≥3 digits ("5090", "6400"), or
+    letters+digits with ≥2 letters ("ddr5", "16gb", "rtx4090"). Excludes
+    bare years, prices and versions ("2026", "13b", "3.0", "27") — the first
+    live sweep resolved "$13b" to *13B (film)* and "3.0" to *0.0.0.0*."""
+    return bool(_ENTITY_DIGIT_RE.match(low)) and not _YEAR_RE.match(low)
+
+
+def resolution_candidates(title: str, *, max_candidates: int = 6) -> list[tuple[str, str]]:
+    """Search queries to try for a title, most entity-shaped first, each
+    tagged with the acceptance ``mode`` ``accept_hit`` applies.
 
     Whole titles resolve badly ("Rtx 5090 Local Llm Performance" → nothing;
     "FastAPI best practices" → "Coding best practices"), while the entity
     inside them resolves cleanly ("rtx 5090" → GeForce RTX 50 series,
     "fastapi" → FastAPI). Order:
 
-    1. the content-word phrase (every non-stopword token, when ≥2 remain);
-    2. digit phrases — a digit token with its preceding content word
-       ("rtx 5090"), then the digit token alone;
-    3. dotted / mixed-case / ALL-CAPS tokens as written ("llama.cpp", "vLLM");
-    4. 2-word then 3-word windows over the content words ("cosine
-       similarity"), skipping windows made only of generic concept words.
+    1. ``phrase`` — the content-word phrase (every non-stopword token, when
+       ≥2 remain); the hit must be headed by its first word;
+    2. ``digit`` — an entity digit token with its preceding content word
+       ("rtx 5090"), then the token alone; a shared distinctive token is
+       enough (product names put the family first: "GeForce RTX 50 series");
+    3. ``token`` — dotted / mixed-case / ALL-CAPS tokens as written
+       ("llama.cpp", "vLLM"); headed by the token;
+    4. ``window`` — 2-word then 3-word windows over the content words
+       ("cosine similarity"); EVERY window word must appear in the hit's
+       head, because ordinary word pairs land on pop culture otherwise
+       ("dark screen" → *Dark fantasy*, "ai boom" → *Boom, Boom, Boom!!*).
 
-    Plain single words are never searched on their own: "vram" resolves to
-    a person, "information" to an article read 70k times a month. If nothing
-    entity-shaped is present the title stays *unknown*, which is the honest
-    answer for "The five days nobody was watching".
+    Plain single words are never searched alone: "vram" is a person,
+    "information" is read 70k times a month. Nothing entity-shaped → the
+    title stays *unknown*, the honest answer for "The five days nobody was
+    watching".
     """
     raw_tokens = [t.strip(".+-") for t in _TOKEN_RE.findall(title or "")]
     raw_tokens = [t for t in raw_tokens if t]
@@ -235,37 +252,36 @@ def resolution_candidates(title: str, *, max_candidates: int = 6) -> list[str]:
         (t, low) for t, low in zip(raw_tokens, lowers, strict=True)
         if low not in _STOPWORDS and (len(low) >= 3 or any(c.isdigit() for c in low))
     ]
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
 
-    def _add(q: str) -> None:
+    def _add(q: str, mode: str) -> None:
         q = " ".join(q.split())
-        if q and q.lower() not in {o.lower() for o in out}:
-            out.append(q)
+        if q and q.lower() not in {o.lower() for o, _ in out}:
+            out.append((q, mode))
 
     if len(content) >= 2:
-        _add(" ".join(low for _, low in content))
+        _add(" ".join(low for _, low in content), "phrase")
     for i, (_tok, low) in enumerate(content):
-        if any(c.isdigit() for c in low) and not _YEAR_RE.match(low):
+        if _is_entity_digit(low):
             if i > 0:
-                _add(f"{content[i - 1][1]} {low}")
-            _add(low)
+                _add(f"{content[i - 1][1]} {low}", "digit")
+            _add(low, "digit")
     for tok, low in content:
         if any(c in low for c in ".+") or (tok.isupper() and len(tok) >= 2) or (
             tok[:1].isupper() and any(c.isupper() for c in tok[1:]) and not tok.isupper()
         ):
-            _add(low)
+            _add(low, "token")
     # 2-grams before 3-grams: the two-word window is where entities live
     # ("cosine similarity", "vector database"), and the first accepted hit
     # wins — so it must be tried before a longer window can land on a
-    # coincidental title ("throws away information" → "Just a Stone's Throw
-    # Away").
-    lows = [low for _, low in content if not _YEAR_RE.match(low)]
+    # coincidental title.
+    lows = [low for _, low in content if not _YEAR_RE.match(low) and not any(c.isdigit() for c in low)]
     for n in (2, 3):
         for i in range(0, max(0, len(lows) - n + 1)):
             window = lows[i:i + n]
             if all(w in _GENERIC_SINGLE_WORDS for w in window):
                 continue
-            _add(" ".join(window))
+            _add(" ".join(window), "window")
     return out[:max_candidates]
 
 
@@ -282,30 +298,31 @@ def _head_tokens(hit_title: str) -> list[str]:
     return out
 
 
-def accept_hit(candidate: str, hit_title: str) -> bool:
+def accept_hit(candidate: str, hit_title: str, mode: str = "phrase") -> bool:
     """Whether a search hit for ``candidate`` is about the thing it names.
 
-    Two conditions. (1) They share a distinctive token that is not a generic
-    concept word — "rtx 5090" → "GeForce RTX 50 series" (rtx), "retrieval
-    augmented generation" → "Retrieval-augmented generation". (2) Unless the
-    candidate carries a digit, the article must be *headed* by the
-    candidate's first word: "cosine similarity" → "Cosine similarity" and
-    "spring boot" → "Spring Boot" pass; "minus signs" → "Plus and minus
-    signs", "locally mac" → "MAC address" and "agent memory" → "AI agent"
-    do not — the hit merely mentions the words. Digit phrases are exempt
-    because product names put the family first ("GeForce RTX 50 series").
+    Always: they share a distinctive token that is not a generic concept
+    word. Then by ``mode`` (see ``resolution_candidates``): ``digit`` needs
+    nothing more; ``phrase`` / ``token`` need the article to be *headed* by
+    the candidate's first word ("cosine similarity" → "Cosine similarity",
+    "gguf quantization types" → "GGUF"); ``window`` needs EVERY window word
+    in the article head ("spring boot" → "Spring Boot" passes, "dark screen"
+    → "Dark fantasy" and "minus signs" → "Plus and minus signs" do not).
+    Hyphen/dot compounds compare by their first part
+    ("Retrieval-augmented" → "retrieval").
     """
     shared = content_tokens(candidate) & distinctive_tokens(hit_title)
     if not (shared - _GENERIC_SINGLE_WORDS):
         return False
-    words = candidate.split()
-    if any(any(c.isdigit() for c in w) for w in words):
+    if mode == "digit":
         return True
     head = _head_tokens(hit_title)
     if not head:
         return False
-    # Compare the leading word of each side, with hyphen/dot compounds
-    # reduced to their first part ("Retrieval-augmented" → "retrieval").
+    head_set = set(head) | {re.split(r"[.+-]", h)[0] for h in head}
+    words = candidate.split()
+    if mode == "window":
+        return all((w in head_set or re.split(r"[.+-]", w)[0] in head_set) for w in words)
     head_first = {head[0], *re.split(r"[.+-]", head[0])[:1]}
     first = words[0]
     return first in head_first or re.split(r"[.+-]", first)[0] in head_first
@@ -439,7 +456,7 @@ class WikipediaDemandScorer:
         searches per title; the sweep caches the outcome either way.
         """
         lang = self._settings.lang
-        for candidate in resolution_candidates(query):
+        for candidate, mode in resolution_candidates(query):
             data = await self._get_json(
                 f"https://{lang}.wikipedia.org/w/api.php",
                 {"action": "query", "list": "search", "srsearch": candidate,
@@ -448,7 +465,7 @@ class WikipediaDemandScorer:
             hits = (((data or {}).get("query") or {}).get("search") or [])
             for hit in hits:
                 title = str(hit.get("title") or "").strip()
-                if title and accept_hit(candidate, title):
+                if title and accept_hit(candidate, title, mode):
                     return title
         return None
 

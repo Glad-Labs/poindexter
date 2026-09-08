@@ -79,47 +79,64 @@ async def test_no_client_outside_lifespan_is_unknown_not_egress(monkeypatch):
     assert d.monthly_views is None and d.wiki_title is None
 
 
+def _cands(title):
+    return [c for c, _ in ed.resolution_candidates(title)]
+
+
 def test_resolution_candidates_are_entity_shaped_first():
     c = ed.resolution_candidates("Rtx 5090 Local Llm Performance")
-    assert c[:3] == ["rtx 5090 llm performance", "rtx 5090", "5090"]
-    assert "performance" not in c  # a plain single word is never searched alone
-    c = ed.resolution_candidates("Llama.Cpp Vs Vllm Vs Sglang")
-    assert c[:2] == ["llama.cpp vllm sglang", "llama.cpp"]
-    c = ed.resolution_candidates("FastAPI best practices")
-    assert c[:2] == ["fastapi practices", "fastapi"]  # mixed-case token outranks windows
+    assert c[:3] == [("rtx 5090 llm performance", "phrase"), ("rtx 5090", "digit"), ("5090", "digit")]
+    assert "performance" not in _cands("Rtx 5090 Local Llm Performance")
+    assert _cands("Llama.Cpp Vs Vllm Vs Sglang")[:2] == ["llama.cpp vllm sglang", "llama.cpp"]
+    assert _cands("FastAPI best practices")[:2] == ["fastapi practices", "fastapi"]
     c = ed.resolution_candidates("Why Cosine Similarity Quietly Throws Away Information")
-    assert c[1] == "cosine similarity" and "information" not in c  # 2-grams right after the phrase
-    assert ed.resolution_candidates("The Stuck Task") == ["stuck task"]
+    assert c[1] == ("cosine similarity", "window") and "information" not in _cands("Why Cosine Similarity Quietly Throws Away Information")
+    assert ed.resolution_candidates("The Stuck Task") == [("stuck task", "phrase")]
     assert ed.resolution_candidates("Information") == []
     assert ed.resolution_candidates("") == []
 
 
-def test_accept_hit_rules():
-    assert ed.accept_hit("rtx 5090", "GeForce RTX 50 series")   # digit phrase: family-first names allowed
-    assert ed.accept_hit("llama.cpp", "Llama.cpp")
-    assert ed.accept_hit("fastapi", "FastAPI")
-    assert ed.accept_hit("vllm", "VLLM")
-    assert ed.accept_hit("cosine similarity", "Cosine similarity")
-    assert ed.accept_hit("spring boot", "Spring Boot")
-    assert ed.accept_hit("retrieval augmented generation", "Retrieval-augmented generation")
-    assert ed.accept_hit("gguf quantization types", "GGUF")
-    assert ed.accept_hit("stuck", "Stuck (2017 film)")  # parenthetical stripped; known residual
-    # Merely mentioned, not what the article is about.
-    assert not ed.accept_hit("minus signs", "Plus and minus signs")
-    assert not ed.accept_hit("locally mac", "MAC address")
-    assert not ed.accept_hit("agent memory", "AI agent")
-    assert not ed.accept_hit("vram", "Video random-access memory")
-    # Only a generic concept word in common.
-    assert not ed.accept_hit("performance memory", "Memory")
-    assert not ed.accept_hit("llm performance", "Performance")
-    assert not ed.accept_hit("gap names", "Gap Inc.")
-    assert not ed.accept_hit("five days watching", "Five Days (film)")
+def test_prices_versions_and_short_numbers_are_not_entity_digits():
+    # First live sweep: "$13b" → "13B (film)", "3.0" → "0.0.0.0", "macos 27" → a list article.
+    for title in ("Nvidia agrees to acquire Hugging Face for $13b", "Unsloth dynamic 3.0 ggufs", "hdiutil is deprecated in macOS 27"):
+        assert not any(m == "digit" for _, m in ed.resolution_candidates(title)), title
+    assert ("rtx 5090", "digit") in ed.resolution_candidates("Rtx 5090 Local Llm Performance")
+    assert ("ddr5 6400", "digit") in ed.resolution_candidates("DDR5 6400 vs 8000 on Ryzen 9")
+    assert ed._is_entity_digit("16gb") and ed._is_entity_digit("ddr5") and ed._is_entity_digit("6400")
+    assert not ed._is_entity_digit("13b") and not ed._is_entity_digit("3.0") and not ed._is_entity_digit("2026")
 
 
 def test_years_are_dates_not_entities():
-    c = ed.resolution_candidates("Spring Boot admiration score Java 2026")
+    c = _cands("Spring Boot admiration score Java 2026")
     assert "java 2026" not in c and "2026" not in c
     assert "spring boot" in c
+
+
+def test_accept_hit_rules():
+    assert ed.accept_hit("rtx 5090", "GeForce RTX 50 series", "digit")   # family-first names allowed
+    assert ed.accept_hit("llama.cpp", "Llama.cpp", "token")
+    assert ed.accept_hit("fastapi", "FastAPI", "token")
+    assert ed.accept_hit("vllm", "VLLM", "token")
+    assert ed.accept_hit("cosine similarity", "Cosine similarity", "window")
+    assert ed.accept_hit("spring boot", "Spring Boot", "window")
+    assert ed.accept_hit("asahi linux", "Asahi Linux", "window")
+    assert ed.accept_hit("retrieval augmented generation", "Retrieval-augmented generation", "phrase")
+    assert ed.accept_hit("gguf quantization types", "GGUF", "phrase")
+    assert ed.accept_hit("tim cook sold steve jobs", "Tim Cook", "phrase")
+    # A window must be wholly present in the head — ordinary word pairs
+    # otherwise land on pop culture (first live sweep).
+    assert not ed.accept_hit("dark screen", "Dark fantasy", "window")
+    assert not ed.accept_hit("boom hitting", "Boom, Boom, Boom, Boom!!", "window")
+    # Whole window present in the head → accepted; the article IS about the words.
+    assert ed.accept_hit("minus signs", "Plus and minus signs", "window")
+    assert not ed.accept_hit("locally mac", "MAC address", "window")
+    assert not ed.accept_hit("agent memory", "AI agent", "window")
+    assert not ed.accept_hit("vram", "Video random-access memory", "token")
+    # Only a generic concept word in common.
+    assert not ed.accept_hit("performance memory", "Memory", "window")
+    assert not ed.accept_hit("llm performance", "Performance", "window")
+    assert not ed.accept_hit("gap names", "Gap Inc.", "phrase")
+    assert not ed.accept_hit("five days watching", "Five Days (film)", "phrase")
 
 
 def test_content_tokens_keep_digits_and_drop_stopwords():
