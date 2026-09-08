@@ -1934,6 +1934,28 @@ DEFAULTS: dict[str, str] = {
     # contributed 0 topics. 1.5 is a nudge, not a lock: an off-goal demand
     # topic still loses to a strongly on-goal one. Unlisted source = 1.0.
     'topic_source_rank_weights': 'search_autocomplete=1.5,gsc_query_gap=1.5',
+    # ----- Entity demand — Wikipedia pageviews (services/entity_demand.py, 2026-09-08) -----
+    # The only free, absolute, unauthenticated demand instrument: monthly
+    # pageviews of the Wikipedia article for the entity a candidate names.
+    # Bounded multiplier on the pre-rank score — 1.0 below min_views, rising
+    # log-linearly to max_factor at 100x the floor (1k -> 1.0, 10k -> 1.5,
+    # 100k -> 2.0 with the defaults). Unknown = factor 1.0 and views None in
+    # the breakdown, never a fabricated zero.
+    'topic_demand_wiki_enabled': 'true',
+    'topic_demand_wiki_min_views': '1000',
+    'topic_demand_wiki_max_factor': '2.0',
+    'topic_demand_wiki_lang': 'en',
+    'topic_demand_wiki_cache_days': '7',
+    'topic_demand_wiki_timeout_seconds': '5',
+    'topic_demand_wiki_concurrency': '4',
+    # Wikimedia requires a descriptive User-Agent with a contact/URL. Unbranded
+    # code default (OSS seed hygiene) — operators set their own name + contact.
+    'topic_demand_wiki_user_agent': 'topic-demand-scorer/1.0 (set topic_demand_wiki_user_agent to identify your install to Wikimedia)',
+    # Dual signal: a candidate from a Google-demand source (people are typing
+    # it) that ALSO names an entity with Wikipedia traffic (people are reading
+    # about it) gets this extra factor. Two independent instruments agreeing.
+    'topic_demand_dual_signal_factor': '1.25',
+    'topic_demand_google_sources': 'search_autocomplete,gsc_query_gap',
     'niche_carry_forward_decay_factor': '0.7',
     'niche_embedding_model': 'nomic-embed-text',
     'niche_goal_descriptions': '{"TRAFFIC": "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.", "EDUCATION": "Topic that teaches the reader something concrete and useful they didn\'t know before.", "BRAND": "Topic that reinforces the operator\'s positioning and unique perspective.", "AUTHORITY": "Topic that demonstrates the operator\'s depth and expertise on something specific.", "REVENUE": "Topic that drives a commercial outcome: signups, sales, conversions, paid feature awareness.", "COMMUNITY": "Topic that resonates with the operator\'s existing audience; sparks discussion, shares, replies.", "NICHE_DEPTH": "Topic that goes deep on the operator\'s niche specialty rather than broad-audience content."}',
@@ -5465,6 +5487,16 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'newsletter_provider': {'owner': 'newsletter_service', 'value_type': 'string'},
     'niche_batch_expires_days': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'topic_source_rank_weights': {'owner': 'topic_batch_service', 'value_type': 'csv'},
+    'topic_demand_wiki_enabled': {'owner': 'entity_demand', 'value_type': 'boolean'},
+    'topic_demand_wiki_min_views': {'owner': 'entity_demand', 'value_type': 'integer'},
+    'topic_demand_wiki_max_factor': {'owner': 'entity_demand', 'value_type': 'float'},
+    'topic_demand_wiki_lang': {'owner': 'entity_demand', 'value_type': 'string'},
+    'topic_demand_wiki_cache_days': {'owner': 'entity_demand', 'value_type': 'integer'},
+    'topic_demand_wiki_timeout_seconds': {'owner': 'entity_demand', 'value_type': 'float'},
+    'topic_demand_wiki_concurrency': {'owner': 'entity_demand', 'value_type': 'integer'},
+    'topic_demand_wiki_user_agent': {'owner': 'entity_demand', 'value_type': 'string'},
+    'topic_demand_dual_signal_factor': {'owner': 'entity_demand', 'value_type': 'float'},
+    'topic_demand_google_sources': {'owner': 'entity_demand', 'value_type': 'csv'},
     'title_searchable_entity_enabled': {'owner': 'title_generation', 'value_type': 'boolean'},
     'title_searchable_entity_mode': {'owner': 'title_generation', 'value_type': 'enum'},
     'niche_carry_forward_decay_factor': {'owner': 'topic_batch_service', 'value_type': 'float'},

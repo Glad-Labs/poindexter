@@ -952,6 +952,41 @@ class TopicBatchService:
         rank_weights = parse_rank_weights(
             self._site_config.get("topic_source_rank_weights", ""),
         )
+        # Entity demand (2026-09-08): Wikipedia pageviews for the thing each
+        # external candidate names, resolved once per sweep with bounded
+        # concurrency and a 7-day DB cache. Fail-open per candidate — an
+        # unknown is factor 1.0 with ``_wiki_views: None`` in the breakdown.
+        # See services/entity_demand.py.
+        from services.entity_demand import (
+            DemandSettings,
+            WikipediaDemandScorer,
+            combined_factor,
+        )
+
+        demand_settings = DemandSettings.from_site_config(self._site_config)
+        demand_by_title: dict[str, Any] = {}
+        if (
+            demand_settings.enabled and external
+            and WikipediaDemandScorer.shared_client_available()
+        ):
+            titles: list[str] = []
+            for item in external:
+                _row = (
+                    item["row"] if isinstance(item, dict) and "row" in item
+                    else item["data"] if isinstance(item, dict) and "data" in item
+                    else item
+                )
+                if isinstance(_row, dict) and _row.get("title"):
+                    titles.append(str(_row["title"]))
+            try:
+                scorer = WikipediaDemandScorer(settings=demand_settings, pool=self._pool)
+                demand_by_title = await scorer.demand_for_many(titles)
+            except Exception as exc:  # noqa: BLE001 — ranking must not depend on Wikimedia
+                logger.warning(
+                    "[topic_batch] entity demand lookup failed for the whole sweep "
+                    "(%s: %s) — ranking without it", type(exc).__name__, exc,
+                )
+                demand_by_title = {}
 
         async def score_one(
             text: str, decay: float,
@@ -996,6 +1031,18 @@ class TopicBatchService:
             if source_weight != 1.0:
                 score *= source_weight
                 breakdown["_source_weight"] = source_weight
+            if demand_settings.enabled:
+                _dm = demand_by_title.get(" ".join(str(row.get("title") or "").split()))
+                demand_mult, demand_breakdown = combined_factor(
+                    _dm.monthly_views if _dm is not None else None,
+                    source_name=row.get("source_name"),
+                    settings=demand_settings,
+                )
+                if _dm is not None and _dm.wiki_title:
+                    demand_breakdown["_wiki_title"] = _dm.wiki_title
+                breakdown.update(demand_breakdown)
+                if demand_mult != 1.0:
+                    score *= demand_mult
 
             grounding_match = None
             if grounding_enabled and vec:

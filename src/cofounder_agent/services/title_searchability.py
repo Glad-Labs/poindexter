@@ -76,6 +76,10 @@ _STOPWORDS = frozenset(
 
 # Separators that start a new "sentence" inside a title, after which the next
 # word is capitalised by convention rather than because it is a name.
+# Public alias: services.entity_demand reuses the same stoplist so "five days"
+# cannot anchor a Wikipedia match on "Five Days (film)".
+STOPWORDS = _STOPWORDS
+
 _SUBTITLE_SPLIT_RE = re.compile(r"\s*(?::|—|–|\s-\s|\|)\s*")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+'-]*")
 _DIGIT_RE = re.compile(r"\d")
@@ -275,6 +279,7 @@ def render_entity_directive(
 
 
 __all__ = [
+    "STOPWORDS",
     "SearchabilityReport",
     "find_searchable_entities",
     "has_searchable_entity",
