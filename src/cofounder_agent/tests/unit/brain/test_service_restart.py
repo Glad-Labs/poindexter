@@ -187,7 +187,7 @@ class TestStaleClaimSweep:
     restart returns. If brain dies in between, nothing reclaims it — the claim
     query filters `status='pending'` — so it strands in `claimed` forever and
     the console reports a permanent "still in progress". The sweep closes that
-    (Glad-Labs/glad-labs-stack#2505).
+    (Glad-Labs/poindexter#2505).
     """
 
     async def test_sweep_runs_before_claiming(self, monkeypatch):
