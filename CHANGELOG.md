@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.134.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.133.0...v0.134.0) (2026-09-08)
+
+
+### Features
+
+* **content:** searchable-entity title gate + wire the search-demand topic taps ([#3584](https://github.com/Glad-Labs/glad-labs-stack/issues/3584)) ([386e52d](https://github.com/Glad-Labs/glad-labs-stack/commit/386e52d5f5c387647db81158c3166d672c416ce5))
+
 ## [0.133.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.132.0...v0.133.0) (2026-09-07)
 
 
