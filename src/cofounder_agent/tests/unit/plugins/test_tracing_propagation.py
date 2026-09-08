@@ -3,7 +3,7 @@
 ``inject_trace_context`` / ``extract_trace_context`` carry trace context across
 the ``pipeline_tasks`` enqueue -> claim handoff so the Prefect flow's root span
 links to the trace of whatever created the task (Tier 1b,
-Glad-Labs/glad-labs-stack#1997). ``stamp_langfuse_trace_url`` is the Tier-1c
+Glad-Labs/poindexter#1997). ``stamp_langfuse_trace_url`` is the Tier-1c
 by-product: it writes a Langfuse deep-link onto the root span so a Tempo viewer
 can click through to the matching Langfuse trace.
 

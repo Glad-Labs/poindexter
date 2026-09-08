@@ -77,7 +77,7 @@ TOKEN_SETTING_KEY = "gh_token"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 15
-DEFAULT_REPO = "Glad-Labs/glad-labs-stack"
+DEFAULT_REPO = "Glad-Labs/poindexter"
 DEFAULT_DEDUP_HOURS = 6
 # Minimum commits-behind before a drift PAGES. A continuously-deploying prod is
 # perpetually 1-2 commits behind origin/main (auto-deploy trails merges by
