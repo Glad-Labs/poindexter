@@ -1,20 +1,12 @@
 {
   "items": [
     {
-      "post_id": "1f98cc99-59d6-4a3f-bcac-bc92c68c66f9",
-      "medium": "video",
-      "title": "How a GPU Lock Bug Was Quietly Wrecking Our RAG Sweep",
-      "slug": "how-a-gpu-lock-bug-was-quietly-wrecking-our-rag-sw-9bdb7f9a",
+      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
+      "medium": "podcast",
+      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
+      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
       "quality_score": 100,
-      "created_at": "2026-09-03T22:14:58.974437Z"
-    },
-    {
-      "post_id": "1f98cc99-59d6-4a3f-bcac-bc92c68c66f9",
-      "medium": "video_short",
-      "title": "How a GPU Lock Bug Was Quietly Wrecking Our RAG Sweep",
-      "slug": "how-a-gpu-lock-bug-was-quietly-wrecking-our-rag-sw-9bdb7f9a",
-      "quality_score": 85,
-      "created_at": "2026-09-03T22:14:17.351386Z"
+      "created_at": "2026-09-08T05:10:40.159182Z"
     },
     {
       "post_id": "1f98cc99-59d6-4a3f-bcac-bc92c68c66f9",
@@ -31,17 +23,9 @@
       "slug": "a-4-bit-model-just-beat-its-full-precision-origina-421ec269",
       "quality_score": 100,
       "created_at": "2026-08-31T00:32:34.607572Z"
-    },
-    {
-      "post_id": "60e38985-90d4-464f-a02a-a81cceddec75",
-      "medium": "podcast",
-      "title": "Why Great Content Dies Without an Amplification System",
-      "slug": "why-great-content-dies-without-an-amplification-sy-e311bcc1",
-      "quality_score": 100,
-      "created_at": "2026-08-30T22:42:34.597037Z"
     }
   ],
-  "total": 5,
+  "total": 3,
   "limit": 50,
   "offset": 0
 }
