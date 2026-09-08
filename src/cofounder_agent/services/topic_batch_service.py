@@ -27,6 +27,7 @@ test authors the cleaner patch path.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -58,6 +59,14 @@ from utils.findings import emit_finding
 # ``topic_ranking`` helpers receive ``self._site_config``.
 
 logger = get_logger(__name__)
+
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _looks_like_uuid(value: Any) -> bool:
+    """True when ``value`` is a uuid-shaped string (a topic_pool id ref)."""
+    return bool(value) and bool(_UUID_RE.match(str(value)))
 
 
 @dataclass
@@ -1177,6 +1186,7 @@ class TopicBatchService:
 
         async with self._pool.acquire() as conn:
             async with conn.transaction():
+                previous_refs: set[str] = set()
                 if replace_batch_id is not None:
                     # In-place refresh. Same row (so the one-open-batch
                     # invariant holds and any external reference stays valid);
@@ -1184,6 +1194,15 @@ class TopicBatchService:
                     # relative — a merged set with stale ranks would order
                     # incorrectly. expires_at is pushed out so a batch being
                     # actively refreshed is not reaped as abandoned.
+                    #
+                    # poindexter#1042: the candidates being deleted here had
+                    # their pool rows flipped to 'batched' when they won the
+                    # previous ranking. Any of them that does NOT re-win below
+                    # would otherwise stay 'batched' forever with no candidate
+                    # and no task — 1,002 such rows on prod, and it burned the
+                    # best-scored fresh rows first (every search_autocomplete
+                    # row). Remember them so the loser set can be re-pooled.
+                    previous_refs = await self._batch_pool_refs(conn, replace_batch_id)
                     await conn.execute(
                         "DELETE FROM topic_candidates WHERE batch_id = $1",
                         replace_batch_id,
@@ -1253,6 +1272,16 @@ class TopicBatchService:
                             c.carried_from_batch_id,
                         )
 
+                persisted = {str(c.id) for c in ranked}
+                dropped = previous_refs - persisted
+                if dropped:
+                    n = await self._repool_rows(conn, dropped)
+                    logger.info(
+                        "Batch %s refresh: %d previous candidate(s) did not "
+                        "re-rank — returned %d pool row(s) to 'pooled' "
+                        "(poindexter#1042)",
+                        batch_row["id"], len(dropped), n,
+                    )
         return BatchSnapshot(
             id=batch_row["id"],
             niche_id=batch_row["niche_id"],
@@ -1260,6 +1289,41 @@ class TopicBatchService:
             candidate_count=rank_in_batch,
             expires_at=batch_row["expires_at"],
         )
+
+    @staticmethod
+    async def _batch_pool_refs(conn: Any, batch_id: UUID) -> set[str]:
+        """Pool-row ids referenced by a batch's candidates, both tables.
+
+        External candidates carry the pool id in ``source_ref``; internal
+        ones in ``primary_ref``. Carry-forward candidates keep the original
+        pool id, so they are covered too. Only uuid-shaped refs are returned
+        — a legacy ref that is a URL or a title prefix is not a pool row.
+        """
+        rows = await conn.fetch(
+            """
+            SELECT source_ref AS ref FROM topic_candidates WHERE batch_id = $1
+            UNION
+            SELECT primary_ref AS ref FROM internal_topic_candidates WHERE batch_id = $1
+            """,
+            batch_id,
+        )
+        return {str(r["ref"]) for r in rows if _looks_like_uuid(r["ref"])}
+
+    @staticmethod
+    async def _repool_rows(conn: Any, refs: set[str]) -> int:
+        """Return still-'batched' pool rows to 'pooled' so a later sweep can
+        read them again. Rows already claimed into a task by another path
+        are not 'batched' (they are consumed), so the status guard keeps
+        this idempotent. Returns the count actually flipped."""
+        ids = [r for r in refs if _looks_like_uuid(r)]
+        if not ids:
+            return 0
+        rows = await conn.fetch(
+            "UPDATE topic_pool SET status = 'pooled', batched_at = NULL "
+            "WHERE id = ANY($1::uuid[]) AND status = 'batched' RETURNING id",
+            ids,
+        )
+        return len(rows)
 
     async def _open_topic_decision_gate(
         self, batch: BatchSnapshot, niche: Niche,
@@ -1486,12 +1550,23 @@ class TopicBatchService:
         ``resolved_at`` so the partial unique index frees up the
         one-open-batch-per-niche slot for the next sweep."""
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE topic_batches "
-                "SET status = 'expired', resolved_at = NOW() WHERE id = $1",
-                batch_id,
-            )
-        logger.info("Batch %s rejected (reason=%r)", batch_id, reason)
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE topic_batches "
+                    "SET status = 'expired', resolved_at = NOW() WHERE id = $1",
+                    batch_id,
+                )
+                # poindexter#1042: an expired batch produced no task, so its
+                # candidates' pool rows go back to 'pooled' — otherwise they
+                # stay 'batched' forever and no sweep ever reads them again.
+                # Covers the operator reject, the stale-batch reaper, and the
+                # deploy-time expire-and-resweep both alike.
+                refs = await self._batch_pool_refs(conn, batch_id)
+                repooled = await self._repool_rows(conn, refs) if refs else 0
+        logger.info(
+            "Batch %s rejected (reason=%r); %d pool row(s) returned to 'pooled'",
+            batch_id, reason, repooled,
+        )
 
     async def list_open_batches(self) -> list[OpenBatch]:
         """Return every ``open`` batch across all niches, newest first.
