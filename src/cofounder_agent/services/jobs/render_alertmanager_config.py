@@ -25,7 +25,8 @@ Prometheus rule still fires — it just can't reach the native-Telegram
 receiver until the chat_id is rendered in.
 
 Config (``plugin.job.render_alertmanager_config``):
-- ``config.template_path`` (default ``/etc/alertmanager/alertmanager.yml.tmpl``)
+- ``config.template_path`` (default ``/etc/alertmanager/template-src/alertmanager.yml.tmpl`` —
+  a directory mount; the legacy single-file path is a fallback, poindexter#831)
 - ``config.output_path`` (default ``/etc/alertmanager/config/alertmanager.yml``)
 - ``config.alertmanager_url`` (default ``http://alertmanager:9093``)
 - ``config.reload_on_change`` (default true)
@@ -45,6 +46,12 @@ from plugins.job import JobResult
 from utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
+
+# Where the compose files mount infrastructure/prometheus (a DIRECTORY, so the
+# template follows the path rather than a pinned inode — poindexter#831).
+DEFAULT_TEMPLATE_PATH = "/etc/alertmanager/template-src/alertmanager.yml.tmpl"
+# The pre-#831 single-file bind mount; honoured only as a fallback.
+LEGACY_TEMPLATE_PATH = "/etc/alertmanager/alertmanager.yml.tmpl"
 
 # The literal placeholder in alertmanager.yml.tmpl. Kept as a module
 # constant so the unit test can assert it is fully substituted.
@@ -70,11 +77,41 @@ class RenderAlertmanagerConfigJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        template_path = Path(
-            config.get(
-                "template_path", "/etc/alertmanager/alertmanager.yml.tmpl"
+        template_path = Path(config.get("template_path", DEFAULT_TEMPLATE_PATH))
+        # poindexter#831 — the template used to be a single-file bind mount at
+        # LEGACY_TEMPLATE_PATH; that pins an inode that `git reset --hard`
+        # replaces, and the container was left reading an orphan. The compose
+        # files now mount the whole infrastructure/prometheus directory at
+        # /etc/alertmanager/template-src. Accept the legacy path only when
+        # the directory mount is absent (an install whose compose predates
+        # the change), so the render never goes dark across the migration.
+        if (
+            str(template_path) == DEFAULT_TEMPLATE_PATH
+            and not template_path.exists()
+            and Path(LEGACY_TEMPLATE_PATH).exists()
+        ):
+            logger.warning(
+                "[render_alertmanager_config] %s absent — falling back to the "
+                "legacy single-file mount %s; update the compose mount "
+                "(poindexter#831)",
+                DEFAULT_TEMPLATE_PATH, LEGACY_TEMPLATE_PATH,
             )
-        )
+            template_path = Path(LEGACY_TEMPLATE_PATH)
+        elif (
+            str(template_path) == LEGACY_TEMPLATE_PATH
+            and not template_path.exists()
+            and Path(DEFAULT_TEMPLATE_PATH).exists()
+        ):
+            # The other direction: an operator's stored config still names
+            # the legacy file path, but the compose now mounts the directory.
+            logger.warning(
+                "[render_alertmanager_config] configured template_path %s is "
+                "the retired single-file mount and is absent — using %s "
+                "(update plugin.job.render_alertmanager_config.config."
+                "template_path; poindexter#831)",
+                LEGACY_TEMPLATE_PATH, DEFAULT_TEMPLATE_PATH,
+            )
+            template_path = Path(DEFAULT_TEMPLATE_PATH)
         output_path = Path(
             config.get("output_path", "/etc/alertmanager/config/alertmanager.yml")
         )

@@ -305,3 +305,39 @@ class TestReloadAlertmanager:
         assert ok is False
         assert detail.startswith("reload failed:")
         assert "connection refused" in detail
+
+
+def test_default_template_path_is_under_the_directory_mount():
+    """poindexter#831: the default must point INTO the directory mount, never at
+    the single-file bind mount whose inode `git reset --hard` orphans."""
+    from services.jobs import render_alertmanager_config as mod
+
+    assert mod.DEFAULT_TEMPLATE_PATH == "/etc/alertmanager/template-src/alertmanager.yml.tmpl"
+    assert mod.LEGACY_TEMPLATE_PATH == "/etc/alertmanager/alertmanager.yml.tmpl"
+    assert mod.DEFAULT_TEMPLATE_PATH != mod.LEGACY_TEMPLATE_PATH
+
+
+@pytest.mark.asyncio
+async def test_legacy_configured_path_migrates_to_the_directory_mount(tmp_path, monkeypatch):
+    """A stored config naming the retired single-file path must not go dark
+    once the compose mounts the directory instead (poindexter#831)."""
+    from services.jobs import render_alertmanager_config as mod
+
+    new_dir = tmp_path / "template-src"
+    new_dir.mkdir()
+    (new_dir / "alertmanager.yml.tmpl").write_text(_TEMPLATE, encoding="utf-8")
+    legacy = tmp_path / "legacy" / "alertmanager.yml.tmpl"  # deliberately absent
+    monkeypatch.setattr(mod, "DEFAULT_TEMPLATE_PATH", str(new_dir / "alertmanager.yml.tmpl"))
+    monkeypatch.setattr(mod, "LEGACY_TEMPLATE_PATH", str(legacy))
+    out = tmp_path / "config" / "alertmanager.yml"
+    result = await mod.RenderAlertmanagerConfigJob().run(
+        pool=None,
+        config={
+            "template_path": str(legacy),
+            "output_path": str(out),
+            "reload_on_change": False,
+            "_site_config": _StubSiteConfig({"telegram_chat_id": "-100999"}),
+        },
+    )
+    assert result.ok is True, result.detail
+    assert out.exists() and "-100999" in out.read_text(encoding="utf-8")

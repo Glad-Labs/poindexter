@@ -696,7 +696,12 @@ services:
       # Read-only mount of the alertmanager config template so the render
       # job can read it (the worker mounts ./src at /app:ro, not the
       # infrastructure tree, so the template needs its own mount).
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl:ro
+      # poindexter#831: mount the DIRECTORY, not the file. A single-file bind
+      # mount pins the inode; deploy-sync's `git reset --hard` replaces the
+      # file (new inode), the container keeps the orphan, and the render job
+      # then read a stale/absent template and paged critically until the next
+      # container recreate. A directory mount follows the path, not the inode.
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/infrastructure/prometheus:/etc/alertmanager/template-src:ro
       # RenderGrafanaAlertsJob reads the .tmpl and writes the rendered
       # alert-rules.yml into this dir; Grafana reads it from the same host
       # path via its existing provisioning/alerting bind mount.
