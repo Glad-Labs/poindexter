@@ -161,3 +161,40 @@ class TestFailSafes:
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=None)
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5]:
             await s._unload_comfyui(hard=True)  # must not raise
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSquatFindingSeverity:
+    """stack#3585: the restart IS the remedy, so a queued restart is an
+    info-level trail on the Findings board, not a Discord delivery. Only the
+    case where the self-heal could not engage (no pool to queue on) warns."""
+
+    async def test_queued_restart_emits_info(self):
+        s = _scheduler()
+        client = _client({"queue_running": [], "queue_pending": []})
+        pool = MagicMock()
+        ctxs = _run_ctx(s, client, [11.7, 11.7], pool=pool)
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], patch(
+            "services.service_restart_requests.create_restart_request",
+            AsyncMock(return_value={"id": "rr-1"}),
+        ), patch("utils.findings.emit_finding") as finding:
+            await s._unload_comfyui(hard=True)
+        finding.assert_called_once()
+        kw = finding.call_args.kwargs
+        assert kw["kind"] == "comfyui_vram_squat"
+        assert kw["severity"] == "info"
+        assert kw["dedup_key"] == "comfyui_vram_squat"
+
+    async def test_unqueued_restart_warns(self):
+        s = _scheduler()
+        client = _client({"queue_running": [], "queue_pending": []})
+        ctxs = _run_ctx(s, client, [11.7, 11.7], pool=None)
+        with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], patch(
+            "utils.findings.emit_finding"
+        ) as finding:
+            await s._unload_comfyui(hard=True)
+        finding.assert_called_once()
+        kw = finding.call_args.kwargs
+        assert kw["severity"] == "warn"
+        assert kw["dedup_key"] == "comfyui_vram_squat:unqueued"

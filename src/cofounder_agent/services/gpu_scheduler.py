@@ -2425,6 +2425,34 @@ class GPUScheduler:
                 "no DB pool is registered — cannot queue it",
                 service, freed,
             )
+            # This is the case a human matters for: the squat is real and the
+            # self-heal could NOT engage. Warn-level (Discord) — the queued
+            # path below is info because the restart itself is the remedy.
+            try:
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="services.gpu_scheduler",
+                    kind="comfyui_vram_squat",
+                    title=(
+                        f"ComfyUI held its VRAM through /free and NO restart "
+                        f"could be queued (only {freed:.1f} GB freed)"
+                    ),
+                    body=(
+                        f"`POST /free` released {freed:.1f} GB, below the "
+                        f"{min_freed:.1f} GB floor, and no DB pool is registered "
+                        f"in this process so the restart request could not be "
+                        f"written to `service_restart_requests`. The render GPU "
+                        f"stays squatted until something restarts "
+                        f"`{container}` by hand."
+                    ),
+                    severity="warn",
+                    dedup_key="comfyui_vram_squat:unqueued",
+                    extra={"service": service, "freed_gb": round(freed, 2), "min_freed_gb": min_freed},
+                )
+            except Exception:  # noqa: BLE001
+                # silent-ok: already logged at WARNING above; the finding is a
+                # second channel, not the outcome.
+                logger.debug("[GPU] comfyui squat (unqueued) finding failed", exc_info=True)
             return
 
         from services.service_restart_requests import create_restart_request
@@ -2461,7 +2489,13 @@ class GPUScheduler:
                     f"Repeated firings mean something re-loads ComfyUI between "
                     f"reclaims — check the media pipeline cadence."
                 ),
-                severity="warn",
+                # info, not warn (stack#3585): the restart IS the designed
+                # remedy for the caching-allocator squat (poindexter#1019) and
+                # it engages ~10x/day on the operator box — every one of those
+                # was reaching Discord as if it were a failure. The Findings
+                # board keeps the trail; delivery is reserved for the case
+                # above where the self-heal could not engage.
+                severity="info",
                 dedup_key="comfyui_vram_squat",
                 extra={
                     "freed_gb": round(freed, 2),
