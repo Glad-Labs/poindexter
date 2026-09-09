@@ -1487,3 +1487,31 @@ both are no-ops on clean output and the gate is DB-toggleable via
 - **Prompt-level fabrication discipline** in the public OSS release.
   The freemium prompt gap is intentional; production-grade
   fabrication-avoidance language ships in Glad Labs Premium Prompts.
+
+## Judge model identity (2026-09-09)
+
+The pinned judge on GPU 1 (`:11435`, `OLLAMA_MAX_LOADED_MODELS=1`, keep-alive
+`-1`) is **`qwen3-vl:30b-a3b-instruct`**. Ollama's bare `qwen3-vl:30b` tag is
+the **30b-a3b-thinking** build (registry manifest digest `eda0be100877` ==
+`30b-a3b-thinking`; instruct is `c871fc73fabc`) and has no non-thinking mode:
+`think:false` and `/no_think` are ignored, so it reasoned to exhaustion on
+~25% of judge calls (EMPTY content at 11.8k–15.5k output tokens) and pushed
+Ragas past its per-job clock. Calibration on the same instance — 12
+faithfulness verdicts with ground truth plus 3 real hero images — read
+instruct **92% / 12-of-12 JSON / 0.4 s p50 / 0 reasoning tokens** against
+thinking 75% / 3 empty / 2.0 s, with equivalent vision descriptions. Same
+architecture, 19 GB on disk, 22.1 GB VRAM at 32k context, ~150 tok/s decode.
+
+Two rules follow. **Every setting that names the judge must name the same
+tag** (`deepeval_judge_model`, `ragas_judge_model`, `qa_vision_model`,
+`qa_preview_vision_model`, `qa_fallback_critic_model`, `vision_alt_model`,
+`console_chat_model`, `pipeline_architect_model`, the brain's
+`ollama_runner_ram_recycle_targets`, and the LiteLLM
+`model_api_base_overrides`) — the instance holds one model, so a stray
+reference to the old tag thrashes 19 GB per swap. And **read the tag, not the
+family**: `thinking_model_substrings` matches `qwen3`, so
+`non_thinking_model_substrings` (default `["-instruct"]`) vetoes the instruct
+sibling before it inherits the reasoning budget or loses JSON mode. Verify any
+tag's identity with
+`curl -sH 'Accept: application/vnd.docker.distribution.manifest.v2+json' https://registry.ollama.ai/v2/library/<family>/manifests/<tag> | sha256sum`
+against the `ID` column of `ollama list`.

@@ -92,7 +92,7 @@ DEFAULT_ENABLED = False
 # 4 GB sits well above a fresh runner (0.30 GiB) and well below the 9.35 GiB
 # incident, so it catches the leak long before the fast swap tier notices.
 DEFAULT_TARGETS = (
-    "ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b"
+    "ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct"
 )
 
 DEFAULT_COOLDOWN_MINUTES = 120

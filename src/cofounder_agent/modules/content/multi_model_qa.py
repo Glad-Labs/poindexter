@@ -2548,7 +2548,7 @@ class MultiModelQA:
 
         Extracts up to N image URLs — the featured/hero image (when supplied)
         plus the inline images from the content — downloads them, and asks
-        a vision-capable Ollama model (qwen3-vl:30b by default) whether each
+        a vision-capable Ollama model (qwen3-vl:30b-a3b-instruct by default) whether each
         image is relevant to the content and topic. The featured image leads the
         set so it always survives the ``qa_vision_max_images`` cap. Returns
         None when disabled (default), when no images are present, or when
@@ -2557,7 +2557,7 @@ class MultiModelQA:
         Settings:
             qa_vision_check_enabled    — default "false" (opt-in; vision
                                          inference is ~10s per image)
-            qa_vision_model            — default "qwen3-vl:30b"
+            qa_vision_model            — default "qwen3-vl:30b-a3b-instruct"
             qa_vision_max_images       — default 3
             qa_vision_pass_threshold   — default 60 (min per-image score
                                          the gate considers "relevant")
@@ -2795,7 +2795,7 @@ class MultiModelQA:
 
         Settings:
             qa_preview_screenshot_enabled  — default "false"
-            qa_preview_vision_model        — default "qwen3-vl:30b"
+            qa_preview_vision_model        — default "qwen3-vl:30b-a3b-instruct"
             qa_preview_pass_threshold      — default 70 (min score)
             qa_preview_viewport_width      — default 1280
             qa_preview_viewport_height     — default 1024

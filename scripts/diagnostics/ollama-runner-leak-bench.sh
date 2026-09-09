@@ -4,7 +4,7 @@
 # so the shadow accumulates during service, not at load.
 set -uo pipefail
 URL=http://localhost:11435
-MODEL=qwen3-vl:30b
+MODEL=qwen3-vl:30b-a3b-instruct
 pid() { for p in $(pgrep -x llama-server 2>/dev/null); do
   tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null | grep -q mmproj && { echo "$p"; return; }; done; }
 anon() { local p=$1; awk '/^RssAnon/{a=$2}/^VmSwap/{s=$2}END{printf "%.3f",(a+s)/1048576}' /proc/$p/status; }

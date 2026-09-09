@@ -414,7 +414,7 @@ DEFAULTS: dict[str, str] = {
     # ambiguous. 4 GB sits well above a fresh runner (0.30 GB) and well below
     # the 9.35 GB incident.
     'ollama_runner_ram_recycle_targets':
-        'ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b',
+        'ollama-vision.service|4|http://host.docker.internal:11435|qwen3-vl:30b-a3b-instruct',
     # A recycle costs an ~85s model reload, so do not churn.
     'ollama_runner_ram_recycle_cooldown_minutes': '120',
     # A loaded-but-idle runner reads 0.0%; one mid-generation pegs a core.
@@ -1416,8 +1416,8 @@ DEFAULTS: dict[str, str] = {
     # poindexter#716: vision QA model keys — seeded here so the DB always has
     # a value and code never falls back to a hardcoded literal.  Empty string =
     # operator deliberately cleared the key — the vision check is skipped.
-    'qa_preview_vision_model': 'ollama/qwen3-vl:30b',
-    'qa_vision_model': 'ollama/qwen3-vl:30b',
+    'qa_preview_vision_model': 'ollama/qwen3-vl:30b-a3b-instruct',
+    'qa_vision_model': 'ollama/qwen3-vl:30b-a3b-instruct',
     'qa_vision_num_predict': '1024',  # #563: room for qwen3-vl <think> + JSON verdict
     # Thinking vision models (qwen3-vl) need a bigger budget than the 1024 base —
     # the <think> trace shares num_predict with the JSON scores and truncates them
@@ -1435,7 +1435,7 @@ DEFAULTS: dict[str, str] = {
     # poindexter#716: vision alt-text + media-qa human-detect model key.
     # The baseline seeds this as 'qwen3-vl:30b'; seeded here too so fresh
     # installs without the baseline seeds can still get a sensible default.
-    'vision_alt_model': 'ollama/qwen3-vl:30b',
+    'vision_alt_model': 'ollama/qwen3-vl:30b-a3b-instruct',
     # Per-step model pins for utility LLM calls that previously resolved through
     # the (now-removed) cost_tier.* fallback. Each is read directly and fails
     # loud when empty — no tier indirection. Seeded to the model the step used

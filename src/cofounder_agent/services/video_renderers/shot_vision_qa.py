@@ -1,7 +1,7 @@
 """Per-shot vision-QA frame scorer (video-quality Piece 2, spec §3.2).
 
 Substrate twin of the blog-image vision gate (``MultiModelQA._check_image_relevance``).
-It reuses the SAME vision model (``qa_vision_model``, default qwen3-vl:30b) and the
+It reuses the SAME vision model (``qa_vision_model``, default qwen3-vl:30b-a3b-instruct) and the
 same Ollama ``/api/chat`` images shape, but scores a SINGLE rendered shot frame
 against its ``Shot`` instead of inline blog-image URLs. Lives in ``services/``
 (not ``modules/content``) so ``shot_list_renderer`` can call it without crossing

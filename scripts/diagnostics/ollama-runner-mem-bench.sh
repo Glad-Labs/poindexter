@@ -5,7 +5,7 @@
 # ~0 within minutes and would read as "no shadow").
 set -uo pipefail
 URL=http://localhost:11435
-MODEL=qwen3-vl:30b
+MODEL=qwen3-vl:30b-a3b-instruct
 
 runner_pid() { for p in $(pgrep -x llama-server 2>/dev/null); do
     grep -q "$(systemctl show ollama-vision.service -p MainPID --value)" /proc/$p/status 2>/dev/null
