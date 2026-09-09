@@ -35,14 +35,6 @@ def _qa_rewrite():
     return m._resolve_revise_prompt(content="A draft body.", feedback="- name the GPU")
 
 
-def _quality():
-    from modules.content import quality_service as m
-
-    return m._resolve_quality_prompt(
-        "qa.quality_evaluation_llm_rubric", topic="Topic", content_excerpt="Body.",
-    )
-
-
 def _narrate():
     from modules.content.atoms import narrate_bundle as m
 
@@ -129,7 +121,6 @@ def _affiliate_derive_keywords():
 # (name, skill_key, resolver_callable)
 _CASES = [
     ("qa_rewrite", "atoms.qa_rewrite.revise_prompt", _qa_rewrite),
-    ("quality", "qa.quality_evaluation_llm_rubric", _quality),
     ("narrate_bundle", "atoms.narrate_bundle.system_prompt", _narrate),
     ("pipeline_architect", "atoms.pipeline_architect.system_prompt", _architect),
     ("social_twitter", "social.twitter_promote", _social_twitter),

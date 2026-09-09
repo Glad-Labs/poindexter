@@ -7,8 +7,6 @@ Three inline prompts migrated to YAML+Langfuse per
   ``social.twitter_promote``
 * ``services.social_poster._build_linkedin_prompt`` →
   ``social.linkedin_promote``
-* ``modules.content.quality_service._resolve_quality_prompt`` →
-  ``qa.quality_evaluation_llm_rubric``
 
 Note: ``memory.collapse_old_embeddings.summary`` was migrated from
 ``services.jobs.collapse_old_embeddings._resolve_summary_prompt_template``
@@ -97,38 +95,6 @@ def test_social_linkedin_resolver_falls_back_on_pm_failure():
     assert "Glad Labs" in result
     assert "LinkedIn" in result
     assert "3000 characters" in result
-
-
-@pytest.mark.unit
-def test_quality_resolver_uses_prompt_manager():
-    from modules.content import quality_service
-
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
-        mock_pm.return_value.get_prompt.return_value = "PM rubric"
-        result = quality_service._resolve_quality_prompt(
-            "qa.quality_evaluation_llm_rubric",
-            topic="AI",
-            content_excerpt="hello",
-        )
-    assert result == "PM rubric"
-
-
-@pytest.mark.unit
-def test_quality_resolver_falls_back_on_pm_failure():
-    from modules.content import quality_service
-
-    with patch(
-        "services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = quality_service._resolve_quality_prompt(
-            "qa.quality_evaluation_llm_rubric",
-            topic="AI",
-            content_excerpt="hello world",
-        )
-    assert "content quality evaluator" in result
-    assert "AI" in result
-    assert "hello world" in result
 
 
 @pytest.mark.unit

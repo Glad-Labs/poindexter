@@ -17,11 +17,16 @@ logger = get_logger(__name__)
 
 
 class EvaluationMethod(str, Enum):
-    """Supported evaluation methods"""
+    """Supported evaluation methods.
+
+    Only the deterministic pre-QA lint remains here. ``LLM_BASED`` and
+    ``HYBRID`` were retired (glad-labs-stack#2796): they named code paths
+    that called an ``llm_client.generate_text`` no class ever provided, so
+    every call silently fell back to pattern-based. LLM judgement lives in
+    the ``qa.*`` rails.
+    """
 
     PATTERN_BASED = "pattern-based"  # Fast, deterministic
-    LLM_BASED = "llm-based"  # Accurate, uses language model
-    HYBRID = "hybrid"  # Combines both
 
 
 @dataclass

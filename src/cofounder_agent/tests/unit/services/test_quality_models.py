@@ -93,8 +93,8 @@ class TestCheckpointerSerializationRoundTrip:
 class TestEvaluationMethod:
     def test_values(self):
         assert EvaluationMethod.PATTERN_BASED.value == "pattern-based"
-        assert EvaluationMethod.LLM_BASED.value == "llm-based"
-        assert EvaluationMethod.HYBRID.value == "hybrid"
+        # LLM_BASED / HYBRID retired in glad-labs-stack#2796 — pattern-based is the only method.
+        assert [m.value for m in EvaluationMethod] == ["pattern-based"]
 
     def test_is_string(self):
         assert isinstance(EvaluationMethod.PATTERN_BASED, str)
@@ -250,7 +250,7 @@ class TestQualityAssessment:
         assessment = QualityAssessment(
             dimensions=dims, overall_score=70.0, passing=True,
             feedback="OK", suggestions=[],
-            evaluation_method=EvaluationMethod.HYBRID,
+            evaluation_method=EvaluationMethod.PATTERN_BASED,
         )
         assert assessment.evaluated_by == "UnifiedQualityService"
         assert assessment.refinement_attempts == 0
@@ -352,7 +352,7 @@ class TestQualityAssessmentOptionalFields:
             dimensions=self._make_dims(),
             overall_score=80.0, passing=True,
             feedback="Good", suggestions=[],
-            evaluation_method=EvaluationMethod.LLM_BASED,
+            evaluation_method=EvaluationMethod.PATTERN_BASED,
             content_length=1500,
             word_count=250,
         )
@@ -365,7 +365,7 @@ class TestQualityAssessmentOptionalFields:
             dimensions=self._make_dims(),
             overall_score=80.0, passing=True,
             feedback="Good", suggestions=[],
-            evaluation_method=EvaluationMethod.LLM_BASED,
+            evaluation_method=EvaluationMethod.PATTERN_BASED,
             flesch_kincaid_grade_level=10.5,
         )
         d = assessment.to_dict()
@@ -387,7 +387,7 @@ class TestQualityAssessmentOptionalFields:
             dimensions=self._make_dims(),
             overall_score=80.0, passing=True,
             feedback="Good", suggestions=[],
-            evaluation_method=EvaluationMethod.HYBRID,
+            evaluation_method=EvaluationMethod.PATTERN_BASED,
             refinement_attempts=2,
             max_refinements=3,
             needs_refinement=True,
