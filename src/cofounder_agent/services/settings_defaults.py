@@ -2106,6 +2106,7 @@ DEFAULTS: dict[str, str] = {
     # poindexter#1035: one extra attempt when the thinking judge returns EMPTY
     # content (its reasoning trace consumed the whole budget). 0 disables.
     'deepeval_judge_empty_retries': '1',
+    'non_thinking_model_substrings': '["-instruct"]',
     'enable_writer_self_review': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'guardrails_enabled': 'true',
@@ -4909,6 +4910,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_gate_retry_backoff_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'deepeval_judge_empty_retries': {'owner': 'deepeval_rails', 'value_type': 'integer'},
+    'non_thinking_model_substrings': {'category': 'llm', 'description': 'JSON array of model-name needles that VETO a thinking_model_substrings match: an instruction-tuned sibling of a thinking family (qwen3-vl:30b-a3b-instruct) must not get the reasoning budget or lose JSON mode. Set [] to disable the veto.', 'value_type': 'json', 'owner': 'thinking_models'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_job_timeout_seconds': {'owner': 'ragas_eval', 'value_type': 'integer'},

@@ -42,6 +42,16 @@ _DEFAULT_SUBSTRINGS: tuple[str, ...] = (
     "deepseek-r1",
 )
 
+# Needles that OVERRIDE a thinking match. Vendors ship the same family as a
+# reasoning build and an instruction-tuned build under one prefix
+# (``qwen3-vl:30b`` — Ollama's bare tag — is ``30b-a3b-thinking``;
+# ``qwen3-vl:30b-a3b-instruct`` is the same weights minus the reasoning
+# channel), so a family substring alone classifies the instruct sibling as a
+# thinking model, hands it the 8k reasoning budget, and withholds JSON mode
+# from a judge that needs neither. Operator override:
+# ``app_settings.non_thinking_model_substrings`` (JSON array).
+_DEFAULT_EXCLUSIONS: tuple[str, ...] = ("-instruct",)
+
 
 def strip_think_blocks(text: str) -> str:
     """Remove every ``<think>...</think>`` (case-insensitive, multiline)
@@ -255,7 +265,12 @@ def strip_reasoning_artifacts(text: str) -> str:
     return cleaned.strip()
 
 
-def is_thinking_model(model: str, *, substrings: tuple[str, ...] | list[str] | None = None) -> bool:
+def is_thinking_model(
+    model: str,
+    *,
+    substrings: tuple[str, ...] | list[str] | None = None,
+    exclusions: tuple[str, ...] | list[str] | None = None,
+) -> bool:
     """Return True if ``model`` looks like a thinking-model identifier.
 
     Args:
@@ -270,14 +285,22 @@ def is_thinking_model(model: str, *, substrings: tuple[str, ...] | list[str] | N
             of a hot path, then reuse). If unset and not provided, the
             module falls back to ``_DEFAULT_SUBSTRINGS``.
 
+        exclusions: Needles that veto a match (an instruction-tuned
+            sibling of a thinking family). ``None`` falls back to
+            ``_DEFAULT_EXCLUSIONS``; callers on a hot path resolve the
+            operator list once via ``resolve_non_thinking_substrings``.
+
     Returns:
         True when any configured substring is found inside the
-        lowercased model name; False otherwise.
+        lowercased model name AND no exclusion needle is; False otherwise.
     """
     if not model:
         return False
     needle = model.lower()
     pool = substrings if substrings is not None else _DEFAULT_SUBSTRINGS
+    vetoes = exclusions if exclusions is not None else _DEFAULT_EXCLUSIONS
+    if any(x in needle for x in vetoes):
+        return False
     return any(s in needle for s in pool)
 
 
@@ -320,7 +343,9 @@ def resolve_judge_num_predict(model: str, site_config: Any) -> int:
         except Exception:  # noqa: BLE001 — defensive against test stubs
             thinking_max, standard_max = 8000, 1500
     substrings = resolve_thinking_substrings(site_config) if site_config is not None else None
-    return thinking_max if is_thinking_model(model, substrings=substrings) else standard_max
+    exclusions = resolve_non_thinking_substrings(site_config) if site_config is not None else None
+    thinking = is_thinking_model(model, substrings=substrings, exclusions=exclusions)
+    return thinking_max if thinking else standard_max
 
 
 def judge_json_mode_supported(model: str, site_config: Any) -> bool:
@@ -353,8 +378,11 @@ def judge_json_mode_supported(model: str, site_config: Any) -> bool:
     ``qa_judge_json_mode_thinking_enabled=true`` (e.g. after an Ollama build
     that interleaves reasoning and constrained output correctly).
     """
-    if not is_thinking_model(model, substrings=resolve_thinking_substrings(site_config)
-                             if site_config is not None else None):
+    if not is_thinking_model(
+        model,
+        substrings=resolve_thinking_substrings(site_config) if site_config is not None else None,
+        exclusions=resolve_non_thinking_substrings(site_config) if site_config is not None else None,
+    ):
         return True
     if site_config is None:
         return False
@@ -402,3 +430,29 @@ def resolve_thinking_substrings(site_config: Any) -> tuple[str, ...]:
     if not isinstance(parsed, list) or not parsed:
         return _DEFAULT_SUBSTRINGS
     return tuple(str(s).lower() for s in parsed if s)
+
+
+def resolve_non_thinking_substrings(site_config: Any) -> tuple[str, ...]:
+    """Resolve the exclusion needles (``non_thinking_model_substrings``).
+
+    Same contract as :func:`resolve_thinking_substrings`: a JSON array of
+    lowercase needles, falling back to ``_DEFAULT_EXCLUSIONS`` on a missing,
+    empty, or malformed value. An operator who runs a family whose
+    ``-instruct`` tag DOES think can set it to ``[]`` to disable the veto.
+    """
+    if site_config is None:
+        return _DEFAULT_EXCLUSIONS
+    try:
+        raw = site_config.get("non_thinking_model_substrings", None)
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: a settings blip keeps the module default veto list.
+        return _DEFAULT_EXCLUSIONS
+    if raw is None or raw == "":
+        return _DEFAULT_EXCLUSIONS
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else list(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_EXCLUSIONS
+    if not isinstance(parsed, list):
+        return _DEFAULT_EXCLUSIONS
+    return tuple(str(x).lower() for x in parsed if str(x).strip())
