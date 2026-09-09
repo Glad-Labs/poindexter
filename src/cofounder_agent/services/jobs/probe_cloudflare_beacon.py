@@ -41,6 +41,7 @@ config must never read as an outage.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -49,6 +50,47 @@ from services.metrics_exporter import CLOUDFLARE_BEACON_REACHABLE
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Flap control (stack#3573). A single failed POST is not an outage: the
+# Worker answers in ~50 ms whenever anyone checks, yet a lone ConnectTimeout
+# was producing ~3 findings a day. Two knobs, both app_settings:
+#   attempts          — POSTs per run before the run counts as a failure
+#   min_consecutive   — failed RUNS in a row before a finding is emitted
+# The gauge always carries the raw per-run result; the finding is the gated
+# signal. Streak state is process-local (resets on worker restart, which is
+# the right bias: a fresh process starts innocent).
+# ---------------------------------------------------------------------------
+ATTEMPTS_KEY = "cloudflare_beacon_probe_attempts"
+MIN_CONSECUTIVE_KEY = "cloudflare_beacon_probe_min_consecutive_failures"
+CONNECT_TIMEOUT_KEY = "cloudflare_beacon_probe_connect_timeout_seconds"
+DEFAULT_ATTEMPTS = 2
+DEFAULT_MIN_CONSECUTIVE = 2
+DEFAULT_CONNECT_TIMEOUT_S = 5
+_RETRY_DELAY_S = 1.0
+_consecutive_failures = 0
+
+
+def _reset_state() -> None:
+    """Test hook — clear the failure streak."""
+    global _consecutive_failures
+    _consecutive_failures = 0
+
+
+def _int_setting(sc: Any, key: str, default: int) -> int:
+    """Read an integer app_setting through the DI'd SiteConfig; a missing or
+    unparseable value falls back to the code default (probe tunables, not
+    gates)."""
+    try:
+        raw = sc.get(key, "")
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: a probe tunable falling back to its code default.
+        return default
+    try:
+        return int(str(raw).strip()) if str(raw).strip() else default
+    except ValueError:
+        return default
 
 
 class ProbeCloudflareBeaconJob:
@@ -90,28 +132,61 @@ class ProbeCloudflareBeaconJob:
         except ImportError:
             return JobResult(ok=False, detail="httpx not available", changes_made=0)
 
+        global _consecutive_failures
+        attempts = max(1, _int_setting(sc, ATTEMPTS_KEY, DEFAULT_ATTEMPTS))
+        min_consecutive = max(1, _int_setting(sc, MIN_CONSECUTIVE_KEY, DEFAULT_MIN_CONSECUTIVE))
+        connect_s = float(_int_setting(sc, CONNECT_TIMEOUT_KEY, DEFAULT_CONNECT_TIMEOUT_S))
         reachable = False
         detail = ""
-        try:
-            # Explicit connect sub-cap so a stuck SYN/DNS can't stall the
-            # probe past its own budget. Empty JSON body → Worker returns 204
-            # and writes nothing (side-effect-free health ping).
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(8.0, connect=3.0)
-            ) as client:
-                resp = await client.post(beacon_url, json={})
-            reachable = 200 <= resp.status_code < 300
-            detail = f"HTTP {resp.status_code}"
-        except Exception as e:  # noqa: BLE001 — any failure ⇒ unreachable
-            detail = f"{type(e).__name__}: {e}"
+        for attempt in range(1, attempts + 1):
+            try:
+                # Explicit connect sub-cap so a stuck SYN/DNS can't stall the
+                # probe past its own budget. Empty JSON body → Worker returns
+                # 204 and writes nothing (side-effect-free health ping).
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(8.0, connect=connect_s)
+                ) as client:
+                    resp = await client.post(beacon_url, json={})
+                reachable = 200 <= resp.status_code < 300
+                detail = f"HTTP {resp.status_code}"
+            except Exception as e:  # noqa: BLE001 — any failure ⇒ unreachable
+                reachable = False
+                detail = f"{type(e).__name__}: {e}"
+            if reachable or attempt == attempts:
+                break
+            # stack#3573: 41 findings in 14 days, every one a ConnectTimeout
+            # on a single POST, while the Worker answered 204 in ~50 ms from
+            # both the host and the worker container whenever anyone looked.
+            # One short retry inside the same run absorbs the edge/DNS blip.
+            await asyncio.sleep(_RETRY_DELAY_S)
 
-        # Process-global gauge; exposed on the next /metrics scrape.
+        # Process-global gauge; exposed on the next /metrics scrape. This is
+        # the raw truth of THIS run — the PoindexterCloudflareBeaconDown rule
+        # carries its own `for: 11m` debounce; the finding below is gated
+        # separately on a streak of failed runs.
         CLOUDFLARE_BEACON_REACHABLE.set(1 if reachable else 0)
 
         if reachable:
+            _consecutive_failures = 0
             return JobResult(
                 ok=True,
                 detail=f"beacon reachable ({detail})",
+                changes_made=0,
+            )
+
+        _consecutive_failures += 1
+        if _consecutive_failures < min_consecutive:
+            logger.warning(
+                "[BEACON_PROBE] beacon unreachable (%s) — %d/%d consecutive "
+                "run(s); finding withheld until the streak reaches %d",
+                detail, _consecutive_failures, min_consecutive, min_consecutive,
+            )
+            return JobResult(
+                ok=True,
+                detail=(
+                    f"beacon UNREACHABLE ({detail}); streak "
+                    f"{_consecutive_failures}/{min_consecutive}, finding withheld"
+                ),
                 changes_made=0,
             )
 

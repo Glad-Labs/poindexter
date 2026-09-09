@@ -4451,6 +4451,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # The production beacon URL is also set in Vercel as NEXT_PUBLIC_BEACON_URL
     # for the browser-side beacon; set this app_setting to the same URL.
     'cloudflare_beacon_url': '',
+    # Flap control for probe_cloudflare_beacon (stack#3573): POSTs per run
+    # before the run counts as failed, failed runs in a row before a finding,
+    # and the connect sub-timeout. 41 findings in 14 days were single
+    # ConnectTimeouts on a Worker that answers in ~50 ms.
+    'cloudflare_beacon_probe_attempts': '2',
+    'cloudflare_beacon_probe_min_consecutive_failures': '2',
+    'cloudflare_beacon_probe_connect_timeout_seconds': '5',
 
     # ----- Beacon bot-flag (de-bot the first-party page_views KPI) -----
     # Stealth scrapers present a browser User-Agent and slip the sync job's
@@ -5093,6 +5100,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'clock_skew_severity': {'owner': 'clock_skew_probe', 'value_type': 'string'},
     'clock_skew_threshold_seconds': {'owner': 'clock_skew_probe', 'value_type': 'integer'},
     'cloudflare_beacon_url': {'owner': 'probe_cloudflare_beacon'},
+    'cloudflare_beacon_probe_attempts': {'owner': 'probe_cloudflare_beacon', 'value_type': 'integer'},
+    'cloudflare_beacon_probe_min_consecutive_failures': {'owner': 'probe_cloudflare_beacon', 'value_type': 'integer'},
+    'cloudflare_beacon_probe_connect_timeout_seconds': {'owner': 'probe_cloudflare_beacon', 'value_type': 'integer'},
     'community_draft_model': {'owner': 'community_drafts'},
     'community_draft_timeout_seconds': {'owner': 'community_drafts', 'value_type': 'integer'},
     'company_founded_date': {'owner': 'content_validator', 'value_type': 'string'},

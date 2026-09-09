@@ -19,9 +19,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from prometheus_client import REGISTRY
 
+import services.jobs.probe_cloudflare_beacon as probe_mod
 from services.jobs.probe_cloudflare_beacon import ProbeCloudflareBeaconJob
 
 _GAUGE = "poindexter_cloudflare_beacon_reachable"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_streak():
+    probe_mod._reset_state()
+    yield
+    probe_mod._reset_state()
+
+
+async def _run_until_finding(sc, fake_httpx, runs: int = 2):
+    """Run the probe `runs` times against the same fake transport and return
+    the last result — the finding is gated on a streak of failed runs."""
+    result = None
+    with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
+        "services.jobs.probe_cloudflare_beacon.emit_finding"
+    ) as mock_finding, patch("services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
+        for _ in range(runs):
+            result = await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
+    return result, mock_finding
 
 
 def _sc(beacon_url: str = "https://beacon.example.workers.dev") -> MagicMock:
@@ -161,12 +181,7 @@ class TestProbeCloudflareBeaconUnreachable:
     async def test_non_2xx_sets_gauge_down_and_emits_finding(self):
         sc = _sc()
         fake_httpx, _ = _fake_httpx(status=500)
-        with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
-        ) as mock_finding:
-            result = await ProbeCloudflareBeaconJob().run(
-                MagicMock(), {"_site_config": sc}
-            )
+        result, mock_finding = await _run_until_finding(sc, fake_httpx)
         # The probe RAN fine — an unreachable beacon is the observed result,
         # not a job crash, so the job is still ok=True (the gauge + finding
         # carry the outage; marking red would double-alert + back off a
@@ -184,12 +199,7 @@ class TestProbeCloudflareBeaconUnreachable:
     async def test_connection_exception_sets_gauge_down_and_emits_finding(self):
         sc = _sc()
         fake_httpx, _ = _fake_httpx(raises=ConnectionError("DNS fail"))
-        with patch.dict("sys.modules", {"httpx": fake_httpx}), patch(
-            "services.jobs.probe_cloudflare_beacon.emit_finding"
-        ) as mock_finding:
-            result = await ProbeCloudflareBeaconJob().run(
-                MagicMock(), {"_site_config": sc}
-            )
+        result, mock_finding = await _run_until_finding(sc, fake_httpx)
         assert result.ok is True
         assert "UNREACHABLE" in result.detail
         assert REGISTRY.get_sample_value(_GAUGE) == 0.0
@@ -213,3 +223,70 @@ class TestProbeCloudflareBeaconUnreachable:
         with patch.dict("sys.modules", {"httpx": fake_up}):
             await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
         assert REGISTRY.get_sample_value(_GAUGE) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Flap control (stack#3573): retry inside a run, streak gate across runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeCloudflareBeaconFlapControl:
+    async def test_single_failed_run_withholds_the_finding(self):
+        sc = _sc()
+        fake_httpx, client = _fake_httpx(raises=ConnectionError("ConnectTimeout"))
+        result, mock_finding = await _run_until_finding(sc, fake_httpx, runs=1)
+        assert result.ok is True
+        assert "withheld" in result.detail
+        assert REGISTRY.get_sample_value(_GAUGE) == 0.0  # gauge stays honest
+        mock_finding.assert_not_called()
+        assert client.post.await_count == 2  # two attempts inside the run
+
+    async def test_second_failed_run_emits_the_finding(self):
+        sc = _sc()
+        fake_httpx, _ = _fake_httpx(raises=ConnectionError("ConnectTimeout"))
+        _, mock_finding = await _run_until_finding(sc, fake_httpx, runs=2)
+        mock_finding.assert_called_once()
+
+    async def test_a_success_between_failures_resets_the_streak(self):
+        sc = _sc()
+        bad, _ = _fake_httpx(raises=ConnectionError("blip"))
+        good, _ = _fake_httpx(status=204)
+        with patch("services.jobs.probe_cloudflare_beacon.emit_finding") as mock_finding, patch(
+            "services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()
+        ):
+            for fake in (bad, good, bad):
+                with patch.dict("sys.modules", {"httpx": fake}):
+                    await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
+        mock_finding.assert_not_called()
+
+    async def test_retry_recovers_a_transient_blip_without_a_gauge_dip(self):
+        sc = _sc()
+        resp = MagicMock()
+        resp.status_code = 204
+        client = AsyncMock()
+        client.post = AsyncMock(side_effect=[ConnectionError("blip"), resp])
+
+        class _AsyncClient:
+            def __init__(self, *a, **k): pass
+            async def __aenter__(self): return client
+            async def __aexit__(self, *a): return None
+
+        fake = MagicMock()
+        fake.AsyncClient = _AsyncClient
+        with patch.dict("sys.modules", {"httpx": fake}), patch(
+            "services.jobs.probe_cloudflare_beacon.emit_finding"
+        ) as mock_finding, patch("services.jobs.probe_cloudflare_beacon.asyncio.sleep", new=AsyncMock()):
+            result = await ProbeCloudflareBeaconJob().run(MagicMock(), {"_site_config": sc})
+        assert result.ok is True and "reachable" in result.detail
+        assert REGISTRY.get_sample_value(_GAUGE) == 1.0
+        mock_finding.assert_not_called()
+
+    async def test_settings_are_seeded(self):
+        from services.settings_defaults import DEFAULTS, METADATA
+
+        for k in (probe_mod.ATTEMPTS_KEY, probe_mod.MIN_CONSECUTIVE_KEY, probe_mod.CONNECT_TIMEOUT_KEY):
+            assert k in DEFAULTS and k in METADATA, k
+        assert DEFAULTS[probe_mod.ATTEMPTS_KEY] == "2"
+        assert DEFAULTS[probe_mod.MIN_CONSECUTIVE_KEY] == "2"
