@@ -20,7 +20,7 @@ from plugins.scheduler import PluginScheduler
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests. An explicit mark wrongly tagged the
-# sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
+# sync tests here, emitting a PytestWarning (Glad-Labs/poindexter#997).
 
 
 class _FakePoolCtx:

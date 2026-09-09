@@ -36,7 +36,7 @@ Rows that legitimately carry NULL are excluded from the numerator's denominator
 rather than counted as misses: failed calls (a GPU-lock timeout decodes
 nothing) and zero-output calls have no decode phase to report.
 
-Issue: Glad-Labs/glad-labs-stack#3340 follow-up (decode-split durability).
+Issue: Glad-Labs/poindexter#3340 follow-up (decode-split durability).
 """
 
 from __future__ import annotations
