@@ -1250,6 +1250,16 @@ _prev_external_status = {}
 # delays a genuine heal by one extra cycle.
 _consecutive_down: dict[str, int] = {}
 BRAIN_RESTART_CONSECUTIVE_FAILURES_DEFAULT = 2
+# poindexter#963 — the brain's own boot is not evidence about anyone else.
+# When deploy-sync recreates the brain container, its first probe cycle can
+# fail on the brain's side (DNS not yet resolvable one second after start:
+# "Temporary failure in name resolution" for BOTH api and worker) and the
+# service-restart loop then bounced a healthy worker — killing an in-flight
+# media render on 2026-08-01 and again on 2026-08-06. For the first
+# ``brain_boot_grace_seconds`` after process start, DOWN results are logged
+# and alerted as usual but do NOT count toward the auto-restart streak.
+_DAEMON_STARTED_AT: float = time.monotonic()
+BRAIN_BOOT_GRACE_SECONDS_DEFAULT = 120
 
 # Services currently in "degraded" (up-but-pressured) state → epoch seconds
 # of when the degradation was first seen, for transition notices.
@@ -2081,6 +2091,11 @@ async def monitor_services(pool) -> list:
         "brain_restart_consecutive_failures",
         BRAIN_RESTART_CONSECUTIVE_FAILURES_DEFAULT,
     )
+    boot_grace_s = await _setting_int(
+        pool, "brain_boot_grace_seconds", BRAIN_BOOT_GRACE_SECONDS_DEFAULT,
+    )
+    uptime_s = time.monotonic() - _DAEMON_STARTED_AT
+    in_boot_grace = uptime_s < boot_grace_s
     for name, config in SERVICES.items():
         if config["type"] == "json_status":
             ok, code, detail = check_json_status(config["url"])
@@ -2159,6 +2174,21 @@ async def monitor_services(pool) -> list:
         # down is a worsening, not a recovery, so drop the degraded
         # marker without the recovery notice.
         _degraded_since.pop(name, None)
+        if in_boot_grace:
+            # poindexter#963: a DOWN observed while the brain itself is still
+            # booting is not counted toward auto-restart. It is still
+            # recorded as an issue (the alert path below is unchanged), so a
+            # real outage that spans the brain's boot is not hidden — only
+            # the restart is withheld until the streak is measured by a
+            # settled process.
+            issues.append({"service": name, "code": code, "detail": detail,
+                           "critical": config["critical"], "state": "down"})
+            logger.warning(
+                "[BRAIN] Service %s is DOWN during the brain's boot grace "
+                "(%.0fs of %ds uptime): %s — not counted toward auto-restart",
+                name, uptime_s, boot_grace_s, detail,
+            )
+            continue
         fails = _consecutive_down.get(name, 0) + 1
         _consecutive_down[name] = fails
         issues.append({"service": name, "code": code, "detail": detail,

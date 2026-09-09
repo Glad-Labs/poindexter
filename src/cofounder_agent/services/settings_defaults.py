@@ -3207,6 +3207,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Degraded (503 + {"status": "degraded"}) never restarts regardless.
     # (2026-08-15 api-down investigation)
     'brain_restart_consecutive_failures': '2',
+    # poindexter#963: seconds after the brain's own process start during which a
+    # DOWN probe result is alerted but NOT counted toward auto-restart — the
+    # brain's first cycle after a container recreate can fail on its own DNS.
+    'brain_boot_grace_seconds': '120',
     # Subprocess timeout (seconds) for the brain's `docker restart` heal.
     # The worker needs ~30-45 s for a graceful stop + start; the old
     # hardcoded 30 s expired on every worker restart and paged a
@@ -4998,6 +5002,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- Brain / service-monitor restart discipline (2026-08-15) -----
     'brain_restart_consecutive_failures': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'brain_boot_grace_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
     'brain_docker_restart_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Deprecated keys — emit warning on read (add new ones here) -----

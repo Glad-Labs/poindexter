@@ -98,6 +98,10 @@ def monitor_env(monkeypatch):
     bd._degraded_since.clear()
     # Keep the periodic openclaw-doctor subprocess out of the loop.
     monkeypatch.setattr(bd, "_last_openclaw_doctor", time.time())
+    # poindexter#963: the module was imported moments ago, so the boot-grace
+    # window would otherwise swallow every restart these tests assert on.
+    # A settled process is the default; TestBootGrace sets it back.
+    monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic() - 10_000)
 
     pool = MagicMock()
     pool.execute = AsyncMock()
@@ -250,3 +254,39 @@ class TestMonitorServicesRestartGate:
         for _ in range(4):
             await bd.monitor_services(monitor_env["pool"])
         assert monitor_env["restart"].await_count == 3
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBootGrace:
+    """poindexter#963: a DOWN seen while the brain itself is booting must not
+    feed the auto-restart streak — the brain's first cycle after a container
+    recreate failed on its own DNS and bounced a healthy worker mid-render."""
+
+    async def test_down_during_boot_grace_never_restarts(self, monkeypatch, monitor_env):
+        monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic())  # just booted
+        _set_services(monkeypatch, {"worker": (False, 0, "Temporary failure in name resolution")})
+        for _ in range(3):
+            issues = await bd.monitor_services(monitor_env["pool"])
+        monitor_env["restart"].assert_not_awaited()
+        assert bd._consecutive_down == {}
+        # Still reported as an issue — the alert path is untouched.
+        assert issues and issues[0]["service"] == "worker" and issues[0]["state"] == "down"
+
+    async def test_after_grace_the_streak_counts_again(self, monkeypatch, monitor_env):
+        monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic() - 10_000)
+        _set_services(monkeypatch, {"worker": (False, 0, "timed out")})
+        await bd.monitor_services(monitor_env["pool"])
+        await bd.monitor_services(monitor_env["pool"])
+        monitor_env["restart"].assert_awaited_once_with("worker", pool=monitor_env["pool"])
+
+    async def test_grace_length_is_a_setting(self, monkeypatch, monitor_env):
+        # brain_boot_grace_seconds = 0 → no grace at all, even one second in.
+        monitor_env["pool"].fetchval = AsyncMock(
+            side_effect=lambda q, *a: 0 if a and a[0] == "brain_boot_grace_seconds" else None
+        )
+        monkeypatch.setattr(bd, "_DAEMON_STARTED_AT", time.monotonic())
+        _set_services(monkeypatch, {"worker": (False, 0, "timed out")})
+        await bd.monitor_services(monitor_env["pool"])
+        await bd.monitor_services(monitor_env["pool"])
+        monitor_env["restart"].assert_awaited_once()
