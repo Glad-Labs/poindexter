@@ -255,3 +255,53 @@ async def test_claim_best_pooled_topic_returns_none_when_pool_dry(db_pool):
     # A pool holding ONLY junk also yields None (never a junk title).
     await _pool_insert(db_pool, n.id, "web_search", [_topic("Untitled", score=5.0)])
     assert await claim_best_pooled_topic(db_pool, niche_id=n.id) is None
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_benchmark_findings_is_an_internal_source(db_pool):
+    """Topics generated from our OWN telemetry belong in the internal bucket.
+
+    Pre-ranking keeps the top 5 of EACH bucket, so a lone never-expiring row in
+    the external bucket competes against ~86 constantly-refreshed
+    HackerNews/RSS/dev.to candidates. `benchmark_findings` did exactly that:
+    7 days and 12 resolved batches without once becoming a candidate.
+
+    `source_kind` is a CHECK-constrained enum, so this also pins the dedicated
+    `telemetry` value — mapping it onto `claude_session` (the old fallback)
+    would both mislabel it and, for any category outside the enum, violate the
+    constraint on insert.
+    """
+    from services.niche_service import NicheService
+    from services.topic_pool import read_pooled
+
+    n = await NicheService(db_pool).create(
+        slug="pool-bench-internal", name="Pool Bench Internal",
+    )
+    await _pool_insert(db_pool, n.id, "benchmark_findings", [
+        _topic("What local models actually deliver",
+               desc="MEASURED DATA - decode 124.7 tokens/second.",
+               cat="engineering", score=0.85),
+    ])
+
+    items = await read_pooled(db_pool, niche_id=n.id, per_source_limit=10)
+    assert [i["kind"] for i in items] == ["internal"]
+    data = items[0]["data"]
+    assert data["source_kind"] == "telemetry"
+    # The measured fact block must survive the internal mapping — it becomes
+    # CandidateView.summary and then the task's research_context.
+    assert "124.7" in data["distilled_angle"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_telemetry_source_kind_is_accepted_by_the_db(db_pool):
+    """The enum widening must actually be applied, not just mapped in Python."""
+    async with db_pool.acquire() as conn:
+        allowed = await conn.fetchval(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conrelid = 'internal_topic_candidates'::regclass "
+            "AND conname LIKE '%source_kind%'"
+        )
+    assert "telemetry" in (allowed or ""), (
+        "migration 20260909_210917 has not been applied — an internal "
+        "benchmark candidate would fail its CHECK constraint on insert"
+    )

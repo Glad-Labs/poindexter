@@ -896,6 +896,44 @@ class TestHandoffToPipelineSQL:
         )
         assert "124.6" in blob, "the fact block itself must survive the handoff"
 
+    async def test_research_context_follows_an_operator_edited_angle(self):
+        """`angle` and `research_context` must be the SAME text.
+
+        `topics edit-winner` sets `operator_edited_angle`, which wins for the
+        writer's `{angle}`. Grounding `research_context` on the raw
+        `winner.summary` instead would hand the writer corrected framing and
+        uncorrected facts — the worst of both.
+        """
+        import json
+
+        captured: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+        winner = _make_candidate()
+        winner.summary = "STALE original summary with 999.9 tokens/second."
+        winner.operator_edited_angle = "CORRECTED: decode 124.7 tokens/second."
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        versions = [a for sql, a in captured if "pipeline_versions" in sql]
+        stage_data = next(
+            json.loads(a) for a in versions[0]
+            if isinstance(a, str) and "research_context" in a
+        )
+        rc = stage_data["metadata"]["research_context"]
+        assert "124.7" in rc, "the operator's corrected angle must ground the writer"
+        assert "999.9" not in rc, "the stale summary must not ground the writer"
+        # `metadata.summary` deliberately KEEPS the original — it is candidate
+        # provenance, not the writer's grounding corpus.
+        assert stage_data["metadata"]["summary"] == winner.summary
+
     async def test_a_summaryless_winner_still_hands_off(self):
         """Most topics carry no summary; research_context is then empty, which
         is honest — the writer simply has no caller-attached corpus."""

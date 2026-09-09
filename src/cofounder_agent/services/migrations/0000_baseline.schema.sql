@@ -2010,7 +2010,7 @@ CREATE TABLE IF NOT EXISTS public.internal_topic_candidates (
     decay_factor numeric DEFAULT 1.0 NOT NULL,
     carried_from_batch_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT internal_topic_candidates_source_kind_check CHECK ((source_kind = ANY (ARRAY['claude_session'::text, 'brain_knowledge'::text, 'audit_event'::text, 'git_commit'::text, 'decision_log'::text, 'memory_file'::text, 'post_history'::text])))
+    CONSTRAINT internal_topic_candidates_source_kind_check CHECK ((source_kind = ANY (ARRAY['claude_session'::text, 'brain_knowledge'::text, 'audit_event'::text, 'git_commit'::text, 'decision_log'::text, 'memory_file'::text, 'post_history'::text, 'telemetry'::text])))
 );
 
 

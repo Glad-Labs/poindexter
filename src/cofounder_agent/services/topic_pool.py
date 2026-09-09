@@ -77,6 +77,19 @@ async def insert_pooled_topics(
 # the read-side balance guard: the pool accumulates at very different rates
 # per source (internal_rag deposits ~40x what devto does), so a plain
 # ORDER BY .. LIMIT would hand the orchestrator an all-internal window.
+# Sources whose rows are OUR OWN material, not consumer topics scraped from
+# the outside world. The split matters because pre-ranking keeps the top 5 of
+# EACH bucket: a lone internally-generated row in the external bucket competes
+# against ~86 constantly-refreshed HackerNews/RSS/dev.to candidates and loses
+# every sweep. `benchmark_findings` did exactly that — 7 days, 12 resolved
+# batches, never once a candidate (stack#3565 follow-up).
+#
+# `source_kind` is a CHECK-constrained enum of knowledge-corpus origins, so a
+# source that is internal but not session-derived needs its own value rather
+# than a mislabel; `telemetry` was added by migration 20260909_210917.
+_INTERNAL_SOURCES = frozenset({"internal_rag", "benchmark_findings"})
+_INTERNAL_SOURCE_KINDS = {"benchmark_findings": "telemetry"}
+
 _READ_POOLED_SQL = """
 SELECT id, source, title, summary, url, category, score
   FROM (
@@ -114,14 +127,16 @@ async def read_pooled(
 
     items: list[dict[str, Any]] = []
     for r in rows:
-        if r["source"] == "internal_rag":
+        if r["source"] in _INTERNAL_SOURCES:
             items.append({
                 "kind": "internal",
                 "data": {
                     "distilled_topic": r["title"],
                     "distilled_angle": r["summary"],
                     # b1's extract shim stores the source_kind in category.
-                    "source_kind": r["category"] or "claude_session",
+                    "source_kind": _INTERNAL_SOURCE_KINDS.get(
+                        r["source"], r["category"] or "claude_session",
+                    ),
                     "primary_ref": str(r["id"]),
                 },
             })

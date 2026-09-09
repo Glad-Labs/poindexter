@@ -1767,7 +1767,12 @@ class TopicBatchService:
                 # wiring". The auto path (``create_blog_post_task``) sets it
                 # from the claimed pool row; the BATCH path is the one that
                 # actually runs for pooled topics, and it never did.
-                "research_context": winner.summary or "",
+                # Use `angle`, NOT `winner.summary` — they differ the moment an
+                # operator uses `topics edit-winner`. The writer prompt gets
+                # `angle` (operator edit wins), so grounding it on the stale
+                # original summary would hand the writer corrected framing and
+                # uncorrected facts.
+                "research_context": angle,
                 "source": "topic_batch",
                 # discovered_by mirrors source — write-only provenance now.
                 # The deleted task_executor's off-brand gate used to exempt
