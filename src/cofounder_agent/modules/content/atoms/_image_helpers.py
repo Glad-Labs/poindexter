@@ -218,12 +218,28 @@ def _normalize_from_router(text: str) -> str:
     return normalize_text(text)
 
 
+def _section_already_illustrated(
+    content_text: str, h_match: re.Match[str], heading_starts: list[int],
+) -> bool:
+    """True when the section under ``h_match`` already carries a placeholder.
+
+    The writer may have placed a ``[SCREENSHOT:]`` / ``[CHART:]`` (or, on the
+    blog_generation path, an ``[IMAGE:]``) in this section already; the
+    top-up must not stack a second image under the same heading. The section
+    runs from this heading to the next heading of either kind, or EOF.
+    """
+    end = next((s for s in heading_starts if s > h_match.start()), len(content_text))
+    return "[IMAGE-" in content_text[h_match.end():end]
+
+
 async def _plan_and_inject_placeholders(
     content_text: str,
     topic: str,
     category: str,
     *,
     site_config: Any,
+    max_images: int = 3,
+    start_num: int = 1,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
@@ -234,6 +250,14 @@ async def _plan_and_inject_placeholders(
     ``site_config`` is the run-bound SiteConfig threaded from
     ``execute`` (``context.get("site_config")``) — ``plan_images``
     requires it post-#272 Phase-2c.
+
+    ``max_images`` is how many slots the agent may fill and ``start_num`` the
+    first placeholder number to hand out — the planner atom passes the slots
+    LEFT after the writer's own markers and numbers after them, so a draft
+    that already carries ``[IMAGE-1: screenshot:qa-rails]`` is topped up with
+    ``[IMAGE-2…]`` rather than either re-numbered from 1 (a collision) or
+    skipped entirely (the 2026-09 screenshot-only regression). A section that
+    already holds a placeholder is never given a second one.
     """
     try:
         from services.image_decision_agent import plan_images
@@ -241,9 +265,12 @@ async def _plan_and_inject_placeholders(
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
         return content_text, {"agent_error": str(e)}
 
+    if max_images < 1:
+        return content_text, None
+
     try:
         plan = await plan_images(
-            content_text, topic, category, max_images=3,
+            content_text, topic, category, max_images=max_images,
             site_config=site_config,
         )
     except Exception as agent_err:
@@ -294,14 +321,25 @@ async def _plan_and_inject_placeholders(
     # real hero slot looks empty — the visible half of the 2026-07-31 hero-image
     # RCA. Clamping (rather than dropping) keeps the image, just below the lede.
     prose_floor = _first_prose_end(content_text)
+    heading_starts = sorted(h.start() for h in heading_map.values())
 
     insert_positions: list[tuple[int, int, str, str]] = []
-    for i, img in enumerate(plan.images):
+    next_num = start_num
+    for img in plan.images:
+        if len(insert_positions) >= max_images:
+            break
         for heading_text, h_match in heading_map.items():
             if (
                 img.section_heading.lower() in heading_text
                 or heading_text in img.section_heading.lower()
             ):
+                if _section_already_illustrated(content_text, h_match, heading_starts):
+                    logger.info(
+                        "[IMAGE_AGENT] Section %r already carries an image "
+                        "marker — skipping the agent's pick for it",
+                        heading_text[:60],
+                    )
+                    break
                 # Default: anchor at the next paragraph break after the
                 # heading. Fall back to end-of-content when this is the
                 # last section (no trailing ``\n\n``) — otherwise the
@@ -316,20 +354,22 @@ async def _plan_and_inject_placeholders(
                 para_end = max(para_end, prose_floor)
                 source_hint = f"{img.source}:{img.style}"
                 insert_positions.append(
-                    (para_end, i + 1, img.prompt, source_hint),
+                    (para_end, next_num, img.prompt, source_hint),
                 )
+                next_num += 1
                 break
 
     # Insert in reverse so earlier positions stay valid.
-    for pos, img_num, prompt, source_hint in reversed(insert_positions):
+    for pos, img_num, prompt, source_hint in sorted(insert_positions, reverse=True):
         placeholder = f"\n[IMAGE-{img_num}: {prompt} ||{source_hint}||]\n"
         content_text = content_text[:pos] + placeholder + content_text[pos:]
 
-    n_inserted = len(_PLACEHOLDER_RE.findall(content_text))
-    if n_inserted:
+    if insert_positions:
         logger.info(
-            "[IMAGE_AGENT] Injected %d image placeholders via decision agent",
-            n_inserted,
+            "[IMAGE_AGENT] Injected %d image placeholders via decision agent "
+            "(numbered from %d; %d total in body)",
+            len(insert_positions), start_num,
+            len(_PLACEHOLDER_RE.findall(content_text)),
         )
     return content_text, info or None
 

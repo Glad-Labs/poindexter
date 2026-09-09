@@ -538,6 +538,12 @@ DEFAULTS: dict[str, str] = {
     # images survive normalization (feedback_no_hardcoded_lengths_in_prompts —
     # the prompt states no number, the cap lives here).
     'writer_max_inline_images': '3',
+    # Evidence markers ([SCREENSHOT:] / [CHART:]) are budgeted SEPARATELY from
+    # illustrations — per kind, so the two-pass prompt's "at most one of each"
+    # is enforced here rather than trusted. They used to share the cap above,
+    # which let one screenshot spend an illustration slot and (with the
+    # all-or-nothing planner) suppress the Image Decision Agent entirely.
+    'writer_max_evidence_per_kind': '1',
     # Body chars per section fed to the image decision agent fallback so its
     # picks are grounded in content, not just heading titles.
     'image_decision_section_body_chars': '500',
@@ -1495,6 +1501,14 @@ DEFAULTS: dict[str, str] = {
     'plugin.image_provider.screenshot.targets': '',
     'plugin.image_provider.screenshot.timeout_ms': '60000',
     'plugin.image_provider.screenshot.upload_to': 'r2',
+    # WHICH posts are offered the allowlist (ai_content_generator.
+    # is_post_about_this_system). Screenshots are evidence for posts about
+    # this system; offered on every draft, the writer captioned a forever-
+    # chemicals post with the Findings board. OR-ed: a topic batch whose
+    # picked_candidate_kind is in the first CSV, OR a topic/angle/tag
+    # containing any keyword in the second. Both empty = never offered.
+    'screenshot_topic_kinds': 'internal',
+    'screenshot_topic_keywords': 'poindexter',
     # ----- chart image provider (services/image_providers/chart.py) -----
     # Draws a chart from a DATA SPEC supplied by whatever computed the numbers.
     # There is deliberately no query surface here: the writer must never be able
@@ -4717,6 +4731,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'inline_image_prompt_model': {'owner': 'image_pipeline', 'value_type': 'model'},
     'model_role_image_decision': {'owner': 'image_decision_agent', 'value_type': 'model'},
     'writer_max_inline_images': {'owner': 'plan_image_markers', 'value_type': 'integer'},
+    'writer_max_evidence_per_kind': {'owner': 'plan_image_markers', 'value_type': 'integer'},
     'image_decision_section_body_chars': {'owner': 'image_decision_agent', 'value_type': 'integer'},
     'pipeline_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'content_originality_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
@@ -5610,6 +5625,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'plugin.image_provider.screenshot.targets': {'owner': 'screenshot'},
     'plugin.image_provider.screenshot.timeout_ms': {'owner': 'screenshot', 'value_type': 'integer'},
     'plugin.image_provider.screenshot.upload_to': {'owner': 'screenshot'},
+    'screenshot_topic_kinds': {'owner': 'ai_content_generator'},
+    'screenshot_topic_keywords': {'owner': 'ai_content_generator'},
     'plugin.job.sync_affiliate_clicks.enabled': {'value_type': 'boolean'},
     'plugin.job.sync_affiliate_clicks.interval_seconds': {'value_type': 'integer'},
     'plugin.llm_provider.gemini.enabled': {'owner': 'gemini', 'value_type': 'boolean'},

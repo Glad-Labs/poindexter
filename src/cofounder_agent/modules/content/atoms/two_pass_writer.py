@@ -255,6 +255,11 @@ class _State(TypedDict, total=False):
     # rejected every glad-labs post for "ignoring the SOURCES corpus"
     # (2026-06-09 disconnect). Empty string when no research was gathered.
     research_context: str
+    # The topic batch's picked_candidate_kind ('internal' | 'external'), read
+    # by writer_core from topic_batches and threaded so generate_with_context
+    # can gate the [SCREENSHOT:] allowlist on whether the post is about this
+    # system. Empty string for manual / batch-less tasks (keyword gate only).
+    topic_kind: str
     # Writer prompt-size observability (poindexter#868) — captured by
     # _draft_node at each context-section assembly point, before
     # concatenation onto `instruction`. 0 (not missing) when a section is
@@ -868,6 +873,7 @@ async def _draft_node(state: _State) -> _State:
             # truncate the visible draft. 2026-07-06 investigation.
             think=_resolve_writer_think(site_config),
             prompt_metrics=draft_metrics,
+            topic_kind=state.get("topic_kind") or None,
         )
 
     min_substance_words = _resolve_min_substance_words(site_config)
@@ -2165,6 +2171,10 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
     - ``internal_grounding`` — the {source_table, source_id, preview,
       similarity} match threaded from generate_content.py (#822). When set
       and eligible, _draft_node appends a soft "PRIOR WORK" anchor section.
+    - ``topic_kind`` — the topic batch's ``picked_candidate_kind``
+      (``internal`` / ``external``), threaded to ``generate_with_context`` so
+      the ``[SCREENSHOT:]`` allowlist is only offered on posts about this
+      system. Unset for manual tasks.
     - ``writer_model_override`` — Phase 1 lab harness. When set
       (string), the writer's ``_revise_node`` uses this model exactly
       instead of resolving from app_settings. Routed via
@@ -2222,6 +2232,7 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             "writer_prompt_override": str(kw.get("writer_prompt_override") or ""),
             "context_bundle": cb_kw if isinstance(cb_kw, dict) else {},
             "research_context": str(kw.get("research_context") or ""),
+            "topic_kind": str(kw.get("topic_kind") or ""),
             "task_id": task_id,
             "target_length": int(kw.get("target_length") or 1200),
             "internal_grounding": (

@@ -171,6 +171,11 @@ class GenerateContentStage:
         # its column) was retired with the dead-mode cleanup. niche_slug
         # is the durable seam.
         niche_slug = await self._read_niche_slug(database_service, task_id)
+        # Is this post about this system? Drives the [SCREENSHOT:] allowlist
+        # gate in the writer prompt (both paths below). None for manual
+        # tasks with no batch lineage — the keyword half of the gate still
+        # applies to them.
+        topic_kind = await self._read_topic_kind(database_service, task_id)
         if niche_slug:
             # Surface niche_slug on context so downstream stages /
             # record_run see it consistently. content_router_service
@@ -197,6 +202,7 @@ class GenerateContentStage:
                 regen_steering=regen_steering,
                 writing_style_directive=writing_style_directive,
                 target_length=target_length,
+                topic_kind=topic_kind,
             )
         else:
             # Generate content (GPU-locked to ollama mode).
@@ -233,6 +239,7 @@ class GenerateContentStage:
                     research_context=research_context,
                     target_audience=target_audience,
                     domain=domain,
+                    topic_kind=topic_kind,
                 )
 
         # poindexter#691 — empty/too-short writer output must FAIL THE TASK
@@ -826,6 +833,48 @@ class GenerateContentStage:
             )
             return None
 
+    async def _read_topic_kind(
+        self, database_service: Any, task_id: str,
+    ) -> str | None:
+        """Return the task's topic-batch ``picked_candidate_kind``, if any.
+
+        ``internal`` means the topic was drawn from the operator's own prior
+        work (internal_rag), ``external`` from HN / RSS / search. It is the
+        one durable signal that says whether a post is about this system —
+        every off-topic dashboard screenshot on prod (2026-09-05 → 09-08) sat
+        on an ``external`` batch, every legitimate one on ``internal``.
+
+        Read from ``topic_batches`` via ``pipeline_tasks.topic_batch_id``
+        rather than stamped into ``stage_data.metadata``: the writer's later
+        upsert rewrites that metadata wholesale (``source`` / ``discovered_by``
+        / ``angle`` are all gone from prod version-1 rows), so a stamp would
+        be gone by the time a ``preview_gate`` text-regen re-runs the writer.
+        None for manual / CLI / dev_diary tasks (no batch) and, fail-open, on
+        any read error — the keyword half of the gate still applies.
+        """
+        try:
+            pool = getattr(database_service, "pool", None)
+            if pool is None:
+                return None
+            async with pool.acquire() as conn:
+                kind = await conn.fetchval(
+                    "SELECT b.picked_candidate_kind FROM pipeline_tasks t "
+                    "JOIN topic_batches b ON b.id = t.topic_batch_id "
+                    "WHERE t.task_id = $1",
+                    str(task_id),
+                )
+            # Only the two real values pass — a test double returning a
+            # MagicMock, or a NULL kind on a half-resolved batch, must not
+            # read as "internal".
+            return kind if kind in ("internal", "external") else None
+        except Exception as e:
+            logger.warning(
+                "Failed to read topic_kind for task %s: %s — screenshot "
+                "gate falls back to keyword match only",
+                task_id, e,
+            )
+            return None
+
     async def _read_writer_prompt_override(
         self, database_service: Any, task_id: str,
     ) -> str | None:
@@ -883,6 +932,7 @@ class GenerateContentStage:
         regen_steering: str = "",
         writing_style_directive: str = "",
         target_length: int = 1200,
+        topic_kind: str | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
@@ -1043,6 +1093,9 @@ class GenerateContentStage:
                 # drafted research-blind and was rejected for "ignoring the
                 # SOURCES corpus" (2026-06-09 disconnect fix).
                 research_context=research_context,
+                # [SCREENSHOT:] topic gate input — the batch's
+                # picked_candidate_kind (see _read_topic_kind).
+                topic_kind=topic_kind,
                 # DI seam (glad-labs-stack#330) — threaded so the atom
                 # reads from the injected SiteConfig instead of
                 # importing the legacy module-level singleton.

@@ -1,10 +1,22 @@
-"""content.plan_image_markers — VRAM guard + image placeholder planning.
+"""content.plan_image_markers — image placeholder planning + VRAM guard.
 
-First unloads the writer LLM from VRAM (deterministic guard), then:
-- If [IMAGE-N] markers already exist in content: parse and surface them.
-- If no markers: calls the Image Decision Agent LLM to plan + inject them.
+1. Numbers the writer's own markers (``[IMAGE:]`` illustrations under the
+   ``writer_max_inline_images`` cap; ``[SCREENSHOT:]`` / ``[CHART:]`` evidence
+   markers under their own ``writer_max_evidence_per_kind`` cap).
+2. TOPS UP: if fewer illustrations were placed than the cap allows, the Image
+   Decision Agent plans the remaining slots (never a second image in a section
+   that already has one) and the merged body is renumbered in document order.
+3. Unloads the writer LLM from VRAM before image-gen loads.
 
-Produces: image_plans (list of {num, desc}), updated content (with injected markers).
+Top-up, not all-or-nothing: the atom used to run the decision agent ONLY when
+the draft carried no markers at all. When the two_pass writer prompt gained
+``[SCREENSHOT:]`` (2026-09-02, stack#3556) a single screenshot marker made
+"markers present" true, so the agent never ran and every canonical_blog draft
+that took the offer shipped with one dashboard capture and zero generated
+illustrations — including four posts that had nothing to do with this system.
+
+Produces: image_plans (list of {num, desc, screenshot_target?, chart_target?}),
+updated content (with injected markers).
 
 Issue: Glad-Labs/poindexter#362.
 """
@@ -25,9 +37,9 @@ ATOM_META = AtomMeta(
     type="atom",
     version="1.0.0",
     description=(
-        "VRAM guard (unload writer LLM) then inject [IMAGE-N] markers via the "
-        "Image Decision Agent when the draft has none. Parses existing markers "
-        "into image_plans."
+        "Number the writer's [IMAGE:]/[SCREENSHOT:]/[CHART:] markers, top up "
+        "the remaining illustration slots via the Image Decision Agent, then "
+        "VRAM-guard (unload writer LLM). Parses every marker into image_plans."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft body (may or may not have [IMAGE-N] markers)"),
@@ -58,8 +70,25 @@ ATOM_META = AtomMeta(
 )
 
 
+def _int_setting(site_config: Any, key: str, default: int) -> int:
+    """Read an integer cap, tolerating a missing / stub site_config.
+
+    The budgets feed arithmetic (``remaining = cap - placed``), so a test
+    double that hands back a non-int must fall to the documented default
+    rather than poison the comparison.
+    """
+    if site_config is None:
+        return default
+    try:
+        val = site_config.get_int(key, default)
+    except Exception:  # noqa: BLE001 — stub / unparsable → documented default
+        return default
+    # A MagicMock answers int() with 1 — insist on a real int, not a coercible.
+    return val if isinstance(val, int) and not isinstance(val, bool) else default
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    """VRAM guard + placeholder planning."""
+    """Number writer markers, top up illustrations, then VRAM-guard."""
     content_text = (state.get("content") or "").strip()
     if not content_text:
         return {}
@@ -68,28 +97,38 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     category = state.get("category", "technology")
     site_config = state.get("site_config")
 
-    # Writer-placed markers (blog-generation SKILL.md): extract the hero, number
-    # the inline markers, enforce the cap. No markers → the decision-agent
-    # fallback below runs (also the ImageRebuildService path, which strips
-    # <img> and re-plans marker-free text).
+    # Writer-placed markers (blog-generation / two-pass SKILL.md): extract the
+    # hero, number the inline markers, enforce the two budgets. The decision
+    # agent then tops up whatever illustration slots are left (also the
+    # ImageRebuildService path, which strips <img> and re-plans marker-free
+    # text — there every slot is left).
     from modules.content.atoms._writer_markers import (
         extract_hero_subject,
+        is_evidence_desc,
         number_inline_markers,
+        renumber_placeholders,
     )
-    max_inline = (
-        site_config.get_int("writer_max_inline_images", 3)
-        if site_config is not None else 3
-    )
+    max_inline = _int_setting(site_config, "writer_max_inline_images", 3)
+    max_evidence = _int_setting(site_config, "writer_max_evidence_per_kind", 1)
     content_text, hero_subject = extract_hero_subject(content_text)
-    content_text = number_inline_markers(content_text, max_inline)
+    content_text = number_inline_markers(
+        content_text, max_inline, max_evidence_per_kind=max_evidence,
+    )
 
-    # Check for existing markers.
+    # Count what the writer placed. Only ILLUSTRATIONS spend the inline
+    # budget — a screenshot or chart is evidence, filled by its own provider,
+    # and must not read as "the illustrations are planned".
     placeholders = _PLACEHOLDER_RE.findall(content_text)
+    n_writer_markers = len(placeholders)
+    n_illustrations = sum(1 for _num, desc in placeholders if not is_evidence_desc(desc))
+    remaining = max_inline - n_illustrations
     stages = state.get("stages") or {}
+    result_extra: dict[str, Any] = {}
 
-    if not placeholders:
-        # Ask the Image Decision Agent to plan + inject. This runs BEFORE the
-        # VRAM guard below: the guard unloads the local LLM to make room for
+    if remaining > 0:
+        # Ask the Image Decision Agent to plan + inject the REMAINING slots,
+        # numbered after the writer's markers. This runs BEFORE the VRAM
+        # guard below: the guard unloads the local LLM to make room for
         # image-gen, but the decision agent IS a local-LLM call — with both
         # pinned to the same 31B model, the old order forced a full 17 GB
         # reload right before the call, which under ComfyUI/image-gen VRAM
@@ -97,13 +136,19 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         from modules.content.atoms._image_helpers import plan_and_inject_placeholders
         content_text, plan = await plan_and_inject_placeholders(
             content_text, topic, category, site_config=site_config,
+            max_images=remaining, start_num=n_writer_markers + 1,
         )
         if plan is not None and plan.get("agent_error"):
             stages["2c_image_agent_error"] = plan["agent_error"]
-            # Loud, not silent: zero inline images because the planner
-            # FAILED is a pipeline defect the operator must see (Findings
-            # board / Discord), not an editorial choice. Every canonical_blog
-            # post 2026-08-17→23 shipped image-less this way, unflagged.
+            # Loud, not silent: zero generated illustrations because the
+            # planner FAILED is a pipeline defect the operator must see
+            # (Findings board / Discord), not an editorial choice. Every
+            # canonical_blog post 2026-08-17→23 shipped image-less this way,
+            # unflagged.
+            kept = (
+                f"only its {n_writer_markers} writer-placed marker(s)"
+                if n_writer_markers else "no inline images"
+            )
             try:
                 from utils.findings import emit_finding
                 _tid = str(state.get("task_id") or "")
@@ -113,12 +158,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     title="Inline images skipped — image decision agent failed",
                     body=(
                         f"Task {_tid[:8]}: the Image Decision Agent returned no "
-                        f"plan, so this draft ships with no inline images. "
-                        f"Reason: {plan['agent_error']}"
+                        f"plan, so this draft ships with {kept} and no generated "
+                        f"illustrations. Reason: {plan['agent_error']}"
                     ),
                     severity="warn",
                     dedup_key=f"inline_images_skipped:{_tid}",
-                    extra={"task_id": _tid or None, "error": plan["agent_error"]},
+                    extra={
+                        "task_id": _tid or None,
+                        "error": plan["agent_error"],
+                        "writer_markers": n_writer_markers,
+                    },
                 )
             except Exception as _fexc:  # noqa: BLE001 — telemetry never blocks the graph
                 logger.warning("[content.plan_image_markers] finding emit failed: %s", _fexc)
@@ -126,11 +175,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # Surface featured image plan as a side-output for downstream.
             # We return it here so the state seam preserves it.
             result_extra = {"featured_image_plan": plan["featured_image_plan"]}
-        else:
-            result_extra: dict[str, Any] = {}  # type: ignore[no-redef]
+        # The agent's slots were numbered AFTER the writer's but sit wherever
+        # their sections fall, so renumber in document order and rebuild the
+        # plan list from the final body — the two can never disagree.
+        content_text = renumber_placeholders(content_text)
         placeholders = _PLACEHOLDER_RE.findall(content_text)
     else:
-        result_extra = {}
+        logger.info(
+            "[content.plan_image_markers] writer placed %d illustration(s) "
+            "(cap %d) — decision agent not needed",
+            n_illustrations, max_inline,
+        )
 
     # VRAM guard: unload the local writer/planner LLM before image-gen (the
     # next node) may load. Deliberately AFTER the decision agent — see above.

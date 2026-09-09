@@ -56,6 +56,56 @@ stripped a successfully captured image from the body; the second aborted any
 rebuild of a draft containing a screenshot marker. Adding a fourth source
 later means auditing those branches — grep for `"image_gen"`.
 
+## Two budgets, one numbering sequence
+
+`[SCREENSHOT:]` and `[CHART:]` are **evidence** markers; `[IMAGE:]` is an
+illustration. They share one number sequence (above) but **not one budget**:
+
+| marker                    | cap                                        | filled by          |
+| ------------------------- | ------------------------------------------ | ------------------ |
+| `[IMAGE:]` + agent top-up | `writer_max_inline_images` (default 3)     | image-gen / Pexels |
+| `[SCREENSHOT:]`           | `writer_max_evidence_per_kind` (default 1) | ScreenshotProvider |
+| `[CHART:]`                | `writer_max_evidence_per_kind` (default 1) | ChartProvider      |
+
+Until 2026-09-09 (stack#3614 follow-up) all three shared the illustration cap,
+and `content.plan_image_markers` ran the Image Decision Agent **only when the
+draft carried no markers at all**. The two_pass writer gained `[SCREENSHOT:]`
+on 2026-09-02, so a single screenshot marker read as "illustrations planned",
+the agent never ran, and every canonical_blog draft that took the offer shipped
+with one dashboard capture and zero generated images. The atom now **tops up**:
+it counts the illustrations the writer placed, asks the agent for the remaining
+slots (numbered after the writer's markers, never a second image in a section
+that already has one), and renumbers the merged body in document order.
+`image_plans` is rebuilt from that final body, so numbers and plans cannot
+disagree. A failed top-up keeps the writer's markers and the
+`inline_images_skipped` finding says how many it kept.
+
+## Only on posts about this system
+
+"Poindexter writes about Poindexter" was the premise, but the prompt used to
+enumerate the allowlist on **every** draft. The writer took the offer where it
+made no sense: a Findings-board capture was the only image on a post about
+forever chemicals (2026-09-05), and the QA Rails board illustrated posts about
+a MUD, native web tricks, and a dad's 90s coding advice. Every one of those sat
+on an `external` topic batch; every legitimate screenshot sat on an `internal`
+one.
+
+`ai_content_generator.screenshot_targets_for_post` gates the block on two
+OR-ed, operator-tunable signals:
+
+| setting                     | default      | matches                                                                                                      |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `screenshot_topic_kinds`    | `internal`   | the topic batch's `picked_candidate_kind` — internal candidates are drawn from the operator's own prior work |
+| `screenshot_topic_keywords` | `poindexter` | case-insensitive substring over topic / angle / tags, for operator-created tasks with no batch lineage       |
+
+`writer_core._read_topic_kind` reads the kind from `topic_batches` via
+`pipeline_tasks.topic_batch_id` at draft time — not from a stamp in
+`stage_data.metadata`, which the writer's later upsert rewrites wholesale (a
+stamp would be gone by the time a `preview_gate` text-regen re-runs the
+writer). Off-topic posts get an explicit `none for this post — … do not use
+[SCREENSHOT: …] markers` line rather than a blank list, for the same reason an
+unconfigured install does. Both CSVs empty is the explicit off switch.
+
 ## Targets are an allowlist, never a URL from the model
 
 The marker carries a target **key**. The URL behind it comes from
@@ -145,6 +195,7 @@ when the pipeline ran.
 
 - [`services/image_providers/screenshot.py`](../../src/cofounder_agent/services/image_providers/screenshot.py) — the provider
 - [`services/preview_screenshot.py`](../../src/cofounder_agent/services/preview_screenshot.py) — the shared capture helper (also drives the `qa.vision` rail)
-- [`modules/content/atoms/_writer_markers.py`](../../src/cofounder_agent/modules/content/atoms/_writer_markers.py) — marker parsing
+- [`modules/content/atoms/_writer_markers.py`](../../src/cofounder_agent/modules/content/atoms/_writer_markers.py) — marker parsing + the two budgets
+- [`modules/content/atoms/content_plan_image_markers.py`](../../src/cofounder_agent/modules/content/atoms/content_plan_image_markers.py) — the top-up planner
 - [`brand-hero.md`](brand-hero.md) — the sibling answer for the **featured** image: composed from brand tokens, because diffusion cannot set type
 - [`anti-hallucination.md`](anti-hallucination.md) — why "show the real number" is a house rule

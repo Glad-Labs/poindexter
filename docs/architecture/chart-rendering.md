@@ -97,6 +97,14 @@ reachable from an LLM-chosen key is exactly what this avoids. The per-install
 lever is the allowlist (`chart_catalog_enabled_keys`, empty = whole catalog),
 not the query.
 
+A chart is an **evidence** marker and is budgeted like a screenshot —
+`writer_max_evidence_per_kind` (default 1), separate from the
+`writer_max_inline_images` illustration cap, so placing one never costs the
+post a generated illustration; see
+[screenshot-image-provider.md](screenshot-image-provider.md#two-budgets-one-numbering-sequence).
+Unlike screenshots, charts carry no topic gate: the catalog allowlist is the
+gate, and a chart only exists where the measurements it plots do.
+
 Every failure collapses to the same empty slot the screenshot branch produces —
 unknown key, key disabled here, too few models to compare, a query that raised,
 a render that returned nothing. **A wrong chart is worse than no chart.**

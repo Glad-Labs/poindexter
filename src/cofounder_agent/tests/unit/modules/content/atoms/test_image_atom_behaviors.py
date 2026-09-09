@@ -139,7 +139,7 @@ class TestPlanImageMarkersAgentFailure:
         sc = _site_config()
         findings = []
 
-        async def fake_plan(content, topic, category, *, site_config):
+        async def fake_plan(content, topic, category, *, site_config, **_kw):
             return content, {"agent_error": "Timeout: 300 s"}
 
         with patch(
@@ -180,7 +180,7 @@ class TestPlanImageMarkersAgentFailure:
             order.append("unload")
             return []
 
-        async def fake_plan(content, topic, category, *, site_config):
+        async def fake_plan(content, topic, category, *, site_config, **_kw):
             order.append("plan")
             return content + "\n\n[IMAGE-1: a cat]\n", None
 

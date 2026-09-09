@@ -650,7 +650,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `content_normalize_draft.py` | content.normalize_draft — pure text transforms on the draft body. |
 | `content_persist_draft_images.py` | content.persist_draft_images — write rebuilt content + featured back to the draft. |
 | `content_persist_task.py` | content.persist_task — guarded DB write for the finalized task. |
-| `content_plan_image_markers.py` | content.plan_image_markers — VRAM guard + image placeholder planning. |
+| `content_plan_image_markers.py` | content.plan_image_markers — image placeholder planning + VRAM guard. |
 | `content_rebuild_featured_image.py` | content.rebuild_featured_image — regenerate the featured/hero image on a rebuild. |
 | `content_reconcile_citations.py` | content.reconcile_citations — deterministic citation repair (poindexter#765). |
 | `content_record_pipeline_version.py` | content.record_pipeline_version — upsert pipeline_versions after finalization. |

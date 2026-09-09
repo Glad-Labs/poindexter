@@ -262,6 +262,16 @@ class TestContentPlanImageMarkers:
             AsyncMock(),
             raising=False,
         )
+        asked: dict = {}
+
+        async def _passthrough_plan(content_text, topic, category, *, site_config, **kw):
+            asked.update(kw)
+            return content_text, None
+
+        monkeypatch.setattr(
+            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            _passthrough_plan,
+        )
         # Patch the import inside the function.
         with patch(
             "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
@@ -273,6 +283,9 @@ class TestContentPlanImageMarkers:
         assert len(out["image_plans"]) == 2
         assert out["image_plans"][0]["num"] == "1"
         assert out["image_plans"][1]["num"] == "2"
+        # Two of the default three illustration slots are taken, so the
+        # decision agent is asked to top up exactly one, numbered after them.
+        assert asked == {"max_images": 1, "start_num": 3}
 
     async def test_no_content_returns_empty(self):
         from modules.content.atoms import content_plan_image_markers as atom
@@ -284,7 +297,7 @@ class TestContentPlanImageMarkers:
         async def _fake_unload(*a, **kw):
             pass
 
-        async def _fake_plan(content_text, topic, category, *, site_config):
+        async def _fake_plan(content_text, topic, category, *, site_config, **_kw):
             # Inject a marker and return it.
             injected = content_text + "\n[IMAGE-1: test image]\n"
             return injected, None

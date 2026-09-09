@@ -106,6 +106,64 @@ def _describe_screenshot_targets(site_config: Any) -> str:
     )
 
 
+_SCREENSHOTS_OFF_TOPIC = (
+    "none for this post — it is not about this system, so do not use "
+    "[SCREENSHOT: …] markers"
+)
+
+
+def is_post_about_this_system(
+    site_config: Any, *, topic_kind: str | None, texts: tuple[str, ...] = (),
+) -> bool:
+    """Should this post be offered the operator's dashboards as evidence?
+
+    ``[SCREENSHOT:]`` exists for posts about Poindexter itself (poindexter#1002:
+    "Poindexter writes about Poindexter"). The prompt used to enumerate the
+    allowlist on EVERY draft with no topic gate, and the writer took the offer
+    where it made no sense — a Findings-board capture was the sole image on a
+    post about forever chemicals (2026-09-05), and a QA Rails capture on posts
+    about a MUD, web tricks, and a dad's 90s coding advice. Two signals decide,
+    both operator-tunable and OR-ed:
+
+    * ``screenshot_topic_kinds`` (CSV, default ``internal``) — the topic
+      batch's ``picked_candidate_kind``. Internal candidates are drawn from the
+      operator's own prior work, so a post built on one is about this system by
+      construction; external candidates come from HN / RSS / search.
+    * ``screenshot_topic_keywords`` (CSV, default ``poindexter``) — a
+      case-insensitive substring match over ``texts`` (topic, angle, tags), for
+      operator-created tasks that carry no batch lineage.
+
+    Both CSVs empty means no post qualifies — the allowlist is then never
+    offered, which is the explicit way to switch screenshots off.
+    """
+    if site_config is None:
+        return False
+    try:
+        kinds = {k.lower() for k in site_config.get_list("screenshot_topic_kinds", "internal")}
+        keywords = [k.lower() for k in site_config.get_list("screenshot_topic_keywords", "poindexter")]
+    except Exception as e:  # noqa: BLE001 — a config stub must not fail the draft
+        logger.warning("[screenshot_targets] topic gate settings unreadable: %s", e)
+        return False
+    if (topic_kind or "").strip().lower() in kinds and kinds:
+        return True
+    haystack = " ".join(t for t in texts if t).lower()
+    return any(kw in haystack for kw in keywords if kw)
+
+
+def screenshot_targets_for_post(
+    site_config: Any, *, topic_kind: str | None, texts: tuple[str, ...] = (),
+) -> str:
+    """The ``{screenshot_targets}`` prompt block, gated on the post's subject.
+
+    Off-topic posts get an explicit "none for this post" line rather than an
+    empty list, for the same reason an unconfigured install does: a blank list
+    is one the model fills in with guesses.
+    """
+    if not is_post_about_this_system(site_config, topic_kind=topic_kind, texts=texts):
+        return _SCREENSHOTS_OFF_TOPIC
+    return _describe_screenshot_targets(site_config)
+
+
 class ContentValidationResult:
     """Result of content validation check"""
 
@@ -405,6 +463,7 @@ class AIContentGenerator:
         research_context: str = "",
         target_audience: str | None = None,
         domain: str | None = None,
+        topic_kind: str | None = None,
     ) -> tuple[str, str, Any]:
         """Load system prompt, generation prompt, and refinement prompt getter from prompt manager.
 
@@ -508,7 +567,13 @@ class AIContentGenerator:
                 primary_keyword=tags[0] if tags else "",
                 research_context=research_context,
                 internal_link_titles=internal_links_str,
-                screenshot_targets=_describe_screenshot_targets(self._site_config),
+                # Gated on the post's subject (see screenshot_targets_for_post):
+                # the allowlist is only offered when the post is about this
+                # system, never on every draft.
+                screenshot_targets=screenshot_targets_for_post(
+                    self._site_config, topic_kind=topic_kind,
+                    texts=(topic, ", ".join(tags) if tags else ""),
+                ),
                 chart_targets=_describe_chart_targets(self._site_config),
                 target_length=target_length,
                 word_count=target_length,  # legacy alias for premium override
@@ -562,6 +627,7 @@ class AIContentGenerator:
         research_context: str | None = None,
         target_audience: str | None = None,
         domain: str | None = None,
+        topic_kind: str | None = None,
     ) -> dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
@@ -605,6 +671,7 @@ class AIContentGenerator:
             research_context=research_context or "",
             target_audience=target_audience,
             domain=domain,
+            topic_kind=topic_kind,
         )
 
         # Inject writing style context into system prompt if provided
@@ -1270,6 +1337,7 @@ class AIContentGenerator:
         research_context: str | None = None,
         target_audience: str | None = None,
         domain: str | None = None,
+        topic_kind: str | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
@@ -1305,6 +1373,7 @@ class AIContentGenerator:
             research_context=research_context,
             target_audience=target_audience,
             domain=domain,
+            topic_kind=topic_kind,
         )
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
@@ -1536,9 +1605,14 @@ async def generate_with_context(
     target_length: int = 1200,
     think: bool | None = None,
     prompt_metrics: dict[str, int] | None = None,
+    topic_kind: str | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
+
+    ``topic_kind`` (the topic batch's ``picked_candidate_kind``) feeds the
+    ``[SCREENSHOT:]`` topic gate — see :func:`screenshot_targets_for_post`.
+    ``None`` for manual tasks, which then qualify only by keyword.
 
     Per-snippet length cap is operator-tunable via
     ``writer_rag_context_snippet_max_chars`` — and since snippets started
@@ -1600,7 +1674,13 @@ async def generate_with_context(
         # 199 recent drafts carried the marker, despite a qa-rails target being
         # configured the whole time. A marker the live writer is never told
         # about is indistinguishable from one it declined to use.
-        screenshot_targets=_describe_screenshot_targets(_sc),
+        #
+        # …and offered on EVERY draft it was taken on posts about forever
+        # chemicals, a MUD, and web tricks (2026-09-05 → 09-08), each shipping
+        # a dashboard capture as its only image. Gated on the post's subject.
+        screenshot_targets=screenshot_targets_for_post(
+            _sc, topic_kind=topic_kind, texts=(topic, angle),
+        ),
     )
     if prompt_metrics is not None:
         prompt_metrics["prompt_chars"] = len(prompt)
