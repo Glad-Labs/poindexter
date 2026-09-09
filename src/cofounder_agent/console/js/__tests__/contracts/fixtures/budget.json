@@ -4,13 +4,13 @@
   "amount_remaining": 12.25,
   "percent_used": 18.32,
   "days_in_month": 30,
-  "days_remaining": 22,
-  "daily_burn_rate": 0.3435,
-  "projected_final_cost": 10.31,
+  "days_remaining": 21,
+  "daily_burn_rate": 0.3053,
+  "projected_final_cost": 9.16,
   "alerts": [],
   "status": "healthy",
-  "electricity_usd": 1.12,
+  "electricity_usd": 1.21,
   "electricity_source": "estimated",
-  "electricity_coverage_pct": 69.1,
-  "last_updated": "2026-09-08T12:31:20.609660+00:00"
+  "electricity_coverage_pct": 79,
+  "last_updated": "2026-09-09T12:37:58.128370+00:00"
 }

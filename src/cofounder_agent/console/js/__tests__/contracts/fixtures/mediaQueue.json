@@ -2,6 +2,22 @@
   "items": [
     {
       "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
+      "medium": "video",
+      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
+      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
+      "quality_score": 100,
+      "created_at": "2026-09-08T14:12:17.047185Z"
+    },
+    {
+      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
+      "medium": "video_short",
+      "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
+      "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
+      "quality_score": 100,
+      "created_at": "2026-09-08T14:10:43.414394Z"
+    },
+    {
+      "post_id": "8189b48c-e266-4eee-893d-b2739d902dbd",
       "medium": "podcast",
       "title": "Faithfulness in AI Content Isn't About Tone--It's About Whether Claims Are True",
       "slug": "faithfulness-in-ai-content-isnt-about-tone-its-abo-faa0a9c6",
@@ -25,7 +41,7 @@
       "created_at": "2026-08-31T00:32:34.607572Z"
     }
   ],
-  "total": 3,
+  "total": 5,
   "limit": 50,
   "offset": 0
 }
