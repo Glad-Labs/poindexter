@@ -93,6 +93,23 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             )
             replaced_count += 1
             logger.info("  [IMAGE-%s] screenshot injected", num)
+        elif source == "chart":
+            # Charts are WIDE (1200pt spec, ~1920px after the uploader's fit),
+            # so the image_gen branch's 1024x1024 square would letterbox the
+            # axis labels into illegibility and shift the page layout.
+            #
+            # Without this branch a chart fell to the `else` below and had its
+            # placeholder STRIPPED — after a chromium launch, a render, and an
+            # R2 upload. The whole [CHART:] chain worked and the last hop threw
+            # the result away (stack#3544 shipped the producer without the
+            # consumer; caught on the first real chart-bearing draft).
+            content_text = inject_html_image(
+                content_text, num, img_url, alt_text,
+                width=int(result.get("width") or 1200),
+                height=int(result.get("height") or 600),
+            )
+            replaced_count += 1
+            logger.info("  [IMAGE-%s] chart injected", num)
         elif source == "pexels":
             photographer = alt_text.replace("Photo by ", "").strip()
             pexels_html = (
