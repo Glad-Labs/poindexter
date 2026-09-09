@@ -303,20 +303,67 @@ export async function getMainFeedPosts(): Promise<Post[]> {
   return allPosts.filter((p) => p.niche_slug !== 'dev_diary');
 }
 
+/** URL-safe slug of an author display name: "Poindexter AI" → "poindexter-ai". */
+export function authorSlug(name: string): string {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+interface AuthorRecord {
+  id: string;
+  name: string;
+}
+
 /**
- * Fetch posts by author. The autonomous content site has one
- * primary byline (poindexter-ai); this still goes through the same
- * filter so /author/<id> can render a real list instead of a
- * "Coming soon" placeholder. Pages this with the same POSTS_PER_PAGE
- * cap as getPosts/getPostsByCategory so all listing pages feel the
- * same to the reader.
+ * Fetch the exported authors list (static/authors.json — id + display name),
+ * written by the same static export that writes posts/index.json. Missing
+ * or unreadable → empty list, never a throw: an author page degrades to its
+ * empty state rather than failing the build.
+ */
+async function fetchAuthors(): Promise<AuthorRecord[]> {
+  try {
+    const response = await fetch(`${STATIC_URL}/authors.json`, {
+      next: { tags: ['posts', 'authors'] },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch posts by author. `/author/<slug>` is keyed by the profile slug
+ * ("poindexter-ai"), while every post carries `author_id` — the UUID of an
+ * `authors` row. The two never met before glad-labs-stack#3339, so every
+ * author page rendered its empty state on a site with 200 posts. The join
+ * goes through the exported authors list: slugify each author's display
+ * name and match it to the requested slug, then filter posts on the
+ * resulting id(s). Paged with the same POSTS_PER_PAGE cap as getPosts /
+ * getPostsByCategory so all listing pages feel the same to the reader.
  */
 export async function getPostsByAuthor(
-  authorId: string,
+  authorSlugOrId: string,
   page: number = 1
 ): Promise<PostsResponse> {
-  const allPosts = await fetchPostIndex();
-  const filtered = allPosts.filter((p) => p.author_id === authorId);
+  const [allPosts, authors] = await Promise.all([
+    fetchPostIndex(),
+    fetchAuthors(),
+  ]);
+  const wanted = authorSlug(authorSlugOrId);
+  const matchingIds = new Set(
+    authors.filter((a) => authorSlug(a.name) === wanted).map((a) => a.id)
+  );
+  // A raw author_id still works (old links, tests) — but only when the
+  // caller passed the id itself, never as a fallback for an unknown slug.
+  const filtered = allPosts.filter(
+    (p) =>
+      !!p.author_id &&
+      (matchingIds.has(p.author_id) || p.author_id === authorSlugOrId)
+  );
   const offset = (page - 1) * POSTS_PER_PAGE;
   const paged = filtered.slice(offset, offset + POSTS_PER_PAGE);
 
