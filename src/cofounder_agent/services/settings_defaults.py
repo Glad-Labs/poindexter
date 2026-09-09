@@ -2012,6 +2012,11 @@ DEFAULTS: dict[str, str] = {
     # time). Older themes are fair game for a deliberate refresh; in-flight
     # tasks are always checked regardless of this window.
     'topic_recent_coverage_lookback_days': '90',
+    # Two-signal secondary: a distinctive title phrase shared with a reference
+    # (seen in <= max_df other references) relaxes the cosine floor to this.
+    # Measured 2026-09-09: duplicate pair at 0.796, unrelated pairs up to 0.804.
+    'topic_recent_coverage_shared_phrase_threshold': '0.75',
+    'topic_recent_coverage_shared_phrase_max_df': '1',
     'topic_discovery_length_distribution': '',
     # Topic-sanity gate (services/topic_sanity.py, 2026-06-30 dots-topic
     # incident): minimum count of alphabetic words (letter-runs of >=2
@@ -5864,6 +5869,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'topic_recent_coverage_enabled': {'owner': 'topic_recent_coverage', 'value_type': 'boolean'},
     'topic_recent_coverage_lookback_days': {'owner': 'topic_recent_coverage', 'value_type': 'integer'},
     'topic_recent_coverage_threshold': {'owner': 'topic_recent_coverage', 'value_type': 'float'},
+    'topic_recent_coverage_shared_phrase_threshold': {'owner': 'topic_recent_coverage', 'value_type': 'float', 'description': 'Relaxed cosine floor applied when the candidate title shares a distinctive bigram with a reference title (two-signal duplicate rule).'},
+    'topic_recent_coverage_shared_phrase_max_df': {'owner': 'topic_recent_coverage', 'value_type': 'integer', 'description': 'A shared title bigram counts as distinctive only if at most this many references already carry it; blog-wide phrases are not duplicate signals.'},
     'topic_sanity_min_alpha_words': {'owner': 'topic_sanity', 'value_type': 'integer'},
     'topic_source_excluded_domains': {'owner': 'topic_self_reference'},
     'trace_recent_limit': {'owner': 'trace_routes', 'value_type': 'integer'},

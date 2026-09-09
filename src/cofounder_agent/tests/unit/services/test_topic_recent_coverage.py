@@ -402,3 +402,132 @@ class TestContracts:
         assert int(DEFAULTS["topic_recent_coverage_lookback_days"]) == (
             DEFAULT_LOOKBACK_DAYS
         )
+
+
+# ---------------------------------------------------------------------------
+# Two-signal shared-phrase rule (2026-09-09): "The Search Autocomplete Dilemma"
+# vs "The Search Autocomplete Mystery" scored 0.796 against the 0.80 floor
+# while unrelated posts pair up to 0.804 — cosine alone cannot separate them.
+# A distinctive title bigram in common + a relaxed floor can.
+# ---------------------------------------------------------------------------
+
+
+def _ref(title, vec, ref_id="r", kind="in_flight_task"):
+    from services.topic_recent_coverage import CoverageRef
+    return CoverageRef(kind=kind, ref_id=ref_id, title=title, niche_slug="glad-labs",
+                       published_at=None, text=title, embedding=vec)
+
+
+# cosine([1, 0.6], [1, 0]) ≈ 0.857; cosine([1, 0.8],[1,0]) ≈ 0.781; cosine([1,1],[1,0]) ≈ 0.707
+_NEAR = [1.0, 0.8]      # 0.781: under the 0.80 floor, over the 0.75 relaxed floor
+_FAR = [1.0, 1.0]       # 0.707: under both
+
+
+@pytest.mark.unit
+class TestDistinctiveBigrams:
+    def test_drops_generic_and_short_tokens(self):
+        from services.topic_recent_coverage import distinctive_bigrams
+        assert distinctive_bigrams("The Search Autocomplete Dilemma") == {
+            ("search", "autocomplete"), ("autocomplete", "dilemma"),
+        }
+        assert distinctive_bigrams("Why We Do It") == set()
+
+    def test_title_of_takes_the_composite_head(self):
+        from services.topic_recent_coverage import compose_text, title_of
+        text = compose_text("The Search Autocomplete Mystery", "an angle")
+        assert title_of(text) == "The Search Autocomplete Mystery"
+        assert title_of("no separator") == "no separator"
+
+
+@pytest.mark.unit
+class TestSharedPhraseRule:
+    async def test_shared_distinctive_bigram_relaxes_the_floor(self):
+        mem = _FakeMem({"The Search Autocomplete Mystery — angle": _NEAR})
+        index = RecentCoverageIndex(
+            [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])],
+            threshold=0.80, embed=mem.embed,
+        )
+        match = await index.embed_and_match("The Search Autocomplete Mystery — angle")
+        assert match is not None
+        assert match.rule == "shared_phrase"
+        assert match.title == "The Search Autocomplete Dilemma"
+        assert match.similarity == pytest.approx(0.781, abs=1e-3)
+        assert match.as_dict()["rule"] == "shared_phrase"
+
+    async def test_same_cosine_without_shared_phrase_passes(self):
+        mem = _FakeMem({"The Stuck Task — angle": _NEAR})
+        index = RecentCoverageIndex(
+            [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
+        )
+        assert await index.embed_and_match("The Stuck Task — angle") is None
+        assert index.last_best[0] == pytest.approx(0.781, abs=1e-3)
+
+    async def test_shared_phrase_below_relaxed_floor_passes(self):
+        mem = _FakeMem({"The Search Autocomplete Mystery — angle": _FAR})
+        index = RecentCoverageIndex(
+            [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
+        )
+        assert await index.embed_and_match("The Search Autocomplete Mystery — angle") is None
+
+    async def test_blog_wide_phrase_is_not_a_signal(self):
+        # "local llm" sits in three reference titles → DF 3 > max_df 1.
+        refs = [
+            _ref("Speculative decoding for local LLM inference", [1.0, 0.0], ref_id="a"),
+            _ref("Choosing a quantization format for local LLM", [0.0, 1.0], ref_id="b"),
+            _ref("Benchmarking local LLM runtimes", [0.0, 1.0], ref_id="c"),
+        ]
+        mem = _FakeMem({"KV cache sizing for local LLM serving — angle": _NEAR})
+        index = RecentCoverageIndex(refs, threshold=0.80, embed=mem.embed)
+        assert await index.embed_and_match("KV cache sizing for local LLM serving — angle") is None
+        # …but an operator can raise max_df to make it count.
+        index = RecentCoverageIndex(refs, threshold=0.80, embed=mem.embed, shared_phrase_max_df=3)
+        match = await index.embed_and_match("KV cache sizing for local LLM serving — angle")
+        assert match is not None and match.rule == "shared_phrase" and match.ref_id == "a"
+
+    async def test_retitled_post_still_matches_through_its_task_topic(self):
+        # The published title lost the phrase at approval; the composite keeps
+        # the source-task topic, which is where the duplicate still overlaps.
+        from services.topic_recent_coverage import CoverageRef, compose_text
+        ref = CoverageRef(
+            kind="published_post", ref_id="p", niche_slug="glad-labs", published_at=None,
+            title="Our Google Autocomplete Topic Source Ran for 6 Weeks",
+            text=compose_text("Our Google Autocomplete Topic Source Ran for 6 Weeks",
+                              "The Search Autocomplete Dilemma", "an angle"),
+            embedding=[1.0, 0.0],
+        )
+        mem = _FakeMem({"The Search Autocomplete Mystery — angle": _NEAR})
+        index = RecentCoverageIndex([ref], threshold=0.80, embed=mem.embed)
+        match = await index.embed_and_match("The Search Autocomplete Mystery — angle")
+        assert match is not None and match.rule == "shared_phrase"
+
+    async def test_cosine_floor_still_wins_and_reports_cosine_rule(self):
+        mem = _FakeMem({"The Search Autocomplete Mystery — angle": [1.0, 0.0]})
+        index = RecentCoverageIndex(
+            [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
+        )
+        match = await index.embed_and_match("The Search Autocomplete Mystery — angle")
+        assert match is not None and match.rule == "cosine"
+
+    async def test_pass_logs_the_near_miss(self, caplog):
+        import logging
+
+        from services.topic_recent_coverage import _log_pass
+        mem = _FakeMem({"The Stuck Task — angle": _NEAR})
+        index = RecentCoverageIndex(
+            [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
+        )
+        with caplog.at_level(logging.INFO, logger="services.topic_recent_coverage"):
+            match = await index.embed_and_match("The Stuck Task — angle")
+            out = _log_pass(index, "The Stuck Task — angle", match)
+        assert out is None
+        messages = [r.getMessage() for r in caplog.records]
+        assert any(
+            "nearest 'The Search Autocomplete Dilemma'" in m and "0.781" in m for m in messages
+        )
+
+    def test_settings_seeded(self):
+        from services.settings_defaults import DEFAULTS, METADATA
+        assert DEFAULTS["topic_recent_coverage_shared_phrase_threshold"] == "0.75"
+        assert DEFAULTS["topic_recent_coverage_shared_phrase_max_df"] == "1"
+        assert "topic_recent_coverage_shared_phrase_threshold" in METADATA
+        assert "topic_recent_coverage_shared_phrase_max_df" in METADATA

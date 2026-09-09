@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -62,6 +63,37 @@ logger = logging.getLogger(__name__)
 ENABLED_KEY = "topic_recent_coverage_enabled"
 THRESHOLD_KEY = "topic_recent_coverage_threshold"
 LOOKBACK_KEY = "topic_recent_coverage_lookback_days"
+SHARED_PHRASE_THRESHOLD_KEY = "topic_recent_coverage_shared_phrase_threshold"
+SHARED_PHRASE_MAX_DF_KEY = "topic_recent_coverage_shared_phrase_max_df"
+DEFAULT_SHARED_PHRASE_THRESHOLD = 0.75
+DEFAULT_SHARED_PHRASE_MAX_DF = 1
+
+# Words that never make a phrase distinctive on their own. Kept short and
+# obvious on purpose: the DF cap below (not this list) is what stops a
+# blog-wide phrase like "content pipeline" from firing.
+_GENERIC_WORDS: frozenset[str] = frozenset(
+    "the a an and or of to in for with your our why how what when from is are "
+    "not into on at by it its this that we you they about without over under "
+    "every one two new more most less than vs versus".split()
+)
+_WORD_RE = re.compile(r"[a-z0-9][a-z0-9'-]+")
+
+
+def title_of(text: str) -> str:
+    """The title segment of a :func:`compose_text` composite (before the first
+    `` — ``); the whole string when it carries no separator."""
+    return (text or "").split(" — ", 1)[0].strip()
+
+
+def distinctive_bigrams(title: str) -> set[tuple[str, str]]:
+    """Adjacent content-word pairs of ``title``, lowercased, generic words and
+    short tokens dropped. ``"The Search Autocomplete Dilemma"`` →
+    ``{("search", "autocomplete"), ("autocomplete", "dilemma")}``."""
+    toks = [
+        t for t in _WORD_RE.findall((title or "").lower())
+        if len(t) >= 3 and t not in _GENERIC_WORDS
+    ]
+    return set(zip(toks, toks[1:], strict=False))
 
 DEFAULT_ENABLED = True
 DEFAULT_THRESHOLD = 0.80
@@ -136,6 +168,9 @@ class RecentCoverageMatch:
     title: str
     similarity: float
     published_at: datetime | None
+    #: ``cosine`` (the calibrated embedding floor) or ``shared_phrase`` (the
+    #: two-signal rule: a distinctive title bigram in common + a relaxed floor).
+    rule: str = "cosine"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -143,6 +178,7 @@ class RecentCoverageMatch:
             "ref_id": self.ref_id,
             "title": self.title,
             "similarity": round(self.similarity, 3),
+            "rule": self.rule,
             "published_at": (
                 self.published_at.isoformat() if self.published_at else None
             ),
@@ -231,6 +267,24 @@ def _resolve_threshold(site_config: Any) -> float:
         return DEFAULT_THRESHOLD
 
 
+def _resolve_shared_phrase_threshold(site_config: Any) -> float:
+    try:
+        raw = site_config.get(SHARED_PHRASE_THRESHOLD_KEY, DEFAULT_SHARED_PHRASE_THRESHOLD)
+        return float(raw)
+    except Exception:  # noqa: BLE001 — stubbed site_config / bad value
+        # silent-ok: a malformed dial keeps the calibrated default.
+        return DEFAULT_SHARED_PHRASE_THRESHOLD
+
+
+def _resolve_shared_phrase_max_df(site_config: Any) -> int:
+    try:
+        raw = site_config.get(SHARED_PHRASE_MAX_DF_KEY, DEFAULT_SHARED_PHRASE_MAX_DF)
+        return int(raw)
+    except Exception:  # noqa: BLE001 — stubbed site_config / bad value
+        # silent-ok: a malformed dial keeps the calibrated default.
+        return DEFAULT_SHARED_PHRASE_MAX_DF
+
+
 def _resolve_lookback_days(site_config: Any) -> int:
     try:
         return int(site_config.get_int(LOOKBACK_KEY, DEFAULT_LOOKBACK_DAYS))
@@ -252,10 +306,32 @@ class RecentCoverageIndex:
         *,
         threshold: float,
         embed: Any,
+        shared_phrase_threshold: float = DEFAULT_SHARED_PHRASE_THRESHOLD,
+        shared_phrase_max_df: int = DEFAULT_SHARED_PHRASE_MAX_DF,
     ) -> None:
         self.refs = refs
         self.threshold = float(threshold)
         self._embed = embed
+        self.shared_phrase_threshold = float(shared_phrase_threshold)
+        self.shared_phrase_max_df = int(shared_phrase_max_df)
+        #: Best cosine seen by the last ``embed_and_match`` call and the ref it
+        #: was against — read by ``check_recent_coverage`` so a PASS logs the
+        #: near-miss it let through (the 2026-09-08 miss at 0.796 vs 0.80 left
+        #: no line anywhere).
+        self.last_best: tuple[float, CoverageRef | None] = (0.0, None)
+        # Title-bigram document frequency across the reference set: a phrase
+        # that several references already share ("llm inference") is a
+        # blog-wide theme, not a duplicate signal.
+        # Counted over each reference's whole composite (title + source-task
+        # topic + angle), because a published post's TITLE is often rewritten
+        # at approval while its task topic still carries the phrase the
+        # duplicate will share ("The Search Autocomplete Dilemma" lives on in
+        # pt.topic after the post shipped as "Our Google Autocomplete Topic
+        # Source Ran for 6 Weeks…").
+        self._bigram_df: dict[tuple[str, str], int] = {}
+        for ref in refs:
+            for bg in distinctive_bigrams(ref.text):
+                self._bigram_df[bg] = self._bigram_df.get(bg, 0) + 1
 
     @classmethod
     async def load(
@@ -313,7 +389,13 @@ class RecentCoverageIndex:
                             embedding=await memory_client.embed(text),
                         )
                     )
-            return cls(refs, threshold=threshold, embed=memory_client.embed)
+            return cls(
+                refs,
+                threshold=threshold,
+                embed=memory_client.embed,
+                shared_phrase_threshold=_resolve_shared_phrase_threshold(site_config),
+                shared_phrase_max_df=_resolve_shared_phrase_max_df(site_config),
+            )
         except Exception as exc:  # noqa: BLE001 — fail open, never sink a sweep
             logger.warning(
                 "[recent_coverage] index load failed — skipping the "
@@ -340,20 +422,90 @@ class RecentCoverageIndex:
             return None
         best_ref: CoverageRef | None = None
         best_sim = 0.0
+        sims: list[tuple[float, CoverageRef]] = []
         for ref in self.refs:
             sim = _cosine(candidate, ref.embedding)
+            sims.append((sim, ref))
             if sim > best_sim:
                 best_sim = sim
                 best_ref = ref
-        if best_ref is None or best_sim < self.threshold:
+        self.last_best = (best_sim, best_ref)
+        if best_ref is not None and best_sim >= self.threshold:
+            return RecentCoverageMatch(
+                kind=best_ref.kind,
+                ref_id=best_ref.ref_id,
+                title=best_ref.title,
+                similarity=best_sim,
+                published_at=best_ref.published_at,
+            )
+        return self._shared_phrase_match(text, sims)
+
+    def _shared_phrase_match(
+        self, text: str, sims: list[tuple[float, CoverageRef]],
+    ) -> RecentCoverageMatch | None:
+        """Two-signal secondary for the band the cosine floor cannot resolve.
+
+        Measured 2026-09-09 over the live 56-ref set: unrelated same-domain
+        posts pair as high as 0.804 while a true duplicate ("The Search
+        Autocomplete Dilemma" vs "The Search Autocomplete Mystery", two
+        distillations of one incident) sat at 0.796 — so no cosine threshold
+        separates them. What does: the duplicate pair SHARES a distinctive
+        title phrase ("search autocomplete", seen in ≤1 other reference) and
+        the only corpus pairs that share one at ≥0.75 are the same-topic
+        neighbours a human would also flag. Requires both signals; a shared
+        blog-wide phrase (DF above ``shared_phrase_max_df``) counts for nothing.
+        """
+        # Candidate side is title-only (the composite's angle is free prose);
+        # reference side is the whole composite — see ``_bigram_df``.
+        cand_bigrams = distinctive_bigrams(title_of(text))
+        if not cand_bigrams:
             return None
-        return RecentCoverageMatch(
-            kind=best_ref.kind,
-            ref_id=best_ref.ref_id,
-            title=best_ref.title,
-            similarity=best_sim,
-            published_at=best_ref.published_at,
+        best: tuple[float, CoverageRef, tuple[str, str]] | None = None
+        for sim, ref in sims:
+            if sim < self.shared_phrase_threshold:
+                continue
+            shared = [
+                bg for bg in cand_bigrams & distinctive_bigrams(ref.text)
+                if self._bigram_df.get(bg, 0) <= self.shared_phrase_max_df
+            ]
+            if shared and (best is None or sim > best[0]):
+                best = (sim, ref, shared[0])
+        if best is None:
+            return None
+        sim, ref, phrase = best
+        logger.info(
+            "[recent_coverage] shared-phrase match %r ~ %r on %r at cosine %.3f "
+            "(floor %.2f; cosine floor %.2f not reached)",
+            title_of(text)[:60], ref.title[:60], " ".join(phrase), sim,
+            self.shared_phrase_threshold, self.threshold,
         )
+        return RecentCoverageMatch(
+            kind=ref.kind,
+            ref_id=ref.ref_id,
+            title=ref.title,
+            similarity=sim,
+            published_at=ref.published_at,
+            rule="shared_phrase",
+        )
+
+
+def _log_pass(
+    index: RecentCoverageIndex, text: str, match: RecentCoverageMatch | None,
+) -> RecentCoverageMatch | None:
+    """A pass leaves a line naming the nearest reference — the signal the
+    2026-09-08 miss (0.796 vs 0.80) had nowhere to show up."""
+    if match is None:
+        best_sim, best_ref = index.last_best
+        logger.info(
+            "[recent_coverage] pass for %r — nearest %r (%s) at cosine %.3f, "
+            "floor %.2f",
+            title_of(text)[:60],
+            (best_ref.title[:60] if best_ref else None),
+            (best_ref.kind if best_ref else "-"),
+            best_sim,
+            index.threshold,
+        )
+    return match
 
 
 async def check_recent_coverage(
@@ -378,7 +530,7 @@ async def check_recent_coverage(
         )
         if index is None:
             return None
-        return await index.embed_and_match(text)
+        return _log_pass(index, text, await index.embed_and_match(text))
 
     if not _resolve_enabled(site_config):
         return None
@@ -395,7 +547,7 @@ async def check_recent_coverage(
             )
             if index is None:
                 return None
-            return await index.embed_and_match(text)
+            return _log_pass(index, text, await index.embed_and_match(text))
     except Exception as exc:  # noqa: BLE001 — fail open
         logger.warning(
             "[recent_coverage] check unavailable — skipping (fail-open): %s",
