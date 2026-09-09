@@ -228,7 +228,25 @@ def _build_dispatcher_judge_model(
             return f"dispatcher:{judge_model}"
 
         async def a_generate(self, prompt: str, schema: Any = None) -> Any:
-            kwargs: dict[str, Any] = {}
+            # poindexter#1035 (2026-09-09): the dispatcher path forwarded NO
+            # output budget — `num_predict` only reached the stock OllamaModel
+            # fallback, and the LiteLLM provider forwards `max_tokens`, not
+            # `num_predict`. A thinking judge then reasoned to exhaustion: every
+            # EMPTY-content faithfulness call in cost_logs since 09-01 carried
+            # 11.8k–15.5k output tokens against a 16k window. The budget is a
+            # bound, not a cure (the trace still comes first); the cure is a
+            # judge that does not think — see the issue.
+            from services.llm_providers.thinking_models import resolve_judge_num_predict
+            kwargs: dict[str, Any] = {
+                "max_tokens": resolve_judge_num_predict(judge_model, site_config),
+            }
+            try:
+                num_ctx = int(site_config.get("qa_deepeval_judge_num_ctx", 0) or 0) if site_config is not None else 0
+            except Exception:  # noqa: BLE001 — stubbed site_config
+                # silent-ok: an absent ctx dial means "leave the model default".
+                num_ctx = 0
+            if num_ctx > 0:
+                kwargs["num_ctx"] = num_ctx
             if schema is not None and judge_json_mode_supported(
                 judge_model, site_config
             ):
@@ -243,19 +261,35 @@ def _build_dispatcher_judge_model(
             # Fail-soft rail: GpuBusyError surfaces as a degraded rail with a
             # finding, not a fabricated pass.
             from services.gpu_scheduler import qa_rail_wait_budget_s
-
-            completion = await dispatch_complete(
-                pool=self._pool,
-                messages=[{"role": "user", "content": prompt}],
-                model=judge_model,
-                tier="standard",
-                phase="qa_deepeval_judge",
-                temperature=0.2,
-                max_wait_s=qa_rail_wait_budget_s(),
-                priority="background",
-                **kwargs,
-            )
-            text = (getattr(completion, "text", "") or "").strip()
+            try:
+                empty_retries = int(site_config.get("deepeval_judge_empty_retries", 1) or 0) if site_config is not None else 1
+            except Exception:  # noqa: BLE001 — stubbed site_config
+                # silent-ok: retry dial falling back to its code default.
+                empty_retries = 1
+            text = ""
+            for attempt in range(1, max(0, empty_retries) + 2):
+                completion = await dispatch_complete(
+                    pool=self._pool,
+                    messages=[{"role": "user", "content": prompt}],
+                    model=judge_model,
+                    tier="standard",
+                    phase="qa_deepeval_judge",
+                    temperature=0.2,
+                    max_wait_s=qa_rail_wait_budget_s(),
+                    priority="background",
+                    **kwargs,
+                )
+                text = (getattr(completion, "text", "") or "").strip()
+                if text or attempt > empty_retries:
+                    break
+                # A thinking judge that spent the whole budget reasoning returns
+                # nothing; the trace length varies run to run (1.5k–3k tokens on
+                # the same prompt in a live probe vs 12k+ in the failing production
+                # calls), so one more attempt is cheap next to losing the rail.
+                logger.warning(
+                    "[deepeval] judge %s returned EMPTY content on attempt %d/%d — retrying",
+                    judge_model, attempt, empty_retries + 1,
+                )
             if not text:
                 # Name the cause rather than letting json.loads("") raise a
                 # bare JSONDecodeError, which reads like a malformed

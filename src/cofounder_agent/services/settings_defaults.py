@@ -2103,11 +2103,21 @@ DEFAULTS: dict[str, str] = {
     'content_validator_unlinked_citation_warning_threshold': '0',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'deepeval_enabled': 'true',
+    # poindexter#1035: one extra attempt when the thinking judge returns EMPTY
+    # content (its reasoning trace consumed the whole budget). 0 disables.
+    'deepeval_judge_empty_retries': '1',
     'enable_writer_self_review': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'guardrails_enabled': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'ragas_enabled': 'true',
+    # poindexter#1035: Ragas's per-job timeout (library default 180 s) — a
+    # metric job is several sequential judge calls at 60–107 s each on the
+    # thinking judge, so 180 s collapsed faithfulness/context_precision to the
+    # -1.0 sentinel on most passes. max_workers bounds the parallel judge calls
+    # so one rail cannot flood the pinned judge.
+    'ragas_job_timeout_seconds': '600',
+    'ragas_max_workers': '4',
     'ragas_judge_model': 'ollama/phi4:14b',
     'self_consistency_enabled': 'false',
     'self_consistency_sample_count': '3',
@@ -4898,8 +4908,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_gate_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_gate_retry_backoff_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'deepeval_judge_empty_retries': {'owner': 'deepeval_rails', 'value_type': 'integer'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'ragas_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'ragas_job_timeout_seconds': {'owner': 'ragas_eval', 'value_type': 'integer'},
+    'ragas_max_workers': {'owner': 'ragas_eval', 'value_type': 'integer'},
 
     # ----- RAG / retrieval (incident: rag_source_filter empty = corpus pollution 2026-06) -----
     'rag_source_filter': {'owner': 'rag_engine', 'value_type': 'csv'},

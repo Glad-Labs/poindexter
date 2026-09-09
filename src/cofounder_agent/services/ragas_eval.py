@@ -349,6 +349,19 @@ async def _build_ragas_models(
 # ---------------------------------------------------------------------------
 
 
+def _int_setting(site_config: Any, key: str, default: int) -> int:
+    """Integer app_setting via the DI'd SiteConfig; missing/unparseable →
+    code default (these are run-config dials, not gates)."""
+    if site_config is None:
+        return default
+    try:
+        raw = site_config.get(key, "")
+        return int(str(raw).strip()) if str(raw).strip() else default
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: a run-config dial falling back to its code default.
+        return default
+
+
 def _coerce_metric(value: Any) -> float:
     """Collapse a raw Ragas metric value onto the -1.0-sentinel contract.
 
@@ -561,12 +574,25 @@ async def evaluate_sample(
             "ground_truth": [""],  # context_precision tolerates empty
         })
 
+        # poindexter#1035 (2026-09-09): Ragas's per-job timeout defaults to
+        # 180 s, and each METRIC job is several sequential judge calls
+        # (faithfulness = statements + verdicts; context_precision = one per
+        # context chunk). Against the thinking judge each call takes 60–107 s
+        # (cost_logs p90 since 09-01), so faithfulness + context_precision
+        # timed out on 27 of 39 passes and collapsed to the -1.0 sentinel
+        # while the rail read as "present". The calls complete; the library
+        # clock was the failure. Both dials are app_settings.
+        from ragas import RunConfig
         result = evaluate(
             ds,
             metrics=[faithfulness, answer_relevancy, context_precision],
             llm=llm,
             embeddings=embeddings,
             raise_exceptions=False,
+            run_config=RunConfig(
+                timeout=_int_setting(site_config, "ragas_job_timeout_seconds", 600),
+                max_workers=_int_setting(site_config, "ragas_max_workers", 4),
+            ),
         )
         scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
         scores = {

@@ -675,3 +675,63 @@ class TestEvaluateSampleNonFinite:
         assert details["answer_relevancy"] == -1.0
         assert details["metric_count"] == 2
         assert details["score"] == pytest.approx((0.85 + 0.72) / 2, abs=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# poindexter#1035 — the Ragas job timeout is a setting, not the library's 180 s
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRunConfigFromSettings:
+    """Each metric job is several sequential judge calls at 60–107 s on the
+    thinking judge; Ragas's default 180 s per-job timeout collapsed
+    faithfulness/context_precision to the -1.0 sentinel on 27 of 39 passes
+    while the rail read as present. evaluate() must receive a RunConfig built
+    from ``ragas_job_timeout_seconds`` / ``ragas_max_workers``."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_receives_run_config_from_site_config(self):
+        from services.site_config import SiteConfig
+
+        captured: dict[str, Any] = {}
+
+        def fake_evaluate(ds, **kwargs):
+            captured.update(kwargs)
+            result = MagicMock()
+            result.scores = [{"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": 0.7}]
+            return result
+
+        def fake_run_config(**kwargs):
+            captured["run_config_kwargs"] = kwargs
+            return ("RunConfig", kwargs)
+
+        fake_ragas = MagicMock()
+        fake_ragas.evaluate = fake_evaluate
+        fake_ragas.RunConfig = fake_run_config
+        fake_datasets = MagicMock()
+        fake_datasets.Dataset.from_dict = lambda d: d
+        sc = SiteConfig(initial_config={"ragas_job_timeout_seconds": "900", "ragas_max_workers": "2"})
+        with patch(
+            "services.ragas_eval._build_ragas_models",
+            return_value=(MagicMock(), MagicMock()),
+        ), patch("services.ragas_eval._emit_ragas_score_audit", lambda *a, **k: None), _inject_fake_modules({
+            "datasets": fake_datasets,
+            "ragas": fake_ragas,
+            "ragas.metrics": MagicMock(),
+        }):
+            result = await evaluate_sample(
+                topic="Topic", generated_content="content", site_config=sc,
+            )
+        assert result["faithfulness"] == 0.9
+        assert captured["run_config_kwargs"] == {"timeout": 900, "max_workers": 2}
+        assert captured["run_config"] == ("RunConfig", {"timeout": 900, "max_workers": 2})
+
+    def test_int_setting_falls_back_to_default(self):
+        from services.ragas_eval import _int_setting
+        from services.site_config import SiteConfig
+
+        assert _int_setting(None, "ragas_job_timeout_seconds", 600) == 600
+        assert _int_setting(SiteConfig(initial_config={}), "ragas_job_timeout_seconds", 600) == 600
+        assert _int_setting(SiteConfig(initial_config={"ragas_job_timeout_seconds": "abc"}), "ragas_job_timeout_seconds", 600) == 600
+        assert _int_setting(SiteConfig(initial_config={"ragas_job_timeout_seconds": "42"}), "ragas_job_timeout_seconds", 600) == 42
