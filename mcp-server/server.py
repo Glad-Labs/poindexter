@@ -566,6 +566,27 @@ async def publish_post(task_id: str) -> str:
 
 
 @mcp.tool()
+async def retitle_post(task_id: str, title: str) -> str:
+    """Replace an awaiting_approval draft's title. Drafts only (enforced).
+
+    Writes the canonical title publish reads first, re-derives the publish
+    slug, and rewrites the URL baked into every live social draft. An approved
+    task must be unapproved first (its posts row already carries the old
+    title). The searchable-entity rule is advisory — warnings are reported and
+    the retitle still applies.
+    """
+    if not (title or "").strip():
+        return "Error: provide a non-blank `title`."
+    full_id = await _resolve_task_id(task_id)
+    result = await _api("POST", f"/api/tasks/{full_id}/retitle", {"title": title})
+    if result.get("error"):
+        return f"Error: {_api_error(result)}"
+    warnings = result.get("warnings") or []
+    suffix = f" (warnings: {'; '.join(warnings)})" if warnings else ""
+    return f"{result.get('detail', 'retitled')}{suffix}"
+
+
+@mcp.tool()
 async def edit_post_body(
     task_id: str, find: str = "", replace: str = "", new_content: str = "",
 ) -> str:

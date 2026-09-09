@@ -42,6 +42,28 @@ _UPDATE_FEATURED_SQL = (
 _CHECK_TASK_STATUS_SQL = (
     "SELECT status FROM pipeline_tasks WHERE task_id = $1"
 )
+_LATEST_TITLE_SQL = (
+    "SELECT title, content, version FROM pipeline_versions "
+    "WHERE task_id = $1 ORDER BY version DESC LIMIT 1"
+)
+_UPDATE_TITLE_SQL = (
+    "UPDATE pipeline_versions SET title = $1 "
+    "WHERE task_id = $2 AND version = $3"
+)
+_TASK_STATUS_TOPIC_SQL = (
+    "SELECT status, topic FROM pipeline_tasks WHERE task_id = $1"
+)
+_LIVE_DRAFTS_SQL = (
+    "SELECT id, content FROM social_post_drafts "
+    "WHERE pipeline_task_id = $1 AND status = ANY($2::text[])"
+)
+_UPDATE_DRAFT_CONTENT_SQL = (
+    "UPDATE social_post_drafts SET content = $1 WHERE id = $2"
+)
+#: The only status a retitle may touch. ``approved`` already has a posts row
+#: carrying the old title + slug, so a title change there would fork the two
+#: records — unapprove first (``poindexter tasks unapprove``), retitle, approve.
+_RETITLE_STATUSES: frozenset[str] = frozenset({"awaiting_approval"})
 _UPDATE_POST_FEATURED_SQL = (
     "UPDATE posts SET featured_image_url = $1, updated_at = NOW() "
     "WHERE metadata->>'pipeline_task_id' = $2"
@@ -151,6 +173,99 @@ class PostEditService:
             task_id, "body", True,
             f"edited body (v{version}, {len(body)} chars)", warnings=warnings,
         )
+
+    # -- title --------------------------------------------------------------
+
+    async def retitle(self, task_id: str, *, title: str) -> EditResult:
+        """Replace the canonical title of an ``awaiting_approval`` draft.
+
+        The canonical title is ``pipeline_versions.title`` (what
+        ``content.generate_title`` persisted and what ``publish_post_from_task``
+        reads first — see ``resolve_canonical_title``). The publish slug derives
+        from it, and the ``social.generate_drafts`` atom baked the *predicted*
+        slug into every promo's URL at finalize time, so a retitle re-derives the
+        slug through the same ``derive_publish_identity`` chain and rewrites the
+        URL in every live (pending/scheduled/failed) social draft. Without that
+        second half a retitled post ships with promos pointing at a 404.
+
+        Drafts only, ENFORCED (unlike ``edit_body``): an ``approved`` task
+        already has a ``posts`` row carrying the old title + slug, so a change
+        here would fork the two records. Unapprove, retitle, re-approve.
+
+        The searchable-entity rule (``services/title_searchability.py``) runs
+        warn-only — the operator is the gate, and a deliberately unsearchable
+        title is their call to make with the warning in front of them.
+        """
+        new_title = " ".join((title or "").split()).strip()
+        if not new_title:
+            raise ValueError("title must not be blank")
+        task = await self._pool.fetchrow(_TASK_STATUS_TOPIC_SQL, task_id)
+        status = (task or {}).get("status") if task else None
+        if status not in _RETITLE_STATUSES:
+            raise ValueError(
+                f"retitle is drafts-only: task {task_id} is {status!r}, "
+                f"expected one of {sorted(_RETITLE_STATUSES)} "
+                "(an approved task must be unapproved first — its posts row "
+                "already carries the old title and slug)"
+            )
+        row = await self._pool.fetchrow(_LATEST_TITLE_SQL, task_id)
+        if not row:
+            raise ValueError(f"no pipeline_versions row for task {task_id}")
+        old_title = (row["title"] or "").strip()
+        content = row["content"] or ""
+        version = int(row["version"])
+        if new_title == old_title:
+            return EditResult(task_id, "title", True, f"title unchanged (v{version})")
+
+        from services.publish_service import derive_publish_identity
+
+        topic = (task or {}).get("topic") or ""
+        _, _, old_slug = derive_publish_identity(
+            content, old_title, topic, task_id, site_config=self._site_config,
+        )
+        _, _, new_slug = derive_publish_identity(
+            content, new_title, topic, task_id, site_config=self._site_config,
+        )
+
+        warnings: list[str] = []
+        try:
+            from services.title_searchability import find_searchable_entities
+
+            report = find_searchable_entities(new_title)
+            if not report.ok:
+                warnings.append(
+                    "title carries no searchable entity (digit / proper noun / "
+                    "article keyword): " + "; ".join(report.reasons)
+                )
+        except Exception as exc:  # noqa: BLE001 — advisory check must never block the edit
+            logger.warning("[post_edit] searchability check skipped: %s", exc)
+
+        await self._pool.execute(_UPDATE_TITLE_SQL, new_title, task_id, version)
+
+        rewritten = 0
+        if old_slug != new_slug:
+            from services.social_drafts import _LIVE_STATUSES
+
+            old_path, new_path = f"/posts/{old_slug}", f"/posts/{new_slug}"
+            drafts = await self._pool.fetch(_LIVE_DRAFTS_SQL, task_id, list(_LIVE_STATUSES))
+            for draft in drafts or []:
+                body = draft["content"] or ""
+                if old_path in body:
+                    await self._pool.execute(
+                        _UPDATE_DRAFT_CONTENT_SQL, body.replace(old_path, new_path), draft["id"],
+                    )
+                    rewritten += 1
+
+        await self._audit(
+            "post_edit_title", task_id,
+            {"version": version, "old_title": old_title, "new_title": new_title,
+             "old_slug": old_slug, "new_slug": new_slug,
+             "social_drafts_rewritten": rewritten, "warnings": warnings},
+        )
+        detail = f"retitled (v{version}): {new_title!r}"
+        if old_slug != new_slug:
+            detail += f"; slug {old_slug} -> {new_slug}; {rewritten} social draft URL(s) rewritten"
+        return EditResult(task_id, "title", True, detail, warnings=warnings)
 
     # -- images -------------------------------------------------------------
 

@@ -552,3 +552,97 @@ async def test_add_image_no_prompt_no_heading_raises():
     svc = PostEditService(pool=FakePool(content=body), image_service=_RecordingImageSvc())
     with pytest.raises(ValueError, match="pass --prompt explicitly"):
         await svc.add_image("t1", after="inline:1")
+
+
+# ---------------------------------------------------------------------------
+# retitle — canonical title + slug + social-draft URL rewrite (2026-09-09)
+# ---------------------------------------------------------------------------
+
+
+class _RetitlePool:
+    """Fake pool for retitle: task status/topic, latest version row, live
+    social drafts; records every execute."""
+
+    def __init__(self, *, status="awaiting_approval", title="Old Title Here", drafts=None,
+                 topic="topic", version=3, content="## Heading\n\nbody"):
+        self._status, self._title, self._topic = status, title, topic
+        self._version, self._content = version, content
+        self._drafts = drafts or []
+        self.executed: list[tuple] = []
+
+    async def fetchrow(self, sql, *args):
+        if "FROM pipeline_tasks" in sql:
+            return {"status": self._status, "topic": self._topic}
+        if "FROM pipeline_versions" in sql:
+            return {"title": self._title, "content": self._content, "version": self._version}
+        return None
+
+    async def fetch(self, sql, *args):
+        if "social_post_drafts" in sql:
+            return list(self._drafts)
+        return []
+
+    async def execute(self, sql, *args):
+        self.executed.append((sql, args))
+
+
+def _slug(title, task_id):
+    from services.publish_service import build_post_slug
+    return build_post_slug(title, task_id)
+
+
+async def test_retitle_writes_latest_version_and_rewrites_live_draft_urls():
+    old, new = "Why I Built My Kid a MUD", "A Parent Built Their 8-Year-Old a MUD"
+    old_slug = _slug(old, "task-1")
+    drafts = [
+        {"id": "d1", "content": f"promo https://www.gladlabs.io/posts/{old_slug}?utm_source=twitter"},
+        {"id": "d2", "content": "unrelated promo with no url"},
+    ]
+    pool = _RetitlePool(title=old, drafts=drafts)
+    platform = _FakePlatform()
+    svc = PostEditService(pool=pool, platform=platform)
+
+    res = await svc.retitle("task-1", title=f"  {new}  ")
+
+    assert res.ok and res.field == "title"
+    title_updates = [e for e in pool.executed if "SET title" in e[0]]
+    assert title_updates and title_updates[0][1] == (new, "task-1", 3)
+    draft_updates = [e for e in pool.executed if "social_post_drafts SET content" in e[0]]
+    assert len(draft_updates) == 1
+    new_body, draft_id = draft_updates[0][1]
+    assert draft_id == "d1"
+    assert f"/posts/{_slug(new, 'task-1')}?utm_source=twitter" in new_body
+    assert old_slug not in new_body
+    assert "1 social draft URL(s) rewritten" in res.detail
+    platform.audit.write.assert_awaited_once()
+    assert platform.audit.write.await_args.args[0] == "post_edit_title"
+
+
+async def test_retitle_refuses_non_draft_statuses():
+    for status in ("approved", "published", "in_progress", "rejected_final"):
+        svc = PostEditService(pool=_RetitlePool(status=status))
+        with pytest.raises(ValueError, match="drafts-only"):
+            await svc.retitle("task-1", title="Something With Google in It")
+
+
+async def test_retitle_rejects_blank_title():
+    svc = PostEditService(pool=_RetitlePool())
+    with pytest.raises(ValueError, match="blank"):
+        await svc.retitle("task-1", title="   ")
+
+
+async def test_retitle_unchanged_title_is_a_noop():
+    pool = _RetitlePool(title="Same Title 2026")
+    svc = PostEditService(pool=pool)
+    res = await svc.retitle("task-1", title="Same Title 2026")
+    assert res.ok and "unchanged" in res.detail
+    assert not pool.executed
+
+
+async def test_retitle_warns_when_title_has_no_searchable_entity():
+    pool = _RetitlePool(title="Old Title 2026")
+    svc = PostEditService(pool=pool)
+    res = await svc.retitle("task-1", title="the gap nobody names")
+    assert res.ok
+    assert any("searchable entity" in w for w in res.warnings)
+    assert [e for e in pool.executed if "SET title" in e[0]]  # warn-only: still written

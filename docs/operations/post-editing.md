@@ -60,6 +60,7 @@ so the operator flow is one coherent noun:
 poindexter tasks list                         # find the draft
 poindexter tasks get <task_id>                # review it
 poindexter tasks edit-body <task_id> ...      # fix the text
+poindexter tasks retitle <task_id> --title …  # fix the title (re-slugs + rewrites promo URLs)
 poindexter tasks replace-image <task_id> ...  # swap an image
 poindexter tasks approve <task_id>            # ship it
 ```
@@ -83,6 +84,34 @@ poindexter tasks edit-body <task_id>
 - After every body edit the anti-hallucination **validator re-runs, warn-only** —
   warnings print (`⚠ …`) but the edit still applies. You are the human approval
   gate; the validator advises, it does not block.
+
+### `tasks retitle`
+
+```bash
+poindexter tasks retitle <task_id> --title "A Parent Built Their 8-Year-Old a MUD to Teach Real Code"
+```
+
+Replaces the **canonical title** — `pipeline_versions.title`, the value
+`publish_post_from_task` reads first (`resolve_canonical_title`) — and does the
+two things a title change drags along:
+
+- **Slug.** The publish slug derives from the title, so it is re-derived through
+  the same `derive_publish_identity` chain publish uses; the result prints as
+  `slug <old> -> <new>`.
+- **Social-draft URLs.** `social.generate_drafts` baked the _predicted_ slug into
+  every promo at finalize time. Each live draft (pending / scheduled / failed)
+  whose copy carries `/posts/<old-slug>` is rewritten to the new slug — without
+  this, a retitled post ships with promos pointing at a 404.
+
+Drafts only, **enforced** (unlike `edit-body`): an `approved` task already has a
+`posts` row carrying the old title + slug, so the command refuses with a 400
+naming the fix — `poindexter tasks unapprove <task_id>`, retitle, re-approve.
+The searchable-entity rule (`services/title_searchability.py`) runs warn-only.
+Also reachable as `POST /api/tasks/{id}/retitle` and the MCP `retitle_post`
+tool. Earned 2026-09-09: two drafts needed retitling before approval (a
+first-person title claiming someone else's project; a title blaming Google for
+our own dark topic source) and the only route was a raw `UPDATE` plus hand-editing
+four social drafts.
 
 ### `tasks replace-image`
 

@@ -268,3 +268,25 @@ async def test_tool_error_without_a_detail_still_reads_cleanly():
     ):
         out = await server.regen_post_image("abc1", "featured", "x")
     assert out == "Error: HTTP 502"
+
+
+@pytest.mark.asyncio
+async def test_retitle_post_posts_title():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={"detail": "retitled (v1)", "warnings": ["w"]}),
+        ) as api,
+    ):
+        out = await server.retitle_post("abc1", title="A Parent Built a MUD")
+    api.assert_awaited_once_with("POST", "/api/tasks/full/retitle", {"title": "A Parent Built a MUD"})
+    assert out == "retitled (v1) (warnings: w)"
+
+
+@pytest.mark.asyncio
+async def test_retitle_post_rejects_blank_title():
+    with patch.object(server, "_api", AsyncMock()) as api:
+        out = await server.retitle_post("abc1", title="  ")
+    assert out.startswith("Error")
+    api.assert_not_awaited()

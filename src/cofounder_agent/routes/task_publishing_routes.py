@@ -1430,6 +1430,10 @@ class EditBodyRequest(BaseModel):
     replace: str | None = None
 
 
+class RetitleRequest(BaseModel):
+    title: str
+
+
 class ReplaceImageRequest(BaseModel):
     which: str  # "featured" | "inline:N"
     url: str
@@ -1529,6 +1533,30 @@ async def edit_task_body(
         res = await svc.edit_body(
             full_id, new_content=body.new_content, find=body.find, replace=body.replace,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/retitle", summary="Replace an awaiting_approval draft's title")
+async def retitle_task(
+    task_id: str,
+    body: RetitleRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Replace the canonical title (``pipeline_versions.title``) of a draft.
+    Re-derives the publish slug and rewrites the URL baked into every live
+    social draft. Drafts only — an approved task must be unapproved first."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.retitle(full_id, title=body.title)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return _edit_result_json(res)

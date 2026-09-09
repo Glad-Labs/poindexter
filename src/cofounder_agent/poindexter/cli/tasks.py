@@ -819,6 +819,21 @@ def tasks_edit_body(task_id: str, find: str | None, replace: str | None) -> None
     _emit_edit_result(_post_edit(f"/api/tasks/{task_id}/edit-body", payload))
 
 
+@tasks_group.command("retitle")
+@click.argument("task_id")
+@click.option("--title", required=True, help="The new canonical title.")
+def tasks_retitle(task_id: str, title: str) -> None:
+    """Replace an awaiting_approval draft's title. Drafts only (enforced).
+
+    Writes pipeline_versions.title — the canonical title publish reads first —
+    re-derives the publish slug from it, and rewrites the URL baked into every
+    live social draft so the promos don't point at a 404. An approved task
+    already has a posts row with the old title: `tasks unapprove` it first.
+    The searchable-entity rule runs warn-only.
+    """
+    _emit_edit_result(_post_edit(f"/api/tasks/{task_id}/retitle", {"title": title}))
+
+
 @tasks_group.command("replace-image")
 @click.argument("task_id")
 @click.option("--which", required=True, help="featured | inline:N (1-based)")

@@ -301,3 +301,14 @@ def test_body_command_help_explains_drafts_only_is_unguarded(runner, command):
     assert "published" in help_text, (
         f"{command} --help should say what happens against a published post"
     )
+
+
+def test_retitle_posts_payload(runner):
+    from poindexter.cli import tasks as tasks_mod
+
+    with patch.object(tasks_mod, "_post_edit", return_value={"detail": "retitled"}) as post:
+        result = runner.invoke(
+            tasks_mod.tasks_group, ["retitle", "abc12345", "--title", "A Parent Built a MUD"],
+        )
+    assert result.exit_code == 0, result.output
+    post.assert_called_once_with("/api/tasks/abc12345/retitle", {"title": "A Parent Built a MUD"})

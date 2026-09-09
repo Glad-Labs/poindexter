@@ -217,6 +217,12 @@ class TestDraftEditingRoutes:
                     new_url="https://cdn/added.webp",
                 )
 
+            async def retitle(self, task_id, **kw):
+                calls["retitle"] = (task_id, kw)
+                if not kw["title"].strip():
+                    raise ValueError("title must not be blank")
+                return EditResult(task_id, "title", True, "retitled (v1)", warnings=["w2"])
+
         async def fake_enqueue(pool, task_id, *, allow_stock=False):
             calls["enqueue_image_rebuild"] = (task_id, {"allow_stock": allow_stock})
             return "rebuild-task-123"
@@ -242,6 +248,24 @@ class TestDraftEditingRoutes:
         tid, kw = calls["edit_body"]
         assert tid == VALID_TASK_ID
         assert kw == {"new_content": None, "find": "x", "replace": "y"}
+
+    def test_retitle_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/retitle", json={"title": "A Parent Built a MUD"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["field"] == "title"
+        assert body["warnings"] == ["w2"]
+        assert calls["retitle"] == (VALID_TASK_ID, {"title": "A Parent Built a MUD"})
+
+    def test_retitle_value_error_maps_to_400(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/retitle", json={"title": "   "})
+        assert r.status_code == 400
+        assert "blank" in r.json()["detail"]
 
     def test_replace_image_routes_to_service(self, monkeypatch):
         calls: dict = {}
