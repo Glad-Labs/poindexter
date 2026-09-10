@@ -39,9 +39,26 @@ alongside the existing ``content_validator``. The competitor rail
 additionally needs ``app_settings.guardrails_competitor_list`` seeded
 (empty list → no enforcement).
 
-Both wire in as reviewers in ``services/multi_model_qa.py`` via
-``run_brand_guard`` / ``run_competitor_guard``, and run as the
-``qa.guardrails`` atom on the ``canonical_blog`` graph_def path.
+RETIRED 2026-09-10 — NOT ON ANY GRAPH
+-------------------------------------
+
+**Nothing calls these rails.** They are reachable only through
+``MultiModelQA``'s ``_check_guardrails_*`` methods, which the #355 atom
+cutover left behind when it replaced ``review()`` with the ``qa.*`` atom
+chain. There is no ``qa.guardrails`` atom — #730 removed that node, and
+``test_regen_services_doc`` asserts it never returns.
+
+Until 2026-09-10 this docstring named a graph node for them. That was false
+for months and is exactly how the dormancy stayed invisible: the gate rows
+read enabled, ``guardrails_enabled`` read true, and the module itself said it
+was wired.
+
+The rails were retired rather than rewired because the cover is not missing:
+``run_brand_guard`` runs the same ``content_validator`` patterns as the live
+``programmatic_validator`` rail (a third lens, by its own description), and
+``run_competitor_guard`` had nothing to catch across 203 published posts.
+The code is kept so it can be rewired if comparison content ever needs it —
+doing so means adding a ``qa.guardrails`` atom AND re-enabling the gate rows.
 """
 
 from __future__ import annotations

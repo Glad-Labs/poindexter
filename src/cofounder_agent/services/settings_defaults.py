@@ -2128,7 +2128,12 @@ DEFAULTS: dict[str, str] = {
     'non_thinking_model_substrings': '["-instruct"]',
     'enable_writer_self_review': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
-    'guardrails_enabled': 'true',
+    # Retired 2026-09-10 (wiring audit): NO atom wires the guardrails rails
+    # since the #355 cutover, so this read `true` while producing 0 reviews in
+    # 60 days. Brand cover is duplicated by programmatic_validator +
+    # deepeval_brand_fabrication; competitor screening had nothing to catch
+    # across 203 posts. Code + gate rows kept so it can be rewired.
+    'guardrails_enabled': 'false',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'ragas_enabled': 'true',
     # poindexter#1035: Ragas's per-job timeout (library default 180 s) — a
