@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-09-08.**  
+> **Auto-generated from live `app_settings` table on 2026-09-09.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 678 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -549,7 +549,7 @@ The worker re-reads on every poll; no restart needed.
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |
-| `vision_alt_model` | `ollama/qwen3-vl:30b` |  |  |
+| `vision_alt_model` | `ollama/qwen3-vl:30b-a3b-instruct` |  |  |
 | `voice_agent_brain` | `ollama` |  | Auto-seeded by services.settings_defaults (#379) |
 | `voice_agent_brain_mode` | `ollama` |  |  |
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
