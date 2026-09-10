@@ -468,8 +468,11 @@ async def _render_bakeoff_engine(engine, text, voice, out_path, site_config, *, 
         raise click.UsageError(
             f"unknown engine {engine!r}; known: speaches,{','.join(_BAKEOFF_PROVIDERS)}"
         )
-    mod_name, cls_name = target.split(":")
     import importlib
+
+    from services.module_paths import resolve_object_path
+
+    mod_name, cls_name = resolve_object_path(target)
     provider = getattr(importlib.import_module(mod_name), cls_name)()
     result = await provider.synthesize(
         text, out_path, voice=voice or None,

@@ -29,6 +29,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from services.module_paths import resolve_module_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,7 +42,7 @@ def _check_module(
 ) -> tuple[bool, str | None]:
     """Probe a single import. Returns (ok, detail_for_notify_on_failure)."""
     try:
-        __import__(module_path)
+        __import__(resolve_module_path(module_path))
         return True, None
     except ImportError as exc:
         return False, (

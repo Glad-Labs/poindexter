@@ -27,6 +27,7 @@ import asyncpg
 from config import get_config
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
 from services.logger_config import get_logger
+from services.module_paths import resolve_module_path
 from services.site_config import SiteConfig
 
 from .admin_db import AdminDatabase
@@ -342,7 +343,9 @@ class DatabaseService:
         # Resolved via sys.modules so a process that never imported the
         # (heavy) publish module doesn't pay the import at shutdown — if it
         # was never imported, nothing was spawned.
-        publish_service = sys.modules.get("services.publish_service")
+        # Key resolved through the module-path seam: after the poindexter.*
+        # move this module is registered under the new name (poindexter#1046).
+        publish_service = sys.modules.get(resolve_module_path("services.publish_service"))
         if publish_service is not None:
             try:
                 await publish_service.drain_background_tasks()

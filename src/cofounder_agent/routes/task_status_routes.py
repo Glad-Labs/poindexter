@@ -31,6 +31,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
 from services.logger_config import get_logger
+from services.module_paths import resolve_module_path
 from utils.deprecation import deprecation_headers
 from utils.route_utils import get_database_dependency
 from utils.task_status import TaskStatus, get_allowed_transitions, is_terminal, is_valid_transition
@@ -221,7 +222,8 @@ async def update_task_status_validated(
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
-                "utils.route_utils", fromlist=["get_enhanced_status_change_service"]
+                resolve_module_path("utils.route_utils"),
+                fromlist=["get_enhanced_status_change_service"],
             ).get_enhanced_status_change_service()
         )
     ),
@@ -518,7 +520,8 @@ async def get_task_validation_failures(
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
             __import__(
-                "utils.route_utils", fromlist=["get_enhanced_status_change_service"]
+                resolve_module_path("utils.route_utils"),
+                fromlist=["get_enhanced_status_change_service"],
             ).get_enhanced_status_change_service()
         )
     ),

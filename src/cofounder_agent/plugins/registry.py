@@ -48,6 +48,8 @@ from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from typing import Any
 
+from services.module_paths import resolve_module_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +104,7 @@ a top-level package."""
 
 def _intree_modules_path() -> Path:
     """Filesystem path of the in-tree ``modules`` package."""
-    pkg = importlib.import_module(_INTREE_MODULES_IMPORT_ROOT)
+    pkg = importlib.import_module(resolve_module_path(_INTREE_MODULES_IMPORT_ROOT))
     return Path(pkg.__path__[0])
 
 
@@ -134,7 +136,7 @@ def _load_intree_module(name: str) -> Any:
     modules declare it) with a fallback to the first class defined in the
     file that exposes a ``manifest`` method."""
     mod = importlib.import_module(
-        f"{_INTREE_MODULES_IMPORT_ROOT}.{name}.{name}_module"
+        resolve_module_path(f"{_INTREE_MODULES_IMPORT_ROOT}.{name}.{name}_module")
     )
     cls = None
     exported = getattr(mod, "__all__", None)
@@ -1212,8 +1214,9 @@ def get_core_samples() -> dict[str, list[Any]]:
 
     for plugin_type, module_path, class_name in _SAMPLES:
         try:
-            import importlib
-            module = importlib.import_module(module_path)
+            # Resolved through the module-path seam so the flat spelling above
+            # keeps working after the poindexter.* move (poindexter#1046 step 1).
+            module = importlib.import_module(resolve_module_path(module_path))
             cls = getattr(module, class_name)
             samples[plugin_type].append(cls())
         except Exception as e:

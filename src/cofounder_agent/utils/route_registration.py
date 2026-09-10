@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from services.logger_config import get_logger
+from services.module_paths import resolve_module_path
 
 logger = get_logger(__name__)
 
@@ -133,7 +134,7 @@ def register_all_routes(
 
     for module_path, router_attr, status_key, description in manifest:
         try:
-            module = importlib.import_module(module_path)
+            module = importlib.import_module(resolve_module_path(module_path))
             router = getattr(module, router_attr)
             app.include_router(router)
             logger.info(" %s registered (%s)", status_key, description)

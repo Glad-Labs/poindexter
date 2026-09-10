@@ -25,6 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from plugins.atom import AtomMeta
+from services.module_paths import resolve_module_path
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,13 @@ _DISCOVERED = False
 
 def _walk_package(pkg_name: str) -> None:
     """Import every module under ``pkg_name`` so module-level
-    ``ATOM_META`` constants are evaluated."""
+    ``ATOM_META`` constants are evaluated.
+
+    ``pkg_name`` may be spelled flat (``modules.content.atoms``) or under the
+    future root (``poindexter.modules.content.atoms``); it is resolved once
+    here so ``full_name`` below is built on the importable spelling
+    (poindexter#1046 step 1)."""
+    pkg_name = resolve_module_path(pkg_name)
     try:
         pkg = importlib.import_module(pkg_name)
     except Exception as exc:

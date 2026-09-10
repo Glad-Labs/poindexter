@@ -149,11 +149,13 @@ def wire_http_client_modules(client: httpx.AsyncClient | None) -> int:
     """
     import importlib
 
+    from services.module_paths import resolve_module_path
+
     wired = 0
     failures: list[str] = []
     for modname in WIRED_HTTP_CLIENT_MODULES:
         try:
-            mod = importlib.import_module(modname)
+            mod = importlib.import_module(resolve_module_path(modname))
         except Exception as exc:  # noqa: BLE001 — optional / lazy module
             failures.append(f"{modname} (import: {exc})")
             continue
