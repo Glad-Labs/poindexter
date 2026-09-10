@@ -1,0 +1,58 @@
+# The `poindexter` name on PyPI, reserved.
+#
+# This is NOT the Poindexter CLI. It is a deliberately tiny package that
+# claims the distribution name and, when run, tells you how to install the
+# real thing. It exists because the real CLI cannot yet be published as a
+# standalone wheel: it imports the backend's service layer (`services`,
+# `plugins`, `modules`), which the backend's flat import layout cannot ship
+# on PyPI without shadowing real packages of the same names. The migration
+# that fixes that is tracked in the epic linked from README.md.
+#
+# Built and published by .github/workflows/release-poindexter-to-pypi.yml when
+# dispatched with `package=placeholder` -- the same workflow and Trusted
+# Publisher the real package will use, so the OIDC path is proven by the
+# placeholder. It is superseded the moment the real package ships (any
+# 0.1xx.0 sorts after 0.0.1), and this directory is deleted then.
+#
+# Version is intentionally NOT lockstepped with release-please: 0.0.1 must sort
+# below every real release, and must never be re-published (PyPI forbids
+# reusing a version) -- bump only if the placeholder itself needs a change.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poindexter"
+version = "0.0.1"
+description = "Reserved name for the Poindexter CLI (self-hosted AI content pipeline). Placeholder: installs a pointer to the real install path."
+readme = "README.md"
+# Broad on purpose: the whole point is that the pointer reaches whoever runs
+# `pip install poindexter`, on whatever Python they have. The real package
+# requires >=3.13 and says so itself.
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Glad Labs LLC", email = "hello@gladlabs.io" }]
+keywords = ["poindexter", "placeholder"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/Glad-Labs/poindexter"
+Documentation = "https://gladlabs.mintlify.app"
+Repository = "https://github.com/Glad-Labs/poindexter"
+Issues = "https://github.com/Glad-Labs/poindexter/issues"
+
+[project.scripts]
+# Same command name the real package will own, so a stale placeholder install
+# fails loud with instructions instead of "command not found".
+poindexter = "poindexter:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

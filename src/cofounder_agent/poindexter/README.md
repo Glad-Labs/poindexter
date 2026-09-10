@@ -9,13 +9,24 @@ one client, zero drift.
 
 ## Install
 
+The CLI ships **with the Poindexter stack**, not as a standalone package yet:
+
 ```bash
-pip install poindexter
-# or, recommended — isolated install:
-uv tool install poindexter
+git clone https://github.com/Glad-Labs/poindexter
+cd poindexter
+docker compose -f docker-compose.consumer.yml up -d
 ```
 
-Python 3.13 required (see `pyproject.toml`'s `>=3.13,<3.14`).
+The `poindexter` command is then available inside the worker container, or on
+the host via `poetry -C src/cofounder_agent install` (Python 3.13).
+
+> **`pip install poindexter` currently installs a placeholder** (0.0.1) that
+> reserves the name and prints these instructions. The CLI is a thin adapter
+> over the stack's service layer — it imports `services`, `plugins` and
+> `modules` by design — and the backend's flat import layout cannot ship those
+> on PyPI without shadowing real packages of the same names. The namespace
+> migration that makes `pip install poindexter` real is tracked in
+> [Glad-Labs/poindexter#1046](https://github.com/Glad-Labs/poindexter/issues/1046).
 
 ## Quick start
 

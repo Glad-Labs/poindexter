@@ -1,8 +1,8 @@
 # Publish the `poindexter` CLI to PyPI.
 #
-# Trigger: pushing a tag of the form `poindexter-v*.*.*` (e.g.
-# `poindexter-v0.9.1`). Manual dispatch is also supported for testing
-# against TestPyPI.
+# Trigger: pushing a release tag (`v*.*.*`, as cut by release-please), or a
+# manual dispatch. Dispatch takes two inputs: `target` (testpypi | pypi) and
+# `package` (cli | placeholder) -- see the inputs block for what each means.
 #
 # Publishing uses PyPI Trusted Publishing (OIDC) — there is NO API
 # token stored in GitHub Secrets. To wire this up on first use:
@@ -22,7 +22,15 @@
 #
 # No PYPI_API_TOKEN secret is used or required.
 #
-# Resolves Glad-Labs/poindexter#41.
+# History: Glad-Labs/poindexter#41 was closed 2026-04-21 on this workflow
+# EXISTING. It had zero runs until 2026-08-28 (wrong tag trigger), and the
+# first wheel it ever built could not import itself -- the CLI reaches into
+# the backend's flat `services`/`plugins`/`modules` packages, which a wheel
+# cannot ship. The real package is gated on the namespace migration in
+# Glad-Labs/poindexter#1046. Until it lands, `package=placeholder` publishes a 0.0.1
+# name-reservation package from packaging/pypi-placeholder/, and the
+# clean-install smoke job below is what stops the broken CLI wheel from ever
+# reaching PyPI.
 
 name: Release poindexter to PyPI
 
@@ -49,6 +57,17 @@ on:
         options:
           - testpypi
           - pypi
+      package:
+        description: >-
+          cli = the real CLI (gated by POINDEXTER_PYPI_RELEASE; its wheel
+          currently fails the smoke test -- see Glad-Labs/poindexter#1046).
+          placeholder = the 0.0.1 name-reservation package.
+        required: true
+        default: cli
+        type: choice
+        options:
+          - cli
+          - placeholder
 
 permissions:
   # Required for PyPI Trusted Publishing via OIDC.
@@ -81,20 +100,32 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine
 
+      # `package` is empty on tag pushes (no inputs), which means the real CLI.
+      - name: Select package source
+        id: src
+        run: |
+          case "${{ github.event.inputs.package || 'cli' }}" in
+            placeholder) dir="packaging/pypi-placeholder" ;;
+            cli)         dir="src/cofounder_agent/poindexter" ;;
+            *) echo "unknown package: ${{ github.event.inputs.package }}" >&2; exit 1 ;;
+          esac
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "building from $dir"
+
       - name: Build distributions
-        working-directory: src/cofounder_agent/poindexter
+        working-directory: ${{ steps.src.outputs.dir }}
         run: |
           python -m build
           ls -la dist/
 
       - name: Validate distributions
-        working-directory: src/cofounder_agent/poindexter
+        working-directory: ${{ steps.src.outputs.dir }}
         run: |
           python -m twine check dist/*
 
       - name: Report package version
         id: pkg
-        working-directory: src/cofounder_agent/poindexter
+        working-directory: ${{ steps.src.outputs.dir }}
         run: |
           # Extract version from the built sdist filename:
           #   poindexter-0.9.0.tar.gz -> 0.9.0
@@ -107,13 +138,47 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v4.6.2 as of 2026-05-12
         with:
           name: poindexter-dist
-          path: src/cofounder_agent/poindexter/dist/
+          path: ${{ steps.src.outputs.dir }}/dist/
           if-no-files-found: error
           retention-days: 14
 
+  # The gate `twine check` cannot be. twine validates metadata and README
+  # rendering and never imports the package -- both the real CLI's artifacts
+  # PASS it while `poindexter --help` dies on `No module named 'services'`.
+  # This installs the wheel into a clean venv and runs the command, which is
+  # the only test that reflects what a user gets.
+  #
+  # EXPECTED RED on `v*` tag builds until Glad-Labs/poindexter#1046 lands: the real CLI wheel is
+  # not installable standalone, and this job saying so is what keeps
+  # publish-pypi from ever shipping it -- both publish jobs `needs` this one.
+  # A green run here on a tag build is the go-live signal for the real package.
+  smoke:
+    name: Clean-install smoke test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: "3.13"
+
+      - name: Download built distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v4.3.0 as of 2026-05-12
+        with:
+          name: poindexter-dist
+          path: dist/
+
+      - name: Install the wheel into a clean venv and run the CLI
+        run: |
+          python -m venv "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke/bin/pip" install --quiet dist/*.whl
+          echo "--- poindexter --help ---"
+          "$RUNNER_TEMP/smoke/bin/poindexter" --help
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build
+    needs: [build, smoke]
     # Mirror-only for the same OIDC reason as publish-pypi below. This is the
     # dry run that proves the Trusted Publisher path before the real one is
     # switched on -- dispatch it from Glad-Labs/poindexter with target=testpypi.
@@ -144,27 +209,36 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
-    # Three conditions, all required, because this is a public, irreversible
-    # publish that has never once run:
+    needs: [build, smoke]
+    # Public and irreversible, so every path here is deliberate:
     #
-    #  1. Only from the PUBLIC mirror. The Trusted Publisher documented in the
-    #     header is registered against `Repository: poindexter`, and the mirror
-    #     is where release-mirror-to-public.yml re-creates each `v*` tag. The
-    #     same tag also exists on glad-labs-stack, where OIDC would not match.
-    #  2. A real release tag, or an explicit dispatch with target=pypi.
-    #  3. `vars.POINDEXTER_PYPI_RELEASE == 'true'` -- the deliberate go-live
-    #     switch. The build job below now runs on every release tag (which is
-    #     the actual fix for "never fires"), but the FIRST publish must not
-    #     happen unattended: the PyPI project does not exist yet, so the
-    #     Trusted Publisher is unverified and would fail the release run.
-    #     Set the repo variable on Glad-Labs/poindexter once the pending
-    #     publisher is registered; no code change needed to go live.
+    #  * Only from the PUBLIC mirror. The Trusted Publisher is registered
+    #    against `Repository: poindexter`, and the mirror is where
+    #    release-mirror-to-public.yml re-creates each `v*` tag. The same tag
+    #    exists on glad-labs-stack, where the OIDC claim would not match.
+    #  * `needs: smoke` -- nothing publishes that a clean install cannot run.
+    #
+    #  Two ways in:
+    #   1. PLACEHOLDER: an explicit dispatch with target=pypi AND
+    #      package=placeholder. Human-triggered, one-time, reserves the name.
+    #      Deliberately NOT behind the go-live variable -- that variable means
+    #      "ship the real CLI on every release", which this is not.
+    #   2. REAL CLI: `vars.POINDEXTER_PYPI_RELEASE == 'true'` on
+    #      Glad-Labs/poindexter, plus a release tag or a package=cli dispatch.
+    #      Do not set the variable until the smoke job is green on a tag build
+    #      -- see Glad-Labs/poindexter#1046. No code change is needed to go live.
     if: >-
       github.repository == 'Glad-Labs/poindexter' &&
-      vars.POINDEXTER_PYPI_RELEASE == 'true' &&
-      (startsWith(github.ref, 'refs/tags/v') ||
-       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi'))
+      (
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.target == 'pypi' &&
+         github.event.inputs.package == 'placeholder')
+        ||
+        (vars.POINDEXTER_PYPI_RELEASE == 'true' &&
+         github.event.inputs.package != 'placeholder' &&
+         (startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
