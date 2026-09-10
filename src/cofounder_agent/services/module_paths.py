@@ -33,9 +33,11 @@ CONTRACT
   :data:`PROJECT_ROOTS` (``os.path``, ``langchain_core.x``, a third-party
   plugin's ``acme_taps.slack``) passes through untouched -- and so does the
   CLI's own ``poindexter.cli.app``, because ``cli`` is not a project root.
-* ``brain`` is deliberately NOT a project root. It is a repo-root sibling of
-  ``src/cofounder_agent`` whose destination is an explicit step-2 decision;
-  until then ``brain.*`` is passed through unchanged.
+* ``brain`` IS a project root (decided 2026-09-10: it moves to
+  ``poindexter.brain``). It is a repo-root sibling of ``src/cofounder_agent``
+  today; the CLI imports it at 12 sites and the backend at 25, ``brain`` is a
+  taken name on PyPI, and the dependency is bidirectional -- so it ships inside
+  the one distribution, under the namespace.
 
 ``tests/unit/services/test_module_paths.py`` walks every string-named
 project module in the wired call sites and asserts each resolves and
@@ -73,7 +75,7 @@ FUTURE_ROOT: str = "poindexter"
 #: moves. Keep this in step with the tree; ``test_module_paths`` asserts every
 #: one is a real package.
 PROJECT_ROOTS: frozenset[str] = frozenset(
-    {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks"}
+    {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"}
 )
 
 

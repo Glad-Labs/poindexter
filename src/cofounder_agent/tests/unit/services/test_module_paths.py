@@ -88,9 +88,12 @@ class TestFlatModulePath:
         for p in ("os.path", "langchain_core.x", "acme_taps.slack", "poindexter"):
             assert mp.flat_module_path(p) == p
 
-    def test_brain_is_not_a_project_root(self):
-        assert mp.flat_module_path("poindexter.brain.bootstrap") == "poindexter.brain.bootstrap"
-        assert mp.resolve_module_path("brain.bootstrap") == "brain.bootstrap"
+    def test_brain_is_a_project_root(self):
+        # Decided 2026-09-10: brain ships inside the distribution as poindexter.brain.
+        assert mp.flat_module_path("poindexter.brain.bootstrap") == "brain.bootstrap"
+        assert mp.resolve_module_path("brain.bootstrap") == mp.resolve_module_path(
+            "poindexter.brain.bootstrap"
+        )
 
     @pytest.mark.parametrize("bad", ["", None, 42])
     def test_rejects_non_string(self, bad):
@@ -124,10 +127,13 @@ class TestResolveModulePath:
         assert mp.resolve_module_path("langchain_core.x") == "langchain_core.x"
         assert mp.resolve_module_path("poindexter.cli.app") == "poindexter.cli.app"
 
-    def test_every_declared_project_root_is_a_real_package(self):
+    def test_every_declared_project_root_is_importable(self):
+        # Importability rather than a directory under BACKEND: `brain` is a repo-root
+        # sibling until step 2 moves it, and after the move every root lives under
+        # poindexter/. find_spec is the move-proof form of "this root exists".
         for root in sorted(mp.PROJECT_ROOTS):
-            assert (BACKEND / root).is_dir(), (
-                f"PROJECT_ROOTS names {root!r} but it is not a package"
+            assert importlib.util.find_spec(root) is not None, (
+                f"PROJECT_ROOTS names {root!r} but it is not importable"
             )
 
 
@@ -184,6 +190,11 @@ def _string_module_paths(rel: str) -> list[tuple[int, str]]:
         # to import (the package roots are always spelled flat, e.g. "modules").
         if re.fullmatch(rf"{re.escape(mp.FUTURE_ROOT)}\.[a-z_]+", value):
             continue
+        # A `/` operand is a filesystem path segment, never a module:
+        # `(_p / "brain" / "bootstrap.py")` in database_service's sys.path walk.
+        parent = parents.get(node)
+        if isinstance(parent, ast.BinOp) and isinstance(parent.op, ast.Div):
+            continue
         # skip label-style arguments: emit_finding(source=...), _require(source=...)
         p = parents.get(node)
         while p is not None and not isinstance(p, ast.Call):
@@ -220,17 +231,30 @@ def test_inventory_floor():
     assert not empty, f"wired files yielding no string paths (check went blind?): {empty}"
 
 
-# The root that holds `services/`, `plugins/`, ... -- derived from the resolver's
-# own location so it follows the tree when it moves under `poindexter/`.
-PKG_ROOT = Path(mp.__file__).resolve().parent.parent
+def _root_dir(root: str) -> Path | None:
+    """Filesystem directory of a project root, wherever this checkout keeps it.
+
+    `services`, `plugins`, ... sit under src/cofounder_agent; `brain` sits at the
+    repo root until step 2 moves it; after the move every root is under
+    poindexter/. `find_spec` on a bare top-level name only LOCATES the package
+    (no import), so this is cheap and follows the tree wherever it goes."""
+    spec = importlib.util.find_spec(root)
+    if spec is None or not spec.submodule_search_locations:
+        return None
+    return Path(next(iter(spec.submodule_search_locations)))
 
 
 def _source_shipped(dotted: str) -> bool:
     """True when this checkout contains the module's source (file or package)."""
-    rel = Path(*mp.flat_module_path(dotted).split("."))
-    return (PKG_ROOT / rel).with_suffix(".py").is_file() or (
-        PKG_ROOT / rel / "__init__.py"
-    ).is_file()
+    flat = mp.flat_module_path(dotted)
+    root, _, rest = flat.partition(".")
+    root_dir = _root_dir(root)
+    if root_dir is None:
+        return False
+    if not rest:
+        return True
+    rel = root_dir.joinpath(*rest.split("."))
+    return rel.with_suffix(".py").is_file() or (rel / "__init__.py").is_file()
 
 
 def _find_spec(dotted: str):
