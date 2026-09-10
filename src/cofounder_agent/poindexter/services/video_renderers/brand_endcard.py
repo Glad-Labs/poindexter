@@ -49,7 +49,8 @@ _TEAL = (45, 212, 191)         # #2DD4BF — stream/particle secondary
 _BLUE = (59, 130, 246)         # #3B82F6 — the site's glow-blue
 _SLATE_TEXT = (203, 213, 225)  # #CBD5E1 — tagline
 
-_FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
+# poindexter#1046 step 2: this file lives under poindexter/ now; assets/ did not move, so the backend root (src/cofounder_agent) is one level further up.
+_FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
 
 # One fixed seed ⇒ the motif is deterministic; re-renders produce identical
 # cards and golden-pixel tests stay stable.

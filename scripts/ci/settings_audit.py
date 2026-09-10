@@ -48,10 +48,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SVC = REPO / "src" / "cofounder_agent" / "services"
+SVC = REPO / "src" / "cofounder_agent" / "poindexter" / "services"
 DEFAULTS_PY = SVC / "settings_defaults.py"
 BASELINE_SEEDS = SVC / "migrations" / "0000_baseline.seeds.sql"
-REGISTRY_PY = REPO / "src" / "cofounder_agent" / "plugins" / "registry.py"
+REGISTRY_PY = REPO / "src" / "cofounder_agent" / "poindexter" / "plugins" / "registry.py"
 JOBS_DIR = SVC / "jobs"
 
 # Roots scanned for code references. Heavy/build dirs are pruned in _walk.

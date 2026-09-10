@@ -20,7 +20,7 @@ OPTIONS
     --dry-run                 Print the would-be path and template; don't write.
     --force                   Overwrite the target file if it already exists.
 
-The script writes to ``src/cofounder_agent/services/migrations/`` and
+The script writes to ``src/cofounder_agent/poindexter/services/migrations/`` and
 prints the absolute path of the created file. After it returns, fill
 in the SQL inside ``up()``/``down()``, run ``python scripts/ci/migrations_smoke.py``
 locally against a fresh Postgres, and open a PR.
@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MIGRATIONS_DIR = REPO_ROOT / "src" / "cofounder_agent" / "services" / "migrations"
+MIGRATIONS_DIR = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9_]+")
 _TEMPLATE_POOL = '''"""Migration {timestamp}: {description}

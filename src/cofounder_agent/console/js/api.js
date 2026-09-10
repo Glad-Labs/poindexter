@@ -25,7 +25,7 @@
       `mock:` branch. Implement/verify the live branch for one
       surface, leave the rest on mock, repeat. Search "TODO(live)".
 
-   Endpoint map (VERIFIED against src/cofounder_agent/routes/):
+   Endpoint map (VERIFIED against src/cofounder_agent/poindexter/routes/):
      token         POST /token   (grant_type=client_credentials → JWT)
      health        GET  /api/health
      settings      GET  /api/settings           · PUT /api/settings/{id}

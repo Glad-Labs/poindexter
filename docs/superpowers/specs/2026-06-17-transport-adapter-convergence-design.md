@@ -128,7 +128,7 @@ params. Typed errors (`UnknownSurfaceError`, `SurfaceValidationError`,
 ### 1.2 HTTP routes
 
 New `src/cofounder_agent/routes/data_plane_routes.py`, modeled exactly on
-[`routes/gates_routes.py`](../../../src/cofounder_agent/routes/gates_routes.py):
+[`routes/gates_routes.py`](../../../src/cofounder_agent/poindexter/routes/gates_routes.py):
 
 - `APIRouter(prefix="/api/data-plane", tags=["data-plane"])`
 - Every handler: `token: str = Depends(verify_api_token)` +
@@ -141,7 +141,7 @@ New `src/cofounder_agent/routes/data_plane_routes.py`, modeled exactly on
   - `PUT    /api/data-plane/{surface}/{key}` → `upsert_row`
   - `DELETE /api/data-plane/{surface}/{key}` → `delete_row` (404 if none)
 - Pydantic body model for upsert; service `*Error`s → `HTTPException` (400/404/409).
-- Register in [`utils/route_registration.py`](../../../src/cofounder_agent/utils/route_registration.py)
+- Register in [`utils/route_registration.py`](../../../src/cofounder_agent/poindexter/utils/route_registration.py)
   `_WORKER_ROUTES`; bump the manifest count in
   `tests/unit/utils/test_route_registration.py` (the #1491 pattern).
 

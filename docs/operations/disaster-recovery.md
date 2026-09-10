@@ -243,7 +243,7 @@ poindexter migrate status > /tmp/migrate-status-before.txt
 
 ```bash
 # Inspect the migration file
-cat src/cofounder_agent/services/migrations/<NNNN>_<name>.py
+cat src/cofounder_agent/poindexter/services/migrations/<NNNN>_<name>.py
 
 # Manually drop / undo whatever DDL the failed migration partially applied
 docker exec -it poindexter-postgres-local psql -U poindexter -d poindexter_brain
@@ -706,7 +706,7 @@ pythonw scripts/nvidia-smi-exporter.py
 - [`ci-deploy-chain.md`](./ci-deploy-chain) — how Vercel deploys are wired
 - [`backups.md`](./backups) — backup tiers, retention, and the brain backup-watcher / restore-test probe
 - `scripts/db-backup-local.sh` — the `DbBackupJob` backup script (flat-dir tier)
-- `src/cofounder_agent/plugins/secrets.py` — encryption module reference
+- `src/cofounder_agent/poindexter/plugins/secrets.py` — encryption module reference
 - `scripts/dr-reimport-posts-from-r2.py` — re-import published posts from R2 into a fresh DB (DB-2 Step 6)
 
 ## Contact

@@ -52,7 +52,7 @@ def _install_fakes(monkeypatch, *, dirty: bool, gh_spy):
 
     def fake_git(*args, **_kwargs):
         if args and args[0] == "status":
-            return _FakeProc(0, " M src/cofounder_agent/services/foo.py\n" if dirty else "")
+            return _FakeProc(0, " M src/cofounder_agent/poindexter/services/foo.py\n" if dirty else "")
         # stack#2809: commit_and_open_pr refuses to commit unless HEAD resolves
         # to the session's own worktree branch, so the fake must report one.
         if args[:2] == ("rev-parse", "--abbrev-ref"):

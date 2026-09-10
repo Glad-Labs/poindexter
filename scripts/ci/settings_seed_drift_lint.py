@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SVC = REPO / "src" / "cofounder_agent" / "services"
+SVC = REPO / "src" / "cofounder_agent" / "poindexter" / "services"
 MIGRATIONS = SVC / "migrations"
 BASELINE_SEEDS = MIGRATIONS / "0000_baseline.seeds.sql"
 DEFAULTS_PY = SVC / "settings_defaults.py"

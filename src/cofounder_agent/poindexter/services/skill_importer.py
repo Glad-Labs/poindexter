@@ -36,8 +36,9 @@ _DEFAULT_ALLOWED_LICENSES = [
     "ISC",
 ]
 
-# Skills directory relative to this file: services/ -> skills/
-_SKILLS_DIR = Path(__file__).parent.parent / "skills"
+# Skills directory relative to this file: poindexter/services/ -> <root>/skills/
+# (skills/ stayed at the backend root when services/ moved, poindexter#1046 step 2).
+_SKILLS_DIR = Path(__file__).resolve().parents[2] / "skills"
 
 # ---------------------------------------------------------------------------
 # Exceptions

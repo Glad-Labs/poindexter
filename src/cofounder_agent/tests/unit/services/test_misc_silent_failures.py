@@ -196,6 +196,8 @@ async def test_podcast_record_episode_asset_emits_finding_on_import_failure(
     import services as services_pkg
     monkeypatch.delattr(services_pkg, "media_asset_recorder", raising=False)
     monkeypatch.setitem(sys.modules, "services.media_asset_recorder", None)
+    # One module, two names since poindexter#1046 step 2 -- poison the canonical too.
+    monkeypatch.setitem(sys.modules, "poindexter.services.media_asset_recorder", None)
     svc = PodcastService.__new__(PodcastService)
     svc._site_config = SimpleNamespace(_pool=None, get=lambda k, d=None: d)
     result = EpisodeResult(

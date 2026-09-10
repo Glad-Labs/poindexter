@@ -1,6 +1,6 @@
 # Settings Service
 
-**File:** `src/cofounder_agent/services/settings_service.py`
+**File:** `src/cofounder_agent/poindexter/services/settings_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_settings_service.py`
 **Last reviewed:** 2026-04-30
 

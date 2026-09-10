@@ -38,10 +38,10 @@ pytestmark = pytest.mark.unit
 
 _SEEDS = (
     Path(__file__).resolve().parents[3]
-    / "services" / "migrations" / "0000_baseline.seeds.sql"
+    / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
 )
 _SERVICE = (
-    Path(__file__).resolve().parents[3] / "services" / "social_drafts.py"
+    Path(__file__).resolve().parents[3] / "poindexter" / "services" / "social_drafts.py"
 )
 
 # Statuses that are NEVER safe to prune, because a surviving row of this status

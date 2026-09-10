@@ -42,7 +42,7 @@ class TestWebResearchExceptionLogging:
 
             with (
                 patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
-                caplog.at_level(logging.WARNING, logger="services.web_research"),
+                caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")
 
@@ -79,7 +79,7 @@ class TestWebResearchExceptionLogging:
 
             with (
                 patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
-                caplog.at_level(logging.WARNING, logger="services.web_research"),
+                caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")
 
@@ -112,7 +112,7 @@ class TestWebResearchExceptionLogging:
 
             with (
                 patch("services.web_research.asyncio.gather", side_effect=_fake_gather),
-                caplog.at_level(logging.WARNING, logger="services.web_research"),
+                caplog.at_level(logging.WARNING, logger="poindexter.services.web_research"),
             ):
                 results = await researcher.search("test query")
 

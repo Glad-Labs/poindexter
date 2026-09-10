@@ -25,13 +25,13 @@
     "EndColumn": 48,
     "Match": "curl -X PATCH http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000 \\\r\n      -H \"Authorization: Bearer REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/routes/task_status_routes.py",
+    "File": "src/cofounder_agent/poindexter/routes/task_status_routes.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.3787835,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/routes/task_status_routes.py:curl-auth-header:547"
+    "Fingerprint": "src/cofounder_agent/poindexter/routes/task_status_routes.py:curl-auth-header:547"
   },
   {
     "RuleID": "curl-auth-header",
@@ -42,13 +42,13 @@
     "EndColumn": 48,
     "Match": "curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \\\\\r\n      -H \"Content-Type: application/json\" \\\\\r\n      -H \"Authorization: Bearer REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/routes/task_publishing_routes.py",
+    "File": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.3787835,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/routes/task_publishing_routes.py:curl-auth-header:248"
+    "Fingerprint": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py:curl-auth-header:248"
   },
   {
     "RuleID": "curl-auth-header",
@@ -59,13 +59,13 @@
     "EndColumn": 48,
     "Match": "curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/publish \\\r\n      -H \"Authorization: Bearer REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/routes/task_publishing_routes.py",
+    "File": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.3787835,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/routes/task_publishing_routes.py:curl-auth-header:556"
+    "Fingerprint": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py:curl-auth-header:556"
   },
   {
     "RuleID": "curl-auth-header",
@@ -76,13 +76,13 @@
     "EndColumn": 48,
     "Match": "curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/reject \\\r\n      -H \"Authorization: Bearer REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/routes/task_publishing_routes.py",
+    "File": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.3787835,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/routes/task_publishing_routes.py:curl-auth-header:767"
+    "Fingerprint": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py:curl-auth-header:767"
   },
   {
     "RuleID": "curl-auth-header",
@@ -93,13 +93,13 @@
     "EndColumn": 48,
     "Match": "curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/generate-image \\\r\n      -H \"Content-Type: application/json\" \\\r\n      -H \"Authorization: Bearer REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/routes/task_publishing_routes.py",
+    "File": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.3787835,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/routes/task_publishing_routes.py:curl-auth-header:887"
+    "Fingerprint": "src/cofounder_agent/poindexter/routes/task_publishing_routes.py:curl-auth-header:887"
   },
   {
     "RuleID": "generic-api-key",
@@ -110,12 +110,12 @@
     "EndColumn": 56,
     "Match": "indexnow_key\", \"REDACTED\"",
     "Secret": "REDACTED",
-    "File": "src/cofounder_agent/services/migrations/20260512_032900_redact_leaked_app_settings_secrets.py",
+    "File": "src/cofounder_agent/poindexter/services/migrations/20260512_032900_redact_leaked_app_settings_secrets.py",
     "SymlinkFile": "",
     "Commit": "",
     "Entropy": 3.5306392,
     "Date": "",
     "Tags": [],
-    "Fingerprint": "src/cofounder_agent/services/migrations/20260512_032900_redact_leaked_app_settings_secrets.py:generic-api-key:65"
+    "Fingerprint": "src/cofounder_agent/poindexter/services/migrations/20260512_032900_redact_leaked_app_settings_secrets.py:generic-api-key:65"
   }
 ]

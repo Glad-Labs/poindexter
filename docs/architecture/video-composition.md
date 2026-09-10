@@ -127,7 +127,7 @@ problems at the shot-list level is cheaper than re-rendering.
   already-frozen list carrying a value the schema no longer accepts, so
   `VideoShotList.model_validate` raises and the task can never render. Add the
   old spelling to `_DEPRECATED_SOURCES` in
-  [`schemas/video_shot_list.py`](../../src/cofounder_agent/schemas/video_shot_list.py)
+  [`schemas/video_shot_list.py`](../../src/cofounder_agent/poindexter/schemas/video_shot_list.py)
   instead — it rewrites the retired value to its canonical replacement on parse,
   so downstream code never learns the old name existed.
 
@@ -192,7 +192,7 @@ Each plugin returns a path to a local file. The renderer treats them all the
 same — concat in shot-list order, transition between, overlay narration.
 
 The existing `MediaCompositor` Protocol in
-`src/cofounder_agent/plugins/media_compositor.py` (CompositionScene +
+`src/cofounder_agent/poindexter/plugins/media_compositor.py` (CompositionScene +
 CompositionRequest dataclasses) is what we hand the shot list to once each
 shot's clip is resolved. `ffmpeg_local` already implements the
 local-rendering side.

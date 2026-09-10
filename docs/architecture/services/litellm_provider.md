@@ -1,6 +1,6 @@
 # LiteLLM Provider
 
-**File:** `src/cofounder_agent/services/llm_providers/litellm_provider.py`
+**File:** `src/cofounder_agent/poindexter/services/llm_providers/litellm_provider.py`
 **Tested by:** smoke-tested against local Ollama 2026-05-04; unit tests pending
 **Last reviewed:** 2026-05-23
 

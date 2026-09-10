@@ -71,7 +71,7 @@ def _is_missing_relation(exc: Exception) -> bool:
 # OpenTelemetry is optional — health probes work with or without it.
 # When the opentelemetry SDK isn't installed, ``_tracer`` is a no-op
 # implementation that matches the real API's ``start_as_current_span``
-# contract. Same shape as src/cofounder_agent/services/llm_providers/dispatcher.py
+# contract. Same shape as src/cofounder_agent/poindexter/services/llm_providers/dispatcher.py
 # so behavior stays uniform across the codebase.
 try:
     from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]

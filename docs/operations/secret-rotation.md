@@ -4,7 +4,7 @@
 **Audience:** solo operator (Matt) at 2am during an incident, or doing scheduled rotation
 **Prereqs:** Local PC online, Docker running, gh CLI authed, poindexter CLI installed, `~/.poindexter/bootstrap.toml` accessible, `POINDEXTER_SECRET_KEY` set
 
-Every secret in Poindexter has a rotation procedure. Most live in `app_settings` with `is_secret=true` and are encrypted at rest via `pgcrypto` — see [`src/cofounder_agent/plugins/secrets.py`](../../src/cofounder_agent/plugins/secrets.py) for how that works. Two secrets (`database_url` and `POINDEXTER_SECRET_KEY` itself) are bootstrap-only and live in `~/.poindexter/bootstrap.toml`.
+Every secret in Poindexter has a rotation procedure. Most live in `app_settings` with `is_secret=true` and are encrypted at rest via `pgcrypto` — see [`src/cofounder_agent/poindexter/plugins/secrets.py`](../../src/cofounder_agent/poindexter/plugins/secrets.py) for how that works. Two secrets (`database_url` and `POINDEXTER_SECRET_KEY` itself) are bootstrap-only and live in `~/.poindexter/bootstrap.toml`.
 
 This runbook lists every known secret, where to obtain a fresh value, how to set the new value, and what to restart to pick it up.
 
@@ -777,5 +777,5 @@ A scheduled agent should be set up to remind on this cadence (see `/schedule` sk
 
 - [`disaster-recovery.md`](./disaster-recovery) — recovery from lost key (CONFIG-2)
 - [`incident-response.md`](./incident-response) — alert routing
-- `src/cofounder_agent/plugins/secrets.py` — encryption module reference
+- `src/cofounder_agent/poindexter/plugins/secrets.py` — encryption module reference
 - `src/cofounder_agent/poindexter/cli/auth.py` — implementation of `poindexter auth migrate-*`

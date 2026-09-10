@@ -472,7 +472,7 @@ class TestRecordPipelineOutcome:
         db = _stub_database_service(active_experiment_key="partial_fail")
         mocked_svc = _make_mocked_service(record_outcome_return=False)
         with patch(_LF_PATCH_TARGET, return_value=mocked_svc):
-            with caplog.at_level(logging.WARNING, logger="services.pipeline_experiment_hook"):
+            with caplog.at_level(logging.WARNING, logger="poindexter.services.pipeline_experiment_hook"):
                 await record_pipeline_outcome(
                     assignment={"experiment_key": "partial_fail", "variant_key": "v"},
                     task_id="partial-task",
@@ -502,7 +502,7 @@ class TestRecordPipelineOutcome:
         db = _stub_database_service(active_experiment_key="happy_path")
         mocked_svc = _make_mocked_service(record_outcome_return=True)
         with patch(_LF_PATCH_TARGET, return_value=mocked_svc):
-            with caplog.at_level(logging.WARNING, logger="services.pipeline_experiment_hook"):
+            with caplog.at_level(logging.WARNING, logger="poindexter.services.pipeline_experiment_hook"):
                 await record_pipeline_outcome(
                     assignment={"experiment_key": "happy_path", "variant_key": "v"},
                     task_id="happy-task",

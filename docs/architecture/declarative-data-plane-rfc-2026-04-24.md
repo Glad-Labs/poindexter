@@ -33,7 +33,7 @@ The short version: **Poindexter has a plugin architecture. Extend it to cover ev
 
 ### The plugin registry
 
-`src/cofounder_agent/plugins/registry.py` exposes 11 entry_point groups:
+`src/cofounder_agent/poindexter/plugins/registry.py` exposes 11 entry_point groups:
 
 ```python
 ENTRY_POINT_GROUPS = {
@@ -124,7 +124,7 @@ CREATE TABLE <surface_name> (
 
 ### 3.2 Handler registry
 
-`src/cofounder_agent/services/integrations/handlers.py`:
+`src/cofounder_agent/poindexter/services/integrations/handlers.py`:
 
 ```python
 _HANDLERS: dict[str, Callable] = {}
@@ -451,7 +451,7 @@ The only Tier 1 table merged into a sibling rather than getting its own surface 
 
 ### Handlers actually registered
 
-`src/cofounder_agent/services/integrations/handlers/` ships **14 handlers** across the 5 surfaces. The registry uses the namespacing-by-surface scheme proposed in §6 (Risk: handler name collisions): every handler is registered as `<surface>.<name>` so the same short name (`revenue_event_writer`, `discord_post`) can coexist where it makes sense.
+`src/cofounder_agent/poindexter/services/integrations/handlers/` ships **14 handlers** across the 5 surfaces. The registry uses the namespacing-by-surface scheme proposed in §6 (Risk: handler name collisions): every handler is registered as `<surface>.<name>` so the same short name (`revenue_event_writer`, `discord_post`) can coexist where it makes sense.
 
 | Surface      | Handler key                       | Module                                     |
 | ------------ | --------------------------------- | ------------------------------------------ |

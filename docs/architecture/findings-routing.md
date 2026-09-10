@@ -265,8 +265,8 @@ informational; both leave the finding queryable. See `feedback_dont_silence_fix_
 
 ## Related
 
-- `src/cofounder_agent/services/jobs/findings_alert_router.py` — the router
-- `src/cofounder_agent/utils/findings.py` — `emit_finding`, the emission contract
+- `src/cofounder_agent/poindexter/services/jobs/findings_alert_router.py` — the router
+- `src/cofounder_agent/poindexter/utils/findings.py` — `emit_finding`, the emission contract
 - `brain/alert_dispatcher.py` — channel selection + fingerprint dedup
 - [job-run-metrics.md](job-run-metrics.md) — how `JobResult.metrics` reaches Grafana
 - Glad-Labs/poindexter#461 (policy delivery), #551 (this cooldown)

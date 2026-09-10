@@ -48,7 +48,7 @@ def _stub_repo(tmp_path: Path, monkeypatch) -> None:
     """Minimal fake repo tree: CLAUDE.md + an empty migrations dir, so
     ``main()`` runs its full body without touching the real repo."""
     (tmp_path / "CLAUDE.md").write_text("hello\n", encoding="utf-8")
-    (tmp_path / "src" / "cofounder_agent" / "services" / "migrations").mkdir(parents=True)
+    (tmp_path / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations").mkdir(parents=True)
     (tmp_path / "scripts").mkdir()
     # main() gates the c.run(...) call on stats.exists() — must be a real
     # (stub) file for the mocked c.run to actually be exercised. Content is

@@ -80,7 +80,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 
 > **Editing note:** `.github/workflows/sync-claude-md.yml` rewrites exactly three
 > phrases in this section by regex — `<N> Python files under
-> `src/cofounder_agent/services/``, `<N> test files`, and `<N> Grafana
+> `src/cofounder_agent/poindexter/services/``, `<N> test files`, and `<N> Grafana
 > dashboards` (first match only). Keep those wordings intact or the sync
 > silently stops updating — that is not hypothetical: rewording the
 > `app_settings` bullet here killed its anchor, and the very next nightly run
@@ -103,7 +103,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 > file, so reword README's stat sentences only alongside their patterns.
 
 - 203 live posts on gladlabs.io (377 posts total; 2,092 pipeline_tasks across all generation runs)
-- 494 Python files under `src/cofounder_agent/services/` (~291 substantive after `__init__.py` stubs)
+- 494 Python files under `src/cofounder_agent/poindexter/services/` (~291 substantive after `__init__.py` stubs)
 - **Deleted trees** (May 2026 cleanup wave; full detail in git) — if a doc or commit references one, it is gone and should not be recreated: the whole `workflow_executor` chain (plus `phases/`, `agents/`, `schemas/custom_workflow_schemas.py`, ~3,800 LOC); `services/task_executor.py` (~1,500 LOC, replaced by `services/flows/content_generation.py` on Prefect); and `plugins/stage_runner.py` with the legacy chunked `content_router_service` path.
 - **Cutover gates are all `true` on prod** — Prefect is the dispatcher, `canonical_blog` is the pipeline, LiteLLM is the LLM router, LlamaIndex + Ragas + DeepEval + Guardrails are all on. `atom_runs` + `services/atom_runs.py` capture per-atom run + outcome, gated by `atom_runs_capture_enabled`.
 - **Migration files** — the Phase G squash (2026-07-11) folded the Phase F baseline and its 42 post-baseline migrations into a fresh `0000_baseline.py` (+ `.schema.sql` + `.seeds.sql`). 44 ordinary migrations have accumulated since (`20260712_084907_rename_opening_to_content_originality.py` … `20260829_003232_repoint_the_text_search_tsvector_at_chunk_text_so_bm25_stops_matching_only_the_preview.py` — spell the newest one out in full, `.py` and all: `claude_md_sync`'s `migration_drift_note` is a literal substring test for that filename, so a `_*` glob leaves the nightly Discord note firing no matter how current the count is). Baseline seeds: non-secret `app_settings` 681 (+2 empty secret placeholders), `pipeline_templates` 6, `qa_gates` 20, `retention_policies` 32. Mechanics in the Database-migrations section.
@@ -170,12 +170,30 @@ npm run type:check            # Python mypy (backend poetry env)
 
 ### Backend (`src/cofounder_agent/`)
 
+**Layout since 2026-09-10 (Glad-Labs/poindexter#1046, step 2):** the backend's
+packages live under **`src/cofounder_agent/poindexter/`** — `poindexter/services/`,
+`poindexter/plugins/`, `poindexter/modules/`, `poindexter/utils/`, `poindexter/routes/`,
+`poindexter/schemas/`, `poindexter/config/`, `poindexter/tasks/` (plus the CLI in
+`poindexter/cli/`; `brain/` follows in the next PR). `src/cofounder_agent` is still the
+filesystem root and the `sys.path` root (`main.py`, `tests/`, `skills/`, `console/`,
+`pyproject.toml` did not move). The flat spellings — `import services.x`,
+`mock.patch("services.x.y")`, the `cofounder_agent.services.x` entry-point spelling —
+all still work and yield the **same module object** as `poindexter.services.x`, via the
+`sys.meta_path` alias in `poindexter/_flat_imports.py` (installed by
+`poindexter/__init__.py` and by the one-file stub left at each old root). Consequences
+for new code: (1) `__name__`-based logger names and `__module__` strings now read
+`poindexter.services.x`; (2) a test that purges or poisons `sys.modules` to simulate an
+import failure must do so under BOTH spellings; (3) a `Path(__file__).parents[N]` walk
+inside a moved file is one level deeper than before — anchor on a sentinel, not a depth;
+(4) path-keyed ratchet baselines and lint roots are spelled `src/cofounder_agent/poindexter/...`.
+Steps 3–5 of the epic rewrite the import spellings and retire the stubs.
+
 **Entry point:** `main.py` — FastAPI app with two deployment modes:
 
 - `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
-**Modules** (Module v1 — `src/cofounder_agent/modules/`):
+**Modules** (Module v1 — `src/cofounder_agent/poindexter/modules/`):
 
 The 18th (and newest) entry-point group in the plugin registry. Each Module bundles
 capability-plugin contributions plus DB migrations, jobs, HTTP routes,
@@ -499,7 +517,7 @@ NOTE: repo-derivable CLAUDE.md stats still auto-sync daily via the `.github/work
 
 ## Database migrations
 
-Migrations live in `src/cofounder_agent/services/migrations/`. The
+Migrations live in `src/cofounder_agent/poindexter/services/migrations/`. The
 migration history is squashed into `0000_baseline.py`
 (plus `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`) with
 ordinary timestamped migrations accumulating on top of it,
@@ -537,7 +555,7 @@ CONFLICT DO NOTHING` no-ops, and the only mutation is the row
 recording the baseline as applied.
 
 **New `app_settings` keys belong in `settings_defaults.py`, not migration
-files.** `src/cofounder_agent/services/settings_defaults.py` holds a
+files.** `src/cofounder_agent/poindexter/services/settings_defaults.py` holds a
 `DEFAULTS: dict[str, str]` that is applied idempotently on every boot via
 `StartupManager._run_migrations()` → `seed_all_defaults(pool)` using
 `INSERT … ON CONFLICT (key) DO NOTHING`. Add new default values there.

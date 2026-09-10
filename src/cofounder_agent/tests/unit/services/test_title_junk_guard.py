@@ -428,7 +428,7 @@ def test_choose_emits_warning_when_junk_guard_fires(caplog):
     topic = "Some Topic"
     content = "# Fallback H1 Title\n\nBody."
 
-    with caplog.at_level(logging.WARNING, logger="services.title_generation"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.services.title_generation"):
         choose_canonical_title(topic, content, llm_title=junk_llm)
 
     assert any(
@@ -638,7 +638,7 @@ def test_choose_meta_commentary_topic_last_resort_warns(caplog):
     )
     content = "Body paragraph with no markdown heading."
 
-    with caplog.at_level(logging.WARNING, logger="services.title_generation"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.services.title_generation"):
         out = choose_canonical_title(topic, content, llm_title=None)
 
     assert out == topic

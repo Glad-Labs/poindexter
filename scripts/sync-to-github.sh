@@ -123,10 +123,10 @@ git rm -r --cached --quiet gladlabs-rig/ 2>/dev/null || true                 # o
 # - FinanceModule: Mercury banking (read-only). No credentials live in the
 #   tree (they're encrypted in app_settings.value), but the module structure,
 #   CLI, and DB schema are operator-scoped and don't ship to public OSS.
-git rm --cached --quiet src/cofounder_agent/services/operator_overrides.py 2>/dev/null || true  # private operator overlay — custom local Ollama tags (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2) + personal settings (voice persona, exact GPU). The PUBLIC apply hook (settings_defaults.apply_operator_overrides) no-ops when this module is absent, so OSS installs use the public defaults.
-git rm --cached --quiet src/cofounder_agent/services/operator_leak_patterns.py 2>/dev/null || true  # private operator overlay — operator-identity scrub regexes (real name / home paths / Tailnet IP / GitHub handle). rag_scrub imports it via a no-op-when-absent hook, so OSS installs get generic scrub only. MUST stay stripped — carries the operator-name literal.
+git rm --cached --quiet src/cofounder_agent/poindexter/services/operator_overrides.py 2>/dev/null || true  # private operator overlay — custom local Ollama tags (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2) + personal settings (voice persona, exact GPU). The PUBLIC apply hook (settings_defaults.apply_operator_overrides) no-ops when this module is absent, so OSS installs use the public defaults.
+git rm --cached --quiet src/cofounder_agent/poindexter/services/operator_leak_patterns.py 2>/dev/null || true  # private operator overlay — operator-identity scrub regexes (real name / home paths / Tailnet IP / GitHub handle). rag_scrub imports it via a no-op-when-absent hook, so OSS installs get generic scrub only. MUST stay stripped — carries the operator-name literal.
 git rm --cached --quiet src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py 2>/dev/null || true  # operator-identity fixtures proving those patterns fire; paired with operator_leak_patterns.py above. MUST stay stripped — carries the operator-name literal.
-git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || true
+git rm -r --cached --quiet src/cofounder_agent/poindexter/modules/finance/ 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)
 git rm --cached --quiet docs/operations/self-hosted-ci-runner.md 2>/dev/null || true      # private operator-overlay runbook (self-hosted CI runner on the operator's PC); references internal repo name + hardware. Paired with the stripped .github/workflows/runner-healthcheck.yml.
@@ -148,7 +148,7 @@ git rm --cached --quiet scripts/kuma_bootstrap.py 2>/dev/null || true         # 
 git rm --cached --quiet scripts/glitchtip_audit.py 2>/dev/null || true        # one-shot admin-credential script (operator-only; was accidentally tracked with a hardcoded password default)
 
 # === Operator-specific taps (read from Matt's local Claude / OpenClaw state) ===
-git rm --cached --quiet src/cofounder_agent/services/taps/claude_code_sessions.py 2>/dev/null || true  # taps ~/.claude/projects/*.jsonl — Matt's actual conversations
+git rm --cached --quiet src/cofounder_agent/poindexter/services/taps/claude_code_sessions.py 2>/dev/null || true  # taps ~/.claude/projects/*.jsonl — Matt's actual conversations
 git rm --cached --quiet src/cofounder_agent/tests/unit/services/test_claude_code_sessions_tap.py 2>/dev/null || true
 
 # === Personal context (bank balance, memory paths, internal URLs) ===

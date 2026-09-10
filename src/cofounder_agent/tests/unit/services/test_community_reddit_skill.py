@@ -15,7 +15,7 @@ from services.prompt_manager import UnifiedPromptManager
 from services.skill_frontmatter import extract_section, parse_frontmatter
 
 _SKILL_PATH = (
-    Path(services.__file__).resolve().parent.parent
+    Path(services.__file__).resolve().parents[2]  # src/cofounder_agent (services/ sits under poindexter/)
     / "skills" / "community" / "reddit-value-post" / "SKILL.md"
 )
 _KEY = "community.reddit_value_post"

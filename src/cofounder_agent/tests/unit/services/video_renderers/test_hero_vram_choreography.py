@@ -628,7 +628,7 @@ async def test_configured_plate_above_the_top_rung_is_capped_and_says_so(caplog)
 
     with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
          caplog.at_level(
-             logging.WARNING, logger="services.video_renderers.shot_list_renderer"
+             logging.WARNING, logger="poindexter.services.video_renderers.shot_list_renderer"
          ):
         out = await slr._fit_hero_dims_to_free_vram(960, 544, _sc())
 
@@ -651,7 +651,7 @@ async def test_configured_plate_at_the_top_rung_is_not_warned(caplog):
 
     with patch("services.gpu_registry.GPURegistry", lambda **kw: _registry(30.0)), \
          caplog.at_level(
-             logging.WARNING, logger="services.video_renderers.shot_list_renderer"
+             logging.WARNING, logger="poindexter.services.video_renderers.shot_list_renderer"
          ):
         out = await slr._fit_hero_dims_to_free_vram(832, 480, _sc())
 

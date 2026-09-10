@@ -5,7 +5,7 @@
 >
 > 545 files across 28 packages. Each summary is the file's module-docstring first line — to improve an entry, improve that file's docstring. `services/migrations/` is excluded (schema deltas; see [migrations.md](../operations/migrations.md)).
 
-A catalog of every service, atom, and stage in `src/cofounder_agent/services/` and `src/cofounder_agent/modules/content/`. Use it to find "what is responsible for X" without reading source. For the load-bearing subset on the critical execution path, see CLAUDE.md's "Key services" table.
+A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/services/` and `src/cofounder_agent/poindexter/modules/content/`. Use it to find "what is responsible for X" without reading source. For the load-bearing subset on the critical execution path, see CLAUDE.md's "Key services" table.
 
 ---
 

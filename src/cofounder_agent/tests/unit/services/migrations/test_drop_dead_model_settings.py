@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "services" / "migrations"
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "poindexter" / "services" / "migrations"
 _DEAD_KEYS = (
     "pipeline_research_model",
     "pipeline_refinement_model",

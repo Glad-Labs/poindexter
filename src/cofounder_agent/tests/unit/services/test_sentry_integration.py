@@ -1031,7 +1031,7 @@ def test_inline_default_matches_seeded_default(key: str, expected: str) -> None:
         Path(__file__).resolve().parents[5]
         / "src"
         / "cofounder_agent"
-        / "services"
+        / "poindexter" / "services"
         / "migrations"
         / "0000_baseline.seeds.sql"
     ).read_text(encoding="utf-8")

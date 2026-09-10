@@ -100,7 +100,7 @@ class TestCitationArtifactsAndPathLeaks:
         assert not any(i.category == "citation_artifact" for i in result.issues)
 
     def test_leaked_internal_repo_path_flagged(self):
-        content = "The fix lives in src/cofounder_agent/services/image_service.py for the pipeline. " * 3
+        content = "The fix lives in src/cofounder_agent/poindexter/services/image_service.py for the pipeline. " * 3
         result = validate_content("AI Pipelines", content, "AI", site_config=_SC)
         assert any(i.category == "leaked_path_token" for i in result.issues)
 

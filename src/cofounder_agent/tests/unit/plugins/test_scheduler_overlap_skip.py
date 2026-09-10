@@ -102,7 +102,7 @@ def test_overlap_skip_warns_counts_and_emits_finding(caplog):
     deferring it would have made the 2026-08-15 tap wedge slower to surface."""
     sched = _scheduler()
     with patch("utils.findings.emit_finding") as emit, \
-         caplog.at_level(logging.WARNING, logger="plugins.scheduler"):
+         caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
     assert any("fire skipped" in rec.getMessage() for rec in caplog.records)
@@ -121,7 +121,7 @@ def test_overlap_alert_switch_off_still_warns_but_no_finding(caplog):
     findings escalation only — the log line and the counter stay."""
     sched = _scheduler(overlap_alert=False)
     with patch("utils.findings.emit_finding") as emit, \
-         caplog.at_level(logging.WARNING, logger="plugins.scheduler"):
+         caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
     emit.assert_not_called()
@@ -136,7 +136,7 @@ def test_overlap_listener_never_raises(caplog):
     sched = _scheduler()
     with patch(
         "utils.findings.emit_finding", side_effect=RuntimeError("findings down")
-    ), caplog.at_level(logging.ERROR, logger="plugins.scheduler"):
+    ), caplog.at_level(logging.ERROR, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
     assert any(
@@ -176,7 +176,7 @@ def test_overlap_expected_job_records_info_not_warn_on_first_skip(caplog):
     sched._overlap_expected_jobs.add("dispatch_media_pipeline")
 
     with patch("utils.findings.emit_finding") as emit, \
-         caplog.at_level(logging.WARNING, logger="plugins.scheduler"):
+         caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(
             SimpleNamespace(job_id="dispatch_media_pipeline")
         )

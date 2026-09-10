@@ -40,7 +40,7 @@ from services.template_runner import PipelineState
 
 _TASK_METADATA_SRC = (
     Path(__file__).resolve().parents[3]
-    / "modules"
+    / "poindexter" / "modules"
     / "content"
     / "task_metadata.py"
 )

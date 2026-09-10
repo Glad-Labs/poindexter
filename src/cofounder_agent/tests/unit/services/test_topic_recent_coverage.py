@@ -516,7 +516,7 @@ class TestSharedPhraseRule:
         index = RecentCoverageIndex(
             [_ref("The Search Autocomplete Dilemma", [1.0, 0.0])], threshold=0.80, embed=mem.embed,
         )
-        with caplog.at_level(logging.INFO, logger="services.topic_recent_coverage"):
+        with caplog.at_level(logging.INFO, logger="poindexter.services.topic_recent_coverage"):
             match = await index.embed_and_match("The Stuck Task — angle")
             out = _log_pass(index, "The Stuck Task — angle", match)
         assert out is None

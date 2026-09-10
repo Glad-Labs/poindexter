@@ -114,13 +114,13 @@ def test_get_modules_drops_module_with_invalid_name(caplog):
         "plugins.registry._merge_with_core_samples",
         return_value=(bad_uppercase, bad_dash, bad_leading_digit),
     ):
-        with caplog.at_level("WARNING", logger="plugins.registry"):
+        with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     assert result == []
     # One warning per dropped module
     warnings = [
         r for r in caplog.records
-        if r.name == "plugins.registry" and r.levelname == "WARNING"
+        if r.name == "poindexter.plugins.registry" and r.levelname == "WARNING"
     ]
     assert len(warnings) == 3
     for w in warnings:
@@ -141,7 +141,7 @@ def test_get_modules_drops_duplicate_names(caplog):
     first = _make_module(name="content", version="1.0.0")
     second = _make_module(name="content", version="2.0.0")
     with patch("plugins.registry._merge_with_core_samples", return_value=(first, second)):
-        with caplog.at_level("WARNING", logger="plugins.registry"):
+        with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     assert len(result) == 1
     assert result[0] is first
@@ -149,7 +149,7 @@ def test_get_modules_drops_duplicate_names(caplog):
     # One warning for the dropped duplicate
     dup_warnings = [
         r for r in caplog.records
-        if r.name == "plugins.registry" and "duplicate module" in r.message
+        if r.name == "poindexter.plugins.registry" and "duplicate module" in r.message
     ]
     assert len(dup_warnings) == 1
 
@@ -172,7 +172,7 @@ def test_merge_dedups_core_sample_and_entry_point_module_silently(caplog):
     ep = _make_module(name="content", version="9.9.9")       # entry-point (installed)
     with patch("plugins.registry.get_core_samples", return_value={"modules": [sample]}), \
          patch("plugins.registry._cached", return_value=(ep,)):
-        with caplog.at_level("WARNING", logger="plugins.registry"):
+        with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     # Exactly one survivor, and it's the entry-point instance (precedence).
     assert len(result) == 1
@@ -181,7 +181,7 @@ def test_merge_dedups_core_sample_and_entry_point_module_silently(caplog):
     # The whole point: NO duplicate-module warning reaches the operator.
     dup_warnings = [
         r for r in caplog.records
-        if r.name == "plugins.registry" and "duplicate module" in r.message
+        if r.name == "poindexter.plugins.registry" and "duplicate module" in r.message
     ]
     assert dup_warnings == []
 
@@ -239,7 +239,7 @@ def test_get_modules_drops_module_whose_manifest_raises(caplog):
     exploding = _ExplodingModule()
     healthy = _make_module(name="content")
     with patch("plugins.registry._merge_with_core_samples", return_value=(exploding, healthy)):
-        with caplog.at_level("WARNING", logger="plugins.registry"):
+        with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     # Healthy module survives
     assert len(result) == 1
@@ -247,7 +247,7 @@ def test_get_modules_drops_module_whose_manifest_raises(caplog):
     # Exploding module dropped with the cause logged
     raise_warnings = [
         r for r in caplog.records
-        if r.name == "plugins.registry"
+        if r.name == "poindexter.plugins.registry"
         and "manifest() raised" in r.message
     ]
     assert len(raise_warnings) == 1

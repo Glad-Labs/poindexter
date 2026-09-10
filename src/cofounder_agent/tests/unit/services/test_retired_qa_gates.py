@@ -21,12 +21,12 @@ RETIRED = ("guardrails_brand", "guardrails_competitor", "url_verifier")
 
 def _repo_root() -> pathlib.Path:
     import services
-    return pathlib.Path(services.__file__).resolve().parent.parent
+    return pathlib.Path(services.__file__).resolve().parents[2]  # src/cofounder_agent
 
 
 def test_no_atom_wires_a_retired_rail():
     """The premise of the retirement: nothing on disk runs these."""
-    atoms = _repo_root() / "modules" / "content" / "atoms"
+    atoms = _repo_root() / "poindexter" / "modules" / "content" / "atoms"
     names = {p.stem for p in atoms.glob("*.py")}
     assert "qa_guardrails" not in names
     assert not [n for n in names if "url_verifier" in n]
@@ -49,7 +49,7 @@ def test_the_master_switch_ships_off():
 
 def test_baseline_seeds_the_retired_gates_disabled():
     """A fresh install must not inherit the enabled-but-inert state."""
-    seeds = (_repo_root() / "services" / "migrations" / "0000_baseline.seeds.sql").read_text()
+    seeds = (_repo_root() / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql").read_text()
     for name in RETIRED:
         line = next(
             (l for l in seeds.splitlines()
@@ -64,7 +64,7 @@ def test_baseline_seeds_the_retired_gates_disabled():
 def test_the_module_no_longer_claims_a_graph_node():
     """The docstring named `qa.guardrails` — a node #730 deleted. That claim is
     how the dormancy stayed invisible."""
-    src = (_repo_root() / "services" / "guardrails_rails.py").read_text()
+    src = (_repo_root() / "poindexter" / "services" / "guardrails_rails.py").read_text()
     assert "RETIRED" in src
     assert not re.search(r"run as the ``qa\.guardrails`` atom", src)
 

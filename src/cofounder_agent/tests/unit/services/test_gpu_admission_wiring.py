@@ -293,7 +293,7 @@ _MIGRATED_CALLERS = {
 
 
 def test_only_allowlisted_call_sites_pass_max_wait_s():
-    root = Path(__file__).resolve().parents[3]  # src/cofounder_agent
+    root = Path(__file__).resolve().parents[3] / "poindexter"  # the package holding services/
     infra_suffixes = ("services/gpu_scheduler.py", "services/gpu_admission.py")
     offenders = []
     for path in root.rglob("*.py"):
@@ -319,7 +319,7 @@ def test_only_allowlisted_call_sites_pass_max_wait_s():
 def test_every_allowlisted_caller_actually_uses_the_contract():
     """The allowlist must not rot into a list of files that no longer opt in —
     a stale entry would silently re-permit an unreviewed migration."""
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[3] / "poindexter"
     for suffix in _MIGRATED_CALLERS:
         path = root / suffix
         assert path.exists(), f"allowlisted file no longer exists: {suffix}"

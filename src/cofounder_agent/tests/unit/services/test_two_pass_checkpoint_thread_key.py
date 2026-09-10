@@ -41,7 +41,7 @@ def _repo_root() -> Path:
 def writer_src() -> str:
     return (
         _repo_root()
-        / "src/cofounder_agent/modules/content/atoms/two_pass_writer.py"
+        / "src/cofounder_agent/poindexter/modules/content/atoms/two_pass_writer.py"
     ).read_text()
 
 
@@ -101,7 +101,7 @@ class TestCleanupMigration:
 
     @pytest.fixture(scope="class")
     def migration_src(self) -> str:
-        d = _repo_root() / "src/cofounder_agent/services/migrations"
+        d = _repo_root() / "src/cofounder_agent/poindexter/services/migrations"
         hits = sorted(d.glob("*delete_two_pass_checkpoint_threads*.py"))
         assert hits, "cleanup migration not found"
         return hits[-1].read_text()
@@ -123,7 +123,7 @@ class TestCleanupMigration:
     def test_clears_dependents_before_checkpoints(self, migration_src):
         from importlib import util
 
-        d = _repo_root() / "src/cofounder_agent/services/migrations"
+        d = _repo_root() / "src/cofounder_agent/poindexter/services/migrations"
         path = sorted(d.glob("*delete_two_pass_checkpoint_threads*.py"))[-1]
         spec = util.spec_from_file_location("_m932", path)
         mod = util.module_from_spec(spec)

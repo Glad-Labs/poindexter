@@ -394,7 +394,7 @@ class TestSetupPyroscopeEdgeCases:
                 raise RuntimeError("simulated bootstrap failure")
             return real_import(name, *args, **kwargs)
 
-        with caplog.at_level("DEBUG", logger="services.profiling"), \
+        with caplog.at_level("DEBUG", logger="poindexter.services.profiling"), \
              patch.object(builtins, "__import__", side_effect=_raising_import):
             # Must not raise.
             setup_pyroscope()
@@ -442,7 +442,7 @@ class TestSetupPyroscopeEdgeCases:
                 "environment": "production",
             }.get(key, default)
 
-        with caplog.at_level("INFO", logger="services.profiling"), \
+        with caplog.at_level("INFO", logger="poindexter.services.profiling"), \
              patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("worker-x")

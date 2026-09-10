@@ -33,7 +33,7 @@ def _load(monkeypatch, env_value):
 def test_env_override_sets_backend_root(monkeypatch, tmp_path):
     mod = _load(monkeypatch, str(tmp_path))
     assert mod.BACKEND_ROOT == tmp_path
-    assert mod.MIGRATIONS_DIR == tmp_path / "services" / "migrations"
+    assert mod.MIGRATIONS_DIR == tmp_path / "poindexter" / "services" / "migrations"
 
 
 def test_no_env_falls_back_to_repo_layout(monkeypatch):

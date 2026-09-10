@@ -974,7 +974,7 @@ def _baseline_seeds_path() -> Path:
     fragility that makes a few brain tests host-only.
     """
     for parent in Path(__file__).resolve().parents:
-        candidate = parent / "services" / "migrations" / "0000_baseline.seeds.sql"
+        candidate = parent / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
         if candidate.exists():
             return candidate
     raise FileNotFoundError(

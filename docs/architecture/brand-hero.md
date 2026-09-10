@@ -15,7 +15,7 @@ So don't roll the dice. Render it.
 
 ## How it works
 
-[`services/brand_hero.py`](../../src/cofounder_agent/services/brand_hero.py)
+[`services/brand_hero.py`](../../src/cofounder_agent/poindexter/services/brand_hero.py)
 lays out real HTML with the real brand tokens and screenshots it in headless
 chromium — the same one `services/preview_screenshot.py` drives for the
 `qa.vision` rail and the screenshot provider.
@@ -102,4 +102,4 @@ looks like the product rather than like stock art.
 
 - [`screenshot-image-provider.md`](screenshot-image-provider.md) — the sibling
   answer for _inline_ images on posts about the system
-- [`services/preview_screenshot.py`](../../src/cofounder_agent/services/preview_screenshot.py) — the shared capture helper
+- [`services/preview_screenshot.py`](../../src/cofounder_agent/poindexter/services/preview_screenshot.py) — the shared capture helper

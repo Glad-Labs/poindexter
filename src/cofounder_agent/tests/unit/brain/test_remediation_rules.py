@@ -150,7 +150,7 @@ def _defaults_value(key: str) -> str:
     from pathlib import Path
 
     defaults_py = (
-        Path(__file__).resolve().parents[3] / "services" / "settings_defaults.py"
+        Path(__file__).resolve().parents[3] / "poindexter" / "services" / "settings_defaults.py"
     )
     tree = ast.parse(defaults_py.read_text(encoding="utf-8"))
     for node in tree.body:

@@ -4,7 +4,7 @@
  * Reads from `NEXT_PUBLIC_POINDEXTER_API_URL` (default `http://localhost:8002`).
  * All fetches are server-side by default — no auth exposure to the client.
  *
- * Endpoints used (see `src/cofounder_agent/routes/cms_routes.py` in the main
+ * Endpoints used (see `src/cofounder_agent/poindexter/routes/cms_routes.py` in the main
  * repo for the full surface):
  *
  *   GET /api/posts?limit=N&offset=M       → paginated list

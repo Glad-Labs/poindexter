@@ -23,7 +23,7 @@ from services.settings_defaults import DEFAULTS
 
 _MIGRATION_FILE = (
     Path(__file__).resolve().parents[3]
-    / "services"
+    / "poindexter" / "services"
     / "migrations"
     / "20260807_183202_drop_the_hello_sample_tap_demo_embedding_row.py"
 )

@@ -1,6 +1,6 @@
 # Cost Guard
 
-**File:** `src/cofounder_agent/services/cost_guard.py`
+**File:** `src/cofounder_agent/poindexter/services/cost_guard.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_cost_guard.py`
 **Last reviewed:** 2026-07-26
 

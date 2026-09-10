@@ -44,7 +44,7 @@ MIN_SAFE_CANCELLED_ERROR_CEILING = 500
 def baseline_seeds_text() -> str:
     seeds_path = (
         Path(__file__).resolve().parents[4]
-        / "services"
+        / "poindexter" / "services"
         / "migrations"
         / "0000_baseline.seeds.sql"
     )

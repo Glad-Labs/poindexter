@@ -121,7 +121,7 @@ def _build_rig(tmp_path: Path) -> dict:
     stack.parent.mkdir(parents=True)
     stack.write_text(_FAKE_START_STACK, encoding="utf-8")
     stack.chmod(0o755)
-    svc = seed / "src" / "cofounder_agent" / "services"
+    svc = seed / "src" / "cofounder_agent" / "poindexter" / "services"
     svc.mkdir(parents=True)
     (svc / "foo.py").write_text("X = 1\n", encoding="utf-8")
     _git(seed, "add", "-A")
@@ -144,7 +144,7 @@ def _build_rig(tmp_path: Path) -> dict:
 
 
 def _advance_origin(rig: dict) -> str:
-    p = rig["seed"] / "src" / "cofounder_agent" / "services" / "foo.py"
+    p = rig["seed"] / "src" / "cofounder_agent" / "poindexter" / "services" / "foo.py"
     p.write_text("X = 2\n", encoding="utf-8")
     _git(rig["seed"], "add", "-A")
     _git(rig["seed"], "commit", "-q", "-m", "B")

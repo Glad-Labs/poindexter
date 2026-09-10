@@ -132,22 +132,24 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
 
 
 def _ensure_services_on_path() -> None:
-    """Walk parents until ``src/cofounder_agent/services/voice_pipecat.py``
+    """Walk parents until ``src/cofounder_agent/poindexter/services/voice_pipecat.py``
     appears, then prepend that ``src/cofounder_agent`` directory to
     ``sys.path``. Idempotent and side-effect-free past the first call.
     """
     here = Path(__file__).resolve()
     candidates = [here.parent, *here.parents]
     for parent in candidates:
-        target = parent / "src" / "cofounder_agent" / "services" / "voice_pipecat.py"
+        target = parent / "src" / "cofounder_agent" / "poindexter" / "services" / "voice_pipecat.py"
         if target.is_file():
             services_root = parent / "src" / "cofounder_agent"
             p = str(services_root)
             if p not in sys.path:
                 sys.path.insert(0, p)
             return
-        # In Docker the layout is /app/services/voice_pipecat.py.
-        flat = parent / "services" / "voice_pipecat.py"
+        # In Docker the layout is /app/poindexter/services/voice_pipecat.py
+        # (poindexter#1046 step 2); /app stays the sys.path root, and the flat
+        # stub at /app/services makes `import services.voice_pipecat` resolve.
+        flat = parent / "poindexter" / "services" / "voice_pipecat.py"
         if flat.is_file():
             p = str(parent)
             if p not in sys.path:

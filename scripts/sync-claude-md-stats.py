@@ -64,7 +64,7 @@ CLAUDE_MD = ROOT / "CLAUDE.md"
 # freezing the count (#2832). The CLAUDE.md "Editing note" warns humans about
 # these exact wordings; the lint makes the warning enforceable.
 STAT_ANCHORS: OrderedDict[str, str] = OrderedDict([
-    ("service_py_files", r"\d+ Python files under `src/cofounder_agent/services/`"),
+    ("service_py_files", r"\d+ Python files under `src/cofounder_agent/poindexter/services/`"),
     ("test_files", r"\d+ test files"),
     ("grafana_dashboards", r"\d+ Grafana dashboards"),
 ])
@@ -129,7 +129,7 @@ def _load_canonical_blog_spec() -> dict[str, Any]:
     not quietly become "0 nodes covering …" in the public README — a red CI
     job is the correct outcome (`feedback_no_silent_defaults`).
     """
-    path = ROOT / "src/cofounder_agent/services/canonical_blog_spec.py"
+    path = ROOT / "src/cofounder_agent/poindexter/services/canonical_blog_spec.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -167,7 +167,7 @@ def _count_qa_rails(spec: dict[str, Any]) -> int:
 
 def collect_stats() -> OrderedDict[str, int | str]:
     """Pull every source-truth metric in one pass."""
-    services_dir = ROOT / "src/cofounder_agent/services"
+    services_dir = ROOT / "src/cofounder_agent/poindexter/services"
     tests_dir = ROOT / "src/cofounder_agent/tests/unit"
     # Test files = files named test_*.py under tests/unit (pytest's
     # default discovery pattern).
@@ -201,7 +201,7 @@ def apply_to_claude_md(stats: OrderedDict[str, int | str]) -> tuple[str, list[st
     text = CLAUDE_MD.read_text(encoding="utf-8")
 
     # Patterns live in STAT_ANCHORS (module level, lint-imported — #2832):
-    #   "329 Python files under `src/cofounder_agent/services/`"
+    #   "329 Python files under `src/cofounder_agent/poindexter/services/`"
     #   "8,400+ Python unit tests across 369 test files"
     #   "8 Grafana dashboards (Mission Control / …)"
     text, changes = substitute_anchored(text, [
@@ -209,7 +209,7 @@ def apply_to_claude_md(stats: OrderedDict[str, int | str]) -> tuple[str, list[st
             "service_py_files",
             STAT_ANCHORS["service_py_files"],
             f"{stats['service_py_files']} Python files under "
-            "`src/cofounder_agent/services/`",
+            "`src/cofounder_agent/poindexter/services/`",
         ),
         ("test_files", STAT_ANCHORS["test_files"], f"{stats['test_files']} test files"),
         (

@@ -43,7 +43,7 @@ _REPO_SRC = Path(__file__).resolve().parents[4]
 @pytest.fixture(scope="module")
 def baseline_seeds_text() -> str:
     return (
-        _REPO_SRC / "services" / "migrations" / "0000_baseline.seeds.sql"
+        _REPO_SRC / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
     ).read_text(encoding="utf-8")
 
 
@@ -56,7 +56,7 @@ def test_orphaned_webhook_handler_module_is_deleted(module_name: str) -> None:
     2026-05-09). Live inbound webhooks are bespoke routes.
     """
     path = (
-        _REPO_SRC / "services" / "integrations" / "handlers" / f"{module_name}.py"
+        _REPO_SRC / "poindexter" / "services" / "integrations" / "handlers" / f"{module_name}.py"
     )
     assert not path.exists(), (
         f"{module_name}.py was retired — it registered an orphaned webhook.* "

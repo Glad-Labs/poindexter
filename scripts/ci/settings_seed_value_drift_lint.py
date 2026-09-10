@@ -63,7 +63,7 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SVC = REPO / "src" / "cofounder_agent" / "services"
+SVC = REPO / "src" / "cofounder_agent" / "poindexter" / "services"
 BASELINE_SEEDS = SVC / "migrations" / "0000_baseline.seeds.sql"
 DEFAULTS_PY = SVC / "settings_defaults.py"
 BRAIN_SEED = REPO / "brain" / "seed_app_settings.json"

@@ -38,8 +38,8 @@ REPO_ROOT = next(
     if (p / "scripts" / "Dockerfile.auto-embed").exists()
 )
 DOCKERFILE = REPO_ROOT / "scripts" / "Dockerfile.auto-embed"
-REGISTRY_PATH = REPO_ROOT / "src" / "cofounder_agent" / "plugins" / "registry.py"
-OLLAMA_CLIENT_PATH = REPO_ROOT / "src" / "cofounder_agent" / "services" / "ollama_client.py"
+REGISTRY_PATH = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "plugins" / "registry.py"
+OLLAMA_CLIENT_PATH = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "services" / "ollama_client.py"
 
 # First-party roots COPY'd into the image (or resolvable via sys.path
 # tricks in auto-embed.py) — never pip packages.
@@ -125,7 +125,7 @@ def test_dockerfile_copies_schemas_for_video_shot_list_stages():
     # import schemas.video_shot_list — a transitive dep _SAMPLES parsing
     # above doesn't see, so pin it explicitly.
     assert "schemas" in _copied_top_level_packages(), (
-        "scripts/Dockerfile.auto-embed must COPY src/cofounder_agent/schemas — "
+        "scripts/Dockerfile.auto-embed must COPY src/cofounder_agent/poindexter/schemas — "
         "modules.content.stages.generate_video_shot_list imports "
         "schemas.video_shot_list (poindexter#849)."
     )

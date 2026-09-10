@@ -139,7 +139,7 @@ async def test_dsn(admin_dsn: str, test_db_name: str) -> AsyncGenerator[str, Non
             await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")
             for p in Path(__file__).resolve().parents:
                 schema_sql = (
-                    p / "src" / "cofounder_agent" / "services"
+                    p / "src" / "cofounder_agent" / "poindexter" / "services"
                     / "migrations" / "0000_baseline.schema.sql"
                 )
                 if schema_sql.is_file():

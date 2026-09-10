@@ -193,9 +193,9 @@ when the pipeline ran.
 
 ## Related
 
-- [`services/image_providers/screenshot.py`](../../src/cofounder_agent/services/image_providers/screenshot.py) — the provider
-- [`services/preview_screenshot.py`](../../src/cofounder_agent/services/preview_screenshot.py) — the shared capture helper (also drives the `qa.vision` rail)
-- [`modules/content/atoms/_writer_markers.py`](../../src/cofounder_agent/modules/content/atoms/_writer_markers.py) — marker parsing + the two budgets
-- [`modules/content/atoms/content_plan_image_markers.py`](../../src/cofounder_agent/modules/content/atoms/content_plan_image_markers.py) — the top-up planner
+- [`services/image_providers/screenshot.py`](../../src/cofounder_agent/poindexter/services/image_providers/screenshot.py) — the provider
+- [`services/preview_screenshot.py`](../../src/cofounder_agent/poindexter/services/preview_screenshot.py) — the shared capture helper (also drives the `qa.vision` rail)
+- [`modules/content/atoms/_writer_markers.py`](../../src/cofounder_agent/poindexter/modules/content/atoms/_writer_markers.py) — marker parsing + the two budgets
+- [`modules/content/atoms/content_plan_image_markers.py`](../../src/cofounder_agent/poindexter/modules/content/atoms/content_plan_image_markers.py) — the top-up planner
 - [`brand-hero.md`](brand-hero.md) — the sibling answer for the **featured** image: composed from brand tokens, because diffusion cannot set type
 - [`anti-hallucination.md`](anti-hallucination.md) — why "show the real number" is a house rule

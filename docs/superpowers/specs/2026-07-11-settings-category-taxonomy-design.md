@@ -26,7 +26,7 @@ Three writers stamp it independently:
 
 1. **`settings_defaults.py::seed_all_defaults`** — the boot seeder that
    applies `DEFAULTS` every startup — **hardcodes `category = 'general'`**
-   on insert ([settings_defaults.py:2251](../../../src/cofounder_agent/services/settings_defaults.py) and `:2358`).
+   on insert ([settings_defaults.py:2251](../../../src/cofounder_agent/poindexter/services/settings_defaults.py) and `:2358`).
    Since the CLAUDE.md convention routes _every_ new key through
    `settings_defaults.py`, `general` grows monotonically forever.
 2. **The baseline `seeds.sql`** — stamps real categories for the keys it
@@ -54,7 +54,7 @@ piling into `general`.
 - The `SettingCategoryEnum` (8 abstract values: `general/api/database/
 security/feature_flags/performance/logging/integration`) is **dead** —
   the list route explicitly bypasses it to accept raw strings
-  ([settings_routes.py:69-74](../../../src/cofounder_agent/routes/settings_routes.py)).
+  ([settings_routes.py:69-74](../../../src/cofounder_agent/poindexter/routes/settings_routes.py)).
 
 ## Goals
 

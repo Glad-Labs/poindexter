@@ -20,76 +20,76 @@
   "scripts/_oauth_helper.py": {
     "python-logger-credential-disclosure": 2
   },
-  "src/cofounder_agent/config/__init__.py": {
-    "python-logger-credential-disclosure": 1
-  },
   "src/cofounder_agent/main.py": {
     "python-logger-credential-disclosure": 2
   },
   "src/cofounder_agent/middleware/token_validation.py": {
     "python-logger-credential-disclosure": 2
   },
-  "src/cofounder_agent/modules/content/ai_content_generator.py": {
+  "src/cofounder_agent/poindexter/config/__init__.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/modules/content/stages/verify_task.py": {
+  "src/cofounder_agent/poindexter/modules/content/ai_content_generator.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/plugins/llm_providers/gemini.py": {
+  "src/cofounder_agent/poindexter/modules/content/stages/verify_task.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/routes/approval_routes.py": {
+  "src/cofounder_agent/poindexter/plugins/llm_providers/gemini.py": {
+    "python-logger-credential-disclosure": 1
+  },
+  "src/cofounder_agent/poindexter/routes/approval_routes.py": {
     "sql-injection-db-cursor-execute": 1
   },
-  "src/cofounder_agent/routes/oauth_routes.py": {
+  "src/cofounder_agent/poindexter/routes/oauth_routes.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/auth/oauth_client.py": {
+  "src/cofounder_agent/poindexter/services/auth/oauth_client.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/image_service.py": {
+  "src/cofounder_agent/poindexter/services/image_service.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/integrations/handlers/retention_embeddings_collapse.py": {
+  "src/cofounder_agent/poindexter/services/integrations/handlers/retention_embeddings_collapse.py": {
     "insecure-hash-algorithm-sha1": 1
   },
-  "src/cofounder_agent/services/jobs/crosspost_to_devto.py": {
+  "src/cofounder_agent/poindexter/services/jobs/crosspost_to_devto.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/jobs/ingest_benchmark_results.py": {
+  "src/cofounder_agent/poindexter/services/jobs/ingest_benchmark_results.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/jobs/render_grafana_alerts.py": {
+  "src/cofounder_agent/poindexter/services/jobs/render_grafana_alerts.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/jobs/sync_affiliate_clicks.py": {
+  "src/cofounder_agent/poindexter/services/jobs/sync_affiliate_clicks.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/jwt_blocklist_service.py": {
+  "src/cofounder_agent/poindexter/services/jwt_blocklist_service.py": {
     "python-logger-credential-disclosure": 4
   },
-  "src/cofounder_agent/services/post_pipeline_actions.py": {
+  "src/cofounder_agent/poindexter/services/post_pipeline_actions.py": {
     "python-logger-credential-disclosure": 3
   },
-  "src/cofounder_agent/services/prompt_manager.py": {
+  "src/cofounder_agent/poindexter/services/prompt_manager.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/publish_adapters/youtube.py": {
+  "src/cofounder_agent/poindexter/services/publish_adapters/youtube.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/revalidation_service.py": {
+  "src/cofounder_agent/poindexter/services/revalidation_service.py": {
     "python-logger-credential-disclosure": 2
   },
-  "src/cofounder_agent/services/site_config.py": {
+  "src/cofounder_agent/poindexter/services/site_config.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/taps/github_issues.py": {
+  "src/cofounder_agent/poindexter/services/taps/github_issues.py": {
     "python-logger-credential-disclosure": 1
   },
-  "src/cofounder_agent/services/topic_sources/igdb.py": {
+  "src/cofounder_agent/poindexter/services/topic_sources/igdb.py": {
     "python-logger-credential-disclosure": 2
   },
-  "src/cofounder_agent/services/voice_agent_livekit.py": {
+  "src/cofounder_agent/poindexter/services/voice_agent_livekit.py": {
     "python-logger-credential-disclosure": 2
   }
 }

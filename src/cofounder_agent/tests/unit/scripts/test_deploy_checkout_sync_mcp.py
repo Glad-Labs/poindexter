@@ -97,7 +97,7 @@ def _build_rig(tmp_path: Path) -> dict:
     (mcp / "server.py").write_text("BASE = 1\n", encoding="utf-8")
     (mcp / "pyproject.toml").write_text('[project]\nname = "m"\n', encoding="utf-8")
     (mcp / "uv.lock").write_text("lock-v1\n", encoding="utf-8")
-    svc = seed / "src" / "cofounder_agent" / "services"
+    svc = seed / "src" / "cofounder_agent" / "poindexter" / "services"
     svc.mkdir(parents=True)
     (svc / "foo.py").write_text("X = 1\n", encoding="utf-8")
     _git(seed, "add", "-A")
@@ -213,7 +213,7 @@ def test_non_mcp_change_leaves_connector_alone(tmp_path):
     rig = _build_rig(tmp_path)
     _seed_venv(rig)
     new_sha = _advance_origin(
-        rig, {"src/cofounder_agent/services/foo.py": "X = 2\n"}
+        rig, {"src/cofounder_agent/poindexter/services/foo.py": "X = 2\n"}
     )
     proc = _run_sync(rig)
     assert proc.returncode == 0, proc.stderr + proc.stdout
@@ -227,7 +227,7 @@ def test_missing_venv_self_heals_even_without_mcp_diff(tmp_path):
     """First pass after setup-deploy-checkout.sh on a host with the unit:
     the clone has no .venv yet, so the sync must create it and reload."""
     rig = _build_rig(tmp_path)  # no venv seeded
-    _advance_origin(rig, {"src/cofounder_agent/services/foo.py": "X = 2\n"})
+    _advance_origin(rig, {"src/cofounder_agent/poindexter/services/foo.py": "X = 2\n"})
     proc = _run_sync(rig)
     assert proc.returncode == 0, proc.stderr + proc.stdout
     ev = _events(rig)

@@ -26,9 +26,8 @@ CONTRACT
 * Both spellings are accepted everywhere, today: ``"services.x"`` and
   ``"poindexter.services.x"`` resolve to whatever is importable in this
   process. Callers may adopt the new spelling before the move.
-* :data:`ROOT_PACKAGE` is the single switch. It is ``""`` while the tree is
-  flat and becomes ``"poindexter"`` in step 2 of the epic. Nothing else
-  changes.
+* :data:`ROOT_PACKAGE` is the single switch. It was ``""`` while the tree was
+  flat and is ``"poindexter"`` since step 2 of the epic. Nothing else changed.
 * Only *project* paths are touched. A first segment outside
   :data:`PROJECT_ROOTS` (``os.path``, ``langchain_core.x``, a third-party
   plugin's ``acme_taps.slack``) passes through untouched -- and so does the
@@ -62,10 +61,10 @@ __all__ = [
     "resolve_object_path",
 ]
 
-#: The package the backend will live under after step 2 of poindexter#1046.
-#: ``""`` while the tree is flat. Flipping this is the whole of that step's
-#: runtime change; every string path in the codebase already routes here.
-ROOT_PACKAGE: str = ""
+#: The package the backend lives under since step 2 of poindexter#1046
+#: (2026-09-10). It was ``""`` while the tree was flat; flipping it was the
+#: whole of that step's runtime change -- every string path already routed here.
+ROOT_PACKAGE: str = "poindexter"
 
 #: The future root's name. Recognised on input at all times so callers can
 #: write ``poindexter.services.x`` before the move.

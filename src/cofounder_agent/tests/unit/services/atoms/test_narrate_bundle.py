@@ -633,7 +633,7 @@ class TestRunWarnsOnResidualLeak:
 
         with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             with caplog.at_level(
-                logging.WARNING, logger="modules.content.atoms.narrate_bundle"
+                logging.WARNING, logger="poindexter.modules.content.atoms.narrate_bundle"
             ):
                 result = await run({
                     "task_id": "leak-guard",
@@ -903,7 +903,7 @@ class TestResolveSystemPrompt:
             "services.prompt_manager.get_prompt_manager",
             return_value=mock_mgr,
         ):
-            with caplog.at_level(logging.ERROR, logger="modules.content.atoms.narrate_bundle"):
+            with caplog.at_level(logging.ERROR, logger="poindexter.modules.content.atoms.narrate_bundle"):
                 text, key, version = _resolve_system_prompt(None)
 
         assert text == _NARRATIVE_SYSTEM_PROMPT_FALLBACK, (

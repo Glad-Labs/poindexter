@@ -88,7 +88,7 @@ The starter calls three backend endpoints:
 - `GET /api/posts/{slug}` — single post with HTML content
 - `GET /api/categories` — (stubbed, not used by default pages)
 
-See `src/cofounder_agent/routes/cms_routes.py` in the main repo for the
+See `src/cofounder_agent/poindexter/routes/cms_routes.py` in the main repo for the
 full API surface.
 
 ---

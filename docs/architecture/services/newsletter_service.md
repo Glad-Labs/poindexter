@@ -1,6 +1,6 @@
 # Newsletter Service
 
-**File:** `src/cofounder_agent/services/newsletter_service.py`
+**File:** `src/cofounder_agent/poindexter/services/newsletter_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_newsletter_service.py`
 **Last reviewed:** 2026-04-30
 

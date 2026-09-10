@@ -1,6 +1,6 @@
 # Publish Service
 
-**File:** `src/cofounder_agent/services/publish_service.py`
+**File:** `src/cofounder_agent/poindexter/services/publish_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_publish_service.py`
 **Last reviewed:** 2026-04-30
 

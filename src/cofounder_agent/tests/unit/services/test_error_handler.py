@@ -177,11 +177,11 @@ class TestHandleError:
 
     def test_log_exception_false_does_not_log(self, caplog):
         import logging
-        with caplog.at_level(logging.ERROR, logger="services.error_handler"):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.error_handler"):
             handle_error(RuntimeError("silent"), log_exception=False)
         # No ERROR-level records from this module
         assert not any(
-            r.name == "services.error_handler" and r.levelno >= logging.ERROR
+            r.name == "poindexter.services.error_handler" and r.levelno >= logging.ERROR
             for r in caplog.records
         )
 

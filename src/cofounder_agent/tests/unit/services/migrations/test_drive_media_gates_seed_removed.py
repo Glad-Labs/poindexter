@@ -46,14 +46,14 @@ def _backend_root() -> Path:
 @pytest.fixture(scope="module")
 def baseline_seeds_text() -> str:
     return (
-        _backend_root() / "services" / "migrations" / "0000_baseline.seeds.sql"
+        _backend_root() / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
     ).read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
 def settings_defaults_text() -> str:
     return (
-        _backend_root() / "services" / "settings_defaults.py"
+        _backend_root() / "poindexter" / "services" / "settings_defaults.py"
     ).read_text(encoding="utf-8")
 
 

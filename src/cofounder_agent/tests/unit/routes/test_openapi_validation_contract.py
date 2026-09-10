@@ -100,7 +100,7 @@ class TestOpenApiPatchSource:
         map 422 → INVALID_STATE (the app uses 422 intentionally for that error;
         we only strip it from the *auto-generated* validation docs, not from the
         live handler behaviour)."""
-        handler_py = _MAIN_PY.parent / "utils" / "exception_handlers.py"
+        handler_py = _MAIN_PY.parent / "poindexter" / "utils" / "exception_handlers.py"
         assert handler_py.is_file(), f"expected exception_handlers.py at {handler_py}"
         source = handler_py.read_text(encoding="utf-8")
         assert '422: "INVALID_STATE"' in source, (

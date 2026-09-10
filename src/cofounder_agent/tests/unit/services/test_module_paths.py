@@ -43,7 +43,9 @@ import pytest
 
 from services import module_paths as mp
 
-BACKEND = Path(__file__).resolve().parents[3]  # src/cofounder_agent
+# The package root that holds services/, plugins/, ... -- derived from the resolver
+# itself so it follows the tree (src/cofounder_agent/poindexter since step 2).
+PKG_ROOT = Path(mp.__file__).resolve().parent.parent
 
 # The files whose string-named modules were routed through the seam. Keep in
 # step with the epic's step-1 list; the floor test below fails if any of them
@@ -56,7 +58,7 @@ WIRED_FILES = (
     "utils/route_registration.py",
     "utils/import_audit.py",
     "routes/task_status_routes.py",
-    "poindexter/cli/media.py",
+    "cli/media.py",
     "modules/content/content_module.py",  # manifest: atoms_package
 )
 
@@ -108,11 +110,14 @@ class TestResolveModulePath:
             "services.x"
         )
 
-    def test_flat_tree_resolves_to_flat(self):
-        # ROOT_PACKAGE is "" until step 2 of the epic.
-        assert mp.ROOT_PACKAGE == ""
+    def test_step2_tree_resolves_under_the_root(self):
+        # ROOT_PACKAGE flipped to "poindexter" in step 2 of the epic (2026-09-10).
+        assert mp.ROOT_PACKAGE == "poindexter"
+        assert mp.resolve_module_path("modules.content.atoms") == (
+            "poindexter.modules.content.atoms"
+        )
         assert mp.resolve_module_path("poindexter.modules.content.atoms") == (
-            "modules.content.atoms"
+            "poindexter.modules.content.atoms"
         )
 
     def test_idempotent(self):
@@ -128,7 +133,7 @@ class TestResolveModulePath:
         assert mp.resolve_module_path("poindexter.cli.app") == "poindexter.cli.app"
 
     def test_every_declared_project_root_is_importable(self):
-        # Importability rather than a directory under BACKEND: `brain` is a repo-root
+        # Importability rather than a directory under PKG_ROOT: `brain` is a repo-root
         # sibling until step 2 moves it, and after the move every root lives under
         # poindexter/. find_spec is the move-proof form of "this root exists".
         for root in sorted(mp.PROJECT_ROOTS):
@@ -140,7 +145,11 @@ class TestResolveModulePath:
 @pytest.mark.unit
 class TestObjectPaths:
     def test_splits_and_resolves(self):
-        assert mp.resolve_object_path("poindexter.services.x:Klass") == ("services.x", "Klass")
+        assert mp.resolve_object_path("poindexter.services.x:Klass") == (
+            "poindexter.services.x",
+            "Klass",
+        )
+        assert mp.resolve_object_path("services.x:Klass") == ("poindexter.services.x", "Klass")
 
     @pytest.mark.parametrize("bad", ["services.x", "services.x:", ":Klass", ""])
     def test_rejects_specs_without_attr(self, bad):
@@ -150,7 +159,9 @@ class TestObjectPaths:
     def test_import_object_path_returns_the_attribute(self):
         obj = mp.import_object_path("services.module_paths:resolve_module_path")
         assert obj is mp.resolve_module_path
-        assert mp.import_object_path("poindexter.services.module_paths:ROOT_PACKAGE") == ""
+        assert (
+            mp.import_object_path("poindexter.services.module_paths:ROOT_PACKAGE") == "poindexter"
+        )
 
     def test_missing_attribute_stays_loud(self):
         with pytest.raises(AttributeError):
@@ -170,7 +181,7 @@ class TestObjectPaths:
 def _string_module_paths(rel: str) -> list[tuple[int, str]]:
     """Every string constant in ``rel`` that names a project module or a
     ``module:attr`` object, excluding label-style call arguments."""
-    src = (BACKEND / rel).read_text(encoding="utf-8")
+    src = (PKG_ROOT / rel).read_text(encoding="utf-8")
     tree = ast.parse(src)
     parents: dict[ast.AST, ast.AST] = {}
     for node in ast.walk(tree):
@@ -315,7 +326,7 @@ def test_wired_call_sites_no_longer_import_project_paths_directly():
     straight to importlib/__import__."""
     offenders: list[str] = []
     for rel in WIRED_FILES:
-        tree = ast.parse((BACKEND / rel).read_text(encoding="utf-8"))
+        tree = ast.parse((PKG_ROOT / rel).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue

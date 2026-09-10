@@ -6,7 +6,7 @@ Spins up an asyncpg pool against ``DATABASE_URL`` (typically a throwaway
 Postgres 16 + pgvector service container in CI), invokes the project's
 ``services.migrations.run_migrations`` runner end-to-end, and asserts that
 exactly one ``schema_migrations`` row exists per migration file in
-``src/cofounder_agent/services/migrations/`` (excluding ``__init__.py``).
+``src/cofounder_agent/poindexter/services/migrations/`` (excluding ``__init__.py``).
 
 The runner itself swallows per-migration exceptions and returns ``False``
 when any failed, so we surface that as a non-zero exit. The row-count
@@ -42,7 +42,7 @@ BACKEND_ROOT = (
     if _BACKEND_ROOT_ENV
     else REPO_ROOT / "src" / "cofounder_agent"
 )
-MIGRATIONS_DIR = BACKEND_ROOT / "services" / "migrations"
+MIGRATIONS_DIR = BACKEND_ROOT / "poindexter" / "services" / "migrations"
 
 
 class _PoolHolder:

@@ -107,7 +107,7 @@ post-baseline migrations, no surviving convergence step). Derive the expected
 count dynamically — the `-1` subtracts `__init__.py`:
 
 ```bash
-python -c "from pathlib import Path; n=len(list(Path('src/cofounder_agent/services/migrations').glob('*.py')))-1; print(f'expect ~{n} migrations applied')"
+python -c "from pathlib import Path; n=len(list(Path('src/cofounder_agent/poindexter/services/migrations').glob('*.py')))-1; print(f'expect ~{n} migrations applied')"
 ```
 
 Then verify against the DB:

@@ -17,10 +17,10 @@ Two phases, each shipping value independently:
 ## Phase 1 — analyze (read-only)
 
 `RunSeoOpportunityAnalyzerJob`
-([`services/jobs/run_seo_opportunity_analyzer.py`](../../src/cofounder_agent/services/jobs/run_seo_opportunity_analyzer.py))
+([`services/jobs/run_seo_opportunity_analyzer.py`](../../src/cofounder_agent/poindexter/services/jobs/run_seo_opportunity_analyzer.py))
 runs daily, reads the latest `post_performance` snapshot per published post,
 classifies via
-[`services/seo/striking_distance.py`](../../src/cofounder_agent/services/seo/striking_distance.py),
+[`services/seo/striking_distance.py`](../../src/cofounder_agent/poindexter/services/seo/striking_distance.py),
 and upserts `seo_opportunities` (one row per post, recomputed each run). A
 findings summary fires when page-1-push candidates exist. It modifies no content.
 
@@ -189,7 +189,7 @@ separate from the code deploy — mirrors how `seo.refresh.enabled` was flipped
 only after explicit operator sign-off in Milestone B.
 
 **Topic-side:** `GscQueryGapSource`
-([`services/topic_sources/gsc_query_gap.py`](../../src/cofounder_agent/services/topic_sources/gsc_query_gap.py))
+([`services/topic_sources/gsc_query_gap.py`](../../src/cofounder_agent/poindexter/services/topic_sources/gsc_query_gap.py))
 is a new `TopicSource` (same protocol as `devto.py`/`hackernews.py`) that
 reads the newly-ingested per-query rows and surfaces queries with real
 impressions but a poor average position as `DiscoveredTopic`s — a gap in

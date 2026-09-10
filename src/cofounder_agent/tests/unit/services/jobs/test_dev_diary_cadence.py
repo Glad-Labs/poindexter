@@ -65,7 +65,7 @@ class TestSeededDefaultMatchesTheCode:
         # Anchor on the FILE, not on a ``services/migrations`` directory:
         # tests/unit/services/migrations/ also exists, so a directory probe
         # matches tests/unit first and resolves to a path with no seeds file.
-        rel = Path("services") / "migrations" / "0000_baseline.seeds.sql"
+        rel = Path("poindexter") / "services" / "migrations" / "0000_baseline.seeds.sql"
         seeds = next(
             p / rel for p in Path(__file__).resolve().parents if (p / rel).is_file()
         )

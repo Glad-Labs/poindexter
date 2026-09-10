@@ -28,7 +28,7 @@ in:
   plan from god-files to plugin Protocols (Tap, Probe, Job, Stage,
   Pack, LLMProvider). Umbrella issue [GH-64](https://github.com/Glad-Labs/poindexter/issues/64).
 - **[Services reference](../reference/services)** — catalog of
-  every service in `src/cofounder_agent/services/` with the four
+  every service in `src/cofounder_agent/poindexter/services/` with the four
   blog-focused agents (content generator, image, publisher, quality)
   called out under Core and Pipeline orchestration.
 - **[Database schema](./database-schema)** — every table + migration.

@@ -133,6 +133,9 @@ class TestPaths:
     def test_real_package_path_passes(self):
         assert atom.check_paths(["services/rag_engine.py"]) == []
 
+    def test_canonical_package_path_passes(self):
+        assert atom.check_paths(["poindexter/services/rag_engine.py"]) == []
+
     def test_invented_path_flags(self):
         offenders = atom.check_paths(["services/entity_overlap_check.py"])
         assert len(offenders) == 1

@@ -244,7 +244,7 @@ async def test_edit_metrics_failure_is_warning_plus_finding_not_fatal(
          patch("utils.findings.emit_finding", side_effect=_capture_finding), \
          patch("services.publish_service._spawn_background"), \
          patch("services.publish_service._should_run_post_publish_hooks", return_value=False), \
-         caplog.at_level(logging.WARNING, logger="services.publish_service"):
+         caplog.at_level(logging.WARNING, logger="poindexter.services.publish_service"):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
             publisher="operator-test",
@@ -274,7 +274,7 @@ async def test_record_post_approve_metrics_pool_none_logs_warning(
     from modules.content.auto_publish_gate import record_post_approve_metrics
 
     with caplog.at_level(
-        logging.WARNING, logger="modules.content.auto_publish_gate"
+        logging.WARNING, logger="poindexter.modules.content.auto_publish_gate"
     ):
         ok = await record_post_approve_metrics(
             None,

@@ -1,6 +1,6 @@
 # QA Gates DB
 
-**File:** `src/cofounder_agent/services/qa_gates_db.py`
+**File:** `src/cofounder_agent/poindexter/services/qa_gates_db.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_qa_gates.py`
 **Last reviewed:** 2026-04-30
 

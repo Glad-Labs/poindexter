@@ -347,7 +347,7 @@ class TestAutoPublishBookkeepingVisibility:
         with (
             patch("services.publish_service.publish_post_from_task", pub_mock),
             patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
-            caplog.at_level(_logging.ERROR, logger="modules.content.auto_publish"),
+            caplog.at_level(_logging.ERROR, logger="poindexter.modules.content.auto_publish"),
         ):
             result = await ap_mod.auto_publish_task(
                 database_service=db,
@@ -392,7 +392,7 @@ class TestAutoPublishBookkeepingVisibility:
             patch("services.publish_service.publish_post_from_task", pub_mock),
             patch("services.pipeline_db.PipelineDB", return_value=pipeline_db),
             patch.object(ap_mod, "emit_finding", create=True) as emit_mock,
-            caplog.at_level(_logging.ERROR, logger="modules.content.auto_publish"),
+            caplog.at_level(_logging.ERROR, logger="poindexter.modules.content.auto_publish"),
         ):
             result = await ap_mod.auto_publish_task(
                 database_service=db,

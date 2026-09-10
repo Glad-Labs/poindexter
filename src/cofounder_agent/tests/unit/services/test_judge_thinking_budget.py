@@ -98,6 +98,6 @@ class TestBothRailsActuallyPassIt:
         from pathlib import Path
 
         src = Path(__file__).resolve().parents[3].joinpath(
-            "services", "ragas_eval.py"
+            "poindexter", "services", "ragas_eval.py"
         ).read_text(encoding="utf-8")
         assert "num_predict=resolve_judge_num_predict(judge_model, site_config)" in src

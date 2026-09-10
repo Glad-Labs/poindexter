@@ -109,7 +109,7 @@ def _registered_modules() -> set[str]:
     a refactor doesn't take this test down — it just fails with a
     clear "couldn't parse registry" message).
     """
-    registry_file = _SRC_ROOT / "plugins" / "registry.py"
+    registry_file = _SRC_ROOT / "poindexter" / "plugins" / "registry.py"
     tree = ast.parse(registry_file.read_text(encoding="utf-8"))
     modules: set[str] = set()
     # _SAMPLES is defined inside the get_core_samples() function body,
@@ -288,7 +288,7 @@ def _registered_class_names_per_group() -> dict[str, set[str]]:
     ``(plugin_type, ClassName)`` split so the cross-check can match
     entry_points by their (group, class) pair.
     """
-    registry_file = _SRC_ROOT / "plugins" / "registry.py"
+    registry_file = _SRC_ROOT / "poindexter" / "plugins" / "registry.py"
     tree = ast.parse(registry_file.read_text(encoding="utf-8"))
     out: dict[str, set[str]] = {}
     for node in ast.walk(tree):

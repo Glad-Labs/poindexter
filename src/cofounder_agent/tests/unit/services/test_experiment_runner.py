@@ -262,7 +262,7 @@ async def test_pool_exception_returns_none_does_not_raise(caplog) -> None:
     its niche-default resolution."""
     pool = _RaisingPool()
 
-    with caplog.at_level("WARNING", logger="services.experiment_runner"):
+    with caplog.at_level("WARNING", logger="poindexter.services.experiment_runner"):
         result = await pick_variant(pool, "glad-labs", task_id="task-X")
 
     assert result is None
@@ -284,7 +284,7 @@ async def test_none_pool_returns_none_without_logging(caplog) -> None:
     """Calling with ``pool=None`` is the test/bootstrap path — not an
     error, just "no DB to consult". Must not log a warning so it
     doesn't spam log review on every test run."""
-    with caplog.at_level("WARNING", logger="services.experiment_runner"):
+    with caplog.at_level("WARNING", logger="poindexter.services.experiment_runner"):
         result = await pick_variant(None, "glad-labs", task_id="task-N")
     assert result is None
     assert caplog.records == [] or all(

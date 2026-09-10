@@ -25,7 +25,7 @@ import pytest
 
 _MIGRATION_FILE = (
     Path(__file__).resolve().parents[4]
-    / "services"
+    / "poindexter" / "services"
     / "migrations"
     / "20260806_053312_clear_windows_era_memory_scope_allowlist_stranded_by_pop_os_migration.py"
 )

@@ -912,7 +912,7 @@ separate from the code deploy — mirrors how `seo.refresh.enabled` was flipped
 only after explicit operator sign-off in Milestone B.
 
 **Topic-side:** `GscQueryGapSource`
-([`services/topic_sources/gsc_query_gap.py`](../../src/cofounder_agent/services/topic_sources/gsc_query_gap.py))
+([`services/topic_sources/gsc_query_gap.py`](../../src/cofounder_agent/poindexter/services/topic_sources/gsc_query_gap.py))
 is a new `TopicSource` (same protocol as `devto.py`/`hackernews.py`) that
 reads the newly-ingested per-query rows and surfaces queries with real
 impressions but a poor average position as `DiscoveredTopic`s — a gap in

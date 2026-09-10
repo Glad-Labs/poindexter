@@ -42,7 +42,7 @@ except ImportError:  # pragma: no cover
     raise
 
 _STAGES_DIR = (
-    Path(__file__).resolve().parents[3] / "modules" / "content" / "stages"
+    Path(__file__).resolve().parents[3] / "poindexter" / "modules" / "content" / "stages"
 )
 _MEDIA_STAGE_FILES = (
     "generate_media_scripts.py",

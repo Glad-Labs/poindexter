@@ -54,7 +54,7 @@ async def test_spawn_background_logs_task_exception(caplog):
     import logging
 
     boom = RuntimeError("media upload exploded")
-    with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+    with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
         task = _spawn_background(_raise(boom), name="test_boom")
         await asyncio.gather(task, return_exceptions=True)
 
@@ -91,7 +91,7 @@ async def test_spawn_background_no_error_log_on_success(caplog):
     """A task that succeeds must NOT produce an ERROR log."""
     import logging
 
-    with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+    with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
         task = _spawn_background(_succeed(), name="clean_task")
         await asyncio.gather(task, return_exceptions=True)
 
@@ -107,7 +107,7 @@ async def test_spawn_background_no_error_log_on_cancel(caplog):
     async def _wait_forever():
         await asyncio.sleep(9999)
 
-    with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+    with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
         task = _spawn_background(_wait_forever(), name="cancelled_task")
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -161,7 +161,7 @@ async def test_upload_media_bg_podcast_failure_does_not_kill_video(caplog):
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
     with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
-        with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-abc")
 
     podcast_errors = [
@@ -186,7 +186,7 @@ async def test_upload_media_bg_video_failure_does_not_kill_podcast(caplog):
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
     with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
-        with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-def")
 
     video_errors = [
@@ -214,7 +214,7 @@ async def test_upload_media_bg_both_failures_independent(caplog):
     fake_r2_mod.R2UploadService = MagicMock(return_value=r2)
 
     with patch.dict(sys.modules, {"services.r2_upload_service": fake_r2_mod}):
-        with caplog.at_level(logging.ERROR, logger="services.publish_service"):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.publish_service"):
             await _upload_media_to_r2_bg(_FAST_SC, "post-ghi")
 
     error_msgs = [r.message for r in caplog.records if r.levelname == "ERROR"]

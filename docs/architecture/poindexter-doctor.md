@@ -127,7 +127,7 @@ reads. **No LLM in v1** — the recover/deliver path stays deterministic
 
 ## Files (v1)
 
-- **New** `src/cofounder_agent/services/doctor.py` — `CheckResult`, `DEPENDS_ON`,
+- **New** `src/cofounder_agent/poindexter/services/doctor.py` — `CheckResult`, `DEPENDS_ON`,
   `load_check_results(pool)` (reads `brain_knowledge`), `build_graph()` /
   root-cause suppression, `score()`, `correlate()`, `run_doctor(pool) ->
 DoctorReport`. Pure-ish + unit-testable (feed fake `brain_knowledge` rows).

@@ -23,7 +23,7 @@ from utils.route_registration import (
 )
 
 # Marker — FinanceModule is private (Glad Labs operator overlay). The
-# sync filter strips ``src/cofounder_agent/modules/finance/`` from the
+# sync filter strips ``src/cofounder_agent/poindexter/modules/finance/`` from the
 # public ``poindexter`` mirror, so the finance-specific tests below
 # must skip on the public side rather than fail. The check uses
 # ``importlib.util.find_spec`` so the spec lookup itself doesn't try

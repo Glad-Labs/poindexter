@@ -1,9 +1,20 @@
-"""Services module for AI content generation and management.
+"""Compatibility stub -- `services` now lives at `poindexter.services` (Glad-Labs/poindexter#1046, step 2).
 
-Intentionally empty — no top-level re-exports. Each caller imports
-the specific submodule it needs, e.g. ``from services.content_task_store
-import ContentTaskStore``. This keeps ``import services.taps.runner``
-cheap for contexts (like the auto-embed container) that don't want to
-drag in heavy deps like yaml, structlog, pydantic via transitive
-imports from content_router_service.
+Importing this installs the flat-import alias finder and replaces this module in
+``sys.modules`` with the canonical package, so ``import services.x`` yields the SAME
+object as ``import poindexter.services.x`` -- one module, two names (see
+``poindexter/_flat_imports.py`` for why a ``__path__`` shim would not do). Deleted
+in step 5 of the epic, once no flat spelling remains.
 """
+
+import importlib as _importlib
+import sys as _sys
+
+from poindexter import _flat_imports as _flat_imports
+
+_flat_imports.install()
+# Keyed on the LAST segment: this same file also loads as
+# `cofounder_agent.services` (the umbrella spelling the entry points use).
+_sys.modules[__name__] = _importlib.import_module(
+    f"poindexter.{__name__.rpartition('.')[2]}"
+)

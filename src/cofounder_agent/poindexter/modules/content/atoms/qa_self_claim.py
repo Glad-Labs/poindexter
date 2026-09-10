@@ -169,8 +169,11 @@ def is_self_referential(content: str, topic: str, markers: list[str]) -> bool:
 
 
 def _package_root() -> Path:
-    # …/modules/content/atoms/qa_self_claim.py → src/cofounder_agent
-    return Path(__file__).resolve().parents[3]
+    # …/poindexter/modules/content/atoms/qa_self_claim.py → src/cofounder_agent,
+    # whose pyproject.toml carries the backend version. parents[3] is
+    # poindexter/, which has its OWN pyproject (the standalone CLI manifest) --
+    # the wrong version to check claims against (poindexter#1046 step 2).
+    return Path(__file__).resolve().parents[4]
 
 
 def current_package_version(root: Path | None = None) -> str | None:
@@ -247,7 +250,10 @@ def check_paths(paths: list[str], root: Path | None = None) -> list[str]:
     return [
         f"file path `{p}` does not exist in the repo"
         for p in paths
-        if not (root / p).exists()
+        # A path spelled the pre-#1046 flat way (`services/x.py`) still names a
+        # real file -- it lives under poindexter/ now, exactly as the import alias
+        # maps `services.x` onto `poindexter.services.x`. Both spellings pass.
+        if not ((root / p).exists() or (root / "poindexter" / p).exists())
     ]
 
 

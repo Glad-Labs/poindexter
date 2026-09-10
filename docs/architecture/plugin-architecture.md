@@ -65,7 +65,7 @@ Provider variants like `image_providers`, `video_providers`,
 `media_compositors`, `publish_adapters`, and the Module v1 group
 that bundles capability plugins into business-function units).
 
-All live under `src/cofounder_agent/plugins/` as the canonical contracts. All discovered via `importlib.metadata.entry_points`.
+All live under `src/cofounder_agent/poindexter/plugins/` as the canonical contracts. All discovered via `importlib.metadata.entry_points`.
 
 ### 1. `Tap` — data ingestion
 

@@ -170,7 +170,7 @@ async def test_logs_and_counts_when_migration_raises(tmp_path, caplog):
     )
 
     pool = _FakePool()
-    with caplog.at_level("ERROR", logger="services.module_runner"):
+    with caplog.at_level("ERROR", logger="poindexter.services.module_runner"):
         result = await run_module_migrations(
             pool=pool,
             module_name="content",
@@ -182,7 +182,7 @@ async def test_logs_and_counts_when_migration_raises(tmp_path, caplog):
     assert result.ok is False
     bad_errors = [
         r for r in caplog.records
-        if r.name == "services.module_runner"
+        if r.name == "poindexter.services.module_runner"
         and "b_bad.py" in r.message
     ]
     assert len(bad_errors) >= 1

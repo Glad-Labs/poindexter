@@ -2,7 +2,7 @@
 """Fail-fast lint for new `os.getenv` / `os.environ` reads in services/.
 
 Enforces Phase 3 of GH#93 (DB-first config): no new env-var reads should
-land in `src/cofounder_agent/services/` outside a small allowlist of
+land in `src/cofounder_agent/poindexter/services/` outside a small allowlist of
 bootstrap / config / subprocess-propagation modules. Everything else
 should go through `services.site_config.site_config.get()`.
 
@@ -26,7 +26,13 @@ import re
 import sys
 from pathlib import Path
 
-SERVICES_ROOT = Path(__file__).resolve().parent.parent / "src" / "cofounder_agent" / "services"
+SERVICES_ROOT = Path(__file__).resolve().parent.parent / "src" / "cofounder_agent" / "poindexter" / "services"
+
+# A lint that scanned nothing must not report clean (poindexter#1029 class).
+sys.path.insert(0, str(Path(__file__).resolve().parent / "ci"))
+from lib_scan_floor import require_dir, require_scanned  # noqa: E402
+
+LINT = "check-no-os-getenv-in-services"
 
 # Files where `os.getenv` / `os.environ` is justified. Keep the
 # justification in the value — "because it runs before site_config
@@ -131,8 +137,11 @@ ALLOWED_FILES: dict[str, str] = {
 
 
 def _relpath(p: Path) -> str:
+    """``services/<...>.py`` -- the key shape ALLOWED_FILES uses. Relative to the
+    package that holds services/ (src/cofounder_agent/poindexter since
+    poindexter#1046 step 2), so the keys did not have to move with the tree."""
     try:
-        return str(p.relative_to(SERVICES_ROOT.parent.parent.parent))
+        return str(p.relative_to(SERVICES_ROOT.parent))
     except ValueError:
         return str(p)
 
@@ -186,11 +195,7 @@ def _find_calls(tree: ast.AST) -> list[tuple[int, str]]:
 
 
 def main() -> int:
-    if not SERVICES_ROOT.is_dir():
-        sys.stderr.write(
-            f"lint: {SERVICES_ROOT} not found — run from the repo root.\n",
-        )
-        return 2
+    require_dir(SERVICES_ROOT, lint=LINT)
 
     violations: list[tuple[str, int, str]] = []
     files_scanned = 0
@@ -220,6 +225,7 @@ def main() -> int:
         for lineno, call in hits:
             violations.append((norm, lineno, call))
 
+    require_scanned(files_scanned, lint=LINT, what="service files", roots=(SERVICES_ROOT,))
     if violations:
         print(
             "FAIL: Found os.getenv / os.environ reads in services/ outside "

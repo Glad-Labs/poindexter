@@ -38,7 +38,7 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           set -euo pipefail
-          LABEL="$(python src/cofounder_agent/services/triage/derive_labels.py --title "$ISSUE_TITLE")"
+          LABEL="$(python src/cofounder_agent/poindexter/services/triage/derive_labels.py --title "$ISSUE_TITLE")"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
           if [[ -z "$LABEL" ]]; then
             echo "No CC prefix in title — leaving type bare for the weekly sweep."

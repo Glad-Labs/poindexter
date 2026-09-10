@@ -143,8 +143,8 @@ class TestLoadCanonicalBlogSpec:
         """A spec that cannot be read must never become "0 nodes covering" in
         the public README — red CI is the correct outcome."""
         fake_root = tmp_path
-        (fake_root / "src/cofounder_agent/services").mkdir(parents=True)
-        (fake_root / "src/cofounder_agent/services/canonical_blog_spec.py").write_text(
+        (fake_root / "src/cofounder_agent/poindexter/services").mkdir(parents=True)
+        (fake_root / "src/cofounder_agent/poindexter/services/canonical_blog_spec.py").write_text(
             "SOMETHING_ELSE = {}\n", encoding="utf-8"
         )
         monkeypatch.setattr(SYNC, "ROOT", fake_root)
@@ -153,8 +153,8 @@ class TestLoadCanonicalBlogSpec:
 
     def test_non_graph_value_raises(self, tmp_path, monkeypatch):
         fake_root = tmp_path
-        (fake_root / "src/cofounder_agent/services").mkdir(parents=True)
-        (fake_root / "src/cofounder_agent/services/canonical_blog_spec.py").write_text(
+        (fake_root / "src/cofounder_agent/poindexter/services").mkdir(parents=True)
+        (fake_root / "src/cofounder_agent/poindexter/services/canonical_blog_spec.py").write_text(
             "CANONICAL_BLOG_GRAPH_DEF = {'name': 'x'}\n", encoding="utf-8"
         )
         monkeypatch.setattr(SYNC, "ROOT", fake_root)

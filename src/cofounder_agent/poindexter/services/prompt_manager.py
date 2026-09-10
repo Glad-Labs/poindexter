@@ -226,11 +226,12 @@ class UnifiedPromptManager:
         is unchanged. See docs/architecture/business-os-endgame.md.
         """
         # Package-relative default, matching the retired prompts/ loader's
-        # depth: __file__ = <pkg>/services/prompt_manager.py -> parent.parent
-        # = <pkg>. Stable on host (src/cofounder_agent) AND in the container
-        # (/app). The ``skills_dir`` arg overrides it (DI seam for tests).
+        # depth: __file__ = <root>/poindexter/services/prompt_manager.py ->
+        # parents[2] = <root>, which is src/cofounder_agent on the host AND /app
+        # in the container; skills/ stayed there when services/ moved under
+        # poindexter/ (poindexter#1046 step 2). ``skills_dir`` overrides it (DI seam).
         if skills_dir is None:
-            skills_dir = Path(__file__).resolve().parent.parent / "skills"
+            skills_dir = Path(__file__).resolve().parents[2] / "skills"
         if not skills_dir.is_dir():
             return
 
@@ -312,7 +313,7 @@ class UnifiedPromptManager:
 
     def _initialize_prompts(self):
         """Load all prompts from YAML files in the prompts/ directory."""
-        prompts_dir = Path(__file__).resolve().parent.parent / "prompts"
+        prompts_dir = Path(__file__).resolve().parents[2] / "prompts"
         if not prompts_dir.is_dir():
             # The legacy prompts/ YAML tree was retired once every default
             # migrated into skills/<pack>/<skill>/SKILL.md (see

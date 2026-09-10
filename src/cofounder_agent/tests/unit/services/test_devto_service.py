@@ -321,7 +321,7 @@ class TestCrossPostSuccess:
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             import logging as _logging
-            with caplog.at_level(_logging.INFO, logger="services.devto_service"):
+            with caplog.at_level(_logging.INFO, logger="poindexter.services.devto_service"):
                 result = await svc.cross_post(
                     title="Test",
                     content_markdown="Content",

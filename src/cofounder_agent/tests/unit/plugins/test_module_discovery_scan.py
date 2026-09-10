@@ -18,7 +18,7 @@ from plugins.registry import (
     _scan_intree_modules,
 )
 
-# The sync filter strips ``src/cofounder_agent/modules/finance/`` from the
+# The sync filter strips ``src/cofounder_agent/poindexter/modules/finance/`` from the
 # public ``poindexter`` mirror. Tests that require the finance module to be
 # present on disk (real-tree scan / forced-load) must skip there rather than
 # fail. ``find_spec`` checks importability without executing the module.

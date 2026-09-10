@@ -18,7 +18,7 @@ from modules.finance.probes import EGRESS_IP_ECHO_URL_KEY
 
 _MIGRATION = (
     Path(__file__).resolve().parents[4]
-    / "modules"
+    / "poindexter" / "modules"
     / "finance"
     / "migrations"
     / "20260711_212344_seed_finance_egress_ip_echo_url.py"

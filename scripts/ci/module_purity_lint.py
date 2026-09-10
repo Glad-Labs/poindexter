@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib_scan_floor import require_dir, require_scanned  # noqa: E402
 
 ROOT = Path(__file__).parents[2] / "src" / "cofounder_agent"
-CONTENT_DIR = ROOT / "modules" / "content"
+CONTENT_DIR = ROOT / "poindexter" / "modules" / "content"
 
 # modules/content/ arrived as a physical code move and could move again; a
 # vanished CONTENT_DIR used to rglob to nothing and print "clean (0 files

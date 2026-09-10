@@ -176,7 +176,7 @@ class TestWriterPrompt:
         import services  # noqa: F401 — locate the package root
 
         skill = (
-            Path(services.__file__).resolve().parent.parent
+            Path(services.__file__).resolve().parents[2]  # src/cofounder_agent (services/ sits under poindexter/)
             / "skills" / "content" / "blog-generation" / "SKILL.md"
         )
         text = skill.read_text(encoding="utf-8")

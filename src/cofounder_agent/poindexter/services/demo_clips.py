@@ -247,7 +247,8 @@ def assert_commands_exist(tape: DemoTape) -> None:
 
 def tapes_dir(package_root: Path | None = None) -> Path:
     """Absolute path to ``demo_tapes/``."""
-    root = package_root or Path(__file__).resolve().parent.parent
+    # <root>/demo_tapes; services/ sits under poindexter/ since poindexter#1046 step 2.
+    root = package_root or Path(__file__).resolve().parents[2]
     return root / TAPES_DIRNAME
 
 

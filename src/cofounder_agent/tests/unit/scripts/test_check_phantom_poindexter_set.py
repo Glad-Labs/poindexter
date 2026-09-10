@@ -100,7 +100,7 @@ def test_legitimate_forms_pass(line: str) -> None:
 # Path allow-list — the four files that legitimately carry the phantom string.
 # ---------------------------------------------------------------------------
 _REMEDIATION_MIGRATION = (
-    "src/cofounder_agent/services/migrations/"
+    "src/cofounder_agent/poindexter/services/migrations/"
     "20260613_120000_fix_poindexter_set_in_app_settings_descriptions.py"
 )
 

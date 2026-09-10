@@ -327,7 +327,7 @@ def test_scan_for_human_tokens_handles_empty() -> None:
 def test_ai_source_human_prompt_warns_but_accepts(caplog: pytest.LogCaptureFixture) -> None:
     """Soft warning — director output isn't rejected, but the log captures
     the slop risk so we can tune the director prompt later."""
-    with caplog.at_level(logging.WARNING, logger="schemas.video_shot_list"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
         shot = Shot.model_validate(
             _valid_shot(0, "image_kenburns", prompt="a developer typing at a keyboard"),
         )
@@ -338,14 +338,14 @@ def test_ai_source_human_prompt_warns_but_accepts(caplog: pytest.LogCaptureFixtu
 
 def test_pexels_human_query_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
     """Pexels is the human-friendly lane — real footage has no AI tell."""
-    with caplog.at_level(logging.WARNING, logger="schemas.video_shot_list"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
         Shot.model_validate(_valid_shot(0, "pexels", query="people working at desk"))
     assert "human-indicator" not in caplog.text
 
 
 def test_ai_source_silhouette_prompt_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
     """The escape hatch — explicit silhouette framing satisfies the rule."""
-    with caplog.at_level(logging.WARNING, logger="schemas.video_shot_list"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.schemas.video_shot_list"):
         Shot.model_validate(
             _valid_shot(0, "wan21", prompt="faceless silhouette of a figure walking"),
         )

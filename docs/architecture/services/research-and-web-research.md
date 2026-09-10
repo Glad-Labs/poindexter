@@ -2,8 +2,8 @@
 
 **Files:**
 
-- `src/cofounder_agent/services/research_service.py`
-- `src/cofounder_agent/services/web_research.py`
+- `src/cofounder_agent/poindexter/services/research_service.py`
+- `src/cofounder_agent/poindexter/services/web_research.py`
 
 **Tested by:**
 

@@ -50,7 +50,8 @@ class TestNoOpLimiterFallback:
         """Force-reimport utils.rate_limiter with slowapi removed from sys.modules."""
         # Remove cached module so we can reimport
         for key in list(sys.modules.keys()):
-            if key in ("utils.rate_limiter", "slowapi", "slowapi.util"):
+            # flat + canonical spelling (one module, two names since poindexter#1046 step 2)
+            if key in ("utils.rate_limiter", "poindexter.utils.rate_limiter", "slowapi", "slowapi.util"):
                 del sys.modules[key]
 
         # Patch slowapi away so the ImportError branch is triggered

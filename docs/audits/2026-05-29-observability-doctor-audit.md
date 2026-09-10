@@ -291,7 +291,7 @@ where it must be reliable.
    - **Metric:** worker `/metrics` now exposes
      `poindexter_brain_cycle_heartbeat_timestamp_seconds` (the epoch of the latest
      `brain.cycle_heartbeat` audit_log row). The series is `.clear()`-ed on no-row / DB-error so
-     `absent()` can fire. (`src/cofounder_agent/services/metrics_exporter.py`)
+     `absent()` can fire. (`src/cofounder_agent/poindexter/services/metrics_exporter.py`)
    - **Rule:** static `BrainDeliveryDeadMansSwitch` in
      `infrastructure/prometheus/alerts/deadmans-switch.yml` (the safety-net `alerts/` dir, NOT the
      DB-rendered `rules/` dir) — fires on `absent(...)` for 10m OR `time() - <gauge> > 900`.

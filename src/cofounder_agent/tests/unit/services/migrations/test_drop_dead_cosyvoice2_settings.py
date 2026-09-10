@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "services" / "migrations"
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "poindexter" / "services" / "migrations"
 _REPO_ROOT = Path(__file__).resolve().parents[6]
 _BRAIN_SEED = _REPO_ROOT / "brain" / "seed_app_settings.json"
 _DEAD_KEYS = (

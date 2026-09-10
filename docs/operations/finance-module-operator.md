@@ -5,7 +5,7 @@
 > Matt's Mercury banking integration. See `scripts/sync-to-github.sh`.
 
 **Last Updated:** 2026-05-13
-**Module:** `src/cofounder_agent/modules/finance/`
+**Module:** `src/cofounder_agent/poindexter/modules/finance/`
 **Spec:** [Module v1](../architecture/module-v1.md), umbrella [Glad-Labs/poindexter#490](https://github.com/Glad-Labs/poindexter/issues/490)
 **API:** Mercury Banking — Read-Only scope only
 

@@ -96,7 +96,9 @@ def _default_console_dir() -> Path:
     where the worker is launched from. Mirrors the pre-extraction main.py path
     ``Path(__file__).parent / "console"``.
     """
-    return Path(__file__).resolve().parent.parent / "console"
+    # utils/ lives under poindexter/ since poindexter#1046 step 2; console/ did not
+    # move, so reach the backend root (src/cofounder_agent) two levels up.
+    return Path(__file__).resolve().parents[2] / "console"
 
 
 def mount_operator_console(app: Any, *, console_dir: Path | None = None) -> bool:

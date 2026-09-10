@@ -46,7 +46,7 @@ _CHEAP_JOB_MODEL_KEYS = (
 def baseline_seeds_text() -> str:
     seeds_path = (
         Path(__file__).resolve().parents[4]
-        / "services"
+        / "poindexter" / "services"
         / "migrations"
         / "0000_baseline.seeds.sql"
     )

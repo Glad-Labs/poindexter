@@ -11,8 +11,8 @@ name: regen-services-doc
 on:
   pull_request:
     paths:
-      - "src/cofounder_agent/services/**"
-      - "src/cofounder_agent/modules/content/**"
+      - "src/cofounder_agent/poindexter/services/**"
+      - "src/cofounder_agent/poindexter/modules/content/**"
       - "scripts/regen-services-doc.py"
       - "docs/reference/services.md"
       - ".github/workflows/regen-services-doc.yml"

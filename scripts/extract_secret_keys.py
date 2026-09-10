@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MIG_DIR = ROOT / "src" / "cofounder_agent" / "services" / "migrations"
+MIG_DIR = ROOT / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
 
 # Conservative heuristic key-name patterns that we treat as secrets even
 # if a migration didn't explicitly mark them is_secret=true. These are

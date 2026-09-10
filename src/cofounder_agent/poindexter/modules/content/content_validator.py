@@ -1300,8 +1300,9 @@ def _find_hc_dir() -> _Path:
     On the host the directory lives at ``<repo-root>/brain/hallucination-check``.
     In the worker container ``brain/`` is bind-mounted at
     ``/opt/poindexter/brain`` (see docker-compose.local.yml), not as a
-    descendant of this file's path — so ``parents[3]`` from /app/services
-    overshoots the filesystem root and raises IndexError.
+    descendant of this file's path — so a fixed ``parents[N]`` from
+    /app/poindexter/modules/content overshoots the filesystem root and raises
+    IndexError.
 
     Walk every ancestor of ``__file__`` looking for the directory, then
     fall back to the container mount path. If neither exists the lazy
@@ -1317,7 +1318,7 @@ def _find_hc_dir() -> _Path:
         return container_hc
     # Best-effort guess for diagnostic output; file reads will fail
     # explicitly if the directory really is missing.
-    return here.parent.parent.parent.parent / "brain" / "hallucination-check"
+    return here.parents[4] / "brain" / "hallucination-check"
 
 
 _HC_DIR = _find_hc_dir()

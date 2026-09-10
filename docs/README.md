@@ -146,7 +146,7 @@ publishing adapters, webhooks, retention.
   Auto-generated; rerun `python scripts/regen-app-settings-doc.py`
   to refresh.
 - [reference/services.md](reference/services.md) — catalog of every
-  service in `src/cofounder_agent/services/`, grouped by responsibility
+  service in `src/cofounder_agent/poindexter/services/`, grouped by responsibility
 - [api/index.mdx](api/index.mdx) — REST endpoint inventory
 
 ## Where the docs are NOT

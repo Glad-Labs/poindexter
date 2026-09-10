@@ -31,8 +31,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_PREFIX = "src/cofounder_agent/"
-_TREES = ("src/cofounder_agent/services/", "src/cofounder_agent/modules/content/")
+_PREFIX = "src/cofounder_agent/poindexter/"
+_TREES = ("src/cofounder_agent/poindexter/services/", "src/cofounder_agent/poindexter/modules/content/")
 _EXCLUDE_DIRS = ("services/migrations/", "modules/content/migrations/")
 # Files tracked here but stripped from the public mirror. Excluded so the
 # shipped services catalog never lists a file that won't exist in the public
@@ -40,7 +40,7 @@ _EXCLUDE_DIRS = ("services/migrations/", "modules/content/migrations/")
 # (services/settings_defaults.apply_operator_overrides); only the operator's
 # private model pins + personal settings in this file are stripped.
 _EXCLUDE_FILES = ("services/operator_overrides.py",)
-_SPEC_PATH = _REPO / "src" / "cofounder_agent" / "services" / "canonical_blog_spec.py"
+_SPEC_PATH = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "canonical_blog_spec.py"
 
 EM_DASH = "—"
 _MAX_SUMMARY = 140
@@ -350,7 +350,7 @@ def intro_lines(n_files: int, n_pkgs: int) -> list[str]:
         "[migrations.md](../operations/migrations.md)).",
         "",
         "A catalog of every service, atom, and stage in "
-        "`src/cofounder_agent/services/` and `src/cofounder_agent/modules/content/`. "
+        "`src/cofounder_agent/poindexter/services/` and `src/cofounder_agent/poindexter/modules/content/`. "
         'Use it to find "what is responsible for X" without reading source. For '
         "the load-bearing subset on the critical execution path, see "
         # NOT a link: CLAUDE.md is stripped from the public mirror, so a link

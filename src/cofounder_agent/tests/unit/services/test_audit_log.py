@@ -306,7 +306,7 @@ class TestGlobalAuditLogger:
         import services.audit_log as mod
         original = mod._global_audit_logger
         try:
-            with caplog.at_level(logging.DEBUG, logger="services.audit_log"):
+            with caplog.at_level(logging.DEBUG, logger="poindexter.services.audit_log"):
                 init_global_audit_logger(_make_pool(), quiet=True)
             infos = [r for r in caplog.records if r.levelno >= logging.INFO]
             assert not infos, "quiet init must not log at info (CLI stderr noise)"

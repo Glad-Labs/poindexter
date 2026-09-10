@@ -6,12 +6,12 @@ tests cannot leak aliases into the rest of the suite.
 
 What must hold for the migration to be safe:
 
-* identity -- the flat and canonical spellings are ONE module object;
+* identity -- the flat, umbrella and canonical spellings are ONE module object;
 * patchability -- ``mock.patch("<flat>.x.y")`` changes what canonical code sees;
 * fidelity -- the canonical module keeps its own ``__name__`` and ``__spec__``;
 * honesty -- an ImportError inside the canonical module propagates unchanged;
 * pre-move no-op -- with no canonical package present, flat imports resolve
-  exactly as they do today;
+  exactly as they did (synthetic tree; the real tree moved in step 2 PR A);
 * idempotence -- installing twice yields one finder.
 """
 
@@ -29,6 +29,7 @@ from poindexter import _flat_imports as fi
 
 ROOT = "synth_root_1046"
 FLAT = "svc_1046"  # the flat name being retired in the synthetic tree
+UMB = "umb_1046"  # the umbrella package (real tree: cofounder_agent)
 
 
 def _write(path: Path, body: str = "") -> None:
@@ -61,14 +62,20 @@ def tree(tmp_path: Path, monkeypatch):
         base / ROOT / FLAT / "bad.py",
         "import definitely_not_an_installed_package_1046  # noqa: F401\n",
     )
+    _write(base / UMB / "__init__.py", "")  # a real umbrella package, nothing inside
     monkeypatch.syspath_prepend(str(base))
-    finder = fi.install(ROOT, {FLAT})
+    finder = fi.install(ROOT, {FLAT}, UMB)
     yield base
     fi.uninstall(ROOT)
     for name in [
         n
         for n in sys.modules
-        if n == ROOT or n.startswith(ROOT + ".") or n == FLAT or n.startswith(FLAT + ".")
+        if n == ROOT
+        or n.startswith(ROOT + ".")
+        or n == FLAT
+        or n.startswith(FLAT + ".")
+        or n == UMB
+        or n.startswith(UMB + ".")
     ]:
         sys.modules.pop(name, None)
     assert finder not in sys.meta_path
@@ -108,6 +115,13 @@ class TestIdentity:
         ns: dict = {}
         exec(f"from {FLAT} import x as flat_x\nfrom {ROOT}.{FLAT} import x as canon_x", ns)
         assert ns["flat_x"] is ns["canon_x"]
+
+    def test_umbrella_spelling_is_the_same_object(self, tree):
+        """<umbrella>.<flat>.x -- the spelling pyproject entry points use -- aliases too."""
+        umb = importlib.import_module(f"{UMB}.{FLAT}.x")
+        assert umb is importlib.import_module(f"{ROOT}.{FLAT}.x")
+        assert umb is importlib.import_module(f"{FLAT}.x")
+        assert importlib.import_module(f"{UMB}.{FLAT}") is importlib.import_module(f"{ROOT}.{FLAT}")
 
     def test_canonical_first_then_flat(self, tree):
         canon = importlib.import_module(f"{ROOT}.{FLAT}.x")
@@ -167,6 +181,82 @@ class TestHonesty:
 
 
 @pytest.mark.unit
+class TestCircularReentry:
+    """A canonical module whose execution re-enters the SAME flat name mid-import
+    must still be executed exactly once, with one object under every spelling.
+    The first finder imported inside find_spec and CPython's _find_spec then
+    swapped in the canonical spec -> a second execution (the task_routes /
+    services.integrations double import PR A hit)."""
+
+    ROOT, FLAT = "synth_root_cyc_1046", "svc_cyc_1046"
+
+    @pytest.fixture
+    def cyc_tree(self, tmp_path: Path, monkeypatch):
+        base = tmp_path / "cyc"
+        R, F = self.ROOT, self.FLAT
+        _write(base / R / "__init__.py", "")
+        # Shape 1: the package __init__ imports its own child by the FLAT name
+        # (services/integrations/__init__.py does this).
+        _write(
+            base / R / F / "__init__.py",
+            f"""
+            import sys
+            sys._pkg_exec_1046 = getattr(sys, "_pkg_exec_1046", 0) + 1
+            from {F}.child import CHILD
+            """,
+        )
+        _write(base / R / F / "child.py", "CHILD = 'child'\n")
+        # Shape 2: module a imports b, which imports back from a by the FLAT name
+        # (routes/task_routes.py <-> task_publishing_routes.py).
+        _write(
+            base / R / F / "a.py",
+            f"""
+            import sys
+            sys._a_exec_1046 = getattr(sys, "_a_exec_1046", 0) + 1
+            EARLY = 'defined before the cycle'
+            from {F}.b import B
+            LATE = 'defined after'
+            """,
+        )
+        _write(base / R / F / "b.py", f"from {F}.a import EARLY\nB = EARLY.upper()\n")
+        monkeypatch.syspath_prepend(str(base))
+        finder = fi.install(R, {F})
+        for attr in ("_pkg_exec_1046", "_a_exec_1046"):
+            monkeypatch.delattr(sys, attr, raising=False)
+        yield base
+        fi.uninstall(R)
+        for name in [
+            n
+            for n in sys.modules
+            if n == R or n.startswith(R + ".") or n == F or n.startswith(F + ".")
+        ]:
+            sys.modules.pop(name, None)
+        assert finder not in sys.meta_path
+
+    def test_package_importing_its_own_child_by_flat_name_executes_once(self, cyc_tree):
+        R, F = self.ROOT, self.FLAT
+        pkg = importlib.import_module(F)
+        assert sys._pkg_exec_1046 == 1  # type: ignore[attr-defined]
+        assert pkg is sys.modules[f"{R}.{F}"] is sys.modules[F]
+        assert sys.modules[f"{F}.child"] is sys.modules[f"{R}.{F}.child"]
+        assert pkg.CHILD == "child"
+
+    def test_mutual_cycle_through_the_flat_name_executes_once(self, cyc_tree):
+        R, F = self.ROOT, self.FLAT
+        a = importlib.import_module(f"{F}.a")
+        assert sys._a_exec_1046 == 1  # type: ignore[attr-defined]
+        assert a is sys.modules[f"{R}.{F}.a"] is sys.modules[f"{F}.a"]
+        assert sys.modules[f"{F}.b"] is sys.modules[f"{R}.{F}.b"]
+        assert a.B == "DEFINED BEFORE THE CYCLE" and a.LATE == "defined after"
+
+    def test_canonical_first_then_flat_still_one_object(self, cyc_tree):
+        R, F = self.ROOT, self.FLAT
+        canon = importlib.import_module(f"{R}.{F}.a")
+        assert importlib.import_module(f"{F}.a") is canon
+        assert sys._a_exec_1046 == 1  # type: ignore[attr-defined]
+
+
+@pytest.mark.unit
 def test_pre_move_state_is_a_no_op(tmp_path: Path, monkeypatch):
     """No canonical package -> the finder steps aside and the flat package on
     sys.path imports exactly as today. Installing early is safe."""
@@ -216,9 +306,23 @@ def test_flat_roots_match_the_resolver_single_source_of_truth():
 
 
 @pytest.mark.unit
-def test_real_finder_is_not_installed_by_merely_importing_the_module():
-    """Activation is explicit (poindexter/__init__.py + the flat stubs, step 2 PR A).
-    Importing this module must not change import behaviour by itself."""
-    assert not any(
-        isinstance(f, fi.FlatImportAliasFinder) and f.root == fi.ROOT for f in sys.meta_path
-    ), "the real finder is installed at import time -- activation must be explicit"
+def test_real_finder_is_active_and_the_real_tree_is_aliased():
+    """Step 2 PR A: poindexter/__init__.py installs the real finder, so on the REAL
+    tree the flat and canonical spellings are one object. This is the acceptance
+    test for the move itself -- not a synthetic tree."""
+    import poindexter  # noqa: F401 -- activation happens on import
+
+    real = [
+        f for f in sys.meta_path if isinstance(f, fi.FlatImportAliasFinder) and f.root == fi.ROOT
+    ]
+    assert len(real) == 1, f"expected exactly one real finder, found {len(real)}"
+    import poindexter.services.module_paths as canon
+    import services.module_paths as flat
+
+    assert flat is canon
+    assert sys.modules["services"] is sys.modules["poindexter.services"]
+    assert flat.__name__ == "poindexter.services.module_paths"
+    assert flat.ROOT_PACKAGE == "poindexter"
+    import cofounder_agent.services.module_paths as umbrella  # the entry-point spelling
+
+    assert umbrella is canon

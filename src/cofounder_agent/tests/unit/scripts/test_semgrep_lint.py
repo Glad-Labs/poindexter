@@ -199,7 +199,7 @@ def test_scan_targets_cover_the_overlay(mod) -> None:
     assert "src/cofounder_agent" in mod.SCAN_TARGETS
     assert "brain" in mod.SCAN_TARGETS
 
-    overlay = Path(mod.REPO_ROOT) / "src" / "cofounder_agent" / "modules" / "finance"
+    overlay = Path(mod.REPO_ROOT) / "src" / "cofounder_agent" / "poindexter" / "modules" / "finance"
     if not overlay.exists():
         pytest.skip("overlay not present (public mirror) — nothing to cover here")
     assert overlay.is_dir(), "overlay moved — update SCAN_TARGETS to keep covering it"

@@ -474,7 +474,7 @@ class TestPreflightAlertPath:
         guard = _make_guard(daily=0.5, monthly=0.0, daily_electricity=2.0,
                             daily_limit=2.0, monthly_limit=100.0,
                             total_budget=3.0)
-        with caplog.at_level("WARNING", logger="services.cost_guard"):
+        with caplog.at_level("WARNING", logger="poindexter.services.cost_guard"):
             await guard.preflight(CostEstimate(
                 estimated_usd=0.0, is_local=False, model="x", provider="x",
             ))
@@ -930,7 +930,7 @@ class TestCheckBudget:
         guard = _make_guard(daily=0.4, monthly=10.0, daily_electricity=2.0,
                             daily_limit=2.0, monthly_limit=100.0,
                             total_budget=3.0)
-        with caplog.at_level("WARNING", logger="services.cost_guard"):
+        with caplog.at_level("WARNING", logger="poindexter.services.cost_guard"):
             await guard.check_budget(
                 provider="openai", model="gpt-4o",
                 estimated_cost_usd=0.0001,

@@ -31,8 +31,8 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parents[6]  # .../<repo>/src/cofounder_agent/tests/unit/services/migrations
-_MIGRATIONS_DIR = _REPO / "src" / "cofounder_agent" / "services" / "migrations"
-_DEFAULTS_PY = _REPO / "src" / "cofounder_agent" / "services" / "settings_defaults.py"
+_MIGRATIONS_DIR = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
+_DEFAULTS_PY = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "settings_defaults.py"
 _BRAIN_SEED = _REPO / "brain" / "seed_app_settings.json"
 _MIGRATION = (
     _MIGRATIONS_DIR

@@ -200,7 +200,7 @@ def mrr(ranked_is_relevant: list[bool]) -> float:
 - Consumes: `MetricResult`, `GoldenSet` (Task 1); `ndcg_at_k`, `mrr` (Task 2).
 - Produces: `RerankerScorer` (implements `Scorer`; `capability="reranker"`, `primary_metric="ndcg@10"`).
 
-**Note on model invocation:** mirror [`rag_engine.py:605` `CrossEncoderRerankRetriever`](../../src/cofounder_agent/services/rag_engine.py) — `from sentence_transformers import CrossEncoder; CrossEncoder(model_name, device).predict([(query, doc_text), ...])` returns a relevance score per pair; device from `rag_rerank_device` (default `cpu`). Cache the loaded encoder by `(name, device)` as `rag_engine` does.
+**Note on model invocation:** mirror [`rag_engine.py:605` `CrossEncoderRerankRetriever`](../../src/cofounder_agent/poindexter/services/rag_engine.py) — `from sentence_transformers import CrossEncoder; CrossEncoder(model_name, device).predict([(query, doc_text), ...])` returns a relevance score per pair; device from `rag_rerank_device` (default `cpu`). Cache the loaded encoder by `(name, device)` as `rag_engine` does.
 
 - [ ] **Step 1: Write the failing test** (inject a fake CrossEncoder so the test is deterministic and offline):
 
@@ -302,7 +302,7 @@ poetry run python -c "import langfuse, inspect; c=langfuse.Langfuse; print([m fo
 poetry run python -c "from langfuse import Langfuse; help(Langfuse.create_dataset_item)" 2>&1 | head -40
 ```
 
-Record the exact method names/signatures for: create dataset, create dataset item, start a dataset _run_, and attach a _score_ to a run/trace. Use the Langfuse client init pattern already proven in [`langfuse_experiments.py:136`](../../src/cofounder_agent/services/langfuse_experiments.py) (`Langfuse(host=, public_key=, secret_key=)` from `site_config`). Write the confirmed calls into Step 3.
+Record the exact method names/signatures for: create dataset, create dataset item, start a dataset _run_, and attach a _score_ to a run/trace. Use the Langfuse client init pattern already proven in [`langfuse_experiments.py:136`](../../src/cofounder_agent/poindexter/services/langfuse_experiments.py) (`Langfuse(host=, public_key=, secret_key=)` from `site_config`). Write the confirmed calls into Step 3.
 
 - [ ] **Step 2: Write the failing test** against the `InMemoryEvalHarness` double (the seam is what we test; Langfuse calls are mocked):
 

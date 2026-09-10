@@ -275,7 +275,7 @@ Runtime:
 
 ### 2. CMS Data Layer (PostgreSQL)
 
-**Location:** `src/cofounder_agent/routes/cms_routes.py`
+**Location:** `src/cofounder_agent/poindexter/routes/cms_routes.py`
 
 **Purpose:** Database-driven content management via FastAPI routes (No separate CMS service)
 
@@ -328,7 +328,7 @@ GET  /api/tags                     # List tags
 
 ### 3. Pipeline Templates + TemplateRunner
 
-**Location:** `src/cofounder_agent/services/template_runner.py`, `services/pipeline_templates/__init__.py`, `services/canonical_blog_spec.py`; atom implementations live under `modules/content/stages/` + `modules/content/atoms/` (the legacy `services/stages/` tree was removed when the content pipeline moved into the content module, Phase 3, 2026-06-04)
+**Location:** `src/cofounder_agent/poindexter/services/template_runner.py`, `services/pipeline_templates/__init__.py`, `services/canonical_blog_spec.py`; atom implementations live under `modules/content/stages/` + `modules/content/atoms/` (the legacy `services/stages/` tree was removed when the content pipeline moved into the content module, Phase 3, 2026-06-04)
 
 **Purpose:** Compose and run the content pipeline as a LangGraph state machine. The `agents/` tree was deleted 2026-05-09 — there are no role-based "agents" anymore. LLM calls live inline in the stages that need them, dispatched via `services/llm_providers/dispatcher.py` (which routes to the LiteLLM provider on prod).
 

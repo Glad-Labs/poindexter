@@ -91,7 +91,7 @@ class TestGet:
         pool = _make_pool([_row("api_key", "")])  # empty DB value
         svc = SettingsService(pool)
         with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
-            logging.WARNING, logger="services.settings_service",
+            logging.WARNING, logger="poindexter.services.settings_service",
         ):
             result = _run(svc.get("api_key"))
 
@@ -129,7 +129,7 @@ class TestGet:
         pool = _make_pool([])
         svc = SettingsService(pool)
         with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
-            logging.WARNING, logger="services.settings_service",
+            logging.WARNING, logger="poindexter.services.settings_service",
         ):
             result = _run(svc.get("api_key", env_fallback=False))
 
@@ -147,7 +147,7 @@ class TestGet:
         pool = _make_pool([_row("api_key", "from-db")])
         svc = SettingsService(pool)
         with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
-            logging.WARNING, logger="services.settings_service",
+            logging.WARNING, logger="poindexter.services.settings_service",
         ):
             _run(svc.get("api_key"))
 
@@ -166,7 +166,7 @@ class TestGet:
         svc = SettingsService(pool)
         # Clear the env var if it happens to leak from the host
         with patch.dict("os.environ", {}, clear=False), caplog.at_level(
-            logging.WARNING, logger="services.settings_service",
+            logging.WARNING, logger="poindexter.services.settings_service",
         ):
             os.environ.pop("UNUSED_KEY", None)
             result = _run(svc.get("unused_key", default="fallback-default"))

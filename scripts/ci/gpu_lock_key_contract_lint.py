@@ -54,7 +54,7 @@ SCAN_ROOTS = ("src/cofounder_agent", "brain", "scripts", "mcp-server")
 #: gpu_scheduler exists because the brain cannot import the worker package,
 #: and each is pinned to the worker constant by a test.
 SANCTIONED = {
-    "src/cofounder_agent/services/gpu_scheduler.py",   # the definition
+    "src/cofounder_agent/poindexter/services/gpu_scheduler.py",   # the definition
     "brain/health_probes.py",                          # takes the lock
     "brain/sidecar_ram_watch.py",                      # reads the lock
     "brain/ollama_runner_ram_watch.py",                # reads the lock (#3441)

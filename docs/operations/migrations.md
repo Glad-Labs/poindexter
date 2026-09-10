@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-07-11
 **Owner:** Glad-Labs/poindexter#378
-**Runner:** `src/cofounder_agent/services/migrations/__init__.py`
+**Runner:** `src/cofounder_agent/poindexter/services/migrations/__init__.py`
 
 This is the canonical reference for adding, naming, and running
 migrations in Poindexter. If you are adding a migration, read sections
@@ -168,7 +168,7 @@ python scripts/new-migration.py "add writer self review settings"
 ```
 
 This stamps the current UTC timestamp into the filename and writes a
-template at `src/cofounder_agent/services/migrations/`. The slug is
+template at `src/cofounder_agent/poindexter/services/migrations/`. The slug is
 auto-lowercased and spaces become underscores.
 
 ### 2. Fill in `up()` (and `down()` when the change is reversible)

@@ -15,14 +15,14 @@ seconds. Root cause: the short lane sizes its visuals and its narration
 independently and never reconciles them.
 
 - **Visual timeline** — `short_shot_list.total_duration_s` is set by
-  [`_estimate_short_duration`](../../../src/cofounder_agent/modules/content/stages/generate_video_shot_list.py)
+  [`_estimate_short_duration`](../../../src/cofounder_agent/poindexter/modules/content/stages/generate_video_shot_list.py)
   (`words / 2.5`, then **clamped to [15, 45]s**).
-- **Narration audio** — [`media_render_narration`](../../../src/cofounder_agent/modules/content/atoms/media_render_narration.py)
+- **Narration audio** — [`media_render_narration`](../../../src/cofounder_agent/poindexter/modules/content/atoms/media_render_narration.py)
   is the TTS of the **full, unclamped** `short_summary_script`.
 
 When the script exceeds ~112 words (45s × 2.5 wps), the shot list caps at 45s
 but the narration runs its full length. The compositor's
-[`_compute_narration_pad_s`](../../../src/cofounder_agent/services/media_compositors/ffmpeg_local.py)
+[`_compute_narration_pad_s`](../../../src/cofounder_agent/poindexter/services/media_compositors/ffmpeg_local.py)
 then **clones the final frame** to cover the overhang — that held frame is the
 frozen tail.
 
@@ -81,8 +81,8 @@ The narration's real duration is only known in Stage 2 (after TTS), so the
 reconciliation lives in the renderer, where both the shot list and the rendered
 narration audio exist.
 
-**Where:** [`render_shot_list`](../../../src/cofounder_agent/services/video_renderers/shot_list_renderer.py)
-gains an optional `narration_fit` config. [`render_from_state`](../../../src/cofounder_agent/modules/content/atoms/_media_render.py)
+**Where:** [`render_shot_list`](../../../src/cofounder_agent/poindexter/services/video_renderers/shot_list_renderer.py)
+gains an optional `narration_fit` config. [`render_from_state`](../../../src/cofounder_agent/poindexter/modules/content/atoms/_media_render.py)
 passes it **only for the short lane** (the `media.render_short_video` atom sets
 a `narration_fit=True` flag; the long atom does not). Scoping to the short lane
 keeps the long lane's legitimately-longer shots and deliberate pacing untouched.
@@ -132,10 +132,10 @@ unchanged, so rescaling visuals never desyncs them.
 `video_short_target_seconds` (default 45). Derive the word target
 `target_words = round(video_short_target_seconds × _WORDS_PER_SECOND)`.
 
-- [`_estimate_short_duration`](../../../src/cofounder_agent/modules/content/stages/generate_video_shot_list.py)'s
+- [`_estimate_short_duration`](../../../src/cofounder_agent/poindexter/modules/content/stages/generate_video_shot_list.py)'s
   upper clamp becomes `video_short_target_seconds` (was hardcoded 45), threaded
   in from `site_config`.
-- [`_build_scene_prompt`](../../../src/cofounder_agent/modules/content/stages/generate_media_scripts.py)
+- [`_build_scene_prompt`](../../../src/cofounder_agent/poindexter/modules/content/stages/generate_media_scripts.py)
   derives its "~N-second / ~M-word" ask from `video_short_target_seconds` and
   `target_words` (placeholder substitution) instead of the hardcoded "60s / 150
   words." This fixes the prompt-vs-clamp disagreement **and** satisfies the

@@ -136,7 +136,7 @@ The audio media plane is wrapped behind an `AudioMediaPlane` interface.
 PR #1 shipped a `NoopAudioMediaPlane` default for fast tests; PR #2
 landed `PipecatAudioMediaPlane` (real Whisper STT + Kokoro TTS over
 LiveKit) and made it the default. The shared Pipecat plumbing lives in
-`src/cofounder_agent/services/voice_pipecat.py` so the bridge and the
+`src/cofounder_agent/poindexter/services/voice_pipecat.py` so the bridge and the
 always-on `voice-agent-livekit` container share one closure.
 
 Set `VOICE_BRIDGE_AUDIO_PLANE=noop` to fall back to the silent stub —

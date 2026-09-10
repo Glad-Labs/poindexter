@@ -36,8 +36,8 @@ import pytest
 pytestmark = pytest.mark.unit
 
 _ROOT = Path(__file__).resolve().parents[3]
-_SEEDS = _ROOT / "services" / "migrations" / "0000_baseline.seeds.sql"
-_PIPELINE_DB = _ROOT / "services" / "pipeline_db.py"
+_SEEDS = _ROOT / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
+_PIPELINE_DB = _ROOT / "poindexter" / "services" / "pipeline_db.py"
 
 # Statuses a run can still resume from — pruning these destroys live state.
 _MUST_NOT_PRUNE = (

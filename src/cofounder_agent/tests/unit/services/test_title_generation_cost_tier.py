@@ -657,7 +657,7 @@ def test_choose_warns_on_large_drift_from_topic(caplog):
     topic = "RTX 5090 Benchmarks (2026-05-10 06:43 #11)"
     # H1 from body is wildly different — model drifted to another angle.
     content = "# Completely Unrelated Discussion About Cloud Economics\n\nBody."
-    with caplog.at_level(logging.WARNING, logger="services.title_generation"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.services.title_generation"):
         out = choose_canonical_title(topic, content, llm_title=None)
     assert out == "Completely Unrelated Discussion About Cloud Economics"
     assert any(
@@ -671,7 +671,7 @@ def test_choose_does_not_warn_on_small_drift(caplog):
     import logging
     topic = "Token Throughput Benchmarks (2026-05-10 06:43 #11)"
     content = "# Token Throughput Benchmarks (2026)\n\nBody."
-    with caplog.at_level(logging.WARNING, logger="services.title_generation"):
+    with caplog.at_level(logging.WARNING, logger="poindexter.services.title_generation"):
         out = choose_canonical_title(topic, content, llm_title=None)
     assert out == "Token Throughput Benchmarks (2026)"
     drift_warnings = [

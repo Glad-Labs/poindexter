@@ -18,7 +18,7 @@ to the LLM and HTTP reviewers.
 **Atom-cutover #355 (live 2026-06-02) split that apart.** The
 `cross_model_qa` stage is deleted; on the live `canonical_blog`
 `graph_def` path the cross-model review runs as composable atoms in
-`src/cofounder_agent/modules/content/atoms/` — `qa.programmatic` → `qa.critic` →
+`src/cofounder_agent/poindexter/modules/content/atoms/` — `qa.programmatic` → `qa.critic` →
 `qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
 `qa.consistency` → `qa.self_consistency` → `qa.content_originality` →
@@ -809,7 +809,7 @@ Files:
 - `skills/content/blog-generation/SKILL.md` (migrated from
   `prompts/blog_generation.yaml`, #528)
 - `src/cofounder_agent/skills/content/writer/SKILL.md`
-- `src/cofounder_agent/modules/content/ai_content_generator.py:248-327`
+- `src/cofounder_agent/poindexter/modules/content/ai_content_generator.py:248-327`
   (`_load_prompts_for_generation` — fetches templates via
   `prompt_manager.get_prompt(...)`)
 
@@ -851,7 +851,7 @@ enforce it deterministically.
 
 ### Layer 1.5 — prompt-echo guard (writer-output sanitizer)
 
-File: `src/cofounder_agent/modules/content/atoms/two_pass_writer.py`
+File: `src/cofounder_agent/poindexter/modules/content/atoms/two_pass_writer.py`
 (`_strip_echoed_preamble`).
 
 A weak/quantized writer model can _regurgitate its own prompt_ instead
@@ -1117,7 +1117,7 @@ shape as the other guards in this section:
 
 ## Layer 2 — Programmatic validator
 
-File: `src/cofounder_agent/modules/content/content_validator.py`
+File: `src/cofounder_agent/poindexter/modules/content/content_validator.py`
 
 Entry point: `validate_content(title, content, topic, tags)` at line
 `686`. Runs synchronously, no LLM calls, returns a `ValidationResult`
@@ -1202,7 +1202,7 @@ remaining after promotion.
 
 ## Layer 3 — Cross-model review
 
-File: `src/cofounder_agent/modules/content/multi_model_qa.py`
+File: `src/cofounder_agent/poindexter/modules/content/multi_model_qa.py`
 
 Entry point: `MultiModelQA.review(title, content, topic,
 research_sources, preview_url)` at line `276`. Returns a
@@ -1397,7 +1397,7 @@ that never ran leaves no trace in the score it was supposed to inform.
 > description below is retained as the historical cross_model_qa reference.
 
 Owned by the stage, not the orchestrator:
-`src/cofounder_agent/services/stages/cross_model_qa.py`. When
+`src/cofounder_agent/poindexter/services/stages/cross_model_qa.py`. When
 `MultiModelQA.review()` returns `approved=False` AND
 `aggregate_issues_to_fix()` finds at least one blocking issue, the
 stage calls `_rewrite_draft()` with the `qa.aggregate_rewrite`

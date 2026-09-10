@@ -57,7 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = Path(__file__).resolve().parent / "semgrep_baseline.json"
 RULES_DIR = REPO_ROOT / "infrastructure" / "semgrep"
 
-# Scan roots. The overlay lives under src/cofounder_agent/modules/finance and
+# Scan roots. The overlay lives under src/cofounder_agent/poindexter/modules/finance and
 # services/operator_*.py, so scanning src/ covers it — that is the point.
 SCAN_TARGETS = ("src/cofounder_agent", "brain", "scripts")
 

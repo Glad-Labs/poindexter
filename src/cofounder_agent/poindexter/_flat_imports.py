@@ -9,10 +9,11 @@ flat top-level names (``services``, ``plugins``, ``modules``, ``utils``,
 cannot all change in the same commit as the move. This finder makes the flat
 spelling keep working during the transition **without duplicating modules**:
 
-    import services.taps.memory            # flat, legacy
-    import poindexter.services.taps.memory # canonical, new
+    import services.taps.memory                  # flat, legacy
+    import cofounder_agent.services.taps.memory  # umbrella (entry points)
+    import poindexter.services.taps.memory       # canonical, new
 
-both yield the SAME object -- ``sys.modules["services.taps.memory"] is
+all yield the SAME object -- ``sys.modules["services.taps.memory"] is
 sys.modules["poindexter.services.taps.memory"]``.
 
 WHY NOT A ``__path__`` SHIM
@@ -30,15 +31,37 @@ HOW IT WORKS
 ------------
 ``sys.meta_path`` finders are consulted for EVERY import -- top-level and
 submodule -- before the path-based finder. For a name whose first segment is a
-flat root, this finder imports the canonical ``poindexter.<name>`` (normal
-resolution; the head is ``poindexter``, so no recursion) and returns a spec
-whose loader swaps the canonical object into ``sys.modules`` under the flat
-name during ``exec_module``. CPython re-reads ``sys.modules[spec.name]`` after
-``exec_module`` precisely to support modules that replace themselves, so the
-import statement receives the canonical object. The canonical module's own
-``__name__`` / ``__spec__`` are never touched (a throwaway module absorbs the
-attribute initialisation), so ``pickle``, ``dataclasses`` and ``inspect`` see
-the canonical identity.
+flat root, :meth:`FlatImportAliasFinder.find_spec` LOCATES the canonical
+``poindexter.<name>`` with :func:`importlib.util.find_spec` (which imports the
+parent packages but never executes the module itself) and returns a spec whose
+loader does the real work at ``exec_module`` time: import the canonical module,
+then swap the canonical object into ``sys.modules`` under the flat name. CPython
+re-reads ``sys.modules[spec.name]`` after ``exec_module`` precisely to support
+modules that replace themselves, so the import statement receives the canonical
+object. The canonical module's own ``__name__`` / ``__spec__`` are never touched
+(a throwaway module absorbs the attribute initialisation), so ``pickle``,
+``dataclasses`` and ``inspect`` see the canonical identity.
+
+WHY THE IMPORT HAPPENS IN THE LOADER, NOT THE FINDER
+----------------------------------------------------
+The first cut imported the canonical module inside ``find_spec``. That is a
+side effect inside ``importlib._bootstrap._find_spec``, and it interacts with
+circular imports: when the canonical module's execution re-enters the SAME flat
+name (``routes/task_routes.py`` imports ``task_publishing_routes``, which does
+``from routes.task_routes import ...``; ``services/integrations/__init__.py``
+imports its own children by their flat names), the nested import populates
+``sys.modules[flat]`` while the outer ``_find_spec`` is still running -- and
+``_find_spec`` then IGNORES the spec our finder returns in favour of
+``sys.modules[flat].__spec__``, the canonical spec, so ``_load_unlocked``
+executes the file a SECOND time under the canonical key. Flat name = copy one,
+canonical name = copy two: exactly the double-import this module exists to
+prevent, surfacing as ``mock.patch("routes.task_routes.x")`` patching the copy
+the app does not run. Locating in ``find_spec`` and importing in ``exec_module``
+keeps ``_find_spec`` side-effect free; during the ``exec_module`` window the
+placeholder that sits under the flat name forwards attribute access to the
+canonical module, so a circular import sees exactly what a plain one would (the
+names defined so far). ``tests/unit/poindexter/test_flat_imports.py`` pins both
+cycle shapes with an execution counter.
 
 TWO STATES, ONE FINDER
 ----------------------
@@ -76,7 +99,7 @@ import sys
 from collections.abc import Iterable
 from types import ModuleType
 
-__all__ = ["FLAT_ROOTS", "ROOT", "FlatImportAliasFinder", "install", "uninstall"]
+__all__ = ["FLAT_ROOTS", "ROOT", "UMBRELLA", "FlatImportAliasFinder", "install", "uninstall"]
 
 #: The canonical root every flat name maps under.
 ROOT: str = "poindexter"
@@ -89,14 +112,24 @@ FLAT_ROOTS: frozenset[str] = frozenset(
     {"services", "plugins", "modules", "utils", "routes", "schemas", "config", "tasks", "brain"}
 )
 
+#: The umbrella package the backend is ALSO importable through: ``src/cofounder_agent``
+#: is itself a package (the poetry manifest ships it as ``cofounder_agent``), and the
+#: pyproject entry points are spelled ``cofounder_agent.plugins.samples.hello_tap:HelloTap``.
+#: ``cofounder_agent.<flat root>.x`` is therefore a THIRD spelling of the same module,
+#: aliased onto the canonical object too. (Before step 2 that spelling loaded a second
+#: copy of every module it touched -- a pre-existing double import this closes.)
+UMBRELLA: str = "cofounder_agent"
+
 
 class _AliasLoader(importlib.abc.Loader):
-    """Swap the canonical module in under the flat name.
+    """Import the canonical module, then swap it in under the flat name.
 
     ``create_module`` returns ``None`` so Python builds a throwaway module and
-    initialises *its* attributes; ``exec_module`` then replaces that throwaway
-    in ``sys.modules`` with the canonical object. The canonical module's
-    ``__spec__`` is therefore never rewritten to the flat name.
+    initialises *its* attributes; ``exec_module`` imports the canonical module
+    (the throwaway sits under the flat name meanwhile, forwarding attribute
+    access to the canonical object so a circular re-entry behaves like a plain
+    circular import) and then replaces the throwaway in ``sys.modules`` with the
+    canonical object. The canonical module's ``__spec__`` is never rewritten.
     """
 
     def __init__(self, canonical: str) -> None:
@@ -106,54 +139,90 @@ class _AliasLoader(importlib.abc.Loader):
         return None
 
     def exec_module(self, module: ModuleType) -> None:
-        sys.modules[module.__spec__.name] = sys.modules[self._canonical]  # type: ignore[union-attr]
+        canonical = self._canonical
+        flat = module.__spec__.name  # type: ignore[union-attr]
+
+        def _forward(name: str):  # noqa: ANN202 -- PEP 562 module __getattr__
+            target = sys.modules.get(canonical)
+            if target is None:
+                raise AttributeError(name)
+            return getattr(target, name)
+
+        module.__getattr__ = _forward  # type: ignore[attr-defined]
+        importlib.import_module(canonical)
+        sys.modules[flat] = sys.modules[canonical]
 
 
 class FlatImportAliasFinder(importlib.abc.MetaPathFinder):
     """``sys.meta_path`` finder: ``<flat root>.*`` -> the ``<root>.<flat root>.*`` object."""
 
-    def __init__(self, root: str = ROOT, flat_roots: Iterable[str] = FLAT_ROOTS) -> None:
+    def __init__(
+        self,
+        root: str = ROOT,
+        flat_roots: Iterable[str] = FLAT_ROOTS,
+        umbrella: str | None = UMBRELLA,
+    ) -> None:
         self.root = root
         self.flat_roots = frozenset(flat_roots)
+        self.umbrella = umbrella
+
+    def _flat_name(self, fullname: str) -> str | None:
+        """``services.x`` or ``<umbrella>.services.x`` -> ``services.x``; else None."""
+        head, _, rest = fullname.partition(".")
+        if head == self.umbrella and rest:
+            head, _, _ = rest.partition(".")
+            fullname = rest
+        return fullname if head in self.flat_roots else None
 
     def find_spec(self, fullname: str, path=None, target=None):  # noqa: ANN001 -- protocol
-        head = fullname.partition(".")[0]
-        if head not in self.flat_roots:
+        flat = self._flat_name(fullname)
+        if flat is None:
             return None
-        canonical = f"{self.root}.{fullname}"
-        if canonical not in sys.modules:
-            try:
-                importlib.import_module(canonical)
-            except ModuleNotFoundError as exc:
-                missing = exc.name or ""
-                # The canonical module (or one of its parents) does not exist:
-                # not our case -- let normal resolution find the flat package,
-                # or fail with the ordinary message.
-                if missing == canonical or canonical.startswith(missing + "."):
-                    return None
-                # A dependency missing INSIDE the canonical module. Propagate:
-                # falling through would report the wrong missing module.
-                raise
-        module = sys.modules[canonical]
+        canonical = f"{self.root}.{flat}"
+        # LOCATE only -- importlib.util.find_spec imports the canonical module's
+        # parents but never executes the module itself, so this stays free of the
+        # side effect that made _bootstrap._find_spec discard our spec (see the
+        # module docstring). The import happens in _AliasLoader.exec_module.
+        try:
+            cspec = importlib.util.find_spec(canonical)
+        except ModuleNotFoundError as exc:
+            missing = exc.name or ""
+            # A parent of the canonical module does not exist: not our case --
+            # let normal resolution find the flat package, or fail normally.
+            if missing == canonical or canonical.startswith(missing + "."):
+                return None
+            # A dependency missing INSIDE a parent package. Propagate: falling
+            # through would report the wrong missing module.
+            raise
+        except ValueError:
+            # sys.modules[canonical].__spec__ is None (a hand-built module):
+            # nothing to alias onto.
+            return None
+        if cspec is None:
+            return None
         spec = importlib.util.spec_from_loader(
-            fullname, _AliasLoader(canonical), origin=getattr(module, "__file__", None)
+            fullname, _AliasLoader(canonical), origin=cspec.origin
         )
-        # Keep package-ness so `import <flat>.<sub>` consults a parent __path__.
-        search = getattr(module, "__path__", None)
-        if search is not None:
-            spec.submodule_search_locations = list(search)
+        # Keep package-ness so `import <flat>.<sub>` consults a parent __path__ --
+        # including while the placeholder sits under the flat name mid-import.
+        if cspec.submodule_search_locations is not None:
+            spec.submodule_search_locations = list(cspec.submodule_search_locations)
         return spec
 
     def __repr__(self) -> str:
         return f"FlatImportAliasFinder(root={self.root!r}, flat_roots={sorted(self.flat_roots)})"
 
 
-def install(root: str = ROOT, flat_roots: Iterable[str] = FLAT_ROOTS) -> FlatImportAliasFinder:
+def install(
+    root: str = ROOT,
+    flat_roots: Iterable[str] = FLAT_ROOTS,
+    umbrella: str | None = UMBRELLA,
+) -> FlatImportAliasFinder:
     """Install the finder at the front of ``sys.meta_path``. Idempotent per root."""
     for existing in sys.meta_path:
         if isinstance(existing, FlatImportAliasFinder) and existing.root == root:
             return existing
-    finder = FlatImportAliasFinder(root, flat_roots)
+    finder = FlatImportAliasFinder(root, flat_roots, umbrella)
     sys.meta_path.insert(0, finder)
     return finder
 

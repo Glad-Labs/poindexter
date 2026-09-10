@@ -272,7 +272,7 @@ class TestProductionCallsiteGuards:
         flow_path = (
             Path(inspect.getsourcefile(inspect.currentframe())).resolve()
             .parents[3]
-            / "services" / "flows" / "content_generation.py"
+            / "poindexter" / "services" / "flows" / "content_generation.py"
         )
         assert flow_path.is_file(), (
             f"expected content_generation.py at {flow_path}"

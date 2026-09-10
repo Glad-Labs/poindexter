@@ -167,7 +167,7 @@ decorators in `test_database_service.py` and
   regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
 - `.github/workflows/regen-services-doc.yml` — PR-time drift guard
   for `docs/reference/services.md`. Path-gated to
-  `src/cofounder_agent/services/**` + `modules/content/**`; regenerates
+  `src/cofounder_agent/poindexter/services/**` + `modules/content/**`; regenerates
   the catalog in-place and fails if the checked-in copy drifts. Unlike
   `regen-app-settings-doc`, this needs no DB — the generator is pure
   stdlib. Non-required.

@@ -308,7 +308,7 @@ def test_sync_script_strips_voice_host_brain() -> None:
     )
 
 
-_OPERATOR_OVERRIDES = "src/cofounder_agent/services/operator_overrides.py"
+_OPERATOR_OVERRIDES = "src/cofounder_agent/poindexter/services/operator_overrides.py"
 
 
 def test_operator_overrides_is_stripped() -> None:
@@ -413,7 +413,7 @@ def test_every_strip_dir_prefix_is_stripped_by_sync_script() -> None:
 # ---------------------------------------------------------------------------
 
 _OPERATOR_LEAK_OVERLAY = (
-    "src/cofounder_agent/services/operator_leak_patterns.py",
+    "src/cofounder_agent/poindexter/services/operator_leak_patterns.py",
     "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py",
 )
 

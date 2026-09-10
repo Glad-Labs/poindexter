@@ -73,8 +73,8 @@ BASELINE_PATH = Path(__file__).resolve().parent / "bandit_baseline.json"
 BANDIT_TARGETS = (
     "brain/",
     "scripts/",
-    "src/cofounder_agent/services/",
-    "src/cofounder_agent/routes/",
+    "src/cofounder_agent/poindexter/services/",
+    "src/cofounder_agent/poindexter/routes/",
 )
 
 # Severity floor — parity with the ops session's `-ll` (medium and above).
@@ -87,9 +87,9 @@ SEVERITY_FLAG = "-ll"
 # adapter_purity_lint's exclusion of mcp-server-gladlabs/.
 PRIVATE_OVERLAY_FILES = frozenset(
     {
-        "src/cofounder_agent/services/operator_overrides.py",
-        "src/cofounder_agent/services/operator_leak_patterns.py",
-        "src/cofounder_agent/services/taps/claude_code_sessions.py",
+        "src/cofounder_agent/poindexter/services/operator_overrides.py",
+        "src/cofounder_agent/poindexter/services/operator_leak_patterns.py",
+        "src/cofounder_agent/poindexter/services/taps/claude_code_sessions.py",
         "scripts/kuma_bootstrap.py",
         "scripts/glitchtip_audit.py",
         "scripts/migrate-poindexter-rename.sh",

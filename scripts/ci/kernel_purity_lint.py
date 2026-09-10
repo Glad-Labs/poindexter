@@ -56,8 +56,8 @@ from lib_scan_floor import require_scanned  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2] / "src" / "cofounder_agent"
 SCAN_DIRS = [
-    ROOT / "services",
-    ROOT / "plugins",
+    ROOT / "poindexter" / "services",
+    ROOT / "poindexter" / "plugins",
 ]
 
 # ---------------------------------------------------------------------------
@@ -71,20 +71,20 @@ SCAN_DIRS = [
 KERNEL_PURITY_BASELINE: dict[str, int] = {
     # deepeval_rails calls content_validator lazily to avoid a circular
     # import; needs a platform.validate seam.
-    "services/deepeval_rails.py::modules.content.api": 1,
+    "poindexter/services/deepeval_rails.py::modules.content.api": 1,
     # guardrails_rails calls content_validator lazily for the same reason.
-    "services/guardrails_rails.py::modules.content.api": 1,
+    "poindexter/services/guardrails_rails.py::modules.content.api": 1,
     # The critic-judge calibration scorer runs the REAL production critic
     # (MultiModelQA.critic_review_once) lazily via the modules/content/api
     # public seam, so a calibration run measures exactly what the pipeline
     # will do with a candidate judge (poindexter#985).
-    "services/model_eval/scorers/critic.py::modules.content.api": 1,
+    "poindexter/services/model_eval/scorers/critic.py::modules.content.api": 1,
     # self_review's revise pass strips + rejects leaked planning scaffold via
     # the modules/content/api public seam (2 lazy imports:
     # strip_leaked_planning_scaffold, has_planning_dump). The graph runs
     # normalize_draft BEFORE writer_self_review, so this stage is the only
     # place its output can be scrubbed (poindexter#1000).
-    "services/self_review.py::modules.content.api": 2,
+    "poindexter/services/self_review.py::modules.content.api": 2,
     # (removed 2026-08-09) pipeline_templates' dev_diary factory used to import
     # the narrate_bundle atom lazily. The factory is deleted — dev_diary is a
     # graph_def row like everything else, and atoms are resolved through the
@@ -94,21 +94,21 @@ KERNEL_PURITY_BASELINE: dict[str, int] = {
     # post_pipeline_actions reaches modules.content.api (the module's public
     # surface) lazily from three sites: the auto-publish gate evaluation, the
     # auto-publish task itself, and MultiModelQA.
-    "services/post_pipeline_actions.py::modules.content.api": 3,
+    "poindexter/services/post_pipeline_actions.py::modules.content.api": 3,
     # publish_service calls record_post_approve_metrics lazily via the
     # modules/content/api public seam — same pattern as post_pipeline_actions.
-    "services/publish_service.py::modules.content.api": 1,
+    "poindexter/services/publish_service.py::modules.content.api": 1,
     # research_context calls internal_link_coherence lazily.
-    "services/research_context.py::modules.content.api": 1,
+    "poindexter/services/research_context.py::modules.content.api": 1,
     # social_drafts.reconcile_missing_drafts calls modules.content.api lazily:
     # the atom it re-invokes imports SocialDraftsService at module level, so a
     # top-level import here would be circular (poindexter#863).
-    "services/social_drafts.py::modules.content.api": 1,
+    "poindexter/services/social_drafts.py::modules.content.api": 1,
     # topic_proposal_service calls build_topic_decision_artifact lazily (moved
     # off the top level in poindexter#666, which was the Direction-B violation
     # warranting the immediate fix); the remaining lazy usage is baselined
     # pending a gate-artifact public seam on the content module.
-    "services/topic_proposal_service.py::modules.content.api": 1,
+    "poindexter/services/topic_proposal_service.py::modules.content.api": 1,
 }
 
 # One ``"key": <count>,`` line, as the baseline is written above. The

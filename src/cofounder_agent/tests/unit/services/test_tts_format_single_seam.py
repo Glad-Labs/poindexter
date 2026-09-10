@@ -66,8 +66,8 @@ def test_media_scripts_stage_uses_the_shared_resolver() -> None:
     from pathlib import Path
 
     stage = (
-        Path(tts_service.__file__).resolve().parents[1]
-        / "modules" / "content" / "stages" / "generate_media_scripts.py"
+        Path(tts_service.__file__).resolve().parents[2]  # src/cofounder_agent
+        / "poindexter" / "modules" / "content" / "stages" / "generate_media_scripts.py"
     )
     src = stage.read_text(encoding="utf-8")
     assert "resolve_tts_format" in src, (

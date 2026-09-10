@@ -4,7 +4,7 @@
 
 How to add new capabilities to Poindexter without forking the monorepo
 or touching 1,000-line files. Every extension point below corresponds
-to a Protocol in `src/cofounder_agent/plugins/`; the plugin architecture
+to a Protocol in `src/cofounder_agent/poindexter/plugins/`; the plugin architecture
 umbrella ([GH-64](https://github.com/Glad-Labs/poindexter/issues/64))
 covers the long-range roadmap.
 
@@ -25,7 +25,7 @@ This guide is prescriptive. If you want design rationale, read
 | Run a background probe for health / business metrics      | **Probe**              | `plugins/probe.py::Probe`                                                  | `brain/health_probes.py`                               |
 | Schedule a recurring background task                      | **Job**                | `plugins/job.py::Job`                                                      | `services/jobs/reload_site_config.py`                  |
 | Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider**           | `plugins/llm_provider.py::LLMProvider`                                     | Phase J, tracked at GH-104                             |
-| **Add an entire business function (finance, HR, ...)**    | **Module**             | `plugins/module.py::Module`                                                | `src/cofounder_agent/modules/content/`                 |
+| **Add an entire business function (finance, HR, ...)**    | **Module**             | `plugins/module.py::Module`                                                | `src/cofounder_agent/poindexter/modules/content/`      |
 
 **Capability plugins vs business modules.** Every row above the last is a
 _capability plugin_ — a discrete piece (one tap, one provider, one stage) the
@@ -52,7 +52,7 @@ them via the spec's edge list.
 
 ### 1a. Minimum viable Stage
 
-Create `src/cofounder_agent/modules/content/stages/my_stage.py`:
+Create `src/cofounder_agent/poindexter/modules/content/stages/my_stage.py`:
 
 ```python
 from typing import Any
@@ -88,7 +88,7 @@ class MyStage:
 
 ### 1b. Register it
 
-Add to `src/cofounder_agent/plugins/registry.py` — the stage must be
+Add to `src/cofounder_agent/poindexter/plugins/registry.py` — the stage must be
 importable by name. The registry is the gateway; stages not registered
 are invisible to TemplateRunner.
 
@@ -602,7 +602,7 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
 
 ## Adding a database migration
 
-Database migrations live in `src/cofounder_agent/services/migrations/`
+Database migrations live in `src/cofounder_agent/poindexter/services/migrations/`
 and run on every worker startup. The naming convention changed in
 Glad-Labs/poindexter#378 — **new migrations use a UTC timestamp
 prefix** (`YYYYMMDD_HHMMSS_<slug>.py`) instead of the legacy 4-digit
@@ -635,14 +635,14 @@ adding a new _business function_ with its own DB tables, jobs, HTTP routes,
 and operator surface — finance, customer support, ops/security, HR. For one
 new pipeline step, one new image provider, one new probe — just use the
 capability-plugin patterns above. The reference Module is `content` at
-[`src/cofounder_agent/modules/content/`](../../src/cofounder_agent/modules/content/).
+[`src/cofounder_agent/poindexter/modules/content/`](../../src/cofounder_agent/poindexter/modules/content/).
 Private operator-overlay Modules (`visibility="private"`) live only in
 forks/operator overlays; the public mirror's sync filter strips them.
 
 ### Step 1 — Scaffold the package
 
 ```
-src/cofounder_agent/modules/<name>/
+src/cofounder_agent/poindexter/modules/<name>/
 ├── __init__.py            # re-exports the Module class
 ├── <name>_module.py       # the Module class
 ├── migrations/            # per-module DB migrations (Phase 2 runner)
@@ -727,7 +727,7 @@ print([m.manifest().name for m in get_modules()])
 # from the repo root
 python scripts/new-migration.py "create <name> tables"
 # This drops the file in services/migrations/; MOVE it to
-# src/cofounder_agent/modules/<name>/migrations/<file>.py.
+# src/cofounder_agent/poindexter/modules/<name>/migrations/<file>.py.
 ```
 
 The Phase 2 runner records each migration in `module_schema_migrations`

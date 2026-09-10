@@ -175,7 +175,7 @@ class TestDiscoveryFailsLoud:
         projects = tmp_path / "projects"
         (projects / "-home-alice-project" / "memory").mkdir(parents=True)
 
-        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.memory"):
             dirs = _discover_memory_dirs(
                 claude_projects_dir=str(projects),
                 openclaw_memory_dir="__skip__",
@@ -192,7 +192,7 @@ class TestDiscoveryFailsLoud:
         projects = tmp_path / "projects"
         projects.mkdir()
 
-        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.memory"):
             dirs = _discover_memory_dirs(
                 claude_projects_dir=str(projects),
                 openclaw_memory_dir="__skip__",
@@ -222,7 +222,7 @@ class TestDiscoveryPermissions:
         locked.chmod(0o000)
 
         try:
-            with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+            with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.memory"):
                 dirs = _discover_memory_dirs(
                     claude_projects_dir=str(projects),
                     openclaw_memory_dir="__skip__",
@@ -243,7 +243,7 @@ class TestDiscoveryPermissions:
         def _boom(self):
             raise PermissionError(13, "Permission denied")
 
-        with caplog.at_level(logging.WARNING, logger="services.taps.memory"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.memory"):
             with mock.patch.object(Path, "iterdir", _boom):
                 dirs = _discover_memory_dirs(
                     claude_projects_dir=str(projects),

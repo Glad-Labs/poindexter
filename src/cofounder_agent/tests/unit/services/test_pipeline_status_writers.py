@@ -145,7 +145,7 @@ def test_completed_at_twins_agree():
     a status change took."""
     mig = importlib.import_module(_MIGRATION)
 
-    text = (_ROOT / "services" / "pipeline_db.py").read_text(encoding="utf-8")
+    text = (_ROOT / "poindexter" / "services" / "pipeline_db.py").read_text(encoding="utf-8")
     m = re.search(r"completed_at = CASE WHEN \$2 IN \(([^)]*)\)", text)
     assert m, "could not locate the completed_at CASE in pipeline_db.py"
     pipeline_db_set = set(re.findall(r"'([a-z_]+)'", m.group(1)))

@@ -60,7 +60,7 @@ def _load_migration():
     not a valid Python identifier, so a normal import can't reach it)."""
     for p in Path(__file__).resolve().parents:
         cand = (
-            p / "src" / "cofounder_agent" / "services" / "migrations"
+            p / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
             / _MIGRATION_FILE
         )
         if cand.is_file():

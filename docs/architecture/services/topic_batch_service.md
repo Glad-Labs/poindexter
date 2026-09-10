@@ -1,6 +1,6 @@
 # Topic Batch Service
 
-**File:** `src/cofounder_agent/services/topic_batch_service.py`
+**File:** `src/cofounder_agent/poindexter/services/topic_batch_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_topic_batch_service.py`
 **Last reviewed:** 2026-07-01
 

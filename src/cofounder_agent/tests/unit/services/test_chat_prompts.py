@@ -55,7 +55,7 @@ def test_placeholders_render():
 @pytest.mark.unit
 def test_fallback_logs_error(caplog):
     with patch(_PATCH_TARGET, side_effect=RuntimeError("registry down")):
-        with caplog.at_level(logging.ERROR, logger="services.chat_prompts"):
+        with caplog.at_level(logging.ERROR, logger="poindexter.services.chat_prompts"):
             resolve_chat_prompt(CHAT_SYSTEM_KEY, **_KW)
     assert any("inline fallback" in r.message for r in caplog.records), (
         "fallback fired silently — it must log at ERROR "

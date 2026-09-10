@@ -131,11 +131,11 @@ def test_the_shipped_tree_is_clean():
     pattern = _target_pattern()
     offenders = []
     for rel in (
-        "src/cofounder_agent/routes/task_publishing_routes.py",
-        "src/cofounder_agent/modules/content/auto_publish.py",
-        "src/cofounder_agent/services/pipeline_db.py",
-        "src/cofounder_agent/services/distribution_yield.py",
-        "src/cofounder_agent/services/migrations/0000_baseline.schema.sql",
+        "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
+        "src/cofounder_agent/poindexter/modules/content/auto_publish.py",
+        "src/cofounder_agent/poindexter/services/pipeline_db.py",
+        "src/cofounder_agent/poindexter/services/distribution_yield.py",
+        "src/cofounder_agent/poindexter/services/migrations/0000_baseline.schema.sql",
         "infrastructure/grafana/dashboards/cost-analytics.json",
     ):
         path = repo_root / rel

@@ -34,6 +34,11 @@ WORKDIR /app
 #     on every hourly run.
 COPY scripts/auto-embed.py /app/auto-embed.py
 COPY src/cofounder_agent/poindexter /app/poindexter
+# Step 2 of poindexter#1046: the backend lives under poindexter/ (COPY'd above).
+# The COPYs below now bring in the FLAT STUBS at the old roots -- a one-file
+# package each that installs the alias finder and becomes the canonical
+# poindexter.<name> -- so auto-embed.py's flat imports still resolve. They go
+# away in step 5 with the stubs.
 COPY src/cofounder_agent/plugins /app/plugins
 COPY src/cofounder_agent/services /app/services
 COPY src/cofounder_agent/modules /app/modules

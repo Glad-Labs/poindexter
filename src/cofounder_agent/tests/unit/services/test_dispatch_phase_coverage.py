@@ -81,7 +81,7 @@ def test_scanner_really_scans_the_backend_tree():
     of thing that breaks silently under a different checkout layout. Assert it
     resolves somewhere that actually contains dispatch_complete call sites.
     """
-    assert (_BACKEND_ROOT / "services" / "llm_providers" / "dispatcher.py").is_file(), (
+    assert (_BACKEND_ROOT / "poindexter" / "services" / "llm_providers" / "dispatcher.py").is_file(), (
         f"_BACKEND_ROOT resolved to {_BACKEND_ROOT}, which is not the backend "
         "package root — the scan below would silently sweep nothing"
     )

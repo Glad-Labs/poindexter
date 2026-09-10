@@ -47,7 +47,7 @@ _ADVISORY_JUDGE_RAILS = ("deepeval_faithfulness", "deepeval_g_eval", "ragas_eval
 def baseline_seeds_text() -> str:
     seeds_path = (
         Path(__file__).resolve().parents[4]
-        / "services"
+        / "poindexter" / "services"
         / "migrations"
         / "0000_baseline.seeds.sql"
     )

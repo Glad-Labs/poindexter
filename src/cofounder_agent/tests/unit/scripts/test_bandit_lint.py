@@ -72,9 +72,9 @@ class TestCountsFromFindings:
         """Bandit joins the CLI target with os.sep, so a nested file on Windows
         comes back mixed-separator. The committed baseline is compared on Linux
         CI — without normalization every such entry is a phantom regression."""
-        findings = [_finding("src/cofounder_agent/services/flows\\content_generation.py")]
+        findings = [_finding("src/cofounder_agent/poindexter/services/flows\\content_generation.py")]
         assert LINT.counts_from_findings(findings) == {
-            "src/cofounder_agent/services/flows/content_generation.py": {"B608": 1}
+            "src/cofounder_agent/poindexter/services/flows/content_generation.py": {"B608": 1}
         }
 
     def test_fully_backslashed_path_is_normalized(self):
@@ -96,7 +96,7 @@ class TestPrivateOverlayExclusion:
     adapter_purity_lint's mcp-server-gladlabs exclusion)."""
 
     def test_private_overlay_file_is_dropped(self):
-        findings = [_finding("src/cofounder_agent/services/operator_overrides.py", "B608")]
+        findings = [_finding("src/cofounder_agent/poindexter/services/operator_overrides.py", "B608")]
         assert LINT.counts_from_findings(findings) == {}
 
     def test_every_declared_private_file_is_excluded(self):
@@ -104,9 +104,9 @@ class TestPrivateOverlayExclusion:
             assert LINT.counts_from_findings([_finding(rel, "B608")]) == {}, rel
 
     def test_non_private_neighbour_still_counted(self):
-        findings = [_finding("src/cofounder_agent/services/publish_service.py", "B608")]
+        findings = [_finding("src/cofounder_agent/poindexter/services/publish_service.py", "B608")]
         assert LINT.counts_from_findings(findings) == {
-            "src/cofounder_agent/services/publish_service.py": {"B608": 1}
+            "src/cofounder_agent/poindexter/services/publish_service.py": {"B608": 1}
         }
 
 

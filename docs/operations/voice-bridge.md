@@ -257,7 +257,7 @@ up it now picks the Pipecat plane by default, joins the LiveKit room as
 the bridge's pipe-write closure on every Silero VAD utterance-end), and
 TTS-publishes Kokoro audio for every line written to `.out`. The
 shared Pipecat plumbing lives in
-`src/cofounder_agent/services/voice_pipecat.py`, used by both the
+`src/cofounder_agent/poindexter/services/voice_pipecat.py`, used by both the
 always-on `voice-agent-livekit` container and this bridge so the two
 surfaces can never drift on Pipecat / Whisper / Kokoro version state.
 

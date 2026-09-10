@@ -1,6 +1,6 @@
 # Social Poster
 
-**File:** `src/cofounder_agent/services/social_poster.py`
+**File:** `src/cofounder_agent/poindexter/services/social_poster.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_social_poster.py`
 **Last reviewed:** 2026-07-10
 

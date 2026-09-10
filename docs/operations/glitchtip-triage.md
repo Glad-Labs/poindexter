@@ -181,7 +181,7 @@ Other traps worth knowing:
 ## Related
 
 - [`brain/glitchtip_triage_probe.py`](../../brain/glitchtip_triage_probe.py) — the probe
-- [`services/sentry_integration.py`](../../src/cofounder_agent/services/sentry_integration.py) — capture-side filter
+- [`services/sentry_integration.py`](../../src/cofounder_agent/poindexter/services/sentry_integration.py) — capture-side filter
 - [Findings dashboard](http://localhost:3000/d/findings) — the _other_ signal
   path; a condition worth an operator's attention should be a
   [finding](../architecture/anti-hallucination.md), not just a captured

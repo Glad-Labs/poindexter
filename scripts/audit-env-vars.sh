@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/audit-env-vars.sh — GH-93 guardrail.
 #
-# Lists every os.getenv/os.environ read in src/cofounder_agent/services/,
+# Lists every os.getenv/os.environ read in src/cofounder_agent/poindexter/services/,
 # classifies each as bootstrap-allowed or migration-candidate, and exits
 # non-zero if any new non-allowed reads appear beyond the known set.
 #
@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 
 ALLOWED='(DATABASE_URL|LOCAL_DATABASE_URL|POINDEXTER_MEMORY_DSN|DEPLOYMENT_MODE|ENVIRONMENT|OLLAMA_URL|OLLAMA_BASE_URL|LOG_[A-Z_]+|CLAUDE_PROJECTS_DIR|OTEL_[A-Z_]+|CLOUD_DATABASE_URL)'
 
-readers=$(grep -rn 'os\.getenv\|os\.environ' src/cofounder_agent/services/ \
+readers=$(grep -rn 'os\.getenv\|os\.environ' src/cofounder_agent/poindexter/services/ \
   --include='*.py' | grep -v __pycache__ | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*#' || true)
 
 total=0; allowed=0; flagged=0

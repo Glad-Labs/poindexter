@@ -163,7 +163,7 @@ def _load_migration():
     from pathlib import Path
 
     path = next(
-        (Path(__file__).resolve().parents[2] / "services" / "migrations").glob(
+        (Path(__file__).resolve().parents[2] / "poindexter" / "services" / "migrations").glob(
             "20260901_173133_*.py"
         )
     )

@@ -11,7 +11,7 @@ import pytest
 
 from modules.content.content_module import ContentModule
 
-# The sync filter strips ``src/cofounder_agent/modules/finance/`` from the
+# The sync filter strips ``src/cofounder_agent/poindexter/modules/finance/`` from the
 # public ``poindexter`` mirror, so finance-specific tests must skip there
 # rather than fail at import/collection. ``find_spec`` answers "is it
 # importable?" without importing (and executing) the module — matching the

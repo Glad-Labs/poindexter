@@ -1,6 +1,6 @@
 # Prompt Manager
 
-**File:** `src/cofounder_agent/services/prompt_manager.py`
+**File:** `src/cofounder_agent/poindexter/services/prompt_manager.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_prompt_manager.py`
 **Last reviewed:** 2026-07-04
 

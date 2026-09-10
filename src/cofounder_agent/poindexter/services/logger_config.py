@@ -47,7 +47,10 @@ STRUCTLOG_AVAILABLE = structlog is not None
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json" if ENVIRONMENT == "production" else "text")
-LOG_DIR = Path(os.getenv("LOG_DIR", str(Path(__file__).resolve().parent.parent / "logs")))
+# Default log dir = <backend root>/logs, i.e. src/cofounder_agent/logs on the host
+# and /app/logs in the container -- NOT inside the poindexter/ package
+# (poindexter#1046 step 2 moved services/ one level down).
+LOG_DIR = Path(os.getenv("LOG_DIR", str(Path(__file__).resolve().parents[2] / "logs")))
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "cofounder_agent.log")
 
 

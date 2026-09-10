@@ -11,7 +11,7 @@
 
 Phase 1 of the media pipeline renders 16:9 long + 9:16 short video from an LLM director's shot list (slideshow image-gen stills + Pexels stock), with narration, ambient bed, captions, QA gates, and YouTube distribution. It works, but the quality ceiling is capped by three gaps:
 
-1. **The director is generate-and-pray.** [`generate_video_shot_list.py`](../../../src/cofounder_agent/modules/content/stages/generate_video_shot_list.py) emits a `visual_prompt`/stock-query per beat on a _standard-tier_ local model, and the result ships with no check that the picture matches the beat, looks good, or is on-brand. `media_qa` only validates mechanical things (human-detection, caption presence, A/V sync) — never "is this the _right_ visual?"
+1. **The director is generate-and-pray.** [`generate_video_shot_list.py`](../../../src/cofounder_agent/poindexter/modules/content/stages/generate_video_shot_list.py) emits a `visual_prompt`/stock-query per beat on a _standard-tier_ local model, and the result ships with no check that the picture matches the beat, looks good, or is on-brand. `media_qa` only validates mechanical things (human-detection, caption presence, A/V sync) — never "is this the _right_ visual?"
 2. **No motion.** Every shot is a still (Ken Burns) or stock clip. There's no way to spend extra effort on a few high-impact beats.
 3. **No sound design.** Only a continuous ambient music bed (#679) exists; no discrete sound effects on transitions/emphasis.
 
@@ -29,7 +29,7 @@ The `media_pipeline` graph and `canonical_blog` director are unchanged in shape;
 
 ### 3.1 `review_shot_list` — director self-critique (Stage 1)
 
-A new step after [`generate_video_shot_list`](../../../src/cofounder_agent/modules/content/stages/generate_video_shot_list.py) in the `canonical_blog` graph. The director critiques **its own** shot list against the script and revises **once**:
+A new step after [`generate_video_shot_list`](../../../src/cofounder_agent/poindexter/modules/content/stages/generate_video_shot_list.py) in the `canonical_blog` graph. The director critiques **its own** shot list against the script and revises **once**:
 
 - **Coverage** — does every key narration beat have a shot?
 - **Variety** — break runs of near-identical visual intents (beyond the mechanical same-source pacing already enforced by `_reconcile_shot_list`).
@@ -40,12 +40,12 @@ Implementation notes:
 
 - A **distinct graph node**, not a second call inside the director, so `atom_runs`/audit captures the critique pass independently.
 - Runs on a **writer-grade model**, not standard tier. `video_director_model` is already a DB key (today resolves to the weak standard tier via `resolve_tier_model`); point it at the writer model (gemma-4-31B).
-- Output is the same `VideoShotList` schema ([`schemas/video_shot_list.py`](../../../src/cofounder_agent/schemas/video_shot_list.py)), re-validated + re-reconciled. Failure is non-halting (fall back to the unreviewed list).
+- Output is the same `VideoShotList` schema ([`schemas/video_shot_list.py`](../../../src/cofounder_agent/poindexter/schemas/video_shot_list.py)), re-validated + re-reconciled. Failure is non-halting (fall back to the unreviewed list).
 - In Stage 1 → the reviewed plan is what the human approves at **Gate 1**.
 
 ### 3.2 Per-shot vision-QA loop — render-check (Stage 2)
 
-The integration point is [`services/video_renderers/shot_list_renderer.render_shot_list`](../../../src/cofounder_agent/services/video_renderers/shot_list_renderer.py) (the real per-shot loop; the `media.render_long_video`/`render_short_video` atoms are thin wrappers over it via `_media_render.render_from_state`). The loop gains a verify-and-repair step:
+The integration point is [`services/video_renderers/shot_list_renderer.render_shot_list`](../../../src/cofounder_agent/poindexter/services/video_renderers/shot_list_renderer.py) (the real per-shot loop; the `media.render_long_video`/`render_short_video` atoms are thin wrappers over it via `_media_render.render_from_state`). The loop gains a verify-and-repair step:
 
 ```
 for shot in reviewed_shot_list:
@@ -59,7 +59,7 @@ for shot in reviewed_shot_list:
     emit finding(kind="shot_quality_fallback") on fallback
 ```
 
-- **Reuses the `qa.vision` rail** ([`qa_vision.py`](../../../src/cofounder_agent/modules/content/atoms/qa_vision.py)) — same vision model already scoring featured images and doing caption re-captioning. Add a per-shot scoring entry point that takes a frame + the shot's `narration_segment`/`visual_prompt`/intent.
+- **Reuses the `qa.vision` rail** ([`qa_vision.py`](../../../src/cofounder_agent/poindexter/modules/content/atoms/qa_vision.py)) — same vision model already scoring featured images and doing caption re-captioning. Add a per-shot scoring entry point that takes a frame + the shot's `narration_segment`/`visual_prompt`/intent.
 - **Bounded** — `video_shot_qa_max_retries` caps regeneration; then a deterministic fallback chain (stock → holdover) guarantees termination. No infinite loops.
 - **Fail-soft + visible** — a fallback is a `finding` (per redesign §9 "never silently ship a degraded video"), surfaced on the Findings dashboard.
 - **Scoped** — gate the whole loop behind `video_shot_qa_enabled` (default true) so it can be disabled per-niche.
@@ -74,10 +74,10 @@ When `shot.source == "generative"`, `resolve_source` routes to the generative re
 
 ### 3.4 SFX cue layer (Stage 2 composition)
 
-Extends [`services/media_compositors/ffmpeg_local.py`](../../../src/cofounder_agent/services/media_compositors/ffmpeg_local.py) (which already does multi-input `amix` with per-input gain for the #679 ambient bed). For each cue, `adelay` a clip to its offset and fold it into the existing mix.
+Extends [`services/media_compositors/ffmpeg_local.py`](../../../src/cofounder_agent/poindexter/services/media_compositors/ffmpeg_local.py) (which already does multi-input `amix` with per-input gain for the #679 ambient bed). For each cue, `adelay` a clip to its offset and fold it into the existing mix.
 
 - **Cue source — director callouts only:** the director emits intentional `sfx_cue: {type, t, intensity}` cues on the **specific shots that warrant a sound**, as a new field on `Shot` (it already times the shot list, so offsets are free). There is **no** automatic per-transition SFX — that was rejected as too mechanical/random. A beat with no cue gets no sound, so "nothing where nothing's needed" is the natural behavior, and `video_sfx_enabled=false` turns the layer off entirely.
-- **Clip source:** a small curated royalty-free SFX library (keyed by `sfx_cue.type`) for one-shots; [`audio_gen_service`](../../../src/cofounder_agent/services/audio_gen_service.py) (Stable Audio Open) for longer stings/risers.
+- **Clip source:** a small curated royalty-free SFX library (keyed by `sfx_cue.type`) for one-shots; [`audio_gen_service`](../../../src/cofounder_agent/poindexter/services/audio_gen_service.py) (Stable Audio Open) for longer stings/risers.
 - **Bounded:** `video_sfx_max_per_min` caps how many cues the director can land per minute, so SFX stays sparse even if it over-salts.
 - **DB-tunable:** `video_sfx_enabled`, `video_sfx_volume_dbfs`, `video_sfx_library`, `video_sfx_max_per_min`.
 - Covers slideshow, stock, AND hero shots uniformly — one SFX system.

@@ -127,5 +127,5 @@ def test_operator_files_are_stripped_from_mirror():
     """Fail loud if the overlay module or this test ever leaves _STRIP_FILES —
     either would ship the operator-name literal to the public mirror."""
     strip = set(_load_leak_guard()._STRIP_FILES)
-    assert "src/cofounder_agent/services/operator_leak_patterns.py" in strip
+    assert "src/cofounder_agent/poindexter/services/operator_leak_patterns.py" in strip
     assert "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py" in strip

@@ -1,6 +1,6 @@
 # Content Router Service
 
-**File:** `src/cofounder_agent/services/content_router_service.py`
+**File:** `src/cofounder_agent/poindexter/services/content_router_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_content_router_service.py` (and any integration test that exercises a full pipeline run)
 **Last reviewed:** 2026-05-23
 

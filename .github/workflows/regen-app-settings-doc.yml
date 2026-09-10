@@ -126,7 +126,7 @@ jobs:
         id: stamp
         run: |
           DATE=$(git log -1 --format=%cs -- \
-            src/cofounder_agent/services/migrations/ \
+            src/cofounder_agent/poindexter/services/migrations/ \
             scripts/regen-app-settings-doc.py \
             2>/dev/null || true)
           if [ -z "$DATE" ]; then

@@ -29,7 +29,7 @@ What is explicitly NOT a violation
 
 Scan roots (adapter trees only)
 -------------------------------
-- ``src/cofounder_agent/routes/``
+- ``src/cofounder_agent/poindexter/routes/``
 - ``src/cofounder_agent/poindexter/cli/`` **minus the bootstrap allowlist**
   (``setup.py`` / ``migrate.py`` / ``auth.py`` / ``_bootstrap.py`` — the
   permanently-direct provisioning commands that run before the API/schema/first
@@ -91,7 +91,7 @@ _CLI_BOOTSTRAP_ALLOWLIST = frozenset(
 
 # (root relative to REPO_ROOT, excluded top-level subdirs, excluded filenames)
 SCAN_SPECS: list[tuple[str, tuple[str, ...], frozenset[str]]] = [
-    ("src/cofounder_agent/routes", (), frozenset()),
+    ("src/cofounder_agent/poindexter/routes", (), frozenset()),
     ("src/cofounder_agent/poindexter/cli", (), _CLI_BOOTSTRAP_ALLOWLIST),
     # The public MCP server — operator phone-facing tools. The private
     # ``mcp-server-gladlabs/`` overlay is intentionally NOT scanned: its paths

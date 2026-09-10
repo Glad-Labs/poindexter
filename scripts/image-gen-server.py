@@ -119,7 +119,7 @@ app = FastAPI(title="image-gen Server", version="2.0")
 
 # ============================================================================
 # MODEL REGISTRY
-# Mirrors src/cofounder_agent/services/image_service.py IMAGE_MODEL_REGISTRY.
+# Mirrors src/cofounder_agent/poindexter/services/image_service.py IMAGE_MODEL_REGISTRY.
 # Keep these in sync — both reference the same friendly names.
 # ============================================================================
 

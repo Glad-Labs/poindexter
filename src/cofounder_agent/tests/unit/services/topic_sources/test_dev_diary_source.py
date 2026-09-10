@@ -653,7 +653,7 @@ class TestCollectMergedPRs:
         transport = _mock_transport({
             "/pulls": httpx.Response(503, text="service unavailable"),
         })
-        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_merged_prs(
                     hours=24, repo="Test-Org/test-repo", client=client,
@@ -668,7 +668,7 @@ class TestCollectMergedPRs:
         transport = _mock_transport({
             "/pulls": httpx.Response(401, json={"message": "Bad credentials"}),
         })
-        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_merged_prs(
                     hours=24, repo="Test-Org/test-repo",
@@ -699,7 +699,7 @@ class TestCollectMergedPRs:
             {"/pulls": httpx.Response(200, json=[])},
             captured_requests=captured,
         )
-        with caplog.at_level(logging.DEBUG, logger="services.topic_sources.dev_diary_source"):
+        with caplog.at_level(logging.DEBUG, logger="poindexter.services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 await _collect_merged_prs(
                     hours=24, repo="Test-Org/test-repo",
@@ -788,7 +788,7 @@ class TestCollectNotableCommits:
         transport = _mock_transport({
             "/commits": httpx.Response(500, text="boom"),
         })
-        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_notable_commits(
                     hours=24, repo="Test-Org/test-repo", client=client,

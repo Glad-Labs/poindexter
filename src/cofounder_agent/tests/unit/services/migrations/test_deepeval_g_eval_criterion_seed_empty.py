@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 _BASELINE_SEEDS = (
-    Path(__file__).resolve().parents[4] / "services" / "migrations" / "0000_baseline.seeds.sql"
+    Path(__file__).resolve().parents[4] / "poindexter" / "services" / "migrations" / "0000_baseline.seeds.sql"
 )
 
 

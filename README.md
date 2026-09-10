@@ -245,7 +245,7 @@ class SlackTap:
 slack = "my_package.slack_tap:SlackTap"
 ```
 
-Shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) live in `src/cofounder_agent/plugins/samples/`. The first production plugin is the `LiteLLMProvider` — Glad Labs eats its own dog food. Full design in [plugin-architecture](https://gladlabs.mintlify.app/docs/architecture/plugin-architecture).
+Shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) live in `src/cofounder_agent/poindexter/plugins/samples/`. The first production plugin is the `LiteLLMProvider` — Glad Labs eats its own dog food. Full design in [plugin-architecture](https://gladlabs.mintlify.app/docs/architecture/plugin-architecture).
 
 </details>
 

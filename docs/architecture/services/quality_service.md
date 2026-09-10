@@ -1,6 +1,6 @@
 # Quality Service (Unified)
 
-**File:** `src/cofounder_agent/modules/content/quality_service.py`
+**File:** `src/cofounder_agent/poindexter/modules/content/quality_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_quality_service.py`
 **Last reviewed:** 2026-04-30
 

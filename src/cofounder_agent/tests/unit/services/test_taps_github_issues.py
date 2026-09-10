@@ -99,7 +99,7 @@ class TestParseRepos:
 
     @pytest.mark.parametrize("bad", ["noslash", "a/b/c", "/b", "a/"])
     def test_rejects_malformed(self, bad, caplog):
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             assert _parse_repos(bad) == []
         assert "malformed repo" in caplog.text
 
@@ -204,7 +204,7 @@ class TestExtract:
     async def test_missing_repo_does_not_lose_the_other(self, patched_client, caplog):
         """A 404 on one repo must not abort the whole run."""
         patched_client({"o/good": [[_issue(1)]]})  # o/missing is absent -> 404
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             docs = await _collect(
                 GitHubIssuesTap(), {"repos": "o/missing,o/good", "gh_token": "t"}
             )
@@ -216,14 +216,14 @@ class TestExtract:
         """403 + remaining=0 is a rate limit, not a permissions problem —
         they need different operator responses."""
         patched_client({"o/a": [403]})
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             docs = await _collect(GitHubIssuesTap(), {"repos": "o/a", "gh_token": "t"})
         assert docs == []
         assert "rate limit" in caplog.text.lower()
 
     @pytest.mark.asyncio
     async def test_no_repos_configured_warns(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             docs = await _collect(GitHubIssuesTap(), {"repos": ""})
         assert docs == []
         assert "no valid repos" in caplog.text
@@ -233,7 +233,7 @@ class TestExtract:
         """Public repos work unauthenticated (slowly); say so rather than
         silently producing an empty result."""
         patched_client({"o/a": [[_issue(1)]]})
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             docs = await _collect(GitHubIssuesTap(), {"repos": "o/a"})
         assert len(docs) == 1
         assert "gh_token" in caplog.text
@@ -277,7 +277,7 @@ class TestOssGenericDefaults:
     @pytest.mark.asyncio
     async def test_unconfigured_yields_nothing_and_says_so(self, caplog):
         """Silence here would be indistinguishable from a broken tap."""
-        with caplog.at_level(logging.WARNING, logger="services.taps.github_issues"):
+        with caplog.at_level(logging.WARNING, logger="poindexter.services.taps.github_issues"):
             docs = await _collect(GitHubIssuesTap(), {})
         assert docs == []
         assert "no valid repos" in caplog.text

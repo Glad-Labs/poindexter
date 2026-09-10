@@ -2,7 +2,7 @@
 
 Slice 3 of the Discord voice-agent rollout (Glad-Labs/poindexter#390).
 
-Lives in ``scripts/`` rather than ``src/cofounder_agent/services/`` for
+Lives in ``scripts/`` rather than ``src/cofounder_agent/poindexter/services/`` for
 the same reason ``_oauth_helper.py`` does: the discord-voice-bot script
 runs in a Docker image that doesn't always have ``services/`` on
 ``PYTHONPATH``, and we want the unit tests to be able to import these

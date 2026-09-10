@@ -57,7 +57,7 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MIGRATIONS_DIR = REPO_ROOT / "src" / "cofounder_agent" / "services" / "migrations"
+MIGRATIONS_DIR = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
 
 # After this 4-digit prefix, NEW migrations must use the timestamp
 # format. Bump this whenever a legitimate legacy-numbered migration

@@ -184,7 +184,7 @@ async def test_unload_logs_warning_and_returns_empty_when_ollama_unreachable(cap
         return_value=client,
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
-    ), caplog.at_level("WARNING", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
             grace_seconds=2.0,
@@ -210,7 +210,7 @@ async def test_unload_logs_warning_on_non_200_ps_status(caplog):
     with patch(
         "services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
-    ), caplog.at_level("WARNING", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
             grace_seconds=2.0,
@@ -245,7 +245,7 @@ async def test_unload_continues_after_individual_model_failure(caplog):
         return_value=client,
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
-    ), caplog.at_level("WARNING", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
             grace_seconds=0.0,
@@ -335,7 +335,7 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
         return_value=client,
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
-    ), caplog.at_level("INFO", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("INFO", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=True),
             stage_label="content.plan_image_markers",
@@ -372,7 +372,7 @@ async def test_maybe_unload_default_stage_label_uses_current_marker(caplog):
         return_value=client,
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
-    ), caplog.at_level("INFO", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("INFO", logger="poindexter.services.llm_providers.ollama_unload"):
         # No stage_label kwarg — exercise the default.
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=True),
@@ -516,7 +516,7 @@ async def test_confirm_warns_and_proceeds_when_model_never_evicts(caplog):
         return_value=client,
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
-    ), caplog.at_level("WARNING", logger="services.llm_providers.ollama_unload"):
+    ), caplog.at_level("WARNING", logger="poindexter.services.llm_providers.ollama_unload"):
         unloaded = await unload_loaded_ollama_models(
             site_config=_site_config(),
             confirm=True,

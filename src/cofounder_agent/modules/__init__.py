@@ -1,17 +1,20 @@
-"""In-tree Module v1 packages.
+"""Compatibility stub -- `modules` now lives at `poindexter.modules` (Glad-Labs/poindexter#1046, step 2).
 
-Phase 3-lite (Glad-Labs/poindexter#490): each business module lives
-as a subpackage here while we prove the Module shape against a real
-example. Long-term these extract to their own top-level packages
-(``poindexter_module_content``, ``poindexter_module_finance``, ...)
-when we have 2+ modules and an obvious shared shape; until then the
-nested location avoids needless import-path churn.
-
-Current modules:
-- ``content``  — blog publishing workflow (canonical_blog template,
-                 multi-model QA, image stages, publish to gladlabs.io).
-                 Phase 3-lite: skeleton + manifest + migrate() only;
-                 the substrate-side code at ``services/content_*`` +
-                 ``services/stages/*`` stays where it is until a 2nd
-                 module gives us a comparison point.
+Importing this installs the flat-import alias finder and replaces this module in
+``sys.modules`` with the canonical package, so ``import modules.x`` yields the SAME
+object as ``import poindexter.modules.x`` -- one module, two names (see
+``poindexter/_flat_imports.py`` for why a ``__path__`` shim would not do). Deleted
+in step 5 of the epic, once no flat spelling remains.
 """
+
+import importlib as _importlib
+import sys as _sys
+
+from poindexter import _flat_imports as _flat_imports
+
+_flat_imports.install()
+# Keyed on the LAST segment: this same file also loads as
+# `cofounder_agent.modules` (the umbrella spelling the entry points use).
+_sys.modules[__name__] = _importlib.import_module(
+    f"poindexter.{__name__.rpartition('.')[2]}"
+)

@@ -187,7 +187,7 @@ def test_every_declared_split_is_backed_by_an_enforced_pin():
     judge = set(scopes.get("qa_judge", []))
     primary = set(scopes.get("llm_primary", []))
     if judge.isdisjoint(primary):
-        repo = Path(gs.__file__).resolve().parents[3]
+        repo = Path(gs.__file__).resolve().parents[4]  # poindexter/services/ -> repo root
         for script, card in (
             ("scripts/linux/ollama-primary.sh", "0"),
             ("scripts/linux/ollama-vision.sh", "1"),

@@ -66,7 +66,7 @@ def _repo_root() -> Path:
 
 def migration_drift_note(root: Path, log) -> str:
     """Surface a newest-migration CLAUDE.md never mentions. Never auto-rewrites prose."""
-    migrations = root / "src" / "cofounder_agent" / "services" / "migrations"
+    migrations = root / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
     newest = newest_migration(migrations)
     if not newest:
         return ""

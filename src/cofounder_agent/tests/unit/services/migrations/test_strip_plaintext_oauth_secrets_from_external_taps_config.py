@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "services" / "migrations"
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "poindexter" / "services" / "migrations"
 _MIGRATION_FILE = (
     _MIGRATIONS_DIR
     / "20260714_064046_strip_plaintext_oauth_secrets_from_external_taps_config.py"

@@ -42,10 +42,11 @@ def _baseline_schema_path() -> Path:
     """Locate 0000_baseline.schema.sql from either the src/ or container layout."""
     for parent in Path(__file__).resolve().parents:
         for candidate in (
-            parent / "services" / "migrations" / "0000_baseline.schema.sql",
+            parent / "poindexter" / "services" / "migrations" / "0000_baseline.schema.sql",
             parent
             / "src"
             / "cofounder_agent"
+            / "poindexter"
             / "services"
             / "migrations"
             / "0000_baseline.schema.sql",

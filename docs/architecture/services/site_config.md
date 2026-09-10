@@ -1,6 +1,6 @@
 # Site Config
 
-**File:** `src/cofounder_agent/services/site_config.py`
+**File:** `src/cofounder_agent/poindexter/services/site_config.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_site_config.py`
 **Last reviewed:** 2026-06-30
 

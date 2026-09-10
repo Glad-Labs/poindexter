@@ -4,7 +4,7 @@
 **Phase:** C (61 timestamped migrations → baseline)
 **Predecessor:** Phase A (169 legacy migrations → baseline, 2026-05-08, Glad-Labs/poindexter#30)
 
-Each timestamped migration under `src/cofounder_agent/services/migrations/`
+Each timestamped migration under `src/cofounder_agent/poindexter/services/migrations/`
 was classified into one of:
 
 - **schema** — pure DDL (CREATE/ALTER/DROP TABLE/COLUMN/INDEX/CONSTRAINT).

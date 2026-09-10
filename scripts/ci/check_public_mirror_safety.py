@@ -108,7 +108,7 @@ _STRIP_DIR_PREFIXES = (
     "src/cofounder_agent/writing_samples/",
     "mcp-server-gladlabs/",
     "gladlabs-rig/",
-    "src/cofounder_agent/modules/finance/",
+    "src/cofounder_agent/poindexter/modules/finance/",
     "src/cofounder_agent/tests/unit/modules/finance/",
     ".gitea/",
     ".shared-context/",
@@ -161,9 +161,9 @@ _STRIP_FILES = (
     # (settings_defaults.apply_operator_overrides) no-ops when this module is
     # absent, so OSS installs keep the public defaults. Strip lock-step with the
     # git-rm line in sync-to-github.sh.
-    "src/cofounder_agent/services/operator_overrides.py",
+    "src/cofounder_agent/poindexter/services/operator_overrides.py",
     # Operator-identity RAG scrub overlay + its literal-carrying test (2026-07-07).
-    "src/cofounder_agent/services/operator_leak_patterns.py",
+    "src/cofounder_agent/poindexter/services/operator_leak_patterns.py",
     "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py",
     # The semgrep job cannot run on the mirror: its vendored rules are
     # stripped above, and the lint fails loud rather than scanning with none.
@@ -180,7 +180,7 @@ _STRIP_FILES = (
     "scripts/kuma_bootstrap.py",
     "scripts/settings_defaults_extract.json",
     "scripts/settings_secret_keys.json",
-    "src/cofounder_agent/services/taps/claude_code_sessions.py",
+    "src/cofounder_agent/poindexter/services/taps/claude_code_sessions.py",
     "src/cofounder_agent/tests/unit/services/test_claude_code_sessions_tap.py",
     "CLAUDE.md",
     "src/cofounder_agent/.coverage",

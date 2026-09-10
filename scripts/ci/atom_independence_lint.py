@@ -72,7 +72,7 @@ from lib_scan_floor import require_scanned  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = Path(__file__).resolve().parent / "atom_independence_baseline.json"
 
-CONTENT_DIR = REPO_ROOT / "src" / "cofounder_agent" / "modules" / "content"
+CONTENT_DIR = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "modules" / "content"
 ATOMS_DIR = CONTENT_DIR / "atoms"
 
 STAGE_PREFIX = "modules.content.stages"

@@ -15,7 +15,7 @@ Dev.to cross-posting is **live in production** — `CrosspostToDevtoJob` runs ev
 and posts are visibly appearing on Dev.to (auto-published via `devto_publish_immediately=true`,
 each carrying a `canonical_url` back to gladlabs.io). But the job syndicates **every**
 published post indiscriminately — its candidate query filters only on
-`status='published'` + Dev.to dedup flags ([crosspost_to_devto.py:81](../../../src/cofounder_agent/services/jobs/crosspost_to_devto.py)).
+`status='published'` + Dev.to dedup flags ([crosspost_to_devto.py:81](../../../src/cofounder_agent/poindexter/services/jobs/crosspost_to_devto.py)).
 
 Two consequences:
 

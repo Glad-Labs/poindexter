@@ -1,6 +1,6 @@
 # Template Runner
 
-**File:** `src/cofounder_agent/services/template_runner.py`
+**File:** `src/cofounder_agent/poindexter/services/template_runner.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py`, `tests/unit/services/test_template_runner_state_partition.py`, `tests/unit/services/test_checkpoint_resumable.py` + integration fan-out tests
 **Last reviewed:** 2026-06-13
 

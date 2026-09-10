@@ -114,7 +114,7 @@ empty/"not wired" state rather than mock numbers.
 One file is the only seam between UI and your stack: `window.PX.api`. Every
 method has a `live:` branch (real `fetch`) and a `mock:` branch via
 `pick(liveFn, mockFn)`. Endpoint map (verified against
-`src/cofounder_agent/routes/`):
+`src/cofounder_agent/poindexter/routes/`):
 
 | Surface           | Endpoint(s)                                                                                                                                          |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
