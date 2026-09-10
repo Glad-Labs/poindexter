@@ -59,7 +59,7 @@ async def _consume_image_gen_response(
     Prior to 2026-05-20, the video-render path only handled the ``image/*``
     branch — every JSON response was logged as a failure with "image-gen
     returned 200 for frame N" and the image path was discarded, so every
-    frame per cycle would silently fail. Closes Glad-Labs/glad-labs-stack#198
+    frame per cycle would silently fail. Closes Glad-Labs/poindexter#198
     follow-up (the underlying ``poindexter#459`` fix was already applied to
     the featured-image path; this extends it to the shot-render path).
     """
