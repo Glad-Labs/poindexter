@@ -3864,14 +3864,14 @@ utils = ["numpydoc (>=1.8.0,<2.0)"]
 
 [[package]]
 name = "llama-index-core"
-version = "0.14.23"
+version = "0.14.24"
 description = "Interface between LLMs and your data"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "llama_index_core-0.14.23-py3-none-any.whl", hash = "sha256:6a54d267826732a8507f81df40785b107f7592af20f451a39a59005147caf84c"},
-    {file = "llama_index_core-0.14.23.tar.gz", hash = "sha256:c4baf2f2ab4f84e95090fe7941e0c87d6c514304f7bd2a749b8fa22164c1822b"},
+    {file = "llama_index_core-0.14.24-py3-none-any.whl", hash = "sha256:a12f39b8a777cc526bf400d929016cd244372af61c5e98f6f4186f51a0b9288c"},
+    {file = "llama_index_core-0.14.24.tar.gz", hash = "sha256:4b2eb3af98eecf3579707ef018be0346bd851be2c7660102d88fab0457b95b61"},
 ]
 
 [package.dependencies]
@@ -9934,4 +9934,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "037d51b45527486dd1a54ab4fda5d98cddf081bafb0d2514ef8e28ce117b5cca"
+content-hash = "b036ea2f27183c21ef4d404d866d9ca2aa49ceca5b1ff114dae652022a2d8550"
