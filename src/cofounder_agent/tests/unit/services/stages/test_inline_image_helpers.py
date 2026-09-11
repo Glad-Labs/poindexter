@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms._image_helpers import _try_image_gen
+from poindexter.modules.content.atoms._image_helpers import _try_image_gen
 from tests.unit._fake_platform import FakePlatform
 
 
@@ -80,17 +80,17 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
     )
 
     with patch(
-        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+        "poindexter.modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
         "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/x.png"),
     ):
         result = await _try_image_gen(
@@ -125,7 +125,7 @@ async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
     image under one ``image_gen`` lock. Both locks still carry ``task_id`` so
     ``gpu_task_sessions`` cost attribution survives (#157).
     """
-    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+    from poindexter.modules.content.atoms._image_helpers import batch_generate_inline_image_urls
 
     recorder = _LockRecorder()
 
@@ -155,17 +155,17 @@ async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
     ]
 
     with patch(
-        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+        "poindexter.modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
         "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(side_effect=[
             "https://r2.example/1.png",
             "https://r2.example/2.png",
@@ -207,7 +207,7 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     is a transient restart window rather than a real verdict. A single 500
     here would now simply be retried and succeed, which is the point.
     """
-    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+    from poindexter.modules.content.atoms._image_helpers import batch_generate_inline_image_urls
 
     recorder = _LockRecorder()
     completion = MagicMock()
@@ -238,17 +238,17 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     )
 
     with patch(
-        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+        "poindexter.modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
         "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(side_effect=["https://r2.example/1.png", "https://r2.example/3.png"]),
     ):
         urls = await batch_generate_inline_image_urls(
@@ -273,7 +273,7 @@ async def test_batch_skips_empty_description_without_using_topic():
     The fix: no description → no image-gen attempt for that slot at all
     (None → the caller's Pexels fallback), and no dispatch call is made.
     """
-    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+    from poindexter.modules.content.atoms._image_helpers import batch_generate_inline_image_urls
 
     recorder = _LockRecorder()
     completion = MagicMock()
@@ -300,17 +300,17 @@ async def test_batch_skips_empty_description_without_using_topic():
     placeholders = [("1", "server racks"), ("2", ""), ("3", "a GPU die shot")]
 
     with patch(
-        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+        "poindexter.modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
         "poindexter.services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(side_effect=[
             "https://r2.example/1.png",
             "https://r2.example/3.png",

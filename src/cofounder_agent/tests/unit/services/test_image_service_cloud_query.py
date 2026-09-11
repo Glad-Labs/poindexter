@@ -85,7 +85,7 @@ async def test_cloud_query_model_routes_through_dispatch_not_local_ollama():
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ):
         out = await svc._llm_semantic_pexels_query("Postgres row-level security")
 
@@ -116,7 +116,7 @@ async def test_local_query_model_with_pool_also_routes_through_dispatch():
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ):
         out = await svc._llm_semantic_pexels_query("Kubernetes pod lifecycle")
 
@@ -138,7 +138,7 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ):
         out = await svc._llm_semantic_pexels_query("Building a FastAPI queue")
 

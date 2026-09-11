@@ -46,10 +46,10 @@ def test_plugins_secrets_imports_without_apscheduler():
         builtins.__import__ = _blocked
 
         # The exact path the voice agent's get_secret takes — must succeed.
-        from plugins.secrets import get_secret  # noqa: F401
+        from poindexter.plugins.secrets import get_secret  # noqa: F401
 
         # The scheduler module still imports (symbols gated to None)...
-        from plugins.scheduler import PluginScheduler
+        from poindexter.plugins.scheduler import PluginScheduler
 
         # ...but constructing it without apscheduler must fail LOUD, not silently.
         try:
@@ -104,7 +104,7 @@ def _blocked_import_header() -> str:
 def test_scheduler_constructor_error_message_mentions_remedy():
     """The ImportError from PluginScheduler without apscheduler must name the fix."""
     code = _blocked_import_header() + textwrap.dedent("""
-        from plugins.scheduler import PluginScheduler
+        from poindexter.plugins.scheduler import PluginScheduler
         try:
             PluginScheduler(pool=None)
         except ImportError as e:
@@ -123,7 +123,7 @@ def test_scheduler_constructor_error_message_mentions_remedy():
 def test_scheduler_constructor_error_is_chained():
     """ImportError from PluginScheduler must chain the original apscheduler ImportError."""
     code = _blocked_import_header() + textwrap.dedent("""
-        from plugins.scheduler import PluginScheduler
+        from poindexter.plugins.scheduler import PluginScheduler
         try:
             PluginScheduler(pool=None)
         except ImportError as e:
@@ -140,7 +140,7 @@ def test_scheduler_constructor_error_is_chained():
 def test_plugins_job_protocol_importable_without_apscheduler():
     """Job and JobResult from plugins.__init__ must survive in a lean image."""
     code = _blocked_import_header() + textwrap.dedent("""
-        from plugins import Job, JobResult
+        from poindexter.plugins import Job, JobResult
         print("OK")
     """)
     proc = _run(code)
@@ -152,28 +152,28 @@ def test_plugins_job_protocol_importable_without_apscheduler():
 
 
 def test_is_encrypted_true_for_enc_prefix():
-    from plugins.secrets import is_encrypted
+    from poindexter.plugins.secrets import is_encrypted
     assert is_encrypted("enc:v1:abc123") is True
 
 
 def test_is_encrypted_false_for_plaintext():
-    from plugins.secrets import is_encrypted
+    from poindexter.plugins.secrets import is_encrypted
     assert is_encrypted("plaintext_value") is False
 
 
 def test_is_encrypted_false_for_none():
-    from plugins.secrets import is_encrypted
+    from poindexter.plugins.secrets import is_encrypted
     assert is_encrypted(None) is False
 
 
 def test_is_encrypted_false_for_empty_string():
-    from plugins.secrets import is_encrypted
+    from poindexter.plugins.secrets import is_encrypted
     assert is_encrypted("") is False
 
 
 def test_key_missing_raises_secrets_error():
     """_key() must raise SecretsError when POINDEXTER_SECRET_KEY is absent."""
-    from plugins.secrets import SecretsError, _key
+    from poindexter.plugins.secrets import SecretsError, _key
     saved = os.environ.pop("POINDEXTER_SECRET_KEY", None)
     try:
         with pytest.raises(SecretsError, match="POINDEXTER_SECRET_KEY"):
@@ -184,18 +184,18 @@ def test_key_missing_raises_secrets_error():
 
 
 def test_stable_stagger_is_deterministic():
-    from plugins.scheduler import _stable_stagger_seconds
+    from poindexter.plugins.scheduler import _stable_stagger_seconds
     assert _stable_stagger_seconds("some_job") == _stable_stagger_seconds("some_job")
 
 
 def test_stable_stagger_in_range():
-    from plugins.scheduler import _FIRST_FIRE_STAGGER_S, _stable_stagger_seconds
+    from poindexter.plugins.scheduler import _FIRST_FIRE_STAGGER_S, _stable_stagger_seconds
     val = _stable_stagger_seconds("some_job")
     assert 0 <= val < _FIRST_FIRE_STAGGER_S
 
 
 def test_stable_stagger_varies_across_names():
     """Different job names should (with overwhelming probability) produce different offsets."""
-    from plugins.scheduler import _stable_stagger_seconds
+    from poindexter.plugins.scheduler import _stable_stagger_seconds
     values = {_stable_stagger_seconds(f"job_{i}") for i in range(10)}
     assert len(values) > 1, "expected different stagger values across distinct job names"

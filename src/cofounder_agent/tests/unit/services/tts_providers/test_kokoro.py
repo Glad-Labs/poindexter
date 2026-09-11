@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from plugins.tts_provider import TTSProvider, TTSResult
+from poindexter.plugins.tts_provider import TTSProvider, TTSResult
 from poindexter.services.tts_providers import kokoro as kokoro_mod
 from poindexter.services.tts_providers.kokoro import KokoroTTSProvider
 

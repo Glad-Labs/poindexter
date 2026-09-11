@@ -35,7 +35,7 @@ async def test_uuid_guard():
 
 
 async def _seed_pool(db_pool, niche_id, titles, *, source="hackernews"):
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
     from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:

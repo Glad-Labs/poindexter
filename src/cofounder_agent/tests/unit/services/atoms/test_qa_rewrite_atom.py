@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_rewrite
+from poindexter.modules.content.atoms import qa_rewrite
 from poindexter.services.site_config import SiteConfig
 
 
@@ -302,7 +302,7 @@ class TestQaRewriteTruncationGuard:
         findings = []
         monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
         monkeypatch.setattr(
-            "utils.findings.emit_finding",
+            "poindexter.utils.findings.emit_finding",
             lambda **kw: findings.append(kw),
         )
         state = {
@@ -404,7 +404,7 @@ class TestQaRewritePlaceholderScrub:
             return "[posts/one] [posts/two]"
 
         monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", _fake_chat)
-        monkeypatch.setattr("utils.findings.emit_finding", _fake_emit)
+        monkeypatch.setattr("poindexter.utils.findings.emit_finding", _fake_emit)
         out = await qa_rewrite.run(self._state())
         # Nothing but placeholders scrubs down to empty — same degrade path as
         # an empty revision: prior draft kept, attempt burned, reviews reset.

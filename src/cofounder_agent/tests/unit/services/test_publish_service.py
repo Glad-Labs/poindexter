@@ -176,7 +176,7 @@ def _stub_lazy_imports():
     podcast_mod.generate_podcast_episode = AsyncMock()
 
     return {
-        "utils.json_encoder": json_encoder_mod,
+        "poindexter.utils.json_encoder": json_encoder_mod,
         "poindexter.services.default_author": default_author_mod,
         "poindexter.services.category_resolver": category_resolver_mod,
         "poindexter.services.webhook_delivery_service": webhook_mod,
@@ -1133,7 +1133,7 @@ class TestEmbedPublishedPost:
         embed_svc_mod = MagicMock()
 
         with patch.dict(sys.modules, {
-            "plugins.registry": registry_mod,
+            "poindexter.plugins.registry": registry_mod,
             "poindexter.services.embedding_service": embed_svc_mod,
         }):
             await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
@@ -1156,7 +1156,7 @@ class TestEmbedPublishedPost:
 
         post = {"id": "p1", "title": "Title", "content": "body"}
         with patch.dict(sys.modules, {
-            "plugins.registry": registry_mod,
+            "poindexter.plugins.registry": registry_mod,
             "poindexter.services.embedding_service": embed_svc_mod,
         }):
             await _embed_published_post(db, post)
@@ -1175,7 +1175,7 @@ class TestEmbedPublishedPost:
         embed_svc_mod = MagicMock()
 
         with patch.dict(sys.modules, {
-            "plugins.registry": registry_mod,
+            "poindexter.plugins.registry": registry_mod,
             "poindexter.services.embedding_service": embed_svc_mod,
         }):
             # Must not raise

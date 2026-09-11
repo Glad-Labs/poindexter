@@ -21,8 +21,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from tests.unit.routes.conftest import make_mock_db
-from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 NOW = datetime(2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc)
 

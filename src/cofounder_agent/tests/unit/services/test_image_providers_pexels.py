@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.image_provider import ImageProvider, ImageResult
+from poindexter.plugins.image_provider import ImageProvider, ImageResult
 from poindexter.services.image_providers.pexels import PexelsProvider, build_semantic_pexels_query
 
 
@@ -264,7 +264,7 @@ class TestBuildSemanticPexelsQuery:
                  "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
-                 "plugins.registry.get_all_llm_providers", return_value=[local],
+                 "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
              ):
             out = await build_semantic_pexels_query(
                 "Postgres row-level security", site_config=sc,
@@ -294,7 +294,7 @@ class TestBuildSemanticPexelsQuery:
                  "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
-                 "plugins.registry.get_all_llm_providers", return_value=[local],
+                 "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
              ):
             out = await build_semantic_pexels_query(
                 "Kubernetes pod lifecycle", site_config=sc,
@@ -317,7 +317,7 @@ class TestBuildSemanticPexelsQuery:
                  "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
              ), \
              patch(
-                 "plugins.registry.get_all_llm_providers", return_value=[local],
+                 "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
              ):
             out = await build_semantic_pexels_query(
                 "Building a FastAPI queue", site_config=sc,

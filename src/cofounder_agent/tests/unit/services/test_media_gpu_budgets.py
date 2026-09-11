@@ -242,7 +242,7 @@ def test_media_skip_finding_kind_is_distinct_from_qa_rails():
     """Separate kinds because the remedies differ: a QA skip means review is
     being crowded out, a media skip means the post shipped without a podcast
     script or shot list."""
-    from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "holder_eta_exceeds_budget"
@@ -250,7 +250,7 @@ def test_media_skip_finding_kind_is_distinct_from_qa_rails():
 
     captured = {}
 
-    with patch("utils.findings.emit_finding", lambda **kw: captured.update(kw)):
+    with patch("poindexter.utils.findings.emit_finding", lambda **kw: captured.update(kw)):
         surface_media_gpu_busy_skip("media_scripts", _Busy(), task_id="t-3")
 
     # Assert the emitted kind, not the source text — the module docstring
@@ -265,14 +265,14 @@ def test_skip_finding_never_raises_into_the_caller():
     """The finding is telemetry on a degraded path — if emitting it could
     raise, a contention skip would become the stage crash it exists to avoid.
     """
-    from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "holder_eta_exceeds_budget"
         eta_seconds = 230.0
 
     with patch(
-        "utils.findings.emit_finding", side_effect=RuntimeError("sink down"),
+        "poindexter.utils.findings.emit_finding", side_effect=RuntimeError("sink down"),
     ):
         surface_media_gpu_busy_skip("media_scripts", _Busy(), task_id="t-1")
 
@@ -281,7 +281,7 @@ def test_skip_finding_never_raises_into_the_caller():
 def test_skip_finding_tolerates_a_busy_error_without_eta():
     """``eta_seconds`` is None when admission refuses for a reason other than a
     holder estimate; formatting it must not blow up the degraded path."""
-    from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "queue_depth"
@@ -292,7 +292,7 @@ def test_skip_finding_tolerates_a_busy_error_without_eta():
     def _capture(**kwargs):
         captured.update(kwargs)
 
-    with patch("utils.findings.emit_finding", _capture):
+    with patch("poindexter.utils.findings.emit_finding", _capture):
         surface_media_gpu_busy_skip("video_director", _Busy(), task_id="t-2")
 
     assert captured["kind"] == "media_gpu_busy_skip"
@@ -336,12 +336,12 @@ class TestTerminalGpuBusySkip:
     def _emit_capture(self, monkeypatch):
         captured: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: captured.append(kw),
+            "poindexter.utils.findings.emit_finding", lambda **kw: captured.append(kw),
         )
         return captured
 
     def test_default_skip_stays_advisory(self, monkeypatch):
-        from modules.content.stages._media_gpu_skip import (
+        from poindexter.modules.content.stages._media_gpu_skip import (
             surface_media_gpu_busy_skip,
         )
 
@@ -356,7 +356,7 @@ class TestTerminalGpuBusySkip:
         assert captured[0]["extra"]["terminal"] is False
 
     def test_terminal_skip_warns_and_names_the_loss(self, monkeypatch):
-        from modules.content.stages._media_gpu_skip import (
+        from poindexter.modules.content.stages._media_gpu_skip import (
             surface_media_gpu_busy_skip,
         )
 
@@ -378,7 +378,7 @@ class TestTerminalGpuBusySkip:
         forgets to pass it."""
         import inspect
 
-        from modules.content.stages import generate_video_shot_list as mod
+        from poindexter.modules.content.stages import generate_video_shot_list as mod
 
         src = inspect.getsource(mod)
         assert 'surface_media_gpu_busy_skip(\n' in src

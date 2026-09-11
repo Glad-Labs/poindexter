@@ -67,7 +67,7 @@ def _fake_memory_client(stats):
 
 def _capture(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

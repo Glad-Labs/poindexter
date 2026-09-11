@@ -51,7 +51,7 @@ class MiddlewareConfig:
             app: FastAPI application instance
 
         Example:
-            from utils.middleware_config import MiddlewareConfig
+            from poindexter.utils.middleware_config import MiddlewareConfig
 
             app = FastAPI()
             middleware_config = MiddlewareConfig()
@@ -293,8 +293,8 @@ class MiddlewareConfig:
 
             # Use the shared singleton so route @limiter.limit() decorators
             # reference the same instance that is registered with app.state.
-            from utils.rate_limiter import configure_rate_limiter
-            from utils.rate_limiter import limiter as _limiter
+            from poindexter.utils.rate_limiter import configure_rate_limiter
+            from poindexter.utils.rate_limiter import limiter as _limiter
 
             self.limiter = _limiter
 
@@ -354,7 +354,7 @@ class MiddlewareConfig:
             Limiter instance or None if not available
 
         Example:
-            from utils.middleware_config import middleware_config
+            from poindexter.utils.middleware_config import middleware_config
 
             @app.get("/expensive-endpoint")
             @middleware_config.get_limiter().limit("5/minute")
@@ -372,7 +372,7 @@ def create_middleware_config() -> MiddlewareConfig:
         MiddlewareConfig: Configured middleware manager
 
     Example:
-        from utils.middleware_config import create_middleware_config
+        from poindexter.utils.middleware_config import create_middleware_config
 
         middleware = create_middleware_config()
         middleware.register_all_middleware(app)

@@ -1103,7 +1103,7 @@ class SocialDraftsService:
         candidates = await self.find_posts_missing_social_coverage(
             pool, lookback_days
         )
-        from modules.content.api import generate_social_drafts
+        from poindexter.modules.content.api import generate_social_drafts
 
         checked = 0
         created = 0
@@ -1355,7 +1355,7 @@ def _emit_overdue_finding(
     than every sweep.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.social_drafts",

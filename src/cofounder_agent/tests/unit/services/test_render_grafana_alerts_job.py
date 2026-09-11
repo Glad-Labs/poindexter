@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.job import Job
+from poindexter.plugins.job import Job
 from poindexter.services.jobs.render_grafana_alerts import RenderGrafanaAlertsJob, _reload_grafana
 
 # ---------------------------------------------------------------------------

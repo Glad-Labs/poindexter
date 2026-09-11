@@ -22,6 +22,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.utils.route_utils import get_database_dependency
 from routes.alertmanager_webhook_routes import (
     _format_alert_message,
     _parse_iso,
@@ -29,7 +30,6 @@ from routes.alertmanager_webhook_routes import (
     router,
     verify_alertmanager_token,
 )
-from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool — records every SQL + args; fetchval returns scripted values.

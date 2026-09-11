@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_pool import dedup_key, insert_pooled_topics
 
 

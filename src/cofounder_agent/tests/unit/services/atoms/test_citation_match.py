@@ -13,7 +13,7 @@ corpus-matched names and leave the rest for the advisory flag.
 
 from __future__ import annotations
 
-from modules.content.atoms._citation_match import (
+from poindexter.modules.content.atoms._citation_match import (
     CorpusSource,
     _domain_match,
     find_attributions,

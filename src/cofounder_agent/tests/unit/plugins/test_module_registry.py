@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.module import Module, ModuleManifest
-from plugins.registry import get_modules
+from poindexter.plugins.module import Module, ModuleManifest
+from poindexter.plugins.registry import get_modules
 
 
 def _make_module(
@@ -66,7 +66,7 @@ def _make_module(
 def _clear_registry_cache():
     """Every test starts with a fresh _cached() result. The registry
     caches via functools.cache, so we clear before AND after."""
-    from plugins.registry import clear_registry_cache
+    from poindexter.plugins.registry import clear_registry_cache
     clear_registry_cache()
     yield
     clear_registry_cache()
@@ -77,7 +77,7 @@ def test_get_modules_empty_when_no_entry_points():
     """A fresh install with no module packages installed returns
     an empty list, not an error. Critical because this is the
     base case for the substrate-without-modules deployment."""
-    with patch("plugins.registry._merge_with_core_samples", return_value=()):
+    with patch("poindexter.plugins.registry._merge_with_core_samples", return_value=()):
         result = get_modules()
     assert result == []
 
@@ -88,7 +88,7 @@ def test_get_modules_returns_valid_module():
     through as-is. Also checks isinstance(mod, Module) since the
     Protocol is runtime_checkable."""
     mod = _make_module(name="content", version="0.1.0", visibility="public")
-    with patch("plugins.registry._merge_with_core_samples", return_value=(mod,)):
+    with patch("poindexter.plugins.registry._merge_with_core_samples", return_value=(mod,)):
         result = get_modules()
     assert len(result) == 1
     assert result[0] is mod
@@ -111,7 +111,7 @@ def test_get_modules_drops_module_with_invalid_name(caplog):
     bad_dash = _make_module(name="my-module")  # dash rejected
     bad_leading_digit = _make_module(name="1content")  # leading digit rejected
     with patch(
-        "plugins.registry._merge_with_core_samples",
+        "poindexter.plugins.registry._merge_with_core_samples",
         return_value=(bad_uppercase, bad_dash, bad_leading_digit),
     ):
         with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
@@ -140,7 +140,7 @@ def test_get_modules_drops_duplicate_names(caplog):
     Phase 1."""
     first = _make_module(name="content", version="1.0.0")
     second = _make_module(name="content", version="2.0.0")
-    with patch("plugins.registry._merge_with_core_samples", return_value=(first, second)):
+    with patch("poindexter.plugins.registry._merge_with_core_samples", return_value=(first, second)):
         with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     assert len(result) == 1
@@ -170,8 +170,8 @@ def test_merge_dedups_core_sample_and_entry_point_module_silently(caplog):
     """
     sample = _make_module(name="content", version="0.1.0")  # core-sample fallback
     ep = _make_module(name="content", version="9.9.9")       # entry-point (installed)
-    with patch("plugins.registry.get_core_samples", return_value={"modules": [sample]}), \
-         patch("plugins.registry._cached", return_value=(ep,)):
+    with patch("poindexter.plugins.registry.get_core_samples", return_value={"modules": [sample]}), \
+         patch("poindexter.plugins.registry._cached", return_value=(ep,)):
         with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     # Exactly one survivor, and it's the entry-point instance (precedence).
@@ -238,7 +238,7 @@ def test_get_modules_drops_module_whose_manifest_raises(caplog):
 
     exploding = _ExplodingModule()
     healthy = _make_module(name="content")
-    with patch("plugins.registry._merge_with_core_samples", return_value=(exploding, healthy)):
+    with patch("poindexter.plugins.registry._merge_with_core_samples", return_value=(exploding, healthy)):
         with caplog.at_level("WARNING", logger="poindexter.plugins.registry"):
             result = get_modules()
     # Healthy module survives

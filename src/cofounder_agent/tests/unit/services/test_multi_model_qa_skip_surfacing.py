@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     SKIP_TYPE_CONDITIONAL,
     SKIP_TYPE_MASTER_FLAG_OFF,
     SKIP_TYPE_MISCONFIG,

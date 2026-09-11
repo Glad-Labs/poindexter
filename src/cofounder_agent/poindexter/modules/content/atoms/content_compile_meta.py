@@ -19,7 +19,7 @@ import logging
 import secrets
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     excerpt_text = generate_excerpt(title=seo_title or topic, content=content_text)
 
     # QA feedback formatting.
-    from modules.content.multi_model_qa import format_qa_feedback_from_reviews
+    from poindexter.modules.content.multi_model_qa import format_qa_feedback_from_reviews
     qa_reviews = state.get("qa_reviews") or []
     qa_feedback_text = ""
     if qa_reviews:

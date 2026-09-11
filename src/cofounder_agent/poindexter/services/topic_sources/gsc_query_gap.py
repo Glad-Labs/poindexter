@@ -51,7 +51,7 @@ import logging
 from typing import Any
 from urllib.parse import quote_plus
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_sources._filters import (
     brand_tokens_from_config,
     classify_category,

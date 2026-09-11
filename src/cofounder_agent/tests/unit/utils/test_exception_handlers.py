@@ -21,7 +21,7 @@ from starlette.testclient import TestClient
 
 from poindexter.services.error_handler import AppError, NotFoundError
 from poindexter.services.error_handler import ValidationError as AppValidationError
-from utils.exception_handlers import (
+from poindexter.utils.exception_handlers import (
     _STATUS_TO_ERROR_CODE,
     app_error_handler,
     generic_exception_handler,
@@ -346,7 +346,7 @@ class TestGenericExceptionHandler:
         """Ensure no crash when sentry_sdk is not importable."""
         req = _make_request()
         exc = Exception("no sentry")
-        with patch("utils.exception_handlers.SENTRY_AVAILABLE", False):
+        with patch("poindexter.utils.exception_handlers.SENTRY_AVAILABLE", False):
             resp = await generic_exception_handler(req, exc)
         assert resp.status_code == 500
 
@@ -360,8 +360,8 @@ class TestGenericExceptionHandler:
         mock_sentry.push_scope.return_value.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("utils.exception_handlers.SENTRY_AVAILABLE", True),
-            patch("utils.exception_handlers.sentry_sdk", mock_sentry),
+            patch("poindexter.utils.exception_handlers.SENTRY_AVAILABLE", True),
+            patch("poindexter.utils.exception_handlers.sentry_sdk", mock_sentry),
         ):
             resp = await generic_exception_handler(req, exc)
 

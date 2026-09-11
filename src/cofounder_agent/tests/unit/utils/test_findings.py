@@ -14,9 +14,9 @@ pytestmark = pytest.mark.unit
 
 class TestEmitFindingShapeValidation:
     def test_details_are_schema_version_stamped(self):
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
-        with patch("utils.findings.audit_log_bg") as mock_write:
+        with patch("poindexter.utils.findings.audit_log_bg") as mock_write:
             emit_finding(source="test_job", kind="broken_link", title="t", body="b")
 
         _, kwargs = mock_write.call_args
@@ -24,9 +24,9 @@ class TestEmitFindingShapeValidation:
         assert kwargs["details"]["kind"] == "broken_link"
 
     def test_dedup_key_and_extra_survive_validation(self):
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
-        with patch("utils.findings.audit_log_bg") as mock_write:
+        with patch("poindexter.utils.findings.audit_log_bg") as mock_write:
             emit_finding(
                 source="test_job",
                 kind="broken_link",
@@ -41,9 +41,9 @@ class TestEmitFindingShapeValidation:
         assert kwargs["details"]["extra"] == {"urls": ["https://example.com"]}
 
     def test_event_type_and_severity_unaffected(self):
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
-        with patch("utils.findings.audit_log_bg") as mock_write:
+        with patch("poindexter.utils.findings.audit_log_bg") as mock_write:
             emit_finding(source="test_job", kind="k", title="t", body="b", severity="warn")
 
         _, kwargs = mock_write.call_args
@@ -55,18 +55,18 @@ class TestEmitFindingShapeValidation:
         """"warning" drifted in at several call sites (copy-pasted from
         Prometheus/Alertmanager conventions); emit_finding canonicalizes it to
         "warn" so the by-severity rollup doesn't fragment into two badges."""
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
-        with patch("utils.findings.audit_log_bg") as mock_write:
+        with patch("poindexter.utils.findings.audit_log_bg") as mock_write:
             emit_finding(source="test_job", kind="k", title="t", body="b", severity="warning")
 
         _, kwargs = mock_write.call_args
         assert kwargs["severity"] == "warn"
 
     def test_severity_normalized_case_insensitively(self):
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
-        with patch("utils.findings.audit_log_bg") as mock_write:
+        with patch("poindexter.utils.findings.audit_log_bg") as mock_write:
             emit_finding(source="test_job", kind="k", title="t", body="b", severity="WARNING")
 
         _, kwargs = mock_write.call_args

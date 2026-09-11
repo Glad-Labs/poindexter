@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.audio_gen_provider import AudioGenResult
-from plugins.registry import clear_registry_cache
+from poindexter.plugins.audio_gen_provider import AudioGenResult
+from poindexter.plugins.registry import clear_registry_cache
 from poindexter.services import audio_gen_service
 
 

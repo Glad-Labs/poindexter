@@ -135,7 +135,7 @@ def _captured_metadata(db: MagicMock) -> dict:
 
 
 async def _run_finalize_stage() -> dict:
-    from modules.content.stages.finalize_task import FinalizeTaskStage
+    from poindexter.modules.content.stages.finalize_task import FinalizeTaskStage
 
     db = _make_db()
     ctx = _fresh_state(db)
@@ -157,7 +157,7 @@ async def _run_finalize_stage() -> dict:
 
 
 async def _run_persist_atom() -> dict:
-    from modules.content.atoms.content_persist_task import run as persist_run
+    from poindexter.modules.content.atoms.content_persist_task import run as persist_run
 
     db = _make_db()
     state = _fresh_state(db)
@@ -201,7 +201,7 @@ async def test_finalize_and_persist_emit_identical_metadata_keys():
 def test_build_task_metadata_contract():
     """The shared helper assembles exactly the canonical key set and
     derives content_length / word_count from the passed content."""
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
 
     meta = build_task_metadata(
         {
@@ -238,7 +238,7 @@ def test_build_task_metadata_contract():
 def test_build_task_metadata_defaults_target_audience():
     """A missing/empty target_audience falls back to 'General' — the
     behaviour both call sites relied on inline."""
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
 
     meta = build_task_metadata(
         {},
@@ -257,7 +257,7 @@ def test_build_task_metadata_defaults_target_audience():
 def test_build_task_metadata_carries_qa_flagged():
     """Self-heal-before-paging: qa_flagged rides task_metadata so the operator
     surface (pipeline_tasks_view.task_metadata) can mark a flagged post."""
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
 
     meta = build_task_metadata(
         {"qa_flagged": True},
@@ -272,7 +272,7 @@ def test_build_task_metadata_carries_veto_reasons():
     """2026-08-20: a flag with no WHY left the operator staring at Q:100
     beside a hard FAIL. The vetoing rails ride alongside the flag, and an
     unflagged draft carries an empty list (never an absent key)."""
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
 
     kw = dict(
         preview_token="", content_text="x", seo_title="", seo_description="",
@@ -289,7 +289,7 @@ def test_build_task_metadata_carries_veto_reasons():
 def test_build_task_metadata_qa_flagged_defaults_false():
     """A draft with no qa_flagged in state (e.g. dev_diary, or an approved
     canonical_blog post) defaults to False."""
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
 
     meta = build_task_metadata(
         {}, preview_token="", content_text="x", seo_title="", seo_description="",

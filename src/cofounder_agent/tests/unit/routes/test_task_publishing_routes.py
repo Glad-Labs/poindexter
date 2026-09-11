@@ -19,8 +19,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.utils.route_utils import get_database_dependency
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-from utils.route_utils import get_database_dependency
 
 
 def _import_publishing_module():
@@ -182,7 +182,7 @@ class TestDraftEditingRoutes:
     service logic itself is covered by tests/unit/modules/content."""
 
     def _client_with_fake_service(self, monkeypatch, calls):
-        from modules.content.post_edit_service import EditResult
+        from poindexter.modules.content.post_edit_service import EditResult
 
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=_make_task())
@@ -1340,7 +1340,7 @@ class TestGenerateTaskImage:
             async def get_secret(self, key, default=""):
                 return "fake-pexels-key" if key == "pexels_api_key" else default
 
-        from utils.route_utils import get_site_config_dependency
+        from poindexter.utils.route_utils import get_site_config_dependency
 
         app.dependency_overrides[get_site_config_dependency] = lambda: _SecretAwareCfg()
 
@@ -1590,7 +1590,7 @@ class TestApproveTaskScheduled:
         from zoneinfo import ZoneInfo
 
         from poindexter.services.site_config import SiteConfig
-        from utils.route_utils import get_site_config_dependency
+        from poindexter.utils.route_utils import get_site_config_dependency
 
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")
@@ -1622,7 +1622,7 @@ class TestApproveTaskScheduled:
     def test_explicit_offset_overrides_the_operator_timezone(self):
         """An absolute instant is honoured as sent — the console's path."""
         from poindexter.services.site_config import SiteConfig
-        from utils.route_utils import get_site_config_dependency
+        from poindexter.utils.route_utils import get_site_config_dependency
 
         mock_db = make_mock_db()
         task = _make_task(status="awaiting_approval")

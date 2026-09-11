@@ -168,7 +168,7 @@ async def _connect(dsn: str) -> Any:
 
 async def _set_secret(conn: Any, key: str, value: str, description: str = "") -> None:
     """Write an ENCRYPTED app_settings row (pgcrypto, ``enc:v1:`` sentinel)."""
-    from plugins.secrets import set_secret
+    from poindexter.plugins.secrets import set_secret
 
     await set_secret(conn, key, value, description=description, category="backup")
 
@@ -637,7 +637,7 @@ def backup_status() -> None:
 
 def _resolved_secret_env(dsn: str) -> dict[str, str]:
     """Decrypt the 3 secrets for an ad-hoc ``docker run restic`` (run/verify/snapshots)."""
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
 
     async def _go() -> dict[str, str]:
         conn = await _connect(dsn)

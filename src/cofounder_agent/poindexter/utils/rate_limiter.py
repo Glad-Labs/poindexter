@@ -9,7 +9,7 @@ so that slowapi's exception handler can find it at request time.
 
 Usage in routes:
     from fastapi import Request
-    from utils.rate_limiter import limiter
+    from poindexter.utils.rate_limiter import limiter
 
     @router.post("/my-endpoint")
     @limiter.limit("10/minute")

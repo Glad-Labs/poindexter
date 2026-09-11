@@ -49,7 +49,7 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 
 logger = logging.getLogger(__name__)
 

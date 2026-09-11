@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.atom_registry import _make_stage_runner
 
 pytestmark = pytest.mark.unit
@@ -42,7 +42,7 @@ def _stage_node_patches() -> tuple:
     stubbed so the node runs with pool=None."""
     enabled_cfg = SimpleNamespace(enabled=True, config={}, get=lambda k, d=None: d)
     return (
-        patch("plugins.config.PluginConfig.load", AsyncMock(return_value=enabled_cfg)),
+        patch("poindexter.plugins.config.PluginConfig.load", AsyncMock(return_value=enabled_cfg)),
         patch("poindexter.services.template_runner._mark_stage_column", AsyncMock()),
         patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
     )

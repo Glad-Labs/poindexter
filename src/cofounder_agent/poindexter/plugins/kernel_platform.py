@@ -26,7 +26,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
-from plugins.platform import (
+from poindexter.plugins.platform import (
     AuditCapability,
     ConfigCapability,
     DbCapability,

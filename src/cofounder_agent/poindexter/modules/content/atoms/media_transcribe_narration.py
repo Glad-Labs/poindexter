@@ -43,10 +43,10 @@ import re
 import tempfile
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from poindexter.services.caption_providers import get_caption_provider
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -413,7 +413,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     Best-effort — never raises. Returns ``{"long_caption_srt_path": <path-or-"">,
     "short_caption_srt_path": <path-or-"">}``.
     """
-    from modules.content.atoms._narration_render import compose_narration_text
+    from poindexter.modules.content.atoms._narration_render import compose_narration_text
 
     task_id = state.get("task_id")
     site_config = state.get("site_config")

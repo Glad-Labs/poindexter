@@ -572,7 +572,7 @@ class TestExtractFailedDedupKey:
         with (
             patch.object(researcher, "_ddg_search", new_callable=AsyncMock, return_value=results),
             patch.object(researcher, "_extract_content", new=_fail),
-            patch("utils.findings.emit_finding") as emit,
+            patch("poindexter.utils.findings.emit_finding") as emit,
         ):
             await researcher.search("q", num_results=2)
 

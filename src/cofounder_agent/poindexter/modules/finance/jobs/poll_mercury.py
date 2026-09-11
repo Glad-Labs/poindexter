@@ -31,8 +31,8 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -152,12 +152,12 @@ class PollMercuryJob:
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         # Avoid circular import — plugins.secrets imports asyncpg lazily
-        from modules.finance.mercury_client import (
+        from poindexter.modules.finance.mercury_client import (
             MercuryAPIError,
             MercuryAuthError,
             MercuryClient,
         )
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
 
         lookback_days = int(config.get("lookback_days", 14))
         transactions_per_account = int(config.get("transactions_per_account", 250))

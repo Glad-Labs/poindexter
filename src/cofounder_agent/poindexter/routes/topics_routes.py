@@ -21,9 +21,9 @@ from poindexter.services.site_config import SiteConfig
 from poindexter.services.topic_batch_service import OpenBatch, TopicBatchService
 from poindexter.services.topic_length import pick_target_length
 from poindexter.services.url_scraper import URLScrapeError, URLScraper
+from poindexter.utils.rate_limiter import _settings_limit, limiter
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from schemas.topics_schemas import TopicProposalListResponse
-from utils.rate_limiter import _settings_limit, limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 

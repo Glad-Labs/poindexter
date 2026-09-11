@@ -70,7 +70,7 @@ import logging
 import re
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 from .webhook_delivery_service import emit_webhook_event
 
@@ -419,7 +419,9 @@ async def _maybe_auto_publish(
                 # ``pipeline_tasks.category`` was dropped in Phase F; the gate
                 # accepts None and falls back to niche_slug-only history lookup.
                 category = None
-                from modules.content.api import evaluate_auto_publish_gate as _gate_evaluate
+                from poindexter.modules.content.api import (
+                    evaluate_auto_publish_gate as _gate_evaluate,
+                )
                 decision = await _gate_evaluate(
                     pool,
                     task_id=task_id,
@@ -468,7 +470,7 @@ async def _maybe_auto_publish(
             task_id, quality_score, gate.get("gate_state"), gate.get("reason"),
         )
 
-    from modules.content.api import auto_publish_task, get_auto_publish_threshold
+    from poindexter.modules.content.api import auto_publish_task, get_auto_publish_threshold
 
     if not gate_bypass:
         try:
@@ -544,7 +546,7 @@ async def _maybe_run_preview_qa(
         # The container lookup matches the inline block's pattern;
         # MultiModelQA needs a settings_service kwarg so we resolve
         # one if the caller didn't pass it in.
-        from modules.content.api import MultiModelQA
+        from poindexter.modules.content.api import MultiModelQA
         from poindexter.services.container import get_service
 
         _settings_svc = settings_service or get_service("settings")
@@ -604,7 +606,7 @@ async def _maybe_run_preview_qa(
         # `raise RuntimeError("preview QA: no DB pool available")` above, so the
         # finding is what keeps that guard from being silently neutralised.
         # content_tasks is not audit_log, so a finding is the right signal.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.post_pipeline_actions",

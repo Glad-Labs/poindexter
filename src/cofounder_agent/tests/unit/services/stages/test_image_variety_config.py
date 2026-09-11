@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms._image_helpers import (
+from poindexter.modules.content.atoms._image_helpers import (
     INLINE_STYLES,
     _build_inline_prompt_instruction,
     _load_inline_styles,
 )
-from modules.content.stages.source_featured_image import (
+from poindexter.modules.content.stages.source_featured_image import (
     _load_recent_published_styles,
     _resolve_image_prompt,
 )

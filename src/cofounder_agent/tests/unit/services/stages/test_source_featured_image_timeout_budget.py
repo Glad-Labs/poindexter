@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.content.stages.source_featured_image import (
+from poindexter.modules.content.stages.source_featured_image import (
     DEFAULT_STAGE_OVERHEAD_SECONDS,
     resolve_stage_timeout_seconds,
 )

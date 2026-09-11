@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.tts_provider import TTSProvider
+from poindexter.plugins.tts_provider import TTSProvider
 
 
 @pytest.mark.unit

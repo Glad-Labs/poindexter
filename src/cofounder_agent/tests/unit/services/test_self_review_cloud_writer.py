@@ -94,7 +94,7 @@ async def test_cloud_self_review_model_routes_through_dispatch_not_local_ollama(
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
@@ -135,7 +135,7 @@ async def test_local_self_review_model_with_pool_also_routes_through_dispatch():
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
@@ -163,7 +163,7 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch(
-             "plugins.registry.get_all_llm_providers", return_value=[local],
+             "poindexter.plugins.registry.get_all_llm_providers", return_value=[local],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"

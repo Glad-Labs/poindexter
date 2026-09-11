@@ -379,7 +379,7 @@ async def _provision_consumer_client(
     from mcp.shared.auth import OAuthClientInformationFull
     from pydantic import AnyUrl
 
-    from plugins.secrets import set_secret
+    from poindexter.plugins.secrets import set_secret
     from poindexter.services.auth.oauth_issuer import generate_client_id, generate_client_secret
     from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 
@@ -784,7 +784,7 @@ def mint_grafana_token(ttl_str: str, scopes: str, name: str, persist: bool) -> N
     GRAFANA_JWT_KEY = "grafana_webhook_oauth_jwt"
 
     async def _impl():
-        from plugins.secrets import get_secret, set_secret
+        from poindexter.plugins.secrets import get_secret, set_secret
         from poindexter.services.auth.oauth_issuer import (
             InvalidScope,
             issue_token,

@@ -22,7 +22,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.ai_content_generator import AIContentGenerator, ContentValidationResult
+from poindexter.modules.content.ai_content_generator import (
+    AIContentGenerator,
+    ContentValidationResult,
+)
 from tests.unit._fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
@@ -323,7 +326,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is True
@@ -340,7 +343,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is False
@@ -354,7 +357,7 @@ class TestCheckOllamaAsync:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.get = AsyncMock(side_effect=ConnectionRefusedError("Connection refused"))
 
-        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         assert gen.ollama_available is False
@@ -370,7 +373,7 @@ class TestCheckOllamaAsync:
         mock_client = AsyncMock()
         mock_client.get = AsyncMock()
 
-        with patch("modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
+        with patch("poindexter.modules.content.ai_content_generator.httpx.AsyncClient", return_value=mock_client):
             await gen._check_ollama_async()
 
         # Should not have made any HTTP request
@@ -540,7 +543,7 @@ def _make_sc():
 def _reset_generator_singleton():
     """Reset the module-global ``_generator`` around each test so factory
     state never leaks between cases (the factory caches the first instance)."""
-    import modules.content.ai_content_generator as mod
+    import poindexter.modules.content.ai_content_generator as mod
     mod._generator = None
     try:
         yield mod
@@ -550,12 +553,12 @@ def _reset_generator_singleton():
 
 class TestGetContentGenerator:
     def test_returns_ai_content_generator(self, _reset_generator_singleton):
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         gen = get_content_generator(site_config=_make_sc())
         assert isinstance(gen, AIContentGenerator)
 
     def test_returns_same_instance(self, _reset_generator_singleton):
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         g1 = get_content_generator(site_config=_make_sc())
         g2 = get_content_generator(site_config=_make_sc())
         assert g1 is g2
@@ -568,7 +571,7 @@ class TestGetContentGenerator:
 
     def test_platform_threaded_into_construction(self, _reset_generator_singleton):
         """Factory with ``platform=p`` yields an instance whose ``_platform is p``."""
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         platform = FakePlatform()
         gen = get_content_generator(site_config=_make_sc(), platform=platform)
         assert gen._platform is platform
@@ -578,7 +581,7 @@ class TestGetContentGenerator:
     ):
         """First call with no platform → ``_platform is None``; a later call
         supplying a real platform upgrades the cached singleton in place."""
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         g1 = get_content_generator(site_config=_make_sc())
         assert g1._platform is None  # regression precondition
 
@@ -592,7 +595,7 @@ class TestGetContentGenerator:
     ):
         """A platform already bound on the singleton is NOT clobbered by a
         later call passing a different one (back-fill only fills a None)."""
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         first = FakePlatform()
         g1 = get_content_generator(site_config=_make_sc(), platform=first)
         second = FakePlatform()
@@ -604,7 +607,7 @@ class TestGetContentGenerator:
         self, _reset_generator_singleton
     ):
         """A platform-less call must not reset an already-bound handle to None."""
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         platform = FakePlatform()
         g1 = get_content_generator(site_config=_make_sc(), platform=platform)
         g2 = get_content_generator(site_config=_make_sc())  # no platform
@@ -619,7 +622,7 @@ class TestGetContentGenerator:
         the ``if self._platform is None: raise RuntimeError(...)`` guard in
         ``_try_ollama`` and actually dispatches, rather than aborting with
         "platform handle required for dispatch"."""
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
 
         body = "Topic phrase. " + ("Lorem ipsum dolor sit amet. " * 20)
         platform = FakePlatform(dispatch_response=_make_completion(body))
@@ -845,7 +848,7 @@ class TestLoadGenerationPrompts:
             "refinement prompt body",
         ])
 
-        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("poindexter.modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             system, generation, refine_fn = gen._load_generation_prompts(
                 topic="FastAPI",
                 style="technical",
@@ -869,7 +872,7 @@ class TestLoadGenerationPrompts:
             "refined output",
         ])
 
-        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("poindexter.modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             _, _, refine_fn = gen._load_generation_prompts(
                 topic="x", style="technical", tone="professional",
                 target_length=500, tags=[],
@@ -882,7 +885,7 @@ class TestLoadGenerationPrompts:
     def test_prompt_manager_failure_raises(self):
         gen = _make_generator()
 
-        with patch("modules.content.ai_content_generator.get_prompt_manager",
+        with patch("poindexter.modules.content.ai_content_generator.get_prompt_manager",
                    side_effect=RuntimeError("pm broken")):
             with pytest.raises(RuntimeError, match="pm broken"):
                 gen._load_generation_prompts(
@@ -897,7 +900,7 @@ class TestLoadGenerationPrompts:
         fake_pm = MagicMock()
         fake_pm.get_prompt = MagicMock(side_effect=["sys", "gen"])
 
-        with patch("modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
+        with patch("poindexter.modules.content.ai_content_generator.get_prompt_manager", return_value=fake_pm):
             gen._load_generation_prompts(
                 topic="x", style="technical", tone="professional",
                 target_length=500, tags=[],
@@ -932,7 +935,7 @@ class TestLoadGenerationPrompts:
         real_pm = UnifiedPromptManager()
 
         with patch(
-            "modules.content.ai_content_generator.get_prompt_manager",
+            "poindexter.modules.content.ai_content_generator.get_prompt_manager",
             return_value=real_pm,
         ):
             system, generation, refine_fn = gen._load_generation_prompts(
@@ -968,7 +971,7 @@ class TestLoadGenerationPrompts:
         real_pm = UnifiedPromptManager()
 
         with patch(
-            "modules.content.ai_content_generator.get_prompt_manager",
+            "poindexter.modules.content.ai_content_generator.get_prompt_manager",
             return_value=real_pm,
         ):
             # Call without target_audience / domain — used to KeyError.
@@ -1523,7 +1526,7 @@ class TestWriterModelPrecedence:
 
     @pytest.mark.asyncio
     async def test_resolve_rag_writer_model_uses_pipeline_writer(self):
-        from modules.content.ai_content_generator import _resolve_rag_writer_model
+        from poindexter.modules.content.ai_content_generator import _resolve_rag_writer_model
 
         sc = MagicMock()
         sc.get.side_effect = lambda k, _d=None: {
@@ -1535,7 +1538,7 @@ class TestWriterModelPrecedence:
 
     @pytest.mark.asyncio
     async def test_resolve_rag_writer_model_raises_when_pin_empty(self):
-        from modules.content.ai_content_generator import _resolve_rag_writer_model
+        from poindexter.modules.content.ai_content_generator import _resolve_rag_writer_model
 
         sc = MagicMock()
         sc.get.side_effect = lambda k, _d=None: {

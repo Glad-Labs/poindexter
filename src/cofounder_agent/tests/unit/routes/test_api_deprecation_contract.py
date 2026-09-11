@@ -118,7 +118,7 @@ class TestDeprecationHeaders:
     HTTP client can detect on a sunsetting endpoint."""
 
     def test_minimal_emits_rfc8594_deprecation_true_and_warning(self) -> None:
-        from utils.deprecation import deprecation_headers
+        from poindexter.utils.deprecation import deprecation_headers
 
         headers = deprecation_headers(message="use PUT /x instead")
         # RFC 8594: bare deprecation (no firm date) is the literal "true".
@@ -134,7 +134,7 @@ class TestDeprecationHeaders:
     def test_sunset_formatted_as_imf_fixdate(self) -> None:
         from datetime import datetime, timezone
 
-        from utils.deprecation import deprecation_headers
+        from poindexter.utils.deprecation import deprecation_headers
 
         sunset = datetime(2026, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
         headers = deprecation_headers(message="x", sunset=sunset)
@@ -147,7 +147,7 @@ class TestDeprecationHeaders:
     def test_sunset_is_converted_to_utc(self) -> None:
         from datetime import datetime, timedelta, timezone
 
-        from utils.deprecation import deprecation_headers
+        from poindexter.utils.deprecation import deprecation_headers
 
         # 2026-01-01 04:00 +05:00 is 2025-12-31 23:00 UTC — the header must
         # carry the UTC instant, not the local wall-clock time.
@@ -156,7 +156,7 @@ class TestDeprecationHeaders:
         assert "31 Dec 2025 23:00:00 GMT" in headers["Sunset"]
 
     def test_link_uses_rel_deprecation(self) -> None:
-        from utils.deprecation import deprecation_headers
+        from poindexter.utils.deprecation import deprecation_headers
 
         headers = deprecation_headers(
             message="x", link="https://example.test/migrate"

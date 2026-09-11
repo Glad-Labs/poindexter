@@ -31,7 +31,7 @@ import httpx
 
 from poindexter.services.distribution_ref import tag_for
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -184,7 +184,7 @@ class DevToCrossPostService:
         if self._api_key_loaded:
             return self._api_key
 
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
         async with self.pool.acquire() as conn:
             self._api_key = await get_secret(conn, "devto_api_key")
         self._api_key_loaded = True
@@ -348,7 +348,7 @@ class DevToCrossPostService:
                 auto_publish, e, exc_info=True,
             )
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="devto_service.cross_post",
                     kind="devto_publish_setting_read_failed",

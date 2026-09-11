@@ -52,7 +52,7 @@ def _state_with_pool(conn: FakeConn, **extra):
 @pytest.mark.unit
 class TestApprovalGateAtom:
     async def test_disabled_gate_passes_through(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         with patch(
             "poindexter.services.approval_service.is_gate_enabled", return_value=False,
@@ -61,19 +61,19 @@ class TestApprovalGateAtom:
         assert out == {}
 
     async def test_missing_gate_name_passes_through(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         out = await approval_gate.run(_state(gate_name=""))
         assert out == {}
 
     async def test_missing_task_id_passes_through(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         out = await approval_gate.run(_state(task_id=""))
         assert out == {}
 
     async def test_approved_history_passes_through(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result={"event_kind": "approved"})
         state = _state_with_pool(conn)
@@ -85,7 +85,7 @@ class TestApprovalGateAtom:
         assert out == {}
 
     async def test_rejected_history_halts(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result={"event_kind": "rejected"})
         state = _state_with_pool(conn)
@@ -98,7 +98,7 @@ class TestApprovalGateAtom:
 
     async def test_pending_calls_interrupt(self):
         """No prior decision → pause_at_gate + notify + interrupt()."""
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result=None)  # no gate_history row
         state = _state_with_pool(conn, title="Hello", topic="t")
@@ -137,7 +137,7 @@ class TestApprovalGateAtom:
         returns the resume value. The atom must treat that as approval and
         pass through (return {}), not re-pause.
         """
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result=None)
         state = _state_with_pool(conn, title="Hello")
@@ -161,7 +161,7 @@ class TestApprovalGateAtom:
         assert out == {}
 
     async def test_no_pool_halts_loud(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         # database_service present but pool is None.
         state = _state(database_service=SimpleNamespace(pool=None))
@@ -196,7 +196,7 @@ class TestApprovalGateRetryCountFreshness:
         survives, but the sweep bumped retry_count to 1. The gate must treat
         the stale approval as no-decision and pause again for a fresh review.
         """
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result={
             "event_kind": "approved",
@@ -227,7 +227,7 @@ class TestApprovalGateRetryCountFreshness:
 
     async def test_matching_approval_passes_through(self):
         """approved_at_retry_count == current retry_count → resume case → pass."""
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result={
             "event_kind": "approved",
@@ -245,7 +245,7 @@ class TestApprovalGateRetryCountFreshness:
         """Backcompat: an 'approved' row written before the retry_count tag
         (no approved_at_retry_count) is still honored — we don't strand
         in-flight approvals that predate this change."""
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result={
             "event_kind": "approved",
@@ -292,7 +292,7 @@ class TestApprovalGatePendingRegen:
     _TARGETS = {"images": "plan_image_markers", "text": "generate_draft"}
 
     async def test_pending_image_regen_routes_goto_and_consumes(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result=_regen_fetchrow(images=True))
         state = _state_with_pool(
@@ -323,7 +323,7 @@ class TestApprovalGatePendingRegen:
         assert "regen_images_pending = false" in executed_sql(conn).lower()
 
     async def test_pending_text_regen_routes_goto_and_consumes(self):
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result=_regen_fetchrow(text=True))
         state = _state_with_pool(
@@ -346,7 +346,7 @@ class TestApprovalGatePendingRegen:
     async def test_image_regen_outranks_stale_approval(self):
         """A pending regen takes priority over an 'approved' row (regen is the
         newer intent; the approval predates the operator asking for a redo)."""
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         def _fetchrow(sql, args):
             if "pipeline_gate_history" in sql:
@@ -366,7 +366,7 @@ class TestApprovalGatePendingRegen:
     async def test_pending_regen_without_target_halts_loud(self):
         """Misconfig: pending regen but no regen_targets mapping → fail loud
         (no silent passthrough that would publish unreviewed content)."""
-        from modules.content.atoms import approval_gate
+        from poindexter.modules.content.atoms import approval_gate
 
         conn = FakeConn(fetchrow_result=_regen_fetchrow(images=True))
         state = _state_with_pool(conn, gate_name="preview_gate")  # no regen_targets
@@ -441,7 +441,7 @@ class TestGraphInterruptPropagation:
         )
         with (
             patch(
-                "plugins.config.PluginConfig.load",
+                "poindexter.plugins.config.PluginConfig.load",
                 AsyncMock(return_value=enabled_cfg),
             ),
             patch(

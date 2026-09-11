@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.writer_core import GenerateContentStage
+from poindexter.modules.content.writer_core import GenerateContentStage
 
 
 def _db(fetchval):
@@ -69,7 +69,7 @@ async def test_read_error_fails_open_to_none():
 @pytest.mark.asyncio
 async def test_two_pass_draft_node_threads_topic_kind_into_the_draft_call(monkeypatch):
     """state["topic_kind"] → generate_with_context(topic_kind=…)."""
-    from modules.content.atoms import two_pass_writer as tp
+    from poindexter.modules.content.atoms import two_pass_writer as tp
     from poindexter.services.site_config import SiteConfig
 
     seen = {}
@@ -79,7 +79,7 @@ async def test_two_pass_draft_node_threads_topic_kind_into_the_draft_call(monkey
         return "A clean first draft with no markers."
 
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False,
+        "poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False,
     )
     thread = "two_pass-test-topic-kind"
     tp._SITE_CONFIG_REGISTRY[thread] = SiteConfig(initial_config={})
@@ -99,6 +99,6 @@ async def test_two_pass_draft_node_threads_topic_kind_into_the_draft_call(monkey
 async def test_two_pass_run_seeds_topic_kind_into_state():
     """run(topic_kind=…) lands on the declared state channel — an undeclared
     channel is how the auto-publish gate starved for six weeks."""
-    from modules.content.atoms import two_pass_writer as tp
+    from poindexter.modules.content.atoms import two_pass_writer as tp
 
     assert "topic_kind" in tp._State.__annotations__

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_aggregate
+from poindexter.modules.content.atoms import qa_aggregate
 from tests.unit._fake_platform import FakePlatform
 
 
@@ -456,12 +456,12 @@ class TestQaAggregateVacuousPassGuard:
             return {"deepeval_g_eval": (True, True), "ragas_eval": (True, False)}
 
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            "poindexter.modules.content.atoms.qa_aggregate.resolve_gate_states",
             _fake_gate_states,
         )
         # Also stub MultiModelQA construction (it requires Ollama + DB).
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
             lambda self, **kw: None,
         )
 
@@ -486,11 +486,11 @@ class TestQaAggregateVacuousPassGuard:
             return {"deepeval_g_eval": (True, True)}
 
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            "poindexter.modules.content.atoms.qa_aggregate.resolve_gate_states",
             _fake_gate_states,
         )
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
             lambda self, **kw: None,
         )
 
@@ -511,17 +511,17 @@ class TestQaAggregateVacuousPassGuard:
         """2026-07-02 latent-path fix: a live pool that can't read qa_gates
         must fail the node loudly (retryable infra halt) — not silently skip
         the vacuous-pass guard and approve unverified content."""
-        from modules.content.atoms._qa_rail_common import GateStatesUnavailable
+        from poindexter.modules.content.atoms._qa_rail_common import GateStatesUnavailable
 
         async def _unavailable(_qa):
             raise GateStatesUnavailable("qa_gates read blip")
 
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            "poindexter.modules.content.atoms.qa_aggregate.resolve_gate_states",
             _unavailable,
         )
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
             lambda self, **kw: None,
         )
         state = {
@@ -574,7 +574,7 @@ class TestQaAggregateRescueDispatch:
             called["persist"] = True
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
         )
         out = await qa_aggregate.run(self._critic_reject_state())
         assert out["_goto"] == "qa_rewrite"
@@ -960,7 +960,7 @@ class TestQaAggregateFlagAndContinue:
             called["persist"] = True
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
         )
         db = _DB2()
         await qa_aggregate.run(
@@ -1045,7 +1045,7 @@ class TestQaAggregateDurableApproval:
             calls.append(kw)
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
         )
         out = await qa_aggregate.run(self._approve_state())
         assert out["qa_final_verdict"] == "approve"
@@ -1060,7 +1060,7 @@ class TestQaAggregateDurableApproval:
             raise RuntimeError("version write down")
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _boom,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _boom,
         )
         out = await qa_aggregate.run(self._approve_state())
         assert out["qa_final_verdict"] == "approve"
@@ -1073,7 +1073,7 @@ class TestQaAggregateDurableApproval:
             calls.append(kw)
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
         )
         out = await qa_aggregate.run(self._approve_state(
             qa_rail_reviews=[
@@ -1091,7 +1091,7 @@ class TestQaAggregateDurableApproval:
             calls.append(kw)
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
         )
 
         class _FakePipelineDB:
@@ -1117,7 +1117,7 @@ class TestQaAggregateDurableApproval:
             return "kept_qa_approved"
 
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.persist_qa_reject", _kept,
+            "poindexter.modules.content.atoms._qa_persist.persist_qa_reject", _kept,
         )
         out = await qa_aggregate.run(self._approve_state(
             platform=FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
@@ -1243,7 +1243,7 @@ class TestVetoingRailDragsTheScore:
     rail emits no review at all), so it must count."""
 
     def test_non_advisory_veto_at_zero_counts_in_gating_mean(self):
-        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
         reviews = [
             {"reviewer": "programmatic_validator", "provider": "programmatic",
              "approved": False, "score": 0.0, "advisory": False},
@@ -1257,7 +1257,7 @@ class TestVetoingRailDragsTheScore:
         assert out["qa_final_score"] < 100.0
 
     def test_advisory_zero_still_excluded(self):
-        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
         reviews = [
             {"reviewer": "deepeval_brand_fabrication", "provider": "deepeval",
              "approved": False, "score": 0.0, "advisory": True},
@@ -1271,7 +1271,7 @@ class TestVetoingRailDragsTheScore:
     def test_passing_zero_is_still_treated_as_unscored(self):
         # approved=True with score 0 is the legacy "ran but produced no
         # number" shape — unchanged: it neither vetoes nor drags.
-        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
         reviews = [
             {"reviewer": "url_verifier", "provider": "http_head",
              "approved": True, "score": 0.0, "advisory": False},
@@ -1311,11 +1311,11 @@ class TestQaAggregateRailReinvoke:
             return {"topic_delivery": (True, True), "ragas_eval": (True, False)}
 
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            "poindexter.modules.content.atoms.qa_aggregate.resolve_gate_states",
             _fake_gate_states,
         )
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
             lambda self, **kw: None,
         )
 
@@ -1330,7 +1330,7 @@ class TestQaAggregateRailReinvoke:
             return late
 
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            "poindexter.modules.content.atoms.qa_aggregate.rerun_missing_rails",
             _fake_rerun,
         )
         out = await qa_aggregate.run(self._state())
@@ -1349,11 +1349,11 @@ class TestQaAggregateRailReinvoke:
 
         findings: list = []
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            "poindexter.modules.content.atoms.qa_aggregate.rerun_missing_rails",
             _fake_rerun,
         )
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.emit_finding",
+            "poindexter.modules.content.atoms.qa_aggregate.emit_finding",
             lambda **kw: findings.append(kw),
         )
         out = await qa_aggregate.run(self._state())
@@ -1378,11 +1378,11 @@ class TestQaAggregateRailReinvoke:
 
         findings: list = []
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.rerun_missing_rails",
+            "poindexter.modules.content.atoms.qa_aggregate.rerun_missing_rails",
             _fake_rerun,
         )
         monkeypatch.setattr(
-            "modules.content.atoms.qa_aggregate.emit_finding",
+            "poindexter.modules.content.atoms.qa_aggregate.emit_finding",
             lambda **kw: findings.append(kw),
         )
         out = await qa_aggregate.run(self._state())

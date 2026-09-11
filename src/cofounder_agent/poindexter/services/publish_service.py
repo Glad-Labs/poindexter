@@ -26,8 +26,8 @@ from typing import Any
 from poindexter.services.logger_config import get_logger
 from poindexter.services.media_policy import resolve_media_to_generate
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
-from utils.text_utils import extract_title_from_content, strip_title_label
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.text_utils import extract_title_from_content, strip_title_label
 
 # #272 Phase-2g: the module-level ``site_config`` global + ``set_site_config``
 # setter (and the ``_resolve_site_config`` fallback shim) are DELETED.
@@ -405,7 +405,7 @@ async def _sync_published_post(post_id: str) -> None:
                 # spamming. The publish_status table is the canonical
                 # source of truth; this finding is the operator alert
                 # surface.
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="publish_service.sync_to_cloud",
                     kind="cloud_sync_returned_false",
@@ -423,7 +423,7 @@ async def _sync_published_post(post_id: str) -> None:
     except Exception as e:
         logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             emit_finding(
                 source="publish_service.sync_to_cloud",
                 kind="cloud_sync_exception",
@@ -505,7 +505,7 @@ async def _ping_search_engines(
 async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteConfig | None" = None) -> None:
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
-        from plugins.registry import get_all_llm_providers
+        from poindexter.plugins.registry import get_all_llm_providers
         from poindexter.services.embedding_service import EmbeddingService
 
         embeddings_db = getattr(db_service, "embeddings", None)
@@ -536,7 +536,7 @@ async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteC
         # invisible to operators. Emit a finding so persistent
         # failures show up in the findings UI.
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             post_id_for_log = (
                 post_dict.get("id") or post_dict.get("post_id") or "?"
             )
@@ -595,7 +595,7 @@ def _surface_schedule_rail_open(*, reason: str, detail: str) -> None:
     raises.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="publish_service._calculate_scheduled_publish_time",
@@ -1346,7 +1346,7 @@ async def _record_edit_distance_metrics(
     training signal starving is invisible in the product itself.
     """
     try:
-        from modules.content.api import record_post_approve_metrics
+        from poindexter.modules.content.api import record_post_approve_metrics
         # Pre-approve snapshot lives in task_metadata under "pre_approve_content"
         # (written by finalize_task). Falls back to "content" — same key
         # publish_service reads as the post-approve content. Falling back to
@@ -1385,7 +1385,7 @@ async def _record_edit_distance_metrics(
         # trailing-clean-runs training data. Surface repeat failures in
         # the findings UI. emit_finding is fire-and-forget by contract
         # (never raises), so no nested guard is needed.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="publish_service.record_edit_distance_metrics",
             kind="edit_metrics_record_failed",
@@ -1451,7 +1451,7 @@ async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> No
             task_id, e, exc_info=True,
         )
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="publish_service._emit_publish_webhook",
@@ -1635,7 +1635,7 @@ async def publish_post_from_task(
         )
     # #272 Phase-2g: site_config is REQUIRED — thread/read via _sc below.
     _sc = site_config
-    from utils.json_encoder import convert_decimals, safe_json_dumps
+    from poindexter.utils.json_encoder import convert_decimals, safe_json_dumps
 
     # ---------------------------------------------------------------
     # 1. Parse task data (result + task_metadata merged) — phase 1

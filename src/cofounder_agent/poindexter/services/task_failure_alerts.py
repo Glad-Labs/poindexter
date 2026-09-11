@@ -33,7 +33,7 @@ from collections import OrderedDict
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -153,7 +153,7 @@ async def _persistent_check_and_record(
             "[task_failure_alerts] persistent dedup check failed (non-fatal): %s",
             e,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="task_failure_alerts",

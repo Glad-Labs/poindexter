@@ -77,7 +77,7 @@ class InternalRagSource:
         source_kinds defaults to all implemented kinds (everything except
         git_commit, which is not yet plumbed).
         """
-        from plugins.topic_source import DiscoveredTopic
+        from poindexter.plugins.topic_source import DiscoveredTopic
 
         niche_id = config.get("niche_id")
         if not niche_id:

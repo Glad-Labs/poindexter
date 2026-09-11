@@ -35,7 +35,7 @@ from typing import Any
 from uuid import UUID
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -127,7 +127,7 @@ async def load_enabled_publishers(
         logger.debug(
             "publishing_adapters lookup failed (%s) — distribution disabled", exc,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="publishing_adapters_db",

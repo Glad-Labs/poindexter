@@ -8,8 +8,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.utils.route_utils import get_site_config_dependency
 from routes.logs_routes import router
-from utils.route_utils import get_site_config_dependency
 
 SAMPLE = {
     "lines": [

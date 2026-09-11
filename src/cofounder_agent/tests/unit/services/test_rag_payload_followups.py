@@ -104,7 +104,7 @@ class TestWriterSnippetPayload:
     async def test_writer_query_selects_the_full_chunk(self, monkeypatch):
         """``two_pass_writer`` grounds drafts from its own pgvector query.
         It never goes through rag_engine, so #3452's fix did not reach it."""
-        from modules.content.atoms import two_pass_writer as tpw
+        from poindexter.modules.content.atoms import two_pass_writer as tpw
 
         async def fake_embed(text, *, site_config=None):
             return [1.0] + [0.0] * 767

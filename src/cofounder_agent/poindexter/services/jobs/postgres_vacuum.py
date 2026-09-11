@@ -48,7 +48,7 @@ import re
 import time
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 
 logger = logging.getLogger(__name__)
 

@@ -20,7 +20,7 @@ from pydantic import BaseModel, field_validator
 # Import configuration
 from config import get_config
 from middleware.api_token_auth import verify_api_token
-from modules.content.api import UnifiedQualityService
+from poindexter.modules.content.api import UnifiedQualityService
 from poindexter.services.container import service_container
 
 # Import services
@@ -34,15 +34,15 @@ except ImportError:
         return
 
 from poindexter.services.telemetry import setup_telemetry
-from utils.connection_health import ConnectionPoolHealth
+from poindexter.utils.connection_health import ConnectionPoolHealth
 
 # Local application imports (must come after path setup)
-from utils.exception_handlers import register_exception_handlers
-from utils.middleware_config import MiddlewareConfig
-from utils.openapi_auth import register_authed_openapi
-from utils.route_registration import register_all_routes
-from utils.route_utils import initialize_services
-from utils.startup_manager import StartupManager
+from poindexter.utils.exception_handlers import register_exception_handlers
+from poindexter.utils.middleware_config import MiddlewareConfig
+from poindexter.utils.openapi_auth import register_authed_openapi
+from poindexter.utils.route_registration import register_all_routes
+from poindexter.utils.route_utils import initialize_services
+from poindexter.utils.startup_manager import StartupManager
 
 # Load configuration
 config = get_config()
@@ -252,7 +252,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # regression pages loudly instead of silently degrading.
         # Runs AFTER site_config so the audit can read feature flags.
         try:
-            from utils.import_audit import audit_worker_imports
+            from poindexter.utils.import_audit import audit_worker_imports
             _audit_failures = audit_worker_imports(_site_cfg)
             if _audit_failures:
                 logger.error(
@@ -535,8 +535,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.plugin_scheduler = None
         if _deployment_mode == "worker" and db_service and getattr(db_service, "pool", None):
             try:
-                from plugins.registry import get_core_samples, get_jobs
-                from plugins.scheduler import PluginScheduler
+                from poindexter.plugins.registry import get_core_samples, get_jobs
+                from poindexter.plugins.scheduler import PluginScheduler
 
                 scheduler = PluginScheduler(db_service.pool, site_config=_site_cfg)
                 # entry_point-discovered jobs (third-party installs) + core
@@ -584,8 +584,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # body is just ``del arg``), so a `None` is the canonical
         # "subsystem not present" sentinel.
         try:
-            from plugins.probe_registry import BrainProbeRegistry
-            from plugins.registry import get_modules as _get_modules
+            from poindexter.plugins.probe_registry import BrainProbeRegistry
+            from poindexter.plugins.registry import get_modules as _get_modules
 
             _modules_for_lifecycle = _get_modules()
             # Shared registry — every module's ``register_probes`` writes
@@ -674,9 +674,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # silently degrade (no-silent-defaults). The re-raise propagates to the
         # lifespan's outer handler (logged as a critical startup failure).
         try:
-            from plugins.kernel_platform import build_kernel_platform
-            from plugins.platform import bind_platform_to_modules
-            from plugins.registry import get_modules as _get_modules_for_platform
+            from poindexter.plugins.kernel_platform import build_kernel_platform
+            from poindexter.plugins.platform import bind_platform_to_modules
+            from poindexter.plugins.registry import get_modules as _get_modules_for_platform
             from poindexter.services.audit_log import get_audit_logger
             from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
@@ -1077,7 +1077,7 @@ if not _is_production:
 # Presence-based: the console/ dir is a Pro-tier overlay stripped from the public
 # OSS mirror (scripts/sync-to-github.sh), so the mount is skipped — not crashed —
 # when the directory is absent. See utils/operator_console.py.
-from utils.operator_console import mount_operator_console  # noqa: E402
+from poindexter.utils.operator_console import mount_operator_console  # noqa: E402
 
 mount_operator_console(app)
 
@@ -1239,7 +1239,7 @@ async def api_health():
         # parse the old shape keep working — it points at the same
         # snapshot data that lives under ``components.llm_resilience.ollama``.
         try:
-            from plugins.llm_resilience import ResilienceRegistry
+            from poindexter.plugins.llm_resilience import ResilienceRegistry
             from poindexter.services.ollama_resilience import get_default_manager
 
             site_cfg = getattr(getattr(app.state, "container", None), "site_config", None)

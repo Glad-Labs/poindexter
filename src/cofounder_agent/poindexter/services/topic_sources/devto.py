@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_sources._filters import classify_category, rewrite_as_blog_topic
 
 logger = logging.getLogger(__name__)

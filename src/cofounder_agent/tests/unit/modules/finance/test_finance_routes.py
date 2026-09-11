@@ -27,14 +27,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from modules.finance.mercury_client import (
+from poindexter.modules.finance.mercury_client import (
     MercuryAccount,
     MercuryAPIError,
     MercuryAuthError,
     MercuryTransaction,
 )
-from modules.finance.routes import router as finance_router
-from utils.route_utils import get_database_dependency
+from poindexter.modules.finance.routes import router as finance_router
+from poindexter.utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -234,7 +234,7 @@ class TestFinanceHealthcheck:
         db = _make_db(enabled="true", token="tok-abc")
         mock_cls = _mock_mercury_client(accounts=_SAMPLE_ACCOUNTS)
 
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/healthcheck",
@@ -253,7 +253,7 @@ class TestFinanceHealthcheck:
         mock_cls = _mock_mercury_client(
             list_accounts_exc=MercuryAuthError("token revoked"),
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/healthcheck",
@@ -268,7 +268,7 @@ class TestFinanceHealthcheck:
         mock_cls = _mock_mercury_client(
             list_accounts_exc=MercuryAPIError("Mercury 503"),
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/healthcheck",
@@ -289,7 +289,7 @@ class TestFinanceBalances:
     def test_happy_path_returns_aggregated_balances(self):
         db = _make_db(enabled="true", token="tok-abc")
         mock_cls = _mock_mercury_client(accounts=_SAMPLE_ACCOUNTS)
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/balances",
@@ -331,7 +331,7 @@ class TestFinanceBalances:
         mock_cls = _mock_mercury_client(
             list_accounts_exc=MercuryAuthError("revoked"),
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/balances",
@@ -344,7 +344,7 @@ class TestFinanceBalances:
         mock_cls = _mock_mercury_client(
             list_accounts_exc=MercuryAPIError("Mercury 5xx"),
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/balances",
@@ -366,7 +366,7 @@ class TestFinanceTransactions:
             accounts=_SAMPLE_ACCOUNTS,
             transactions=_SAMPLE_TXNS,
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/transactions",
@@ -388,7 +388,7 @@ class TestFinanceTransactions:
             accounts=_SAMPLE_ACCOUNTS,
             transactions=_SAMPLE_TXNS,
         )
-        with patch("modules.finance.routes.MercuryClient", mock_cls):
+        with patch("poindexter.modules.finance.routes.MercuryClient", mock_cls):
             with TestClient(_build_app(db)) as client:
                 resp = client.get(
                     "/api/finance/transactions?account_id=acc-1",
@@ -439,7 +439,7 @@ class TestFinanceModuleRegisterRoutes:
         Starlette 0.45+ wraps included routers in _IncludedRouter objects
         that lack a top-level .path attribute, so walking app.routes
         directly is version-sensitive."""
-        from modules.finance.finance_module import FinanceModule
+        from poindexter.modules.finance.finance_module import FinanceModule
 
         app = FastAPI()
         FinanceModule().register_routes(app)
@@ -452,7 +452,7 @@ class TestFinanceModuleRegisterRoutes:
     def test_register_routes_raises_on_non_fastapi_arg(self):
         """Per feedback_no_silent_defaults — a wrong host object must
         fail loud, not silently no-op."""
-        from modules.finance.finance_module import FinanceModule
+        from poindexter.modules.finance.finance_module import FinanceModule
 
         with pytest.raises(RuntimeError, match="include_router"):
             FinanceModule().register_routes(object())

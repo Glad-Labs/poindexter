@@ -63,9 +63,9 @@ from middleware.api_token_auth import verify_api_token
 from poindexter.services.firefighter_service import build_triage_context, run_triage
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
-from utils.rate_limiter import _settings_limit, limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.rate_limiter import _settings_limit, limiter
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -316,7 +316,7 @@ async def _cost_guard_check(site_config: SiteConfig) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[triage] cost_guard module unavailable: %s — skipping check", exc)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="triage_routes",

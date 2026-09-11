@@ -16,9 +16,9 @@ from __future__ import annotations
 import pytest
 
 # Import will fail until the atom file is created (RED).
-from modules.content.atoms import qa_content_originality
-from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.atoms import qa_content_originality
+from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 
 _ADVISORY_STATES = {"content_originality": (True, False)}
 _HARD_GATE_STATES = {"content_originality": (True, True)}
@@ -91,7 +91,7 @@ class TestQaOpeningOriginalityAtom:
         async def mock_eval(*, content, site_config, pool):
             return (True, 0.80, "nearest published post 'foo' at cosine 0.20")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         out = await qa_content_originality.run(_state())
         assert "qa_rail_reviews" in out
@@ -109,7 +109,7 @@ class TestQaOpeningOriginalityAtom:
                 "'choosing-a-quantization-format' (cosine 0.95)",
             )
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         out = await qa_content_originality.run(_state())
         rev = out["qa_rail_reviews"][0]
@@ -120,7 +120,7 @@ class TestQaOpeningOriginalityAtom:
         async def mock_eval(*, content, site_config, pool):
             raise RuntimeError("pgvector died")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         result = await qa_content_originality.run(_state())
         assert result == {}
@@ -131,7 +131,7 @@ class TestQaOpeningOriginalityAtom:
         async def mock_eval(*, content, site_config, pool):
             return (False, 0.05, "opening near-duplicate of 'x' (cosine 0.95)")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         out = await qa_content_originality.run(_state())
@@ -145,7 +145,7 @@ class TestQaOpeningOriginalityAtom:
         async def mock_eval(*, content, site_config, pool):
             return (False, 0.02, "opening near-duplicate of 'x' (cosine 0.98)")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_content_originality.run(_state())
@@ -357,7 +357,7 @@ class TestSeriesExclusion:
         async def mock_eval(*, content, site_config, pool):
             return (False, 0.05, "content near-duplicate of 'x' (cosine 0.95)")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_content_originality.run(
@@ -380,7 +380,7 @@ class TestSeriesExclusion:
         async def mock_eval(*, content, site_config, pool):
             return (False, 0.02, "content near-duplicate of 'x' (cosine 0.98)")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_content_originality._evaluate", mock_eval,
+            "poindexter.modules.content.atoms.qa_content_originality._evaluate", mock_eval,
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_content_originality.run(

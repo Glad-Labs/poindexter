@@ -21,8 +21,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from modules.finance import probes as _probes_mod
-from modules.finance.probes import (
+from poindexter.modules.finance import probes as _probes_mod
+from poindexter.modules.finance.probes import (
     ENABLED_KEY,
     POLL_INTERVAL_SECONDS_KEY,
     STALE_MULTIPLIER_KEY,
@@ -519,7 +519,7 @@ async def test_default_egress_ip_fetch_emits_finding_on_httpx_failure(monkeypatc
     """The same network failure also fires a ``finance_egress_ip_lookup_failed``
     finding rather than swallowing the error silently (gap-site burn-down
     batch 6b, glad-labs-stack#2407)."""
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     calls: list[dict] = []
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))

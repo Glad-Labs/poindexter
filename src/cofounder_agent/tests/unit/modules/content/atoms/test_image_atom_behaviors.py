@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import (
+from poindexter.modules.content.atoms import (
     content_generate_images,
     content_inject_images,
     content_plan_image_markers,
@@ -146,10 +146,10 @@ class TestPlanImageMarkersAgentFailure:
             "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=AsyncMock(return_value=[]),
         ), patch(
-            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            "poindexter.modules.content.atoms._image_helpers.plan_and_inject_placeholders",
             new=fake_plan,
         ), patch(
-            "utils.findings.emit_finding",
+            "poindexter.utils.findings.emit_finding",
             new=lambda **kw: findings.append(kw),
         ):
             result = await content_plan_image_markers.run({
@@ -188,7 +188,7 @@ class TestPlanImageMarkersAgentFailure:
             "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             new=fake_unload,
         ), patch(
-            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            "poindexter.modules.content.atoms._image_helpers.plan_and_inject_placeholders",
             new=fake_plan,
         ):
             result = await content_plan_image_markers.run({
@@ -226,10 +226,10 @@ class TestGenerateImagesProducerHook:
         record_mock = AsyncMock(return_value=None)
 
         with patch(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             new=AsyncMock(return_value=["https://r2.example/gen-1.png"]),
         ), patch(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             new=record_mock,
         ):
             result = await content_generate_images.run(self._state())
@@ -249,13 +249,13 @@ class TestGenerateImagesProducerHook:
         record_mock = AsyncMock(return_value=None)
 
         with patch(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             new=AsyncMock(return_value=[None]),
         ), patch(
-            "modules.content.atoms._image_helpers.try_pexels",
+            "poindexter.modules.content.atoms._image_helpers.try_pexels",
             new=AsyncMock(return_value=("https://pexels.example/cat.jpg", "Jane")),
         ), patch(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             new=record_mock,
         ):
             result = await content_generate_images.run(self._state())
@@ -277,10 +277,10 @@ class TestGenerateImagesProducerHook:
             return [None] * len(placeholders)  # force Pexels fallback so the rest of the atom runs
 
         with patch(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             new=AsyncMock(side_effect=fake_batch),
         ), patch(
-            "modules.content.atoms._image_helpers.try_pexels",
+            "poindexter.modules.content.atoms._image_helpers.try_pexels",
             new=AsyncMock(return_value=None),
         ):
             await content_generate_images.run(self._state(task_id="task-xyz-789"))
@@ -327,10 +327,10 @@ class TestGenerateImagesAltTextLeakGuard:
         topic = "Stable Diffusion XL on a Single RTX 5090"
 
         with patch(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             new=AsyncMock(return_value=["https://r2.example/inline-1.png"]),
         ), patch(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             new=AsyncMock(return_value=None),
         ):
             result = await content_generate_images.run(self._state(poisoned_desc, topic))
@@ -354,10 +354,10 @@ class TestGenerateImagesAltTextLeakGuard:
         clean_desc = "A close-up macro photo of a circuit board with red LEDs"
 
         with patch(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             new=AsyncMock(return_value=["https://r2.example/inline-1.png"]),
         ), patch(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             new=AsyncMock(return_value=None),
         ):
             result = await content_generate_images.run(self._state(clean_desc, "Electronics"))
@@ -378,7 +378,7 @@ class TestGenerateImagesAltTextLeakGuard:
 class TestRecordInlineImageAssetContract:
     @pytest.mark.asyncio
     async def test_records_inline_image_row_with_provider_and_type(self):
-        from modules.content.atoms._image_helpers import record_inline_image_asset
+        from poindexter.modules.content.atoms._image_helpers import record_inline_image_asset
 
         recorder = AsyncMock(return_value="asset-uuid")
         with patch("poindexter.services.media_asset_recorder.record_media_asset", recorder):
@@ -401,7 +401,7 @@ class TestRecordInlineImageAssetContract:
     @pytest.mark.asyncio
     async def test_no_post_id_skips_recording(self):
         """Early-pipeline runs before the post row exists skip the insert."""
-        from modules.content.atoms._image_helpers import record_inline_image_asset
+        from poindexter.modules.content.atoms._image_helpers import record_inline_image_asset
 
         recorder = AsyncMock()
         with patch("poindexter.services.media_asset_recorder.record_media_asset", recorder):

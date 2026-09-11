@@ -79,7 +79,7 @@ GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 from poindexter.services.llm_providers.ollama_unload import unload_loaded_ollama_models
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -587,7 +587,7 @@ def _emit_cfg_fetch_finding(
         kind, key, type(exc).__name__, exc, default,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="gpu_scheduler.cfg_fetch",
             kind="site_config_read_failed",
@@ -1148,7 +1148,7 @@ class GPUScheduler:
         stall→crash→requeue loop was previously silent).
         """
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="gpu_scheduler",
@@ -1450,7 +1450,7 @@ class GPUScheduler:
                     # gpu_task_sessions table with no other signal, so surface
                     # it as a non-paging finding rather than a debug log the
                     # prod level never ships.
-                    from utils.findings import emit_finding
+                    from poindexter.utils.findings import emit_finding
                     try:
                         emit_finding(
                             source="gpu_scheduler",
@@ -1650,7 +1650,7 @@ class GPUScheduler:
         reason) so a busy render window produces one row, not one per rail.
         """
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             eta_txt = (
                 f"holder ETA ~{eta_seconds:.0f}s vs budget {max_wait_s:.0f}s"
@@ -1769,7 +1769,7 @@ class GPUScheduler:
         top so this is upper-bound noise control.
         """
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             emit_finding(
                 source="gpu_scheduler",
                 kind="nvidia_exporter_unreachable",
@@ -2025,7 +2025,7 @@ class GPUScheduler:
             try:
                 await call()
             except Exception as exc:  # noqa: BLE001 — best-effort by contract
-                from utils.exception_format import describe_exception
+                from poindexter.utils.exception_format import describe_exception
 
                 logger.warning(
                     "[GPU] VRAM reclaim lever %r failed (continuing with "
@@ -2431,7 +2431,7 @@ class GPUScheduler:
             # self-heal could NOT engage. Warn-level (Discord) — the queued
             # path below is info because the restart itself is the remedy.
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="services.gpu_scheduler",
                     kind="comfyui_vram_squat",
@@ -2469,7 +2469,7 @@ class GPUScheduler:
             service, freed, min_freed, container, row.get("id"),
         )
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="services.gpu_scheduler",

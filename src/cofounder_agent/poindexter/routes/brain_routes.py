@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.brain_stats import get_brain_stats
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 router = APIRouter(
     prefix="/api/brain",

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.posts_service import PostsService
+from poindexter.modules.content.posts_service import PostsService
 
 # ---------------------------------------------------------------------------
 # Helpers

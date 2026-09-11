@@ -37,7 +37,7 @@ class _StatusTrackingDb:
 
 @pytest.mark.asyncio
 async def test_flips_in_progress_to_completed_with_percentage():
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="in_progress")
     state = {
@@ -61,7 +61,7 @@ async def test_flips_in_progress_to_completed_with_percentage():
 async def test_target_status_is_config_driven_not_hardcoded():
     """Proves the status is a parameter: a graph can finalize to any valid
     status, not just 'completed'."""
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="in_progress")
     state = {"task_id": "job-2", "target_status": "published", "database_service": db}
@@ -75,7 +75,7 @@ async def test_target_status_is_config_driven_not_hardcoded():
 async def test_already_terminal_is_a_benign_noop():
     """Guard returns None (current status not in allowed_from) → no raise,
     status unchanged. Makes a re-run idempotent."""
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="completed")
     state = {"task_id": "job-3", "target_status": "completed", "database_service": db}
@@ -88,7 +88,7 @@ async def test_already_terminal_is_a_benign_noop():
 
 @pytest.mark.asyncio
 async def test_custom_allowed_from_from_config():
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="awaiting_gate")
     state = {
@@ -105,7 +105,7 @@ async def test_custom_allowed_from_from_config():
 
 @pytest.mark.asyncio
 async def test_missing_target_status_fails_loud():
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="in_progress")
     with pytest.raises(RuntimeError, match="target_status"):
@@ -114,7 +114,7 @@ async def test_missing_target_status_fails_loud():
 
 @pytest.mark.asyncio
 async def test_invalid_target_status_fails_loud():
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     db = _StatusTrackingDb(status="in_progress")
     with pytest.raises(RuntimeError, match="not a valid"):
@@ -127,7 +127,7 @@ async def test_invalid_target_status_fails_loud():
 async def test_missing_guarded_method_is_nonfatal():
     """A degenerate db without the guarded method must not fail a completed
     graph — mirrors content.evaluate_auto_publish's terminal-node posture."""
-    from modules.content.atoms.set_task_status import run
+    from poindexter.modules.content.atoms.set_task_status import run
 
     out = await run(
         {"task_id": "job-7", "target_status": "completed", "database_service": object()}
@@ -150,8 +150,8 @@ def test_valid_statuses_match_db_constraint():
     import re
     from pathlib import Path
 
-    from modules.content.atoms.set_task_status import _VALID_STATUSES
     from poindexter import services
+    from poindexter.modules.content.atoms.set_task_status import _VALID_STATUSES
 
     schema = (
         Path(services.__file__).parent / "migrations" / "0000_baseline.schema.sql"

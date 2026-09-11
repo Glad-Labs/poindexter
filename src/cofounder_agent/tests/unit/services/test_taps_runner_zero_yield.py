@@ -61,7 +61,7 @@ class TestIsZeroYield:
 class TestEmitZeroYieldFinding:
     def test_emits_warn_severity_with_stable_dedup_key(self):
         """Discord-routine, not a Telegram page, and collapsible across runs."""
-        with mock.patch("utils.findings.emit_finding") as emit:
+        with mock.patch("poindexter.utils.findings.emit_finding") as emit:
             _emit_zero_yield_finding(TapStats(name="memory", duration_s=0.004))
 
         emit.assert_called_once()
@@ -75,7 +75,7 @@ class TestEmitZeroYieldFinding:
     def test_finding_failure_never_breaks_ingest(self):
         """Observability is best-effort — a broken sink must not stop taps."""
         with mock.patch(
-            "utils.findings.emit_finding", side_effect=RuntimeError("audit down")
+            "poindexter.utils.findings.emit_finding", side_effect=RuntimeError("audit down")
         ):
             _emit_zero_yield_finding(TapStats(name="memory"))  # must not raise
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="media.render_short_video",
@@ -51,7 +51,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render the short-form (9:16) video from ``short_shot_list``."""
-    from modules.content.atoms._media_render import render_from_state
+    from poindexter.modules.content.atoms._media_render import render_from_state
 
     return await render_from_state(
         state,

@@ -42,7 +42,7 @@ async def test_detection_fail_uses_fallback_and_emits_finding():
         detected=None,
     )
     with patch("poindexter.services.container_registry.get_container", return_value=container), \
-         patch("utils.findings.emit_finding") as mock_emit:
+         patch("poindexter.utils.findings.emit_finding") as mock_emit:
         total, _reserve, _kv = await dispatcher._budget_inputs({})
     assert total == 24.0
     mock_emit.assert_called_once()

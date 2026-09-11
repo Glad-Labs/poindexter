@@ -1,8 +1,8 @@
 """Tests for services/atoms/seo_extract_keywords.py."""
 from unittest.mock import AsyncMock, MagicMock
 
-from modules.content.atoms import _seo_common as sc
-from modules.content.atoms import seo_extract_keywords as atom
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.modules.content.atoms import seo_extract_keywords as atom
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests. An explicit mark wrongly tagged the

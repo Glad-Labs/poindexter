@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.quality_evaluation import QualityEvaluationStage
-from plugins.stage import Stage
+from poindexter.modules.content.stages.quality_evaluation import QualityEvaluationStage
+from poindexter.plugins.stage import Stage
 
 
 def _fake_quality_result(score: float = 82.5, passing: bool = True, truncated: bool = False):
@@ -56,7 +56,7 @@ class TestExecute:
             "database_service": MagicMock(),
         }
         with patch(
-            "modules.content.quality_service.UnifiedQualityService",
+            "poindexter.modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             result = await QualityEvaluationStage().execute(ctx, {})
@@ -81,7 +81,7 @@ class TestExecute:
             "topic": "AI", "content": "body", "database_service": MagicMock(),
         }
         with patch(
-            "modules.content.quality_service.UnifiedQualityService",
+            "poindexter.modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             with pytest.raises(ValueError, match="no result produced"):
@@ -94,7 +94,7 @@ class TestExecute:
             "database_service": MagicMock(), "tags": [],
         }
         with patch(
-            "modules.content.quality_service.UnifiedQualityService",
+            "poindexter.modules.content.quality_service.UnifiedQualityService",
             return_value=fake_svc,
         ):
             await QualityEvaluationStage().execute(ctx, {})

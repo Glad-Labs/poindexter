@@ -282,7 +282,7 @@ async def _run_veto(task_prefix: str, as_json: bool) -> None:
     try:
         # Service-layer delegate per the transport-adapter contract — the
         # CLI holds no veto logic (prefix resolution included) of its own.
-        from modules.content.api import veto_auto_publish
+        from poindexter.modules.content.api import veto_auto_publish
 
         payload = await veto_auto_publish(pool, task_prefix)
     finally:

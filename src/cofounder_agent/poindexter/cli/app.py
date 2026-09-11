@@ -177,7 +177,7 @@ for _flat_alias in (*APPROVAL_FLAT_ALIASES, *PUBLISH_FLAT_ALIASES, *SCHEDULE_FLA
 # mounts its own subcommands via register_cli, so a private module's CLI
 # travels with its package — there is no module-specific line to strip from
 # this shared bootstrap on the public mirror.
-from plugins.registry import get_modules  # noqa: E402 — after the static groups
+from poindexter.plugins.registry import get_modules  # noqa: E402 — after the static groups
 
 for _module in get_modules():
     _module.register_cli(main)

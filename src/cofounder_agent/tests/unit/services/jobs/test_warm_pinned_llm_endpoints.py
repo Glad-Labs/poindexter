@@ -75,7 +75,7 @@ def _patches(client_ctx, overrides: dict[str, str]):
             lambda v: dict(v or {}),
         ),
         patch("poindexter.services.ollama_client.resolve_num_ctx", lambda *_a, **_k: 8192),
-        patch("utils.findings.emit_finding", lambda **_k: None),
+        patch("poindexter.utils.findings.emit_finding", lambda **_k: None),
     ]
 
 
@@ -176,7 +176,7 @@ def test_job_is_registered_and_instantiable():
     module path or class name fails here instead of being swallowed by the
     registry's per-entry try/except and silently never scheduling.
     """
-    from plugins.registry import get_core_samples
+    from poindexter.plugins.registry import get_core_samples
 
     jobs = get_core_samples().get("jobs", [])
     names = {getattr(j, "name", None) for j in jobs}

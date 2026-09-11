@@ -19,8 +19,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from modules.content.content_validator import ValidationResult
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.content_validator import ValidationResult
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 from poindexter.services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 from poindexter.services.site_config import SiteConfig
 
@@ -219,7 +219,7 @@ def _qa_with_chain(rows: list[dict[str, Any]]) -> MultiModelQA:
     the qa_gates fetch — used by the consumer-side tests."""
     conn = _StubConn(sorted(rows, key=lambda r: r["execution_order"]))
     pool = _StubPool(conn)
-    with patch("modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
+    with patch("poindexter.modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         # site_config is a required kwarg (#272 Phase-2): the module-global
         # singleton was deleted, so tests pass an explicit SiteConfig().
         qa = MultiModelQA(pool=pool, settings_service=None, site_config=SiteConfig())
@@ -297,7 +297,7 @@ class TestLegacyFallback:
         """``pool=None`` (the unit-test default for MultiModelQA) must
         load an empty chain → all gates default-enabled."""
         with patch(
-            "modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
+            "poindexter.modules.content.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
         ):
             qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         chain = await load_qa_gate_chain(qa.pool)

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.post_edit_service import EditResult, PostEditService
+from poindexter.modules.content.post_edit_service import EditResult, PostEditService
 from poindexter.services.image_service import ImageGenOutcome
 
 

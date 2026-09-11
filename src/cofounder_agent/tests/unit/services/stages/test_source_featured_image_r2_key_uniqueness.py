@@ -30,7 +30,7 @@ async def test_upload_featured_to_r2_uses_unique_key_per_call() -> None:
     reclaim, manual retry) silently overwrites a prior run's featured image
     at a URL that's cached immutable for a year.
     """
-    from modules.content.stages.source_featured_image import (
+    from poindexter.modules.content.stages.source_featured_image import (
         _upload_featured_to_r2,
     )
 

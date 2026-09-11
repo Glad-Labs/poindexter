@@ -119,7 +119,7 @@ async def get_http_client(request: Request) -> httpx.AsyncClient:
 # loops over the list at startup and at shutdown.
 WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "poindexter.services.citation_verifier",
-    "modules.content.content_validator",
+    "poindexter.modules.content.content_validator",
     # services.image_decision_agent removed: migrated to dispatch_complete
     # (poindexter#706) — the module no longer holds a lifespan http_client.
     "poindexter.services.image_service",
@@ -129,7 +129,7 @@ WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     "poindexter.services.image_providers.ai_generation",
     "poindexter.services.integrations.operator_notify",
     "poindexter.services.metrics_exporter",
-    "modules.content.multi_model_qa",
+    "poindexter.modules.content.multi_model_qa",
 )
 
 
@@ -174,7 +174,7 @@ def wire_http_client_modules(client: httpx.AsyncClient | None) -> int:
         # One process-lifetime finding covering every module that failed to
         # wire, rather than one per module — this runs once at lifespan
         # startup/shutdown, not per-request.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="http_client",

@@ -39,9 +39,9 @@ import zipfile
 from datetime import datetime
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ class IngestBenchmarkResultsJob:
         if pool is None:
             return ""
         try:
-            from plugins.secrets import get_secret
+            from poindexter.plugins.secrets import get_secret
 
             async with pool.acquire() as conn:
                 value = await get_secret(conn, "gh_token")

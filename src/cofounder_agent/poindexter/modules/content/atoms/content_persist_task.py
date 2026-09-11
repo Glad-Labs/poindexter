@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.exception_format import describe_exception
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # normalized content/seo, scores) are computed above and passed in;
     # passthrough fields are read from `state` by the helper. Keeps the
     # two finalize paths' key sets identical (Glad-Labs/poindexter#693).
-    from modules.content.task_metadata import build_task_metadata
+    from poindexter.modules.content.task_metadata import build_task_metadata
     task_metadata = build_task_metadata(
         state,
         preview_token=preview_token,
@@ -220,7 +220,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # previous snapshot, so any later diff silently compares against the
         # wrong baseline. Non-paging info finding — the task is already
         # persisted by this point and must not be failed for a lost snapshot.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         logger.warning(
             "[content.persist_task] final revision snapshot failed for %s "

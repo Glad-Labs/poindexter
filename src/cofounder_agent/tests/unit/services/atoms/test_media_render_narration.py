@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import media_render_narration
+from poindexter.modules.content.atoms import media_render_narration
 
 
 @pytest.mark.asyncio
@@ -20,7 +20,7 @@ async def test_renders_long_and_short_with_own_cta(monkeypatch):
         return f"/tmp/{key}.mp3"
 
     monkeypatch.setattr(
-        "modules.content.atoms._narration_render.render_narration", _fake_render
+        "poindexter.modules.content.atoms._narration_render.render_narration", _fake_render
     )
     out = await media_render_narration.run({
         "task_id": "t1",
@@ -44,7 +44,7 @@ async def test_long_falls_back_to_podcast_script(monkeypatch):
         return "/tmp/x.mp3"
 
     monkeypatch.setattr(
-        "modules.content.atoms._narration_render.render_narration", _fake_render
+        "poindexter.modules.content.atoms._narration_render.render_narration", _fake_render
     )
     await media_render_narration.run({
         "task_id": "t1", "video_long_script": "",
@@ -61,7 +61,7 @@ async def test_empty_scripts_yield_empty_paths(monkeypatch):
         return "" if not script.strip() else "/tmp/x.mp3"
 
     monkeypatch.setattr(
-        "modules.content.atoms._narration_render.render_narration", _fake_render
+        "poindexter.modules.content.atoms._narration_render.render_narration", _fake_render
     )
     out = await media_render_narration.run({"task_id": "t1", "site_config": object()})
     assert out["long_narration_audio_path"] == ""

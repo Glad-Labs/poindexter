@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_deepeval
-from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+from poindexter.modules.content.atoms import qa_deepeval
+from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:

@@ -53,7 +53,7 @@ class TestSocialPosterResolveModel:
 class TestAIContentGeneratorResolveRAGModel:
     @pytest.mark.asyncio
     async def test_returns_pipeline_writer_model_stripped(self):
-        from modules.content.ai_content_generator import _resolve_rag_writer_model
+        from poindexter.modules.content.ai_content_generator import _resolve_rag_writer_model
 
         sc = MagicMock()
         sc.get = MagicMock(return_value="ollama/glm-4.7-5090:latest")
@@ -63,7 +63,7 @@ class TestAIContentGeneratorResolveRAGModel:
 
     @pytest.mark.asyncio
     async def test_raises_when_pin_unset(self):
-        from modules.content.ai_content_generator import _resolve_rag_writer_model
+        from poindexter.modules.content.ai_content_generator import _resolve_rag_writer_model
 
         notify = AsyncMock()
         sc = MagicMock()

@@ -15,15 +15,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.config import PluginConfig
-from plugins.registry import get_topic_sources
+from poindexter.plugins.config import PluginConfig
+from poindexter.plugins.registry import get_topic_sources
 from poindexter.services.integrations.registry import register_handler
 from poindexter.services.niche_service import NicheService
 from poindexter.services.topic_dedup_semantic import get_deduplicator
 from poindexter.services.topic_pool import insert_pooled_topics
 from poindexter.services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
 from poindexter.services.topic_self_reference import is_self_referential, resolve_owned_hosts
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

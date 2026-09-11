@@ -13,36 +13,24 @@ the bug surfaced as inflated "X new today" numbers.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-
 # brain/ is a standalone package outside the poindexter distro.
 # brain_daemon.py uses bare ``from health_probes import ...`` for
 # runtime-container compatibility, so we add brain/ directly to sys.path
 # BEFORE importing. Tests without this prelude fail to collect with
 # ``ModuleNotFoundError: No module named 'health_probes'``.
 #
-# Walk up to find the repo root rather than hardcoding a parents[N]
-# index — the docker worker mounts `src/cofounder_agent` as `/app` so
-# only 5 parent levels exist and `brain/` is not present at all in
-# that tree. The test skips cleanly there; runs on the host.
-_BRAIN_DIR = None
-for _parent in Path(__file__).resolve().parents:
-    _candidate = _parent / "brain"
-    if (_candidate / "brain_daemon.py").is_file():
-        _BRAIN_DIR = _candidate
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        break
+# brain is the ``poindexter.brain`` package (poindexter#1046 step 2), shipped
+# wherever the backend is -- host and container alike -- so locate it through the
+# import system rather than by walking parents. (The old walk for a repo-root
+# ``brain/`` reached the MAIN checkout from this worktree's ancestor directory and
+# tested the other tree until that checkout moved on; then it silently skipped.)
+import importlib
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
-pytestmark = pytest.mark.skipif(
-    _BRAIN_DIR is None,
-    reason="brain/ directory not present — docker worker only mounts "
-    "src/cofounder_agent as /app; this test runs on the host.",
-)
+import pytest
+
+_BRAIN_DIR = Path(importlib.import_module("poindexter.brain").__file__).parent
 
 if _BRAIN_DIR is not None:
     from brain import brain_daemon as bd  # noqa: E402

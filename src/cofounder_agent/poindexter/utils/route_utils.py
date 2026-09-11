@@ -121,7 +121,7 @@ def get_services() -> ServiceContainer:
         ServiceContainer: The global service container
 
     Example:
-        from utils.route_utils import get_services
+        from poindexter.utils.route_utils import get_services
 
         async def list_tasks():
             services = get_services()
@@ -174,7 +174,7 @@ def get_site_config_dependency(request: Request) -> Any:
     Usage::
 
         from fastapi import Depends
-        from utils.route_utils import get_site_config_dependency
+        from poindexter.utils.route_utils import get_site_config_dependency
 
         @router.get("/foo")
         async def handler(cfg = Depends(get_site_config_dependency)):
@@ -211,7 +211,7 @@ def get_container_dependency(request: Request) -> Any:
     handlers will reach those services via this dependency::
 
         from fastapi import Depends
-        from utils.route_utils import get_container_dependency
+        from poindexter.utils.route_utils import get_container_dependency
 
         @router.get("/topics/sweep")
         async def sweep(container = Depends(get_container_dependency)):
@@ -281,7 +281,7 @@ def register_legacy_db_service(service: Any) -> None:
     Wrapper for legacy set_db_service() calls.
 
     This allows old route files to continue working with:
-        from utils.route_utils import register_legacy_db_service
+        from poindexter.utils.route_utils import register_legacy_db_service
         register_legacy_db_service(db_service)
 
     Instead of the old pattern of defining set_db_service() in each route file.
@@ -319,7 +319,7 @@ def initialize_services(
         ServiceContainer: The initialized global service container
 
     Example:
-        from utils.route_utils import initialize_services
+        from poindexter.utils.route_utils import initialize_services
 
         # In lifespan or startup event
         services = await startup_manager.initialize_all_services()
@@ -384,7 +384,7 @@ NEW PATTERN 1 (Using global service function):
 ================================================
 
 In main.py:
-    from utils.route_utils import initialize_services
+    from poindexter.utils.route_utils import initialize_services
 
     services = await startup_manager.initialize_all_services()
     initialize_services(
@@ -393,7 +393,7 @@ In main.py:
     )
 
 In task_routes.py:
-    from utils.route_utils import get_services
+    from poindexter.utils.route_utils import get_services
 
     @app.get("/tasks")
     async def list_tasks():
@@ -412,13 +412,13 @@ NEW PATTERN 2 (Using FastAPI Depends):
 =========================================
 
 In main.py:
-    from utils.route_utils import initialize_services
+    from poindexter.utils.route_utils import initialize_services
 
     services = await startup_manager.initialize_all_services()
     initialize_services(app, database_service=services['database'])
 
 In task_routes.py:
-    from utils.route_utils import get_database_dependency
+    from poindexter.utils.route_utils import get_database_dependency
 
     @app.get("/tasks")
     async def list_tasks(db = Depends(get_database_dependency)):
@@ -440,7 +440,7 @@ In main.py:
     # initialize_services() automatically sets app.state.services
 
 In task_routes.py:
-    from utils.route_utils import get_db_from_request
+    from poindexter.utils.route_utils import get_db_from_request
 
     @app.get("/tasks")
     async def list_tasks(request: Request):

@@ -146,7 +146,7 @@ def webhooks_set_secret(name: str, value: str | None) -> None:
                 "Set it first so the secret has somewhere to go."
             )
         # plugins.secrets owns the encrypted write; we just hand it a conn.
-        from plugins.secrets import ensure_pgcrypto, set_secret
+        from poindexter.plugins.secrets import ensure_pgcrypto, set_secret
 
         async with pool.acquire() as conn:
             await ensure_pgcrypto(conn)

@@ -12,7 +12,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ async def begin(
         # exists, so a lapsed heartbeat still shows up via reap_stale), a
         # failed begin means the row never exists at all — no fallback
         # signal, total blackout for this job in the live pulse.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="live_activity",
@@ -189,7 +189,7 @@ async def reap_stale(pool: Any, *, reaper_seconds: int) -> int:
         return int(str(res).split()[-1]) if str(res).startswith("UPDATE") else 0
     except Exception as exc:  # noqa: BLE001
         logger.debug("live_activity.reap_stale swallowed: %s", exc)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="live_activity",

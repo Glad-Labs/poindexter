@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from plugins.secrets import set_secret
+from poindexter.plugins.secrets import set_secret
 
 
 def _mock_conn() -> MagicMock:

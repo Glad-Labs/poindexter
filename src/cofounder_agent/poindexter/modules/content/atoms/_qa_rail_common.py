@@ -145,7 +145,7 @@ def is_rescuable_reject(
     """
     # Truncated input is unrecoverable by revision — both modes (#986).
     if content is not None:
-        from modules.content.content_validator import detect_truncated_content
+        from poindexter.modules.content.content_validator import detect_truncated_content
 
         if detect_truncated_content(content):
             return False

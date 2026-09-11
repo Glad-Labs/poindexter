@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 
-from modules.content.atoms.set_task_status import _VALID_STATUSES
+from poindexter.modules.content.atoms.set_task_status import _VALID_STATUSES
 
 pytestmark = pytest.mark.unit
 

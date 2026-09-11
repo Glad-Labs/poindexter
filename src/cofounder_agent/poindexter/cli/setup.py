@@ -314,7 +314,7 @@ async def _setting_value(dsn: str, key: str) -> str:
     try:
         import asyncpg
 
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
 
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
@@ -788,7 +788,7 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
     from mcp.shared.auth import OAuthClientInformationFull
     from pydantic import AnyUrl
 
-    from plugins.secrets import set_secret
+    from poindexter.plugins.secrets import set_secret
     from poindexter.services.auth.oauth_issuer import (
         generate_client_id,
         generate_client_secret,

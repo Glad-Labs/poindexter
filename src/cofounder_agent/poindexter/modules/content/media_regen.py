@@ -127,13 +127,13 @@ async def regen_video_scripts(
     GPU-busy skip inside the stages) returns ``ok=False`` and writes NOTHING,
     so a caller can simply retry a later cycle; the task is no worse off.
     """
-    from modules.content.stages.generate_media_scripts import (
+    from poindexter.modules.content.stages.generate_media_scripts import (
         GenerateMediaScriptsStage,
     )
-    from modules.content.stages.generate_video_shot_list import (
+    from poindexter.modules.content.stages.generate_video_shot_list import (
         GenerateVideoShotListStage,
     )
-    from modules.content.stages.review_video_shot_list import (
+    from poindexter.modules.content.stages.review_video_shot_list import (
         ReviewVideoShotListStage,
     )
 

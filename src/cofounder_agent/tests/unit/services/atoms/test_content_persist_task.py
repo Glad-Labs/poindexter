@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms.content_persist_task import run as persist_run
+from poindexter.modules.content.atoms.content_persist_task import run as persist_run
 
 
 @pytest.mark.asyncio

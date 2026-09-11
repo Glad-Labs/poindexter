@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms import two_pass_writer as two_pass
+from poindexter.modules.content.atoms import two_pass_writer as two_pass
 
 pytestmark = pytest.mark.asyncio
 
@@ -184,7 +184,7 @@ async def test_internal_grounding_post_injected_into_draft_prompt(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -215,7 +215,7 @@ async def test_internal_grounding_absent_leaves_prompt_unchanged(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -235,7 +235,7 @@ async def test_internal_grounding_disabled_flag_no_section(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "draft"
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -259,7 +259,7 @@ async def test_internal_grounding_ineligible_source_no_section(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "draft"
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -296,7 +296,7 @@ async def test_draft_prompt_size_breakdown_all_sections_present(monkeypatch):
             prompt_metrics["prompt_chars"] = len(extra_instructions or "")
             prompt_metrics["snippet_chars"] = 0
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
@@ -329,7 +329,7 @@ async def test_draft_prompt_size_breakdown_zero_when_sections_absent(monkeypatch
             prompt_metrics["prompt_chars"] = len(extra_instructions or "")
             prompt_metrics["snippet_chars"] = 0
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
@@ -350,7 +350,7 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None): return [0.0] * 768
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
@@ -378,7 +378,7 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     ])
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_revise(prompt, **kwargs):
         return next(drafts)
     monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_revise)
@@ -409,7 +409,7 @@ async def test_revise_chars_accumulate_across_two_loops(monkeypatch):
     ])
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     revise_prompts: list[str] = []
     async def fake_revise(prompt, **kwargs):
@@ -439,7 +439,7 @@ async def test_revise_chars_zero_when_no_revision(monkeypatch):
     _revise_node, so writer_prompt_revise_chars stays 0."""
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
@@ -470,7 +470,7 @@ async def test_research_context_injected_into_draft_prompt(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -502,7 +502,7 @@ async def test_no_research_context_leaves_draft_prompt_unchanged(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         captured["instructions"] = extra_instructions or ""
         return "A clean first draft with no markers."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
 
     async def fake_embed(text, *, site_config=None):
         return [0.0] * 768
@@ -522,7 +522,7 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
     async def always_needs_more(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         counter["n"] += 1
         return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
-    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", always_needs_more, raising=False)
+    monkeypatch.setattr("poindexter.modules.content.ai_content_generator.generate_with_context", always_needs_more, raising=False)
     async def fake_revise(prompt, **kwargs):
         counter["n"] += 1
         return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
@@ -570,7 +570,7 @@ async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return next(drafts)
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_revise(prompt, **kwargs):
@@ -607,7 +607,7 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
     failed: no content produced" on every task post-#355. Mirrors
     ``test_revise_uses_plain_text_helper_not_json_helper`` for the draft.
     """
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
 
     async def forbidden_json_helper(prompt, **kwargs):
         raise AssertionError(
@@ -629,10 +629,10 @@ async def test_draft_uses_plain_text_helper_not_json_helper(monkeypatch):
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator._resolve_rag_writer_model", fake_resolve,
+        "poindexter.modules.content.ai_content_generator._resolve_rag_writer_model", fake_resolve,
     )
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.get_prompt_manager",
+        "poindexter.modules.content.ai_content_generator.get_prompt_manager",
         lambda: MagicMock(get_prompt=MagicMock(return_value="PROMPT")),
     )
 
@@ -675,7 +675,7 @@ def _wire_one_revise(monkeypatch):
         return next(drafts)
 
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -713,7 +713,7 @@ async def test_bad_variant_override_raises_falls_back_to_default(monkeypatch):
     def fake_emit(**kwargs):
         findings.append(kwargs)
 
-    monkeypatch.setattr("utils.findings.emit_finding", fake_emit)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", fake_emit)
 
     result = await two_pass.run(
         topic="t", angle="a", niche_id="n",
@@ -754,7 +754,7 @@ async def test_bad_variant_override_empty_falls_back_to_default(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -787,7 +787,7 @@ async def test_good_variant_override_used_as_is(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -819,7 +819,7 @@ async def test_no_override_single_call_no_fallback_machinery(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -864,7 +864,7 @@ async def test_empty_revise_retries_once_and_recovers(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -898,7 +898,7 @@ async def test_empty_revise_keeps_prior_draft_when_retry_also_empty(monkeypatch)
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -985,7 +985,7 @@ async def test_degenerate_first_draft_retries_once_and_recovers(monkeypatch):
         calls.append("draft")
         return next(drafts)
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -994,7 +994,7 @@ async def test_degenerate_first_draft_retries_once_and_recovers(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -1018,7 +1018,7 @@ async def test_degenerate_first_draft_kept_when_retry_also_degenerate(monkeypatc
         calls.append("draft")
         return "..."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -1027,7 +1027,7 @@ async def test_degenerate_first_draft_kept_when_retry_also_degenerate(monkeypatc
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -1059,7 +1059,7 @@ async def test_degenerate_revise_retries_once_and_recovers(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -1091,7 +1091,7 @@ async def test_degenerate_revise_keeps_prior_draft_when_retry_also_degenerate(mo
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -1130,7 +1130,7 @@ async def test_target_length_threaded_into_draft_call(monkeypatch):
         captured["target_length"] = kw.get("target_length")
         return "A clean first draft with no markers."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1151,7 +1151,7 @@ async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatc
     """``generate_with_context`` must forward ``target_length`` into the
     prompt render so the SKILL.md ``{target_length}`` placeholder receives
     the requested word budget."""
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
 
     seen: dict = {}
 
@@ -1159,14 +1159,14 @@ async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatc
         seen.update(kwargs)
         return "PROMPT"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.get_prompt_manager",
+        "poindexter.modules.content.ai_content_generator.get_prompt_manager",
         lambda: MagicMock(get_prompt=MagicMock(side_effect=fake_get_prompt)),
     )
 
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        "poindexter.modules.content.ai_content_generator._resolve_rag_writer_model",
         fake_resolve,
     )
 
@@ -1185,19 +1185,19 @@ async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatc
 async def test_generate_with_context_populates_prompt_metrics(monkeypatch):
     """poindexter#868: a passed prompt_metrics dict gets populated with the
     exact size of the rendered prompt and its snippet_block portion."""
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
 
     def fake_get_prompt(key, **kwargs):
         return f"INSTRUCTIONS:{kwargs['instructions']}|SNIPPETS:{kwargs['snippet_block']}"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.get_prompt_manager",
+        "poindexter.modules.content.ai_content_generator.get_prompt_manager",
         lambda: MagicMock(get_prompt=MagicMock(side_effect=fake_get_prompt)),
     )
 
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        "poindexter.modules.content.ai_content_generator._resolve_rag_writer_model",
         fake_resolve,
     )
 
@@ -1223,17 +1223,17 @@ async def test_generate_with_context_populates_prompt_metrics(monkeypatch):
 async def test_generate_with_context_prompt_metrics_none_is_noop(monkeypatch):
     """Existing callers that don't pass prompt_metrics see no behavior
     change (default None is a no-op, not a crash)."""
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
 
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.get_prompt_manager",
+        "poindexter.modules.content.ai_content_generator.get_prompt_manager",
         lambda: MagicMock(get_prompt=MagicMock(return_value="PROMPT")),
     )
 
     async def fake_resolve(*, site_config=None):
         return "glm-4.7-5090:latest"
     monkeypatch.setattr(
-        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        "poindexter.modules.content.ai_content_generator._resolve_rag_writer_model",
         fake_resolve,
     )
 
@@ -1283,7 +1283,7 @@ async def test_short_draft_triggers_expansion_pass(monkeypatch):
                          site_config=None, **kw):
         return "Tiny draft."  # 2 words — far below 0.7 * 2500 = 1750
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1319,7 +1319,7 @@ async def test_expansion_shorter_keeps_original_draft(monkeypatch):
                          site_config=None, **kw):
         return original
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1350,7 +1350,7 @@ async def test_no_expansion_when_draft_meets_target(monkeypatch):
                          site_config=None, **kw):
         return draft
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1383,7 +1383,7 @@ async def test_expansion_disabled_via_setting(monkeypatch):
                          site_config=None, **kw):
         return "tiny"  # 1 word
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1431,7 +1431,7 @@ async def test_degenerate_draft_skips_expansion_pass(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **kw):
         return "..."  # degenerate — far under any length threshold
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -1447,7 +1447,7 @@ async def test_degenerate_draft_skips_expansion_pass(monkeypatch):
 
     findings: list[dict] = []
     monkeypatch.setattr(
-        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
     )
 
     result = await two_pass.run(
@@ -1476,7 +1476,7 @@ async def test_substantial_short_draft_still_triggers_expansion(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **kw):
         return "A short draft covering the topic in brief but real terms."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -1552,7 +1552,7 @@ async def test_embed_and_fetch_applies_source_filter(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "Clean draft, no markers."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -1689,7 +1689,7 @@ async def test_run_strips_prompt_echo_from_final_draft(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return contaminated
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -1697,7 +1697,7 @@ async def test_run_strips_prompt_echo_from_final_draft(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
@@ -1718,7 +1718,7 @@ async def test_run_no_echo_leaves_clean_draft_untouched(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return _REAL_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
     async def fake_embed(text, *, site_config=None):
@@ -1726,7 +1726,7 @@ async def test_run_no_echo_leaves_clean_draft_untouched(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
@@ -2137,7 +2137,7 @@ async def test_run_strips_planning_dump_from_final_draft(monkeypatch):
                          site_config=None, **_kw):
         return _E46_FUSED_DUMP
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2146,7 +2146,7 @@ async def test_run_strips_planning_dump_from_final_draft(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic="Ellipses and triple-dot punctuation marks",
@@ -2169,7 +2169,7 @@ async def test_run_clean_draft_fires_no_planning_dump_finding(monkeypatch):
                          site_config=None, **_kw):
         return _REAL_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2178,7 +2178,7 @@ async def test_run_clean_draft_fires_no_planning_dump_finding(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
@@ -2199,7 +2199,7 @@ async def test_expansion_planning_dump_stripped_before_keep_best(monkeypatch):
                          site_config=None, **_kw):
         return original
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2215,7 +2215,7 @@ async def test_expansion_planning_dump_stripped_before_keep_best(monkeypatch):
     monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_expand)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic="Ellipses and triple-dot punctuation marks",
@@ -2300,7 +2300,7 @@ async def test_run_trims_dangling_heading_and_fires_finding(monkeypatch):
                          site_config=None, **_kw):
         return _DANGLING_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2309,7 +2309,7 @@ async def test_run_trims_dangling_heading_and_fires_finding(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic="Running a 27B LLM locally", angle="hands-on", niche_id="glad-labs",
@@ -2331,7 +2331,7 @@ async def test_run_clean_ending_fires_no_dangling_finding(monkeypatch):
                          site_config=None, **_kw):
         return _REAL_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2340,7 +2340,7 @@ async def test_run_clean_ending_fires_no_dangling_finding(monkeypatch):
     monkeypatch.setattr("poindexter.services.topic_ranking.embed_text", fake_embed)
 
     findings: list[dict] = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw))
 
     result = await two_pass.run(
         topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
@@ -2386,7 +2386,7 @@ async def test_run_passes_think_false_to_draft_call(monkeypatch):
         seen["think"] = kw.get("think")
         return _REAL_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2411,7 +2411,7 @@ async def test_run_omits_think_when_switch_off(monkeypatch):
         seen["think"] = kw.get("think")
         return _REAL_BODY
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2603,7 +2603,7 @@ async def test_embed_and_fetch_oversamples_candidate_pool(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
         return "Clean draft, no markers."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2626,7 +2626,7 @@ async def test_embed_and_fetch_mmr_suppresses_near_duplicate_sibling(monkeypatch
         captured["snippets"] = snippets
         return "Clean draft, no markers."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 
@@ -2656,7 +2656,7 @@ async def test_embed_and_fetch_dedup_ceiling_drops_near_identical(monkeypatch):
         captured["snippets"] = snippets
         return "Clean draft, no markers."
     monkeypatch.setattr(
-        "modules.content.ai_content_generator.generate_with_context",
+        "poindexter.modules.content.ai_content_generator.generate_with_context",
         fake_pass1, raising=False,
     )
 

@@ -16,7 +16,7 @@ import asyncio
 import time
 from typing import Any
 
-from plugins.probe import CATEGORY_INFRASTRUCTURE, ProbeResult
+from poindexter.plugins.probe import CATEGORY_INFRASTRUCTURE, ProbeResult
 
 
 class DatabaseProbe:

@@ -887,7 +887,7 @@ class TestQaRailSkipRatio:
         match. If a new intentional skip_type is added there but the SQL isn't
         updated, that rail's intentional skips would drive QaRailFullySkipped.
         """
-        from modules.content.multi_model_qa import (
+        from poindexter.modules.content.multi_model_qa import (
             SKIP_TYPES_EXCLUDED_FROM_RATIO,
         )
         from poindexter.services import metrics_exporter as mx
@@ -975,7 +975,7 @@ async def test_module_metrics_loop_invokes_async_and_awaitable_hooks():
     sync_mod = _ModWithSyncAwaitableHook()
     pool = MagicMock()
 
-    with patch("plugins.registry.get_modules", return_value=[async_mod, sync_mod]):
+    with patch("poindexter.plugins.registry.get_modules", return_value=[async_mod, sync_mod]):
         await mx._refresh_module_metrics(pool)
 
     assert async_mod.called_with is pool
@@ -991,7 +991,7 @@ async def test_module_metrics_loop_skips_modules_without_hook():
 
     # A module lacking the hook must be silently skipped (not an error).
     with patch(
-        "plugins.registry.get_modules", return_value=[_ModWithoutHook(), good]
+        "poindexter.plugins.registry.get_modules", return_value=[_ModWithoutHook(), good]
     ):
         await mx._refresh_module_metrics(pool)
 
@@ -1008,7 +1008,7 @@ async def test_module_metrics_loop_isolates_a_failing_hook():
     pool = MagicMock()
 
     with patch(
-        "plugins.registry.get_modules",
+        "poindexter.plugins.registry.get_modules",
         return_value=[_ModThatRaises(), good],
     ):
         # Must not raise.
@@ -1023,7 +1023,7 @@ async def test_module_metrics_loop_tolerates_registry_failure():
     from poindexter.services import metrics_exporter as mx
 
     pool = MagicMock()
-    with patch("plugins.registry.get_modules", side_effect=RuntimeError("nope")):
+    with patch("poindexter.plugins.registry.get_modules", side_effect=RuntimeError("nope")):
         # Registry import/call failure must be swallowed.
         await mx._refresh_module_metrics(pool)
 

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.content.atoms import podcast_render
+from poindexter.modules.content.atoms import podcast_render
 from poindexter.services.podcast_service import PodcastService
 from poindexter.services.site_config import SiteConfig
 
@@ -100,7 +100,7 @@ async def test_sting_mix_replaces_path_on_success(tmp_path, monkeypatch) -> None
         assert narration == "/tmp/dry.mp3"
         return "/tmp/mixed.mp3"
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
     import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
@@ -119,7 +119,7 @@ async def test_sting_mix_failure_ships_dry_and_flags(tmp_path, monkeypatch) -> N
 
     findings = []
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
     import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
@@ -144,7 +144,7 @@ async def test_sting_mix_disabled_skips(tmp_path, monkeypatch) -> None:
         calls.append(a)
         return "/tmp/mixed.mp3"
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
     import poindexter.services.podcast_sting_mixer as mixer
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
@@ -160,7 +160,7 @@ async def test_no_sting_no_mix(monkeypatch) -> None:
     async def fake_narration(**kwargs):
         return "/tmp/dry.mp3"
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
 
     monkeypatch.setattr(nr, "render_narration", fake_narration)
     sc = SiteConfig(initial_config={"media.cta.podcast": ""})
@@ -177,7 +177,7 @@ def _patch_narration(monkeypatch, path="/tmp/dry.mp3"):
     async def fake_narration(**kwargs):
         return path
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
     monkeypatch.setattr(nr, "render_narration", fake_narration)
 
 
@@ -291,7 +291,7 @@ async def test_render_dedupes_a_persisted_duplicate_title(monkeypatch) -> None:
         captured["script"] = script
         return "/tmp/dry.mp3"
 
-    import modules.content.atoms._narration_render as nr
+    import poindexter.modules.content.atoms._narration_render as nr
     monkeypatch.setattr(nr, "render_narration", fake_narration)
 
     await podcast_render.run({

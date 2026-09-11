@@ -53,8 +53,8 @@ from poindexter.services.auth.oauth_issuer import (
 from poindexter.services.auth.oauth_provider import PoindexterOAuthProvider
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
-from utils.rate_limiter import _settings_limit, limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.rate_limiter import _settings_limit, limiter
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 

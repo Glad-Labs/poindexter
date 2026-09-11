@@ -168,7 +168,7 @@ def test_gpu_busy_skip_uses_its_own_finding_kind_not_degraded():
     from poindexter.services import ragas_eval
 
     emit = MagicMock()
-    with patch("utils.findings.emit_finding", emit):
+    with patch("poindexter.utils.findings.emit_finding", emit):
         ragas_eval._surface_gpu_busy_skip(
             "ragas", GpuBusyError("eta_exceeds_budget", 210.0), task_id="t-1",
         )
@@ -189,7 +189,7 @@ def test_deepeval_gpu_busy_uses_the_same_shared_kind():
     from poindexter.services import deepeval_rails
 
     emit = MagicMock()
-    with patch("utils.findings.emit_finding", emit):
+    with patch("poindexter.utils.findings.emit_finding", emit):
         deepeval_rails._surface_deepeval_gpu_busy(
             GpuBusyError("no_fit", None), rail="brand_fabrication",
         )
@@ -205,7 +205,7 @@ def test_gpu_busy_finding_emit_never_raises_into_the_rail():
     """Reporting a skip must not become a new failure mode."""
     from poindexter.services import deepeval_rails, ragas_eval
 
-    with patch("utils.findings.emit_finding", side_effect=RuntimeError("boom")):
+    with patch("poindexter.utils.findings.emit_finding", side_effect=RuntimeError("boom")):
         ragas_eval._surface_gpu_busy_skip(
             "ragas", GpuBusyError("no_fit", None), task_id=None,
         )

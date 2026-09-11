@@ -21,7 +21,7 @@ import io
 import pytest
 from PIL import Image
 
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     _normalize_image_for_vision,
     extract_inline_image_urls,
 )

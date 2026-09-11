@@ -77,7 +77,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
     to opt in dev_diary. A canonical_blog/glad-labs post scoring 92 must
     NOT inherit that opt-in — glad-labs has no explicit opt-in keys,
     so the gate must return ``disabled``."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -111,7 +111,7 @@ async def test_dev_diary_opt_in_does_not_leak_to_other_niches() -> None:
 async def test_dev_diary_opt_in_still_works_for_dev_diary_niche() -> None:
     """Backward-compat: dev_diary's existing keys still control dev_diary
     posts. The niche-leak fix doesn't break the niche it was named after."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -149,7 +149,7 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
     """When the operator explicitly opts in glad-labs via
     ``glad-labs_auto_publish_threshold=70`` + ``glad-labs_auto_publish_dry_run=false``,
     the gate fires for glad-labs (independent of dev_diary)."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "glad-labs_auto_publish_threshold": "70",
@@ -189,7 +189,7 @@ async def test_missing_niche_slug_returns_disabled() -> None:
     neither passed by the caller nor on its own ``pipeline_tasks`` row
     (``_make_pool`` defaults ``task_niche=None``) — cannot auto-publish.
     The gate must NOT pick an arbitrary fallback niche."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -221,7 +221,7 @@ async def test_none_niche_slug_falls_back_to_pipeline_tasks_lookup() -> None:
 
     This is a same-task lookup, NOT a cross-niche fallback: the resolved
     niche still has to carry its own opt-in keys."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     platform = _make_platform({
         "dev_diary_auto_publish_threshold": "69",
@@ -260,7 +260,7 @@ async def test_none_niche_slug_falls_back_to_pipeline_tasks_lookup() -> None:
 async def test_niche_fallback_lookup_error_stays_disabled() -> None:
     """Fail-closed: if the ``pipeline_tasks`` fallback lookup itself errors,
     the gate returns ``disabled`` — never raises, never guesses a niche."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     platform = _make_platform({
         "dev_diary_auto_publish_threshold": "69",
@@ -296,7 +296,7 @@ async def test_niche_fallback_lookup_error_stays_disabled() -> None:
 @pytest.mark.asyncio
 async def test_empty_niche_slug_returns_disabled() -> None:
     """Whitespace-only niche slug is treated the same as None."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({})
 
@@ -317,7 +317,7 @@ async def test_empty_niche_slug_returns_disabled() -> None:
 async def test_no_platform_returns_disabled() -> None:
     """Stages running without a platform handle (e.g. legacy callers) must not
     auto-publish — they have no operator-tuned settings to read."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     decision = await evaluate(
         _make_pool(),
@@ -336,7 +336,7 @@ async def test_no_platform_returns_disabled() -> None:
 async def test_threshold_negative_returns_disabled() -> None:
     """The default ``threshold=-1`` opts OUT — the gate must not fire
     even on a perfect score."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "-1",
@@ -364,7 +364,7 @@ async def test_threshold_negative_returns_disabled() -> None:
 
 @pytest.mark.asyncio
 async def test_score_below_threshold_returns_block_threshold() -> None:
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "80",
@@ -388,7 +388,7 @@ async def test_score_below_threshold_returns_block_threshold() -> None:
 async def test_insufficient_history_returns_no_history() -> None:
     """Until N historical approves exist, the gate can't establish the
     clean-run baseline — return ``no_history``."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -415,7 +415,7 @@ async def test_insufficient_history_returns_no_history() -> None:
 @pytest.mark.asyncio
 async def test_unclean_history_returns_block_unclean() -> None:
     """Enough history, but too many were heavily edited — block."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -455,7 +455,7 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
     """``dry_run=true`` is the observe-only mode — the gate still
     computes ``would_fire=True`` so dashboards can show it, but the
     caller must NOT approve the task."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -531,7 +531,7 @@ async def test_history_query_filters_on_niche_only() -> None:
     the niche-prefix fix (#598) closed. The clean-run track record must be
     scoped to the niche that opted in, full stop — ``category`` must not
     appear in the filter at all."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -579,7 +579,7 @@ async def test_history_window_not_polluted_by_shared_category() -> None:
     window. With niche-only matching the double's rows (all clean, all
     this niche) produce ``pass`` even though the caller's category is the
     post-Phase-F default ``"technology"`` that other niches also carry."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "69",
@@ -630,13 +630,13 @@ _REAL_TITLE = "Wiring the structural gate and shipping three healthcheck fixes"
 
 
 def test_structural_pass_with_real_content() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements(_REAL_TITLE, _REAL_CONTENT, _REAL_EXCERPT)
     assert ok is True, f"expected pass, got: {reason}"
 
 
 def test_structural_fails_on_empty_excerpt() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements(_REAL_TITLE, _REAL_CONTENT, "")
     assert ok is False
     assert "excerpt" in reason.lower()
@@ -644,7 +644,7 @@ def test_structural_fails_on_empty_excerpt() -> None:
 
 def test_structural_fails_on_short_body() -> None:
     """A post that's just the boilerplate header + footer has too few real words."""
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     boilerplate_only = (
         "# What we shipped on 2026-06-09\n\n"
         "_Auto-compiled by Poindexter from today's commits and PRs. "
@@ -656,21 +656,21 @@ def test_structural_fails_on_short_body() -> None:
 
 
 def test_structural_fails_on_iso_date_title() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements("2026-06-09", _REAL_CONTENT, _REAL_EXCERPT)
     assert ok is False
     assert "date" in reason.lower()
 
 
 def test_structural_fails_on_weekday_date_title() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements("Monday, June 9", _REAL_CONTENT, _REAL_EXCERPT)
     assert ok is False
     assert "date" in reason.lower()
 
 
 def test_structural_fails_on_shipped_on_title() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements(
         "What we shipped on 2026-06-09", _REAL_CONTENT, _REAL_EXCERPT
     )
@@ -679,7 +679,7 @@ def test_structural_fails_on_shipped_on_title() -> None:
 
 
 def test_structural_fails_on_month_day_year_title() -> None:
-    from modules.content.auto_publish_gate import _check_structural_requirements
+    from poindexter.modules.content.auto_publish_gate import _check_structural_requirements
     ok, reason = _check_structural_requirements("June 9, 2026", _REAL_CONTENT, _REAL_EXCERPT)
     assert ok is False
     assert "date" in reason.lower()
@@ -693,7 +693,7 @@ def test_structural_fails_on_month_day_year_title() -> None:
 @pytest.mark.asyncio
 async def test_evaluate_returns_block_structural_on_empty_excerpt() -> None:
     """Gate condition 2.5: empty excerpt → block_structural before history fetch."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -721,7 +721,7 @@ async def test_evaluate_returns_block_structural_on_empty_excerpt() -> None:
 
 @pytest.mark.asyncio
 async def test_evaluate_returns_block_structural_on_date_only_title() -> None:
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -750,7 +750,7 @@ async def test_evaluate_returns_block_structural_on_date_only_title() -> None:
 async def test_evaluate_skips_structural_check_when_args_omitted() -> None:
     """Backwards compat: callers that don't pass title/content/excerpt must not
     suddenly get block_structural. The gate skips the check when all three are None."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
         "dev_diary_auto_publish_threshold": "70",
@@ -790,7 +790,7 @@ async def test_evaluate_skips_structural_check_when_args_omitted() -> None:
 async def test_qa_flagged_blocks_would_fire() -> None:
     """A draft the QA gate flagged requires operator sign-off — it must NEVER
     auto-publish, even with an enabled niche opt-in that clears the threshold."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     platform = _make_platform({
         "glad-labs_auto_publish_threshold": "70",
@@ -807,7 +807,7 @@ async def test_qa_flagged_blocks_would_fire() -> None:
 @pytest.mark.asyncio
 async def test_not_flagged_defaults_evaluate_normally() -> None:
     """qa_flagged defaults False — the guard must not alter the non-flagged path."""
-    from modules.content.auto_publish_gate import evaluate
+    from poindexter.modules.content.auto_publish_gate import evaluate
 
     platform = _make_platform({})  # no opt-in keys → disabled, NOT block_qa_flagged
     decision = await evaluate(

@@ -118,7 +118,7 @@ def test_never_prunes_resumable_statuses(source: str):
 @pytest.mark.parametrize("source", ["seed", "handler"])
 def test_statuses_are_real(source: str):
     """Catch typos: every entry must be a status the DB constraint allows."""
-    from modules.content.atoms.set_task_status import _VALID_STATUSES
+    from poindexter.modules.content.atoms.set_task_status import _VALID_STATUSES
 
     configured = set(
         _seed_terminal_statuses() if source == "seed" else _handler_default()

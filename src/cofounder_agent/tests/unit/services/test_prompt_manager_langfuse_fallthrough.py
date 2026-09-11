@@ -399,7 +399,7 @@ def test_partial_langfuse_config_emits_warn_finding(monkeypatch):
     pm._site_config = _sc_with(host="http://lf:3000", public_key="pk-test")
     pm._langfuse_secret_key = ""
 
-    with patch("utils.findings.emit_finding") as emit:
+    with patch("poindexter.utils.findings.emit_finding") as emit:
         assert pm._init_langfuse_client() is None
 
     assert emit.call_count == 1
@@ -417,7 +417,7 @@ def test_partial_langfuse_config_finding_emitted_once_per_instance(monkeypatch):
     pm._site_config = _sc_with(host="http://lf:3000", public_key="pk-test")
     pm._langfuse_secret_key = ""
 
-    with patch("utils.findings.emit_finding") as emit:
+    with patch("poindexter.utils.findings.emit_finding") as emit:
         pm._init_langfuse_client()
         pm._init_langfuse_client()
 
@@ -433,7 +433,7 @@ def test_unconfigured_langfuse_emits_no_finding(monkeypatch):
     pm._site_config = _sc_with()
     pm._langfuse_secret_key = ""
 
-    with patch("utils.findings.emit_finding") as emit:
+    with patch("poindexter.utils.findings.emit_finding") as emit:
         assert pm._init_langfuse_client() is None
 
     emit.assert_not_called()

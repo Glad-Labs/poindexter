@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from plugins.publish_adapter import PublishAdapter, PublishResult
+from poindexter.plugins.publish_adapter import PublishAdapter, PublishResult
 from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
 
 

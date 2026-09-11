@@ -37,7 +37,7 @@ from typing import Any
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively (#272 Phase-2f). The
 # module-level ``site_config`` global + ``set_site_config`` setter were
@@ -261,7 +261,7 @@ def _get_tts_replacements(*, site_config: "SiteConfig | None" = None) -> list:
         # is just bad" until someone digs through logs. Emit a deduped finding so
         # it reaches the findings board / Discord instead of rotting behind a log
         # line (feedback_self_heal_not_suppress / feedback_no_silent_defaults).
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="podcast_service",
@@ -729,7 +729,7 @@ def _emit_scaffold_dump_finding(*, title: str) -> None:
     (from the article body) while the model-quality signal stays visible on the
     Findings dashboard. ``severity='warn'`` → Discord."""
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log already surfaced the dump
         return
     try:
@@ -1513,7 +1513,7 @@ class PodcastService:
             probe_duration_s,
             resolve_sting_path,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         sting = resolve_sting_path(None, sc)
         if not sting.path:
@@ -1713,7 +1713,7 @@ class PodcastService:
             # Same guard as _image_helpers._record_inline_image_asset and
             # source_featured_image._record_featured_image_asset — shared
             # dedup_key, one cooldown for one underlying import break.
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="podcast_service",

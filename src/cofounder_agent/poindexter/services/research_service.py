@@ -21,7 +21,7 @@ import re
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -297,7 +297,7 @@ class ResearchService:
                 # silently handing the writer a corpus with no web tier — the
                 # draft will lean on the model's own knowledge, which is exactly
                 # the ungrounded output the research step exists to prevent.
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
 
                 emit_finding(
                     source="research_service",
@@ -384,7 +384,7 @@ class ResearchService:
             return [{"title": r["title"], "slug": r["slug"]} for r in rows]
         except Exception as e:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="research_service",
@@ -423,7 +423,7 @@ class ResearchService:
             return await researcher.search_simple(topic, num_results=5)
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="research_service",

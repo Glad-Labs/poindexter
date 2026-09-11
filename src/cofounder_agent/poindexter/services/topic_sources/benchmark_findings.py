@@ -48,7 +48,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.benchmark_findings import KIND_NEW_MODEL, build_findings, measure_models
 
 logger = logging.getLogger(__name__)

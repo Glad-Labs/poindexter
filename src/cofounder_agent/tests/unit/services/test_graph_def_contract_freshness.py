@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 import poindexter.services.pipeline_architect as pa
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 from poindexter.services.atom_registry import discover
 from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF

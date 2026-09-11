@@ -429,7 +429,7 @@ class TestFetchRecentTitles:
     async def test_db_error_is_degraded_and_never_silent(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding",
+            "poindexter.utils.findings.emit_finding",
             lambda **kw: findings.append(kw),
         )
 
@@ -615,7 +615,7 @@ class TestFetchTakenTitles:
     async def test_unreadable_corpus_emits_a_finding(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
 
         class _BoomPool:

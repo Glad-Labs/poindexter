@@ -10,7 +10,7 @@ pytest.importorskip("apscheduler")
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from plugins import scheduler as sched
+from poindexter.plugins import scheduler as sched
 
 
 def test_cron_parsed_in_operator_tz():

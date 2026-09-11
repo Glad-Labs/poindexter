@@ -1056,7 +1056,7 @@ async def test_reconcile_calls_atom_and_counts_new_drafts(monkeypatch):
         AsyncMock(side_effect=[set(), {("bluesky", "")}]),
     )
     generate = AsyncMock(return_value={})
-    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+    monkeypatch.setattr("poindexter.modules.content.api.generate_social_drafts", generate)
 
     sc = _make_site_config({})
     result = await svc.reconcile_missing_drafts(pool, sc, lookback_days=14)
@@ -1082,7 +1082,7 @@ async def test_reconcile_skips_candidates_without_task_id(monkeypatch):
         AsyncMock(return_value=[{"pipeline_task_id": None, "title": "T"}]),
     )
     generate = AsyncMock()
-    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+    monkeypatch.setattr("poindexter.modules.content.api.generate_social_drafts", generate)
 
     result = await svc.reconcile_missing_drafts(pool, _make_site_config({}), 14)
 
@@ -1106,7 +1106,7 @@ async def test_reconcile_collects_per_task_errors_and_continues(monkeypatch):
     )
     monkeypatch.setattr(svc, "existing_draft_keys", AsyncMock(return_value=set()))
     generate = AsyncMock(side_effect=[RuntimeError("boom"), {}])
-    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+    monkeypatch.setattr("poindexter.modules.content.api.generate_social_drafts", generate)
 
     result = await svc.reconcile_missing_drafts(pool, _make_site_config({}), 14)
 
@@ -1300,7 +1300,7 @@ async def test_fire_due_drafts_skips_and_reports_an_overdue_draft():
     svc = SocialDraftsService()
     svc.approve_draft = AsyncMock()
 
-    with patch("utils.findings.emit_finding") as emit:
+    with patch("poindexter.utils.findings.emit_finding") as emit:
         result = await svc.fire_due_drafts(pool, sc)
 
     svc.approve_draft.assert_not_awaited()

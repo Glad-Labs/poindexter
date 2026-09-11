@@ -69,7 +69,7 @@ class TestCriticGoldenSet:
         pipeline's own definition — cross-checked against
         content_validator.detect_truncated_content so the two gates can
         never drift apart on what 'truncated' means."""
-        from modules.content.content_validator import detect_truncated_content
+        from poindexter.modules.content.content_validator import detect_truncated_content
 
         golden = await build_critic_golden_set(pool=_FakePool(_posts(2)), site_config=_sc(2))
         for c in golden.cases:
@@ -108,7 +108,7 @@ class TestDeliberationCorruption:
     validator itself considers clean."""
 
     async def test_deliberation_case_trips_the_planning_dump_detector(self):
-        from modules.content.content_validator import (
+        from poindexter.modules.content.content_validator import (
             _strip_code_spans,
             detect_planning_dump_preamble,
         )

@@ -148,7 +148,7 @@ async def _resolve_credentials(
     # Local import — we already pull plugins.secrets in main app paths,
     # but the CLI runs in a thinner subset and importing it lazily keeps
     # cold-start fast.
-    from plugins.secrets import get_secret as _plugin_get_secret
+    from poindexter.plugins.secrets import get_secret as _plugin_get_secret
 
     last_err: BaseException | None = None
     for attempt in range(_CRED_READ_ATTEMPTS):

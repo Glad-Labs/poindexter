@@ -644,7 +644,7 @@ def _reset_singletons_between_tests():
     # avoid dragging in apscheduler/etc.). When such a polluter mutates
     # ``sys.modules`` directly (without monkeypatch teardown), the
     # parent ``plugins`` module ends up without a ``registry`` attribute
-    # even though ``sys.modules["plugins.registry"]`` is still the real
+    # even though ``sys.modules["poindexter.plugins.registry"]`` is still the real
     # module. A subsequent ``monkeypatch.setattr("plugins.registry.X",
     # ...)`` then fails with:
     #     'module' object at plugins.registry has no attribute 'registry'
@@ -658,11 +658,11 @@ def _reset_singletons_between_tests():
     # module object whose globals nobody can patch from the outside.
     # Idempotent + cheap when nothing is wrong.
     try:
-        registry = sys.modules.get("plugins.registry")
+        registry = sys.modules.get("poindexter.plugins.registry")
         if registry is None:
             import importlib
-            registry = importlib.import_module("plugins.registry")
-        plugins_pkg = sys.modules.get("plugins")
+            registry = importlib.import_module("poindexter.plugins.registry")
+        plugins_pkg = sys.modules.get("poindexter.plugins")
         if plugins_pkg is not None and getattr(plugins_pkg, "registry", None) is not registry:
             plugins_pkg.registry = registry  # type: ignore[attr-defined]
 

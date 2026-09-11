@@ -16,7 +16,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from utils.openapi_auth import register_authed_openapi
+from poindexter.utils.openapi_auth import register_authed_openapi
 
 pytestmark = pytest.mark.unit
 

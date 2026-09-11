@@ -49,8 +49,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from plugins.config import PluginConfig
-from plugins.registry import get_core_samples, get_taps
+from poindexter.plugins.config import PluginConfig
+from poindexter.plugins.registry import get_core_samples, get_taps
 from poindexter.services.taps._chunking import chunk_text, content_hash
 
 logger = logging.getLogger(__name__)
@@ -262,7 +262,7 @@ def _emit_zero_yield_finding(stats: TapStats) -> None:
     that stays dark should not re-page every run.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="tap_runner",

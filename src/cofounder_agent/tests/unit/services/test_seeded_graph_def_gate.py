@@ -27,7 +27,7 @@ from __future__ import annotations
 import pytest
 
 import poindexter.services.pipeline_architect as pa
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 
 
 def _meta(name: str, *, produces: tuple[str, ...] = ()) -> AtomMeta:

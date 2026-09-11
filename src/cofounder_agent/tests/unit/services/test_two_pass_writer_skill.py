@@ -149,7 +149,7 @@ def test_format_snippet_block_drops_citation_bracket_template() -> None:
     framing (whose work this is, for first/third-person voice), no inline
     bracket to copy — and drops the ref slug entirely (the most-echoed token).
     """
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
     snippets = [
         {"source": "token_efficiency.md", "ref": "feedback_token",
          "snippet": "Cut tokens to cut cost."},
@@ -170,7 +170,7 @@ def test_format_snippet_block_drops_citation_bracket_template() -> None:
 def test_format_snippet_block_skips_empty_and_defaults_missing_source() -> None:
     """Empty snippets are skipped; a missing source falls back to a neutral
     label (never a KeyError, never a bare 'None')."""
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
     snippets = [
         {"source": "posts", "ref": "x", "snippet": ""},  # skipped — no snippet
         {"ref": "y", "snippet": "Kept."},                # missing source
@@ -192,7 +192,7 @@ def test_format_snippet_block_windows_onto_the_query() -> None:
     anywhere in it. With the query threaded through, the budget lands on the
     matching passage instead.
     """
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
     filler = "unrelated background prose that mentions nothing relevant. " * 60
     chunk = filler + " we moved inference on-prem to cut GPU cost. " + filler
     block = acg._format_snippet_block(
@@ -205,7 +205,7 @@ def test_format_snippet_block_windows_onto_the_query() -> None:
 
 def test_format_snippet_block_without_a_query_head_slices() -> None:
     """Back-compat: callers that pass no query get the previous behaviour."""
-    import modules.content.ai_content_generator as acg
+    import poindexter.modules.content.ai_content_generator as acg
     chunk = "opening line. " + ("filler " * 400)
     block = acg._format_snippet_block([{"source": "posts", "snippet": chunk}], 200)
     assert "opening line." in block

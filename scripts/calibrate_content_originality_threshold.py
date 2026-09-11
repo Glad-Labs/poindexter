@@ -38,7 +38,7 @@ import asyncpg
 # Repo root on path so ``brain.bootstrap`` resolves when run as ``python scripts/…``.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from brain.bootstrap import resolve_database_url  # noqa: E402  # type: ignore
-from modules.content.atoms.qa_content_originality import (  # noqa: E402
+from poindexter.modules.content.atoms.qa_content_originality import (  # noqa: E402
     _DEFAULT_CHUNK_MAX,
     _DEFAULT_CHUNK_MIN,
     _chunk_draft,

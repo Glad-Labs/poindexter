@@ -26,7 +26,7 @@ from poindexter.services.service_restart_requests import (
     create_restart_request,
     get_restart_request,
 )
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 

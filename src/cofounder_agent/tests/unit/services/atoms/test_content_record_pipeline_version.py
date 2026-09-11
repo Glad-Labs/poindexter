@@ -20,8 +20,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms.content_persist_task import run as persist_run
-from modules.content.atoms.content_record_pipeline_version import run as record_run
+from poindexter.modules.content.atoms.content_persist_task import run as persist_run
+from poindexter.modules.content.atoms.content_record_pipeline_version import run as record_run
 
 PREVIEW_TOKEN = "abc123deadbeef0011223344"
 

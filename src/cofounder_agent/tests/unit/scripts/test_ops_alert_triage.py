@@ -136,7 +136,7 @@ def _issue(number, alertname):
 @pytest.mark.parametrize("alertname", [
     "PoindexterSystemdUnitFailed",
     "gpu_scheduler:gpu_lock_timeout",
-    "modules.content.multi_model_qa:critic_model_collision",
+    "poindexter.modules.content.multi_model_qa:critic_model_collision",
 ])
 def test_alertname_round_trips_through_the_issue_title(alertname):
     """Dotted/colonned alertnames must survive the title grammar intact."""
@@ -384,14 +384,14 @@ def test_main_does_not_refile_a_still_firing_alert_tracked_elsewhere(monkeypatch
     """
     monkeypatch.setattr(at.c, "get_logger", lambda _n: logging.getLogger("test-alert-triage"))
     monkeypatch.setattr(at.c, "asyncio_run", _fake_run(
-        [{"alertname": "modules.content.multi_model_qa:critic_model_collision",
+        [{"alertname": "poindexter.modules.content.multi_model_qa:critic_model_collision",
           "dispatch_result": "sent", "n_paged": 10, "n_total": 10}],
-        firing={"modules.content.multi_model_qa:critic_model_collision"},
+        firing={"poindexter.modules.content.multi_model_qa:critic_model_collision"},
     ))
     monkeypatch.setattr(at, "open_probe_issues", lambda: [])
     monkeypatch.setattr(
         at, "tracked_elsewhere_alertnames",
-        lambda: {"modules.content.multi_model_qa:critic_model_collision"},
+        lambda: {"poindexter.modules.content.multi_model_qa:critic_model_collision"},
     )
     monkeypatch.setattr(at.c, "ollama_chat", lambda *a, **k: pytest.fail("must not re-classify"))
     monkeypatch.setattr(at.c, "gh", lambda *a: pytest.fail("must not re-file a concluded alert"))

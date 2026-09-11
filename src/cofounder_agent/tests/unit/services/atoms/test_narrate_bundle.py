@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.content.atoms.narrate_bundle import (
+from poindexter.modules.content.atoms.narrate_bundle import (
     _format_bundle_for_narrative,
     _scrub_private_repo_refs,
     run,
@@ -280,7 +280,7 @@ class TestRunNeverBillsCloudWriter:
             return "TITLE: A real headline\n\nStub narration prose for the day."
 
         with patch(
-            "modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat
+            "poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat
         ):
             result = await run({
                 "task_id": "sonnet-canary-repro",
@@ -313,7 +313,7 @@ class TestRunPromptConstruction:
             return "Stub LLM output."
 
         with (
-            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -361,7 +361,7 @@ class TestRunPromptConstruction:
             return "Stub LLM output."
 
         with (
-            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -403,7 +403,7 @@ class TestRunPromptConstruction:
 
         misleading_topic = "totally unrelated string about widgets"
         with (
-            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -432,7 +432,7 @@ class TestRunPromptConstruction:
             return "Stub."
 
         with (
-            patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
+            patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
             # site_config now flows via state (private-ops#330 DI seam);
             # patching the deleted singleton import is a no-op but kept
             # to avoid editing every test method's with-block.
@@ -461,7 +461,7 @@ class TestRunPromptConstruction:
 
 class TestParseTitleAndProse:
     def test_extracts_title_from_title_prefix(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         raw = "TITLE: Fixing the structural gate and shipping three PRs\n\nToday we wired up the auto-publish structural check."
         bundle = {"merged_prs": [{"number": 1, "title": "test"}], "notable_commits": []}
         title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
@@ -469,14 +469,14 @@ class TestParseTitleAndProse:
         assert prose.startswith("Today we wired")
 
     def test_title_prefix_case_insensitive(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         raw = "title: Some headline\n\nProse here."
         title, prose = _parse_title_and_prose(raw, {}, "2026-06-10")
         assert title == "Some headline"
         assert "Prose here" in prose
 
     def test_heuristic_first_sentence_when_no_prefix(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         raw = "The biggest change today was wiring the structural gate. It blocks bad posts."
         bundle = {"merged_prs": [{"number": 42}], "notable_commits": []}
         title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
@@ -484,21 +484,21 @@ class TestParseTitleAndProse:
         assert len(title) <= 80
 
     def test_heuristic_clips_long_first_sentence(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         long_sentence = "A" * 100 + " is done."
         raw = long_sentence + " Second sentence."
         title, _ = _parse_title_and_prose(raw, {}, "2026-06-10")
         assert len(title) <= 80
 
     def test_bundle_derived_fallback_on_empty_raw(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         bundle = {"merged_prs": [{"number": 1}, {"number": 2}], "notable_commits": []}
         title, prose = _parse_title_and_prose("", bundle, "2026-06-10")
         assert "2" in title or "PR" in title  # bundle-derived summary
         assert prose == ""
 
     def test_empty_title_after_prefix_falls_back_to_heuristic(self):
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
         raw = "TITLE:\n\nReal prose paragraph here with enough words to clip."
         bundle = {"merged_prs": [], "notable_commits": []}
         title, prose = _parse_title_and_prose(raw, bundle, "2026-06-10")
@@ -517,7 +517,7 @@ class TestParseTitleAndProse:
         (post ``glad-labs-one-person-indie-shop-07217583``). The parser
         must locate the marker anywhere and discard everything before it.
         """
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
 
         raw = (
             "Glad Labs (one-person indie shop).\n"
@@ -548,7 +548,7 @@ class TestParseTitleAndProse:
         """A reasoner may *mention* the TITLE: instruction while planning
         before emitting the real one. Take the last marker — the real
         headline is emitted immediately before the body."""
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
 
         raw = (
             "Let me plan. The prompt says the first line must be TITLE: a headline.\n"
@@ -569,7 +569,7 @@ class TestParseTitleAndProse:
         accepted as the headline. When the text after the last marker has
         no newline break (so the 'title' would be the whole rest), reject
         it as a headline and derive one from the prose instead."""
-        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+        from poindexter.modules.content.atoms.narrate_bundle import _parse_title_and_prose
 
         raw = (
             "We refactored the parser today. The function now scans for the "
@@ -592,7 +592,7 @@ class TestParseTitleAndProse:
 
 class TestDetectPromptLeak:
     def test_flags_scaffolding_phrases(self):
-        from modules.content.atoms.narrate_bundle import _detect_prompt_leak
+        from poindexter.modules.content.atoms.narrate_bundle import _detect_prompt_leak
 
         leaked = (
             "    *   Lead with stakes/surprising thing.\n"
@@ -604,7 +604,7 @@ class TestDetectPromptLeak:
         assert any("lead with stakes" in m.lower() for m in found)
 
     def test_clean_prose_has_no_leak(self):
-        from modules.content.atoms.narrate_bundle import _detect_prompt_leak
+        from poindexter.modules.content.atoms.narrate_bundle import _detect_prompt_leak
 
         clean = (
             "We found our own personal email live in the public mirror. A routine "
@@ -622,7 +622,7 @@ class TestRunWarnsOnResidualLeak:
         warn loudly so the operator sees it. Warn-only: the post still ships."""
         import logging
 
-        from modules.content.atoms.narrate_bundle import run
+        from poindexter.modules.content.atoms.narrate_bundle import run
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
             return (
@@ -631,7 +631,7 @@ class TestRunWarnsOnResidualLeak:
                 "facts through narrative. First-person plural? Yes."
             )
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             with caplog.at_level(
                 logging.WARNING, logger="poindexter.modules.content.atoms.narrate_bundle"
             ):
@@ -665,7 +665,7 @@ class TestRunEmitsTitle:
         without falling through to the date-shaped topic string."""
         from unittest.mock import patch
 
-        from modules.content.atoms.narrate_bundle import run
+        from poindexter.modules.content.atoms.narrate_bundle import run
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
             return (
@@ -675,7 +675,7 @@ class TestRunEmitsTitle:
                 "stopped the public mirror re-running full CI on every sync (PR #1279)."
             )
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             result = await run({
                 "task_id": "t1",
                 "site_config": _CaptureSiteConfig(),
@@ -699,8 +699,8 @@ class TestRunEmitsTitle:
         cause the structural gate to fire block_structural on every run."""
         from unittest.mock import patch
 
-        from modules.content.atoms.narrate_bundle import run
-        from modules.content.auto_publish_gate import _DATE_ONLY_PATTERNS
+        from poindexter.modules.content.atoms.narrate_bundle import run
+        from poindexter.modules.content.auto_publish_gate import _DATE_ONLY_PATTERNS
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
             return (
@@ -708,7 +708,7 @@ class TestRunEmitsTitle:
                 "The rank-batch command now accepts sys#N markers (PR #221)."
             )
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             result = await run({
                 "task_id": "t2",
                 "site_config": _CaptureSiteConfig(),
@@ -750,8 +750,8 @@ class TestRunBodyH1MatchesTitle:
     async def test_body_h1_equals_returned_title(self):
         from unittest.mock import patch
 
-        from modules.content.atoms.narrate_bundle import run
-        from utils.text_utils import extract_title_from_content
+        from poindexter.modules.content.atoms.narrate_bundle import run
+        from poindexter.utils.text_utils import extract_title_from_content
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
             return (
@@ -759,7 +759,7 @@ class TestRunBodyH1MatchesTitle:
                 "Today we wired the Stage-3 podcast pipeline (PR #1445)."
             )
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             result = await run({
                 "task_id": "h1-title",
                 "site_config": _CaptureSiteConfig(),
@@ -782,13 +782,13 @@ class TestRunBodyH1MatchesTitle:
     async def test_date_line_preserved_as_subtitle_after_h1_stripped(self):
         from unittest.mock import patch
 
-        from modules.content.atoms.narrate_bundle import run
-        from utils.text_utils import extract_title_from_content
+        from poindexter.modules.content.atoms.narrate_bundle import run
+        from poindexter.utils.text_utils import extract_title_from_content
 
         async def _stub_llm(prompt, *, model=None, **kwargs):
             return "TITLE: Some Good Headline\n\nProse body referencing PR #1445."
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
             result = await run({
                 "task_id": "subtitle",
                 "site_config": _CaptureSiteConfig(),
@@ -808,13 +808,13 @@ class TestRunBodyH1MatchesTitle:
     async def test_quiet_day_body_h1_equals_title(self):
         from unittest.mock import patch
 
-        from modules.content.atoms.narrate_bundle import run
-        from utils.text_utils import extract_title_from_content
+        from poindexter.modules.content.atoms.narrate_bundle import run
+        from poindexter.utils.text_utils import extract_title_from_content
 
         async def _capture_chat(prompt, *, model=None, **kwargs):
             return "Stub."
 
-        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat):
+        with patch("poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat):
             result = await run({
                 "task_id": "quiet-h1",
                 "site_config": _CaptureSiteConfig(),
@@ -846,7 +846,7 @@ class TestResolveSystemPrompt:
         so the placeholders in the SKILL.md template don't raise KeyError."""
         from unittest.mock import MagicMock, patch
 
-        from modules.content.atoms.narrate_bundle import _resolve_system_prompt
+        from poindexter.modules.content.atoms.narrate_bundle import _resolve_system_prompt
 
         site_config = _CaptureSiteConfig()
         captured_kwargs: list[dict] = []
@@ -888,7 +888,7 @@ class TestResolveSystemPrompt:
         import logging
         from unittest.mock import MagicMock, patch
 
-        from modules.content.atoms.narrate_bundle import (
+        from poindexter.modules.content.atoms.narrate_bundle import (
             _NARRATIVE_SYSTEM_PROMPT_FALLBACK,
             _resolve_system_prompt,
         )
@@ -992,7 +992,7 @@ class TestTitleVarietyGuidance:
             state["database_service"] = db
 
         with patch(
-            "modules.content.atoms.narrate_bundle._ollama_chat_text",
+            "poindexter.modules.content.atoms.narrate_bundle._ollama_chat_text",
             _capture_chat,
         ):
             await run(state)

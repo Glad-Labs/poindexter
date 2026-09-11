@@ -22,8 +22,8 @@ from middleware.api_token_auth import verify_api_token
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.rate_limiter import limiter
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 

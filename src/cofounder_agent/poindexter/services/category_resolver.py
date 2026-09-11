@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 
 from poindexter.services.database_service import DatabaseService
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ async def select_category_for_topic(
                 exc_info=True,
             )
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="category_resolver.select_category_for_topic",
                     kind="explicit_category_lookup_failed",

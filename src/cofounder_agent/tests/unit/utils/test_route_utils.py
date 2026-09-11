@@ -20,7 +20,7 @@ import pytest
 
 class TestServiceContainerInit:
     def setup_method(self):
-        from utils.route_utils import ServiceContainer
+        from poindexter.utils.route_utils import ServiceContainer
 
         self.container = ServiceContainer()
 
@@ -37,7 +37,7 @@ class TestServiceContainerInit:
 
 class TestServiceContainerSetGet:
     def setup_method(self):
-        from utils.route_utils import ServiceContainer
+        from poindexter.utils.route_utils import ServiceContainer
 
         self.container = ServiceContainer()
 
@@ -81,13 +81,13 @@ class TestServiceContainerSetGet:
 
 class TestGetServicesGlobal:
     def test_get_services_returns_service_container(self):
-        from utils.route_utils import ServiceContainer, get_services
+        from poindexter.utils.route_utils import ServiceContainer, get_services
 
         result = get_services()
         assert isinstance(result, ServiceContainer)
 
     def test_get_services_same_object_on_repeated_calls(self):
-        from utils.route_utils import get_services
+        from poindexter.utils.route_utils import get_services
 
         assert get_services() is get_services()
 
@@ -99,24 +99,24 @@ class TestDependencyFunctions:
     """
 
     def _fresh_container(self):
-        from utils.route_utils import ServiceContainer
+        from poindexter.utils.route_utils import ServiceContainer
 
         return ServiceContainer()
 
     def _patch_services(self, container):
-        import utils.route_utils as mod
+        import poindexter.utils.route_utils as mod
 
         original = mod._services
         mod._services = container
         return original
 
     def _restore_services(self, original):
-        import utils.route_utils as mod
+        import poindexter.utils.route_utils as mod
 
         mod._services = original
 
     def test_get_database_dependency_returns_db(self):
-        from utils.route_utils import get_database_dependency
+        from poindexter.utils.route_utils import get_database_dependency
 
         c = self._fresh_container()
         mock_db = MagicMock()
@@ -128,7 +128,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_database_dependency_raises_when_none(self):
-        from utils.route_utils import get_database_dependency
+        from poindexter.utils.route_utils import get_database_dependency
 
         c = self._fresh_container()
         orig = self._patch_services(c)
@@ -139,7 +139,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_redis_cache_dependency_returns_cache(self):
-        from utils.route_utils import get_redis_cache_dependency
+        from poindexter.utils.route_utils import get_redis_cache_dependency
 
         c = self._fresh_container()
         mock_c = MagicMock()
@@ -151,7 +151,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_redis_cache_dependency_raises_when_none(self):
-        from utils.route_utils import get_redis_cache_dependency
+        from poindexter.utils.route_utils import get_redis_cache_dependency
 
         c = self._fresh_container()
         orig = self._patch_services(c)
@@ -162,7 +162,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_redis_cache_optional_returns_none_when_unset(self):
-        from utils.route_utils import get_redis_cache_optional
+        from poindexter.utils.route_utils import get_redis_cache_optional
 
         c = self._fresh_container()
         orig = self._patch_services(c)
@@ -173,7 +173,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_redis_cache_optional_returns_cache_when_set(self):
-        from utils.route_utils import get_redis_cache_optional
+        from poindexter.utils.route_utils import get_redis_cache_optional
 
         c = self._fresh_container()
         mock_c = MagicMock()
@@ -185,7 +185,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_service_dependency_returns_named_service(self):
-        from utils.route_utils import get_service_dependency
+        from poindexter.utils.route_utils import get_service_dependency
 
         c = self._fresh_container()
         mock_svc = MagicMock()
@@ -197,7 +197,7 @@ class TestDependencyFunctions:
             self._restore_services(orig)
 
     def test_get_service_dependency_raises_when_not_set(self):
-        from utils.route_utils import get_service_dependency
+        from poindexter.utils.route_utils import get_service_dependency
 
         c = self._fresh_container()
         orig = self._patch_services(c)
@@ -210,8 +210,8 @@ class TestDependencyFunctions:
 
 class TestRegisterLegacyDbService:
     def test_delegates_to_set_database(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, register_legacy_db_service
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer, register_legacy_db_service
 
         c = ServiceContainer()
         orig = mod._services
@@ -226,8 +226,8 @@ class TestRegisterLegacyDbService:
 
 class TestInitializeServices:
     def test_sets_database_on_container_and_app_state(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, initialize_services
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -243,8 +243,8 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_skips_none_services(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, initialize_services
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -257,8 +257,8 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_registers_additional_kwargs(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, initialize_services
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -272,8 +272,8 @@ class TestInitializeServices:
             mod._services = orig
 
     def test_sets_all_standard_services(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, initialize_services
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer, initialize_services
 
         c = ServiceContainer()
         orig = mod._services
@@ -293,8 +293,11 @@ class TestInitializeServices:
 
 class TestGetEnhancedStatusChangeService:
     def test_raises_when_database_not_initialized(self):
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import (
+            ServiceContainer,
+            get_enhanced_status_change_service,
+        )
 
         c = ServiceContainer()
         orig = mod._services
@@ -308,8 +311,8 @@ class TestGetEnhancedStatusChangeService:
     def test_returns_service_when_database_initialized(self):
         from unittest.mock import patch
 
-        import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer
+        import poindexter.utils.route_utils as mod
+        from poindexter.utils.route_utils import ServiceContainer
 
         c = ServiceContainer()
         mock_db = MagicMock()
@@ -325,7 +328,7 @@ class TestGetEnhancedStatusChangeService:
             mock_esc_cls.return_value = mock_esc_instance
 
             with (
-                patch("utils.route_utils.ServiceContainer"),  # not patched — import already done
+                patch("poindexter.utils.route_utils.ServiceContainer"),  # not patched — import already done
                 patch("poindexter.services.tasks_db.TasksDatabase", mock_tasks_db_cls),
                 patch(
                     "poindexter.services.enhanced_status_change_service.EnhancedStatusChangeService",
@@ -335,7 +338,7 @@ class TestGetEnhancedStatusChangeService:
                 # The imports inside get_enhanced_status_change_service are local,
                 # so we need to patch via the function's module.
                 with patch(  # type: ignore[attr-defined]
-                    "utils.route_utils.get_enhanced_status_change_service.__module__", create=True
+                    "poindexter.utils.route_utils.get_enhanced_status_change_service.__module__", create=True
                 ):
                     pass
             # Without patching the local imports inside the function body (tricky),

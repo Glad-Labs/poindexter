@@ -14,7 +14,7 @@ from typing import Any
 import asyncpg
 import pytest
 
-from plugins import Document, PluginConfig
+from poindexter.plugins import Document, PluginConfig
 from poindexter.services.taps.runner import run_tap
 from tests.integration.conftest import requires_real_services
 

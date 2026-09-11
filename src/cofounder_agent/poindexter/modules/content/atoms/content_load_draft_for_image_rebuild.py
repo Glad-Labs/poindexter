@@ -22,8 +22,8 @@ import logging
 import re
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 

@@ -58,7 +58,7 @@ if os.path.isdir(_AGENT_SRC):
     sys.path.insert(0, os.path.abspath(_AGENT_SRC))
 
 import asyncpg  # noqa: E402
-from utils.title_utils import (  # noqa: E402
+from poindexter.utils.title_utils import (  # noqa: E402
     DEFAULT_SEO_TITLE_MAX_LEN,
     derive_seo_title,
     extract_body_h1,

@@ -385,10 +385,10 @@ class TestAutoPublish:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.get_auto_publish_threshold",
+            "poindexter.modules.content.api.get_auto_publish_threshold",
             AsyncMock(return_value=80.0),
         ), patch(
-            "modules.content.api.auto_publish_task",
+            "poindexter.modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
@@ -434,7 +434,7 @@ class TestAutoPublish:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.auto_publish_task",
+            "poindexter.modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
@@ -472,10 +472,10 @@ class TestAutoPublish:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.get_auto_publish_threshold",
+            "poindexter.modules.content.api.get_auto_publish_threshold",
             AsyncMock(return_value=80.0),
         ), patch(
-            "modules.content.api.auto_publish_task",
+            "poindexter.modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
@@ -761,10 +761,10 @@ class TestRejectedTaskGuard:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.get_auto_publish_threshold",
+            "poindexter.modules.content.api.get_auto_publish_threshold",
             AsyncMock(return_value=70.0),
         ), patch(
-            "modules.content.api.auto_publish_task", auto_pub_mock,
+            "poindexter.modules.content.api.auto_publish_task", auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
@@ -957,10 +957,10 @@ class TestAutoPublishGateBypass:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.get_auto_publish_threshold",
+            "poindexter.modules.content.api.get_auto_publish_threshold",
             threshold_mock,
         ), patch(
-            "modules.content.api.auto_publish_task",
+            "poindexter.modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
@@ -1017,11 +1017,11 @@ class TestAutoPublishGateBypass:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.get_auto_publish_threshold",
+            "poindexter.modules.content.api.get_auto_publish_threshold",
             # Threshold above the score → the global path also declines.
             AsyncMock(return_value=95.0),
         ), patch(
-            "modules.content.api.auto_publish_task",
+            "poindexter.modules.content.api.auto_publish_task",
             auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
@@ -1086,9 +1086,9 @@ class TestAutoPublishGateBypass:
             "poindexter.services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
         ), patch(
-            "modules.content.api.evaluate_auto_publish_gate", gate_eval_mock,
+            "poindexter.modules.content.api.evaluate_auto_publish_gate", gate_eval_mock,
         ), patch(
-            "modules.content.api.auto_publish_task", auto_pub_mock,
+            "poindexter.modules.content.api.auto_publish_task", auto_pub_mock,
         ), patch(
             "poindexter.services.integrations.operator_notify.notify_operator",
             notify_mock,

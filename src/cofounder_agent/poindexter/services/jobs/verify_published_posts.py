@@ -48,11 +48,11 @@ from typing import Any
 
 import httpx
 
-from plugins.job import JobResult
-from utils.crawler_ua import build_crawler_ua
-from utils.edge_challenge import is_edge_challenge
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.job import JobResult
+from poindexter.utils.crawler_ua import build_crawler_ua
+from poindexter.utils.edge_challenge import is_edge_challenge
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

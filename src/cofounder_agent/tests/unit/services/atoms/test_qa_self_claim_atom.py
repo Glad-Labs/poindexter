@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms import qa_self_claim as atom
+from poindexter.modules.content.atoms import qa_self_claim as atom
 
 pytestmark = pytest.mark.unit
 
@@ -54,7 +54,7 @@ def _patch_gates(monkeypatch):
 
     monkeypatch.setattr(atom, "resolve_gate_states", _states)
     monkeypatch.setattr(
-        "modules.content.multi_model_qa.MultiModelQA.__init__",
+        "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
         lambda self, **kw: None,
     )
 

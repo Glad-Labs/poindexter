@@ -129,7 +129,7 @@ def emitted(monkeypatch):
     def _capture(**kwargs):
         calls.append(kwargs)
 
-    monkeypatch.setattr("utils.findings.emit_finding", _capture)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", _capture)
     return calls
 
 
@@ -385,7 +385,7 @@ class TestEmissionNeverBreaksTheWalk:
         def _boom(**kwargs):
             raise RuntimeError("audit log down")
 
-        monkeypatch.setattr("utils.findings.emit_finding", _boom)
+        monkeypatch.setattr("poindexter.utils.findings.emit_finding", _boom)
         pool = _FakePool()
         pool.next_streak = 2
         pool.next_fetch = [

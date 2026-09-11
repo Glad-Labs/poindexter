@@ -34,9 +34,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.internal_link_coherence import get_tag_slugs_for_post
-from plugins.llm_providers.gemini import GeminiProvider
-from plugins.scheduler import PluginScheduler
+from poindexter.modules.content.internal_link_coherence import get_tag_slugs_for_post
+from poindexter.plugins.llm_providers.gemini import GeminiProvider
+from poindexter.plugins.scheduler import PluginScheduler
 from poindexter.services import (
     content_revisions_logger,
     experiment_runner,
@@ -50,14 +50,14 @@ from poindexter.services.integrations import operator_notify
 from poindexter.services.jobs import run_dev_diary_post
 from poindexter.services.self_consistency_rail import _sample_summaries
 from poindexter.services.web_research import WebResearcher
-from utils import startup_manager as startup_manager_module
+from poindexter.utils import startup_manager as startup_manager_module
 
 pytestmark = pytest.mark.unit
 
 
 def _capture(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls
@@ -96,7 +96,7 @@ def test_gemini_is_enabled_emits_finding_on_site_config_error():
             raise RuntimeError("cache corrupted")
 
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
     orig = findings_module.emit_finding
     findings_module.emit_finding = lambda **kw: calls.append(kw)
     try:
@@ -156,7 +156,7 @@ async def test_weighted_selection_enabled_emits_finding_on_conn_error(monkeypatc
 
 def test_resolve_site_config_emits_finding_when_get_site_config_raises(monkeypatch):
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
 
     fake_shared_context = MagicMock()
@@ -213,7 +213,7 @@ async def test_podcast_record_episode_asset_emits_finding_on_import_failure(
 
 def test_setup_pyroscope_emits_finding_on_site_config_import_failure(monkeypatch):
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     monkeypatch.setitem(sys.modules, "poindexter.services.site_config", None)
     profiling.setup_pyroscope("test-service", site_config=None)

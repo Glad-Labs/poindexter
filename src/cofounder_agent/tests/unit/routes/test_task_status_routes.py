@@ -28,9 +28,9 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.enhanced_status_change_service import EnhancedStatusChangeService
+from poindexter.utils.route_utils import get_database_dependency
 from routes.task_routes import router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -102,7 +102,7 @@ def _make_client_with_status_svc(mock_db=None, mock_svc=None):
     # utils.route_utils.get_enhanced_status_change_service().
     # We patch that function to return our mock.
     patcher = patch(
-        "utils.route_utils.get_enhanced_status_change_service",
+        "poindexter.utils.route_utils.get_enhanced_status_change_service",
         return_value=mock_svc,
     )
     patcher.start()

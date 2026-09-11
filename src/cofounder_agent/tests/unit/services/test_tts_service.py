@@ -871,7 +871,7 @@ class TestTtsService:
         import re
         import subprocess
 
-        from modules.content.atoms.qa_audio import _DEFAULT_MAX_VOLUME_CLIP_DB
+        from poindexter.modules.content.atoms.qa_audio import _DEFAULT_MAX_VOLUME_CLIP_DB
         from poindexter.services.tts_service import _remux_concatenated_audio
 
         def _max_volume_db(path) -> float:

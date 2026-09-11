@@ -12,8 +12,8 @@ FinanceModule need the worker's heavy deps; their conformance is covered in CI +
 
 from __future__ import annotations
 
-from plugins.module import Module, ModuleManifest
-from plugins.platform import Capability, ScopedPlatform, scope_for_module
+from poindexter.plugins.module import Module, ModuleManifest
+from poindexter.plugins.platform import Capability, ScopedPlatform, scope_for_module
 from tests.unit._fake_platform import FakePlatform
 
 
@@ -94,7 +94,7 @@ def test_scope_for_module_grants_only_declared_capabilities() -> None:
 
 
 def test_scope_for_module_blocks_undeclared_capability() -> None:
-    from plugins.platform import CapabilityError
+    from poindexter.plugins.platform import CapabilityError
 
     module = _stub_module(capabilities=(Capability.CONFIG,))
     scoped = scope_for_module(module, FakePlatform(config={"k": "v"}))

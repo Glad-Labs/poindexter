@@ -32,7 +32,7 @@ import httpx
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.crawler_ua import build_crawler_ua
+from poindexter.utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)
 

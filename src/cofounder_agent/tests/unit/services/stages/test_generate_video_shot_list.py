@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.generate_video_shot_list import (
+from poindexter.modules.content.stages.generate_video_shot_list import (
     GenerateVideoShotListStage,
     _estimate_short_duration,
     _estimate_target_duration,
@@ -529,7 +529,7 @@ async def test_shot_list_returned_via_context_updates():
     gpu = SimpleNamespace(lock=lambda *a, **k: _FakeLock())
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
-         patch("modules.content.stages.generate_video_shot_list._log_audit", new=AsyncMock()):
+         patch("poindexter.modules.content.stages.generate_video_shot_list._log_audit", new=AsyncMock()):
         pm.return_value.get_prompt.return_value = "director prompt"
         result = await GenerateVideoShotListStage().execute(ctx, {})
 

@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.source_featured_image import (
+from poindexter.modules.content.stages.source_featured_image import (
     GeneratedImage,
     SourceFeaturedImageStage,
 )
@@ -70,7 +70,7 @@ class TestSourceFeaturedImageRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-row-1")
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.png",
                 photographer="AI Generated (image-gen)",
@@ -121,7 +121,7 @@ class TestSourceFeaturedImageRecordsAsset:
         # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the image-gen path to miss so the Pexels fallback runs.
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "poindexter.services.media_asset_recorder.record_media_asset",
@@ -158,7 +158,7 @@ class TestSourceFeaturedImageRecordsAsset:
         # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the image-gen path to miss so search_featured_image is reached.
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "poindexter.services.media_asset_recorder.record_media_asset",
@@ -215,7 +215,7 @@ class TestFeaturedImageDataContextUpdates:
             },
         )
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=gen_img),
         ), patch(
             "poindexter.services.media_asset_recorder.record_media_asset",
@@ -272,7 +272,7 @@ class TestFeaturedImageDataContextUpdates:
         )
         recorder = AsyncMock(return_value="row")
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=gen_img),
         ), patch(
             "poindexter.services.media_asset_recorder.record_media_asset",
@@ -314,7 +314,7 @@ class TestFeaturedImageDataContextUpdates:
         # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the image-gen path to miss so the Pexels branch populates featured_image_data.
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "poindexter.services.media_asset_recorder.record_media_asset",

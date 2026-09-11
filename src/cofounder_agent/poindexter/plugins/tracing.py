@@ -14,7 +14,7 @@ This module centralizes the pattern so a new provider gets traces in
 **1-2 lines** instead of 30+:
 
     # Top of the plugin module
-    from plugins.tracing import get_tracer, traced_method, traced_span
+    from poindexter.plugins.tracing import get_tracer, traced_method, traced_span
 
     _tracer = get_tracer("poindexter.image_providers.midjourney")
 

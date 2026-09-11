@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from utils.uuid_prefix import (
+from poindexter.utils.uuid_prefix import (
     looks_like_full_uuid,
     resolve_task_id_prefix,
     resolve_uuid_prefix,

@@ -30,8 +30,8 @@ import re
 from typing import Any
 
 from poindexter.services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # Atom metadata
 # ---------------------------------------------------------------------------
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="atoms.narrate_bundle",

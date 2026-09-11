@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.audio_gen_provider import AudioGenProvider, AudioGenResult
+from poindexter.plugins.audio_gen_provider import AudioGenProvider, AudioGenResult
 from poindexter.services.audio_gen_providers.stable_audio_open import (
     StableAudioOpenProvider,
     _apply_prompt_template,

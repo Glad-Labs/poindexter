@@ -124,7 +124,7 @@ def _sc(**overrides):
 
 
 async def _render_inline(client, attempts=3):
-    from modules.content.atoms._image_helpers import _render_one_with_retry
+    from poindexter.modules.content.atoms._image_helpers import _render_one_with_retry
 
     return await _render_one_with_retry(
         client, num="1", prompt="a glowing server rack", neg_prompt="",
@@ -140,7 +140,7 @@ async def test_inline_batch_does_not_retry_a_gate_rejection():
     image_ocr_gate_max_attempts times before returning 422."""
     client = MagicMock()
     client.post = AsyncMock(return_value=_resp(422, _REJECTION_BODY))
-    with patch("modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
+    with patch("poindexter.modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
         out = await _render_inline(client, attempts=3)
 
     assert out is None
@@ -155,12 +155,12 @@ async def test_inline_batch_still_retries_a_transient_non_200():
     client = MagicMock()
     client.post = AsyncMock(side_effect=[_resp(503), _resp(200)])
     with patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         AsyncMock(return_value="/tmp/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         AsyncMock(return_value="https://cdn.example/owned.webp"),
-    ), patch("modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
+    ), patch("poindexter.modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
         out = await _render_inline(client, attempts=3)
 
     assert out == "https://cdn.example/owned.webp"
@@ -176,7 +176,7 @@ async def test_inline_batch_still_retries_a_transient_non_200():
 async def test_featured_render_flags_a_gate_rejection_in_its_meta():
     """`_render_image_gen` returns (None, meta); the rejection has to travel
     in the meta because that tuple is all the retry loop above it sees."""
-    from modules.content.stages import source_featured_image as sfi
+    from poindexter.modules.content.stages import source_featured_image as sfi
 
     client = MagicMock()
     client.post = AsyncMock(return_value=_resp(422, _REJECTION_BODY))
@@ -204,7 +204,7 @@ async def test_featured_render_flags_a_gate_rejection_in_its_meta():
 async def test_featured_render_leaves_meta_unflagged_for_other_failures():
     """A 503 must NOT set the flag, or the hero path would stop retrying the
     restart window it was built to survive."""
-    from modules.content.stages import source_featured_image as sfi
+    from poindexter.modules.content.stages import source_featured_image as sfi
 
     client = MagicMock()
     client.post = AsyncMock(return_value=_resp(503))

@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services import pipeline_architect
 from poindexter.services.template_runner import PipelineState
 
@@ -88,7 +88,7 @@ def _build_two_node_graph(
     with (
         patch.object(pipeline_architect, "get_atom_meta", lambda name: catalog.get(name)),
         patch.object(pipeline_architect, "get_atom_callable", lambda name: callables.get(name)),
-        patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         graph = pipeline_architect.build_graph_from_spec(spec, pool=None)
 
@@ -187,7 +187,7 @@ class TestHaltShortCircuit:
         with (
             patch.object(pipeline_architect, "get_atom_meta", lambda name: catalog.get(name)),
             patch.object(pipeline_architect, "get_atom_callable", lambda name: callables.get(name)),
-            patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+            patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
         ):
             compiled = pipeline_architect.build_graph_from_spec(spec, pool=None).compile()
 

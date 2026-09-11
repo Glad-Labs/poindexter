@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Generate and persist the canonical title, including originality check."""
-    from modules.content.atoms._seo_common import resolve_primary_keyword
+    from poindexter.modules.content.atoms._seo_common import resolve_primary_keyword
     from poindexter.services.title_generation import (
         DEFAULT_TITLE_EXCERPT_CHARS,
         build_title_grounding_digest,
@@ -190,7 +190,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # title beats no post), but it must not ship silently — this is the signal
     # that the threshold or the avoidance prompt needs attention.
     if originality.get("internal_duplicate"):
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         matches = originality.get("internal_matches") or []
         emit_finding(
@@ -273,7 +273,7 @@ async def _apply_searchability_gate(
         has_searchable_entity,
         render_entity_directive,
     )
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     enabled = True
     mode = "regenerate"

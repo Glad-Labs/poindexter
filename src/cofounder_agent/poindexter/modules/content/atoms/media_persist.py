@@ -27,7 +27,7 @@ import os
 import shutil
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from poindexter.services.media_asset_recorder import record_media_asset
 
 logger = logging.getLogger(__name__)

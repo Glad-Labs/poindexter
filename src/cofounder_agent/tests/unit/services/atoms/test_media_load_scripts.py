@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms.media_load_scripts import run as load_scripts_run
+from poindexter.modules.content.atoms.media_load_scripts import run as load_scripts_run
 
 
 def _pool_returning(row):

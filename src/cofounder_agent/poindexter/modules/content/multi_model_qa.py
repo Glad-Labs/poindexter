@@ -12,7 +12,7 @@ Architecture:
   Arbiter:      Score aggregation — weighted average decides publish/reject
 
 Usage:
-    from modules.content.multi_model_qa import MultiModelQA
+    from poindexter.modules.content.multi_model_qa import MultiModelQA
     qa = MultiModelQA(pool, site_config=site_config)
     result = await qa.review(title, content, topic)
     if result.approved:
@@ -26,14 +26,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from modules.content.content_validator import ValidationResult, validate_content
+from poindexter.modules.content.content_validator import ValidationResult, validate_content
 from poindexter.services.audit_event_schemas import validate_event_details
 from poindexter.services.integrations.operator_notify import notify_operator
 from poindexter.services.langfuse_shim import observe  # type: ignore[attr-defined]
 from poindexter.services.logger_config import get_logger
 from poindexter.services.prompt_manager import get_prompt_manager
 from poindexter.services.qa_gates_db import load_qa_gate_chain
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
     import httpx
@@ -561,7 +561,7 @@ class MultiModelQA:
                 if (norm, key) in _CRITIC_COLLISIONS_SEEN:
                     continue
                 _CRITIC_COLLISIONS_SEEN.add((norm, key))
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
 
                 emit_finding(
                     source="modules.content.multi_model_qa",
@@ -650,7 +650,7 @@ class MultiModelQA:
             # (Glad-Labs/poindexter#985). Daily dedup keeps it one finding
             # per engaged model, not one per review.
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
 
                 emit_finding(
                     source="modules.content.multi_model_qa",
@@ -885,7 +885,7 @@ class MultiModelQA:
             logger.info("[MULTI_QA] Skipped gate 'url_verifier' (qa_gates.enabled=False)")
         else:
             try:
-                from modules.content.content_validator import verify_content_urls
+                from poindexter.modules.content.content_validator import verify_content_urls
                 url_issues = await verify_content_urls(
                     content, site_config=self._site_config,
                 )
@@ -2862,7 +2862,7 @@ class MultiModelQA:
         try:
             from poindexter.services.preview_screenshot import capture_preview_screenshot
         except Exception as e:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="multi_model_qa",

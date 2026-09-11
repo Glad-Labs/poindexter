@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ async def _resolve_active_experiment_key(database_service: Any) -> str | None:
             "[experiment_hook] could not read %s from app_settings: %s",
             _ACTIVE_EXPERIMENT_SETTING, e,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="pipeline_experiment_hook",
@@ -119,7 +119,7 @@ async def _get_variant_config(
             "[experiment_hook] could not load variants for %r: %s",
             experiment_key, e,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="pipeline_experiment_hook",
@@ -194,7 +194,7 @@ async def assign_pipeline_variant(
         )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="pipeline_experiment_hook",
@@ -293,7 +293,7 @@ async def record_pipeline_outcome(
         )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="pipeline_experiment_hook",

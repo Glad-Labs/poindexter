@@ -45,9 +45,9 @@ import asyncio
 import logging
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.metrics_exporter import CLOUDFLARE_BEACON_REACHABLE
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

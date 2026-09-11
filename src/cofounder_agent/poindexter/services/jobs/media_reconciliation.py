@@ -124,9 +124,9 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 if TYPE_CHECKING:  # annotation-only — the runtime import stays lazy, inside
     # _probe_infra_health, so importing this job never pulls the probe stack.

@@ -12,7 +12,7 @@ bullets with the real article buried below.
 
 import asyncio
 
-from modules.content.atoms.content_normalize_draft import (
+from poindexter.modules.content.atoms.content_normalize_draft import (
     run,
     strip_leaked_planning_scaffold,
 )

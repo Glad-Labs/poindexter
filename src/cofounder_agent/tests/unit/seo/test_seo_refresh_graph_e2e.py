@@ -13,7 +13,7 @@ Issue: Glad-Labs/poindexter#763 (SEO Harvest Loop Phase 2).
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-from modules.content.atoms import _seo_common, content_republish_post
+from poindexter.modules.content.atoms import _seo_common, content_republish_post
 from poindexter.services.atom_registry import discover
 from poindexter.services.pipeline_architect import build_graph_from_spec
 from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF

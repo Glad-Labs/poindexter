@@ -145,7 +145,7 @@ def publishers_set_secret(name: str, key: str, value: str | None) -> None:
                 f"prefix {ref!r}; refusing to cross-write namespaces"
             )
         # plugins.secrets owns the encrypted write; we just hand it a conn.
-        from plugins.secrets import ensure_pgcrypto, set_secret
+        from poindexter.plugins.secrets import ensure_pgcrypto, set_secret
 
         async with pool.acquire() as conn:
             await ensure_pgcrypto(conn)

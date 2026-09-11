@@ -81,7 +81,7 @@ from typing import Any
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 from .audit_log import audit_log_bg
 from .database_service import DatabaseService
@@ -133,7 +133,7 @@ async def _record_experiment_outcome(
         )
     except Exception as _exc:  # noqa: BLE001 — attribution is best-effort; never poison the run
         logger.debug("[BG-TASK] experiment record_outcome failed: %s", _exc)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.content_router_service",

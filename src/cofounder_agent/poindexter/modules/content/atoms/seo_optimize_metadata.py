@@ -20,8 +20,8 @@ import json
 import re
 from typing import Any
 
-from modules.content.atoms import _seo_common as sc
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="seo.optimize_metadata",

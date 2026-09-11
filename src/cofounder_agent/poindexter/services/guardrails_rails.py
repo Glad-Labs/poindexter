@@ -67,7 +67,7 @@ import re
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -105,7 +105,7 @@ def run_brand_guard(content: str) -> tuple[bool, str | None]:
         return True, None
 
     try:
-        from modules.content.api import content_validator as cv
+        from poindexter.modules.content.api import content_validator as cv
 
         issues: list[str] = []
         # Hit each pattern set the legacy validator hits, accumulate
@@ -199,7 +199,7 @@ def _resolve_competitors(site_config: Any) -> list[str]:
             e, exc_info=True,
         )
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             emit_finding(
                 source="guardrails_rails._resolve_competitors",
                 kind="guardrails_competitor_list_read_failed",

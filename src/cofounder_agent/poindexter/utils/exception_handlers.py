@@ -181,7 +181,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         app: FastAPI application instance
 
     Example:
-        from utils.exception_handlers import register_exception_handlers
+        from poindexter.utils.exception_handlers import register_exception_handlers
 
         app = FastAPI()
         register_exception_handlers(app)

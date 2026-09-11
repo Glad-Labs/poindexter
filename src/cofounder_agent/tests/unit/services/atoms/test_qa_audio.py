@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import modules.content.atoms.qa_audio as qa
+import poindexter.modules.content.atoms.qa_audio as qa
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

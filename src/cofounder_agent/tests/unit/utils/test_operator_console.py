@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.cache_control import NO_STORE, CacheControlMiddleware
-from utils.operator_console import (
+from poindexter.utils.operator_console import (
     CONSOLE_CACHE_CONTROL,
     _default_console_dir,
     mount_operator_console,

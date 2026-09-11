@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from utils.route_registration import (
+from poindexter.utils.route_registration import (
     _COORDINATOR_ROUTES,
     _ROUTE_MANIFEST,
     _WORKER_ROUTES,
@@ -29,7 +29,7 @@ from utils.route_registration import (
 # ``importlib.util.find_spec`` so the spec lookup itself doesn't try
 # to import (and therefore execute) the module — it just answers
 # "is this importable?".
-_FINANCE_MODULE_PRESENT = importlib.util.find_spec("modules.finance") is not None
+_FINANCE_MODULE_PRESENT = importlib.util.find_spec("poindexter.modules.finance") is not None
 _finance_only = pytest.mark.skipif(
     not _FINANCE_MODULE_PRESENT,
     reason="modules.finance is private (operator overlay) — stripped from public mirror",
@@ -165,7 +165,7 @@ class TestRouteManifestStructure:
 class TestRegisterAllRoutes:
     def test_returns_dict(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app)
@@ -173,7 +173,7 @@ class TestRegisterAllRoutes:
 
     def test_pre_excluded_routers_are_false(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app)
@@ -182,7 +182,7 @@ class TestRegisterAllRoutes:
 
     def test_successful_route_status_is_true(self):
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app)
@@ -194,7 +194,7 @@ class TestRegisterAllRoutes:
         app = _make_app()
         # Make every import fail
         with patch(
-            "utils.route_registration.importlib.import_module",
+            "poindexter.utils.route_registration.importlib.import_module",
             side_effect=ImportError("no module"),
         ):
             result = register_all_routes(app)
@@ -204,7 +204,7 @@ class TestRegisterAllRoutes:
     def test_generic_exception_sets_status_to_false(self):
         app = _make_app()
         with patch(
-            "utils.route_registration.importlib.import_module",
+            "poindexter.utils.route_registration.importlib.import_module",
             side_effect=RuntimeError("boom"),
         ):
             result = register_all_routes(app)
@@ -214,7 +214,7 @@ class TestRegisterAllRoutes:
     def test_does_not_raise_on_import_failure(self):
         app = _make_app()
         with patch(
-            "utils.route_registration.importlib.import_module",
+            "poindexter.utils.route_registration.importlib.import_module",
             side_effect=Exception("crash"),
         ):
             # Should not raise
@@ -235,8 +235,8 @@ class TestRegisterAllRoutes:
         # ``plugins.registry``, it silently patches the mock instead of
         # the real module and the production code reaches the real
         # ``get_modules``.
-        with patch("plugins.registry.get_modules", return_value=[]), \
-             patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.plugins.registry.get_modules", return_value=[]), \
+             patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app)
@@ -246,9 +246,9 @@ class TestRegisterAllRoutes:
     def test_include_router_not_called_on_import_failure(self):
         app = _make_app()
         # Patch order: get_modules first; see sibling test for why.
-        with patch("plugins.registry.get_modules", return_value=[]), \
+        with patch("poindexter.plugins.registry.get_modules", return_value=[]), \
              patch(
-                 "utils.route_registration.importlib.import_module",
+                 "poindexter.utils.route_registration.importlib.import_module",
                  side_effect=ImportError("no module"),
              ):
             register_all_routes(app)
@@ -267,7 +267,7 @@ class TestRegisterAllRoutes:
             return MagicMock()
 
         with patch(
-            "utils.route_registration.importlib.import_module",
+            "poindexter.utils.route_registration.importlib.import_module",
             side_effect=_import_side_effect,
         ):
             result = register_all_routes(app)
@@ -289,8 +289,8 @@ class TestRegisterAllRoutes:
         # module:finance also land True; that's exercised in
         # TestModuleV1RouteIteration). Patch order matters — see sibling
         # test_include_router_called_for_each_successful_route.
-        with patch("plugins.registry.get_modules", return_value=[]), \
-             patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.plugins.registry.get_modules", return_value=[]), \
+             patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app, deployment_mode="worker")
@@ -301,7 +301,7 @@ class TestRegisterAllRoutes:
     def test_worker_mode_includes_cms_router_for_preview(self):
         """Worker mode includes CMS routes for preview endpoint access."""
         app = _make_app()
-        with patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             result = register_all_routes(app, deployment_mode="worker")
@@ -314,8 +314,8 @@ class TestRegisterAllRoutes:
         # also calls app.include_router; exercised separately in
         # TestModuleV1RouteIteration). Patch order matters — see sibling
         # test_include_router_called_for_each_successful_route.
-        with patch("plugins.registry.get_modules", return_value=[]), \
-             patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.plugins.registry.get_modules", return_value=[]), \
+             patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app, deployment_mode="coordinator")
@@ -325,8 +325,8 @@ class TestRegisterAllRoutes:
         app = _make_app()
         # Patch order matters — see sibling
         # test_include_router_called_for_each_successful_route.
-        with patch("plugins.registry.get_modules", return_value=[]), \
-             patch("utils.route_registration.importlib.import_module") as mock_import:
+        with patch("poindexter.plugins.registry.get_modules", return_value=[]), \
+             patch("poindexter.utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
             register_all_routes(app)

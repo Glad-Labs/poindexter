@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_web_factcheck
-from modules.content.atoms._qa_rail_common import (
+from poindexter.modules.content.atoms import qa_web_factcheck
+from poindexter.modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
     known_wrong_fact_rescued,
 )
-from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:

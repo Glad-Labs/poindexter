@@ -52,7 +52,7 @@ from urllib.parse import urlparse, urlunparse
 import pytest
 import pytest_asyncio
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.niche_service import NicheService
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.topic_batch_service import TopicBatchService

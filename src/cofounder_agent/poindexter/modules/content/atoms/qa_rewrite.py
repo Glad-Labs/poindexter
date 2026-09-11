@@ -38,8 +38,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ def _failing_review_feedback(reviews: list[dict[str, Any]]) -> str:
 def _emit_truncated_finding(model: str, evidence: list[str]) -> None:
     """Best-effort observability when the revision came back truncated."""
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.atoms.qa_rewrite",
             kind="qa_rewrite_truncated_revision",
@@ -182,7 +182,7 @@ def _emit_truncated_finding(model: str, evidence: list[str]) -> None:
 def _emit_empty_finding(model: str) -> None:
     """Best-effort observability when the revise call yields nothing usable."""
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.atoms.qa_rewrite",
             kind="qa_rewrite_empty_revision",
@@ -263,7 +263,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # so the strip must happen here (prod task 342a26b7, 2026-07-23:
         # the briefing echo rode all the way to awaiting_approval).
         if revised:
-            from modules.content.atoms._scaffold_helpers import (
+            from poindexter.modules.content.atoms._scaffold_helpers import (
                 strip_leaked_planning_scaffold,
             )
             from poindexter.services.llm_providers.thinking_models import (
@@ -292,7 +292,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # anyway, minus one full rail re-run. Same degrade-to-reject path as an
     # empty revision: keep the prior content, burn the attempt.
     if revised:
-        from modules.content.content_validator import detect_truncated_content
+        from poindexter.modules.content.content_validator import detect_truncated_content
 
         truncation_evidence = detect_truncated_content(revised)
         if truncation_evidence:

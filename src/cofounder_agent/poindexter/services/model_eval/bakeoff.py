@@ -115,7 +115,7 @@ async def run_critic_bakeoff(
     # Best-effort visibility: one finding per run with the headline numbers
     # (min-good-approve floor per model_eval_critic_min_good_approve).
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         floor = float(site_config.get("model_eval_critic_min_good_approve", "0.7"))
         lines = []
@@ -215,7 +215,7 @@ async def run_self_review_bakeoff(
     # nothing reported it; a bakeoff whose result also went unreported would
     # repeat that exact mistake.
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         lines = [
             f"- `{r.model}`: balanced {r.value:.2f} | detection "

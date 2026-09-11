@@ -17,7 +17,7 @@ import re
 from typing import Any
 
 from poindexter.services import live_activity
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

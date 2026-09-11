@@ -20,7 +20,7 @@ import json
 import pytest
 
 import poindexter.services.chat_agent as chat_agent
-from plugins.llm_provider import Completion
+from poindexter.plugins.llm_provider import Completion
 from poindexter.services.chat_tools import ChatToolError, ChatToolSpec
 
 

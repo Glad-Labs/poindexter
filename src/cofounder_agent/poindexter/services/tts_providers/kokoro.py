@@ -42,7 +42,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from plugins.tts_provider import TTSResult
+from poindexter.plugins.tts_provider import TTSResult
 
 logger = logging.getLogger(__name__)
 

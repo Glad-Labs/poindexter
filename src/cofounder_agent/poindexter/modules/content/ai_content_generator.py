@@ -359,7 +359,7 @@ class AIContentGenerator:
         # scores it. Same detector as the qa.programmatic rail's
         # ``truncated_content`` rule, applied here so THIS writer pass
         # retries instead of shipping a severed draft into the pipeline.
-        from modules.content.content_validator import detect_truncated_content
+        from poindexter.modules.content.content_validator import detect_truncated_content
         truncation_reasons = detect_truncated_content(content)
         if truncation_reasons:
             issues.append(

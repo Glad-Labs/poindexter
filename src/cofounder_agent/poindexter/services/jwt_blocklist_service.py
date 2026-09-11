@@ -58,7 +58,7 @@ class JWTBlocklistService:
         import cycle (findings -> audit_log) at service-load time.
         """
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="jwt_blocklist_service",

@@ -24,11 +24,11 @@ import logging
 import os
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.jobs.dispatch_handles import claim_media_dispatch
 from poindexter.services.media_approval_service import record_dispatched, record_pending
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

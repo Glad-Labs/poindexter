@@ -209,8 +209,8 @@ def settings_get(key: str, json_output: bool, reveal: bool) -> None:
         async def _reveal() -> str | None:
             import asyncpg
 
-            from plugins.secrets import get_secret
             from poindexter.cli._bootstrap import ensure_secret_key, resolve_dsn
+            from poindexter.plugins.secrets import get_secret
 
             # Load POINDEXTER_SECRET_KEY from bootstrap.toml — a bare CLI
             # invocation doesn't inherit it the way the worker does.
@@ -367,8 +367,8 @@ def settings_set(
         async def _upsert_secret() -> None:
             import asyncpg
 
-            from plugins.secrets import ensure_pgcrypto, set_secret
             from poindexter.cli._bootstrap import ensure_secret_key, resolve_dsn
+            from poindexter.plugins.secrets import ensure_pgcrypto, set_secret
 
             # plugins.secrets reads POINDEXTER_SECRET_KEY from the env; a
             # bare ``poindexter <cmd>`` invocation hasn't loaded it the way

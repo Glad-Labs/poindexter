@@ -8,8 +8,8 @@ Two layers, both DB-free / LLM-free where possible:
 
 from __future__ import annotations
 
-from modules.content.atoms._citation_match import parse_corpus
-from modules.content.atoms.content_llm_reconcile_citations import (
+from poindexter.modules.content.atoms._citation_match import parse_corpus
+from poindexter.modules.content.atoms.content_llm_reconcile_citations import (
     apply_verified_links,
     candidate_corpus_sources,
 )
@@ -75,7 +75,7 @@ def test_candidate_gate_skips_already_linked_source():
 
 import json  # noqa: E402
 
-from modules.content.atoms import content_llm_reconcile_citations as atom  # noqa: E402
+from poindexter.modules.content.atoms import content_llm_reconcile_citations as atom  # noqa: E402
 
 
 class _Cfg:

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.topic_source import TopicSource
+from poindexter.plugins.topic_source import TopicSource
 from poindexter.services.topic_sources import igdb as igdb_mod
 from poindexter.services.topic_sources.igdb import IGDBSource
 
@@ -94,7 +94,7 @@ def _patch_secrets(client_id: str = "test-client-id", client_secret: str = "test
         if key == "igdb_twitch_client_secret":
             return client_secret
         return None
-    return patch("plugins.secrets.get_secret", new=_get_secret)
+    return patch("poindexter.plugins.secrets.get_secret", new=_get_secret)
 
 
 class TestIGDBSource:

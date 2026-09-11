@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="media.render_long_video",
@@ -52,7 +52,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render the long-form (16:9) video from ``video_shot_list``."""
-    from modules.content.atoms._media_render import render_from_state
+    from poindexter.modules.content.atoms._media_render import render_from_state
 
     # narration_fit (silent-tail fix, 2026-07-31): fit the visuals to the
     # ACTUAL narration in both directions. The long lane historically opted out

@@ -7,7 +7,7 @@ any residual scaffold so it can't reach awaiting_approval (quality 82 on the
 original) and trigger the QA rescue/rewrite cycle.
 """
 
-from modules.content.content_validator import validate_content
+from poindexter.modules.content.content_validator import validate_content
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.validator_config import reset_cache, seed_cache_for_tests
 
@@ -151,8 +151,8 @@ class TestScaffoldTellSync:
         # contract ("strip there, detect here") — a tell added to one and
         # not the other reproduces the ece2f516 class of miss, so the
         # patterns must stay byte-identical.
-        from modules.content.atoms._scaffold_helpers import SCAFFOLD_TELL_RE
-        from modules.content.content_validator import (
+        from poindexter.modules.content.atoms._scaffold_helpers import SCAFFOLD_TELL_RE
+        from poindexter.modules.content.content_validator import (
             LEAKED_PLANNING_SCAFFOLD_RE,
         )
 

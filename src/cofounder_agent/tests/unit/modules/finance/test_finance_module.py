@@ -18,8 +18,8 @@ import inspect
 
 import pytest
 
-from modules.finance.finance_module import FinanceModule
-from plugins.probe_registry import BrainProbeRegistry
+from poindexter.modules.finance.finance_module import FinanceModule
+from poindexter.plugins.probe_registry import BrainProbeRegistry
 
 
 @pytest.mark.unit
@@ -33,7 +33,7 @@ def test_register_probes_adds_poll_staleness_probe():
     assert probe.name == "poll_staleness"
     assert probe.interval_seconds == 300
     # The registered callable is the run function the brain will invoke.
-    from modules.finance.probes import run_finance_poll_staleness_probe
+    from poindexter.modules.finance.probes import run_finance_poll_staleness_probe
 
     assert probe.callable is run_finance_poll_staleness_probe
     assert "stall" in probe.description.lower()

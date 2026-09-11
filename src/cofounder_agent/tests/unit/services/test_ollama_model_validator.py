@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from utils.startup_manager import StartupManager
+from poindexter.utils.startup_manager import StartupManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -411,7 +411,7 @@ class TestOllamaValueClassification:
     """Unit-level checks on the value/key classifier itself."""
 
     def test_ollama_prefixed_values_are_checked(self):
-        from utils.startup_manager import _is_ollama_model_value
+        from poindexter.utils.startup_manager import _is_ollama_model_value
 
         assert _is_ollama_model_value(
             "pipeline_writer_model", "ollama/gemma-4-31B-it-qat:latest",
@@ -423,7 +423,7 @@ class TestOllamaValueClassification:
         allowlist of cloud prefixes, which could only ever recognise providers
         someone had already been bitten by — HuggingFace orgs sailed through
         and were reported as missing Ollama models."""
-        from utils.startup_manager import _is_ollama_model_value
+        from poindexter.utils.startup_manager import _is_ollama_model_value
 
         for value in (
             "anthropic/claude-sonnet-5",             # another LLM provider
@@ -438,7 +438,7 @@ class TestOllamaValueClassification:
 
     def test_sentinel_values_are_skipped(self):
         """`auto` selects a model at runtime — there is nothing to look up."""
-        from utils.startup_manager import _is_ollama_model_value
+        from poindexter.utils.startup_manager import _is_ollama_model_value
 
         assert not _is_ollama_model_value(
             "default_ollama_model", "auto", skip_keys=frozenset()
@@ -448,7 +448,7 @@ class TestOllamaValueClassification:
         """Bare values can't be classified by inspection, so the key decides.
         gpu_model is the clearest case: it holds a hardware description, and
         was being reported as a missing LLM."""
-        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
 
         assert "gpu_model" in _NON_OLLAMA_MODEL_KEYS
         assert not _is_ollama_model_value(
@@ -463,7 +463,7 @@ class TestOllamaValueClassification:
         """Default-on for unrecognised bare keys: a NEW Ollama model setting
         must be validated without anyone remembering to register it. Silence
         on a real missing model is worse than one false positive."""
-        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
 
         assert _is_ollama_model_value(
             "some_new_writer_model", "llama3.2:3b",
@@ -471,7 +471,7 @@ class TestOllamaValueClassification:
         )
 
     def test_operator_skip_list_extends_the_builtin(self):
-        from utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
+        from poindexter.utils.startup_manager import _NON_OLLAMA_MODEL_KEYS, _is_ollama_model_value
 
         extended = _NON_OLLAMA_MODEL_KEYS | {"my_custom_backend_model"}
         assert not _is_ollama_model_value(
@@ -483,7 +483,7 @@ class TestOllamaValueClassification:
         an Ollama tag. The ComfyUI keys were the live false positives: three
         MISSING warnings per boot against /api/tags for files that live in
         ComfyUI's models directory."""
-        from utils.startup_manager import _is_ollama_model_value
+        from poindexter.utils.startup_manager import _is_ollama_model_value
 
         for key, value in (
             ("video_comfyui_high_model", "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"),
@@ -499,7 +499,7 @@ class TestOllamaValueClassification:
         """An Ollama tag that merely CONTAINS a dot (`llama3.2:3b`,
         `qwen2.5-coder:14b`) must still be validated — only a terminal
         weights-file suffix opts out."""
-        from utils.startup_manager import _is_ollama_model_value
+        from poindexter.utils.startup_manager import _is_ollama_model_value
 
         for value in ("llama3.2:3b", "qwen2.5-coder:14b", "nomic-embed-text"):
             assert _is_ollama_model_value(
@@ -514,12 +514,12 @@ class TestOllamaNameVariants:
         `nomic-embed-text` never string-matched the installed
         `nomic-embed-text:latest` — reported missing while sitting right
         there."""
-        from utils.startup_manager import _ollama_name_variants
+        from poindexter.utils.startup_manager import _ollama_name_variants
 
         assert "nomic-embed-text:latest" in _ollama_name_variants("nomic-embed-text")
 
     def test_latest_tag_matches_untagged(self):
-        from utils.startup_manager import _ollama_name_variants
+        from poindexter.utils.startup_manager import _ollama_name_variants
 
         assert "nomic-embed-text" in _ollama_name_variants("nomic-embed-text:latest")
 
@@ -527,7 +527,7 @@ class TestOllamaNameVariants:
         """`phi4:14b` must NOT be treated as equivalent to bare `phi4` — a
         different tag is a different model, and widening would hide a genuine
         wrong-tag misconfiguration."""
-        from utils.startup_manager import _ollama_name_variants
+        from poindexter.utils.startup_manager import _ollama_name_variants
 
         assert _ollama_name_variants("phi4:14b") == {"phi4:14b"}
 

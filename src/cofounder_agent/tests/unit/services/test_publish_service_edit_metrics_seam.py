@@ -106,7 +106,7 @@ async def test_stage_only_records_edit_metrics_at_approve_seam() -> None:
     db = _make_db_service()
     recorder = AsyncMock(return_value=True)
 
-    with patch("modules.content.api.record_post_approve_metrics", recorder), \
+    with patch("poindexter.modules.content.api.record_post_approve_metrics", recorder), \
          patch("poindexter.services.publish_service._spawn_background"), \
          patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False):
         result = await publish_post_from_task(
@@ -146,7 +146,7 @@ async def test_immediate_publish_records_edit_metrics() -> None:
     db = _make_db_service()
     recorder = AsyncMock(return_value=True)
 
-    with patch("modules.content.api.record_post_approve_metrics", recorder), \
+    with patch("poindexter.modules.content.api.record_post_approve_metrics", recorder), \
          patch("poindexter.services.publish_service._spawn_background"), \
          patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False), \
          patch("poindexter.services.static_export_service.export_post", new=AsyncMock(return_value=True)), \
@@ -181,7 +181,7 @@ async def test_promote_existing_approved_does_not_record_again() -> None:
     db._test_conn.execute = AsyncMock(return_value="UPDATE 1")
     recorder = AsyncMock(return_value=True)
 
-    with patch("modules.content.api.record_post_approve_metrics", recorder), \
+    with patch("poindexter.modules.content.api.record_post_approve_metrics", recorder), \
          patch("poindexter.services.publish_service._spawn_background"), \
          patch("poindexter.services.static_export_service.export_post", new=AsyncMock(return_value=True)):
         result = await publish_post_from_task(
@@ -210,7 +210,7 @@ async def test_restage_does_not_record_again() -> None:
     db.pool.fetchrow = AsyncMock(return_value=_existing_post("approved"))
     recorder = AsyncMock(return_value=True)
 
-    with patch("modules.content.api.record_post_approve_metrics", recorder), \
+    with patch("poindexter.modules.content.api.record_post_approve_metrics", recorder), \
          patch("poindexter.services.publish_service._spawn_background"):
         result = await publish_post_from_task(
             db, _make_task(), "11111111-1111-1111-1111-111111111111",
@@ -240,8 +240,8 @@ async def test_edit_metrics_failure_is_warning_plus_finding_not_fatal(
     def _capture_finding(**kwargs: Any) -> None:
         findings.append(kwargs)
 
-    with patch("modules.content.api.record_post_approve_metrics", recorder), \
-         patch("utils.findings.emit_finding", side_effect=_capture_finding), \
+    with patch("poindexter.modules.content.api.record_post_approve_metrics", recorder), \
+         patch("poindexter.utils.findings.emit_finding", side_effect=_capture_finding), \
          patch("poindexter.services.publish_service._spawn_background"), \
          patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False), \
          caplog.at_level(logging.WARNING, logger="poindexter.services.publish_service"):
@@ -271,7 +271,7 @@ async def test_record_post_approve_metrics_pool_none_logs_warning(
     """The pool-None early return used to be completely silent — not even a
     debug line. It must warn: a caller wired without a pool starves the gate
     signal invisibly."""
-    from modules.content.auto_publish_gate import record_post_approve_metrics
+    from poindexter.modules.content.auto_publish_gate import record_post_approve_metrics
 
     with caplog.at_level(
         logging.WARNING, logger="poindexter.modules.content.auto_publish_gate"

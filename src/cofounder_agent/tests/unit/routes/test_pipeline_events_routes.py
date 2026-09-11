@@ -535,7 +535,7 @@ class TestSettingsOverrideWire:
     """The CSV override must reach the SQL ANY() param on both endpoints."""
 
     def _override_cfg(self, client, csv: str):
-        from utils.route_utils import get_site_config_dependency
+        from poindexter.utils.route_utils import get_site_config_dependency
 
         client.app.dependency_overrides[get_site_config_dependency] = (
             lambda: _FakeSiteConfig({"pipeline_event_stream_types": csv})

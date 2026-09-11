@@ -12,14 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
-from modules.content.api import PostsService
+from poindexter.modules.content.api import PostsService
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
-from utils.content_formatting import convert_markdown_to_html  # still used by preview_post
-from utils.error_handler import handle_route_error
-from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
-from utils.uuid_prefix import resolve_uuid_prefix
+from poindexter.utils.content_formatting import (
+    convert_markdown_to_html,  # still used by preview_post
+)
+from poindexter.utils.error_handler import handle_route_error
+from poindexter.utils.rate_limiter import limiter
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.uuid_prefix import resolve_uuid_prefix
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["cms"])
@@ -496,7 +498,7 @@ async def update_post(
             filtered["published_at"] = datetime.now(timezone.utc)
 
         # Validate column identifiers to prevent SQL injection
-        from utils.sql_safety import SQLIdentifierValidator
+        from poindexter.utils.sql_safety import SQLIdentifierValidator
 
         pool = await get_db_pool()
         # Operators paste 8-char id prefixes from the dashboards / `poindexter

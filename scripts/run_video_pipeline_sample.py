@@ -167,7 +167,7 @@ class _StripLongFormSceneList:
     halts_on_failure = False
 
     async def execute(self, context: dict[str, Any], config: dict[str, Any]):
-        from plugins.stage import StageResult
+        from poindexter.plugins.stage import StageResult
         script = context.get("video_script") or {}
         if isinstance(script, dict) and "long_form" in script:
             long_form = script.get("long_form") or {}

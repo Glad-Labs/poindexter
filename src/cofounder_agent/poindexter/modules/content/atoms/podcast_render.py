@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.findings import emit_finding
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.findings import emit_finding
 
 ATOM_META = AtomMeta(
     name="podcast.render",
@@ -56,7 +56,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     ``_narration_render`` helper (the same one the video lanes use), so there is
     a single TTS code path across podcast + video narration (#689).
     """
-    from modules.content.atoms._narration_render import render_narration
+    from poindexter.modules.content.atoms._narration_render import render_narration
     from poindexter.services.podcast_service import dedupe_episode_title
 
     task_id = state.get("task_id")

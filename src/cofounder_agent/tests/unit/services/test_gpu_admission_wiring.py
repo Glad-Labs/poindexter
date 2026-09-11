@@ -109,7 +109,7 @@ def test_finding_dedup_key_is_owner_phase_reason():
     def _fake_emit(**kwargs):
         captured.update(kwargs)
 
-    with patch("utils.findings.emit_finding", _fake_emit):
+    with patch("poindexter.utils.findings.emit_finding", _fake_emit):
         gpu._emit_admission_rejected_finding(
             owner="ollama", phase="qa_vision", reason="no_fit",
             eta_seconds=None, max_wait_s=60.0,

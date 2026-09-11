@@ -107,7 +107,7 @@ def _publish_result(success=True):
 class TestGetAutoPublishThreshold:
     @pytest.mark.asyncio
     async def test_reads_threshold_from_settings(self):
-        from modules.content.auto_publish import get_auto_publish_threshold
+        from poindexter.modules.content.auto_publish import get_auto_publish_threshold
 
         db = MagicMock()
         db.get_setting_value = AsyncMock(return_value="80")
@@ -115,7 +115,7 @@ class TestGetAutoPublishThreshold:
 
     @pytest.mark.asyncio
     async def test_default_zero_means_disabled(self):
-        from modules.content.auto_publish import get_auto_publish_threshold
+        from poindexter.modules.content.auto_publish import get_auto_publish_threshold
 
         db = MagicMock()
         db.get_setting_value = AsyncMock(return_value="0")
@@ -132,7 +132,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_daily_limit_reached(self):
         """published_today >= daily_limit ⇒ returns False, never publishes."""
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         db = _make_db(published_today=1, daily_limit="1")
         pub_mock = AsyncMock(return_value=_publish_result())
@@ -151,7 +151,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_featured_image_missing(self):
         """A task without a featured_image_url is not auto-published."""
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = {"task_id": "t-noimg", "featured_image_url": None}
         db = _make_db(published_today=0, daily_limit="1", task=task)
@@ -171,7 +171,7 @@ class TestAutoPublishBails:
     @pytest.mark.asyncio
     async def test_bails_when_task_not_found(self):
         """get_task returns None ⇒ return False, no publish."""
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         db = _make_db(published_today=0, daily_limit="1", task=None)
         pub_mock = AsyncMock(return_value=_publish_result())
@@ -187,7 +187,7 @@ class TestAutoPublishBails:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_database_service_none(self):
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         result = await auto_publish_task(
             database_service=None,
@@ -208,7 +208,7 @@ class TestAutoPublishBails:
         incident; a fail-open daily-limit check could let a DB blip auto-publish
         an unbounded number of posts in a day.
         """
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-dberr",
@@ -245,7 +245,7 @@ class TestAutoPublishHappyPath:
         """Clears the gates ⇒ flips status → approved, stamps
         publish_mode='auto' + auto_published metadata, calls
         publish_post_from_task, returns True."""
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-ok",
@@ -292,7 +292,7 @@ class TestAutoPublishHappyPath:
     async def test_returns_false_when_publish_fails(self):
         """publish_post_from_task returns success=False ⇒ auto_publish
         returns False (post lands in awaiting_approval)."""
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = {
             "task_id": "t-pubfail",
@@ -332,7 +332,7 @@ class TestAutoPublishBookkeepingVisibility:
     async def test_gate_history_write_failure_logs_and_emits_finding(self, caplog):
         import logging as _logging
 
-        from modules.content import auto_publish as ap_mod
+        from poindexter.modules.content import auto_publish as ap_mod
 
         task = {
             "task_id": "t-gh",
@@ -373,7 +373,7 @@ class TestAutoPublishBookkeepingVisibility:
     async def test_learning_signal_write_failure_logs_and_emits_finding(self, caplog):
         import logging as _logging
 
-        from modules.content import auto_publish as ap_mod
+        from poindexter.modules.content import auto_publish as ap_mod
 
         task = {
             "task_id": "t-ls",
@@ -461,7 +461,7 @@ class TestVetoWindow:
     async def test_delay_stages_and_schedules(self):
         from datetime import datetime, timedelta, timezone
 
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = _veto_task()
         db = _make_keyed_db(
@@ -511,7 +511,7 @@ class TestVetoWindow:
 
     @pytest.mark.asyncio
     async def test_no_delay_key_publishes_immediately(self):
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = _veto_task("t-nodelay")
         db = _make_keyed_db(
@@ -537,7 +537,7 @@ class TestVetoWindow:
 
     @pytest.mark.asyncio
     async def test_unparseable_delay_falls_back_to_immediate(self):
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = _veto_task("t-baddelay")
         db = _make_keyed_db(
@@ -566,7 +566,7 @@ class TestVetoWindow:
 
     @pytest.mark.asyncio
     async def test_slot_refusal_returns_false_and_leaves_staged(self):
-        from modules.content.auto_publish import auto_publish_task
+        from poindexter.modules.content.auto_publish import auto_publish_task
 
         task = _veto_task("t-slotfail")
         db = _make_keyed_db(
@@ -585,7 +585,7 @@ class TestVetoWindow:
 
         p1, p2, p3, p4 = self._patches(pub_mock, slot_mock, notify_mock)
         with p1, p2, p3, p4, patch(
-            "modules.content.auto_publish.emit_finding", finding_mock,
+            "poindexter.modules.content.auto_publish.emit_finding", finding_mock,
         ):
             result = await auto_publish_task(
                 database_service=db,
@@ -634,7 +634,7 @@ class TestVetoAutoPublish:
 
     @pytest.mark.asyncio
     async def test_veto_unwinds_schedule_and_trust_row(self):
-        from modules.content.auto_publish import veto_auto_publish
+        from poindexter.modules.content.auto_publish import veto_auto_publish
 
         pool, conn = self._make_veto_pool({"id": "post-1", "title": "Held"})
         result = await veto_auto_publish(pool, "t-veto")
@@ -656,7 +656,7 @@ class TestVetoAutoPublish:
 
     @pytest.mark.asyncio
     async def test_veto_without_scheduled_post_is_a_clean_miss(self):
-        from modules.content.auto_publish import veto_auto_publish
+        from poindexter.modules.content.auto_publish import veto_auto_publish
 
         pool, conn = self._make_veto_pool(None)
         result = await veto_auto_publish(pool, "t-gone")
@@ -667,7 +667,7 @@ class TestVetoAutoPublish:
 
     @pytest.mark.asyncio
     async def test_veto_resolves_prefixes_and_refuses_ambiguity(self):
-        from modules.content.auto_publish import veto_auto_publish
+        from poindexter.modules.content.auto_publish import veto_auto_publish
 
         pool, conn = self._make_veto_pool(None, matches=[])
         result = await veto_auto_publish(pool, "zzz")

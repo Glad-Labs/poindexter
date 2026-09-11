@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import modules.content.atoms.approval_gate as ag
+import poindexter.modules.content.atoms.approval_gate as ag
 from poindexter.services.approval_service import count_trailing_clean_approvals
 from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 

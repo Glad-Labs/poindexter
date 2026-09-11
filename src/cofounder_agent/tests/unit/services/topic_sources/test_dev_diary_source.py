@@ -27,7 +27,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from plugins.topic_source import TopicSource
+from poindexter.plugins.topic_source import TopicSource
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.topic_sources.dev_diary_source import (
     _CC_RE,

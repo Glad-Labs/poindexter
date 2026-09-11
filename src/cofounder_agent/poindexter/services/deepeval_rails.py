@@ -329,7 +329,7 @@ def _build_brand_fabrication_metric():
     from deepeval.metrics import BaseMetric
     from deepeval.test_case import LLMTestCase
 
-    from modules.content.api import content_validator as cv
+    from poindexter.modules.content.api import content_validator as cv
 
     class BrandFabricationMetric(BaseMetric):
         """DeepEval metric: 1.0 = clean, 0.0 = fabrication detected.
@@ -478,7 +478,7 @@ def _surface_deepeval_gpu_busy(busy: Any, *, rail: str) -> None:
     ``qa_rail_degraded``.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         eta = f"{busy.eta_seconds:.0f}s" if busy.eta_seconds is not None else "unknown"
         emit_finding(
@@ -532,7 +532,7 @@ def _surface_deepeval_degraded(reason: str, detail: str, *, rail: str) -> None:
     rail correctly had nothing to measure, and paging on it is noise.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source=f"deepeval_rails.evaluate_{rail}",

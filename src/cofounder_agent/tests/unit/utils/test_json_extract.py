@@ -7,7 +7,7 @@ QA atoms) carry their own behavioral suites; this pins the shared ladder.
 
 from __future__ import annotations
 
-from utils.json_extract import extract_json_object
+from poindexter.utils.json_extract import extract_json_object
 
 
 def test_direct_object():

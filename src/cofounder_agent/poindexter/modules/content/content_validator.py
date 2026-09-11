@@ -9,7 +9,7 @@ No LLM judgment — deterministic pattern matching that catches:
 - Impossible timeframes and metrics
 
 Usage:
-    from modules.content.content_validator import validate_content
+    from poindexter.modules.content.content_validator import validate_content
     result = validate_content(title, content, topic, site_config=site_config)
     if not result.passed:
         # Reject — content has quality issues
@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from poindexter.services.logger_config import get_logger
-from utils.crawler_ua import build_crawler_ua
+from poindexter.utils.crawler_ua import build_crawler_ua
 
 if TYPE_CHECKING:
     import httpx

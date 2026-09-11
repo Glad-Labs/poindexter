@@ -22,19 +22,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.capture_training_data import CaptureTrainingDataStage
-from modules.content.stages.finalize_task import FinalizeTaskStage
-from modules.content.stages.generate_media_scripts import (
+from poindexter.modules.content.stages.capture_training_data import CaptureTrainingDataStage
+from poindexter.modules.content.stages.finalize_task import FinalizeTaskStage
+from poindexter.modules.content.stages.generate_media_scripts import (
     GenerateMediaScriptsStage,
     _build_scene_prompt,
     _parse_scene_output,
 )
-from modules.content.stages.generate_seo_metadata import (
+from poindexter.modules.content.stages.generate_seo_metadata import (
     GenerateSeoMetadataStage,
     _normalize_keywords,
 )
-from modules.content.stages.source_featured_image import SourceFeaturedImageStage
-from plugins.stage import Stage
+from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
+from poindexter.plugins.stage import Stage
 
 # ---------------------------------------------------------------------------
 # Protocol conformance — all five new stages in one sweep.
@@ -157,7 +157,7 @@ class TestGenerateSeoMetadata:
             "poindexter.services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "modules.content.ai_content_generator.get_content_generator",
+            "poindexter.modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             result = await GenerateSeoMetadataStage().execute(ctx, {})
@@ -183,7 +183,7 @@ class TestGenerateSeoMetadata:
             "poindexter.services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
         ), patch(
-            "modules.content.ai_content_generator.get_content_generator",
+            "poindexter.modules.content.ai_content_generator.get_content_generator",
             MagicMock(),
         ):
             with pytest.raises(ValueError, match="invalid result"):
@@ -456,7 +456,7 @@ class TestFinalizeTask:
 
 class TestInlineImageHelpersPure:
     def test_cleanup_leaked_descriptions_strips_italic_scene(self):
-        from modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
+        from poindexter.modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
         body = (
             "<img src='x' />\n"
             "\n*An editorial illustration of a mountain range stretching into horizon*\n"
@@ -467,14 +467,14 @@ class TestInlineImageHelpersPure:
         assert "Real paragraph." in out
 
     def test_cleanup_strips_photo_attribution_lines(self):
-        from modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
+        from poindexter.modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
         body = "Hi\n\n*Photo by Jane on Pexels*\n\nMore."
         out = _cleanup_leaked_descriptions(body)
         assert "Photo by Jane" not in out
         assert "More." in out
 
     def test_inject_html_image_substitutes_exactly_one(self):
-        from modules.content.atoms._image_helpers import _inject_html_image
+        from poindexter.modules.content.atoms._image_helpers import _inject_html_image
         body = "Start [IMAGE-1: desc] middle [IMAGE-1: other] end"
         out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
         # Only the first should be replaced
@@ -486,7 +486,7 @@ class TestInlineImageHelpersPure:
         both sides; injection must consume them and leave exactly one blank
         line on each side — padding-without-consuming shipped 3-5 newline
         runs into every stored draft with inline images."""
-        from modules.content.atoms._image_helpers import _inject_html_image
+        from poindexter.modules.content.atoms._image_helpers import _inject_html_image
         body = "## Why\n\n[IMAGE-1: cat]\n\nMost models treat this..."
         out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
         assert "## Why\n\n<img" in out
@@ -544,7 +544,7 @@ class TestSourceFeaturedImageAdapter:
         # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
         # force the image-gen path to miss so the Pexels fallback runs.
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -556,7 +556,7 @@ class TestSourceFeaturedImageAdapter:
         assert u["stages"]["3_image_source"] == "pexels"
 
     async def test_image_gen_succeeds_populates_image_gen_source(self):
-        from modules.content.stages.source_featured_image import GeneratedImage
+        from poindexter.modules.content.stages.source_featured_image import GeneratedImage
         image_service = SimpleNamespace(
             gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(),
@@ -566,7 +566,7 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.jpg",
                 photographer="AI Generated (image-gen)",
@@ -591,7 +591,7 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

@@ -208,7 +208,7 @@ class SiteConfig:
                     # plugins.secrets.get_secret handles both encrypted
                     # and plaintext rows — returns None if the row
                     # doesn't exist.
-                    from plugins.secrets import get_secret as _plugin_get_secret
+                    from poindexter.plugins.secrets import get_secret as _plugin_get_secret
                     value = await _plugin_get_secret(conn, key)
                     if value is not None and value != "":
                         return str(value)

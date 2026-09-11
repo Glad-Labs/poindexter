@@ -231,7 +231,7 @@ async def _sample_summaries(
     samples = await asyncio.gather(*[_one_sample(i) for i in range(n)])
 
     if sample_failures:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="self_consistency_rail",

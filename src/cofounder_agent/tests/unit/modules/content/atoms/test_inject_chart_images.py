@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import content_inject_images as atom
+from poindexter.modules.content.atoms import content_inject_images as atom
 
 pytestmark = pytest.mark.unit
 

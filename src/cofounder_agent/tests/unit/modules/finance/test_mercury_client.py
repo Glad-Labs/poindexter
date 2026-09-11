@@ -13,7 +13,7 @@ import json
 import httpx
 import pytest
 
-from modules.finance.mercury_client import (
+from poindexter.modules.finance.mercury_client import (
     MercuryAccount,
     MercuryAPIError,
     MercuryAuthError,

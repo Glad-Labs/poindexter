@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.seo_read import read_seo
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 router = APIRouter(
     prefix="/api/seo",

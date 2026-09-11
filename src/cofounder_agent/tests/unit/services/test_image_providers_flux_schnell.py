@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.image_provider import ImageProvider, ImageResult
+from poindexter.plugins.image_provider import ImageProvider, ImageResult
 from poindexter.services.image_providers.flux_schnell import (
     FluxSchnellProvider,
     _resolve_negative,

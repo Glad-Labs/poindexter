@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import content_plan_image_markers as planner
+from poindexter.modules.content.atoms import content_plan_image_markers as planner
 from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.unit
@@ -86,7 +86,7 @@ class TestGenerationRouting:
     def test_chart_plans_are_excluded_from_the_image_gen_batch(self):
         import inspect
 
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         src = inspect.getsource(atom.run)
         assert 'not p.get("chart_target")' in src
@@ -96,7 +96,7 @@ class TestGenerationRouting:
         provider is handed finished JSON and has no query surface."""
         import inspect
 
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         src = inspect.getsource(atom._render_chart)
         assert "services.chart_catalog import resolve" in src
@@ -105,7 +105,7 @@ class TestGenerationRouting:
             assert banned not in src.lower()
 
     async def test_an_unresolvable_key_leaves_an_empty_slot(self):
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         with patch(
             "poindexter.services.chart_catalog.resolve", AsyncMock(return_value=None),
@@ -117,7 +117,7 @@ class TestGenerationRouting:
         assert out == {"num": "1", "url": None, "alt_text": "", "source": "none"}
 
     async def test_a_rendered_chart_carries_the_data_matrix_as_alt_text(self):
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
         from poindexter.services.chart_render import ChartSpec, Series
 
         spec = ChartSpec(
@@ -133,9 +133,9 @@ class TestGenerationRouting:
         )
         with (
             patch("poindexter.services.chart_catalog.resolve", AsyncMock(return_value=spec)),
-            patch("plugins.registry.get_image_providers", lambda: [provider]),
+            patch("poindexter.plugins.registry.get_image_providers", lambda: [provider]),
             patch(
-                "modules.content.atoms._image_helpers.record_inline_image_asset",
+                "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
                 AsyncMock(return_value=None),
             ),
         ):
@@ -149,7 +149,7 @@ class TestGenerationRouting:
 
     async def test_a_provider_crash_leaves_an_empty_slot(self):
         """A chart must never break the post."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
         from poindexter.services.chart_render import ChartSpec, Series
 
         spec = ChartSpec(
@@ -160,7 +160,7 @@ class TestGenerationRouting:
         )
         with (
             patch("poindexter.services.chart_catalog.resolve", AsyncMock(return_value=spec)),
-            patch("plugins.registry.get_image_providers", lambda: [provider]),
+            patch("poindexter.plugins.registry.get_image_providers", lambda: [provider]),
         ):
             out = await atom._render_chart(
                 "llm-decode-vs-delivered", site_config=None, task_id="t",

@@ -208,7 +208,7 @@ class TestMissingTableIsLoud:
         svc = JWTBlocklistService()
         await svc.initialize(pool)
 
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             result = await svc.is_blocked("jti-x")
 
         assert result is False  # still fail-open
@@ -223,7 +223,7 @@ class TestMissingTableIsLoud:
         svc = JWTBlocklistService()
         await svc.initialize(pool)
 
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             await svc.add_token("jti-x", "user-1", _future_dt())  # must not raise
 
         emit.assert_called_once()
@@ -235,7 +235,7 @@ class TestMissingTableIsLoud:
         svc = JWTBlocklistService()
         await svc.initialize(pool)
 
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             result = await svc.cleanup()
 
         assert result == 0
@@ -250,7 +250,7 @@ class TestMissingTableIsLoud:
         svc = JWTBlocklistService()
         await svc.initialize(pool)
 
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             result = await svc.is_blocked("jti-x")
 
         assert result is False

@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Delegate to the writer orchestrator in modules.content.writer_core."""
-    from modules.content.writer_core import GenerateContentStage
-    from plugins.stage import StageResult
+    from poindexter.modules.content.writer_core import GenerateContentStage
+    from poindexter.plugins.stage import StageResult
 
     stage = GenerateContentStage()
     result: StageResult = await stage.execute(context=state, config={})

@@ -26,8 +26,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from modules.content.atoms._qa_rail_common import (
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._qa_rail_common import (
     GateStatesUnavailable,
     aggregate_rail_reviews,
     is_rescuable_reject,
@@ -35,9 +35,9 @@ from modules.content.atoms._qa_rail_common import (
     rerun_missing_rails,
     resolve_gate_states,
 )
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 from poindexter.services.audit_event_schemas import validate_event_details
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     settings_service = state.get("settings_service")
     if pool is not None and site_config is not None and approved:
         try:
-            from modules.content.multi_model_qa import MultiModelQA
+            from poindexter.modules.content.multi_model_qa import MultiModelQA
             _qa = MultiModelQA(
                 pool=pool, settings_service=settings_service,
                 site_config=site_config, platform=state.get("platform"),
@@ -433,7 +433,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     "(flag-rate telemetry will under-count): %s", exc,
                 )
     elif not approved:
-        from modules.content.atoms._qa_persist import (
+        from poindexter.modules.content.atoms._qa_persist import (
             build_qa_feedback,
             build_reject_reason,
             persist_qa_reject,
@@ -483,10 +483,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # between is exactly where the overnight crashes hit — and a crash there
         # used to lose the approved draft to a from-scratch re-run (last-run-wins
         # incident 2026-07-03). Best-effort: the helper never raises.
-        from modules.content.atoms._qa_persist import (
+        from poindexter.modules.content.atoms._qa_persist import (
             build_qa_feedback as _build_fb,
         )
-        from modules.content.atoms._qa_persist import (
+        from poindexter.modules.content.atoms._qa_persist import (
             persist_qa_approved_snapshot,
         )
         try:

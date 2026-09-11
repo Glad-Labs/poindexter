@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 ATOM_META = AtomMeta(
     name="media.render_narration",
@@ -59,7 +59,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Render long + short narration audio. Best-effort — never raises."""
-    from modules.content.atoms._narration_render import render_narration
+    from poindexter.modules.content.atoms._narration_render import render_narration
 
     task_id = state.get("task_id")
     site_config = state.get("site_config")

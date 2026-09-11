@@ -1610,7 +1610,7 @@ class TestSweepStaleTasks:
         pool.acquire = _acquire
 
         db = TasksDatabase(pool=pool)
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
 
         kinds = {c.kwargs["kind"]: c.kwargs for c in emit.call_args_list}
@@ -1649,7 +1649,7 @@ class TestSweepStaleTasks:
 
         db = TasksDatabase(pool=pool)
         with patch(
-            "utils.findings.emit_finding", side_effect=RuntimeError("boom")
+            "poindexter.utils.findings.emit_finding", side_effect=RuntimeError("boom")
         ):
             result = await db.sweep_stale_tasks(
                 stale_threshold_minutes=60, max_retries=3
@@ -1721,7 +1721,7 @@ class TestSweepStaleTasks:
         ]
         _conn, pool = self._sweep_conn(stale_rows)
         db = TasksDatabase(pool=pool)
-        with patch("utils.findings.emit_finding") as emit:
+        with patch("poindexter.utils.findings.emit_finding") as emit:
             await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
         kinds = {c.kwargs["kind"]: c.kwargs for c in emit.call_args_list}
         assert "stale_task_promoted_qa_approved" in kinds

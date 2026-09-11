@@ -80,7 +80,7 @@ async def _run(revision: str, site_config: MagicMock | None = None):
              "poindexter.services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
-         patch("utils.findings.emit_finding", side_effect=lambda **kw: findings.append(kw)):
+         patch("poindexter.utils.findings.emit_finding", side_effect=lambda **kw: findings.append(kw)):
         pm.return_value.get_prompt.return_value = "PROMPT"
         out, stats = await self_review_and_revise(
             _DRAFT, "A Title", "A Topic",

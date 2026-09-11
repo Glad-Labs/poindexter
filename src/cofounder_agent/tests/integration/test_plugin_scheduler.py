@@ -14,7 +14,7 @@ from typing import Any
 import asyncpg
 import pytest
 
-from plugins import JobResult, PluginConfig, PluginScheduler
+from poindexter.plugins import JobResult, PluginConfig, PluginScheduler
 from tests.integration.conftest import requires_real_services
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]

@@ -47,7 +47,7 @@ import json
 import logging
 from typing import Any
 
-from plugins.secrets import get_secret, set_secret
+from poindexter.plugins.secrets import get_secret, set_secret
 
 logger = logging.getLogger(__name__)
 

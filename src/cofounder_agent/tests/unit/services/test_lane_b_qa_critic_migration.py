@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class TestMultiModelQAResolveCriticModel:
         settings.get = AsyncMock(return_value=None)
         qa = MultiModelQA(pool=MagicMock(), settings_service=settings, site_config=SiteConfig())
         notify = AsyncMock()
-        with patch("modules.content.multi_model_qa.notify_operator", notify):
+        with patch("poindexter.modules.content.multi_model_qa.notify_operator", notify):
             with pytest.raises(RuntimeError):
                 await qa._resolve_critic_model(
                     setting_key="qa_fallback_critic_model", site="critic",
@@ -70,7 +70,7 @@ class TestMultiModelQAResolveCriticModel:
     async def test_raises_when_no_settings_service(self):
         qa = MultiModelQA(pool=MagicMock(), settings_service=None, site_config=SiteConfig())
         notify = AsyncMock()
-        with patch("modules.content.multi_model_qa.notify_operator", notify):
+        with patch("poindexter.modules.content.multi_model_qa.notify_operator", notify):
             with pytest.raises(RuntimeError):
                 await qa._resolve_critic_model(
                     setting_key="qa_fallback_critic_model", site="critic",

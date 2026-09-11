@@ -42,8 +42,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

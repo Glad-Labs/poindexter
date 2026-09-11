@@ -441,7 +441,7 @@ class TestBuildContextUnfetchableSources:
         ]
         with (
             patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=results),
-            patch("utils.findings.emit_finding") as emit,
+            patch("poindexter.utils.findings.emit_finding") as emit,
         ):
             context = await svc.build_context("agent rollback")
         assert "RECENT WEB SOURCES" not in context
@@ -455,7 +455,7 @@ class TestBuildContextUnfetchableSources:
         svc = ResearchService(pool=mock_pool, site_config=SiteConfig())
         with (
             patch.object(svc, "_web_search", new_callable=AsyncMock, return_value=self._results()),
-            patch("utils.findings.emit_finding") as emit,
+            patch("poindexter.utils.findings.emit_finding") as emit,
         ):
             await svc.build_context("agent rollback")
         emit.assert_not_called()

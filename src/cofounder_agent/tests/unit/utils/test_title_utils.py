@@ -9,7 +9,7 @@ Covers:
 """
 
 
-from utils.title_utils import (
+from poindexter.utils.title_utils import (
     DEFAULT_SEO_TITLE_MAX_LEN,
     derive_seo_title,
     extract_body_h1,

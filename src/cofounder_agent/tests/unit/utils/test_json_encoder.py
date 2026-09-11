@@ -12,7 +12,12 @@ from uuid import UUID
 
 import pytest
 
-from utils.json_encoder import DecimalEncoder, convert_decimals, safe_json_dumps, safe_json_load
+from poindexter.utils.json_encoder import (
+    DecimalEncoder,
+    convert_decimals,
+    safe_json_dumps,
+    safe_json_load,
+)
 
 # ---------------------------------------------------------------------------
 # DecimalEncoder

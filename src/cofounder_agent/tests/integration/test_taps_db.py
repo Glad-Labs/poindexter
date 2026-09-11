@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
-from plugins import Tap
+from poindexter.plugins import Tap
 from poindexter.services.taps.audit import AuditTap
 from poindexter.services.taps.brain_decisions import BrainDecisionsTap
 from poindexter.services.taps.brain_knowledge import BrainKnowledgeTap

@@ -50,7 +50,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger("finance.poll_staleness_probe")
 
@@ -161,7 +161,7 @@ async def _default_egress_ip_fetch(pool: Any) -> str | None:
         return resp.text.strip() or None
     except Exception as exc:  # noqa: BLE001
         logger.debug("[FINANCE_POLL] egress IP lookup failed: %s", exc)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="finance.probes",

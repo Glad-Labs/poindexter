@@ -33,7 +33,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -219,7 +219,7 @@ async def record_chain_run(
         # so a failure loses EVERY gate's counters for this chain run while the
         # pipeline itself looks healthy. qa_gates is not audit_log, so a finding
         # is the right signal — it can't vanish along with the row it reports.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.qa_gates_db_writer",

@@ -68,7 +68,7 @@ from typing import Any
 
 import httpx
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

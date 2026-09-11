@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-import modules.content.atoms.content_image_rebuild_gate as content_image_rebuild_gate
-import modules.content.atoms.content_load_draft_for_image_rebuild as content_load_draft_for_image_rebuild
-import modules.content.atoms.content_persist_draft_images as content_persist_draft_images
-import modules.content.atoms.content_rebuild_featured_image as content_rebuild_featured_image
+import poindexter.modules.content.atoms.content_image_rebuild_gate as content_image_rebuild_gate
+import poindexter.modules.content.atoms.content_load_draft_for_image_rebuild as content_load_draft_for_image_rebuild
+import poindexter.modules.content.atoms.content_persist_draft_images as content_persist_draft_images
+import poindexter.modules.content.atoms.content_rebuild_featured_image as content_rebuild_featured_image
 
 
 class FakePool:
@@ -142,7 +142,7 @@ async def test_featured_prefers_image_gen(monkeypatch):
         return "https://r2/hero.webp"
 
     monkeypatch.setattr(
-        "modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen,
+        "poindexter.modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen,
     )
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets",
@@ -162,8 +162,8 @@ async def test_featured_falls_back_to_pexels(monkeypatch):
     async def fake_try_pexels(desc, topic, image_service):
         return ("https://pexels/p.jpg", "Ada")
 
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets", "image_service": object(), "allow_stock": True}
     )
@@ -184,8 +184,8 @@ async def test_featured_refuses_pexels_without_allow_stock(monkeypatch):
         searched["called"] = True
         return ("https://pexels/p.jpg", "Ada")
 
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets", "image_service": object()}
     )
@@ -201,8 +201,8 @@ async def test_featured_reports_none_without_raising(monkeypatch):
     async def fake_try_pexels(*a, **kw):
         return None
 
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
-    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets", "image_service": object()}
     )

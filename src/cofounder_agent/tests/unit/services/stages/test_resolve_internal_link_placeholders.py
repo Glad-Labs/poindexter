@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.stages.resolve_internal_link_placeholders import (
+from poindexter.modules.content.stages.resolve_internal_link_placeholders import (
     _PLACEHOLDER_RE,
     ResolveInternalLinkPlaceholdersStage,
     _resolve_all_placeholders,

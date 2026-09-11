@@ -325,7 +325,7 @@ class TestRerankDeviceMisconfigIsLoud:
         import sys
 
         monkeypatch.setitem(
-            sys.modules, "utils.findings",
+            sys.modules, "poindexter.utils.findings",
             type("m", (), {"emit_finding": staticmethod(lambda **kw: sink.update(kw))}),
         )
 

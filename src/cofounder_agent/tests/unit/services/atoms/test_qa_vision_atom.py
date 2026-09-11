@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_vision
-from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+from poindexter.modules.content.atoms import qa_vision
+from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:
@@ -212,7 +212,7 @@ class TestQaVisionAtom:
         """THE #563 acceptance core: a post with no inline images produces a
         review that satisfies a REQUIRED vision_gate (missing_required_gates
         returns it as present), so qa.aggregate does NOT fail closed."""
-        from modules.content.atoms._qa_rail_common import missing_required_gates
+        from poindexter.modules.content.atoms._qa_rail_common import missing_required_gates
 
         async def img(self, title, topic, content, featured_image_url=None):
             return None
@@ -244,7 +244,7 @@ class TestQaVisionAtom:
 
         findings = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
         )
 
         body = 'Body.\n<img src="https://r2.dev/x.webp" alt="x" width="1024" />\nmore'
@@ -271,7 +271,7 @@ class TestQaVisionAtom:
 
         findings = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw),
         )
 
         out = await qa_vision.run(_state())  # no images, no preview
@@ -330,7 +330,7 @@ class TestQaVisionAtom:
         monkeypatch.setattr(
             "poindexter.services.integrations.operator_notify.notify_operator", fake_notify,
         )
-        monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+        monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
 
         body = 'Body.\n<img src="https://r2.dev/x.webp" alt="x" width="1024" />\nmore'
         await qa_vision.run(_state(content=body, task_id="def456"))

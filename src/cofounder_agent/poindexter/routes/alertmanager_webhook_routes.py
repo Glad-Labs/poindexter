@@ -70,7 +70,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from poindexter.services.logger_config import StructuredLogger, get_logger
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 logger: StructuredLogger = get_logger(__name__)
 
@@ -152,7 +152,7 @@ async def verify_alertmanager_token(
                 "falling back to static-Bearer comparison"
             )
 
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
     async with db.pool.acquire() as conn:
         expected = await get_secret(conn, "alertmanager_webhook_token")
 

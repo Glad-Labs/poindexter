@@ -1030,7 +1030,7 @@ async def _refresh_module_metrics(pool: Any) -> None:
     import inspect
 
     try:
-        from plugins.registry import get_modules
+        from poindexter.plugins.registry import get_modules
     except Exception as e:  # noqa: BLE001 — registry import must never break /metrics
         _note_refresh_error("module_registry", e)
         return

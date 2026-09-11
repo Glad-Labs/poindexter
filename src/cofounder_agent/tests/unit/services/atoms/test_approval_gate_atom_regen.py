@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import modules.content.atoms.approval_gate as ag
+import poindexter.modules.content.atoms.approval_gate as ag
 from tests.unit.services._gate_fakes import FakeConn, FakePool
 
 pytestmark = pytest.mark.unit

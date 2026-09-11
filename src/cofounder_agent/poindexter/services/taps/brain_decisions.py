@@ -15,7 +15,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from plugins.tap import Document
+from poindexter.plugins.tap import Document
 
 logger = logging.getLogger(__name__)
 

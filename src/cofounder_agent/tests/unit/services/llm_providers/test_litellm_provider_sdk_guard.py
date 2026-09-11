@@ -125,7 +125,7 @@ class TestRegistryExcludesUnavailableProvider:
         scope degrades to "provider absent from the registry", never to a
         failed startup.
         """
-        from plugins.registry import get_llm_providers
+        from poindexter.plugins.registry import get_llm_providers
 
         real_import = builtins.__import__
 

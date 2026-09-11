@@ -1,6 +1,6 @@
 """Unit tests for the content.inject_affiliate_links atom."""
 
-from modules.content.atoms import content_inject_affiliate_links as atom
+from poindexter.modules.content.atoms import content_inject_affiliate_links as atom
 
 
 class _Cfg:

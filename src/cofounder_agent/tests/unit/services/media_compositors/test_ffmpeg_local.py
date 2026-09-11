@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.media_compositor import (
+from poindexter.plugins.media_compositor import (
     CompositionRequest,
     CompositionResult,
     CompositionScene,

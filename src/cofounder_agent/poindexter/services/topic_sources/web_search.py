@@ -51,7 +51,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_sources._filters import rewrite_as_blog_topic
 
 logger = logging.getLogger(__name__)

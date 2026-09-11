@@ -746,7 +746,7 @@ async def add_post_image(
 async def get_post_count() -> str:
     """Get the total number of published posts on the configured site."""
     try:
-        from modules.content.api import PostsService
+        from poindexter.modules.content.api import PostsService
 
         pool = await _get_pool()
         svc = PostsService(pool=pool)

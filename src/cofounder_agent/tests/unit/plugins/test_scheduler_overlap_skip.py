@@ -32,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from apscheduler.events import EVENT_JOB_MAX_INSTANCES
 
-from plugins.scheduler import PluginScheduler
+from poindexter.plugins.scheduler import PluginScheduler
 
 
 def _scheduler(
@@ -83,7 +83,7 @@ async def test_register_job_maps_overlap_safety_to_max_instances():
 
     with patch.object(sched, "_seed_job_config_if_absent", new=AsyncMock()), \
          patch.object(sched, "_interval_next_run", new=AsyncMock(return_value=None)), \
-         patch("plugins.scheduler.PluginConfig") as plugin_config, \
+         patch("poindexter.plugins.scheduler.PluginConfig") as plugin_config, \
          patch.object(sched._scheduler, "add_job", side_effect=_capture_add_job):
         plugin_config.load = AsyncMock(return_value=cfg)
         assert await sched.register_job(_job("serial_job", idempotent=False))
@@ -101,7 +101,7 @@ def test_overlap_skip_warns_counts_and_emits_finding(caplog):
     hourly job like run_taps the first skip already means an hour elapsed, so
     deferring it would have made the 2026-08-15 tap wedge slower to surface."""
     sched = _scheduler()
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
@@ -120,7 +120,7 @@ def test_overlap_alert_switch_off_still_warns_but_no_finding(caplog):
     """``scheduler_alert_on_job_overlap=false`` is an operator opt-out of the
     findings escalation only — the log line and the counter stay."""
     sched = _scheduler(overlap_alert=False)
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
@@ -135,7 +135,7 @@ def test_overlap_listener_never_raises(caplog):
     degrade to an error log, never propagate."""
     sched = _scheduler()
     with patch(
-        "utils.findings.emit_finding", side_effect=RuntimeError("findings down")
+        "poindexter.utils.findings.emit_finding", side_effect=RuntimeError("findings down")
     ), caplog.at_level(logging.ERROR, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(SimpleNamespace(job_id="run_taps"))
 
@@ -156,7 +156,7 @@ async def test_register_job_records_overlap_expected_declaration():
 
     with patch.object(sched, "_seed_job_config_if_absent", new=AsyncMock()), \
          patch.object(sched, "_interval_next_run", new=AsyncMock(return_value=None)), \
-         patch("plugins.scheduler.PluginConfig") as plugin_config, \
+         patch("poindexter.plugins.scheduler.PluginConfig") as plugin_config, \
          patch.object(sched._scheduler, "add_job"):
         plugin_config.load = AsyncMock(return_value=cfg)
         await sched.register_job(
@@ -175,7 +175,7 @@ def test_overlap_expected_job_records_info_not_warn_on_first_skip(caplog):
     sched = _scheduler()
     sched._overlap_expected_jobs.add("dispatch_media_pipeline")
 
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          caplog.at_level(logging.WARNING, logger="poindexter.plugins.scheduler"):
         sched._on_job_max_instances(
             SimpleNamespace(job_id="dispatch_media_pipeline")
@@ -199,7 +199,7 @@ def test_overlap_expected_job_escalates_to_warn_once_wedged():
         timezone.utc
     ) - timedelta(minutes=90)
 
-    with patch("utils.findings.emit_finding") as emit:
+    with patch("poindexter.utils.findings.emit_finding") as emit:
         sched._on_job_max_instances(
             SimpleNamespace(job_id="dispatch_media_pipeline")
         )
@@ -219,7 +219,7 @@ def test_overlap_streak_anchors_on_first_skip_not_latest():
     anchor = datetime.now(timezone.utc) - timedelta(minutes=30)
     sched._overlap_streak_started_at["render_job"] = anchor
 
-    with patch("utils.findings.emit_finding"):
+    with patch("poindexter.utils.findings.emit_finding"):
         sched._on_job_max_instances(SimpleNamespace(job_id="render_job"))
 
     assert sched._overlap_streak_started_at["render_job"] == anchor

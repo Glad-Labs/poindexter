@@ -41,9 +41,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -142,7 +142,7 @@ async def _emit_deliberate_pass(
       (vision model unreachable / unparseable). Operator policy is fail-open +
       page — the post proceeds, the operator is alerted to fix the model.
     """
-    from modules.content.multi_model_qa import (
+    from poindexter.modules.content.multi_model_qa import (
         ReviewerResult,
         extract_inline_image_urls,
     )
@@ -180,7 +180,7 @@ async def _emit_deliberate_pass(
         # finding is the durable "fix the vision infra" signal. Routed per
         # findings.vision_scorer_unavailable.delivery.
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="qa_vision",
@@ -259,7 +259,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     pool = resolve_pool(state, atom="qa.vision")
     settings_service = state.get("settings_service")
 
-    from modules.content.multi_model_qa import MultiModelQA
+    from poindexter.modules.content.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)

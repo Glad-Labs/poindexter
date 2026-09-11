@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 
 
 class NoopJob:

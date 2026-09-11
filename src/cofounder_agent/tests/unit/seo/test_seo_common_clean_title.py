@@ -7,7 +7,7 @@ word-boundary clip left a dangling `&` (derive_seo_title, unlike clamp_words,
 doesn't drop trailing punctuation). clean_title is the title twin of clamp_words.
 """
 
-from modules.content.atoms import _seo_common as sc
+from poindexter.modules.content.atoms import _seo_common as sc
 
 
 def test_clean_title_strips_embedded_quote_and_trailing_ampersand():

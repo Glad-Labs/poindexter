@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncpg
 import pytest
 
-from plugins import Job
+from poindexter.plugins import Job
 from poindexter.services.jobs.sync_cloudflare_analytics import SyncCloudflareAnalyticsJob
 from tests.integration.conftest import requires_real_services
 

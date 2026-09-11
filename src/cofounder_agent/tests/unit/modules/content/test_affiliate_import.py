@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.affiliate_import import (
+from poindexter.modules.content.affiliate_import import (
     _derive_display_and_keywords,
     _map_category,
     _map_is_active,
@@ -52,7 +52,7 @@ class _RaisingSiteConfig:
 
 async def test_derive_display_and_keywords_fails_open_on_llm_error():
     with patch(
-        "modules.content.affiliate_import.ollama_chat_text",
+        "poindexter.modules.content.affiliate_import.ollama_chat_text",
         AsyncMock(side_effect=RuntimeError("ollama unreachable")),
     ):
         display_text, keywords = await _derive_display_and_keywords(
@@ -102,10 +102,10 @@ async def test_import_creates_new_row_with_llm_keywords(tmp_path):
         return True
 
     with patch(
-        "modules.content.affiliate_import._derive_display_and_keywords",
+        "poindexter.modules.content.affiliate_import._derive_display_and_keywords",
         AsyncMock(return_value=("Widget Pro", ["Widget Pro", "Pro 9000"])),
-    ), patch("modules.content.affiliate_links.add_link", _fake_add_link), \
-       patch("modules.content.affiliate_links.set_active", _fake_set_active):
+    ), patch("poindexter.modules.content.affiliate_links.add_link", _fake_add_link), \
+       patch("poindexter.modules.content.affiliate_links.set_active", _fake_set_active):
         report = await import_csv(pool, csv_path, site_config=object())
 
     assert len(report.created) == 1
@@ -139,10 +139,10 @@ async def test_import_force_overwrites_existing_code(tmp_path):
         return True
 
     with patch(
-        "modules.content.affiliate_import._derive_display_and_keywords",
+        "poindexter.modules.content.affiliate_import._derive_display_and_keywords",
         AsyncMock(return_value=("Widget Pro", ["Widget"])),
-    ), patch("modules.content.affiliate_links.add_link", _fake_add_link), \
-       patch("modules.content.affiliate_links.set_active", _fake_set_active):
+    ), patch("poindexter.modules.content.affiliate_links.add_link", _fake_add_link), \
+       patch("poindexter.modules.content.affiliate_links.set_active", _fake_set_active):
         report = await import_csv(pool, csv_path, site_config=object(), force=True)
 
     assert len(report.created) == 1
@@ -163,10 +163,10 @@ async def test_import_uses_fallback_keyword_when_derivation_returns_none(tmp_pat
         return True
 
     with patch(
-        "modules.content.affiliate_import._derive_display_and_keywords",
+        "poindexter.modules.content.affiliate_import._derive_display_and_keywords",
         AsyncMock(return_value=("Widget Pro 9000", [])),
-    ), patch("modules.content.affiliate_links.add_link", _fake_add_link), \
-       patch("modules.content.affiliate_links.set_active", _fake_set_active):
+    ), patch("poindexter.modules.content.affiliate_links.add_link", _fake_add_link), \
+       patch("poindexter.modules.content.affiliate_links.set_active", _fake_set_active):
         report = await import_csv(pool, csv_path, site_config=object())
 
     assert len(report.created) == 1
@@ -188,10 +188,10 @@ async def test_import_add_link_failure_produces_error_row_not_batch_abort(tmp_pa
         return True
 
     with patch(
-        "modules.content.affiliate_import._derive_display_and_keywords",
+        "poindexter.modules.content.affiliate_import._derive_display_and_keywords",
         AsyncMock(return_value=("Name", ["kw"])),
-    ), patch("modules.content.affiliate_links.add_link", _failing_add_link), \
-       patch("modules.content.affiliate_links.set_active", _fake_set_active):
+    ), patch("poindexter.modules.content.affiliate_links.add_link", _failing_add_link), \
+       patch("poindexter.modules.content.affiliate_links.set_active", _fake_set_active):
         report = await import_csv(pool, csv_path, site_config=object())
 
     assert len(report.errors) == 1

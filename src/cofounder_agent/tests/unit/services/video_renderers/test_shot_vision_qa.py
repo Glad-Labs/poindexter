@@ -28,7 +28,7 @@ def _shot(source="image_gen", prompt="a cyan circuit board, dark navy backdrop")
 
 def _completion(text: str):
     """A Completion-shaped stub (dispatch_complete returns Completion)."""
-    from plugins.llm_provider import Completion
+    from poindexter.plugins.llm_provider import Completion
 
     return Completion(text=text, model="qwen3-vl:30b")
 

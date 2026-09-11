@@ -50,7 +50,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from plugins.publish_adapter import PublishResult
+from poindexter.plugins.publish_adapter import PublishResult
 from poindexter.services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)

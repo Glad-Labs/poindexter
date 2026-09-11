@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms._writer_markers import (
+from poindexter.modules.content.atoms._writer_markers import (
     extract_hero_subject,
     number_inline_markers,
     split_chart_target,
@@ -46,7 +46,7 @@ def test_number_inline_markers_caps_and_strips_extras():
 
 @pytest.mark.asyncio
 async def test_plan_image_markers_surfaces_hero_and_uses_writer_markers():
-    from modules.content.atoms import content_plan_image_markers
+    from poindexter.modules.content.atoms import content_plan_image_markers
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
@@ -92,7 +92,7 @@ def test_screenshot_markers_count_against_the_cap():
 
 
 def test_split_screenshot_target_roundtrip():
-    from modules.content.atoms._writer_markers import split_screenshot_target
+    from poindexter.modules.content.atoms._writer_markers import split_screenshot_target
 
     assert split_screenshot_target("screenshot:qa-rails") == ("qa-rails", "qa-rails")
     assert split_screenshot_target("SCREENSHOT: qa-rails") == ("qa-rails", "qa-rails")
@@ -102,7 +102,7 @@ def test_split_screenshot_target_roundtrip():
 
 @pytest.mark.asyncio
 async def test_plan_image_markers_surfaces_screenshot_target():
-    from modules.content.atoms import content_plan_image_markers
+    from poindexter.modules.content.atoms import content_plan_image_markers
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
@@ -132,7 +132,7 @@ async def test_plan_image_markers_surfaces_screenshot_target():
 
 @pytest.mark.asyncio
 async def test_screenshot_marker_survives_plan_through_inject():
-    from modules.content.atoms import content_inject_images, content_plan_image_markers
+    from poindexter.modules.content.atoms import content_inject_images, content_plan_image_markers
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"writer_max_inline_images": "3"})
@@ -163,7 +163,7 @@ async def test_screenshot_marker_survives_plan_through_inject():
 @pytest.mark.asyncio
 async def test_screenshot_slot_with_no_url_strips_placeholder():
     """A failed capture must leave no orphan marker in the published body."""
-    from modules.content.atoms import content_inject_images
+    from poindexter.modules.content.atoms import content_inject_images
 
     injected = await content_inject_images.run({
         "content": "Text.\n\n[IMAGE-1: screenshot:qa-rails]\n\nMore.",

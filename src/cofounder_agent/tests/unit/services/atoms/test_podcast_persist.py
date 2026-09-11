@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms import podcast_persist
+from poindexter.modules.content.atoms import podcast_persist
 
 
 class _FakePool:

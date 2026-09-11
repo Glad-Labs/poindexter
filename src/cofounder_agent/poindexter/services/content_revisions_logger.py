@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ async def log_revision(
             return int(next_rev)
     except Exception as e:
         logger.debug("[content_revisions] log_revision failed: %s", e)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="content_revisions_logger",

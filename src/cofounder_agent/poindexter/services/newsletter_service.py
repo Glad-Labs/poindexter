@@ -25,7 +25,7 @@ from typing import Any
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -385,7 +385,7 @@ async def send_post_newsletter(
         # one identical provider rejection per subscriber (that shape
         # burned 53/53 sends 2026-05-08 → 07-10 with warnings nobody saw).
         logger.error("[NEWSLETTER] %s — campaign skipped", e)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="newsletter_service",
             kind="newsletter_config_invalid",
@@ -488,7 +488,7 @@ async def send_post_newsletter(
         # note the summary line above still reports a clean "N sent, 0 failed".
         # ONE aggregate finding, never one per subscriber.
         delivered_lost = sum(1 for s in log_write_failures if s == "delivered")
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.newsletter_service",
@@ -509,7 +509,7 @@ async def send_post_newsletter(
     if result["failed"] > 0 and result["sent"] == 0:
         # Every attempted send failed — that's a campaign outage, not
         # per-recipient noise. One finding per post (dedup on slug).
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="newsletter_service",
             kind="newsletter_campaign_failed",

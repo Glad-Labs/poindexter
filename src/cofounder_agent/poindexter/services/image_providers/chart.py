@@ -48,7 +48,7 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 from poindexter.services.chart_render import ChartSpec, Series, chart_alt_text, render_chart
 
 logger = logging.getLogger(__name__)

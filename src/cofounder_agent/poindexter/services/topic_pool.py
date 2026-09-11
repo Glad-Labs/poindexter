@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 
 # Tap rows name their destination in external_taps.target_table; we read it
 # from the (trusted) row but allowlist it before interpolation — asyncpg can't

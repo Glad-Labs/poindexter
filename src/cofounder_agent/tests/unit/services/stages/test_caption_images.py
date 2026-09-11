@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.stages.caption_images import CaptionImagesStage
+from poindexter.modules.content.stages.caption_images import CaptionImagesStage
 
 
 @pytest.mark.asyncio
@@ -29,7 +29,7 @@ async def test_caption_images_rewrites_inline_alt_and_featured():
         )
 
     with patch(
-        "modules.content.stages.caption_images.caption_image",
+        "poindexter.modules.content.stages.caption_images.caption_image",
         AsyncMock(side_effect=fake_caption),
     ):
         res = await CaptionImagesStage().execute(ctx, {})
@@ -49,7 +49,7 @@ async def test_caption_images_failsoft_keeps_prior_alt():
     content = '<img src="https://r2/a.png" alt="original alt" />'
     ctx = {"content": content, "topic": "X", "site_config": None}
     with patch(
-        "modules.content.stages.caption_images.caption_image",
+        "poindexter.modules.content.stages.caption_images.caption_image",
         AsyncMock(return_value=None),
     ):
         res = await CaptionImagesStage().execute(ctx, {})
@@ -61,7 +61,7 @@ async def test_caption_images_strips_double_quotes_from_caption():
     content = '<img src="https://r2/a.png" alt="old" />'
     ctx = {"content": content, "topic": "X", "site_config": None}
     with patch(
-        "modules.content.stages.caption_images.caption_image",
+        "poindexter.modules.content.stages.caption_images.caption_image",
         AsyncMock(return_value='A sign reading "OPEN" on a door'),
     ):
         res = await CaptionImagesStage().execute(ctx, {})

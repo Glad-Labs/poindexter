@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
-from utils.startup_manager import StartupManager
+from poindexter.utils.startup_manager import StartupManager
 
 # ---------------------------------------------------------------------------
 # _scan_syntax_errors — pure walk + compile, testable without mocking
@@ -95,7 +95,7 @@ class TestCheckModuleSyntax:
 
         mgr = self._make_manager()
         with patch.object(StartupManager, "_scan_syntax_errors", return_value=[(str(tmp_path / "conflicted.py"), "SyntaxError: invalid syntax")]):
-            with patch("utils.startup_manager.Path") as MockPath:
+            with patch("poindexter.utils.startup_manager.Path") as MockPath:
                 mock_dir = MockPath.return_value.parent.parent.__truediv__.return_value
                 mock_dir.is_dir.return_value = True
 
@@ -106,7 +106,7 @@ class TestCheckModuleSyntax:
 
     def test_does_not_exit_when_modules_dir_missing(self, tmp_path):
         mgr = self._make_manager()
-        with patch("utils.startup_manager.Path") as MockPath:
+        with patch("poindexter.utils.startup_manager.Path") as MockPath:
             mock_dir = MockPath.return_value.parent.parent.__truediv__.return_value
             mock_dir.is_dir.return_value = False
 
@@ -116,7 +116,7 @@ class TestCheckModuleSyntax:
     def test_does_not_exit_when_all_clean(self, tmp_path):
         mgr = self._make_manager()
         with patch.object(StartupManager, "_scan_syntax_errors", return_value=[]):
-            with patch("utils.startup_manager.Path") as MockPath:
+            with patch("poindexter.utils.startup_manager.Path") as MockPath:
                 mock_dir = MockPath.return_value.parent.parent.__truediv__.return_value
                 mock_dir.is_dir.return_value = True
                 mock_dir.rglob.return_value = []
@@ -128,7 +128,7 @@ class TestCheckModuleSyntax:
         offender = str(tmp_path / "oops.py")
         mgr = self._make_manager()
         with patch.object(StartupManager, "_scan_syntax_errors", return_value=[(offender, "SyntaxError: invalid syntax")]):
-            with patch("utils.startup_manager.Path") as MockPath:
+            with patch("poindexter.utils.startup_manager.Path") as MockPath:
                 mock_dir = MockPath.return_value.parent.parent.__truediv__.return_value
                 mock_dir.is_dir.return_value = True
 

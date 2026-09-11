@@ -611,7 +611,7 @@ class UnifiedPromptManager:
         aborted and the caller falls back to DB+YAML for this lookup —
         so they share one kind/dedup_key rather than paging separately.
         """
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="prompt_manager",
@@ -741,7 +741,7 @@ class UnifiedPromptManager:
             return
         self._langfuse_unavailable_reported = True
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="prompt_manager",

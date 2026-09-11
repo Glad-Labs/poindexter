@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from plugins import LLMProvider
-from plugins.llm_provider import Completion, Token
+from poindexter.plugins import LLMProvider
+from poindexter.plugins.llm_provider import Completion, Token
 
 # --------------------------------------------------------------------------- #
 # Fixture: install a mock ``litellm`` in sys.modules for the duration of the

@@ -31,7 +31,7 @@ from poindexter.services.bootstrap import build_container
 from poindexter.services.container_registry import set_container
 from poindexter.services.jobs.reload_site_config import ReloadSiteConfigJob
 from poindexter.services.site_config import SiteConfig
-from utils.route_utils import get_site_config_dependency
+from poindexter.utils.route_utils import get_site_config_dependency
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +145,7 @@ class TestQualityModelWatch:
     async def test_watched_pin_change_emits_finding(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         sc = SiteConfig(initial_config={"pipeline_critic_model": "old-judge"})
         pool = AsyncMock()
@@ -164,7 +164,7 @@ class TestQualityModelWatch:
     async def test_unwatched_change_is_silent(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         sc = SiteConfig(initial_config={"some_other_key": "old"})
         pool = AsyncMock()
@@ -179,7 +179,7 @@ class TestQualityModelWatch:
     async def test_no_change_no_finding(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         sc = SiteConfig(initial_config={"pipeline_critic_model": "same-judge"})
         pool = AsyncMock()

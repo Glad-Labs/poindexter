@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.text_utils import strip_title_label
+from poindexter.utils.text_utils import strip_title_label
 
 
 @pytest.mark.parametrize(

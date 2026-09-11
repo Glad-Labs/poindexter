@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from plugins.tracing import (
+from poindexter.plugins.tracing import (
     _NoopTracer,
     get_tracer,
     traced_method,
@@ -232,7 +232,7 @@ class TestTracedMethod:
         ``_tracer`` on the function's module. ``_ModuleScopedProvider``
         is defined at module scope below so ``inspect.getmodule`` can
         resolve to this test module."""
-        import plugins.tracing as tmod
+        import poindexter.plugins.tracing as tmod
 
         tracer = _RecordingTracer()
         # Patch the test module — _ModuleScopedProvider.go's module is

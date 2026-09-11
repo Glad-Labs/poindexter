@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from plugins.module import ModuleManifest
+from poindexter.plugins.module import ModuleManifest
 
 _MANIFEST = ModuleManifest(
     name="finance",
@@ -64,7 +64,7 @@ class FinanceModule:
         # inside register_routes() means a Module-discovery pass that
         # doesn't ultimately mount the routes (e.g. a unit test that
         # only exercises manifest()) never pays the import cost.
-        from modules.finance.routes import router as finance_router
+        from poindexter.modules.finance.routes import router as finance_router
 
         if not hasattr(app, "include_router"):
             # Per ``feedback_no_silent_defaults`` — fail loud if the host
@@ -96,7 +96,7 @@ class FinanceModule:
                 "FinanceModule.register_cli: expected a click Group with "
                 f".add_command, got {type(parser).__name__}"
             )
-        from modules.finance.cli import finance_group
+        from poindexter.modules.finance.cli import finance_group
 
         parser.add_command(finance_group, name="finance")  # type: ignore[attr-defined]
 
@@ -132,7 +132,7 @@ class FinanceModule:
                 f"with .register(...), got {type(brain).__name__}"
             )
 
-        from modules.finance.probes import (
+        from poindexter.modules.finance.probes import (
             FinancePollStalenessProbe,
             run_finance_poll_staleness_probe,
         )
@@ -160,7 +160,7 @@ class FinanceModule:
         can ``await`` it; the exporter wraps the call in its own try/except so
         a finance refresh failure never makes ``/metrics`` error.
         """
-        from modules.finance.metrics import refresh_finance_metrics
+        from poindexter.modules.finance.metrics import refresh_finance_metrics
 
         return refresh_finance_metrics(pool)
 

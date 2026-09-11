@@ -21,11 +21,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import modules.content.atoms._image_helpers as image_helpers
-import modules.content.atoms.approval_gate as approval_gate
-import modules.content.atoms.content_inject_affiliate_links as affiliate
-import modules.content.atoms.narrate_bundle as narrate_bundle
-import modules.content.atoms.qa_audio as qa_audio
+import poindexter.modules.content.atoms._image_helpers as image_helpers
+import poindexter.modules.content.atoms.approval_gate as approval_gate
+import poindexter.modules.content.atoms.content_inject_affiliate_links as affiliate
+import poindexter.modules.content.atoms.narrate_bundle as narrate_bundle
+import poindexter.modules.content.atoms.qa_audio as qa_audio
 
 pytestmark = pytest.mark.unit
 
@@ -132,7 +132,7 @@ async def test_affiliate_list_active_failure_emits_finding(monkeypatch):
     # list_active is imported at call time from the source module, so patching
     # the source attribute intercepts it regardless of the local binding.
     monkeypatch.setattr(
-        "modules.content.affiliate_links.list_active",
+        "poindexter.modules.content.affiliate_links.list_active",
         AsyncMock(side_effect=RuntimeError("list_active boom")),
     )
 

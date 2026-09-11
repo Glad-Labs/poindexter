@@ -45,15 +45,15 @@ from typing import Any
 
 import httpx
 
-from plugins.llm_provider import Completion, Token
-from plugins.llm_resilience import (
+from poindexter.plugins.llm_provider import Completion, Token
+from poindexter.plugins.llm_resilience import (
     CircuitOpenError,
     LLMResilienceManager,
     RetryDecision,
 )
 from poindexter.services.cost_guard import CostGuard, CostGuardExhausted
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -209,7 +209,7 @@ class GeminiProvider:
             # Defensive — SiteConfig.get is sync and reads from cache.
             # DEBUG so a misbehaving cache surfaces in dev.
             logger.debug("[gemini] site_config.get(enabled) failed: %s", e)
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="llm_providers.gemini",

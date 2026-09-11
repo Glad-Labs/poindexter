@@ -35,7 +35,7 @@ async def _main() -> int:
     parser.add_argument("--apply", action="store_true", help="write back + heal (default: dry run)")
     args = parser.parse_args()
 
-    from modules.content.media_regen import regen_video_scripts
+    from poindexter.modules.content.media_regen import regen_video_scripts
     from poindexter.services.di_wiring import (
         build_and_wire_subprocess_with_container,
         build_platform_for_subprocess,

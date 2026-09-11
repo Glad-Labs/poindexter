@@ -127,7 +127,7 @@ def _emit_tap_failure_finding(
     is recorded without paging. ``warn`` from the Nth consecutive failure on.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         sustained = streak >= max(1, alert_after)
         emit_finding(

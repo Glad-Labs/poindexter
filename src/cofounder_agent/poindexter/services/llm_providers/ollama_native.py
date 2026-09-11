@@ -18,7 +18,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from plugins.llm_provider import Completion, Token
+from poindexter.plugins.llm_provider import Completion, Token
 
 logger = logging.getLogger(__name__)
 

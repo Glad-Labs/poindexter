@@ -23,8 +23,8 @@ from typing import Any
 
 import pytest
 
-from modules.finance import metrics as fin_metrics
-from modules.finance.metrics import (
+from poindexter.modules.finance import metrics as fin_metrics
+from poindexter.modules.finance.metrics import (
     FINANCE_LAST_POLL_AGE_SECONDS,
     FINANCE_LAST_POLL_SUCCESS_TIMESTAMP,
     FINANCE_POLL_RUNS_TOTAL,

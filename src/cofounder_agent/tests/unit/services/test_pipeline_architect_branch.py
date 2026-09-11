@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services import pipeline_architect
 
 
@@ -57,7 +57,7 @@ def _compile_branch_graph(log: list[str], *, gate_fn):
     with (
         patch.object(pipeline_architect, "get_atom_meta", lambda n: catalog.get(n)),
         patch.object(pipeline_architect, "get_atom_callable", lambda n: callables.get(n)),
-        patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         return pipeline_architect.build_graph_from_spec(spec, pool=None).compile()
 
@@ -149,7 +149,7 @@ def _compile_multi_branch_graph(log: list[str], *, gate_fn):
     with (
         patch.object(pipeline_architect, "get_atom_meta", lambda n: catalog.get(n)),
         patch.object(pipeline_architect, "get_atom_callable", lambda n: callables.get(n)),
-        patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         return pipeline_architect.build_graph_from_spec(spec, pool=None).compile()
 
@@ -240,7 +240,7 @@ def _compile_backward_loop_graph(log: list[str], *, gate_fn):
     with (
         patch.object(pipeline_architect, "get_atom_meta", lambda n: catalog.get(n)),
         patch.object(pipeline_architect, "get_atom_callable", lambda n: callables.get(n)),
-        patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         return pipeline_architect.build_graph_from_spec(spec, pool=None).compile()
 

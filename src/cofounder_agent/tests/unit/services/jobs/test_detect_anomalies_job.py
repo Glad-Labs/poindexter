@@ -105,7 +105,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.findings.emit_finding",
+        with patch("poindexter.utils.findings.emit_finding",
                    new=AsyncMock(return_value=True)) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.ok is True
@@ -129,7 +129,7 @@ class TestDetectAnomaliesJobRun:
         # Patch as MagicMock + assert_called_once. Was AsyncMock +
         # assert_awaited_once which never fired despite the call going
         # through — see poindexter#446.
-        with patch("utils.findings.emit_finding",
+        with patch("poindexter.utils.findings.emit_finding",
                    new=MagicMock()) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.ok is True
@@ -153,7 +153,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.findings.emit_finding", new=MagicMock()) as f:
+        with patch("poindexter.utils.findings.emit_finding", new=MagicMock()) as f:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.changes_made == 2
         flagged = {a["metric"] for a in result.metrics["anomalies"]}
@@ -205,7 +205,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.findings.emit_finding",
+        with patch("poindexter.utils.findings.emit_finding",
                    new=MagicMock()) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {"issue_threshold": 1})
         assert result.changes_made == 1

@@ -106,7 +106,7 @@ def model_eval_run(slot: str, challengers: tuple[str, ...], json_output: bool) -
                     pool=pool, site_config=cfg, challengers=list(challengers),
                 )
             if slot == "critic":
-                from plugins.kernel_platform import KernelPlatform
+                from poindexter.plugins.kernel_platform import KernelPlatform
                 from poindexter.services.llm_providers.dispatcher import dispatch_complete
                 from poindexter.services.model_eval.bakeoff import run_critic_bakeoff
 

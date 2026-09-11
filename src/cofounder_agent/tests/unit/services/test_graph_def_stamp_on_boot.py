@@ -29,7 +29,7 @@ import json
 import pytest
 
 import poindexter.services.pipeline_architect as pa
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 
 
 def _meta(name: str) -> AtomMeta:

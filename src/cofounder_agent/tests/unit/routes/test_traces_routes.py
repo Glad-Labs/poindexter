@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.traces_read import LangfuseNotConfigured
+from poindexter.utils.route_utils import get_site_config_dependency
 from routes.traces_routes import router
-from utils.route_utils import get_site_config_dependency
 
 SAMPLE = {
     "traces": [

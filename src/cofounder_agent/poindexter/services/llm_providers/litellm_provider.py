@@ -101,7 +101,7 @@ import re
 from collections.abc import AsyncIterator
 from typing import Any
 
-from plugins.llm_provider import Completion, Token
+from poindexter.plugins.llm_provider import Completion, Token
 from poindexter.services.cost_guard import is_local_base_url
 from poindexter.services.llm_providers.coldload_guard import maybe_reclaim_before_coldload
 from poindexter.services.llm_providers.ollama_timings import (

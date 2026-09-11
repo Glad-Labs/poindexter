@@ -48,7 +48,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, StateGraph
 
-from plugins.tracing import get_tracer
+from poindexter.plugins.tracing import get_tracer
 from poindexter.services.atom_registry import (
     AtomRegistryUnavailableError,
     get_atom_callable,
@@ -902,7 +902,7 @@ def build_graph_from_spec(
     node_failed, with ``index``/``total`` reflecting position in the graph.
     A callback failure never breaks the run (see ``_safe_on_event``).
     """
-    from plugins.registry import get_core_samples
+    from poindexter.plugins.registry import get_core_samples
 
     g: StateGraph = StateGraph(PipelineState)
     stages_by_name = {s.name: s for s in get_core_samples().get("stages", [])}

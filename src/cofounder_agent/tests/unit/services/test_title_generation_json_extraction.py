@@ -57,7 +57,7 @@ async def _run(provider_text: str) -> Any:
     extraction path, not the (separately tested) prompt body."""
     provider = _provider_returning(provider_text)
     with patch(
-        "plugins.registry.get_all_llm_providers", return_value=[provider]
+        "poindexter.plugins.registry.get_all_llm_providers", return_value=[provider]
     ), patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
         pm.return_value.get_prompt.return_value = "PROMPT"
         return await generate_canonical_title(

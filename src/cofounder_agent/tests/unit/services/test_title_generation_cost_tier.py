@@ -54,7 +54,7 @@ async def test_uses_pipeline_writer_model_pin():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -83,7 +83,7 @@ async def test_pin_without_prefix_passed_through():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -111,7 +111,7 @@ async def test_pages_operator_when_pin_empty():
     provider.complete = AsyncMock()
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm, \
@@ -160,7 +160,7 @@ async def test_disables_thinking_for_short_copy_title():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -296,7 +296,7 @@ async def test_returns_none_when_ollama_native_provider_missing():
     other.name = "claude_haiku"  # registered, but not the writer
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[other],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -330,7 +330,7 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -366,7 +366,7 @@ async def test_topic_is_passed_to_get_prompt():
         return "PROMPT"
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -407,7 +407,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:
@@ -454,7 +454,7 @@ async def test_avoidance_block_supersedes_legacy_existing_titles():
     fake_sc.get_int.return_value = 4000
 
     with patch(
-             "plugins.registry.get_all_llm_providers",
+             "poindexter.plugins.registry.get_all_llm_providers",
              return_value=[provider],
          ), \
          patch("poindexter.services.prompt_manager.get_prompt_manager") as pm:

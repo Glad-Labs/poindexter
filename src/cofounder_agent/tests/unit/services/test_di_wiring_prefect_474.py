@@ -73,7 +73,7 @@ class TestWiredModulesList:
             "poindexter.services.ollama_client",
             "poindexter.services.prompt_manager",
             "poindexter.services.gpu_scheduler",
-            "utils.route_utils",
+            "poindexter.utils.route_utils",
         ],
     )
     def test_migrated_module_has_no_setter(self, modname: str):

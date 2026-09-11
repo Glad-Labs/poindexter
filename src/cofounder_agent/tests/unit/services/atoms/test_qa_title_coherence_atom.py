@@ -13,8 +13,8 @@ import json
 
 import pytest
 
-from modules.content.atoms import qa_title_coherence
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.atoms import qa_title_coherence
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 
 # Advisory-first seed: required_to_pass=false.
 _ADVISORY_STATES = {"title_coherence": (True, False)}
@@ -40,7 +40,7 @@ def _patch_judge(monkeypatch, payload):
 
 def _capture_findings(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

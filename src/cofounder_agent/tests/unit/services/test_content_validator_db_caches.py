@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from modules.content import content_validator as cv
+from poindexter.modules.content import content_validator as cv
 
 
 def _ensure_brain_importable() -> None:

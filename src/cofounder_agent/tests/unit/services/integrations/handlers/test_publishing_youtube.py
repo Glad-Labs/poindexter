@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.publish_adapter import PublishResult
+from poindexter.plugins.publish_adapter import PublishResult
 from poindexter.services.integrations import registry
 from poindexter.services.integrations.handlers import (
     publishing_youtube,  # noqa: F401  side-effect: decorator

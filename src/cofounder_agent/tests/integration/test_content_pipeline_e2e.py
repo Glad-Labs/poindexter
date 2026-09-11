@@ -232,7 +232,7 @@ class TestContentGeneration:
         so it returned non-Ollama fallback content that satisfied every
         assertion here without a model ever being called.
         """
-        from modules.content.ai_content_generator import AIContentGenerator
+        from poindexter.modules.content.ai_content_generator import AIContentGenerator
 
         gen = AIContentGenerator(
             quality_threshold=2.0,  # Low threshold for speed
@@ -470,7 +470,7 @@ async def platform_stack():
 @pytest.fixture
 def qa_with_platform(platform_stack):
     """A ``MultiModelQA`` built the way the ``qa.*`` atoms build it."""
-    from modules.content.multi_model_qa import MultiModelQA
+    from poindexter.modules.content.multi_model_qa import MultiModelQA
 
     return MultiModelQA(
         pool=platform_stack.pool,
@@ -486,7 +486,7 @@ class TestQAReview:
     @pytest.mark.asyncio
     async def test_multi_model_qa_review(self, ollama_site_config):
         """MultiModelQA.review() returns a scored result using Ollama."""
-        from modules.content.multi_model_qa import MultiModelQA
+        from poindexter.modules.content.multi_model_qa import MultiModelQA
 
         qa = MultiModelQA(site_config=ollama_site_config)
         result = await qa.review(

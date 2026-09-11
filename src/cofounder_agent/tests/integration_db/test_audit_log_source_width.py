@@ -24,7 +24,7 @@ pytestmark = [
 
 # The exact production source that overran varchar(50) — see the GlitchTip #863
 # traceback. 53 chars.
-_LONG_SOURCE = "modules.content.atoms.content_llm_reconcile_citations"
+_LONG_SOURCE = "poindexter.modules.content.atoms.content_llm_reconcile_citations"
 
 
 async def test_source_column_widened_to_text(test_pool) -> None:

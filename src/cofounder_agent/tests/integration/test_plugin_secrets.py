@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
-from plugins.secrets import (
+from poindexter.plugins.secrets import (
     SecretsError,
     demote_secret,
     ensure_pgcrypto,

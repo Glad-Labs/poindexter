@@ -15,32 +15,32 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins import (
+from poindexter.plugins import (
     Job,
     JobResult,
     Probe,
     Tap,
     get_core_samples,
 )
-from plugins.registry import clear_registry_cache
+from poindexter.plugins.registry import clear_registry_cache
 
 
 class TestHelloTap:
     """Sample Tap: plugins.samples.hello_tap.HelloTap"""
 
     def test_conforms_to_tap_protocol(self):
-        from plugins.samples.hello_tap import HelloTap
+        from poindexter.plugins.samples.hello_tap import HelloTap
         assert isinstance(HelloTap(), Tap)
 
     def test_has_required_attributes(self):
-        from plugins.samples.hello_tap import HelloTap
+        from poindexter.plugins.samples.hello_tap import HelloTap
         tap = HelloTap()
         assert tap.name == "hello"
         assert isinstance(tap.interval_seconds, int)
 
     @pytest.mark.asyncio
     async def test_extract_yields_document(self):
-        from plugins.samples.hello_tap import HelloTap
+        from poindexter.plugins.samples.hello_tap import HelloTap
         tap = HelloTap()
 
         docs = []
@@ -58,11 +58,11 @@ class TestDatabaseProbe:
     """Sample Probe: plugins.samples.database_probe.DatabaseProbe"""
 
     def test_conforms_to_probe_protocol(self):
-        from plugins.samples.database_probe import DatabaseProbe
+        from poindexter.plugins.samples.database_probe import DatabaseProbe
         assert isinstance(DatabaseProbe(), Probe)
 
     def test_has_required_attributes(self):
-        from plugins.samples.database_probe import DatabaseProbe
+        from poindexter.plugins.samples.database_probe import DatabaseProbe
         probe = DatabaseProbe()
         assert probe.name == "database"
         assert probe.category == "infrastructure"
@@ -73,11 +73,11 @@ class TestNoopJob:
     """Sample Job: plugins.samples.noop_job.NoopJob"""
 
     def test_conforms_to_job_protocol(self):
-        from plugins.samples.noop_job import NoopJob
+        from poindexter.plugins.samples.noop_job import NoopJob
         assert isinstance(NoopJob(), Job)
 
     def test_has_required_attributes(self):
-        from plugins.samples.noop_job import NoopJob
+        from poindexter.plugins.samples.noop_job import NoopJob
         job = NoopJob()
         assert job.name == "noop"
         assert job.schedule == "every 1 hour"
@@ -85,7 +85,7 @@ class TestNoopJob:
 
     @pytest.mark.asyncio
     async def test_run_returns_ok_result(self):
-        from plugins.samples.noop_job import NoopJob
+        from poindexter.plugins.samples.noop_job import NoopJob
         result = await NoopJob().run(pool=None, config={})
 
         assert isinstance(result, JobResult)

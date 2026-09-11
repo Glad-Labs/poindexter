@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from plugins import Document, get_all_llm_providers, get_llm_providers, get_taps
-from plugins.registry import clear_registry_cache
+from poindexter.plugins import Document, get_all_llm_providers, get_llm_providers, get_taps
+from poindexter.plugins.registry import clear_registry_cache
 
 
 class _FakeTap:
@@ -59,11 +59,11 @@ def _reset_registry_cache():
     """
     import sys
 
-    registry = sys.modules.get("plugins.registry")
+    registry = sys.modules.get("poindexter.plugins.registry")
     if registry is None:
         import importlib
-        registry = importlib.import_module("plugins.registry")
-    plugins_pkg = sys.modules.get("plugins")
+        registry = importlib.import_module("poindexter.plugins.registry")
+    plugins_pkg = sys.modules.get("poindexter.plugins")
     if plugins_pkg is not None and getattr(plugins_pkg, "registry", None) is not registry:
         plugins_pkg.registry = registry  # type: ignore[attr-defined]
 
@@ -115,7 +115,7 @@ def test_discovers_registered_tap(monkeypatch):
             return [_make_entry_point("fake", "poindexter.taps", _FakeTap)]
         return []
 
-    monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+    monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
     taps = get_taps()
@@ -140,7 +140,7 @@ def test_broken_plugin_skipped_not_fatal(monkeypatch, caplog):
             ]
         return []
 
-    monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+    monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
     with caplog.at_level("ERROR"):
@@ -161,7 +161,7 @@ def test_isolated_group_registration(monkeypatch):
             return [_make_entry_point("fake-llm", "poindexter.llm_providers", _FakeLLMProvider)]
         return []
 
-    monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+    monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
     # Core samples (ollama_native, openai_compat) merge in alongside the
@@ -184,7 +184,7 @@ def test_cache_reuses_load_result(monkeypatch):
             return [_make_entry_point("fake", "poindexter.taps", _FakeTap)]
         return []
 
-    monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+    monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
     get_taps()
@@ -204,7 +204,7 @@ def test_clear_cache_forces_rediscovery(monkeypatch):
             return [_make_entry_point("fake", "poindexter.taps", _FakeTap)]
         return []
 
-    monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+    monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
     get_taps()
@@ -239,7 +239,7 @@ class TestGetAllLlmProviders:
         def fake_entry_points(group: str | None = None):
             return []  # entry_points genuinely empty (the prod reality)
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         names = {p.name for p in get_all_llm_providers()}
@@ -272,7 +272,7 @@ class TestGetAllLlmProviders:
                 ]
             return []
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         by_name = {p.name: p for p in get_all_llm_providers()}
@@ -294,7 +294,7 @@ class TestGetAllLlmProviders:
         def fake_entry_points(group: str | None = None):
             return []
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         bare = {p.name for p in get_llm_providers()}

@@ -38,7 +38,7 @@ import asyncio
 import logging
 from typing import Any
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +252,7 @@ class CodebaseSource:
             # BaseException — they'd otherwise look identical to "this
             # query legitimately matched nothing". One aggregate finding
             # per extract() call, never per-query.
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="topic_sources.codebase",

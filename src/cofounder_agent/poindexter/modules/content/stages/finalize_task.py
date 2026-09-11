@@ -32,8 +32,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.stage import StageResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.stage import StageResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def _maybe_append_sources_section(content_text: str, platform: Any) -> str:
             "[finalize_task] Sources-section auto-append skipped (non-fatal): %s",
             _sources_err,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="modules.content.stages.finalize_task",
@@ -130,7 +130,7 @@ async def _snapshot_final_revision(
         )
     except Exception as rev_err:  # noqa: BLE001 — snapshot is best-effort; never break finalize
         logger.debug("[content_revisions] final snapshot failed: %s", rev_err)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="modules.content.stages.finalize_task",
@@ -224,7 +224,7 @@ class FinalizeTaskStage:
         # text so approvers can see *why* a post scored Q85 vs Q88, from the
         # serialized qa_reviews list qa.aggregate promotes onto state (the
         # deleted cross_model_qa stage wrote it pre atom-cutover #355).
-        from modules.content.multi_model_qa import format_qa_feedback_from_reviews
+        from poindexter.modules.content.multi_model_qa import format_qa_feedback_from_reviews
         qa_reviews = context.get("qa_reviews") or []
         qa_feedback_text = ""
         if qa_reviews:
@@ -285,7 +285,7 @@ class FinalizeTaskStage:
         # featured_image_* group, and the media keys) are read from `context`
         # by the helper. Keeps the dev_diary and canonical_blog finalize
         # paths' metadata key sets identical (Glad-Labs/poindexter#693).
-        from modules.content.task_metadata import build_task_metadata
+        from poindexter.modules.content.task_metadata import build_task_metadata
         task_metadata = build_task_metadata(
             context,
             preview_token=preview_token,
@@ -447,7 +447,7 @@ class FinalizeTaskStage:
         # actually approves while dry_run=true (default).
         gate_decision = None
         try:
-            from modules.content.auto_publish_gate import evaluate as _gate_check
+            from poindexter.modules.content.auto_publish_gate import evaluate as _gate_check
             db_pool = getattr(database_service, "pool", None)
             gate_decision = await _gate_check(
                 db_pool,
@@ -498,7 +498,7 @@ class FinalizeTaskStage:
                 exc_info=True,
             )
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
 
                 emit_finding(
                     source="finalize_task",

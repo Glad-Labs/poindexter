@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from modules.finance.probes import EGRESS_IP_ECHO_URL_KEY
+from poindexter.modules.finance.probes import EGRESS_IP_ECHO_URL_KEY
 
 _MIGRATION = (
     Path(__file__).resolve().parents[4]

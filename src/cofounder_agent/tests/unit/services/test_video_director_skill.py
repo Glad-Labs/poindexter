@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from modules.content.stages.generate_video_shot_list import _extract_json_object
+from poindexter.modules.content.stages.generate_video_shot_list import _extract_json_object
 from poindexter.services.prompt_manager import UnifiedPromptManager
 from schemas.video_shot_list import scan_for_human_tokens
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ ATOM_META = AtomMeta(
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    from modules.content.atoms._image_helpers import (
+    from poindexter.modules.content.atoms._image_helpers import (
         stock_fallback_enabled,
         try_image_gen,
         try_pexels,
@@ -134,7 +134,7 @@ def _emit_rebuild_downgrade_finding(
     did not pass --allow-stock; with the flag set the downgrade would
     otherwise pass entirely unrecorded.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     if source == "pexels":
         title = "Rebuilt hero fell back to stock — image-gen failed"

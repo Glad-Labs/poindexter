@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from modules.content.atoms import _seo_common as sc
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.title_utils import derive_seo_title
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.title_utils import derive_seo_title
 
 ATOM_META = AtomMeta(
     name="seo.generate_title",

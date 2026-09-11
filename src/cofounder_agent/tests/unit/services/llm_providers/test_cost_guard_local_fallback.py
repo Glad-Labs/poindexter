@@ -59,7 +59,7 @@ def _resolve(exc, *, model=_PAID, provider_config=None, paid=lambda m, pc: "anth
 
 def test_downgrades_to_the_configured_local_model():
     with _container(cost_guard_local_fallback_model=_LOCAL), \
-         patch("utils.findings.emit_finding") as finding:
+         patch("poindexter.utils.findings.emit_finding") as finding:
         out, span = _resolve(_exhausted())
 
     assert out == _LOCAL
@@ -76,7 +76,7 @@ def test_falls_back_to_pipeline_local_writer_model_when_unset():
     """No dedicated key configured -> reuse the existing guaranteed-local pin
     rather than inventing a model name."""
     with _container(pipeline_local_writer_model=_LOCAL), \
-         patch("utils.findings.emit_finding"):
+         patch("poindexter.utils.findings.emit_finding"):
         out, _ = _resolve(_exhausted())
     assert out == _LOCAL
 
@@ -84,7 +84,7 @@ def test_falls_back_to_pipeline_local_writer_model_when_unset():
 def test_reraises_when_no_local_model_is_resolvable():
     """No silent invention of a model name (feedback_no_silent_defaults)."""
     exc = _exhausted()
-    with _container(), patch("utils.findings.emit_finding"):
+    with _container(), patch("poindexter.utils.findings.emit_finding"):
         with pytest.raises(CostGuardExhausted) as caught:
             _resolve(exc)
     assert caught.value is exc, "must propagate the ORIGINAL error unchanged"
@@ -95,7 +95,7 @@ def test_reraises_when_the_configured_fallback_is_itself_paid():
     provider for another. A misconfigured fallback must not bill a second API."""
     exc = _exhausted()
     with _container(cost_guard_local_fallback_model="openai/gpt-5"), \
-         patch("utils.findings.emit_finding") as finding:
+         patch("poindexter.utils.findings.emit_finding") as finding:
         with pytest.raises(CostGuardExhausted):
             _resolve(exc, paid=lambda m, pc: True)
     finding.assert_not_called()
@@ -146,7 +146,7 @@ async def test_dispatch_completes_locally_after_the_cap_is_hit():
          patch.object(d, "_gpu_serialize_local_dispatch", lambda m, pc: False), \
          patch.object(d, "_vram_guard_enabled", lambda: False), \
          patch("poindexter.services.ollama_client.resolve_num_ctx", lambda *a, **k: 16384), \
-         patch("utils.findings.emit_finding"):
+         patch("poindexter.utils.findings.emit_finding"):
         out = await d.dispatch_complete(
             MagicMock(), [{"role": "user", "content": "hi"}], _PAID,
             tier="standard", phase="draft_generation",

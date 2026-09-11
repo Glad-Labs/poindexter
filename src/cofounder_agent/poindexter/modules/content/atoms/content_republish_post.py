@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from poindexter.services.revalidation_service import trigger_isr_revalidate
 from poindexter.services.static_export_service import export_post
 

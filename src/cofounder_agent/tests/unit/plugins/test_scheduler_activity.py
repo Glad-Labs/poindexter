@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from plugins.job import JobResult
-from plugins.scheduler import PluginScheduler
+from poindexter.plugins.job import JobResult
+from poindexter.plugins.scheduler import PluginScheduler
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,8 +30,8 @@ async def test_job_run_brackets_activity(monkeypatch):
     async def fake_finish(pool, aid, **kw):
         calls.append(("finish", aid, kw))
 
-    monkeypatch.setattr("plugins.scheduler.live_activity.begin", fake_begin)
-    monkeypatch.setattr("plugins.scheduler.live_activity.finish", fake_finish)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.begin", fake_begin)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.finish", fake_finish)
 
     await PluginScheduler._invoke_job_with_activity(pool=None, job=_Job(), cfg={})
     assert calls[0][0] == "begin" and calls[0][1]["kind"] == "job"
@@ -41,7 +41,7 @@ async def test_job_run_brackets_activity(monkeypatch):
 async def test_activity_silent_job_skips(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "plugins.scheduler.live_activity.begin",
+        "poindexter.plugins.scheduler.live_activity.begin",
         lambda *a, **k: calls.append("begin"),
     )
     job = _Job()
@@ -76,9 +76,9 @@ async def test_long_running_job_gets_heartbeat(monkeypatch):
     async def fake_finish(pool, aid, **kw):
         finishes.append((aid, kw.get("status")))
 
-    monkeypatch.setattr("plugins.scheduler.live_activity.begin", fake_begin)
-    monkeypatch.setattr("plugins.scheduler.live_activity.update", fake_update)
-    monkeypatch.setattr("plugins.scheduler.live_activity.finish", fake_finish)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.begin", fake_begin)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.update", fake_update)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.finish", fake_finish)
 
     class _SlowJob:
         name = "slow"
@@ -110,9 +110,9 @@ async def test_heartbeat_cancelled_when_job_raises(monkeypatch):
     async def fake_finish(pool, aid, **kw):
         finishes.append((aid, kw.get("status")))
 
-    monkeypatch.setattr("plugins.scheduler.live_activity.begin", fake_begin)
-    monkeypatch.setattr("plugins.scheduler.live_activity.update", fake_update)
-    monkeypatch.setattr("plugins.scheduler.live_activity.finish", fake_finish)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.begin", fake_begin)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.update", fake_update)
+    monkeypatch.setattr("poindexter.plugins.scheduler.live_activity.finish", fake_finish)
 
     class _BoomJob:
         name = "boom"

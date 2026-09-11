@@ -67,8 +67,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +255,7 @@ async def _get_last_run_date(pool: Any) -> str | None:
         )
     except Exception as exc:
         logger.debug("[dev-diary] last-run-date fetch failed: %s", describe_exception(exc))
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="jobs.run_dev_diary_post",

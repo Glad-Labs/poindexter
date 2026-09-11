@@ -20,7 +20,7 @@ from middleware.api_token_auth import _request_site_config
 from poindexter.services.container import AppContainer
 from poindexter.services.container_registry import set_container
 from poindexter.services.site_config import SiteConfig
-from utils.route_utils import get_site_config_dependency
+from poindexter.utils.route_utils import get_site_config_dependency
 
 
 @pytest.fixture(autouse=True)

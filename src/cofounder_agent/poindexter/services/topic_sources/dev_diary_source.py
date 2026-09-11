@@ -40,10 +40,10 @@ from typing import Any
 
 import httpx
 
-from plugins.topic_source import DiscoveredTopic
-from utils.crawler_ua import build_crawler_ua
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.topic_source import DiscoveredTopic
+from poindexter.utils.crawler_ua import build_crawler_ua
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -932,7 +932,7 @@ async def _fetch_gh_token(pool: Any) -> str:
     if pool is None:
         return ""
     try:
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
         async with pool.acquire() as conn:
             value = await get_secret(conn, "gh_token")
         return value or ""

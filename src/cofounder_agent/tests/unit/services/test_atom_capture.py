@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.atom import RetryPolicy
+from poindexter.plugins.atom import RetryPolicy
 from poindexter.services.atom_runs import digest_keys
 from poindexter.services.pipeline_architect import _wrap_atom
 

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from utils.startup_manager import StartupManager
+from poindexter.utils.startup_manager import StartupManager
 
 # ---------------------------------------------------------------------------
 # Helpers

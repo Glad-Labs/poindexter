@@ -26,9 +26,9 @@ from typing import Any
 
 import pytest
 
-from plugins.kernel_platform import KernelPlatform, build_kernel_platform
-from plugins.module import ModuleManifest
-from plugins.platform import Capability, CapabilityError
+from poindexter.plugins.kernel_platform import KernelPlatform, build_kernel_platform
+from poindexter.plugins.module import ModuleManifest
+from poindexter.plugins.platform import Capability, CapabilityError
 
 # --- stub kernel services -----------------------------------------------------
 
@@ -127,7 +127,7 @@ class _StubModule:
 
 
 def test_build_kernel_platform_satisfies_protocol() -> None:
-    from plugins.platform import Platform
+    from poindexter.plugins.platform import Platform
 
     assert isinstance(_make_platform(), Platform)
 
@@ -194,7 +194,7 @@ def test_kernel_metric_explicit_emitter_still_used() -> None:
 
 
 def test_bind_returns_count_and_binds_each_module() -> None:
-    from plugins.platform import bind_platform_to_modules
+    from poindexter.plugins.platform import bind_platform_to_modules
 
     modules = [_StubModule("a"), _StubModule("b")]
     platform = _make_platform()
@@ -206,7 +206,7 @@ def test_bind_returns_count_and_binds_each_module() -> None:
 
 
 def test_bind_grants_only_declared_capabilities() -> None:
-    from plugins.platform import bind_platform_to_modules
+    from poindexter.plugins.platform import bind_platform_to_modules
 
     module = _StubModule("c", capabilities=(Capability.CONFIG,))
     platform = _make_platform()
@@ -221,7 +221,7 @@ def test_bind_grants_only_declared_capabilities() -> None:
 
 
 def test_bind_empty_module_gets_capability_free_handle() -> None:
-    from plugins.platform import bind_platform_to_modules
+    from poindexter.plugins.platform import bind_platform_to_modules
 
     module = _StubModule("d")  # declares nothing
     platform = _make_platform()
@@ -233,7 +233,7 @@ def test_bind_empty_module_gets_capability_free_handle() -> None:
 
 
 def test_bind_fails_loud_when_backing_cannot_supply_capability() -> None:
-    from plugins.platform import bind_platform_to_modules
+    from poindexter.plugins.platform import bind_platform_to_modules
 
     class _PartialBacking:
         # Supplies only ``config`` — no ``audit`` attribute at all.
@@ -255,7 +255,7 @@ def test_bind_fails_loud_when_backing_cannot_supply_capability() -> None:
 def test_content_module_declares_audit_capability() -> None:
     # Content's first capability migration: its manifest must declare AUDIT so
     # the scoped handle exposes ``audit`` to the migrated stage/atom sites.
-    from modules.content.content_module import ContentModule
+    from poindexter.modules.content.content_module import ContentModule
 
     assert Capability.AUDIT in ContentModule().manifest().capabilities
 
@@ -263,7 +263,7 @@ def test_content_module_declares_audit_capability() -> None:
 def test_content_module_declares_dispatch_capability() -> None:
     # Wave 3d: the migrated stages reach the LLM router via
     # ``platform.dispatch.complete``, so the manifest must declare DISPATCH.
-    from modules.content.content_module import ContentModule
+    from poindexter.modules.content.content_module import ContentModule
 
     assert Capability.DISPATCH in ContentModule().manifest().capabilities
 
@@ -272,7 +272,7 @@ def test_content_module_declares_config_capability() -> None:
     # Wave 3e: the config file sweep reads DB-backed app_settings via
     # ``platform.config.get``, so the manifest must declare CONFIG — without it
     # the scoped handle raises ``CapabilityError`` on ``platform.config`` access.
-    from modules.content.content_module import ContentModule
+    from poindexter.modules.content.content_module import ContentModule
 
     assert Capability.CONFIG in ContentModule().manifest().capabilities
 
@@ -284,7 +284,7 @@ def test_build_platform_for_subprocess_scopes_to_content(monkeypatch) -> None:
     # The Prefect subprocess never runs main.py's lifespan, so it builds + scopes
     # its own handle. The helper returns content's *scoped* handle (audit only),
     # mirroring how the subprocess rebuilds site_config.
-    from plugins.module import ModuleManifest
+    from poindexter.plugins.module import ModuleManifest
     from poindexter.services import di_wiring
 
     class _AuditLogger:
@@ -308,7 +308,7 @@ def test_build_platform_for_subprocess_scopes_to_content(monkeypatch) -> None:
         "poindexter.services.llm_providers.dispatcher.dispatch_complete", _dispatch
     )
     monkeypatch.setattr(
-        "plugins.registry.get_modules", lambda: [_ContentLike()]
+        "poindexter.plugins.registry.get_modules", lambda: [_ContentLike()]
     )
 
     scoped = di_wiring.build_platform_for_subprocess(

@@ -60,7 +60,7 @@ from prometheus_client import Histogram
 from poindexter.services import live_activity
 from poindexter.services.live_activity_content import content_step_pct
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 # SiteConfig is now injected exclusively via constructor DI (#272
 # Phase-2f). The module-level ``site_config`` global + ``set_site_config``
@@ -856,7 +856,7 @@ def _emit_swallowed_stage_finding(
     Deduped per stage name so an outage window collapses to one delivery while
     every occurrence still lands in ``audit_log`` for the Findings dashboard.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="services.template_runner",
@@ -916,8 +916,8 @@ def make_stage_node(
     Implements: Glad-Labs/poindexter#357, Glad-Labs/poindexter#382.
     """
 
-    from plugins.config import PluginConfig
-    from plugins.stage import StageResult  # type only, but useful for clarity
+    from poindexter.plugins.config import PluginConfig
+    from poindexter.plugins.stage import StageResult  # type only, but useful for clarity
 
     name = getattr(stage, "name", stage.__class__.__name__)
 
@@ -1234,7 +1234,7 @@ async def _record_capability_outcomes(
             "[template_runner] capability_outcomes wrote %d row(s)", written,
         )
     except Exception as exc:  # noqa: BLE001
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="services.template_runner",
             kind="capability_outcomes_write_failed",
@@ -1279,7 +1279,7 @@ async def _capture_atom_runs(
             "[template_runner] atom_runs wrote %d row(s)", n_atom_runs,
         )
     except Exception as exc:  # noqa: BLE001
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="services.template_runner",
             kind="atom_runs_capture_failed",
@@ -2126,7 +2126,7 @@ class TemplateRunner:
                 "[template_runner] could not read flag, defaulting to "
                 "MemorySaver: %s", exc,
             )
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="template_runner",

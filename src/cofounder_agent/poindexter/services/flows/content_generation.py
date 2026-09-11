@@ -32,7 +32,7 @@ from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from plugins.tracing import (
+from poindexter.plugins.tracing import (
     extract_trace_context,
     get_tracer,
     stamp_langfuse_trace_url,

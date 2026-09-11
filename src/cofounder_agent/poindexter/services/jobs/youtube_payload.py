@@ -16,7 +16,7 @@ import re
 from typing import Any
 
 from poindexter.services.distribution_ref import tag_for
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

@@ -90,7 +90,7 @@ class TestParentContextFromClaimed:
         from opentelemetry import trace as ot
         from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
-        from plugins.tracing import inject_trace_context
+        from poindexter.plugins.tracing import inject_trace_context
         from poindexter.services.flows.content_generation import _parent_context_from_claimed
 
         sc = SpanContext(

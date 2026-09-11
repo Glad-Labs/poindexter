@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.knowledge_graph import (
     ORIGIN_MEMORY,
     ORIGIN_POST,

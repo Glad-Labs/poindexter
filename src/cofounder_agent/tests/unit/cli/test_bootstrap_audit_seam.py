@@ -28,7 +28,7 @@ import pytest
 import poindexter.services.audit_log as audit_mod
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 from poindexter.services.audit_log import get_audit_logger, init_global_audit_logger
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

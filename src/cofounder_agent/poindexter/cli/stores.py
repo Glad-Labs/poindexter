@@ -283,7 +283,7 @@ def stores_set_secret(
                     f"{name!r}: no credentials_ref on the row. "
                     "Set it first so the secret has somewhere to land."
                 )
-            from plugins.secrets import ensure_pgcrypto, set_secret
+            from poindexter.plugins.secrets import ensure_pgcrypto, set_secret
             await ensure_pgcrypto(conn)
             await set_secret(
                 conn, ref, blob,

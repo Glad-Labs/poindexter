@@ -36,7 +36,7 @@ from poindexter.services import live_activity
 
 # Dep-free (json/logging only), so importing it here doesn't break the lean
 # images that this module already guards apscheduler for.
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 # apscheduler is only needed by the worker that actually RUNS the scheduler.
 # Gate the import so lean images (the voice agent) can still ``import plugins``
@@ -462,7 +462,7 @@ class PluginScheduler:
             logger.debug(
                 "scheduler: last-run lookup failed for %r: %s", job_name, e
             )
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="scheduler",
@@ -630,7 +630,7 @@ class PluginScheduler:
                     critical=True,
                 )
             else:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source=f"scheduler.{job_name}",
                     kind="job_failure",
@@ -741,7 +741,7 @@ class PluginScheduler:
                 )
             if not enabled:
                 return
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             # Only a job that DECLARED its interval to be a poll cadence gets
             # the tolerance. Everything else pages on the first skip exactly as

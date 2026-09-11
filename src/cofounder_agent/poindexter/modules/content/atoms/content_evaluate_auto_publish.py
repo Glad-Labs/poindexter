@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.exception_format import describe_exception
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     gate_decision = None
     try:
-        from modules.content.auto_publish_gate import evaluate as _gate_check
+        from poindexter.modules.content.auto_publish_gate import evaluate as _gate_check
         db_pool = getattr(database_service, "pool", None)
         gate_decision = await _gate_check(
             db_pool,
@@ -181,7 +181,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             exc_info=True,
         )
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="content.evaluate_auto_publish",

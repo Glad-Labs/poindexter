@@ -23,8 +23,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-import modules.content.content_validator as content_validator
-import modules.content.multi_model_qa as multi_model_qa
+import poindexter.modules.content.content_validator as content_validator
+import poindexter.modules.content.multi_model_qa as multi_model_qa
 import poindexter.services.citation_verifier as citation_verifier
 import poindexter.services.image_decision_agent as image_decision_agent
 import poindexter.services.image_providers.ai_generation as ai_generation

@@ -638,7 +638,7 @@ def test_convert_to_webp_emits_finding_on_failure(tmp_path, monkeypatch):
     from poindexter.services import r2_upload_service
 
     calls = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: calls.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: calls.append(kw))
     bad = tmp_path / "not-an-image.txt"
     bad.write_text("garbage", encoding="utf-8")
 

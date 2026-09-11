@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Test constants

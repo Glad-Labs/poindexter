@@ -18,7 +18,7 @@ def test_job_has_required_attrs():
 def test_job_registered_in_core_samples():
     # get_core_samples() instantiates every registered core-sample plugin, so
     # this also proves the job class imports and constructs cleanly.
-    from plugins.registry import get_core_samples
+    from poindexter.plugins.registry import get_core_samples
 
     jobs = get_core_samples().get("jobs", [])
     assert any(

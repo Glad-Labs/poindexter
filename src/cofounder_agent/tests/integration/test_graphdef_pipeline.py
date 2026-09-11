@@ -378,7 +378,7 @@ async def test_graphdef_media_artifacts_survive_to_terminal(monkeypatch):
 
 from unittest.mock import patch as _patch
 
-from plugins.atom import AtomMeta as _AtomMeta
+from poindexter.plugins.atom import AtomMeta as _AtomMeta
 from poindexter.services import pipeline_architect as _pa
 
 
@@ -410,7 +410,7 @@ def _compile_rescue_graph(gate_fn, rewrite_fn):
     with (
         _patch.object(_pa, "get_atom_meta", lambda n: catalog.get(n)),
         _patch.object(_pa, "get_atom_callable", lambda n: callables.get(n)),
-        _patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        _patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         return _pa.build_graph_from_spec(spec, pool=None).compile()
 

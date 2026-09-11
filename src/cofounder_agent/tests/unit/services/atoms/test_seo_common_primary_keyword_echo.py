@@ -11,7 +11,7 @@ topic string parroted back (optionally clipped at the 60-char SEO cap).
 
 from __future__ import annotations
 
-from modules.content.atoms import _seo_common as sc
+from poindexter.modules.content.atoms import _seo_common as sc
 
 _DIRECTIVE_TOPIC = "Expand coverage of the Insights category — only Insights (3)"
 
@@ -77,7 +77,7 @@ def test_clipped_echo_at_seo_cap():
         "Expand coverage of the Insights category and make sure every post "
         "lands in exactly that category going forward"
     )
-    from utils.title_utils import derive_seo_title
+    from poindexter.utils.title_utils import derive_seo_title
 
     clipped = derive_seo_title(long_topic, max_len=60)
     assert sc.is_topic_echo(clipped, long_topic) is True

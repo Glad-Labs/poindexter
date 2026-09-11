@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     stripped: list[str] = []
     research_context = state.get("research_context") or ""
     if research_context.strip():
-        from modules.content.atoms._citation_match import (
+        from poindexter.modules.content.atoms._citation_match import (
             link_matched_attributions,
             parse_corpus,
             repoint_fabricated_citations,
@@ -176,7 +176,7 @@ async def _attribute_youtube(
 ) -> tuple[str, list[dict]]:
     """Rewrite YouTube references for proper attribution. No-op when there are
     no YouTube URLs or none resolve to a channel (fail-soft)."""
-    from modules.content.atoms._youtube_attribution import (
+    from poindexter.modules.content.atoms._youtube_attribution import (
         apply_youtube_attribution,
         find_youtube_urls,
     )
@@ -240,7 +240,7 @@ async def _resolve_youtube_authors(
         # do. A run of these suggests the oEmbed endpoint itself is degraded,
         # not that the cited videos don't exist. One aggregate finding per
         # call (never per-URL) keeps this non-spammy.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="content.reconcile_citations",

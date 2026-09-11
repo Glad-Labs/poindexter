@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_sources.runner import RunnerSummary, SourceStats, run_all
 
 
@@ -50,13 +50,13 @@ class TestRunAll:
         b = _StubSource("b", [_mk_topic("t3", "b")])
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[a, b],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=AsyncMock(return_value=_mock_config()),
         ):
             summary = await run_all(pool=None)
@@ -75,13 +75,13 @@ class TestRunAll:
             return _mock_config(enabled=(name != "disabled"))
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[a, disabled],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=cfg_load,
         ):
             summary = await run_all(pool=None)
@@ -100,13 +100,13 @@ class TestRunAll:
         bad = _StubSource("bad", error=RuntimeError("boom"))
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[good, bad],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=AsyncMock(return_value=_mock_config()),
         ):
             summary = await run_all(pool=None)
@@ -125,13 +125,13 @@ class TestRunAll:
         same_name_2 = _StubSource("duplicated", [_mk_topic("t2")])
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[same_name_1],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": [same_name_2]},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=AsyncMock(return_value=_mock_config()),
         ):
             summary = await run_all(pool=None)
@@ -148,13 +148,13 @@ class TestRunAll:
             return _mock_config(cfg={"custom_flag": "xyz"})
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[a],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=cfg_load,
         ):
             await run_all(pool=None)
@@ -165,10 +165,10 @@ class TestRunAll:
     @pytest.mark.asyncio
     async def test_empty_registry_returns_empty_summary(self):
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ):
             summary = await run_all(pool=None)
@@ -217,13 +217,13 @@ class TestPerSourceTimeout:
             return _mock_config()
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[good, hanger],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=cfg_load,
         ):
             summary = await run_all(pool=None)
@@ -253,13 +253,13 @@ class TestPerSourceTimeout:
             return _mock_config()
 
         with patch(
-            "plugins.registry.get_topic_sources",
+            "poindexter.plugins.registry.get_topic_sources",
             return_value=[hanger],
         ), patch(
-            "plugins.registry.get_core_samples",
+            "poindexter.plugins.registry.get_core_samples",
             return_value={"topic_sources": []},
         ), patch(
-            "plugins.config.PluginConfig.load",
+            "poindexter.plugins.config.PluginConfig.load",
             new=cfg_load,
         ):
             summary = await run_all(pool=None)

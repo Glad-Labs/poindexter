@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.integrations.tap_runner import RunSummary, TapResult
 from poindexter.services.jobs.ingest_corsair_csv import IngestCorsairCsvJob
 

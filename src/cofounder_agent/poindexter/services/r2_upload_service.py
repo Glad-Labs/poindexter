@@ -25,7 +25,7 @@ from pathlib import Path
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -82,7 +82,7 @@ def _convert_to_webp(
             buf.seek(0)
             return buf
     except Exception as exc:  # noqa: BLE001 — conversion is best-effort
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         logger.debug("[STORAGE] WebP conversion failed for %s: %s", path.name, exc)
         emit_finding(
@@ -562,7 +562,7 @@ class R2UploadService:
             # surfaces to readers as a broken or outdated image while every log
             # looks healthy. media_assets is not audit_log, so a finding is the
             # right signal here.
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="services.r2_upload_service",

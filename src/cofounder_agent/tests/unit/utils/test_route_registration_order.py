@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from utils.route_registration import _WORKER_ROUTES
+from poindexter.utils.route_registration import _WORKER_ROUTES
 
 pytestmark = pytest.mark.unit
 

@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import media_persist
-from modules.content.atoms.media_persist import run as persist_run
+from poindexter.modules.content.atoms import media_persist
+from poindexter.modules.content.atoms.media_persist import run as persist_run
 
 
 def _write_tmp(path) -> str:

@@ -19,13 +19,13 @@ from asyncpg import Pool
 from poindexter.services.logger_config import get_logger
 from poindexter.services.settings_categories import resolve_category
 from poindexter.services.settings_read_sink import record_read
+from poindexter.utils.exception_format import describe_exception
 from schemas.database_response_models import (
     CostLogResponse,
     SettingResponse,
     TaskCostBreakdownResponse,
 )
 from schemas.model_converter import ModelConverter
-from utils.exception_format import describe_exception
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -78,7 +78,7 @@ async def _mirror_model_performance(conn: Any, cost_log: dict[str, Any]) -> None
             "[log_cost] model_performance mirror write failed (non-fatal): %s",
             mp_err,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.admin_db",
@@ -135,7 +135,7 @@ async def _mirror_routing_outcome(conn: Any, cost_log: dict[str, Any]) -> None:
             "[log_cost] routing_outcomes mirror write failed (non-fatal): %s",
             ro_err,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.admin_db",
@@ -304,7 +304,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 "[mark_model_performance_outcome] Update failed for %s: %s",
                 task_id, e,
             )
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="services.admin_db",

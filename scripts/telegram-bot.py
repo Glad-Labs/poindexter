@@ -70,7 +70,7 @@ async def _load_telegram_config(pool) -> dict:
     OAuth creds are NOT fetched here — the OAuth helper handles its own
     resolution (bootstrap.toml + app_settings + decryption).
     """
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
 
     async with pool.acquire() as conn:
         token = await get_secret(conn, "telegram_bot_token")

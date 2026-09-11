@@ -30,10 +30,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from modules.content.atoms._image_helpers import (
+from poindexter.modules.content.atoms._image_helpers import (
     _resolve_gen_response,
 )
-from modules.content.stages.source_featured_image import (
+from poindexter.modules.content.stages.source_featured_image import (
     _resolve_gen_featured_response,
 )
 
@@ -94,10 +94,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"\x89PNG\r\n\x1a\n--bytes--")
 
         with patch(
-            "modules.content.atoms._image_helpers.httpx.AsyncClient",
+            "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.atoms._image_helpers._generated_images_dir",
+            "poindexter.modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             result = await _resolve_gen_response(
@@ -131,10 +131,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"bytes")
 
         with patch(
-            "modules.content.atoms._image_helpers.httpx.AsyncClient",
+            "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.atoms._image_helpers._generated_images_dir",
+            "poindexter.modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             await _resolve_gen_response(
@@ -156,7 +156,7 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(404)
 
         with patch(
-            "modules.content.atoms._image_helpers.httpx.AsyncClient",
+            "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ):
             with pytest.raises(RuntimeError, match="404"):
@@ -190,10 +190,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"x")
 
         with patch(
-            "modules.content.atoms._image_helpers.httpx.AsyncClient",
+            "poindexter.modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.atoms._image_helpers._generated_images_dir",
+            "poindexter.modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             await _resolve_gen_response(
@@ -214,7 +214,7 @@ class TestInlineResolverFetchesViaHttp:
         resp = _bytes_resp(b"\x89PNG-direct-bytes")
 
         with patch(
-            "modules.content.atoms._image_helpers._generated_images_dir",
+            "poindexter.modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             result = await _resolve_gen_response(
@@ -260,10 +260,10 @@ class TestFeaturedResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"feature-bytes")
 
         with patch(
-            "modules.content.stages.source_featured_image.httpx.AsyncClient",
+            "poindexter.modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.stages.source_featured_image._featured_generated_images_dir",
+            "poindexter.modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
             output_path, gen_meta = await _resolve_gen_featured_response(
@@ -298,7 +298,7 @@ class TestFeaturedResolverFetchesViaHttp:
         client = _get_client_returning(500)
 
         with patch(
-            "modules.content.stages.source_featured_image.httpx.AsyncClient",
+            "poindexter.modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=client,
         ):
             output_path, gen_meta = await _resolve_gen_featured_response(
@@ -325,10 +325,10 @@ class TestFeaturedResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"x")
 
         with patch(
-            "modules.content.stages.source_featured_image.httpx.AsyncClient",
+            "poindexter.modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.stages.source_featured_image._featured_generated_images_dir",
+            "poindexter.modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
             await _resolve_gen_featured_response(
@@ -349,7 +349,7 @@ class TestFeaturedResolverFetchesViaHttp:
         resp = _bytes_resp(b"feature-bytes-direct")
 
         with patch(
-            "modules.content.stages.source_featured_image._featured_generated_images_dir",
+            "poindexter.modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
             output_path, gen_meta = await _resolve_gen_featured_response(

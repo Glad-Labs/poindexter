@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class GenerateSeoMetadataStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         from poindexter.services.seo_content_generator import get_seo_content_generator
 
         topic = context.get("topic", "")
@@ -80,7 +80,7 @@ class GenerateSeoMetadataStage:
 
         # Title: derive from the canonical title with word-boundary truncation
         # (GH-85). Legacy seo_title[:60] mid-word chop removed.
-        from utils.title_utils import derive_seo_title
+        from poindexter.utils.title_utils import derive_seo_title
         canonical_title = (
             context.get("canonical_title")
             or context.get("title")

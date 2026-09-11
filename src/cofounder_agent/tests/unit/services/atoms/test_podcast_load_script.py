@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from modules.content.atoms import podcast_load_script
+from poindexter.modules.content.atoms import podcast_load_script
 
 
 class _FakeConn:

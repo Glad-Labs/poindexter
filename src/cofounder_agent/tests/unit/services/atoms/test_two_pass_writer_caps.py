@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms.two_pass_writer import _parse_source_caps, _select_snippets
+from poindexter.modules.content.atoms.two_pass_writer import _parse_source_caps, _select_snippets
 
 
 def _c(source, ref, relevance):

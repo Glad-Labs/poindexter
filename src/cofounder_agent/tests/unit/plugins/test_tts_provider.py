@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-from plugins import TTSProvider, TTSResult, get_tts_providers
-from plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
+from poindexter.plugins import TTSProvider, TTSResult, get_tts_providers
+from poindexter.plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
 
 
 class _FakeTTS:
@@ -147,7 +147,7 @@ class TestRegistryGroup:
                 return [_make_ep("fake_tts", "poindexter.tts_providers", _FakeTTS)]
             return []
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         providers = get_tts_providers()
@@ -163,7 +163,7 @@ class TestRegistryGroup:
                 return [_make_ep("not_tts", "poindexter.image_providers", _FakeTTS)]
             return []
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         assert get_tts_providers() == []

@@ -49,7 +49,7 @@ from poindexter.services.topic_sanity import (
     evaluate_topic_sanity,
     resolve_min_alpha_words,
 )
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``TopicBatchService`` now REQUIRES a keyword-only

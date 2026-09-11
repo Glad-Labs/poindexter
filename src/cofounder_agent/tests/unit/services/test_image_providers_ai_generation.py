@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 from poindexter.services.image_providers.ai_generation import (
     AIGenerationProvider,
     _build_image_gen_prompt,
@@ -83,7 +83,7 @@ class TestAIGenerationProviderFetch:
             new=AsyncMock(return_value="a cinematic prompt"),
         ), \
              patch(
-                "plugins.registry.get_image_providers",
+                "poindexter.plugins.registry.get_image_providers",
                 return_value=[image_gen],
              ):
             results = await AIGenerationProvider().fetch("Docker changed everything", {})
@@ -106,7 +106,7 @@ class TestAIGenerationProviderFetch:
             new=AsyncMock(return_value="p"),
         ), \
              patch(
-                "plugins.registry.get_image_providers",
+                "poindexter.plugins.registry.get_image_providers",
                 return_value=[image_gen],
              ):
             await AIGenerationProvider().fetch("topic", {
@@ -133,7 +133,7 @@ class TestAIGenerationProviderFetch:
             new=AsyncMock(return_value="p"),
         ), \
              patch(
-                "plugins.registry.get_image_providers",
+                "poindexter.plugins.registry.get_image_providers",
                 return_value=[image_gen],  # "flux" not present
              ):
             results = await AIGenerationProvider().fetch("topic", {"generator": "flux"})
@@ -149,7 +149,7 @@ class TestAIGenerationProviderFetch:
             new=AsyncMock(return_value="p"),
         ), \
              patch(
-                "plugins.registry.get_image_providers",
+                "poindexter.plugins.registry.get_image_providers",
                 return_value=[],
              ):
             results = await AIGenerationProvider().fetch("topic", {})

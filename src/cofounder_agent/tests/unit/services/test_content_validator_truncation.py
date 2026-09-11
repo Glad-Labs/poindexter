@@ -14,7 +14,7 @@ the 3 flags were genuinely truncated live posts).
 
 import pytest
 
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     detect_truncated_content,
     validate_content,
 )

@@ -11,9 +11,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.atom import AtomMeta, FieldSpec
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if pool is None:
         return {}
 
-    from modules.content.affiliate_links import (
+    from poindexter.modules.content.affiliate_links import (
         inject_affiliate_links,
         list_active,
         load_link_last_used,

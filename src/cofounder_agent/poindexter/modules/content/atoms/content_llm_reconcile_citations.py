@@ -24,7 +24,7 @@ import logging
 import re
 from typing import Any
 
-from modules.content.atoms._citation_match import (
+from poindexter.modules.content.atoms._citation_match import (
     _STOPWORD_TOKENS,
     CorpusSource,
     _domain_handles,
@@ -32,10 +32,10 @@ from modules.content.atoms._citation_match import (
     _overlaps,
     parse_corpus,
 )
-from modules.content.atoms._pool import resolve_pool
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 from poindexter.services.llm_text import ollama_chat_text, resolve_structured_model
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +317,8 @@ def _build_ungrounded_review(ungrounded: list[str]) -> dict:
     rail is advisory by construction; the seeded ``qa_gates.citation_grounding``
     row (``required_to_pass=false``) exists for run-counter telemetry + dashboard
     visibility (via ``qa_gates_db_writer.record_chain_run``), not graduation."""
-    from modules.content.atoms._qa_rail_common import reviewer_to_dict
-    from modules.content.multi_model_qa import ReviewerResult
+    from poindexter.modules.content.atoms._qa_rail_common import reviewer_to_dict
+    from poindexter.modules.content.multi_model_qa import ReviewerResult
 
     penalty = 6
     score = float(max(60, 100 - penalty * len(ungrounded)))

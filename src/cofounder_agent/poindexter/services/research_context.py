@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ async def build_rag_context(
             # infra failure, not intentional filtering, so it gets its own
             # non-paging finding rather than being buried in the info log.
             # One finding per call (never per-candidate).
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="research_context",
@@ -176,7 +176,7 @@ async def build_rag_context(
         # forwarded to InternalLinkCoherenceFilter.
         if pool and source_tags:
             try:
-                from modules.content.api import (
+                from poindexter.modules.content.api import (
                     InternalLinkCoherenceFilter,
                     LinkCandidate,
                 )
@@ -239,7 +239,7 @@ async def build_rag_context(
         # Outer catch-all — distinct from the inner dropped_db_error/
         # coherence-filter findings above, this covers anything else in
         # the function (e.g. MemoryClient construction itself failing).
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="research_context",

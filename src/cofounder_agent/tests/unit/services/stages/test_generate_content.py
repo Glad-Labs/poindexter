@@ -18,13 +18,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.stages.generate_content import (
+from poindexter.modules.content.stages.generate_content import (
     GenerateContentStage,
     _extract_caller_research,
     _self_review_enabled,
     _strip_leaked_image_prompts,
 )
-from modules.content.writer_core import _writing_style_directive
+from poindexter.modules.content.writer_core import _writing_style_directive
 from poindexter.services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ def _patch_everything():
     """Returns a tuple of patch context managers wrapping every external dep."""
     return [
         patch(
-            "modules.content.ai_content_generator.get_content_generator",
+            "poindexter.modules.content.ai_content_generator.get_content_generator",
             return_value=SimpleNamespace(
                 _internal_links_cache=[
                     '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
@@ -483,13 +483,13 @@ class TestGenerateContentStageExecute:
             p.start()
         try:
             with patch(
-                "modules.content.ai_content_generator.get_content_generator",
+                "poindexter.modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[],
                     generate_blog_post=AsyncMock(return_value=("", "glm-4.7-5090", {})),
                 ),
             ), patch(
-                "utils.findings.emit_finding",
+                "poindexter.utils.findings.emit_finding",
                 side_effect=lambda **kw: findings.append(kw),
             ):
                 with pytest.raises(ValueError, match="empty draft"):
@@ -529,7 +529,7 @@ class TestGenerateContentStageExecute:
             p.start()
         try:
             with patch(
-                "modules.content.ai_content_generator.get_content_generator",
+                "poindexter.modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[],
                     generate_blog_post=AsyncMock(
@@ -537,7 +537,7 @@ class TestGenerateContentStageExecute:
                     ),
                 ),
             ), patch(
-                "utils.findings.emit_finding",
+                "poindexter.utils.findings.emit_finding",
                 side_effect=lambda **kw: findings.append(kw),
             ):
                 with pytest.raises(ValueError, match="too-short draft"):
@@ -653,7 +653,7 @@ class TestRegenSteeringInExecute:
             p.start()
         try:
             with patch(
-                "modules.content.ai_content_generator.get_content_generator",
+                "poindexter.modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[
                         '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
@@ -707,7 +707,7 @@ class TestRegenSteeringInExecute:
             p.start()
         try:
             with patch(
-                "modules.content.ai_content_generator.get_content_generator",
+                "poindexter.modules.content.ai_content_generator.get_content_generator",
                 return_value=SimpleNamespace(
                     _internal_links_cache=[
                         '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
@@ -909,7 +909,7 @@ class TestWritingStyleReferenceWired:
             with (
                 patch.object(stage, "_read_niche_slug", AsyncMock(return_value=None)),
                 patch(
-                    "modules.content.ai_content_generator.get_content_generator",
+                    "poindexter.modules.content.ai_content_generator.get_content_generator",
                     return_value=SimpleNamespace(
                         _internal_links_cache=[],
                         generate_blog_post=_spy_generate,

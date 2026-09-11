@@ -59,8 +59,8 @@ import logging
 import re
 from typing import Any
 
-from plugins.stage import StageResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.stage import StageResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class GenerateContentStage:
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
         # during the Phase E transition.
-        from modules.content.ai_content_generator import get_content_generator
+        from poindexter.modules.content.ai_content_generator import get_content_generator
         from poindexter.services.model_preferences import (
             parse_model_preferences as _parse_model_preferences,
         )
@@ -283,7 +283,7 @@ class GenerateContentStage:
 
         # Generate canonical title with recent-titles avoidance prompt.
         logger.info("Generating title from content...")
-        from modules.content.atoms._seo_common import resolve_primary_keyword
+        from poindexter.modules.content.atoms._seo_common import resolve_primary_keyword
         from poindexter.services.title_generation import (
             DEFAULT_TITLE_EXCERPT_CHARS,
             build_title_grounding_digest,
@@ -565,7 +565,7 @@ class GenerateContentStage:
             # caller attached (the seed-URL "Source article:" block). That is a
             # quiet grounding downgrade, so surface it instead of debug-logging
             # below the prod log level.
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             emit_finding(
                 source="modules.content.writer_core",
                 kind="task_research_context_read_failed",
@@ -959,7 +959,7 @@ class GenerateContentStage:
         no-variant production path (per the design doc's "Posture:
         testing in production").
         """
-        from modules.content.atoms import two_pass_writer
+        from poindexter.modules.content.atoms import two_pass_writer
 
         # The writer modes use "angle" rather than separate style/tone/tags;
         # collapse the available descriptors into a single angle string.
@@ -1206,7 +1206,7 @@ def _build_real_slug_allowlist(content_generator: Any) -> set[str]:
                 if slug:
                     real_slug_set.add(slug)
     except Exception as exc:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.writer_core",
             kind="real_slug_allowlist_build_failed",
@@ -1252,7 +1252,7 @@ async def _snapshot_initial_draft(
             quality_score=quality_score,
         )
     except Exception as exc:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.writer_core",
             kind="content_revisions_snapshot_failed",
@@ -1374,7 +1374,7 @@ async def _fail_empty_draft(
     # 2. Finding → Findings dashboard + Discord (severity warn per the
     #    findings dispatcher policy). Late import so tests can patch it.
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.writer_core",
             kind="writer_empty_draft",

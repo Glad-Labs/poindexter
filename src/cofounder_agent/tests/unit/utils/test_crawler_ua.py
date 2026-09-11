@@ -10,7 +10,7 @@ operator's contact URL as a baked-in default
 from __future__ import annotations
 
 from poindexter.services.site_config import SiteConfig
-from utils.crawler_ua import build_crawler_ua
+from poindexter.utils.crawler_ua import build_crawler_ua
 
 
 class TestContactLeakGuard:

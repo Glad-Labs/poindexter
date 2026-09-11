@@ -48,7 +48,7 @@ def _build_app():
     # via get_site_config_dependency. Override it with the dedicated test
     # config so the route doesn't 503 on the reset-stripped shared
     # singleton.
-    from utils.route_utils import get_site_config_dependency
+    from poindexter.utils.route_utils import get_site_config_dependency
     app.dependency_overrides[get_site_config_dependency] = lambda: _test_site_config
     return app
 
@@ -213,7 +213,7 @@ class TestBuildRssXml:
 
 class TestPodcastFeed:
     @patch("routes.podcast_routes.PodcastService")
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_empty_feed_when_no_episodes(self, mock_get_services, mock_svc_cls):
         # Mock the lazy import
         with patch("routes.podcast_routes.get_services", create=True) as mock_gs:
@@ -231,7 +231,7 @@ class TestPodcastFeed:
             assert "application/rss+xml" in resp.headers["content-type"]
             assert "<item>" not in resp.text
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_feed_lists_episode_from_media_assets(self, mock_gs):
         """The feed sources the enclosure from media_assets (type='podcast'),
         not a local-disk scan — so atom-produced (task-keyed) episodes surface."""
@@ -418,7 +418,7 @@ class TestGenerateEpisode:
         test_app.dependency_overrides[verify_api_token] = lambda: None
         return TestClient(test_app, raise_server_exceptions=False)
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_no_db_returns_503(self, mock_gs):
         tc = self._make_app_with_auth_override()
         mock_db = MagicMock()
@@ -429,7 +429,7 @@ class TestGenerateEpisode:
         resp = tc.post("/api/podcast/generate/abc123")
         assert resp.status_code == 503
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_post_not_found_returns_404(self, mock_gs):
         tc = self._make_app_with_auth_override()
         mock_conn = AsyncMock()
@@ -449,7 +449,7 @@ class TestGenerateEpisode:
         assert resp.status_code == 404
 
     @patch("routes.podcast_routes.PodcastService")
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_successful_generation(self, mock_gs, mock_svc_cls):
         tc = self._make_app_with_auth_override()
 
@@ -487,7 +487,7 @@ class TestGenerateEpisode:
         assert data["post_id"] == "post-1"
 
     @patch("routes.podcast_routes.PodcastService")
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_generation_failure_returns_500(self, mock_gs, mock_svc_cls):
         tc = self._make_app_with_auth_override()
 

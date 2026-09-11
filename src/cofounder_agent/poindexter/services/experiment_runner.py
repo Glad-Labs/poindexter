@@ -66,7 +66,7 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ async def _weighted_selection_enabled(conn: Any) -> bool:
             "defaulting to uniform",
             exc,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="experiment_runner",

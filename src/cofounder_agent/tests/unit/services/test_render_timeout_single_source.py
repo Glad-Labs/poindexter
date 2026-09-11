@@ -69,8 +69,8 @@ def test_no_call_site_repeats_a_literal_fallback() -> None:
 
 def test_every_read_site_resolves_to_the_same_number() -> None:
     """End-to-end: the value each module would fall back to is identical."""
-    from modules.content.atoms._image_helpers import _default_render_timeout
-    from modules.content.stages.source_featured_image import (
+    from poindexter.modules.content.atoms._image_helpers import _default_render_timeout
+    from poindexter.modules.content.stages.source_featured_image import (
         _render_timeout_seconds,
     )
 
@@ -85,7 +85,7 @@ def test_featured_stage_budget_tracks_the_declared_default() -> None:
     This is the coupling that failed in the original incident — the stage cap
     was a constant while the render budget was settings-driven.
     """
-    from modules.content.stages.source_featured_image import (
+    from poindexter.modules.content.stages.source_featured_image import (
         resolve_stage_timeout_seconds,
     )
 

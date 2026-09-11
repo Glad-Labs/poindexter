@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import _narration_render
+from poindexter.modules.content.atoms import _narration_render
 
 
 class _SC:

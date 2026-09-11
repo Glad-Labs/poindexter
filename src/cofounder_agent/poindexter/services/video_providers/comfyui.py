@@ -83,7 +83,7 @@ from typing import Any
 
 import httpx
 
-from plugins.video_provider import VideoResult
+from poindexter.plugins.video_provider import VideoResult
 
 logger = logging.getLogger(__name__)
 

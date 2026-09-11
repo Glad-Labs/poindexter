@@ -34,7 +34,7 @@ import logging
 import re
 from typing import Any
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,10 @@ class QualityEvaluationStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from modules.content.quality_service import EvaluationMethod, UnifiedQualityService
+        from poindexter.modules.content.quality_service import (
+            EvaluationMethod,
+            UnifiedQualityService,
+        )
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []

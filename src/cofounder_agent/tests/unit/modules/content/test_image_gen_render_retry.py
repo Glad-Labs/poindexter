@@ -36,7 +36,7 @@ def _resp(status: int):
 
 
 async def _render(client, sc, attempts=2):
-    from modules.content.atoms._image_helpers import _render_one_with_retry
+    from poindexter.modules.content.atoms._image_helpers import _render_one_with_retry
 
     return await _render_one_with_retry(
         client, num="1", prompt="a glowing server rack", neg_prompt="",
@@ -53,12 +53,12 @@ async def test_transient_failure_recovers_on_retry():
     client = MagicMock()
     client.post = AsyncMock(side_effect=[ConnectionError("connection refused"), _resp(200)])
     with patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         AsyncMock(return_value="/tmp/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         AsyncMock(return_value="https://cdn.example/owned.webp"),
-    ), patch("modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
+    ), patch("poindexter.modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
         out = await _render(client, _sc())
 
     assert out == "https://cdn.example/owned.webp"
@@ -73,12 +73,12 @@ async def test_non_200_is_retried_too():
     client = MagicMock()
     client.post = AsyncMock(side_effect=[_resp(503), _resp(200)])
     with patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         AsyncMock(return_value="/tmp/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         AsyncMock(return_value="https://cdn.example/owned.webp"),
-    ), patch("modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
+    ), patch("poindexter.modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
         out = await _render(client, _sc())
 
     assert out == "https://cdn.example/owned.webp"
@@ -92,7 +92,7 @@ async def test_persistent_failure_gives_up_bounded():
     than looping. None is what hands control to the (gated) fallback."""
     client = MagicMock()
     client.post = AsyncMock(side_effect=ConnectionError("down"))
-    with patch("modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
+    with patch("poindexter.modules.content.atoms._image_helpers.asyncio.sleep", AsyncMock()):
         out = await _render(client, _sc(), attempts=3)
 
     assert out is None
@@ -106,10 +106,10 @@ async def test_first_attempt_success_does_not_retry():
     client = MagicMock()
     client.post = AsyncMock(return_value=_resp(200))
     with patch(
-        "modules.content.atoms._image_helpers._resolve_gen_response",
+        "poindexter.modules.content.atoms._image_helpers._resolve_gen_response",
         AsyncMock(return_value="/tmp/x.png"),
     ), patch(
-        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        "poindexter.modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         AsyncMock(return_value="https://cdn.example/owned.webp"),
     ):
         out = await _render(client, _sc())
@@ -125,7 +125,7 @@ def test_retry_lives_inside_the_single_gpu_lock():
     retry helper must not touch gpu.lock at all — its caller holds it."""
     import inspect
 
-    from modules.content.atoms import _image_helpers
+    from poindexter.modules.content.atoms import _image_helpers
 
     src = inspect.getsource(_image_helpers._render_one_with_retry)
     assert "gpu.lock" not in src
@@ -143,7 +143,7 @@ def test_retry_lives_inside_the_single_gpu_lock():
 @pytest.mark.asyncio
 async def test_featured_render_retries_before_conceding():
     """A transient hero render failure must be retried, not conceded."""
-    from modules.content.stages import source_featured_image as sfi
+    from poindexter.modules.content.stages import source_featured_image as sfi
 
     render = AsyncMock(side_effect=[(None, None), ("/tmp/hero.png", {"seed": 7})])
     with patch.object(sfi, "_render_image_gen", render), \
@@ -167,7 +167,7 @@ async def test_featured_render_retries_before_conceding():
 @pytest.mark.asyncio
 async def test_featured_render_gives_up_after_attempts():
     """Bounded — a persistently dead server still returns None."""
-    from modules.content.stages import source_featured_image as sfi
+    from poindexter.modules.content.stages import source_featured_image as sfi
 
     render = AsyncMock(return_value=(None, None))
     with patch.object(sfi, "_render_image_gen", render), \

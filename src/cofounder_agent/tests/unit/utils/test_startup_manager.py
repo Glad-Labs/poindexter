@@ -36,8 +36,8 @@ import pytest
 def _make_manager():
     """Import StartupManager with a clean import context."""
     # Remove cached module so re-import is fresh each test (avoids state leakage)
-    sys.modules.pop("utils.startup_manager", None)
-    from utils.startup_manager import StartupManager
+    sys.modules.pop("poindexter.utils.startup_manager", None)
+    from poindexter.utils.startup_manager import StartupManager
 
     return StartupManager()
 

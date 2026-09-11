@@ -178,7 +178,7 @@ class TestSquatFindingSeverity:
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], patch(
             "poindexter.services.service_restart_requests.create_restart_request",
             AsyncMock(return_value={"id": "rr-1"}),
-        ), patch("utils.findings.emit_finding") as finding:
+        ), patch("poindexter.utils.findings.emit_finding") as finding:
             await s._unload_comfyui(hard=True)
         finding.assert_called_once()
         kw = finding.call_args.kwargs
@@ -191,7 +191,7 @@ class TestSquatFindingSeverity:
         client = _client({"queue_running": [], "queue_pending": []})
         ctxs = _run_ctx(s, client, [11.7, 11.7], pool=None)
         with ctxs[0], ctxs[1], ctxs[2], ctxs[3], ctxs[4], ctxs[5], patch(
-            "utils.findings.emit_finding"
+            "poindexter.utils.findings.emit_finding"
         ) as finding:
             await s._unload_comfyui(hard=True)
         finding.assert_called_once()

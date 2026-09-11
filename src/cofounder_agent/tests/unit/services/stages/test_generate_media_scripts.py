@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.generate_media_scripts import (
+from poindexter.modules.content.stages.generate_media_scripts import (
     GenerateMediaScriptsStage,
     _build_scene_prompt,
     _build_video_narration_prompt,
@@ -104,7 +104,7 @@ async def test_podcast_script_preserved_when_scene_parsing_fails():
              new=AsyncMock(return_value="A" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts._parse_scene_output",
+             "poindexter.modules.content.stages.generate_media_scripts._parse_scene_output",
              side_effect=RuntimeError(
                  "podcast_service requires a site_config",
              ),
@@ -156,7 +156,7 @@ async def test_runaway_short_is_trimmed_and_emits_finding():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -187,7 +187,7 @@ async def test_runaway_long_script_is_trimmed_and_emits_finding():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -217,7 +217,7 @@ async def test_long_script_within_budget_is_not_trimmed():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -246,7 +246,7 @@ async def test_short_within_budget_is_not_trimmed():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -264,7 +264,7 @@ async def test_audio_gen_intro_called_when_enabled():
     generate_audio must be called with kind='intro'."""
     from types import SimpleNamespace
 
-    from plugins.audio_gen_provider import AudioGenResult
+    from poindexter.plugins.audio_gen_provider import AudioGenResult
 
     gpu = SimpleNamespace(lock=_fake_lock)
     audio_calls = []
@@ -281,15 +281,15 @@ async def test_audio_gen_intro_called_when_enabled():
              new=AsyncMock(return_value="C" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
              return_value=True,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.generate_audio",
+             "poindexter.modules.content.stages.generate_media_scripts.generate_audio",
              new=mock_generate_audio,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
              return_value=False,
          ):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -322,15 +322,15 @@ async def test_audio_gen_skipped_when_disabled():
              new=AsyncMock(return_value="D" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
              return_value=False,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.generate_audio",
+             "poindexter.modules.content.stages.generate_media_scripts.generate_audio",
              new=mock_generate_audio,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
              return_value=False,
          ):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -359,15 +359,15 @@ async def test_tts_called_when_enabled():
              new=AsyncMock(return_value="E" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
              return_value=True,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.synthesize_speech",
+             "poindexter.modules.content.stages.generate_media_scripts.synthesize_speech",
              new=mock_synthesize_speech,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
              return_value=False,
          ):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -389,9 +389,9 @@ async def test_ambient_path_returned_via_context_updates():
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.generate_audio",
+         patch("poindexter.modules.content.stages.generate_media_scripts.generate_audio",
                new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/ambient.wav"))):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -407,7 +407,7 @@ async def test_ambient_and_sting_outputs_are_durable_not_tempfiles(tmp_path):
     deterministic per-task stem. A provider-picked tempfile lives in
     per-container /tmp and is permanently gone at render time, which is what
     fed the 2026-08-24 render-fail loop."""
-    from modules.content.stages import generate_media_scripts as gms
+    from poindexter.modules.content.stages import generate_media_scripts as gms
 
     gpu = SimpleNamespace(lock=_fake_lock)
     scene_text = "1. a cinematic wide shot of mountains\n\nSHORT:\nsummary text"
@@ -425,11 +425,11 @@ async def test_ambient_and_sting_outputs_are_durable_not_tempfiles(tmp_path):
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
          patch.object(gms, "VIDEO_DIR", tmp_path / "video"), \
          patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"), \
-         patch("modules.content.stages.generate_media_scripts.generate_audio",
+         patch("poindexter.modules.content.stages.generate_media_scripts.generate_audio",
                new=mock_generate_audio):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -445,7 +445,7 @@ async def test_ambient_and_sting_outputs_are_durable_not_tempfiles(tmp_path):
 async def test_tts_output_path_is_durable(tmp_path):
     """Same contract for the podcast TTS narration: an explicit durable
     output path under PODCAST_DIR with the task stem, never a tempfile."""
-    from modules.content.stages import generate_media_scripts as gms
+    from poindexter.modules.content.stages import generate_media_scripts as gms
 
     gpu = SimpleNamespace(lock=_fake_lock)
     seen: dict[str, str] = {}
@@ -458,11 +458,11 @@ async def test_tts_output_path_is_durable(tmp_path):
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="E" * 500)), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+         patch("poindexter.modules.content.stages.generate_media_scripts.synthesize_speech",
                new=mock_synthesize_speech), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=False), \
          patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -494,7 +494,7 @@ async def test_podcast_audio_path_returned_via_context_updates(tmp_path):
     """The TTS narration path lands in context_updates — since #1021 as a
     durable per-task path under PODCAST_DIR, never a tempfile (the frozen
     path is consumed by another container, possibly days later)."""
-    from modules.content.stages import generate_media_scripts as gms
+    from poindexter.modules.content.stages import generate_media_scripts as gms
 
     gpu = SimpleNamespace(lock=_fake_lock)
     ctx = _ctx()  # no platform → scene call skipped, only the TTS block runs
@@ -505,11 +505,11 @@ async def test_podcast_audio_path_returned_via_context_updates(tmp_path):
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+         patch("poindexter.modules.content.stages.generate_media_scripts.synthesize_speech",
                new=_mock_tts), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=False), \
          patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -528,11 +528,11 @@ async def test_intro_sting_path_returned_via_context_updates():
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="Q" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.generate_audio",
+         patch("poindexter.modules.content.stages.generate_media_scripts.generate_audio",
                new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=False):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -555,21 +555,21 @@ async def test_podcast_audio_paths_preserved_on_scene_failure(tmp_path):
     async def _mock_tts(text, *, site_config, output_path=None):
         return b"RIFF_fake_wav"
 
-    from modules.content.stages import generate_media_scripts as gms
+    from poindexter.modules.content.stages import generate_media_scripts as gms
 
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="R" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.synthesize_speech",
+         patch("poindexter.modules.content.stages.generate_media_scripts.synthesize_speech",
                new=_mock_tts), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.generate_audio",
+         patch("poindexter.modules.content.stages.generate_media_scripts.generate_audio",
                new=AsyncMock(return_value=SimpleNamespace(file_path="/tmp/intro.wav"))), \
          patch.object(gms, "PODCAST_DIR", tmp_path / "podcast"), \
-         patch("modules.content.stages.generate_media_scripts._parse_scene_output",
+         patch("poindexter.modules.content.stages.generate_media_scripts._parse_scene_output",
                side_effect=RuntimeError("podcast_service requires a site_config")):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -762,9 +762,9 @@ async def test_video_long_script_emitted_via_context_updates():
                new=AsyncMock(return_value="A" * 500)), \
          patch("poindexter.services.podcast_service._normalize_for_speech",
                new=lambda text, **_k: text), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=False), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=False):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -924,7 +924,7 @@ def test_resolve_media_title_prefers_full_h1_over_truncated_seo_title():
 # 2026-08-01 script-quality fixes: sanitizer, validity gate, prompt voice rules
 # ---------------------------------------------------------------------------
 
-from modules.content.stages.generate_media_scripts import (  # noqa: E402
+from poindexter.modules.content.stages.generate_media_scripts import (  # noqa: E402
     _VIDEO_NARRATION_FALLBACK,
     _sanitize_short_script,
 )
@@ -985,7 +985,7 @@ async def test_invalid_short_retries_once_then_ships_without_short():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -1024,7 +1024,7 @@ async def test_valid_short_on_retry_is_used():
              new=AsyncMock(return_value="B" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.emit_finding",
+             "poindexter.modules.content.stages.generate_media_scripts.emit_finding",
          ) as mock_finding:
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
@@ -1055,7 +1055,7 @@ class TestAmbientMoodCues:
     """_ambient_mood_cues + the music-directed prompt template (engine-room-hum fix)."""
 
     def test_skips_header_junk_and_strips_markup(self) -> None:
-        from modules.content.stages.generate_media_scripts import _ambient_mood_cues
+        from poindexter.modules.content.stages.generate_media_scripts import _ambient_mood_cues
 
         scenes = [
             "### PART 1: Stable Diffusion XL Prompts for Video Slideshow",
@@ -1066,13 +1066,13 @@ class TestAmbientMoodCues:
         assert "###" not in mood and "*" not in mood and "Scene One" not in mood
 
     def test_empty_and_short_entries_yield_empty(self) -> None:
-        from modules.content.stages.generate_media_scripts import _ambient_mood_cues
+        from poindexter.modules.content.stages.generate_media_scripts import _ambient_mood_cues
 
         assert _ambient_mood_cues([]) == ""
         assert _ambient_mood_cues(["## x", "tiny"]) == ""
 
     def test_fallback_template_is_music_directed(self) -> None:
-        from modules.content.stages.generate_media_scripts import (
+        from poindexter.modules.content.stages.generate_media_scripts import (
             _AMBIENT_PROMPT_FALLBACK,
         )
 
@@ -1106,15 +1106,15 @@ async def test_curated_sting_file_skips_generation(tmp_path):
              new=AsyncMock(return_value="C" * 500),
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
              return_value=True,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.generate_audio",
+             "poindexter.modules.content.stages.generate_media_scripts.generate_audio",
              new=mock_generate_audio,
          ), \
          patch(
-             "modules.content.stages.generate_media_scripts.is_tts_enabled",
+             "poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
              return_value=False,
          ):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
@@ -1184,11 +1184,11 @@ async def test_video_only_never_generates_ambient_bed():
     with patch("poindexter.services.gpu_scheduler.gpu", gpu), \
          patch("poindexter.services.podcast_service._build_script_with_llm",
                new=AsyncMock(return_value="P" * 600)), \
-         patch("modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_audio_gen_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.is_tts_enabled",
+         patch("poindexter.modules.content.stages.generate_media_scripts.is_tts_enabled",
                return_value=True), \
-         patch("modules.content.stages.generate_media_scripts.generate_audio",
+         patch("poindexter.modules.content.stages.generate_media_scripts.generate_audio",
                new=generate_audio_mock):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 

@@ -179,8 +179,11 @@ def _atom_imported_local_libs() -> set[Path]:
         except (SyntaxError, ValueError, OSError):
             continue
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(CONTENT_PREFIX):
-                rest = node.module[len(CONTENT_PREFIX) :]
+            # #1046 step 3: the import may spell `poindexter.modules.content.x` -- normalise
+            # before the prefix test or library-file discovery silently shrinks (78 -> 71).
+            mod = node.module.removeprefix("poindexter.") if isinstance(node, ast.ImportFrom) and node.module else ""
+            if mod.startswith(CONTENT_PREFIX):
+                rest = mod[len(CONTENT_PREFIX) :]
                 if "." not in rest and rest not in ("atoms", "stages"):
                     cand = CONTENT_DIR / f"{rest}.py"
                     if cand.exists():

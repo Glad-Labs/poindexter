@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from modules.content.stages.verify_task import VerifyTaskStage
+from poindexter.modules.content.stages.verify_task import VerifyTaskStage
 
 
 class _Cfg:

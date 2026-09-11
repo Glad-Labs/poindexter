@@ -359,7 +359,7 @@ def _capture_findings(monkeypatch) -> list[dict]:
     """Collect emit_finding kwargs. The rails import emit_finding inside the
     function body, so patching the module attribute intercepts it."""
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

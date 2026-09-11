@@ -34,8 +34,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms import media_qa
-from modules.content.atoms.media_qa import run as qa_run
+from poindexter.modules.content.atoms import media_qa
+from poindexter.modules.content.atoms.media_qa import run as qa_run
 
 
 def _existing_file(tmp_path, name="video.mp4"):
@@ -700,7 +700,7 @@ async def test_no_rendered_assets_returns_empty_result(tmp_path):
 
 
 def test_atom_meta_shape():
-    from modules.content.atoms.media_qa import ATOM_META
+    from poindexter.modules.content.atoms.media_qa import ATOM_META
 
     assert ATOM_META.name == "media.qa"
     assert ATOM_META.type == "atom"

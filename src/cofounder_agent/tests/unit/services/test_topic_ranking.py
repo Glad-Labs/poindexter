@@ -455,7 +455,7 @@ async def test_truncated_response_salvages_complete_entries(monkeypatch):
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": 88, "c2": '
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert scored["c1"].llm_score == 88.0          # salvaged
@@ -469,7 +469,7 @@ async def test_total_degrade_emits_finding(monkeypatch):
         return "Let me re-evaluate the candidates and calculate scores."
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     # Every candidate fell back to embedding_score * 100.
@@ -491,7 +491,7 @@ async def test_partial_omission_emits_partial_finding(monkeypatch):
         return '{"c1": 88}'
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
     await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert len(seen) == 1
@@ -507,7 +507,7 @@ async def test_clean_response_emits_no_finding(monkeypatch):
         return '{"c1": 88, "c2": 44}'
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
     await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert seen == []
@@ -520,7 +520,7 @@ async def test_non_numeric_score_counts_as_omitted(monkeypatch):
     async def fake(prompt, *, model, pool=None, site_config=None):
         return '{"c1": true, "c2": null}'
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert scored["c1"].llm_score == pytest.approx(60.0)
@@ -538,7 +538,7 @@ async def test_wrong_shape_is_a_total_degrade_not_partial(monkeypatch):
         return '[{"score": 50.0}]'
     monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
     seen = []
-    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: seen.append(kw))
+    monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: seen.append(kw))
 
     scored = await llm_final_score(_cands(), _WEIGHTS, model="m", site_config=_SC)
     assert scored["c1"].llm_score == pytest.approx(60.0)

@@ -37,7 +37,7 @@ _test_site_config = SiteConfig(initial_config={
 def _build_app():
     app = FastAPI()
     app.include_router(router)
-    from utils.route_utils import get_site_config_dependency
+    from poindexter.utils.route_utils import get_site_config_dependency
     app.dependency_overrides[get_site_config_dependency] = lambda: _test_site_config
     return app
 
@@ -187,7 +187,7 @@ class TestListVideoEpisodes:
 
 
 class TestVideoFeed:
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_empty_feed_when_no_videos(self, mock_gs, tmp_path):
         mock_db = MagicMock()
         mock_db.pool = None
@@ -201,7 +201,7 @@ class TestVideoFeed:
             assert "<item>" not in resp.text
             assert "Test Video" in resp.text
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_feed_renders_approved_episodes(self, mock_gs):
         """The feed renders the rows the (gated) query returns, sourced from
         media_assets like the podcast feed — enclosure uses the asset row's
@@ -237,7 +237,7 @@ class TestVideoFeed:
         # Enclosure uses the asset-row R2 url (not a disk path).
         assert "https://pub-test-bucket.r2.dev/video/post-1.mp4" in resp.text
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_feed_query_requires_approved_media_approval(self, mock_gs):
         """The video feed MUST gate on an approved media_approvals row
         (medium='video') joined to a video media_assets row — mirroring the
@@ -275,7 +275,7 @@ class TestVideoFeed:
         # Mirror the podcast feed's niche-policy seam (feedback_filter_on_seams_not_slugs).
         assert "media_to_generate" in sql
 
-    @patch("utils.route_utils.get_services")
+    @patch("poindexter.utils.route_utils.get_services")
     def test_empty_feed_when_nothing_approved(self, mock_gs):
         """No approved rows → query returns [] → feed renders no items."""
         mock_conn = AsyncMock()

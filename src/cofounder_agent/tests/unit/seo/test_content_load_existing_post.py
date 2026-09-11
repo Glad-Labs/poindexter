@@ -1,6 +1,6 @@
 import pytest
 
-from modules.content.atoms import content_load_existing_post as atom
+from poindexter.modules.content.atoms import content_load_existing_post as atom
 
 
 class _Conn:

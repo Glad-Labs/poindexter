@@ -81,8 +81,8 @@ from typing import Any
 
 import httpx
 
-from plugins.llm_provider import Completion, Token
-from plugins.llm_resilience import (
+from poindexter.plugins.llm_provider import Completion, Token
+from poindexter.plugins.llm_resilience import (
     CircuitOpenError,
     LLMResilienceManager,
     RetryDecision,

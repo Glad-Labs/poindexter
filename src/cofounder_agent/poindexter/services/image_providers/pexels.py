@@ -28,7 +28,7 @@ from typing import Any
 
 import httpx
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 from poindexter.services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
@@ -203,7 +203,7 @@ async def build_semantic_pexels_query(topic: str, *, site_config: SiteConfig) ->
     _pool = getattr(_sc, "_pool", None)
     local_provider = None
     if _pool is None:
-        from plugins.registry import get_all_llm_providers
+        from poindexter.plugins.registry import get_all_llm_providers
         providers = {p.name: p for p in get_all_llm_providers()}
         local_provider = providers.get("ollama_native")
         if local_provider is None:
@@ -301,7 +301,7 @@ async def _load_pexels_api_key_from_settings() -> str:
     if db is None or not getattr(db, "pool", None):
         return ""
 
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
     async with db.pool.acquire() as conn:
         value = await get_secret(conn, "pexels_api_key")
     return value or ""

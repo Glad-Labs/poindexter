@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     # dependency on ``plugins.platform`` (annotations are strings under
     # ``from __future__ import annotations``). The module that *declares*
     # capabilities imports ``Capability`` at runtime; this file only names it.
-    from plugins.platform import Capability, Platform
+    from poindexter.plugins.platform import Capability, Platform
 
 Visibility = Literal["public", "private"]
 """Whether a module ships in the OSS sync (`public`) or stays in the

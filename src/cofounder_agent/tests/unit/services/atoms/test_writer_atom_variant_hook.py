@@ -80,7 +80,7 @@ async def test_no_active_experiment_state_unchanged() -> None:
     """When pick_variant returns None, the writer's metrics dict must
     NOT contain variant_id / variant_label / experiment_*. The
     production path is byte-equivalent to pre-PR behavior."""
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -95,13 +95,13 @@ async def test_no_active_experiment_state_unchanged() -> None:
     # Stub the helper DB reads inside _generate_via_two_pass_atom so
     # they don't go to a real DB.
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run",
+        "poindexter.modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",
@@ -139,7 +139,7 @@ async def test_research_context_forwarded_to_writer_atom() -> None:
     never given them — so every ``glad-labs`` post was rejected for
     "completely ignores the provided SOURCES corpus".
     """
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -157,13 +157,13 @@ async def test_research_context_forwarded_to_writer_atom() -> None:
     research = "Source A: 2026 survey (https://example.com/s) — 60% cite the gap."
 
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run", new=fake_run,
+        "poindexter.modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=None),
@@ -191,7 +191,7 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
     threads via ``writer_model_override=...`` kwarg into
     ``two_pass_writer.run``. The metrics dict carries the variant ids
     so capability_outcomes can stamp them."""
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -220,13 +220,13 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
         }
 
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run", new=fake_run,
+        "poindexter.modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
@@ -265,7 +265,7 @@ async def test_active_experiment_writer_model_override_flows_through() -> None:
 
 
 async def test_active_experiment_no_overrides_preserves_defaults() -> None:
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -292,13 +292,13 @@ async def test_active_experiment_no_overrides_preserves_defaults() -> None:
         }
 
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run", new=fake_run,
+        "poindexter.modules.content.atoms.two_pass_writer.run", new=fake_run,
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",
         new=AsyncMock(return_value=variant),
@@ -467,7 +467,7 @@ async def test_prompt_size_metrics_forwarded_to_stage_metrics() -> None:
     """poindexter#868: two_pass_writer.run()'s writer_prompt_* fields (plus
     revision_loops) must land on the metrics dict _generate_via_two_pass_atom
     returns, with revision_loops renamed writer_prompt_revise_calls."""
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -487,13 +487,13 @@ async def test_prompt_size_metrics_forwarded_to_stage_metrics() -> None:
     }
 
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run",
+        "poindexter.modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",
@@ -524,7 +524,7 @@ async def test_prompt_size_metrics_absent_when_atom_doesnt_return_them() -> None
     older in-flight LangGraph checkpoint from before this deploy), the
     forwarding block must not KeyError — it omits them, exactly like the
     existing prompt_template_key guard already does."""
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     stage = GenerateContentStage()
     db = _fake_database_service()
@@ -536,13 +536,13 @@ async def test_prompt_size_metrics_absent_when_atom_doesnt_return_them() -> None
     }
 
     with patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        "poindexter.modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
         new=AsyncMock(return_value=None),
     ), patch(
-        "modules.content.atoms.two_pass_writer.run",
+        "poindexter.modules.content.atoms.two_pass_writer.run",
         new=AsyncMock(return_value=fake_atom_result),
     ), patch(
         "poindexter.services.experiment_runner.pick_variant",

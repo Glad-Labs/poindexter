@@ -82,7 +82,7 @@ def _stub_gate(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "modules.content.auto_publish_gate.evaluate", _fake_evaluate
+        "poindexter.modules.content.auto_publish_gate.evaluate", _fake_evaluate
     )
 
 
@@ -91,7 +91,7 @@ async def test_approve_resume_finalizes_awaiting_approval():
     """The preview_gate approve-resume path lands the terminal node with
     status='in_progress'; it must flip the row to 'awaiting_approval' so the
     stale-inprogress sweep can't re-run the approved post."""
-    from modules.content.atoms.content_evaluate_auto_publish import run
+    from poindexter.modules.content.atoms.content_evaluate_auto_publish import run
 
     db = _StatusTrackingDb(status="in_progress")
     state = {"task_id": "t-approve-resume", "database_service": db}
@@ -114,7 +114,7 @@ async def test_forward_path_already_awaiting_is_idempotent():
     """On the forward path persist_task already set awaiting_approval; the
     terminal node's re-assert must be a benign guarded no-op (never raises,
     never clobbers)."""
-    from modules.content.atoms.content_evaluate_auto_publish import run
+    from poindexter.modules.content.atoms.content_evaluate_auto_publish import run
 
     db = _StatusTrackingDb(status="awaiting_approval")
     state = {"task_id": "t-forward", "database_service": db}
@@ -129,7 +129,7 @@ async def test_does_not_revert_a_published_task():
     """Defense-in-depth: a task the forward path already auto-published must
     never be reverted to awaiting_approval by a re-run of the terminal node.
     Constrains the fix to a guarded write (a naive update_task would clobber)."""
-    from modules.content.atoms.content_evaluate_auto_publish import run
+    from poindexter.modules.content.atoms.content_evaluate_auto_publish import run
 
     db = _StatusTrackingDb(status="published")
     state = {"task_id": "t-published", "database_service": db}
@@ -143,7 +143,7 @@ async def test_does_not_revert_a_published_task():
 async def test_missing_database_service_is_a_noop():
     """No database_service in state → atom returns {} and never touches status
     (preserves the existing early-return contract)."""
-    from modules.content.atoms.content_evaluate_auto_publish import run
+    from poindexter.modules.content.atoms.content_evaluate_auto_publish import run
 
     out = await run({"task_id": "t-no-db"})
 

@@ -194,7 +194,7 @@ class TestRailsGetSyncSiteConfig:
     def test_deepeval_rails_are_passed_site_config_not_settings_service(self):
         from pathlib import Path as _P
 
-        import modules.content.multi_model_qa as mmqa
+        import poindexter.modules.content.multi_model_qa as mmqa
 
         src = _P(mmqa.__file__).read_text(encoding="utf-8")
         for call in ("evaluate_g_eval", "evaluate_faithfulness"):

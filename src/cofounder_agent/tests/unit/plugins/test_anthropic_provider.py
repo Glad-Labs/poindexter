@@ -37,8 +37,8 @@ _anthropic_module.AsyncAnthropic = MagicMock(name="AsyncAnthropic")
 _anthropic_module.__spec__ = importlib.machinery.ModuleSpec("anthropic", loader=None)
 sys.modules.setdefault("anthropic", _anthropic_module)
 
-from plugins import LLMProvider  # noqa: E402,I001 — tests must register the SDK stub above before importing the provider
-from plugins.llm_providers.anthropic import (  # noqa: E402,I001
+from poindexter.plugins import LLMProvider  # noqa: E402,I001 — tests must register the SDK stub above before importing the provider
+from poindexter.plugins.llm_providers.anthropic import (  # noqa: E402,I001
     _PER_MODEL_RATES,
     AnthropicProvider,
     AnthropicProviderDisabled,

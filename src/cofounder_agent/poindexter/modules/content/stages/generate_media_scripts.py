@@ -27,15 +27,15 @@ import re
 import uuid
 from typing import Any
 
-from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
-from plugins.stage import StageResult
+from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+from poindexter.plugins.stage import StageResult
 from poindexter.services.audio_gen_service import generate_audio, is_audio_gen_enabled
 from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.gpu_scheduler import media_wait_budget_s
 from poindexter.services.podcast_service import PODCAST_DIR
 from poindexter.services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from poindexter.services.video_service import VIDEO_DIR
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 _INTRO_PROMPT_FALLBACK = (
     "Podcast intro theme: warm analog synth ident, clean electric piano "

@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms._image_helpers import (
+from poindexter.modules.content.atoms._image_helpers import (
     _first_prose_end,
     _plan_and_inject_placeholders,
 )

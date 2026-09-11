@@ -160,7 +160,7 @@ class TestRunBrandGuardFabrication:
             raise RuntimeError("validator exploded")
 
         # Patch the symbol the rail looks up at call time.
-        import modules.content.content_validator as cv
+        import poindexter.modules.content.content_validator as cv
 
         monkeypatch.setattr(cv, "_check_patterns", boom)
         ok, reason = gr.run_brand_guard("some content with enough words")
@@ -208,7 +208,7 @@ class TestResolveCompetitors:
         def fake_emit(**kwargs):
             emitted.update(kwargs)
 
-        monkeypatch.setattr("utils.findings.emit_finding", fake_emit)
+        monkeypatch.setattr("poindexter.utils.findings.emit_finding", fake_emit)
 
         sc = MagicMock()
         sc.get.side_effect = RuntimeError("site_config broken")

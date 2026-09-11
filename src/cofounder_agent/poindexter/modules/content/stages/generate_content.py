@@ -18,7 +18,7 @@ New code should import from ``modules.content.writer_core`` directly.
 """
 from __future__ import annotations
 
-from modules.content.writer_core import (
+from poindexter.modules.content.writer_core import (
     GenerateContentStage,
     _extract_caller_research,
     _min_draft_chars,

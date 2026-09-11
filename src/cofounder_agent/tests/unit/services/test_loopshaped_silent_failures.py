@@ -27,7 +27,7 @@ import pytest
 
 import poindexter.services.http_client as http_client_module
 import poindexter.services.skill_importer as skill_importer_module
-from modules.content.atoms.content_reconcile_citations import (
+from poindexter.modules.content.atoms.content_reconcile_citations import (
     _resolve_youtube_authors,
 )
 from poindexter.services.http_client import wire_http_client_modules
@@ -48,7 +48,7 @@ _RealAsyncClient = httpx.AsyncClient
 def _capture(monkeypatch) -> list[dict]:
     """Patch ``utils.findings.emit_finding`` with a capture list."""
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

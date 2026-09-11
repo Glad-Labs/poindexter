@@ -18,10 +18,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import modules.content.auto_publish_gate as auto_publish_gate
-import modules.content.internal_link_coherence as internal_link_coherence
-import modules.content.stages.source_featured_image as source_featured_image
-from modules.content.multi_model_qa import MultiModelQA
+import poindexter.modules.content.auto_publish_gate as auto_publish_gate
+import poindexter.modules.content.internal_link_coherence as internal_link_coherence
+import poindexter.modules.content.stages.source_featured_image as source_featured_image
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.unit
@@ -44,7 +44,7 @@ def _capture(monkeypatch) -> list[dict]:
     the source module, so patching it there intercepts every site.
     """
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

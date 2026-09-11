@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.scheduler import PluginScheduler
+from poindexter.plugins.scheduler import PluginScheduler
 
 
 def _scheduler(*, alert_enabled: bool = True, page_threshold: int = 2) -> PluginScheduler:
@@ -29,7 +29,7 @@ def _scheduler(*, alert_enabled: bool = True, page_threshold: int = 2) -> Plugin
 @pytest.mark.asyncio
 async def test_ordinary_job_failure_emits_finding():
     sched = _scheduler()
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          patch("poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock()) as notify:
         await sched._escalate_job_failure("audit_published_quality", "boom")
     emit.assert_called_once()
@@ -45,7 +45,7 @@ async def test_ordinary_job_failure_emits_finding():
 async def test_circular_safe_single_failure_holds_page():
     """A lone failed tick is usually a transient deploy race — don't page yet."""
     sched = _scheduler()  # threshold 2
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          patch("poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock()) as notify:
         await sched._escalate_job_failure("render_alertmanager_config", "[Errno 2]")
     notify.assert_not_awaited()  # first consecutive failure is held
@@ -56,7 +56,7 @@ async def test_circular_safe_single_failure_holds_page():
 @pytest.mark.asyncio
 async def test_alerting_infra_job_pages_after_consecutive_threshold():
     sched = _scheduler()  # threshold 2
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          patch("poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock()) as notify:
         await sched._escalate_job_failure("findings_alert_router", "DB down")  # 1/2 — hold
         await sched._escalate_job_failure("findings_alert_router", "DB down")  # 2/2 — page
@@ -114,7 +114,7 @@ async def test_threshold_one_restores_immediate_page():
 @pytest.mark.asyncio
 async def test_master_switch_off_is_silent():
     sched = _scheduler(alert_enabled=False)
-    with patch("utils.findings.emit_finding") as emit, \
+    with patch("poindexter.utils.findings.emit_finding") as emit, \
          patch("poindexter.services.integrations.operator_notify.notify_operator", new=AsyncMock()) as notify:
         await sched._escalate_job_failure("findings_alert_router", "x")
         await sched._escalate_job_failure("findings_alert_router", "x")
@@ -128,7 +128,7 @@ async def test_master_switch_off_is_silent():
 async def test_escalation_never_raises_into_loop():
     sched = _scheduler()
     # emit_finding blows up -> _escalate must swallow + log, not propagate.
-    with patch("utils.findings.emit_finding", side_effect=RuntimeError("kaboom")):
+    with patch("poindexter.utils.findings.emit_finding", side_effect=RuntimeError("kaboom")):
         await sched._escalate_job_failure("some_job", "detail")  # must not raise
 
 

@@ -54,7 +54,7 @@ def _base_state(**extra):
 
 class TestContentGenerateDraft:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_generate_draft import ATOM_META
+        from poindexter.modules.content.atoms.content_generate_draft import ATOM_META
         assert ATOM_META.name == "content.generate_draft"
         assert "task_id" in ATOM_META.requires
         assert "content" in ATOM_META.produces
@@ -63,8 +63,8 @@ class TestContentGenerateDraft:
         assert "db_write" in ATOM_META.side_effects
 
     async def test_run_delegates_to_stage(self, monkeypatch):
-        from modules.content.atoms import content_generate_draft as atom
-        from plugins.stage import StageResult
+        from poindexter.modules.content.atoms import content_generate_draft as atom
+        from poindexter.plugins.stage import StageResult
 
         fake_result = StageResult(
             ok=True,
@@ -83,7 +83,7 @@ class TestContentGenerateDraft:
         mock_stage = MagicMock()
         mock_stage.execute = AsyncMock(return_value=fake_result)
 
-        import modules.content.writer_core as gc_mod
+        import poindexter.modules.content.writer_core as gc_mod
         monkeypatch.setattr(
             gc_mod, "GenerateContentStage", lambda: mock_stage,
         )
@@ -97,14 +97,14 @@ class TestContentGenerateDraft:
     async def test_run_raises_on_stage_failure(self, monkeypatch):
         import pytest
 
-        from modules.content.atoms import content_generate_draft as atom
-        from plugins.stage import StageResult
+        from poindexter.modules.content.atoms import content_generate_draft as atom
+        from poindexter.plugins.stage import StageResult
 
         fail_result = StageResult(ok=False, detail="no content produced")
         mock_stage = MagicMock()
         mock_stage.execute = AsyncMock(return_value=fail_result)
 
-        import modules.content.writer_core as gc_mod
+        import poindexter.modules.content.writer_core as gc_mod
         monkeypatch.setattr(gc_mod, "GenerateContentStage", lambda: mock_stage)
 
         with pytest.raises(RuntimeError, match="content.generate_draft failed"):
@@ -118,14 +118,14 @@ class TestContentGenerateDraft:
 
 class TestContentNormalizeDraft:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_normalize_draft import ATOM_META
+        from poindexter.modules.content.atoms.content_normalize_draft import ATOM_META
         assert ATOM_META.name == "content.normalize_draft"
         assert ATOM_META.idempotent is True
         assert ATOM_META.cost_class == "free"
         assert ATOM_META.side_effects == ()
 
     async def test_strips_leaked_image_prompts(self, monkeypatch):
-        from modules.content.atoms import content_normalize_draft as atom
+        from poindexter.modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr(
             "poindexter.services.text_utils.normalize_text", lambda t: t, raising=False
         )
@@ -140,7 +140,7 @@ class TestContentNormalizeDraft:
         assert "Real body text." in out["content"]
 
     async def test_keeps_image_markers_strips_figure(self, monkeypatch):
-        from modules.content.atoms import content_normalize_draft as atom
+        from poindexter.modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
             "poindexter.services.text_utils.scrub_fabricated_links",
@@ -154,11 +154,13 @@ class TestContentNormalizeDraft:
         assert "[FIGURE:" not in out["content"]
 
     async def test_empty_content_returns_empty(self):
-        from modules.content.atoms import content_normalize_draft as atom
+        from poindexter.modules.content.atoms import content_normalize_draft as atom
         assert await atom.run(_base_state(content="")) == {}
 
     def test_strip_leaked_image_prompts_pure(self):
-        from modules.content.atoms.content_normalize_draft import strip_leaked_image_prompts
+        from poindexter.modules.content.atoms.content_normalize_draft import (
+            strip_leaked_image_prompts,
+        )
         result = strip_leaked_image_prompts("Hello\n[FIGURE: some description]\nWorld")
         assert "[FIGURE:" not in result
         assert "Hello" in result
@@ -174,7 +176,7 @@ class TestContentNormalizeDraft:
     async def test_repairs_orphaned_fabricated_citation_end_to_end(self):
         # Real scrubber (not mocked): a fabricated appended Title-Case citation
         # must not survive node 5 as an orphaned anchor stranded mid-sentence.
-        from modules.content.atoms import content_normalize_draft as atom
+        from poindexter.modules.content.atoms import content_normalize_draft as atom
         content = (
             "Memory bandwidth dominates. We've seen the trend elsewhere too "
             "[Local LLM Hardware Requirements](https://made-up.example/x). "
@@ -190,7 +192,7 @@ class TestContentNormalizeDraft:
         # straight onto the first ``*`` bullet with no blank line between, so
         # Markdown rendered the whole thing as a block paragraph with literal
         # ``*`` and bold pseudo-headers instead of a bulleted list.
-        from modules.content.atoms.content_normalize_draft import (
+        from poindexter.modules.content.atoms.content_normalize_draft import (
             ensure_blank_line_before_lists,
         )
         raw = (
@@ -206,7 +208,7 @@ class TestContentNormalizeDraft:
         assert "less.\n*   **Lower Noise" in out
 
     def test_ensure_blank_line_before_lists_idempotent(self):
-        from modules.content.atoms.content_normalize_draft import (
+        from poindexter.modules.content.atoms.content_normalize_draft import (
             ensure_blank_line_before_lists,
         )
         # Already-correct list (blank line present) must be left untouched.
@@ -217,7 +219,7 @@ class TestContentNormalizeDraft:
         assert ensure_blank_line_before_lists(good_num) == good_num
 
     def test_ensure_blank_line_before_numbered_list_glued(self):
-        from modules.content.atoms.content_normalize_draft import (
+        from poindexter.modules.content.atoms.content_normalize_draft import (
             ensure_blank_line_before_lists,
         )
         raw = "Follow these steps:\n1. Apply a power limit.\n2. Monitor tokens/sec."
@@ -225,7 +227,7 @@ class TestContentNormalizeDraft:
         assert "steps:\n\n1. Apply" in out
 
     async def test_inserts_blank_line_before_list_block_end_to_end(self, monkeypatch):
-        from modules.content.atoms import content_normalize_draft as atom
+        from poindexter.modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr(
             "poindexter.services.text_utils.normalize_text", lambda t: t, raising=False
         )
@@ -249,16 +251,16 @@ class TestContentNormalizeDraft:
 
 class TestContentPlanImageMarkers:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_plan_image_markers import ATOM_META
+        from poindexter.modules.content.atoms.content_plan_image_markers import ATOM_META
         assert ATOM_META.name == "content.plan_image_markers"
         assert "content" in ATOM_META.requires
         assert "image_plans" in ATOM_META.produces
 
     async def test_parses_existing_markers(self, monkeypatch):
-        from modules.content.atoms import content_plan_image_markers as atom
+        from poindexter.modules.content.atoms import content_plan_image_markers as atom
         # Patch VRAM guard so it's a no-op.
         monkeypatch.setattr(
-            "modules.content.atoms.content_plan_image_markers.maybe_unload_writer_before_image_gen",
+            "poindexter.modules.content.atoms.content_plan_image_markers.maybe_unload_writer_before_image_gen",
             AsyncMock(),
             raising=False,
         )
@@ -269,7 +271,7 @@ class TestContentPlanImageMarkers:
             return content_text, None
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            "poindexter.modules.content.atoms._image_helpers.plan_and_inject_placeholders",
             _passthrough_plan,
         )
         # Patch the import inside the function.
@@ -288,11 +290,11 @@ class TestContentPlanImageMarkers:
         assert asked == {"max_images": 1, "start_num": 3}
 
     async def test_no_content_returns_empty(self):
-        from modules.content.atoms import content_plan_image_markers as atom
+        from poindexter.modules.content.atoms import content_plan_image_markers as atom
         assert await atom.run(_base_state(content="")) == {}
 
     async def test_calls_image_agent_when_no_markers(self, monkeypatch):
-        from modules.content.atoms import content_plan_image_markers as atom
+        from poindexter.modules.content.atoms import content_plan_image_markers as atom
 
         async def _fake_unload(*a, **kw):
             pass
@@ -303,7 +305,7 @@ class TestContentPlanImageMarkers:
             return injected, None
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.plan_and_inject_placeholders",
+            "poindexter.modules.content.atoms._image_helpers.plan_and_inject_placeholders",
             _fake_plan,
         )
         with patch(
@@ -322,13 +324,13 @@ class TestContentPlanImageMarkers:
 
 class TestContentInjectImages:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_inject_images import ATOM_META
+        from poindexter.modules.content.atoms.content_inject_images import ATOM_META
         assert ATOM_META.name == "content.inject_images"
         assert ATOM_META.idempotent is True
         assert "db_write" in ATOM_META.side_effects
 
     async def test_injects_image_gen_image(self):
-        from modules.content.atoms import content_inject_images as atom
+        from poindexter.modules.content.atoms import content_inject_images as atom
         content = "## Section\n\n[IMAGE-1: a futuristic city]\n\nBody."
         image_results = [{"num": "1", "url": "https://r2.example.com/img.png", "alt_text": "futuristic city", "source": "image_gen"}]
         state = _base_state(content=content, image_results=image_results)
@@ -338,7 +340,7 @@ class TestContentInjectImages:
         assert out["inline_images_replaced"] == 1
 
     async def test_strips_unresolved_placeholder(self):
-        from modules.content.atoms import content_inject_images as atom
+        from poindexter.modules.content.atoms import content_inject_images as atom
         content = "## Section\n\n[IMAGE-1: a thing]\n\nBody."
         image_results = [{"num": "1", "url": None, "alt_text": "", "source": "none"}]
         state = _base_state(content=content, image_results=image_results)
@@ -347,7 +349,7 @@ class TestContentInjectImages:
         assert out["inline_images_replaced"] == 0
 
     async def test_injects_pexels_image(self):
-        from modules.content.atoms import content_inject_images as atom
+        from poindexter.modules.content.atoms import content_inject_images as atom
         content = "[IMAGE-2: mountain landscape]\n\nSome text."
         image_results = [{"num": "2", "url": "https://pexels.com/photo.jpg", "alt_text": "Photo by Jane", "source": "pexels"}]
         state = _base_state(content=content, image_results=image_results)
@@ -357,7 +359,7 @@ class TestContentInjectImages:
         assert out["inline_images_replaced"] == 1
 
     async def test_empty_image_results_no_op(self):
-        from modules.content.atoms import content_inject_images as atom
+        from poindexter.modules.content.atoms import content_inject_images as atom
         content = "Some body without images."
         state = _base_state(content=content, image_results=[])
         out = await atom.run(state)
@@ -371,7 +373,7 @@ class TestContentInjectImages:
 
 class TestContentCompileMeta:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_compile_meta import ATOM_META
+        from poindexter.modules.content.atoms.content_compile_meta import ATOM_META
         assert ATOM_META.name == "content.compile_meta"
         assert ATOM_META.idempotent is True
         assert ATOM_META.cost_class == "free"
@@ -380,7 +382,7 @@ class TestContentCompileMeta:
         assert "preview_token" in ATOM_META.produces
 
     async def test_produces_all_output_keys(self, monkeypatch):
-        from modules.content.atoms import content_compile_meta as atom
+        from poindexter.modules.content.atoms import content_compile_meta as atom
 
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
@@ -389,7 +391,7 @@ class TestContentCompileMeta:
             raising=False,
         )
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.format_qa_feedback_from_reviews",
+            "poindexter.modules.content.multi_model_qa.format_qa_feedback_from_reviews",
             lambda reviews, final_score=None, approved=None: "",
             raising=False,
         )
@@ -408,11 +410,11 @@ class TestContentCompileMeta:
         assert "qa_feedback_formatted" in out
 
     async def test_reuses_existing_preview_token(self, monkeypatch):
-        from modules.content.atoms import content_compile_meta as atom
+        from poindexter.modules.content.atoms import content_compile_meta as atom
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr("poindexter.services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.format_qa_feedback_from_reviews",
+            "poindexter.modules.content.multi_model_qa.format_qa_feedback_from_reviews",
             lambda *a, **kw: "",
             raising=False,
         )
@@ -422,11 +424,11 @@ class TestContentCompileMeta:
         assert out["preview_token"] == existing
 
     async def test_quality_score_fallback_to_zero(self, monkeypatch):
-        from modules.content.atoms import content_compile_meta as atom
+        from poindexter.modules.content.atoms import content_compile_meta as atom
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr("poindexter.services.excerpt_generator.generate_excerpt", lambda **kw: "x", raising=False)
         monkeypatch.setattr(
-            "modules.content.multi_model_qa.format_qa_feedback_from_reviews",
+            "poindexter.modules.content.multi_model_qa.format_qa_feedback_from_reviews",
             lambda *a, **kw: "",
             raising=False,
         )
@@ -444,7 +446,7 @@ class TestContentCompileMeta:
 
 class TestContentPersistTask:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_persist_task import ATOM_META
+        from poindexter.modules.content.atoms.content_persist_task import ATOM_META
         assert ATOM_META.name == "content.persist_task"
         assert "db_write" in ATOM_META.side_effects
         assert "task_id" in ATOM_META.requires
@@ -452,7 +454,7 @@ class TestContentPersistTask:
         assert ATOM_META.retry.max_attempts == 3
 
     async def test_writes_awaiting_approval(self, monkeypatch):
-        from modules.content.atoms import content_persist_task as atom
+        from poindexter.modules.content.atoms import content_persist_task as atom
 
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
@@ -482,7 +484,7 @@ class TestContentPersistTask:
     async def test_raises_when_status_guard_returns_none(self, monkeypatch):
         import pytest
 
-        from modules.content.atoms import content_persist_task as atom
+        from poindexter.modules.content.atoms import content_persist_task as atom
 
         monkeypatch.setattr("poindexter.services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr("poindexter.services.title_generation.strip_qa_batch_suffix", lambda t: t, raising=False)
@@ -496,7 +498,7 @@ class TestContentPersistTask:
     async def test_missing_task_id_raises(self):
         import pytest
 
-        from modules.content.atoms import content_persist_task as atom
+        from poindexter.modules.content.atoms import content_persist_task as atom
         state = _base_state()
         state.pop("task_id")
         with pytest.raises(ValueError):

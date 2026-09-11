@@ -23,7 +23,7 @@ At runtime Poindexter discovers them:
 
 .. code:: python
 
-    from plugins.registry import get_taps
+    from poindexter.plugins.registry import get_taps
     for tap in get_taps():
         ...
 
@@ -96,7 +96,7 @@ class ModuleDiscoveryError(RuntimeError):
     by ``_validate_modules``."""
 
 
-_INTREE_MODULES_IMPORT_ROOT = "modules"
+_INTREE_MODULES_IMPORT_ROOT = "poindexter.modules"
 """Import root for in-tree business modules (e.g. ``modules.content``).
 The worker/CLI run with ``src/cofounder_agent`` on ``sys.path``, so this is
 a top-level package."""
@@ -456,7 +456,7 @@ def _validate_modules(modules: list[Any]) -> list[Any]:
     - No two surviving modules share a name (first-discovered wins;
       collisions log a warning)
     """
-    from plugins.module import ModuleManifest
+    from poindexter.plugins.module import ModuleManifest
 
     valid: list[Any] = []
     seen_names: set[str] = set()
@@ -613,8 +613,8 @@ def get_core_samples() -> dict[str, list[Any]]:
 
     _SAMPLES: list[tuple[str, str, str]] = [
         # (plugin_type, module_path, class_name)
-        ("taps", "plugins.samples.hello_tap", "HelloTap"),
-        ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
+        ("taps", "poindexter.plugins.samples.hello_tap", "HelloTap"),
+        ("probes", "poindexter.plugins.samples.database_probe", "DatabaseProbe"),
         # NoopJob sample registration removed 2026-06-02 (#936 cleanup) — it
         # was occupying a prod scheduler slot with an hourly no-op. The sample
         # file plugins/samples/noop_job.py is retained as a reference.
@@ -937,7 +937,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # (poindexter#1001). Small batches: the director is real GPU work.
         # Lives in the MODULE, not services/jobs/: it drives the Stage-1
         # director, so a kernel home would need a Seam 2 exemption.
-        ("jobs", "modules.content.jobs.backfill_video_shot_lists", "BackfillVideoShotListsJob"),
+        ("jobs", "poindexter.modules.content.jobs.backfill_video_shot_lists", "BackfillVideoShotListsJob"),
         # BackfillMediaScriptsJob — the scripts-side sibling of the shot-list
         # backfill: a GPU-skipped media_scripts leaves video_long_script
         # empty FOREVER, and the narration atom's podcast_script fallback
@@ -945,7 +945,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # rejected 2026-08-15). Regenerates the video scripts + replans the
         # shot lists via the shared media_regen core. Module home for the
         # same Seam 2 reason as its sibling.
-        ("jobs", "modules.content.jobs.backfill_media_scripts", "BackfillMediaScriptsJob"),
+        ("jobs", "poindexter.modules.content.jobs.backfill_media_scripts", "BackfillMediaScriptsJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live
@@ -1183,11 +1183,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Plugin-namespaced LLM providers (paid-vendor SDKs, opt-in via
         # ``app_settings.plugin.llm_provider.<name>.enabled``). Each ships
         # disabled by default so the core install stays free + self-hostable.
-        ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
+        ("llm_providers", "poindexter.plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
-        ("stages", "modules.content.stages.verify_task", "VerifyTaskStage"),
-        ("stages", "modules.content.stages.generate_content", "GenerateContentStage"),
+        ("stages", "poindexter.modules.content.stages.verify_task", "VerifyTaskStage"),
+        ("stages", "poindexter.modules.content.stages.generate_content", "GenerateContentStage"),
         # Resolve ``[posts/<slug>]`` placeholders before validation. The
         # writer LLM emits these as hints to internal posts but NO code
         # ever resolved them; the validator (added 2026-05-12) catches
@@ -1197,19 +1197,19 @@ def get_core_samples() -> dict[str, list[Any]]:
         # markdown links, or strips unknown placeholders.
         (
             "stages",
-            "modules.content.stages.resolve_internal_link_placeholders",
+            "poindexter.modules.content.stages.resolve_internal_link_placeholders",
             "ResolveInternalLinkPlaceholdersStage",
         ),
-        ("stages", "modules.content.stages.quality_evaluation", "QualityEvaluationStage"),
-        ("stages", "modules.content.stages.url_validation", "UrlValidationStage"),
-        ("stages", "modules.content.stages.source_featured_image", "SourceFeaturedImageStage"),
-        ("stages", "modules.content.stages.caption_images", "CaptionImagesStage"),
-        ("stages", "modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
-        ("stages", "modules.content.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
-        ("stages", "modules.content.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
-        ("stages", "modules.content.stages.review_video_shot_list", "ReviewVideoShotListStage"),
-        ("stages", "modules.content.stages.capture_training_data", "CaptureTrainingDataStage"),
-        ("stages", "modules.content.stages.finalize_task", "FinalizeTaskStage"),
+        ("stages", "poindexter.modules.content.stages.quality_evaluation", "QualityEvaluationStage"),
+        ("stages", "poindexter.modules.content.stages.url_validation", "UrlValidationStage"),
+        ("stages", "poindexter.modules.content.stages.source_featured_image", "SourceFeaturedImageStage"),
+        ("stages", "poindexter.modules.content.stages.caption_images", "CaptionImagesStage"),
+        ("stages", "poindexter.modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
+        ("stages", "poindexter.modules.content.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
+        ("stages", "poindexter.modules.content.stages.generate_video_shot_list", "GenerateVideoShotListStage"),
+        ("stages", "poindexter.modules.content.stages.review_video_shot_list", "ReviewVideoShotListStage"),
+        ("stages", "poindexter.modules.content.stages.capture_training_data", "CaptureTrainingDataStage"),
+        ("stages", "poindexter.modules.content.stages.finalize_task", "FinalizeTaskStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:

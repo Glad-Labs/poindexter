@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.affiliate_links import (
+from poindexter.modules.content.affiliate_links import (
     add_link,
     list_active,
     list_all,
@@ -195,7 +195,7 @@ class _QueuedPool(_FakePool):
 
 @pytest.mark.asyncio
 async def test_add_keywords_appends_and_counts_new_rows():
-    from modules.content.affiliate_links import add_keywords
+    from poindexter.modules.content.affiliate_links import add_keywords
 
     pool = _QueuedPool([7])  # link_id lookup
     added = await add_keywords(pool, code="mercury", keywords=["Mercury Bank"])
@@ -211,7 +211,7 @@ async def test_add_keywords_appends_and_counts_new_rows():
 
 @pytest.mark.asyncio
 async def test_add_keywords_dedupes_and_strips_input():
-    from modules.content.affiliate_links import add_keywords
+    from poindexter.modules.content.affiliate_links import add_keywords
 
     pool = _QueuedPool([7])
     await add_keywords(pool, code="mercury", keywords=[" Mercury ", "Mercury", ""])
@@ -223,7 +223,7 @@ async def test_add_keywords_dedupes_and_strips_input():
 
 @pytest.mark.asyncio
 async def test_add_keywords_unknown_code_fails_loud():
-    from modules.content.affiliate_links import add_keywords
+    from poindexter.modules.content.affiliate_links import add_keywords
 
     pool = _QueuedPool([None])  # no link_id
     with pytest.raises(LookupError, match="nope"):
@@ -232,7 +232,7 @@ async def test_add_keywords_unknown_code_fails_loud():
 
 @pytest.mark.asyncio
 async def test_add_keywords_rejects_empty_input():
-    from modules.content.affiliate_links import add_keywords
+    from poindexter.modules.content.affiliate_links import add_keywords
 
     with pytest.raises(ValueError):
         await add_keywords(_QueuedPool([7]), code="mercury", keywords=["  "])
@@ -240,7 +240,7 @@ async def test_add_keywords_rejects_empty_input():
 
 @pytest.mark.asyncio
 async def test_remove_keywords_deletes_and_counts():
-    from modules.content.affiliate_links import remove_keywords
+    from poindexter.modules.content.affiliate_links import remove_keywords
 
     # link_id=7, total=3 keywords, 1 of them doomed
     pool = _QueuedPool([7, 3, 1], execute_result="DELETE 1")
@@ -257,7 +257,7 @@ async def test_remove_keywords_deletes_and_counts():
 
 @pytest.mark.asyncio
 async def test_remove_keywords_refuses_to_strip_the_last_one():
-    from modules.content.affiliate_links import remove_keywords
+    from poindexter.modules.content.affiliate_links import remove_keywords
 
     # total=1, doomed=1 -> removing it would make the link uninjectable
     pool = _QueuedPool([7, 1, 1])
@@ -267,7 +267,7 @@ async def test_remove_keywords_refuses_to_strip_the_last_one():
 
 @pytest.mark.asyncio
 async def test_remove_keywords_unknown_code_fails_loud():
-    from modules.content.affiliate_links import remove_keywords
+    from poindexter.modules.content.affiliate_links import remove_keywords
 
     pool = _QueuedPool([None])
     with pytest.raises(LookupError):

@@ -39,7 +39,7 @@ def _capture(monkeypatch) -> list[dict]:
     ``from utils.findings import emit_finding`` inside each handler resolves to
     our stub (attribute looked up on the module at call time)."""
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

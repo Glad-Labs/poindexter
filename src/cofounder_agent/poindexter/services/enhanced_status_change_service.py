@@ -5,8 +5,8 @@ from typing import Any
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.tasks_db import TasksDatabase
-from utils.json_encoder import safe_json_load
-from utils.task_status import StatusTransitionValidator
+from poindexter.utils.json_encoder import safe_json_load
+from poindexter.utils.task_status import StatusTransitionValidator
 
 logger = get_logger(__name__)
 

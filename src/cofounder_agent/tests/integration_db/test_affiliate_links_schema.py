@@ -191,7 +191,7 @@ async def test_load_link_last_used_runs_against_real_schema(test_pool):
     whole test inside the rollback (mirrors the sibling test's
     ``_export_affiliate_referrals(conn, ...)`` call).
     """
-    from modules.content.affiliate_links import load_link_last_used
+    from poindexter.modules.content.affiliate_links import load_link_last_used
 
     published_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
 

@@ -14,7 +14,7 @@ def test_job_has_required_attrs():
 
 
 def test_job_registered_in_core_samples():
-    from plugins.registry import get_core_samples
+    from poindexter.plugins.registry import get_core_samples
 
     jobs = get_core_samples().get("jobs", [])
     assert any(

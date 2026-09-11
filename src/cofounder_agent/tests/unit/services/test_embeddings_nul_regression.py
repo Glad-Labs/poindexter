@@ -37,8 +37,8 @@ from typing import Any
 
 import pytest
 
-from plugins.tap import Document
 from poindexter.memory import MemoryClient
+from poindexter.plugins.tap import Document
 from poindexter.services.taps.runner import run_tap
 
 # ---------------------------------------------------------------------------

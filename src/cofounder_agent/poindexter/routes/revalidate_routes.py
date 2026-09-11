@@ -21,7 +21,7 @@ from poindexter.services.revalidation_service import (
     trigger_nextjs_revalidation_detailed,
 )
 from poindexter.services.site_config import SiteConfig
-from utils.route_utils import get_site_config_dependency
+from poindexter.utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 

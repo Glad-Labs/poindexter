@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from plugins.module import ModuleManifest
-from plugins.platform import Capability
+from poindexter.plugins.module import ModuleManifest
+from poindexter.plugins.platform import Capability
 
 _MANIFEST = ModuleManifest(
     name="content",
@@ -50,7 +50,7 @@ _MANIFEST = ModuleManifest(
     capabilities=(Capability.AUDIT, Capability.DISPATCH, Capability.CONFIG),
     # Manifest-driven atom discovery (Glad-Labs/poindexter#754): the atom registry
     # walks this package at startup instead of hardcoding the path in kernel code.
-    atoms_package="modules.content.atoms",
+    atoms_package="poindexter.modules.content.atoms",
 )
 
 

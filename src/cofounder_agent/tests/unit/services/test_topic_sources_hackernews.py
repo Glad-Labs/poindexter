@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.topic_source import TopicSource
+from poindexter.plugins.topic_source import TopicSource
 from poindexter.services.topic_sources._filters import (
     classify_category,
     is_news_or_junk,

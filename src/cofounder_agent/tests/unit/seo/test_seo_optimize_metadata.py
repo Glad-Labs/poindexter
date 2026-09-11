@@ -1,6 +1,6 @@
 import pytest
 
-from modules.content.atoms import seo_optimize_metadata as atom
+from poindexter.modules.content.atoms import seo_optimize_metadata as atom
 
 
 @pytest.mark.asyncio

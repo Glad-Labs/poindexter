@@ -12,8 +12,8 @@ import importlib.util
 
 import pytest
 
-from plugins import registry
-from plugins.registry import (
+from poindexter.plugins import registry
+from poindexter.plugins.registry import (
     ModuleDiscoveryError,
     _scan_intree_modules,
 )
@@ -22,7 +22,7 @@ from plugins.registry import (
 # public ``poindexter`` mirror. Tests that require the finance module to be
 # present on disk (real-tree scan / forced-load) must skip there rather than
 # fail. ``find_spec`` checks importability without executing the module.
-_FINANCE_MODULE_PRESENT = importlib.util.find_spec("modules.finance") is not None
+_FINANCE_MODULE_PRESENT = importlib.util.find_spec("poindexter.modules.finance") is not None
 _finance_only = pytest.mark.skipif(
     not _FINANCE_MODULE_PRESENT,
     reason="modules.finance is private (operator overlay) — stripped from public mirror",
@@ -131,11 +131,11 @@ def test_jobs_loader_broken_inner_import_propagates(monkeypatch):
     real_import = registry.importlib.import_module
 
     def _fake_import(modpath, *args, **kwargs):
-        if modpath == "modules.finance.jobs":
+        if modpath == "poindexter.modules.finance.jobs":
             # jobs/__init__.py present, but a DIFFERENT module it imports is missing.
             raise ModuleNotFoundError(
-                "No module named 'modules.finance.jobs.poll_mercury'",
-                name="modules.finance.jobs.poll_mercury",
+                "No module named 'poindexter.modules.finance.jobs.poll_mercury'",
+                name="poindexter.modules.finance.jobs.poll_mercury",
             )
         return real_import(modpath, *args, **kwargs)
 
@@ -150,7 +150,7 @@ def test_jobs_loader_broken_inner_import_propagates(monkeypatch):
 def test_get_modules_uses_scan(monkeypatch):
     """get_modules() surfaces the scanned in-tree modules (via the
     unchanged _merge_with_core_samples -> get_core_samples path)."""
-    from plugins.registry import clear_registry_cache, get_modules
+    from poindexter.plugins.registry import clear_registry_cache, get_modules
 
     clear_registry_cache()
     monkeypatch.setattr(registry, "_intree_module_names", lambda: ["content", "finance"])
@@ -162,7 +162,7 @@ def test_stripped_tree_has_no_finance_anywhere(monkeypatch):
     """The leak-class regression: with finance absent on disk, neither
     get_modules() nor the jobs bucket reference finance — the exact
     consistency the old substrate line-patching guaranteed by hand."""
-    from plugins.registry import clear_registry_cache, get_core_samples, get_modules
+    from poindexter.plugins.registry import clear_registry_cache, get_core_samples, get_modules
 
     clear_registry_cache()
     monkeypatch.setattr(registry, "_intree_module_names", lambda: ["content"])

@@ -14,10 +14,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import (
+from poindexter.modules.content.atoms import (
     content_detect_contradictions as detect_atom,
 )
-from modules.content.atoms import (
+from poindexter.modules.content.atoms import (
     content_revise_contradictions as revise_atom,
 )
 

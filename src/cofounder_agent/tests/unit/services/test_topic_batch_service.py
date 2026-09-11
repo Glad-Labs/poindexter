@@ -67,7 +67,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     # Titles are multi-word (so the topic-sanity intake filter keeps them)
     # AND mutually word-disjoint (so the intra-batch dedup pass keeps them —
     # fuzzy matching only skips single-content-word titles).
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
     from poindexter.services.topic_pool import insert_pooled_topics
 
     titles = [
@@ -168,7 +168,7 @@ async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypa
     guard — ingestion failures now happen in the tap runner, outside the
     sweep, so that failure mode is structurally impossible here.)
     """
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
     from poindexter.services.topic_pool import insert_pooled_topics
 
     nsvc = NicheService(db_pool)
@@ -337,7 +337,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
 
     # Multi-word, word-disjoint titles: survive the topic-sanity intake
     # filter and the intra-batch dedup pass.
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
     from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:
@@ -416,7 +416,7 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
     # titles so they survive the sanity filter + dedup and genuinely reach
     # the LLM scorer — the guard under test is about SCORER emptiness, not
     # upstream filtering).
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
     from poindexter.services.topic_pool import insert_pooled_topics
 
     async with db_pool.acquire() as conn:

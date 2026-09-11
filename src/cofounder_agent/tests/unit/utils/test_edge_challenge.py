@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from utils.edge_challenge import is_edge_challenge
+from poindexter.utils.edge_challenge import is_edge_challenge
 
 
 class _Resp:

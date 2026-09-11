@@ -47,10 +47,10 @@ def test_declared_contract_changes_fingerprint():
 
 @pytest.mark.unit
 def test_media_stages_declare_their_io():
-    from modules.content.stages.generate_media_scripts import (
+    from poindexter.modules.content.stages.generate_media_scripts import (
         GenerateMediaScriptsStage,
     )
-    from modules.content.stages.generate_video_shot_list import (
+    from poindexter.modules.content.stages.generate_video_shot_list import (
         GenerateVideoShotListStage,
     )
 

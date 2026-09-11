@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms import _media_render
-from modules.content.atoms.media_render_long_video import run as run_long
-from modules.content.atoms.media_render_short_video import run as run_short
+from poindexter.modules.content.atoms import _media_render
+from poindexter.modules.content.atoms.media_render_long_video import run as run_long
+from poindexter.modules.content.atoms.media_render_short_video import run as run_short
 from poindexter.services.site_config import SiteConfig
 
 
@@ -674,7 +674,7 @@ class TestRenderLongVideoAtom:
         assert kwargs["caption_path"] == "/tmp/long.srt"
 
     def test_atom_meta_shape(self):
-        from modules.content.atoms.media_render_long_video import ATOM_META
+        from poindexter.modules.content.atoms.media_render_long_video import ATOM_META
 
         assert ATOM_META.name == "media.render_long_video"
         assert ATOM_META.requires == ("task_id",)
@@ -729,7 +729,7 @@ class TestRenderShortVideoAtom:
         assert kwargs["caption_path"] == "/tmp/short.srt"
 
     def test_atom_meta_shape(self):
-        from modules.content.atoms.media_render_short_video import ATOM_META
+        from poindexter.modules.content.atoms.media_render_short_video import ATOM_META
 
         assert ATOM_META.name == "media.render_short_video"
         assert ATOM_META.requires == ("task_id",)

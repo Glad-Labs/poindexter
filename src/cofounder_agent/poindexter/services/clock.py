@@ -18,7 +18,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _warn_invalid_tz(name: str, exc: Exception) -> None:
     try:
         emit = emit_finding
         if emit is None:  # normal runtime path (tests monkeypatch the module attr)
-            from utils.findings import emit_finding as _emit_finding
+            from poindexter.utils.findings import emit_finding as _emit_finding
 
             emit = _emit_finding
         emit(

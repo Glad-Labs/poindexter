@@ -13,7 +13,7 @@ from typing import Any
 from asyncpg import Pool
 
 from poindexter.services.logger_config import get_logger
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from poindexter.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance

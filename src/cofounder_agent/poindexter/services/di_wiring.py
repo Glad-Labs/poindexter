@@ -250,9 +250,9 @@ def build_platform_for_subprocess(
     row." Imports are local so ``di_wiring`` stays import-cheap.
     """
     try:
-        from plugins.kernel_platform import build_kernel_platform
-        from plugins.platform import scope_for_module
-        from plugins.registry import get_modules
+        from poindexter.plugins.kernel_platform import build_kernel_platform
+        from poindexter.plugins.platform import scope_for_module
+        from poindexter.plugins.registry import get_modules
         from poindexter.services.audit_log import get_audit_logger
         from poindexter.services.llm_providers.dispatcher import dispatch_complete
 

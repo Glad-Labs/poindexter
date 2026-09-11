@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_ragas
-from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+from poindexter.modules.content.atoms import qa_ragas
+from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
 
 class _Cfg:
@@ -92,7 +92,7 @@ class TestQaRagasAtom:
         this advisory rail hard-veto a finished draft in qa.aggregate."""
         from types import SimpleNamespace
 
-        from modules.content.atoms._qa_rail_common import GateStatesUnavailable
+        from poindexter.modules.content.atoms._qa_rail_common import GateStatesUnavailable
 
         async def boom(self):
             raise ConnectionError("qa_gates read blip")

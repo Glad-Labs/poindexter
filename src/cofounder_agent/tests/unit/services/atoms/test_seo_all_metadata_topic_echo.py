@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock
 
-from modules.content.atoms import _seo_common as sc
-from modules.content.atoms import seo_generate_all_metadata as atom
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.modules.content.atoms import seo_generate_all_metadata as atom
 
 _TOPIC = "Expand coverage of the Insights category — only Insights (3)"
 
@@ -44,7 +44,7 @@ class _Cfg:
 
 def _capture_findings(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from modules.content.jobs.backfill_media_scripts import (
+from poindexter.modules.content.jobs.backfill_media_scripts import (
     _STRANDED_SQL,
     BackfillMediaScriptsJob,
 )
-from modules.content.media_regen import RegenOutcome
+from poindexter.modules.content.media_regen import RegenOutcome
 from poindexter.services.site_config import SiteConfig
 
 _TASK = "11111111-2222-3333-4444-555555555555"
@@ -43,7 +43,7 @@ def _patch_deps(monkeypatch, *, outcome, platform=object()):
         lambda *a, **k: platform,
     )
     regen = AsyncMock(return_value=outcome)
-    monkeypatch.setattr("modules.content.media_regen.regen_video_scripts", regen)
+    monkeypatch.setattr("poindexter.modules.content.media_regen.regen_video_scripts", regen)
     return regen
 
 
@@ -52,7 +52,7 @@ class TestBackfillMediaScripts:
     async def test_successful_regen_counts_and_emits(self, monkeypatch):
         findings: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_media_scripts.emit_finding",
+            "poindexter.modules.content.jobs.backfill_media_scripts.emit_finding",
             lambda **kw: findings.append(kw),
         )
         regen = _patch_deps(
@@ -77,7 +77,7 @@ class TestBackfillMediaScripts:
         progress and emit nothing."""
         findings: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_media_scripts.emit_finding",
+            "poindexter.modules.content.jobs.backfill_media_scripts.emit_finding",
             lambda **kw: findings.append(kw),
         )
         _patch_deps(
@@ -94,7 +94,7 @@ class TestBackfillMediaScripts:
 
     async def test_regen_exception_does_not_abort_the_batch(self, monkeypatch):
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_media_scripts.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_media_scripts.emit_finding", lambda **kw: None,
         )
         monkeypatch.setattr(
             "poindexter.services.di_wiring.build_platform_for_subprocess", lambda *a, **k: object(),
@@ -108,7 +108,7 @@ class TestBackfillMediaScripts:
             return RegenOutcome(ok=True, detail="ok")
 
         monkeypatch.setattr(
-            "modules.content.media_regen.regen_video_scripts", _boom_then_ok,
+            "poindexter.modules.content.media_regen.regen_video_scripts", _boom_then_ok,
         )
 
         result = await BackfillMediaScriptsJob().run(

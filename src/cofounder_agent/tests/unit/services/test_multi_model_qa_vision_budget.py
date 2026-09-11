@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 from poindexter.services.site_config import SiteConfig
 
 

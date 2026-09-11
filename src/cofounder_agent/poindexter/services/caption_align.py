@@ -32,7 +32,7 @@ import re
 from dataclasses import replace
 from typing import Any
 
-from plugins.caption_provider import CaptionSegment
+from poindexter.plugins.caption_provider import CaptionSegment
 
 _TOKEN_NORM = re.compile(r"[^\w]+")
 

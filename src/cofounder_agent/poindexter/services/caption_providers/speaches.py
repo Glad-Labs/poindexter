@@ -38,7 +38,7 @@ from typing import Any, Literal
 
 import httpx
 
-from plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
+from poindexter.plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
 from poindexter.services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)

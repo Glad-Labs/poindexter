@@ -26,7 +26,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from plugins.llm_resilience import (
+from poindexter.plugins.llm_resilience import (
     CircuitBreaker,
     CircuitOpenError,
     LLMResilienceManager,
@@ -460,7 +460,7 @@ class TestAuditLog:
         # The generic manager emits events from
         # plugins.llm_resilience; patch there. Event names use the
         # provider tag (``ollama_*`` for the Ollama manager, etc.).
-        with patch("plugins.llm_resilience.audit_log_bg") as mock_audit:
+        with patch("poindexter.plugins.llm_resilience.audit_log_bg") as mock_audit:
             await manager.run(op, op_name="generate")
 
         event_types = {call.args[0] for call in mock_audit.call_args_list}
@@ -477,7 +477,7 @@ class TestAuditLog:
         async def fail():
             raise httpx.ConnectError("down")
 
-        with patch("plugins.llm_resilience.audit_log_bg") as mock_audit:
+        with patch("poindexter.plugins.llm_resilience.audit_log_bg") as mock_audit:
             for _ in range(2):
                 with pytest.raises(httpx.ConnectError):
                     await mgr.run(fail, op_name="generate")
@@ -581,7 +581,7 @@ class TestRetryDecisionWaitSecondsOverride:
                 raise _RateLimit("retry-after 7")
             return "ok"
 
-        with patch("plugins.llm_resilience.asyncio.sleep", new=fake_sleep):
+        with patch("poindexter.plugins.llm_resilience.asyncio.sleep", new=fake_sleep):
             result = await mgr.run(op, op_name="complete")
 
         assert result == "ok"
@@ -628,7 +628,7 @@ class TestRetryDecisionWaitSecondsOverride:
                 raise RuntimeError("blip")
             return "ok"
 
-        with patch("plugins.llm_resilience.asyncio.sleep", new=fake_sleep):
+        with patch("poindexter.plugins.llm_resilience.asyncio.sleep", new=fake_sleep):
             await mgr.run(op, op_name="complete")
 
         # attempt=1 → base=1.5 * 2^0 = 1.5s, no jitter.
@@ -743,7 +743,7 @@ class TestAnthropicClassifier:
         # — same class name, same ``response.headers`` shape. The
         # classifier ducks on these so the SDK is not a hard dep at
         # test-time.
-        from plugins.llm_providers.anthropic import anthropic_classifier
+        from poindexter.plugins.llm_providers.anthropic import anthropic_classifier
 
         class _Resp:
             headers = {"retry-after": "12.5"}
@@ -757,7 +757,7 @@ class TestAnthropicClassifier:
         assert d.reason == "rate_limit"
 
     def test_authentication_error_not_retryable(self):
-        from plugins.llm_providers.anthropic import anthropic_classifier
+        from poindexter.plugins.llm_providers.anthropic import anthropic_classifier
 
         class _Resp:
             status_code = 401
@@ -770,7 +770,7 @@ class TestAnthropicClassifier:
         assert anthropic_classifier(APIStatusError("auth")).retry is False
 
     def test_internal_server_error_retryable(self):
-        from plugins.llm_providers.anthropic import anthropic_classifier
+        from poindexter.plugins.llm_providers.anthropic import anthropic_classifier
 
         class InternalServerError(Exception):
             status_code = 500
@@ -781,7 +781,7 @@ class TestAnthropicClassifier:
 
 class TestGeminiClassifier:
     def test_resource_exhausted_retryable(self):
-        from plugins.llm_providers.gemini import gemini_classifier
+        from poindexter.plugins.llm_providers.gemini import gemini_classifier
 
         class ResourceExhausted(Exception):
             pass
@@ -794,7 +794,7 @@ class TestGeminiClassifier:
         assert d.wait_seconds is None
 
     def test_client_error_4xx_not_retryable(self):
-        from plugins.llm_providers.gemini import gemini_classifier
+        from poindexter.plugins.llm_providers.gemini import gemini_classifier
 
         class ClientError(Exception):
             code = 400
@@ -802,7 +802,7 @@ class TestGeminiClassifier:
         assert gemini_classifier(ClientError("bad")).retry is False
 
     def test_server_error_retryable(self):
-        from plugins.llm_providers.gemini import gemini_classifier
+        from poindexter.plugins.llm_providers.gemini import gemini_classifier
 
         class ServerError(Exception):
             pass

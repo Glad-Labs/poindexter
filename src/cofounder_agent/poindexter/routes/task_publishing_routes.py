@@ -23,15 +23,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from modules.content.api import EditResult, PostEditService, enqueue_image_rebuild
+from poindexter.modules.content.api import EditResult, PostEditService, enqueue_image_rebuild
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
+from poindexter.utils.json_encoder import convert_decimals, safe_json_dumps
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.uuid_prefix import resolve_task_id_prefix
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
-from utils.json_encoder import convert_decimals, safe_json_dumps
-from utils.route_utils import get_database_dependency, get_site_config_dependency
-from utils.uuid_prefix import resolve_task_id_prefix
 
 # Stable gate name for the legacy `awaiting_approval` HITL flow.
 # Mirrors `routes.approval_routes.LEGACY_APPROVAL_GATE` — kept duplicated

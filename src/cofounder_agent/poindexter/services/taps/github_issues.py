@@ -93,7 +93,7 @@ from typing import Any
 
 import httpx
 
-from plugins.tap import Document
+from poindexter.plugins.tap import Document
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +198,7 @@ async def _resolve_token(pool: Any, config: dict[str, Any]) -> str:
     if pool is None:
         return ""
     try:
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
 
         async with pool.acquire() as conn:
             return str(await get_secret(conn, "gh_token") or "")

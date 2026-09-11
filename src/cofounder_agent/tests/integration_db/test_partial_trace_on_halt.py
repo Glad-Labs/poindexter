@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services import pipeline_architect
 from poindexter.services.atom_runs import persist_one_atom_run
 from poindexter.services.pipeline_architect import _RecordingSink
@@ -83,7 +83,7 @@ def _compiled_three_node_graph(sink: _RecordingSink, *, raiser: str, log: list[s
     with (
         patch.object(pipeline_architect, "get_atom_meta", lambda name: catalog.get(name)),
         patch.object(pipeline_architect, "get_atom_callable", lambda name: callables.get(name)),
-        patch("plugins.registry.get_core_samples", return_value={"stages": []}),
+        patch("poindexter.plugins.registry.get_core_samples", return_value={"stages": []}),
     ):
         return pipeline_architect.build_graph_from_spec(
             spec, pool=None, record_sink=sink,

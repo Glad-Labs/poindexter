@@ -18,10 +18,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms import media_transcribe_narration
-from modules.content.atoms.media_transcribe_narration import _transcribe_one
-from modules.content.atoms.media_transcribe_narration import run as transcribe_run
-from plugins.caption_provider import CaptionResult, CaptionSegment
+from poindexter.modules.content.atoms import media_transcribe_narration
+from poindexter.modules.content.atoms.media_transcribe_narration import _transcribe_one
+from poindexter.modules.content.atoms.media_transcribe_narration import run as transcribe_run
+from poindexter.plugins.caption_provider import CaptionResult, CaptionSegment
 
 
 def _caption_result(*, success=True, srt_text="1\n00:00:00,000 --> 00:00:02,000\nhi\n", segments=None):
@@ -267,7 +267,7 @@ async def test_run_diffs_against_voiced_text_script_plus_cta(monkeypatch):
 
 
 def test_atom_meta_shape():
-    from modules.content.atoms.media_transcribe_narration import ATOM_META
+    from poindexter.modules.content.atoms.media_transcribe_narration import ATOM_META
 
     assert ATOM_META.name == "media.transcribe_narration"
     assert ATOM_META.requires == ("task_id",)
@@ -282,7 +282,7 @@ def test_atom_meta_shape():
 
 
 def _aligned_provider(monkeypatch, segments):
-    from plugins.caption_provider import CaptionResult
+    from poindexter.plugins.caption_provider import CaptionResult
 
     result = CaptionResult(
         success=True,
@@ -303,7 +303,7 @@ def _aligned_provider(monkeypatch, segments):
 
 @pytest.mark.asyncio
 async def test_alignment_rewrites_captions_from_script(tmp_path, monkeypatch):
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -327,7 +327,7 @@ async def test_alignment_rewrites_captions_from_script(tmp_path, monkeypatch):
 async def test_alignment_disabled_keeps_asr_text(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -352,7 +352,7 @@ async def test_alignment_disabled_keeps_asr_text(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_alignment_low_match_falls_back_to_asr(tmp_path, monkeypatch):
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -377,7 +377,7 @@ async def test_alignment_low_match_falls_back_to_asr(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_short_lane_chunks_long_segment_into_display_cues(tmp_path, monkeypatch):
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -408,7 +408,7 @@ async def test_short_lane_chunks_long_segment_into_display_cues(tmp_path, monkey
 
 @pytest.mark.asyncio
 async def test_long_lane_budget_tolerates_subtitle_sized_cues(tmp_path, monkeypatch):
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -432,7 +432,7 @@ async def test_long_lane_budget_tolerates_subtitle_sized_cues(tmp_path, monkeypa
 async def test_chunking_disabled_via_zero_budget(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -461,7 +461,7 @@ async def test_chunking_disabled_via_zero_budget(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_chunking_composes_with_alignment(tmp_path, monkeypatch):
-    from plugins.caption_provider import CaptionSegment
+    from poindexter.plugins.caption_provider import CaptionSegment
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")
@@ -492,7 +492,7 @@ async def test_word_timestamps_retime_display_cues(tmp_path, monkeypatch):
     the provider's segment says the text spans 0-8s, but the words start at
     2.0 — the burned cue must start at the word onset minus the lead, not at
     the interpolated segment position."""
-    from plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
+    from poindexter.plugins.caption_provider import CaptionResult, CaptionSegment, CaptionWord
 
     audio = tmp_path / "narration.mp3"
     audio.write_bytes(b"x")

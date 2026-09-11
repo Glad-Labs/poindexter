@@ -61,7 +61,7 @@ class TestEmitRagasScoreAudit:
         to the ``ragas_score`` write contract only."""
         with (
             patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
-            patch("utils.findings.emit_finding"),
+            patch("poindexter.utils.findings.emit_finding"),
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
@@ -86,7 +86,7 @@ class TestEmitRagasScoreAudit:
         ``TestEmitRagasDegradedMetricsFinding.test_full_failure_also_emits_degraded_finding``.)"""
         with (
             patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
-            patch("utils.findings.emit_finding"),
+            patch("poindexter.utils.findings.emit_finding"),
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": -1.0, "answer_relevancy": -1.0, "context_precision": -1.0},
@@ -154,7 +154,7 @@ class TestEmitRagasDegradedMetricsFinding:
     def test_partial_failure_emits_degraded_finding(self):
         with (
             patch("poindexter.services.audit_log.audit_log_bg"),
-            patch("utils.findings.emit_finding") as mock_finding,
+            patch("poindexter.utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
@@ -176,7 +176,7 @@ class TestEmitRagasDegradedMetricsFinding:
         MOST degraded case, not an exemption."""
         with (
             patch("poindexter.services.audit_log.audit_log_bg") as mock_bg,
-            patch("utils.findings.emit_finding") as mock_finding,
+            patch("poindexter.utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": -1.0, "answer_relevancy": -1.0, "context_precision": -1.0},
@@ -199,7 +199,7 @@ class TestEmitRagasDegradedMetricsFinding:
     def test_healthy_run_does_not_emit_finding(self):
         with (
             patch("poindexter.services.audit_log.audit_log_bg"),
-            patch("utils.findings.emit_finding") as mock_finding,
+            patch("poindexter.utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": 0.8, "answer_relevancy": 0.9, "context_precision": 0.7},
@@ -216,7 +216,7 @@ class TestEmitRagasDegradedMetricsFinding:
         for existing)."""
         with (
             patch("poindexter.services.audit_log.audit_log_bg"),
-            patch("utils.findings.emit_finding") as mock_finding,
+            patch("poindexter.utils.findings.emit_finding") as mock_finding,
         ):
             _emit_ragas_score_audit(
                 {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
@@ -237,7 +237,7 @@ class TestEmitRagasDegradedMetricsFinding:
         with (
             patch("poindexter.services.audit_log.audit_log_bg"),
             patch(
-                "utils.findings.emit_finding",
+                "poindexter.utils.findings.emit_finding",
                 side_effect=RuntimeError("audit_log unavailable"),
             ),
         ):

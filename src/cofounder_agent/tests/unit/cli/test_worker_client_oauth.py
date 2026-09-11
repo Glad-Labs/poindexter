@@ -276,7 +276,7 @@ class TestCredentialStoreReachability:
             AsyncMock(side_effect=[ConnectionResetError(64, "blip"), fake_conn]),
         )
         monkeypatch.setattr(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             AsyncMock(side_effect=["pdx_client_abc", "shh-secret"]),
         )
 
@@ -296,7 +296,7 @@ class TestCredentialStoreReachability:
 
         monkeypatch.setattr(asyncpg, "connect", AsyncMock(return_value=AsyncMock()))
         monkeypatch.setattr(
-            "plugins.secrets.get_secret", AsyncMock(return_value=None)
+            "poindexter.plugins.secrets.get_secret", AsyncMock(return_value=None)
         )
 
         assert await _resolve_credentials("http://test-worker") == ("", "")

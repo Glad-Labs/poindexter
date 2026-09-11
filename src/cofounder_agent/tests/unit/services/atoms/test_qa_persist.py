@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from modules.content.atoms._qa_persist import (
+from poindexter.modules.content.atoms._qa_persist import (
     build_qa_feedback,
     build_reject_reason,
     persist_qa_approved_snapshot,
@@ -129,7 +129,7 @@ class TestPersistQaReject:
 
         calls: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.emit_finding",
+            "poindexter.modules.content.atoms._qa_persist.emit_finding",
             lambda **kw: calls.append(kw),
         )
 
@@ -157,7 +157,7 @@ class TestPersistQaReject:
         monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.emit_finding",
+            "poindexter.modules.content.atoms._qa_persist.emit_finding",
             lambda **kw: calls.append(kw),
         )
         await persist_qa_reject(
@@ -251,7 +251,7 @@ class TestKeepBestGuard:
         monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.emit_finding",
+            "poindexter.modules.content.atoms._qa_persist.emit_finding",
             lambda **kw: calls.append(kw),
         )
         await persist_qa_reject(
@@ -317,7 +317,7 @@ class TestPersistQaApprovedSnapshot:
         monkeypatch.setattr("poindexter.services.pipeline_db.PipelineDB", _FakePipelineDB)
         calls: list[dict] = []
         monkeypatch.setattr(
-            "modules.content.atoms._qa_persist.emit_finding",
+            "poindexter.modules.content.atoms._qa_persist.emit_finding",
             lambda **kw: calls.append(kw),
         )
         # Must not raise — the graph continues toward persist_task regardless.

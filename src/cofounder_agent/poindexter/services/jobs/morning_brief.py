@@ -27,9 +27,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.integrations.operator_notify import notify_operator
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     instead of ``enc:v1:`` ciphertext. Mirrors the brain-side fix in
     ``poindexter/brain/alert_dispatcher.py`` for the same bug class.
     """
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
     try:
         val = await get_secret(pool, key)
     except Exception as exc:  # noqa: BLE001 — best-effort; degrade to default

@@ -87,7 +87,7 @@ from poindexter.services.voice_pipecat import (
     resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
 from poindexter.services.voice_prompts import CLAUDE_BRIDGE_TTS_KEY, resolve_voice_prompt
-from utils.crawler_ua import build_crawler_ua
+from poindexter.utils.crawler_ua import build_crawler_ua
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice_agent_livekit")
@@ -537,7 +537,7 @@ async def _get_recent_pull_requests_text() -> str:
         import asyncpg
 
         from brain.bootstrap import resolve_database_url
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
         dsn = resolve_database_url()
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1, timeout=2.0)
     except Exception as e:  # noqa: BLE001

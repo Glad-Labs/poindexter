@@ -57,7 +57,7 @@ import tempfile
 import time
 from typing import Any, Literal
 
-from plugins.caption_provider import CaptionResult, CaptionSegment
+from poindexter.plugins.caption_provider import CaptionResult, CaptionSegment
 from poindexter.services.cost_guard import CostGuard
 
 logger = logging.getLogger(__name__)

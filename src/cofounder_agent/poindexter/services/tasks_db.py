@@ -16,14 +16,14 @@ from uuid import UUID, uuid4
 
 from asyncpg import Pool
 
-from plugins.tracing import inject_trace_context
+from poindexter.plugins.tracing import inject_trace_context
 from poindexter.services.logger_config import get_logger
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.json_encoder import safe_json_load
+from poindexter.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
-from utils.exception_format import describe_exception
-from utils.json_encoder import safe_json_load
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -908,7 +908,7 @@ class TasksDatabase(DatabaseServiceMixin):
             # a transient DB blip doesn't spam WARN, but surface the
             # reason for test assertions + debugging.
             logger.debug("heartbeat_task(%s) failed: %s", task_id, e)
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="tasks_db",
@@ -1627,7 +1627,7 @@ class TasksDatabase(DatabaseServiceMixin):
         a sweep whose DB writes already committed).
         """
         try:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             retry_by_id = {
                 row["task_id"]: int(row["retry_count"] or 0) for row in stale_rows

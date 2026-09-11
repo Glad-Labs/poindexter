@@ -63,7 +63,7 @@ class CriticScorer:
             return self._review_fn
         # Substrate reaches content through the api adapter, never a deep
         # import (modules/content/api.py boundary).
-        from modules.content.api import MultiModelQA
+        from poindexter.modules.content.api import MultiModelQA
 
         qa = MultiModelQA(
             pool=self._pool,

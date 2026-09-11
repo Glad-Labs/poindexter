@@ -19,11 +19,11 @@ import os
 import shutil
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from poindexter.services.media_asset_recorder import record_media_asset
 from poindexter.services.podcast_service import PODCAST_DIR
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

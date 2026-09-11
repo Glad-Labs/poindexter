@@ -106,7 +106,7 @@ class TestMetadata:
         # _SAMPLES is the sole load path in production (the worker
         # bind-mounts source rather than pip-installing), so a job missing
         # here never runs — see finding #189 / test_registry_completeness.
-        from plugins.registry import get_core_samples
+        from poindexter.plugins.registry import get_core_samples
 
         jobs = get_core_samples().get("jobs", [])
         assert any(

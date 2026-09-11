@@ -161,7 +161,7 @@ class WebhookDeliveryService:
             # operator-notification event doesn't vanish into a dead letter.
             if new_attempts >= MAX_RETRIES:
                 try:
-                    from utils.findings import emit_finding
+                    from poindexter.utils.findings import emit_finding
 
                     emit_finding(
                         source="webhook_delivery_service",

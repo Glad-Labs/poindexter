@@ -3,7 +3,7 @@
 
 from unittest.mock import patch
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services import pipeline_architect
 
 

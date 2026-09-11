@@ -36,7 +36,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.asyncio]
 
 def _capture(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls
@@ -67,7 +67,7 @@ class _FakePreviewQA:
 
 
 def _patch_qa(monkeypatch) -> None:
-    import modules.content.api as content_api
+    import poindexter.modules.content.api as content_api
 
     monkeypatch.setattr(content_api, "MultiModelQA", _FakePreviewQA)
 

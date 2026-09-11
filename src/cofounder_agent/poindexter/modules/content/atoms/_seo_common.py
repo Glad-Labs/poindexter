@@ -13,11 +13,11 @@ import logging
 import re
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._pool import resolve_pool
 from poindexter.services.llm_text import ollama_chat_text
 from poindexter.services.prompt_manager import get_prompt_manager
-from utils.text_utils import extract_keywords_from_text
-from utils.title_utils import derive_seo_title
+from poindexter.utils.text_utils import extract_keywords_from_text
+from poindexter.utils.title_utils import derive_seo_title
 
 logger = logging.getLogger(__name__)
 

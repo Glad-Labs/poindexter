@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import poindexter.services.jobs.findings_alert_router as router_mod
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.jobs.findings_alert_router import (
     _AUTOFIX_JOBS,
     _SEV_RANK,

@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 ATOM_META = AtomMeta(
     name="qa.deepeval",
@@ -46,7 +46,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     settings_service = state.get("settings_service")
 
     # Lazy import — keeps module discovery cheap (multi_model_qa is heavy).
-    from modules.content.multi_model_qa import MultiModelQA
+    from poindexter.modules.content.multi_model_qa import MultiModelQA
 
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
 

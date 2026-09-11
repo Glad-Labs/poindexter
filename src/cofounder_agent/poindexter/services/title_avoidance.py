@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -438,7 +438,7 @@ async def fetch_recent_titles(
             rows = await conn.fetch(_RECENT_TITLES_SQL, limit)
         return [r["title"] for r in rows if r["title"]]
     except Exception as exc:  # noqa: BLE001 — degraded, never fatal
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         logger.warning(
             "[title_avoidance] recent-title lookup failed (%s: %s) — the "
@@ -650,7 +650,7 @@ async def fetch_taken_titles(
             )
         return [r["title"] for r in rows if r["title"]]
     except Exception as exc:  # noqa: BLE001 — degraded, never fatal
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         logger.warning(
             "[title_avoidance] taken-title lookup failed (%s: %s) — the "

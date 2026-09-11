@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from plugins import VideoProvider, VideoResult, get_video_providers
-from plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
+from poindexter.plugins import VideoProvider, VideoResult, get_video_providers
+from poindexter.plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
 
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
@@ -200,7 +200,7 @@ class TestVideoProviderRegistry:
                 return [wrapped]
             return []
 
-        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        monkeypatch.setattr("poindexter.plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
         providers = get_video_providers()
@@ -214,7 +214,7 @@ class TestVideoProviderRegistry:
     def test_get_core_samples_includes_video_providers_key(self):
         """``get_core_samples()`` must surface the video_providers list
         so dispatchers can merge entry-point + core-sample sources."""
-        from plugins.registry import get_core_samples
+        from poindexter.plugins.registry import get_core_samples
 
         samples = get_core_samples()
         assert "video_providers" in samples

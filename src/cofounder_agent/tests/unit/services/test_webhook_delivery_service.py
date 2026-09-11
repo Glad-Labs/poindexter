@@ -479,7 +479,7 @@ class TestDeadLetterEscalation:
             event_type="task.failed",
             delivery_attempts=MAX_RETRIES - 1,
         )
-        with patch("utils.findings.emit_finding") as mock_emit:
+        with patch("poindexter.utils.findings.emit_finding") as mock_emit:
             await self.svc._deliver_event(row)
 
         mock_emit.assert_called_once()
@@ -495,7 +495,7 @@ class TestDeadLetterEscalation:
         # delivery_attempts == 0 → new total is 1, still < MAX_RETRIES, so the
         # row remains retriable and no dead-letter finding should fire.
         row = _make_row(event_id=100, delivery_attempts=0)
-        with patch("utils.findings.emit_finding") as mock_emit:
+        with patch("poindexter.utils.findings.emit_finding") as mock_emit:
             await self.svc._deliver_event(row)
 
         mock_emit.assert_not_called()
@@ -505,7 +505,7 @@ class TestDeadLetterEscalation:
         """An emit_finding error must never propagate out of the delivery path."""
         row = _make_row(event_id=101, delivery_attempts=MAX_RETRIES - 1)
         with patch(
-            "utils.findings.emit_finding",
+            "poindexter.utils.findings.emit_finding",
             side_effect=RuntimeError("audit pool down"),
         ):
             # Should NOT raise.

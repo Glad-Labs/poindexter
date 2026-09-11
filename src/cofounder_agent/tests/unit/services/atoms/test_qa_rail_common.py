@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms._qa_rail_common import (
+from poindexter.modules.content.atoms._qa_rail_common import (
     aggregate_rail_reviews,
     missing_required_gates,
     reviewer_to_dict,
@@ -189,7 +189,7 @@ class TestMissingRequiredGates:
         assert missing_required_gates(self._passing_reviews(), {}) == []
 
 
-from modules.content.atoms._qa_rail_common import is_rescuable_reject
+from poindexter.modules.content.atoms._qa_rail_common import is_rescuable_reject
 
 
 @pytest.mark.unit
@@ -367,7 +367,7 @@ class TestIsRescuableReject:
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from modules.content.atoms._qa_rail_common import (
+from poindexter.modules.content.atoms._qa_rail_common import (
     GateStatesUnavailable,
     resolve_gate_states,
 )
@@ -601,7 +601,7 @@ class _RerunFakeQA:
 
 
 def _review(reviewer: str, approved: bool = True, score: float = 85.0):
-    from modules.content.multi_model_qa import ReviewerResult
+    from poindexter.modules.content.multi_model_qa import ReviewerResult
 
     return ReviewerResult(
         reviewer=reviewer, approved=approved, score=score,
@@ -611,7 +611,7 @@ def _review(reviewer: str, approved: bool = True, score: float = 85.0):
 
 @pytest.mark.asyncio
 async def test_rerun_recovers_mapped_rails_and_skips_unmapped():
-    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+    from poindexter.modules.content.atoms._qa_rail_common import rerun_missing_rails
 
     _RerunFakeQA.marked = []
     qa = _RerunFakeQA(topic=_review("topic_delivery"))
@@ -629,7 +629,7 @@ async def test_rerun_recovers_mapped_rails_and_skips_unmapped():
 
 @pytest.mark.asyncio
 async def test_rerun_topic_delivery_without_topic_is_structural_not_flake():
-    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+    from poindexter.modules.content.atoms._qa_rail_common import rerun_missing_rails
 
     qa = _RerunFakeQA(topic=_review("topic_delivery"))
     late = await rerun_missing_rails(
@@ -642,7 +642,7 @@ async def test_rerun_topic_delivery_without_topic_is_structural_not_flake():
 @pytest.mark.asyncio
 async def test_rerun_preserves_a_vetoing_verdict():
     """The retry recovers the rail's verdict, whatever it is — never a pass."""
-    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+    from poindexter.modules.content.atoms._qa_rail_common import rerun_missing_rails
 
     qa = _RerunFakeQA(topic=_review("topic_delivery", approved=False, score=20.0))
     late = await rerun_missing_rails(
@@ -654,7 +654,7 @@ async def test_rerun_preserves_a_vetoing_verdict():
 
 @pytest.mark.asyncio
 async def test_rerun_critic_unpacks_tuple_and_exception_skips():
-    from modules.content.atoms._qa_rail_common import rerun_missing_rails
+    from poindexter.modules.content.atoms._qa_rail_common import rerun_missing_rails
 
     ok = _RerunFakeQA(critic=_review("ollama_critic"))
     late = await rerun_missing_rails(

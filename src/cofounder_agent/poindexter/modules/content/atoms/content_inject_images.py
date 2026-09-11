@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Inject images and clean up the content."""
-    from modules.content.atoms._image_helpers import (
+    from poindexter.modules.content.atoms._image_helpers import (
         cleanup_leaked_descriptions,
         inject_html_image,
         normalize_from_router,

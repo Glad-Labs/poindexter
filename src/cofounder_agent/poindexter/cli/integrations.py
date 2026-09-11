@@ -295,7 +295,7 @@ async def _write_secrets(
     leave the adapter in a half-configured state per
     `feedback_no_silent_defaults`.
     """
-    from plugins.secrets import ensure_pgcrypto, set_secret
+    from poindexter.plugins.secrets import ensure_pgcrypto, set_secret
 
     from ._bootstrap import ensure_secret_key
 
@@ -350,7 +350,7 @@ async def _read_secrets() -> dict[str, str]:
     Used by the smoke-test path; the adapter's normal flow goes
     through SiteConfig.get_secret instead.
     """
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
 
     from ._bootstrap import ensure_secret_key
 

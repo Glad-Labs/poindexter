@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms import qa_programmatic
-from modules.content.content_validator import ValidationIssue, ValidationResult
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.atoms import qa_programmatic
+from poindexter.modules.content.content_validator import ValidationIssue, ValidationResult
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 
 
 class _Cfg:
@@ -107,7 +107,7 @@ class TestQaProgrammaticAtom:
         """Prod baseline: required_to_pass=True → a critical fabrication yields a
         NON-advisory failing review, so qa.aggregate vetoes + rejects."""
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -119,7 +119,7 @@ class TestQaProgrammaticAtom:
 
     async def test_clean_content_passes(self, monkeypatch):
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _clean_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _clean_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -129,7 +129,7 @@ class TestQaProgrammaticAtom:
 
     async def test_warnings_shave_score_without_vetoing(self, monkeypatch):
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _warning_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _warning_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -140,7 +140,7 @@ class TestQaProgrammaticAtom:
     async def test_advisory_when_operator_demotes(self, monkeypatch):
         """required_to_pass=False → advisory=True (no veto), poindexter#454 lever."""
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         out = await qa_programmatic.run(_state())
@@ -151,7 +151,7 @@ class TestQaProgrammaticAtom:
         """Empty gate_states (no DB) → stays required (advisory=False) — fail-closed,
         matching the legacy 'every gate required' default."""
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, {})
         out = await qa_programmatic.run(_state())
@@ -165,7 +165,7 @@ class TestQaProgrammaticAtom:
         def boom(**kw):
             raise RuntimeError("regex exploded")
 
-        monkeypatch.setattr("modules.content.content_validator.validate_content", boom)
+        monkeypatch.setattr("poindexter.modules.content.content_validator.validate_content", boom)
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
         rev = out["qa_rail_reviews"][0]
@@ -182,10 +182,10 @@ class TestQaProgrammaticAtom:
         """End-to-end proof of the C1 fix: a critical fabrication flowing from
         qa.programmatic into the real aggregation produces a REJECT — the gate
         that the #355 cutover silently dropped now bites again."""
-        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -196,10 +196,10 @@ class TestQaProgrammaticAtom:
     async def test_advisory_fabrication_does_not_veto_through_aggregation(self, monkeypatch):
         """When the operator demotes the gate to advisory, the same fabrication
         no longer vetoes (score still factored, but no reject)."""
-        from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+        from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
 
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, _ADVISORY_STATES)
         out = await qa_programmatic.run(_state())
@@ -210,7 +210,7 @@ class TestQaProgrammaticAtom:
         """#661: a known_wrong_fact-only critical sets qa_known_wrong_fact_only on
         state so qa.aggregate can apply the web fact-check rescue."""
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _known_wrong_fact_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _known_wrong_fact_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -222,7 +222,7 @@ class TestQaProgrammaticAtom:
         """A normal fabrication (fake_person) must NOT set the rescue flag —
         only stale-regex known_wrong_fact qualifies for the web rescue."""
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: _fabrication_result()
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
         out = await qa_programmatic.run(_state())
@@ -248,7 +248,7 @@ class TestQaProgrammaticAtom:
             ],
         )
         monkeypatch.setattr(
-            "modules.content.content_validator.validate_content", lambda **kw: two_warnings
+            "poindexter.modules.content.content_validator.validate_content", lambda **kw: two_warnings
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
 

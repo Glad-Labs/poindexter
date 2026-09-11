@@ -58,12 +58,12 @@ class TestInjectTraceContext:
         traceparent — we return None so callers store NULL (today's behavior)."""
         from opentelemetry.context import Context
 
-        from plugins.tracing import inject_trace_context
+        from poindexter.plugins.tracing import inject_trace_context
 
         assert inject_trace_context(context=Context()) is None
 
     def test_returns_carrier_with_traceparent_for_active_span(self):
-        from plugins.tracing import inject_trace_context
+        from poindexter.plugins.tracing import inject_trace_context
 
         carrier = inject_trace_context(context=_ctx_with_span(_TRACE_ID, _SPAN_ID))
 
@@ -78,7 +78,7 @@ class TestExtractTraceContext:
     def test_roundtrip_preserves_trace_and_span_ids(self):
         from opentelemetry import trace as ot
 
-        from plugins.tracing import extract_trace_context, inject_trace_context
+        from poindexter.plugins.tracing import extract_trace_context, inject_trace_context
 
         carrier = inject_trace_context(context=_ctx_with_span(_TRACE_ID, _SPAN_ID))
         assert carrier is not None
@@ -89,7 +89,7 @@ class TestExtractTraceContext:
         assert sc.span_id == _SPAN_ID
 
     def test_none_or_empty_returns_none(self):
-        from plugins.tracing import extract_trace_context
+        from poindexter.plugins.tracing import extract_trace_context
 
         assert extract_trace_context(None) is None
         assert extract_trace_context({}) is None
@@ -100,7 +100,7 @@ class TestExtractTraceContext:
         claim path may hand us the carrier as JSON text — extract must cope."""
         from opentelemetry import trace as ot
 
-        from plugins.tracing import extract_trace_context, inject_trace_context
+        from poindexter.plugins.tracing import extract_trace_context, inject_trace_context
 
         carrier = inject_trace_context(context=_ctx_with_span(_TRACE_ID, _SPAN_ID))
         assert carrier is not None
@@ -113,7 +113,7 @@ class TestExtractTraceContext:
     def test_malformed_carrier_returns_none(self):
         """A non-JSON string or junk dict must not raise — return None and let
         the consumer start a fresh root span."""
-        from plugins.tracing import extract_trace_context
+        from poindexter.plugins.tracing import extract_trace_context
 
         assert extract_trace_context("not-json{") is None
         # A dict with no traceparent yields a context with no valid span.
@@ -137,7 +137,7 @@ class TestStampLangfuseTraceUrl:
     """
 
     def test_builds_url_and_stamps_attributes(self):
-        from plugins.tracing import stamp_langfuse_trace_url
+        from poindexter.plugins.tracing import stamp_langfuse_trace_url
 
         span = _RecordingSpan(_TRACE_ID)
         url = stamp_langfuse_trace_url(span, "http://localhost:3010")
@@ -147,7 +147,7 @@ class TestStampLangfuseTraceUrl:
         assert span.attributes["langfuse.trace_id"] == _TRACE_HEX
 
     def test_normalizes_trailing_slash_on_host(self):
-        from plugins.tracing import stamp_langfuse_trace_url
+        from poindexter.plugins.tracing import stamp_langfuse_trace_url
 
         span = _RecordingSpan(_TRACE_ID)
         url = stamp_langfuse_trace_url(span, "http://localhost:3010/")
@@ -157,7 +157,7 @@ class TestStampLangfuseTraceUrl:
 
     def test_returns_none_without_host(self):
         """No Langfuse host configured -> nothing to link to. Stamp nothing."""
-        from plugins.tracing import stamp_langfuse_trace_url
+        from poindexter.plugins.tracing import stamp_langfuse_trace_url
 
         span = _RecordingSpan(_TRACE_ID)
         assert stamp_langfuse_trace_url(span, "") is None
@@ -167,7 +167,7 @@ class TestStampLangfuseTraceUrl:
     def test_returns_none_for_invalid_context(self):
         """trace_id == 0 is the OTel INVALID context (tracing disabled /
         sampled out) — no real trace to deep-link, so stamp nothing."""
-        from plugins.tracing import stamp_langfuse_trace_url
+        from poindexter.plugins.tracing import stamp_langfuse_trace_url
 
         span = _RecordingSpan(0)
         assert stamp_langfuse_trace_url(span, "http://localhost:3010") is None
@@ -176,7 +176,7 @@ class TestStampLangfuseTraceUrl:
     def test_returns_none_for_noop_span(self):
         """A span lacking ``get_span_context`` is the SDK-absent noop span —
         guard with getattr, never raise."""
-        from plugins.tracing import stamp_langfuse_trace_url
+        from poindexter.plugins.tracing import stamp_langfuse_trace_url
 
         class _NoCtxSpan:
             def set_attribute(self, *_a, **_k):

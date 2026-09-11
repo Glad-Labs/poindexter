@@ -23,7 +23,7 @@ import asyncpg
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src" / "cofounder_agent"))
 
-from plugins.secrets import set_secret  # noqa: E402
+from poindexter.plugins.secrets import set_secret  # noqa: E402
 
 
 def _resolve_db_url() -> str:

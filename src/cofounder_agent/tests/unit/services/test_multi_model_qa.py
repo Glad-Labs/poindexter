@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.content_validator import ValidationIssue, ValidationResult
-from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
+from poindexter.modules.content.content_validator import ValidationIssue, ValidationResult
+from poindexter.modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
 from poindexter.services.site_config import SiteConfig
 from tests.unit._fake_platform import FakePlatform
 
@@ -156,7 +156,7 @@ def qa():
 class TestValidatorPasses:
     async def test_passes_validator_runs_cloud_review(self, qa):
         """When programmatic validator passes, cloud review should execute."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -168,7 +168,7 @@ class TestValidatorPasses:
 
     async def test_all_pass_approved(self, qa):
         """When all reviewers pass and score >= 70, result is approved."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -184,7 +184,7 @@ class TestValidatorPasses:
 class TestValidatorFails:
     async def test_critical_issues_reject_immediately(self, qa):
         """Content with critical validator issues should be rejected without cloud review."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_failing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_failing_validation()):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.approved is False
@@ -196,7 +196,7 @@ class TestValidatorFails:
     async def test_rejected_score_reflects_penalty(self, qa):
         """Rejected content should have score reduced by penalty."""
         failing = _failing_validation()
-        with patch("modules.content.multi_model_qa.validate_content", return_value=failing):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=failing):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.final_score == max(0, 100 - failing.score_penalty)
@@ -204,7 +204,7 @@ class TestValidatorFails:
     async def test_validation_result_included(self, qa):
         """The ValidationResult should be attached to the MultiModelResult."""
         failing = _failing_validation()
-        with patch("modules.content.multi_model_qa.validate_content", return_value=failing):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=failing):
             result = await qa.review(BAD_TITLE, BAD_CONTENT, "revenue")
 
         assert result.validation is not None
@@ -219,7 +219,7 @@ class TestValidatorFails:
 class TestWeightedScore:
     async def test_weighted_average_programmatic_40_cloud_60(self, qa):
         """Score should be 40% programmatic + 60% cloud reviewer."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=80.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -230,7 +230,7 @@ class TestWeightedScore:
 
     async def test_low_cloud_score_can_block_approval(self, qa):
         """Even if validator passes, a low cloud score (<70) blocks approval."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=False, score=30.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -245,7 +245,7 @@ class TestWeightedScore:
 
 class TestAllReviewersPass:
     async def test_high_scores_approved(self, qa):
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=95.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -253,7 +253,7 @@ class TestAllReviewersPass:
         assert all(r.approved for r in result.reviews)
 
     async def test_result_has_summary(self, qa):
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -270,7 +270,7 @@ class TestAllReviewersPass:
 class TestOllamaDown:
     async def test_ollama_unhealthy_skips_to_fallback(self, qa):
         """When Ollama is down, review should still complete (fallback or skip)."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
                 # Also patch Gemini to be unavailable (no API key)
                 with patch.dict("os.environ", {}, clear=False):
@@ -287,7 +287,7 @@ class TestOllamaDown:
 
     async def test_ollama_exception_handled_gracefully(self, qa):
         """If the dispatch seam raises, the review should still complete."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             mock_dispatch = AsyncMock(side_effect=Exception("connection refused"))
             with patch.object(MultiModelQA, "_dispatch_llm", mock_dispatch):
                 with patch.dict("os.environ", {}, clear=False):
@@ -302,7 +302,7 @@ class TestOllamaDown:
 
     async def test_only_validator_when_no_cloud(self, qa):
         """With no cloud reviewers, approval is based on validator + score threshold."""
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
                 with patch.dict("os.environ", {}, clear=False):
                     import os
@@ -489,7 +489,7 @@ class TestConsistencyGateVetoPolicy:
     async def test_moderate_inconsistency_does_not_veto(self, qa):
         """A consistency gate with approved=False but score 60 should NOT
         reject an article that otherwise scores high."""
-        from modules.content.multi_model_qa import ReviewerResult
+        from poindexter.modules.content.multi_model_qa import ReviewerResult
 
         async def _consistency_moderate(_content):
             return ReviewerResult(
@@ -502,7 +502,7 @@ class TestConsistencyGateVetoPolicy:
 
         qa._check_internal_consistency = _consistency_moderate  # type: ignore[method-assign]
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -513,7 +513,7 @@ class TestConsistencyGateVetoPolicy:
     async def test_unambiguous_inconsistency_still_vetoes(self, qa):
         """A consistency gate with a clearly low score (< 50) should still
         veto — real contradictions should manifest in the gate's own score."""
-        from modules.content.multi_model_qa import ReviewerResult
+        from poindexter.modules.content.multi_model_qa import ReviewerResult
 
         async def _consistency_low(_content):
             return ReviewerResult(
@@ -526,7 +526,7 @@ class TestConsistencyGateVetoPolicy:
 
         qa._check_internal_consistency = _consistency_low  # type: ignore[method-assign]
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -566,7 +566,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(score=80.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -589,7 +589,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(score=75.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -612,7 +612,7 @@ class TestSettingsOverrides:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=60.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -643,7 +643,7 @@ class TestSettingsOverrides:
 
         qa._review_with_cloud_model = _capture_review
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Lane B contract: review() no longer threads pipeline_critic_model
@@ -704,7 +704,7 @@ class TestCriticModelDistinctFromWriter:
         with patch.object(
             MultiModelQA, "_resolve_critic_model", _REAL_RESOLVE_CRITIC_MODEL,
         ), patch(
-            "modules.content.multi_model_qa.notify_operator", AsyncMock(),
+            "poindexter.modules.content.multi_model_qa.notify_operator", AsyncMock(),
         ):
             with pytest.raises(RuntimeError):
                 await qa._resolve_critic_model(
@@ -728,7 +728,7 @@ class TestResearchSourcesThreading:
 
         qa._review_with_cloud_model = _capture
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(
                 GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC,
                 research_sources="Source 1: github.com/example\nSource 2: arxiv.org/abs/1234",
@@ -746,7 +746,7 @@ class TestResearchSourcesThreading:
 
         qa._review_with_cloud_model = _capture
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert captured["research_sources"] is None
@@ -770,7 +770,7 @@ class TestCriticSkippedFinalScore:
             passed=True, issues=[], score_penalty=0,
         )
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=validator_passing_high):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=validator_passing_high):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Validator score is 100 - 0 = 100
@@ -796,7 +796,7 @@ class TestCriticSkippedFinalScore:
             score_penalty=15,
         )
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=validator_with_warnings):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=validator_with_warnings):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.final_score == 85.0  # 100 - 15
@@ -821,7 +821,7 @@ class TestCriticSkippedFinalScore:
             score_penalty=40,  # 100 - 40 = 60, below 70 threshold
         )
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=heavy_penalty):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=heavy_penalty):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.final_score == 60.0
@@ -1004,7 +1004,7 @@ class TestWarningQAPenalty:
         qa._check_internal_consistency = _skip_gate
 
         validation = _validation_with_warnings(9)
-        with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=validation), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
@@ -1033,7 +1033,7 @@ class TestWarningQAPenalty:
         qa._check_topic_delivery = _skip_gate
         qa._check_internal_consistency = _skip_gate
 
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
@@ -1062,7 +1062,7 @@ class TestWarningQAPenalty:
 
         # Only 4 warnings but 5 pt penalty = 20 pt drop. Base ~80 → ~60.
         validation = _validation_with_warnings(4)
-        with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=validation), \
              patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
@@ -1164,7 +1164,7 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
         dispatch_mock = _mock_dispatch(approved=True, score=90.0)
 
         with patch(
-            "modules.content.multi_model_qa.validate_content",
+            "poindexter.modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch.object(MultiModelQA, "_dispatch_llm", dispatch_mock,
@@ -1208,7 +1208,7 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
         )
 
         with patch(
-            "modules.content.multi_model_qa.validate_content",
+            "poindexter.modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0),
@@ -1250,7 +1250,7 @@ class TestQAGatesAdvisoryDoesNotVeto:
         # must still come back approved=True (validator score 100,
         # weighted final score >= 70 threshold).
         with patch(
-            "modules.content.multi_model_qa.validate_content",
+            "poindexter.modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=False, score=30.0),
@@ -1298,7 +1298,7 @@ class TestQAGatesAdvisoryDoesNotVeto:
         # Run twice — once with critic score 90, once with 30. Final
         # scores must differ (advisory still affects the weighted avg).
         with patch(
-            "modules.content.multi_model_qa.validate_content",
+            "poindexter.modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0),
@@ -2139,7 +2139,7 @@ class TestQaPassCompletedShapeValidation:
         )
         qa._check_topic_delivery = _skip_gate  # type: ignore[method-assign]
         qa._check_internal_consistency = _skip_gate  # type: ignore[method-assign]
-        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+        with patch("poindexter.modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
             with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0)):
                 await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 

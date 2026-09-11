@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.url_validation import UrlValidationStage
-from plugins.stage import Stage
+from poindexter.modules.content.stages.url_validation import UrlValidationStage
+from poindexter.plugins.stage import Stage
 
 
 class TestProtocol:

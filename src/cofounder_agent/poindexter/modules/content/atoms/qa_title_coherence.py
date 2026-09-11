@@ -48,11 +48,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
-from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
-from plugins.atom import AtomMeta, FieldSpec
-from utils.json_extract import extract_json_object
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+from poindexter.plugins.atom import AtomMeta, FieldSpec
+from poindexter.utils.json_extract import extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ def _degraded(reason: str) -> None:
     run must never render as a score) and the disappearance is made loud via
     the shared ``qa_rail_degraded`` finding kind."""
     logger.warning("[qa.title_coherence] no measurement — %s", reason)
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="qa.title_coherence",

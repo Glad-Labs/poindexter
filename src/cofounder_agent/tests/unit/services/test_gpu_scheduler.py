@@ -946,7 +946,7 @@ class TestPropertiesAndConfig:
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("db pool exhausted"))
 
         with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
-             patch("utils.findings.emit_finding") as mock_emit:
+             patch("poindexter.utils.findings.emit_finding") as mock_emit:
             result = gpu_scheduler._cfg_int("threshold", 42)
 
         # Still falls back to default — scheduler can't crash on config-read failure.
@@ -969,7 +969,7 @@ class TestPropertiesAndConfig:
         fake_sc.get_float = MagicMock(side_effect=RuntimeError("connection refused"))
 
         with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
-             patch("utils.findings.emit_finding") as mock_emit:
+             patch("poindexter.utils.findings.emit_finding") as mock_emit:
             result = gpu_scheduler._cfg_float("electricity_rate_kwh_usd", 0.12)
 
         assert result == 0.12
@@ -992,7 +992,7 @@ class TestPropertiesAndConfig:
         fake_sc.get_int = MagicMock(side_effect=RuntimeError("simulated"))
 
         with patch.object(gpu_scheduler, "_sc", return_value=fake_sc), \
-             patch("utils.findings.emit_finding",
+             patch("poindexter.utils.findings.emit_finding",
                    side_effect=RuntimeError("audit_log not ready")):
             result = gpu_scheduler._cfg_int("threshold", 30)
 

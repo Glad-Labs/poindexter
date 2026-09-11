@@ -33,9 +33,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.settings_read_sink import record_read
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ class CheckMemoryStalenessJob:
                 # finding (a different channel that persists to the Findings
                 # board even when Discord itself is down) rather than a debug
                 # log the prod level never ships.
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="services.jobs.check_memory_staleness",
                     kind="memory_stale_notify_failed",
@@ -233,7 +233,7 @@ class CheckMemoryStalenessJob:
                 # The cooldown dedup map wasn't saved — the next run reads the
                 # stale map and can re-alert (duplicate pages) or lose track of
                 # what already fired. Surface it instead of a debug log.
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 emit_finding(
                     source="services.jobs.check_memory_staleness",
                     kind="memory_stale_state_persist_failed",

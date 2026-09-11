@@ -55,9 +55,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from modules.content.atoms._pool import resolve_pool
-from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +324,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not offenders and not checked_anything:
         return {}
 
-    from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
+    from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 
     penalty = _DEFAULT_PENALTY
     try:

@@ -45,7 +45,7 @@ from contextlib import suppress
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -821,7 +821,7 @@ def _build_rerank_retriever_class():
                     # context, and losing a retrieval query over a telemetry
                     # import would be worse than losing the finding.
                     with suppress(Exception):  # silent-ok: telemetry only, ERROR already logged
-                        from utils.findings import emit_finding
+                        from poindexter.utils.findings import emit_finding
 
                         emit_finding(
                             source="rag_engine",

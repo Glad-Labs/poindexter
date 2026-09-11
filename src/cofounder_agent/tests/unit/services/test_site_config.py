@@ -259,7 +259,7 @@ class TestGetSecret:
         pool.acquire = lambda: acquire_ctx
 
         cfg = SiteConfig(pool=pool)
-        with patch("plugins.secrets.get_secret",
+        with patch("poindexter.plugins.secrets.get_secret",
                    new=AsyncMock(return_value="s3cret-value")):
             val = await cfg.get_secret("api_key")
         assert val == "s3cret-value"
@@ -273,7 +273,7 @@ class TestGetSecret:
         pool.acquire = lambda: acquire_ctx
         cfg = SiteConfig(pool=pool)
 
-        with patch("plugins.secrets.get_secret",
+        with patch("poindexter.plugins.secrets.get_secret",
                    new=AsyncMock(return_value=None)):
             with patch.dict(os.environ, {"MY_SECRET_KEY": "from-env"}):
                 val = await cfg.get_secret("my_secret_key")
@@ -338,7 +338,7 @@ class TestGetSecret:
         pool.acquire = lambda: acquire_ctx
         cfg = SiteConfig(pool=pool)
 
-        with patch("plugins.secrets.get_secret",
+        with patch("poindexter.plugins.secrets.get_secret",
                    new=AsyncMock(return_value="")):
             with patch.dict(os.environ, {"EMPTY_KEY": "from-env"}):
                 val = await cfg.get_secret("empty_key", default="default-x")

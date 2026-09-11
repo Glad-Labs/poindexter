@@ -21,8 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.registry import clear_registry_cache, get_video_providers
-from plugins.video_provider import VideoProvider, VideoResult
+from poindexter.plugins.registry import clear_registry_cache, get_video_providers
+from poindexter.plugins.video_provider import VideoProvider, VideoResult
 from poindexter.services.video_providers.wan2_1 import (
     Wan21Provider,
     _resolve_negative,
@@ -687,7 +687,7 @@ class TestPluginDiscovery:
         """
         clear_registry_cache()
         try:
-            from plugins.registry import get_core_samples
+            from poindexter.plugins.registry import get_core_samples
             ep_providers = get_video_providers()
             sample_providers = get_core_samples().get("video_providers", [])
             all_providers = list(ep_providers) + list(sample_providers)

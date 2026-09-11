@@ -14,8 +14,8 @@ import logging
 import re
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.exception_format import describe_exception
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +112,13 @@ def ensure_blank_line_before_lists(content: str) -> str:
 # content_validator documents the strip-here/detect-there pairing against these
 # names. isort splits this into one statement per name because of the per-name
 # suppression comments below; that is cosmetic and the split is stable.
-from modules.content.atoms._scaffold_helpers import (  # noqa: E402
+from poindexter.modules.content.atoms._scaffold_helpers import (  # noqa: E402
     FIRST_HEADING_RE as _FIRST_HEADING_RE,  # noqa: F401
 )
-from modules.content.atoms._scaffold_helpers import (
+from poindexter.modules.content.atoms._scaffold_helpers import (
     SCAFFOLD_TELL_RE as _SCAFFOLD_TELL_RE,  # noqa: F401
 )
-from modules.content.atoms._scaffold_helpers import (
+from poindexter.modules.content.atoms._scaffold_helpers import (
     strip_leaked_planning_scaffold,
 )
 
@@ -164,7 +164,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # blocked by its own telemetry. Same fix as writer_core's
         # _build_real_slug_allowlist (OLD-debt batch 1); this is the atom-side
         # twin that runs on the graph_def path.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         logger.warning(
             "[content.normalize_draft] failed to build slug allowlist: %s", exc

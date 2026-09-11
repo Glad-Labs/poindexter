@@ -23,8 +23,8 @@ from poindexter.services.site_config import SiteConfig
 
 _SC = SiteConfig()
 
-from modules.content import content_validator as cv
-from modules.content.content_validator import (
+from poindexter.modules.content import content_validator as cv
+from poindexter.modules.content.content_validator import (
     _extract_library_candidates,
     _is_known_reference,
     _load_known_list,
@@ -261,33 +261,33 @@ class TestVerifyContentUrlsUserAgent:
 class TestIsKnownReference:
     def test_ollama_model_with_tag_suffix(self):
         """qwen3:7b should match 'qwen3' from ollama-models.txt."""
-        with patch("modules.content.content_validator._get_ollama_names",
+        with patch("poindexter.modules.content.content_validator._get_ollama_names",
                    return_value={"qwen3"}), \
-             patch("modules.content.content_validator._get_stdlib_names",
+             patch("poindexter.modules.content.content_validator._get_stdlib_names",
                    return_value=set()), \
-             patch("modules.content.content_validator._get_pypi_names",
+             patch("poindexter.modules.content.content_validator._get_pypi_names",
                    return_value=set()):
             # The norm_name comes through _normalize_pkg, then suffix-stripped
             assert _is_known_reference("qwen3:7b") is True
 
     def test_unknown_name_returns_false(self):
-        with patch("modules.content.content_validator._get_ollama_names",
+        with patch("poindexter.modules.content.content_validator._get_ollama_names",
                    return_value=set()), \
-             patch("modules.content.content_validator._get_stdlib_names",
+             patch("poindexter.modules.content.content_validator._get_stdlib_names",
                    return_value=set()), \
-             patch("modules.content.content_validator._get_pypi_names",
+             patch("poindexter.modules.content.content_validator._get_pypi_names",
                    return_value=set()):
             assert _is_known_reference("totally-fake-pkg") is False
 
     def test_stdlib_match_returns_true(self):
-        with patch("modules.content.content_validator._get_stdlib_names",
+        with patch("poindexter.modules.content.content_validator._get_stdlib_names",
                    return_value={"asyncio"}):
             assert _is_known_reference("asyncio") is True
 
     def test_pypi_match_returns_true(self):
-        with patch("modules.content.content_validator._get_stdlib_names",
+        with patch("poindexter.modules.content.content_validator._get_stdlib_names",
                    return_value=set()), \
-             patch("modules.content.content_validator._get_pypi_names",
+             patch("poindexter.modules.content.content_validator._get_pypi_names",
                    return_value={"requests"}):
             assert _is_known_reference("requests") is True
 
@@ -336,7 +336,7 @@ class TestFindHallucinatedReferences:
 
     def test_whitelist_entries_skipped(self):
         """Items in HALLUCINATION_WHITELIST are not returned."""
-        from modules.content.content_validator import _HALLUCINATION_WHITELIST
+        from poindexter.modules.content.content_validator import _HALLUCINATION_WHITELIST
         if not _HALLUCINATION_WHITELIST:
             pytest.skip("whitelist empty in this build")
         sample_white = next(iter(_HALLUCINATION_WHITELIST))
@@ -470,7 +470,7 @@ class TestHallucinationWhitelistAdditions:
 class TestTitleDiversity:
     def test_banned_opener_emits_warning(self):
         """A title starting with 'Mastering' should produce a title_diversity warning."""
-        from modules.content.content_validator import validate_content
+        from poindexter.modules.content.content_validator import validate_content
         result = validate_content(
             title="Mastering Python Async",
             content="A long enough body. " * 100,
@@ -483,7 +483,7 @@ class TestTitleDiversity:
             assert "mastering" in diversity[0].description.lower()
 
     def test_normal_title_no_warning(self):
-        from modules.content.content_validator import validate_content
+        from poindexter.modules.content.content_validator import validate_content
         result = validate_content(
             title="Postgres LISTEN/NOTIFY in production",
             content="A long enough body. " * 100,

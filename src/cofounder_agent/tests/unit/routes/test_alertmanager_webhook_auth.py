@@ -26,8 +26,8 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.utils.route_utils import get_database_dependency
 from routes.alertmanager_webhook_routes import router
-from utils.route_utils import get_database_dependency
 
 
 class _FakeConn:
@@ -78,7 +78,7 @@ class TestBearerTokenAuth:
     def test_token_mismatch_returns_401(self):
         client = _build_app()
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value="the-real-token-ABC123"),
         ):
             resp = client.post(
@@ -91,7 +91,7 @@ class TestBearerTokenAuth:
     def test_correct_token_passes(self):
         client = _build_app()
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value="correct-token"),
         ), patch(
             "routes.alertmanager_webhook_routes._ensure_table",
@@ -109,7 +109,7 @@ class TestBearerTokenAuth:
         unsigned webhooks."""
         client = _build_app()
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value=""),
         ):
             resp = client.post(
@@ -124,7 +124,7 @@ class TestBearerTokenAuth:
         doesn't exist at all. Also fail-closed."""
         client = _build_app()
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value=None),
         ):
             resp = client.post(
@@ -174,7 +174,7 @@ class TestOAuthJWT:
         jwt_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake-sig"
 
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_boom),
         ), patch(
             "poindexter.services.auth.oauth_issuer.verify_token",
@@ -209,7 +209,7 @@ class TestOAuthJWT:
         jwt_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.fake"
 
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_boom),
         ), patch(
             "poindexter.services.auth.oauth_issuer.verify_token",
@@ -230,7 +230,7 @@ class TestOAuthJWT:
         client = _build_app()
 
         with patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(return_value="legacy-static-token-abc123"),
         ), patch(
             "routes.alertmanager_webhook_routes._ensure_table",

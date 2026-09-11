@@ -19,7 +19,7 @@ from typing import Any
 
 import asyncpg
 
-from utils.content_formatting import (
+from poindexter.utils.content_formatting import (
     convert_markdown_to_html,
     generate_excerpt_from_content,
     map_featured_image_to_coverimage,

@@ -19,8 +19,8 @@ from fastapi.testclient import TestClient
 import poindexter.services.chat_agent as chat_agent
 import poindexter.services.chat_conversation_store as store_module
 from middleware.api_token_auth import verify_api_token
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from routes.chat_routes import router
-from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 
 class FakeSiteConfig:

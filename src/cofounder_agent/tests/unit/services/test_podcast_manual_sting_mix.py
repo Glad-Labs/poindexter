@@ -179,7 +179,7 @@ class TestFailSoft:
         """OSS default — nothing pinned, so silence is correct, not a downgrade."""
         svc = PodcastService(output_dir=tmp_path, site_config=_sc())
         findings: list[dict[str, Any]] = []
-        import utils.findings as uf
+        import poindexter.utils.findings as uf
         monkeypatch.setattr(uf, "emit_finding", lambda **kw: findings.append(kw))
 
         with patch.object(svc, "_generate_with_voice", _dry_render()):
@@ -196,7 +196,7 @@ class TestFailSoft:
             site_config=_sc(podcast_sting_file_path=str(tmp_path / "typo.wav")),
         )
         findings: list[dict[str, Any]] = []
-        import utils.findings as uf
+        import poindexter.utils.findings as uf
         monkeypatch.setattr(uf, "emit_finding", lambda **kw: findings.append(kw))
 
         with patch.object(svc, "_generate_with_voice", _dry_render()):
@@ -222,7 +222,7 @@ class TestFailSoft:
             return None
 
         import poindexter.services.podcast_sting_mixer as mixer
-        import utils.findings as uf
+        import poindexter.utils.findings as uf
         monkeypatch.setattr(mixer, "mix_intro_outro", fake_mix)
         monkeypatch.setattr(uf, "emit_finding", lambda **kw: findings.append(kw))
 

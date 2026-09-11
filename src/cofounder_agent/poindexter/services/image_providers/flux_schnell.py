@@ -46,7 +46,7 @@ from typing import Any
 
 import httpx
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
 # set_http_client() at startup. ``_generate`` prefers it so the

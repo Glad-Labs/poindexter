@@ -75,7 +75,7 @@ def affiliate_group() -> None:
 @click.option("--platform", default="", help="Free-text tracking label (e.g. Amazon, direct).")
 def add_cmd(code, keywords, url, display_text, program, category, description, platform):
     """Add or update an affiliate link."""
-    from modules.content.affiliate_links import add_link
+    from poindexter.modules.content.affiliate_links import add_link
 
     async def _go():
         pool = await _connect()
@@ -111,7 +111,7 @@ def keyword_group() -> None:
 )
 def keyword_add_cmd(code, keywords):
     """Append match phrases to an existing link (idempotent)."""
-    from modules.content.affiliate_links import add_keywords
+    from poindexter.modules.content.affiliate_links import add_keywords
 
     async def _go():
         pool = await _connect()
@@ -139,7 +139,7 @@ def keyword_add_cmd(code, keywords):
 )
 def keyword_rm_cmd(code, keywords):
     """Remove match phrases from a link (never the last one)."""
-    from modules.content.affiliate_links import remove_keywords
+    from poindexter.modules.content.affiliate_links import remove_keywords
 
     async def _go():
         pool = await _connect()
@@ -159,7 +159,7 @@ def keyword_rm_cmd(code, keywords):
 @click.option("--all", "show_all", is_flag=True, help="Include inactive links.")
 def list_cmd(show_all):
     """List affiliate links (active only, unless --all)."""
-    from modules.content.affiliate_links import list_active, list_all
+    from poindexter.modules.content.affiliate_links import list_active, list_all
 
     async def _go():
         pool = await _connect()
@@ -203,7 +203,7 @@ def disable_cmd(code):
 
 
 def _set_active(code, active):
-    from modules.content.affiliate_links import set_active
+    from poindexter.modules.content.affiliate_links import set_active
 
     async def _go():
         pool = await _connect()
@@ -222,7 +222,7 @@ def _set_active(code, active):
 
 
 def _set_active_all(active: bool):
-    from modules.content.affiliate_links import list_all, set_active
+    from poindexter.modules.content.affiliate_links import list_all, set_active
 
     async def _go():
         pool = await _connect()
@@ -250,7 +250,7 @@ def _set_active_all(active: bool):
 @click.argument("code")
 def rm_cmd(code):
     """Remove an affiliate link."""
-    from modules.content.affiliate_links import remove_link
+    from poindexter.modules.content.affiliate_links import remove_link
 
     async def _go():
         pool = await _connect()
@@ -273,7 +273,7 @@ def rm_cmd(code):
 @click.option("--force", is_flag=True, help="Overwrite existing rows instead of skipping them.")
 def import_csv_cmd(csv_path, force):
     """Bulk-import affiliate links from a spreadsheet export."""
-    from modules.content.affiliate_import import import_csv
+    from poindexter.modules.content.affiliate_import import import_csv
 
     async def _go():
         pool = await _connect()

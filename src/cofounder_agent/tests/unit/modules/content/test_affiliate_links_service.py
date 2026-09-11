@@ -1,6 +1,6 @@
 """Unit tests for the affiliate-link matcher (pure, no DB)."""
 
-from modules.content.affiliate_links import AffiliateLink, inject_affiliate_links
+from poindexter.modules.content.affiliate_links import AffiliateLink, inject_affiliate_links
 
 M = AffiliateLink(code="mercury", keywords=["Mercury"], url="https://x", display_text="Mercury")
 

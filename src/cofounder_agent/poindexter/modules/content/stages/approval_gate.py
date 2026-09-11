@@ -58,7 +58,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.approval_service import is_gate_enabled, pause_at_gate
 from poindexter.services.logger_config import get_logger
 

@@ -9,7 +9,7 @@ Locks three things a future edit could silently break:
 
 from __future__ import annotations
 
-from plugins.registry import get_core_samples
+from poindexter.plugins.registry import get_core_samples
 from poindexter.services.jobs.findings_alert_router import _delivery_for
 from poindexter.services.jobs.probe_zero_reader_settings import _FINDING_KIND
 from poindexter.services.settings_defaults import DEFAULTS

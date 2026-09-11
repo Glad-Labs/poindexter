@@ -65,7 +65,7 @@ def test_initial_draft_mentions_the_screenshot_marker():
 
 
 def test_describe_screenshot_targets_renders_allowlist():
-    from modules.content.ai_content_generator import _describe_screenshot_targets
+    from poindexter.modules.content.ai_content_generator import _describe_screenshot_targets
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={
@@ -88,7 +88,7 @@ def test_describe_screenshot_targets_tells_writer_to_skip_when_unusable(targets)
     to say "don't use the marker" rather than leave a blank list the model
     fills in with guesses.
     """
-    from modules.content.ai_content_generator import _describe_screenshot_targets
+    from poindexter.modules.content.ai_content_generator import _describe_screenshot_targets
     from poindexter.services.site_config import SiteConfig
 
     sc = None if targets is None else SiteConfig(
@@ -184,7 +184,7 @@ def _gate_sc(**overrides):
 
 
 def test_internal_topic_kind_is_offered_the_allowlist():
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     out = screenshot_targets_for_post(
         _gate_sc(), topic_kind="internal", texts=("Sweep Process Optimization",),
@@ -193,7 +193,7 @@ def test_internal_topic_kind_is_offered_the_allowlist():
 
 
 def test_external_topic_with_no_keyword_is_told_none_for_this_post():
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     out = screenshot_targets_for_post(
         _gate_sc(), topic_kind="external",
@@ -206,7 +206,7 @@ def test_external_topic_with_no_keyword_is_told_none_for_this_post():
 
 def test_keyword_in_topic_qualifies_a_manual_task():
     """No batch lineage (topic_kind=None) — the keyword half still applies."""
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     out = screenshot_targets_for_post(
         _gate_sc(), topic_kind=None, texts=("Building Poindexter's QA rails",),
@@ -215,7 +215,7 @@ def test_keyword_in_topic_qualifies_a_manual_task():
 
 
 def test_keyword_matches_tags_in_the_angle_case_insensitively():
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     out = screenshot_targets_for_post(
         _gate_sc(), topic_kind="external",
@@ -225,7 +225,7 @@ def test_keyword_matches_tags_in_the_angle_case_insensitively():
 
 
 def test_operator_can_widen_kinds_and_keywords():
-    from modules.content.ai_content_generator import is_post_about_this_system
+    from poindexter.modules.content.ai_content_generator import is_post_about_this_system
 
     sc = _gate_sc(
         screenshot_topic_kinds="internal, external",
@@ -240,7 +240,7 @@ def test_operator_can_widen_kinds_and_keywords():
 
 def test_both_csvs_empty_means_never_offered():
     """The explicit off switch — not a blank list the model fills with guesses."""
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     sc = _gate_sc(screenshot_topic_kinds="", screenshot_topic_keywords="")
     out = screenshot_targets_for_post(sc, topic_kind="internal", texts=("poindexter",))
@@ -248,7 +248,7 @@ def test_both_csvs_empty_means_never_offered():
 
 
 def test_no_site_config_is_never_about_this_system():
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
 
     assert "do not use [SCREENSHOT" in screenshot_targets_for_post(
         None, topic_kind="internal", texts=("poindexter",),
@@ -256,7 +256,7 @@ def test_no_site_config_is_never_about_this_system():
 
 
 def test_gate_passes_but_no_targets_configured_still_says_none_configured():
-    from modules.content.ai_content_generator import screenshot_targets_for_post
+    from poindexter.modules.content.ai_content_generator import screenshot_targets_for_post
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={"plugin.image_provider.screenshot.targets": ""})
@@ -266,7 +266,7 @@ def test_gate_passes_but_no_targets_configured_still_says_none_configured():
 
 def test_two_pass_generate_with_context_threads_topic_kind_to_the_gate(monkeypatch):
     """The gate must sit on the writer canonical_blog actually runs."""
-    from modules.content import ai_content_generator as acg
+    from poindexter.modules.content import ai_content_generator as acg
 
     seen = {}
 

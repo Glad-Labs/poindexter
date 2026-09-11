@@ -47,11 +47,11 @@ import shutil
 import tempfile
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 # Reuse the audit-era ffprobe/subprocess helpers rather than reinventing them.
 from poindexter.services.media_quality_service import _probe_duration, _run_argv
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

@@ -256,7 +256,7 @@ class ResolveInternalLinkPlaceholdersStage:
         # Soft import the StageResult dataclass — keeps the module load
         # cycle-free if a future refactor moves it. Mirrors what the
         # other stages do (see e.g. ``replace_inline_images.py``).
-        from plugins.stage import StageResult
+        from poindexter.plugins.stage import StageResult
 
         content = context.get("content") or ""
         if not content:

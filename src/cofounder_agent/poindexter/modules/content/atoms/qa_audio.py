@@ -43,13 +43,13 @@ import re
 import shutil
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 # Reuse subprocess helpers from the audit-era QA service — they handle
 # asyncio subprocess lifecycle and ffprobe/ffmpeg argv composition.
 from poindexter.services.media_quality_service import _probe_duration, _run_argv
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

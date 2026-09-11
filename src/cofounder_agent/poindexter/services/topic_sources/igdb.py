@@ -46,7 +46,7 @@ from typing import Any
 
 import httpx
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 from poindexter.services.topic_sources._filters import classify_category
 
 logger = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ class IGDBSource:
             )
             return []
 
-        from plugins.secrets import get_secret
+        from poindexter.plugins.secrets import get_secret
         async with pool.acquire() as conn:
             client_id = await get_secret(conn, "igdb_twitch_client_id") or ""
             client_secret = await get_secret(conn, "igdb_twitch_client_secret") or ""

@@ -25,7 +25,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from plugins.tap import Document
+from poindexter.plugins.tap import Document
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ methods for embedding posts and brain knowledge triples.
 The ctor used to take ``ollama_client: OllamaClient``. It now takes an
 ``LLMProvider`` instance instead — callers get one via::
 
-    from plugins.registry import get_llm_providers
+    from poindexter.plugins.registry import get_llm_providers
     provider = {p.name: p for p in get_llm_providers()}["ollama_native"]
 
 Batch embedding (``embed_all_posts``) uses the provider's
@@ -24,7 +24,7 @@ round-trip rather than one per chunk.
 import hashlib
 from typing import Any
 
-from plugins.llm_provider import LLMProvider
+from poindexter.plugins.llm_provider import LLMProvider
 from poindexter.services.logger_config import get_logger
 from poindexter.services.taps._chunking import chunk_text as split_into_chunks
 from poindexter.services.taps._chunking import content_hash as chunk_content_hash

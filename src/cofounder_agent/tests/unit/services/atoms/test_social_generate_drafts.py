@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from modules.content.atoms import social_generate_drafts
-from modules.content.atoms.social_generate_drafts import run as drafts_run
+from poindexter.modules.content.atoms import social_generate_drafts
+from poindexter.modules.content.atoms.social_generate_drafts import run as drafts_run
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.social_poster import SocialPost
 

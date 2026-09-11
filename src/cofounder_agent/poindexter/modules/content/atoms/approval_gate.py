@@ -70,9 +70,9 @@ from typing import Any
 
 from langgraph.types import interrupt
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

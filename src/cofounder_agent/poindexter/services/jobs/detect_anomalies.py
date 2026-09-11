@@ -34,9 +34,9 @@ import logging
 import math
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.cost_ledger import API_AXIS_PREDICATE, ELECTRICITY_AXIS_PREDICATE
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ class DetectAnomaliesJob:
 
         # Emit a finding when enough anomalies are present (avoid noise).
         if len(anomalies) >= issue_threshold:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
             body = "## Anomalies Detected\n\n" + "\n".join(
                 f"- **{a['metric']}**: {a['value']} ({a['direction']}, "
                 f"z={a['z_score']}, mean={a['mean']}±{a['stddev']})"

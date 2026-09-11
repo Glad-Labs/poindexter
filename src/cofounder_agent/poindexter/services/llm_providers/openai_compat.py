@@ -41,7 +41,7 @@ from typing import Any
 
 import httpx
 
-from plugins.llm_provider import Completion, Token
+from poindexter.plugins.llm_provider import Completion, Token
 from poindexter.services.cost_guard import is_local_base_url
 
 logger = logging.getLogger(__name__)
@@ -262,7 +262,7 @@ class OpenAICompatProvider:
                     # stream ending naturally, or the caller closing early)
                     # — one finding per stream call, never per malformed line.
                     if malformed_lines:
-                        from utils.findings import emit_finding
+                        from poindexter.utils.findings import emit_finding
 
                         emit_finding(
                             source="llm_providers.openai_compat",

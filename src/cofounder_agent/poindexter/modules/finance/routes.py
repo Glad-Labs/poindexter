@@ -44,14 +44,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from middleware.api_token_auth import verify_api_token
-from modules.finance.mercury_client import (
+from poindexter.modules.finance.mercury_client import (
     MercuryAPIError,
     MercuryAuthError,
     MercuryClient,
 )
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 
@@ -87,7 +87,7 @@ async def _read_mercury_config(
     ``PollMercuryJob.run`` — keeps this route file importable even when
     asyncpg/pgcrypto wiring is degraded in tests.
     """
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(

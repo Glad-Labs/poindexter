@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services.integrations.operator_notify import notify_operator
 from poindexter.services.social_drafts import SocialDraftsService
 from poindexter.services.social_poster import generate_social_posts

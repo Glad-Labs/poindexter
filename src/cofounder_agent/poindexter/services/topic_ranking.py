@@ -91,7 +91,7 @@ async def _embed_text_cached(text: str, *, site_config: SiteConfig) -> list[floa
     threading the param is cache-safe.
     """
     _sc = site_config
-    from plugins.registry import get_all_llm_providers
+    from poindexter.plugins.registry import get_all_llm_providers
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
     if provider is None:
@@ -380,7 +380,7 @@ async def llm_final_score(
     # response often carries several complete, correctly-scored entries before
     # it breaks down; recovering them beats discarding the whole batch. Safe
     # here because top-level entries are independent (one id -> one score).
-    from utils.json_extract import extract_json_object
+    from poindexter.utils.json_extract import extract_json_object
 
     degrade_reason: str | None = None
     parsed = extract_json_object(raw, salvage_truncated=True)
@@ -475,7 +475,7 @@ def _emit_rank_degrade_finding(
     was knowable only by noticing that ``score_breakdown`` was empty. Ten of
     nineteen real calls over 14 days degraded that way with nothing surfaced.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     n = len(omitted) if reason == "partial" else total
     # "partial" is the only reason where some candidates kept a real score;

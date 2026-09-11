@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.atom_registry import _make_stage_runner
 from poindexter.services.pipeline_architect import _wrap_atom
 from poindexter.services.template_runner import _resolve_node_timeout, make_stage_node
@@ -52,7 +52,7 @@ def _stage_node_patches() -> tuple:
     """PluginConfig.load runs before execute(); DB-touching helpers stubbed."""
     enabled_cfg = SimpleNamespace(enabled=True, config={}, get=lambda k, d=None: d)
     return (
-        patch("plugins.config.PluginConfig.load", AsyncMock(return_value=enabled_cfg)),
+        patch("poindexter.plugins.config.PluginConfig.load", AsyncMock(return_value=enabled_cfg)),
         patch("poindexter.services.template_runner._mark_stage_column", AsyncMock()),
         patch("poindexter.services.template_runner._emit_progress", AsyncMock()),
     )
@@ -69,7 +69,7 @@ def test_featured_image_timeout_contains_its_own_retry_budget() -> None:
     Prod settings at the time of the incident. The old hardcoded 300 could not
     contain 2 x 240 + 3, so the second attempt could never even start.
     """
-    from modules.content.stages.source_featured_image import (
+    from poindexter.modules.content.stages.source_featured_image import (
         SourceFeaturedImageStage,
         resolve_stage_timeout_seconds,
     )
@@ -96,7 +96,7 @@ def test_featured_image_timeout_contains_its_own_retry_budget() -> None:
 
 def test_featured_image_budget_scales_with_attempts() -> None:
     """Raising the retry count must raise the node timeout with it."""
-    from modules.content.stages.source_featured_image import (
+    from poindexter.modules.content.stages.source_featured_image import (
         resolve_stage_timeout_seconds,
     )
 
@@ -180,7 +180,7 @@ class _SlowStage:
 async def test_swallowed_timeout_emits_finding() -> None:
     node = make_stage_node(_SlowStage(), pool=None, record_sink=[])
     p1, p2, p3 = _stage_node_patches()
-    with p1, p2, p3, patch("utils.findings.emit_finding") as emit:
+    with p1, p2, p3, patch("poindexter.utils.findings.emit_finding") as emit:
         out = await node({"task_id": "t-1"})
 
     assert out == {}, "non-halting timeout still yields no state updates"
@@ -204,7 +204,7 @@ async def test_clean_stage_emits_no_finding() -> None:
 
     node = make_stage_node(_Fine(), pool=None, record_sink=[])
     p1, p2, p3 = _stage_node_patches()
-    with p1, p2, p3, patch("utils.findings.emit_finding") as emit:
+    with p1, p2, p3, patch("poindexter.utils.findings.emit_finding") as emit:
         out = await node({"task_id": "t-2"})
 
     assert out["content"] == "x"
@@ -219,7 +219,7 @@ async def test_clean_stage_emits_no_finding() -> None:
 async def test_stage_runner_lifts_failure_onto_atom_outcome() -> None:
     runner = _make_stage_runner(_SlowStage(), fallback_pool=None)
     p1, p2, p3 = _stage_node_patches()
-    with p1, p2, p3, patch("utils.findings.emit_finding"):
+    with p1, p2, p3, patch("poindexter.utils.findings.emit_finding"):
         out = await runner({"task_id": "t-3"})
 
     assert out["_atom_outcome"]["ok"] is False

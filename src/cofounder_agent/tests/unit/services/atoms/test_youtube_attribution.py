@@ -16,7 +16,7 @@ attributed with human text.
 
 from __future__ import annotations
 
-from modules.content.atoms._youtube_attribution import (
+from poindexter.modules.content.atoms._youtube_attribution import (
     apply_youtube_attribution,
     find_youtube_urls,
 )

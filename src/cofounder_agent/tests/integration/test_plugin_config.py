@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncpg
 import pytest
 
-from plugins import PluginConfig
+from poindexter.plugins import PluginConfig
 from tests.integration.conftest import requires_real_services
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]

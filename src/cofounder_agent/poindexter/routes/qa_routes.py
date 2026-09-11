@@ -9,7 +9,7 @@ from middleware.api_token_auth import verify_api_token
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.logger_config import get_logger
 from poindexter.services.qa_trend import get_qa_pass_trend
-from utils.route_utils import get_database_dependency
+from poindexter.utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 

@@ -20,8 +20,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
-from modules.content.stages.generate_video_shot_list import (
+from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+from poindexter.modules.content.stages.generate_video_shot_list import (
     _DIRECTOR_MAX_RETRIES_DEFAULT,
     _DIRECTOR_MAX_TOKENS_DEFAULT,
     _DIRECTOR_TIMEOUT_DEFAULT,
@@ -31,7 +31,7 @@ from modules.content.stages.generate_video_shot_list import (
     _resolve_director_think,
     _tolerant_json_loads,
 )
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.gpu_scheduler import media_wait_budget_s
 from schemas.video_shot_list import VideoShotList

@@ -2,7 +2,7 @@
 import pytest
 
 import poindexter.services.pipeline_architect as pa
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 
 def _meta(

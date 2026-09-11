@@ -13,8 +13,8 @@ Targets:
 
 from __future__ import annotations
 
-from modules.content.content_validator import ValidationIssue, ValidationResult
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.content_validator import ValidationIssue, ValidationResult
+from poindexter.modules.content.multi_model_qa import (
     MultiModelResult,
     ReviewerResult,
     format_qa_feedback_from_reviews,
@@ -367,14 +367,14 @@ class TestBuildReviewExcerpt:
     as prose cut mid-word at ``content[:8000]``)."""
 
     def test_short_content_passes_through_untouched(self):
-        from modules.content.multi_model_qa import build_review_excerpt
+        from poindexter.modules.content.multi_model_qa import build_review_excerpt
 
         text, excerpted = build_review_excerpt("Short article. Done.", 24000)
         assert text == "Short article. Done."
         assert excerpted is False
 
     def test_long_content_cut_at_paragraph_boundary_with_marker(self):
-        from modules.content.multi_model_qa import (
+        from poindexter.modules.content.multi_model_qa import (
             REVIEW_EXCERPT_MARKER,
             build_review_excerpt,
         )
@@ -391,7 +391,7 @@ class TestBuildReviewExcerpt:
         assert len(body) <= 2000
 
     def test_no_boundary_falls_back_to_hard_cut_with_marker(self):
-        from modules.content.multi_model_qa import (
+        from poindexter.modules.content.multi_model_qa import (
             REVIEW_EXCERPT_MARKER,
             build_review_excerpt,
         )
@@ -405,8 +405,8 @@ class TestBuildReviewExcerpt:
         """Cross-gate invariant: an excerpt produced for the critic must not
         read as truncated to the #984 detector — the marker line ends
         terminally by construction."""
-        from modules.content.content_validator import detect_truncated_content
-        from modules.content.multi_model_qa import build_review_excerpt
+        from poindexter.modules.content.content_validator import detect_truncated_content
+        from poindexter.modules.content.multi_model_qa import build_review_excerpt
 
         paragraphs = [f"Paragraph {i} with several words in it." for i in range(200)]
         text, _ = build_review_excerpt("\n\n".join(paragraphs), 2000)
@@ -426,7 +426,7 @@ class TestCriticModelCollision:
     deliberation dump at 95/100 that a different judge scored 25 on."""
 
     def _qa(self, **settings):
-        from modules.content.multi_model_qa import MultiModelQA
+        from poindexter.modules.content.multi_model_qa import MultiModelQA
         from poindexter.services.site_config import SiteConfig
 
         return MultiModelQA(
@@ -435,14 +435,14 @@ class TestCriticModelCollision:
         )
 
     def _reset(self):
-        import modules.content.multi_model_qa as mq
+        import poindexter.modules.content.multi_model_qa as mq
         mq._CRITIC_COLLISIONS_SEEN.clear()
 
     def test_collision_with_self_review_pin_emits_finding(self, monkeypatch):
         self._reset()
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         qa = self._qa(
             pipeline_writer_model="anthropic/claude-sonnet-5",
@@ -458,7 +458,7 @@ class TestCriticModelCollision:
         self._reset()
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         qa = self._qa(writer_self_review_model="Gemma-4-31B-IT-QAT:latest")
         qa._warn_on_critic_collision("ollama/gemma-4-31b-it-qat:latest", site="critic")
@@ -468,7 +468,7 @@ class TestCriticModelCollision:
         self._reset()
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         qa = self._qa(
             pipeline_writer_model="anthropic/claude-sonnet-5",
@@ -482,7 +482,7 @@ class TestCriticModelCollision:
         self._reset()
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         qa = self._qa(writer_self_review_model="ollama/gemma-4-31B-it-qat:latest")
         for _ in range(5):

@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from modules.content.stages.source_featured_image import (
+from poindexter.modules.content.stages.source_featured_image import (
     _try_image_gen_featured,
     describe_exception,
 )
@@ -57,15 +57,15 @@ async def _run(render_side_effect, **cfg: Any):
     """Drive _try_image_gen_featured with a stubbed renderer."""
     with (
         patch(
-            "modules.content.stages.source_featured_image._render_image_gen",
+            "poindexter.modules.content.stages.source_featured_image._render_image_gen",
             new=AsyncMock(side_effect=render_side_effect),
         ) as render,
         patch(
-            "modules.content.stages.source_featured_image._build_image_gen_prompt",
+            "poindexter.modules.content.stages.source_featured_image._build_image_gen_prompt",
             new=AsyncMock(return_value="a glowing server rack, flat vector"),
         ),
         patch(
-            "modules.content.stages.source_featured_image._upload_featured_to_r2",
+            "poindexter.modules.content.stages.source_featured_image._upload_featured_to_r2",
             new=AsyncMock(return_value="https://r2.example/img.webp"),
         ),
     ):
@@ -137,7 +137,7 @@ class TestRenderContainsTransientFailures:
         ids=["read-timeout", "connect-error", "server-disconnected"],
     )
     async def test_transport_failures_come_back_as_values(self, exc):
-        from modules.content.stages.source_featured_image import _render_image_gen
+        from poindexter.modules.content.stages.source_featured_image import _render_image_gen
 
         gpu = MagicMock()
         gpu.lock = MagicMock(return_value=AsyncMock())
@@ -164,7 +164,7 @@ class TestRenderContainsTransientFailures:
 
     @pytest.mark.asyncio
     async def test_server_5xx_is_transient(self):
-        from modules.content.stages.source_featured_image import _render_image_gen
+        from poindexter.modules.content.stages.source_featured_image import _render_image_gen
 
         gpu = MagicMock()
         gpu.lock = MagicMock(return_value=AsyncMock())

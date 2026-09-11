@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins import LLMProvider
+from poindexter.plugins import LLMProvider
 from poindexter.services.llm_providers.ollama_native import OllamaNativeProvider
 from poindexter.services.llm_providers.openai_compat import OpenAICompatProvider
 

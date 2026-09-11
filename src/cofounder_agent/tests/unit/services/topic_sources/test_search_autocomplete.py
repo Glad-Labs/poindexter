@@ -321,7 +321,7 @@ class TestShipsInert:
     def test_registered_in_the_plugin_registry(self):
         """Registered through the same public seam the runner reads, so a source
         that exists on disk but was never wired fails here."""
-        from plugins.registry import get_core_samples
+        from poindexter.plugins.registry import get_core_samples
 
         names = {
             getattr(s, "name", None) for s in get_core_samples().get("topic_sources", [])

@@ -24,8 +24,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.exception_format import describe_exception
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

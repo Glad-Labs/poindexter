@@ -89,10 +89,10 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.settings_read_sink import record_read
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

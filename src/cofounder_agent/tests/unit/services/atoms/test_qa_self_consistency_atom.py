@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 # Import will fail until the atom file is created.
-from modules.content.atoms import qa_self_consistency
-from modules.content.atoms._qa_rail_common import aggregate_rail_reviews
-from modules.content.multi_model_qa import MultiModelQA
+from poindexter.modules.content.atoms import qa_self_consistency
+from poindexter.modules.content.atoms._qa_rail_common import aggregate_rail_reviews
+from poindexter.modules.content.multi_model_qa import MultiModelQA
 
 # Advisory-first restore: self_consistency seeded required_to_pass=false.
 _ADVISORY_STATES = {"self_consistency": (True, False)}
@@ -30,7 +30,7 @@ def _capture_findings(monkeypatch) -> list[dict]:
     """Collect emit_finding kwargs. The atom imports emit_finding inside the
     function body, so patching the module attribute intercepts it."""
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls
@@ -87,7 +87,7 @@ class TestQaSelfConsistencyAtom:
         async def mock_evaluate(*, content, topic, site_config):
             return (True, 0.82, "mean_similarity=0.82 >= threshold=0.55")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         out = await qa_self_consistency.run(_state())
@@ -102,7 +102,7 @@ class TestQaSelfConsistencyAtom:
         async def mock_evaluate(*, content, topic, site_config):
             return (False, 0.31, "mean_similarity=0.31 < threshold=0.55")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         out = await qa_self_consistency.run(_state())
@@ -116,7 +116,7 @@ class TestQaSelfConsistencyAtom:
         async def mock_evaluate(*, content, topic, site_config):
             raise RuntimeError("Ollama died")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         # Should not raise
@@ -134,7 +134,7 @@ class TestQaSelfConsistencyAtom:
         async def mock_evaluate(*, content, topic, site_config):
             return (False, 0.31, "mean_similarity=0.31 < threshold=0.55")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         _patch_gates(monkeypatch, _ADVISORY_STATES)
@@ -149,7 +149,7 @@ class TestQaSelfConsistencyAtom:
         async def mock_evaluate(*, content, topic, site_config):
             return (False, 0.20, "mean_similarity=0.20 < threshold=0.55")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         _patch_gates(monkeypatch, _HARD_GATE_STATES)
@@ -176,7 +176,7 @@ class TestNoMeasurement:
         async def mock_evaluate(*, content, topic, site_config):
             return (True, None, reason)
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
 
@@ -287,7 +287,7 @@ class TestNoMeasurement:
         async def mock_evaluate(*, content, topic, site_config):
             return (False, 0.31, "mean_similarity=0.31 < threshold=0.55")
         monkeypatch.setattr(
-            "modules.content.atoms.qa_self_consistency._rail_evaluate",
+            "poindexter.modules.content.atoms.qa_self_consistency._rail_evaluate",
             mock_evaluate,
         )
         out = await qa_self_consistency.run(_state())

@@ -335,7 +335,7 @@ def stub_pr_env(monkeypatch):
     repos configured" branch.
     """
     # Fake plugins.secrets.get_secret returning a token (or empty string).
-    fake_secrets = types.ModuleType("plugins.secrets")
+    fake_secrets = types.ModuleType("poindexter.plugins.secrets")
 
     async def _get_secret(_conn, key):
         if key == "gh_token":
@@ -343,7 +343,7 @@ def stub_pr_env(monkeypatch):
         return None
 
     fake_secrets.get_secret = _get_secret
-    monkeypatch.setitem(sys.modules, "plugins.secrets", fake_secrets)
+    monkeypatch.setitem(sys.modules, "poindexter.plugins.secrets", fake_secrets)
 
     # Fake brain.bootstrap so resolve_database_url returns a sentinel.
     fake_brain = types.ModuleType("brain")

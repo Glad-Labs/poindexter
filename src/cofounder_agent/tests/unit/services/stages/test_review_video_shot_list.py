@@ -69,7 +69,7 @@ def _platform(
 
 @pytest.mark.asyncio
 async def test_revised_list_replaces_original() -> None:
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     revised = _valid_list(source1="wan21")  # reviewer promoted a hero shot
     ctx = {
@@ -94,7 +94,7 @@ async def test_long_review_prefers_video_long_script() -> None:
     """Silent-tail fix: the long review's reference script is the one the
     narration will voice (video_long_script, fallback podcast_script) —
     matching the director and media.render_narration."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     ctx = {
         "title": "T", "content": "C body " * 20,
@@ -120,7 +120,7 @@ async def test_long_review_prefers_video_long_script() -> None:
 
 @pytest.mark.asyncio
 async def test_failure_keeps_original_non_halting() -> None:
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     original = _valid_list()  # shot[1].source == "image_kenburns"
     ctx = {
@@ -142,7 +142,7 @@ async def test_failure_keeps_original_non_halting() -> None:
 
 @pytest.mark.asyncio
 async def test_skips_when_no_shot_list() -> None:
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
     result = await ReviewVideoShotListStage().execute({"task_id": "t"}, {})
     assert result.ok
     assert result.metrics.get("skipped") is True
@@ -150,7 +150,7 @@ async def test_skips_when_no_shot_list() -> None:
 
 @pytest.mark.asyncio
 async def test_short_list_also_reviewed() -> None:
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     long_revised = _valid_list(source1="wan21")
     short_revised = _valid_list(source1="wan21")
@@ -186,7 +186,7 @@ async def test_review_timeout_read_from_db_setting() -> None:
     and threaded into the dispatch — not hardcoded. Finding: the old hardcoded
     120s timed out the writer-grade reviewer mid shot-list (same bug the director
     had, #1750), leaving the draft list unreviewed on every run."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     revised = _valid_list(source1="wan21")
     platform = _platform(dispatch_text=json.dumps(revised), timeout=555)
@@ -219,7 +219,7 @@ async def test_review_recovers_unquoted_key_dialect() -> None:
     """The reviewer emits the same near-JSON dialect the director does
     (unquoted keys) — the shared ``_tolerant_json_loads`` repairs it
     deterministically instead of discarding the revision."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     dialect_revision = (
         '{ version: 1, aspect: "16:9", total_duration_s: 10.0, shots: ['
@@ -255,7 +255,7 @@ async def test_review_dispatch_disables_thinking_by_default() -> None:
     director model; leaving the reasoning channel on starves its revised JSON
     the same way it empties the director's, so the self-critique fell back to
     the draft on every run (2026-07-07 fix — mirrors the writer path, #2163)."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     revised = _valid_list(source1="wan21")
     # Dict-backed config so the disable-thinking key resolves to its default
@@ -286,7 +286,7 @@ async def test_review_dispatch_disables_thinking_by_default() -> None:
 async def test_review_dispatch_uses_configured_max_tokens() -> None:
     """max_tokens (default 8192) reaches the reviewer dispatch — same headroom
     the director got, since the reviewer serializes the same JSON shape."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     revised = _valid_list(source1="wan21")
     platform = MagicMock()
@@ -315,7 +315,7 @@ async def test_review_retries_on_empty_extract_and_recovers() -> None:
     """The reviewer retries a no-JSON (truncated) revision — same guard as the
     director — so a verbose revision that overflows the budget isn't silently
     discarded (which would ship the unreviewed draft)."""
-    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
     revised = _valid_list(source1="wan21")
     platform = MagicMock()

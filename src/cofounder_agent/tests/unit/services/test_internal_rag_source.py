@@ -705,7 +705,7 @@ async def test_extract_delegates_to_generate(monkeypatch):
 
 
 async def test_extract_converts_candidate_to_discovered_topic(monkeypatch):
-    from plugins.topic_source import DiscoveredTopic
+    from poindexter.plugins.topic_source import DiscoveredTopic
 
     pool = _FakePool()
     src = InternalRagSource(pool, site_config=SiteConfig())

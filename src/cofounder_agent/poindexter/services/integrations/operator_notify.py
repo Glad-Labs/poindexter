@@ -47,7 +47,7 @@ from typing import Any
 import httpx
 
 from poindexter.services.logger_config import get_logger
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -142,7 +142,7 @@ def _resolve_site_config() -> Any | None:
         # the notify_operator path this function feeds — it stays visible
         # even when notify_operator's own site_config resolution is what
         # broke.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="operator_notify",

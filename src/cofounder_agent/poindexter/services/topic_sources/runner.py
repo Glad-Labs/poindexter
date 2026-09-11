@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from plugins.topic_source import DiscoveredTopic
+from poindexter.plugins.topic_source import DiscoveredTopic
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ async def _load_source_config(pool: Any, source_name: str) -> tuple[bool, dict[s
     ``{enabled: bool, config: {...}}``. Falls back to enabled=True
     with empty config when the row is missing.
     """
-    from plugins.config import PluginConfig
+    from poindexter.plugins.config import PluginConfig
     cfg = await PluginConfig.load(pool, "topic_source", source_name)
     return cfg.enabled, cfg.config
 
@@ -64,7 +64,7 @@ async def run_all(pool: Any) -> RunnerSummary:
     whole discovery pass. Aggregated topics are passed through to
     the caller for dedup + ranking.
     """
-    from plugins.registry import get_core_samples, get_topic_sources
+    from poindexter.plugins.registry import get_core_samples, get_topic_sources
 
     sources = list(get_topic_sources()) + list(
         get_core_samples().get("topic_sources", [])
@@ -90,7 +90,7 @@ async def run_all(pool: Any) -> RunnerSummary:
     # ``plugin.topic_source.<name>.config.timeout_s``.
     global_timeout_s = 60.0
     try:
-        from plugins.config import PluginConfig
+        from poindexter.plugins.config import PluginConfig
         runner_cfg = await PluginConfig.load(pool, "topic_source", "_runner")
         global_timeout_s = float(
             runner_cfg.config.get("per_source_timeout_s")

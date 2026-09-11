@@ -8,7 +8,7 @@ exactly that error class plus the fail-open quality gate.
 
 from __future__ import annotations
 
-from plugins.caption_provider import CaptionSegment
+from poindexter.plugins.caption_provider import CaptionSegment
 from poindexter.services.caption_align import (
     align_script_to_segments,
     retime_cues_to_words,

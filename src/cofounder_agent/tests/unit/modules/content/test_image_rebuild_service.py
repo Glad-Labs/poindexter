@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.image_rebuild_service import enqueue_image_rebuild
+from poindexter.modules.content.image_rebuild_service import enqueue_image_rebuild
 
 
 class FakePool:

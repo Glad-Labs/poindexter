@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.atoms.two_pass_writer import _resolve_snippet_source_filter
+from poindexter.modules.content.atoms.two_pass_writer import _resolve_snippet_source_filter
 
 
 class _Cfg:

@@ -19,7 +19,11 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from utils.middleware_config import MiddlewareConfig, create_middleware_config, middleware_config
+from poindexter.utils.middleware_config import (
+    MiddlewareConfig,
+    create_middleware_config,
+    middleware_config,
+)
 
 
 def _make_app():

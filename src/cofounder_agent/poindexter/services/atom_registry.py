@@ -24,7 +24,7 @@ import pkgutil
 from collections.abc import Callable
 from typing import Any
 
-from plugins.atom import AtomMeta
+from poindexter.plugins.atom import AtomMeta
 from poindexter.services.module_paths import resolve_module_path
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ def discover() -> None:
     existing stages) in one catalog.
 
     The ``atoms_package`` field on ``ModuleManifest`` replaces the
-    previous hardcoded ``_walk_package("modules.content.atoms")`` call so
+    previous hardcoded ``_walk_package("poindexter.modules.content.atoms")`` call so
     any future business module can register its own atoms without editing
     kernel code (Glad-Labs/poindexter#754).
 
@@ -131,7 +131,7 @@ def discover() -> None:
 
     # Lazy import to avoid circular-import issues at module load time.
     try:
-        from plugins.registry import get_modules  # noqa: PLC0415
+        from poindexter.plugins.registry import get_modules  # noqa: PLC0415
         for module in get_modules():
             try:
                 manifest = module.manifest()
@@ -153,7 +153,7 @@ def discover() -> None:
             "hardcoded 'modules.content.atoms'",
             exc,
         )
-        _walk_package("modules.content.atoms")
+        _walk_package("poindexter.modules.content.atoms")
 
     _surface_stages_as_atoms()
 
@@ -194,7 +194,7 @@ def _surface_stages_as_atoms() -> None:
     + timeout treatment as a stage embedded in a LangGraph template.
     """
     try:
-        from plugins.registry import get_core_samples, get_stages
+        from poindexter.plugins.registry import get_core_samples, get_stages
     except Exception as exc:  # noqa: BLE001
         logger.warning("[atom_registry] could not import plugins.registry: %s", exc)
         return
@@ -254,7 +254,7 @@ def _stage_to_atom_meta(stage_name: str, stage: Any) -> AtomMeta | None:
     blurb. capability_tier defaults to None — stages don't declare
     one because they reach into model_router themselves.
     """
-    from plugins.atom import RetryPolicy
+    from poindexter.plugins.atom import RetryPolicy
 
     cls = type(stage)
     doc = (cls.__doc__ or "").strip()

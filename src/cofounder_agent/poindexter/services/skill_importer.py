@@ -348,7 +348,7 @@ async def remove_skill(name: str, *, pool: Any = None) -> dict:
         # A skill living in one of these unparseable files would otherwise
         # silently report as "not installed" — one aggregate finding per
         # call (never per-file) explains why.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="skill_importer",

@@ -53,7 +53,7 @@ from typing import Any
 
 import httpx
 
-from plugins.audio_gen_provider import AudioGenResult, AudioKind
+from poindexter.plugins.audio_gen_provider import AudioGenResult, AudioKind
 
 logger = logging.getLogger(__name__)
 

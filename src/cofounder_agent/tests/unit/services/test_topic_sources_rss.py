@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from plugins.topic_source import TopicSource
+from poindexter.plugins.topic_source import TopicSource
 from poindexter.services.topic_sources.rss import RssSource
 
 pytestmark = [pytest.mark.unit, pytest.mark.asyncio]

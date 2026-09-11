@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import modules.content.stages.source_featured_image as sfi
+import poindexter.modules.content.stages.source_featured_image as sfi
 from poindexter.services.site_config import SiteConfig
 
 pytestmark = pytest.mark.unit
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.unit
 
 def _capture(monkeypatch) -> list[dict]:
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

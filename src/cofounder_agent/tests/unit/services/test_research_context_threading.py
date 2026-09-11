@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 from langgraph.graph import END, StateGraph
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.template_runner import PipelineState, make_stage_node
 
 
@@ -147,11 +147,11 @@ async def test_generate_content_stage_returns_research_context_in_updates():
     async def _no_gpu_lock(*_a: Any, **_kw: Any):
         yield None
 
-    from modules.content.stages.generate_content import GenerateContentStage
+    from poindexter.modules.content.stages.generate_content import GenerateContentStage
 
     patches = [
         patch(
-            "modules.content.ai_content_generator.get_content_generator",
+            "poindexter.modules.content.ai_content_generator.get_content_generator",
             return_value=SimpleNamespace(
                 _internal_links_cache=[],
                 generate_blog_post=AsyncMock(return_value=(

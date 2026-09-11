@@ -107,11 +107,11 @@ class TestRenderImageGenNon200ReturnsNone:
         unhealthy, which is transient, while 4xx is a verdict on the request.
         Asserted below per status code.
         """
-        from modules.content.stages.source_featured_image import _render_image_gen
+        from poindexter.modules.content.stages.source_featured_image import _render_image_gen
 
         post_resp = _fake_response(status_code)
         with patch(
-            "modules.content.stages.source_featured_image.httpx.AsyncClient",
+            "poindexter.modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=_fake_httpx_client_returning(post_resp),
         ), patch(
             "poindexter.services.gpu_scheduler.gpu", _gpu_lock_noop(),
@@ -161,7 +161,7 @@ class TestStageFallsBackToPexels:
 
     @pytest.mark.asyncio
     async def test_image_gen_returns_none_yields_pexels_featured_image(self):
-        from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+        from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         pexels_image = SimpleNamespace(
             url="https://images.pexels.com/photos/12345/photo.jpg",
@@ -198,7 +198,7 @@ class TestStageFallsBackToPexels:
         # Force the image-gen branch to return None — simulating the
         # 2026-05-11 17:48 UTC degraded scenario.
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -228,7 +228,7 @@ class TestStageFallsBackToPexels:
         the post lands without a featured image rather than crashing
         the whole task.
         """
-        from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+        from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         image_service = SimpleNamespace(
             gen_available=True,
@@ -250,7 +250,7 @@ class TestStageFallsBackToPexels:
         }
 
         with patch(
-            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -297,7 +297,7 @@ class TestStockFallbackGate:
     async def test_disabled_skips_pexels_entirely_and_emits_finding(self):
         """Gated off: no stock search at all, no image, and a finding — the
         run must not be able to pass as clean."""
-        from modules.content.stages import source_featured_image as sfi
+        from poindexter.modules.content.stages import source_featured_image as sfi
 
         search = AsyncMock()
         image_service = SimpleNamespace(
@@ -305,7 +305,7 @@ class TestStockFallbackGate:
         )
         emit = MagicMock()
         with patch.object(sfi, "_try_image_gen_featured", new=AsyncMock(return_value=None)), \
-             patch("utils.findings.emit_finding", emit):
+             patch("poindexter.utils.findings.emit_finding", emit):
             result = await sfi.SourceFeaturedImageStage().execute(
                 self._ctx(image_service, stock_enabled=False), {},
             )
@@ -322,7 +322,7 @@ class TestStockFallbackGate:
     async def test_enabled_still_reports_the_downgrade(self):
         """Opting back in restores stock, but it is still a downgrade and is
         still announced — a fork enabling this keeps the signal."""
-        from modules.content.stages import source_featured_image as sfi
+        from poindexter.modules.content.stages import source_featured_image as sfi
 
         pexels_image = SimpleNamespace(
             url="https://images.pexels.com/photos/1/p.jpg",
@@ -334,7 +334,7 @@ class TestStockFallbackGate:
         )
         emit = MagicMock()
         with patch.object(sfi, "_try_image_gen_featured", new=AsyncMock(return_value=None)), \
-             patch("utils.findings.emit_finding", emit):
+             patch("poindexter.utils.findings.emit_finding", emit):
             result = await sfi.SourceFeaturedImageStage().execute(
                 self._ctx(image_service, stock_enabled=True), {},
             )

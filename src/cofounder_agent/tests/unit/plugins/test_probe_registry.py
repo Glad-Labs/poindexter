@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.probe_registry import BrainProbeRegistry, RegisteredProbe
+from poindexter.plugins.probe_registry import BrainProbeRegistry, RegisteredProbe
 
 
 async def _noop_probe() -> dict[str, str]:

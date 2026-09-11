@@ -27,10 +27,10 @@ import logging
 import re
 from typing import Any
 
-from modules.content.atoms import _seo_common as sc
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from utils.json_extract import extract_json_object
-from utils.title_utils import derive_seo_title
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.utils.json_extract import extract_json_object
+from poindexter.utils.title_utils import derive_seo_title
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ def _emit_echo_finding(state: dict[str, Any], *, title: str, topic: str, healed:
     operator's approval queue) is a ``warn`` so it reaches Discord — the
     operator must retitle before approving.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     task_id = str(state.get("task_id") or "unknown")
     emit_finding(

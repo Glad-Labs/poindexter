@@ -81,7 +81,7 @@ async def test_execute_threads_context_platform_into_try_image_gen_featured() ->
     without ``platform=``, so the image-gen prompt build received ``platform=None``
     and fell back to the deterministic style-only prompt on every run.
     """
-    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+    from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     sentinel_platform = MagicMock(name="capability_handle")
     site_config = _make_site_config({
@@ -92,7 +92,7 @@ async def test_execute_threads_context_platform_into_try_image_gen_featured() ->
 
     gen_mock = AsyncMock(return_value=None)
     with patch(
-        "modules.content.stages.source_featured_image._try_image_gen_featured",
+        "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
         gen_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -118,7 +118,7 @@ async def test_build_image_gen_prompt_dispatches_to_llm_when_platform_present() 
     the featured stage, so ``platform.dispatch.complete`` here had never run.
     The threading fix makes it live; this pins that it produces an LLM prompt.
     """
-    from modules.content.stages import source_featured_image as mod
+    from poindexter.modules.content.stages import source_featured_image as mod
 
     site_config = _make_site_config({})
     site_config._pool = MagicMock()  # non-None pool → reach the dispatch branch
@@ -148,7 +148,7 @@ async def test_build_image_gen_prompt_dispatches_to_llm_when_platform_present() 
 async def test_build_image_gen_prompt_falls_back_without_platform() -> None:
     """Symmetry guard: no platform handle → graceful deterministic fallback
     (the retained pre-fix behavior for the None case, e.g. tests/bootstrap)."""
-    from modules.content.stages import source_featured_image as mod
+    from poindexter.modules.content.stages import source_featured_image as mod
 
     site_config = _make_site_config({})
     site_config._pool = MagicMock()

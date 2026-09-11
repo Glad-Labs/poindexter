@@ -23,12 +23,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from routes.cms_routes import router
-from utils.content_formatting import (
+from poindexter.utils.content_formatting import (
     convert_markdown_to_html,
     generate_excerpt_from_content,
     map_featured_image_to_coverimage,
 )
+from routes.cms_routes import router
 
 HAS_MARKDOWN = find_spec("markdown") is not None
 

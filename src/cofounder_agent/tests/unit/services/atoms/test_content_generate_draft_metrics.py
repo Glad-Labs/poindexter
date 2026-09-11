@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 pytestmark = pytest.mark.unit
 
@@ -34,7 +34,7 @@ def _stage_result(metrics: dict[str, Any]) -> StageResult:
 
 
 async def test_stage_metrics_exposed_as_atom_metrics() -> None:
-    from modules.content.atoms import content_generate_draft
+    from poindexter.modules.content.atoms import content_generate_draft
 
     metrics = {
         "content_length": 4,
@@ -43,7 +43,7 @@ async def test_stage_metrics_exposed_as_atom_metrics() -> None:
         "writer_prompt_draft_chars": 5000,
     }
     with patch(
-        "modules.content.writer_core.GenerateContentStage.execute",
+        "poindexter.modules.content.writer_core.GenerateContentStage.execute",
         new=AsyncMock(return_value=_stage_result(metrics)),
     ):
         out = await content_generate_draft.run({"task_id": "t"})
@@ -53,10 +53,10 @@ async def test_stage_metrics_exposed_as_atom_metrics() -> None:
 
 
 async def test_no_metrics_attaches_no_key() -> None:
-    from modules.content.atoms import content_generate_draft
+    from poindexter.modules.content.atoms import content_generate_draft
 
     with patch(
-        "modules.content.writer_core.GenerateContentStage.execute",
+        "poindexter.modules.content.writer_core.GenerateContentStage.execute",
         new=AsyncMock(return_value=_stage_result({})),
     ):
         out = await content_generate_draft.run({"task_id": "t"})

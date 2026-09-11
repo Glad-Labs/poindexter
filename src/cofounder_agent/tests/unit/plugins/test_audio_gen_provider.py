@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from plugins import AudioGenProvider, AudioGenResult, AudioKind
-from plugins.audio_gen_provider import AudioGenProvider as DirectAudioGenProvider
+from poindexter.plugins import AudioGenProvider, AudioGenResult, AudioKind
+from poindexter.plugins.audio_gen_provider import AudioGenProvider as DirectAudioGenProvider
 
 
 @pytest.mark.unit

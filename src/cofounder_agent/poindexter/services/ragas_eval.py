@@ -403,7 +403,7 @@ def _emit_degraded_metrics_finding(failed_metrics: list[str], task_id: str | Non
     """
     key = ",".join(failed_metrics)
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="ragas_eval.evaluate_sample",
@@ -439,7 +439,7 @@ def _surface_gpu_busy_skip(rail: str, busy: Any, *, task_id: str | None) -> None
     ``qa_rail_degraded`` means something is actually wrong.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         eta = f"{busy.eta_seconds:.0f}s" if busy.eta_seconds is not None else "unknown"
         emit_finding(

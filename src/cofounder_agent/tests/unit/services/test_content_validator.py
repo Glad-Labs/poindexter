@@ -11,7 +11,7 @@ from poindexter.services.site_config import SiteConfig
 
 _SC = SiteConfig()
 
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     ValidationResult,
     _get_company_facts,
     validate_content,
@@ -696,21 +696,21 @@ class TestLateAcronymExpansion:
 
 class TestStripHtml:
     def test_removes_simple_tags(self):
-        from modules.content.content_validator import _strip_html
+        from poindexter.modules.content.content_validator import _strip_html
         assert _strip_html("<p>Hello</p>") == "Hello"
 
     def test_removes_nested_tags(self):
-        from modules.content.content_validator import _strip_html
+        from poindexter.modules.content.content_validator import _strip_html
         result = _strip_html("<div><p>nested <span>text</span></p></div>")
         assert "<" not in result
         assert ">" not in result
 
     def test_removes_attributes(self):
-        from modules.content.content_validator import _strip_html
+        from poindexter.modules.content.content_validator import _strip_html
         assert _strip_html('<a href="https://x.com">link</a>') == "link"
 
     def test_plain_text_unchanged(self):
-        from modules.content.content_validator import _strip_html
+        from poindexter.modules.content.content_validator import _strip_html
         assert _strip_html("plain text no tags") == "plain text no tags"
 
 
@@ -1003,7 +1003,7 @@ class TestKnownWrongHardwareFacts:
     @pytest.fixture(autouse=True)
     def _mock_fact_overrides(self, monkeypatch):
         """Inject test patterns without hitting the DB."""
-        import modules.content.content_validator as cv
+        import poindexter.modules.content.content_validator as cv
         monkeypatch.setattr(
             cv, "_load_fact_overrides_sync", lambda *_a, **_kw: self._TEST_OVERRIDES
         )
@@ -1216,7 +1216,7 @@ class TestPrometheusCounterEmission:
 
     def _read_counter(self, rule: str) -> float:
         """Read the current value of the warnings counter for ``rule``."""
-        from modules.content.content_validator import CONTENT_VALIDATOR_WARNINGS_TOTAL
+        from poindexter.modules.content.content_validator import CONTENT_VALIDATOR_WARNINGS_TOTAL
 
         # prometheus_client Counter stores per-label data on the internal
         # metric. We read the value via the public `_metrics` dict. If
@@ -1542,7 +1542,7 @@ class TestHallucinatedReferenceDetection:
 
     def test_stdlib_and_pypi_lists_actually_loaded(self):
         """Guard against the data files going missing in deployment."""
-        from modules.content.content_validator import (
+        from poindexter.modules.content.content_validator import (
             _get_ollama_names,
             _get_pypi_names,
             _get_stdlib_names,
@@ -1723,7 +1723,7 @@ class TestInternalFilePathExemption:
     """Internal project files / repo paths are NOT hallucinated libraries."""
 
     def test_looks_like_file_or_path_predicate(self):
-        from modules.content.content_validator import _looks_like_file_or_path
+        from poindexter.modules.content.content_validator import _looks_like_file_or_path
 
         # Files (known source / config extensions) and paths → True.
         assert _looks_like_file_or_path("api_token_auth.py")
@@ -1740,7 +1740,7 @@ class TestInternalFilePathExemption:
         assert not _looks_like_file_or_path("")
 
     def test_extract_candidates_skips_internal_py_file(self):
-        from modules.content.content_validator import _extract_library_candidates
+        from poindexter.modules.content.content_validator import _extract_library_candidates
 
         cands = _extract_library_candidates(
             "We split the auth layer into `api_token_auth.py` this week."
@@ -1815,7 +1815,7 @@ class TestInternalPipelineVocabExemption:
     libraries (self-heal-before-paging §7)."""
 
     def test_extract_candidates_skips_internal_pipeline_terms(self):
-        from modules.content.content_validator import _extract_library_candidates
+        from poindexter.modules.content.content_validator import _extract_library_candidates
 
         cands = _extract_library_candidates(
             "The graph runs `generate_content`, then `qa_aggregate` decides, "
@@ -1852,7 +1852,7 @@ class TestInternalPipelineVocabExemption:
         """Guard against over-whitelisting: a genuinely unknown backticked
         module is STILL a candidate (the fix must be a precise allowlist, not
         a blanket suppression of underscore/lowercase tokens)."""
-        from modules.content.content_validator import _extract_library_candidates
+        from poindexter.modules.content.content_validator import _extract_library_candidates
 
         cands = _extract_library_candidates("Install `zzfakelibxyz` to start.")
         assert any("zzfakelibxyz" in raw for raw, _ in cands)
@@ -2107,31 +2107,31 @@ class TestDetectPromptLeak:
     """Unit tests for the shared prompt-leak detector."""
 
     def test_returns_marker_for_reviser_echo(self):
-        from modules.content.content_validator import detect_prompt_leak
+        from poindexter.modules.content.content_validator import detect_prompt_leak
         hits = detect_prompt_leak(
             "Please revise a draft article based on the listed fixes."
         )
         assert "revise a draft article based on" in hits
 
     def test_returns_marker_for_writer_instruction(self):
-        from modules.content.content_validator import detect_prompt_leak
+        from poindexter.modules.content.content_validator import detect_prompt_leak
         hits = detect_prompt_leak(
             "Grounding: use only provided snippets and never invent facts."
         )
         assert "use only provided snippets" in hits
 
     def test_case_insensitive(self):
-        from modules.content.content_validator import detect_prompt_leak
+        from poindexter.modules.content.content_validator import detect_prompt_leak
         assert detect_prompt_leak("LEAD WITH STAKES, then explain.")
 
     def test_clean_prose_returns_empty(self):
-        from modules.content.content_validator import detect_prompt_leak
+        from poindexter.modules.content.content_validator import detect_prompt_leak
         assert detect_prompt_leak(
             "Docker containers isolate application dependencies."
         ) == []
 
     def test_empty_returns_empty(self):
-        from modules.content.content_validator import detect_prompt_leak
+        from poindexter.modules.content.content_validator import detect_prompt_leak
         assert detect_prompt_leak("") == []
 
 
@@ -2288,7 +2288,7 @@ class TestParaphrasedInstructionEchoRule:
         assert not any(i.category == "prompt_leak" for i in result.issues)
 
     def test_detector_reports_distinct_shape_names(self):
-        from modules.content.content_validator import (
+        from poindexter.modules.content.content_validator import (
             detect_prompt_echo_paraphrase,
         )
         hits = detect_prompt_echo_paraphrase(
@@ -2299,7 +2299,7 @@ class TestParaphrasedInstructionEchoRule:
 
     def test_expand_shape_tolerates_adjectives(self):
         # Task ecaf0c01 variant: adjective between article and "draft".
-        from modules.content.content_validator import (
+        from poindexter.modules.content.content_validator import (
             detect_prompt_echo_paraphrase,
         )
         hits = detect_prompt_echo_paraphrase(
@@ -2349,7 +2349,7 @@ class TestDetectPlanningDumpPreamble:
     """
 
     def test_e46_planning_dump_detected(self):
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         evidence = detect_planning_dump_preamble(_E46_PLANNING_DUMP)
         assert evidence, "e46b449c-shape planning dump must be detected"
         assert any(e.startswith("opening_bullets:") for e in evidence)
@@ -2359,7 +2359,7 @@ class TestDetectPlanningDumpPreamble:
         # Shape of task ecaf0c01's outline block: section-by-section plan
         # labels + notes-to-self + word-count checklist, no expand/word-target
         # instruction lines at all.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   *Introduction:* Define hallucination using Wikipedia/IBM.\n"
             "    *   Connect to technical writing via the content problem.\n"
@@ -2380,7 +2380,7 @@ class TestDetectPlanningDumpPreamble:
     def test_dump_below_leading_h1_detected(self):
         # A dump placed right below the generated H1 title is still a dump —
         # the detector skips one leading heading line before scanning.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = "# Decoding the Dots\n\n" + _E46_PLANNING_DUMP
         assert detect_planning_dump_preamble(content)
 
@@ -2393,7 +2393,7 @@ class TestDetectPlanningDumpPreamble:
         # silent on a 13-bullet dump with the article fused onto the last
         # bullet. The task-receipt family + the snippet/material widening of
         # source-triage close that dialect.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             '*   User wants a comprehensive explanation of an "ellipsis."\n'
             "    *   I have several provided sources: Wikipedia (Ellipsis and "
@@ -2434,7 +2434,7 @@ class TestDetectPlanningDumpPreamble:
         # close that dialect. (The <|channel>thought wrapper itself is
         # stripped upstream by strip_reasoning_artifacts; this is the
         # post-strip body the validator actually sees.)
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   Topic: Why VRAM capacity > Raw Compute (TFLOPS/CUDA cores) "
             "for local LLMs.\n"
@@ -2463,7 +2463,7 @@ class TestDetectPlanningDumpPreamble:
         # legitimately OPEN with a spec-sheet bullet list whose labels
         # include "Length:" / "Format:". That matches assignment-spec — but
         # only that one family, so the >=2-family bar holds it silent.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   Length: 304 mm (blocks the bottom drive cage in most "
             "mid-towers).\n"
@@ -2481,7 +2481,7 @@ class TestDetectPlanningDumpPreamble:
         # FP guard for the source-triage widening: an article ABOUT RAG can
         # discuss irrelevant snippets in prose — vocabulary never fires
         # without the bullet-dominated opening structure.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "Retrieval quality decides everything downstream. When the "
             "retriever returns irrelevant snippets, the writer grounds its "
@@ -2493,7 +2493,7 @@ class TestDetectPlanningDumpPreamble:
         assert detect_planning_dump_preamble(content) == []
 
     def test_clean_prose_intro_returns_empty(self):
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "Local model routing sounds simple until you meet the failure "
             "modes. Here is what actually breaks in production, and what we "
@@ -2506,7 +2506,7 @@ class TestDetectPlanningDumpPreamble:
     def test_bullet_list_after_heading_not_flagged(self):
         # An article that opens with a heading then a legitimate bullet list
         # has an empty pre-heading opening — never flagged.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "## What You Will Need\n\n"
             "*   A GPU with at least 12 GB of VRAM.\n"
@@ -2523,7 +2523,7 @@ class TestDetectPlanningDumpPreamble:
     def test_leading_bullets_without_planning_vocab_not_flagged(self):
         # Structure alone is not enough: a (rare) legitimate opening list
         # without planning vocabulary stays below the bar.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   Timeouts on cold model loads.\n"
             "*   VRAM fragmentation after repeated swaps.\n"
@@ -2539,7 +2539,7 @@ class TestDetectPlanningDumpPreamble:
     def test_planning_vocab_in_prose_without_bullets_not_flagged(self):
         # Vocabulary alone is not enough either: an article ABOUT writing
         # can discuss word count and markdown format in prose.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "Our style guide bans filler. We track word count per section, "
             "require markdown format for every draft, and reject anything "
@@ -2552,7 +2552,7 @@ class TestDetectPlanningDumpPreamble:
     def test_short_bullet_opening_not_flagged(self):
         # Below the minimum-bullet floor (a TL;DR list) — never flagged,
         # even with planning-adjacent vocabulary nearby.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   Word count matters less than substance.\n"
             "*   Markdown format is table stakes.\n"
@@ -2572,7 +2572,7 @@ class TestDetectPlanningDumpPreamble:
         # family matches any of these lines; the two new families
         # (draft-meta-commentary + draft-meta-narration) co-occurring is what
         # crosses the >=2-family bar, per the assignment-spec precedent.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             '*   SEO Value: They target high-intent keywords like "eliminating '
             'downtime," "architecting systems," and "zero-issue stability."\n'
@@ -2598,7 +2598,7 @@ class TestDetectPlanningDumpPreamble:
         # FP guard for the draft-meta-narration family: a legitimate
         # comparison list can open bullets with "Focuses on…" — that matches
         # narration alone, ONE family, and stays below the >=2-family bar.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "*   Focuses on raster performance over ray tracing.\n"
             "*   Ships with 16 GB of VRAM on a 256-bit bus.\n"
@@ -2615,7 +2615,7 @@ class TestDetectPlanningDumpPreamble:
         # FP guard: a participial phrase can legitimately START a prose line
         # ("Focused on performance, the RTX 5090 …") — vocabulary never fires
         # without the bullet-dominated opening structure.
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         content = (
             "Focused on performance, the RTX 5090 rewrites what a consumer "
             "card can do for local inference. Shifted from the compute-bound "
@@ -2627,7 +2627,7 @@ class TestDetectPlanningDumpPreamble:
         assert detect_planning_dump_preamble(content) == []
 
     def test_empty_returns_empty(self):
-        from modules.content.content_validator import detect_planning_dump_preamble
+        from poindexter.modules.content.content_validator import detect_planning_dump_preamble
         assert detect_planning_dump_preamble("") == []
         assert detect_planning_dump_preamble("   \n\n  ") == []
 

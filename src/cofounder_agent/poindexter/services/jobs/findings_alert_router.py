@@ -100,13 +100,13 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.jobs.fix_broken_external_links import FixBrokenExternalLinksJob
 from poindexter.services.jobs.fix_broken_internal_links import FixBrokenInternalLinksJob
 from poindexter.services.jobs.fix_missing_seo import FixMissingSeoJob
 from poindexter.services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

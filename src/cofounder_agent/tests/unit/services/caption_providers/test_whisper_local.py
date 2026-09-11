@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.caption_provider import CaptionProvider, CaptionResult, CaptionSegment
+from poindexter.plugins.caption_provider import CaptionProvider, CaptionResult, CaptionSegment
 from poindexter.services.caption_providers import whisper_local as whisper_mod
 from poindexter.services.caption_providers.whisper_local import (
     WhisperLocalCaptionProvider,

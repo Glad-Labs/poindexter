@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from utils.connection_health import ConnectionPoolHealth, diagnose_connection_issues
+from poindexter.utils.connection_health import ConnectionPoolHealth, diagnose_connection_issues
 
 
 def _make_mock_pool(pool_size: int = 10, idle_size: int = 8) -> MagicMock:

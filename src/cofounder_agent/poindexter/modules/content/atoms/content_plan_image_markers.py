@@ -26,7 +26,7 @@ import logging
 import re
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # agent then tops up whatever illustration slots are left (also the
     # ImageRebuildService path, which strips <img> and re-plans marker-free
     # text — there every slot is left).
-    from modules.content.atoms._writer_markers import (
+    from poindexter.modules.content.atoms._writer_markers import (
         extract_hero_subject,
         is_evidence_desc,
         number_inline_markers,
@@ -133,7 +133,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         # pinned to the same 31B model, the old order forced a full 17 GB
         # reload right before the call, which under ComfyUI/image-gen VRAM
         # contention blew the 300 s provider timeout on every run for a week.
-        from modules.content.atoms._image_helpers import plan_and_inject_placeholders
+        from poindexter.modules.content.atoms._image_helpers import plan_and_inject_placeholders
         content_text, plan = await plan_and_inject_placeholders(
             content_text, topic, category, site_config=site_config,
             max_images=remaining, start_num=n_writer_markers + 1,
@@ -150,7 +150,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 if n_writer_markers else "no inline images"
             )
             try:
-                from utils.findings import emit_finding
+                from poindexter.utils.findings import emit_finding
                 _tid = str(state.get("task_id") or "")
                 emit_finding(
                     source="content.plan_image_markers",
@@ -209,7 +209,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # the ScreenshotProvider by content.generate_images, and a chart_target to
     # the ChartProvider — both instead of image-gen, because diffusion renders
     # axis labels and dashboards as garbled glyphs.
-    from modules.content.atoms._writer_markers import (
+    from poindexter.modules.content.atoms._writer_markers import (
         split_chart_target,
         split_screenshot_target,
     )

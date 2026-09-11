@@ -15,7 +15,7 @@ from poindexter.services.cost_aggregation_service import CostAggregationService
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.llm_throughput import VALID_METRICS, get_llm_throughput_trend
 from poindexter.services.logger_config import get_logger
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 # Create metrics router

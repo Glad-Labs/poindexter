@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.video_provider import VideoResult
+from poindexter.plugins.video_provider import VideoResult
 from poindexter.services.image_providers.pexels_video import PexelsVideoProvider, _pick_video_file
 
 
@@ -230,7 +230,7 @@ class TestFetch:
 
 class TestContract:
     def test_conforms_to_video_provider_protocol(self):
-        from plugins.video_provider import VideoProvider
+        from poindexter.plugins.video_provider import VideoProvider
         provider = PexelsVideoProvider()
         assert isinstance(provider, VideoProvider)
         assert provider.name == "pexels_video"

@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 import pytest
 
-from plugins import Tap
+from poindexter.plugins import Tap
 from poindexter.services.taps.github_issues import (
     GitHubIssuesTap,
     _build_source_id,
@@ -295,7 +295,7 @@ class TestConformance:
     def test_is_registered_in_the_plugin_registry(self):
         """A Tap on disk but absent from _SAMPLES never runs — that is
         exactly how OpenClawSQLiteTap sat dormant (finding #189)."""
-        from plugins.registry import get_core_samples
+        from poindexter.plugins.registry import get_core_samples
 
         names = {t.name for t in get_core_samples().get("taps", [])}
         assert "github_issues" in names

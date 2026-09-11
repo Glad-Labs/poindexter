@@ -118,7 +118,7 @@ async def _list_tasks(ctx: ChatToolContext, *, status: str = "", limit: int = 10
 
 
 async def _get_task(ctx: ChatToolContext, *, task_id: str) -> str:
-    from utils.uuid_prefix import resolve_task_id_prefix
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
 
     resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
     record = await ctx.db_service.get_task(resolved)
@@ -305,7 +305,7 @@ async def _cancel_task(ctx: ChatToolContext, *, task_id: str) -> str:
     import json as _json
     from datetime import datetime, timezone
 
-    from utils.uuid_prefix import resolve_task_id_prefix
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
 
     resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
     task = await ctx.db_service.get_task(resolved)

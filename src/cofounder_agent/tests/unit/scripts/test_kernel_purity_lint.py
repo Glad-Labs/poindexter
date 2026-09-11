@@ -195,3 +195,13 @@ class TestBaselineRatchet:
 
     def test_lint_passes_on_the_current_tree(self):
         assert LINT.main() == 0
+
+
+@pytest.mark.unit
+def test_canonical_spelling_yields_the_same_bare_target():
+    """poindexter#1046 step 3: imports now spell `poindexter.modules.content.api`; the
+    lint reports the bare target for both spellings so its baseline keys stay stable."""
+    flat = LINT.scan_source("from modules.content.api import x\n")
+    canonical = LINT.scan_source("from poindexter.modules.content.api import x\n")
+    plain = LINT.scan_source("import poindexter.modules.content.api\n")
+    assert flat == canonical == plain == [(1, "modules.content.api")]

@@ -39,9 +39,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class BackfillMediaScriptsJob:
                 metrics={"backfilled": 0, "attempted": 0},
             )
 
-        from modules.content.media_regen import regen_video_scripts
+        from poindexter.modules.content.media_regen import regen_video_scripts
         from poindexter.services.di_wiring import build_platform_for_subprocess
 
         platform = build_platform_for_subprocess(pool, site_config)

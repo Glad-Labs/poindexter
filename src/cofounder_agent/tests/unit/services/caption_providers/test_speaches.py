@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from plugins.caption_provider import CaptionProvider, CaptionResult
+from poindexter.plugins.caption_provider import CaptionProvider, CaptionResult
 
 
 class _StubSiteConfig:
@@ -328,7 +328,7 @@ class TestSrtHelpers:
         assert _format_ts(3661.5) == "01:01:01,500"
 
     def test_segments_to_srt_numbered_blocks(self):
-        from plugins.caption_provider import CaptionSegment
+        from poindexter.plugins.caption_provider import CaptionSegment
         from poindexter.services.caption_providers.speaches import _segments_to_srt
 
         srt = _segments_to_srt([

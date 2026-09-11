@@ -16,8 +16,8 @@ from fastapi.responses import FileResponse, Response
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.video_service import VIDEO_DIR
+from poindexter.utils.route_utils import get_site_config_dependency
 from schemas.media_schemas import VideoEpisodeListResponse
-from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -76,7 +76,7 @@ async def video_feed(
     ``DISTINCT ON (p.id)`` collapses multiple video assets per post to the
     newest.
     """
-    from utils.route_utils import get_services
+    from poindexter.utils.route_utils import get_services
 
     db = get_services().get_database()
     pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)

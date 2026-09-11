@@ -67,12 +67,12 @@ from typing import Any
 
 import httpx
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.image_prompt_sanitizer import (
     clean_image_prompt,
     subject_fallback_prompt,
 )
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -655,7 +655,7 @@ def _emit_featured_downgrade_finding(
     used to log per-image and then return ``ok=True``, so a run that quietly
     swapped owned art for stock was indistinguishable from a clean one.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     if source == "pexels":
         title = "Featured image fell back to stock — image-gen failed"
@@ -715,7 +715,7 @@ async def _record_featured_image_asset(
     try:
         from poindexter.services.media_asset_recorder import record_media_asset
     except Exception as exc:  # noqa: BLE001 — defensive import guard
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="stages.source_featured_image",
@@ -933,7 +933,7 @@ async def _try_image_gen_featured(
             "image-gen featured render failed (%s) — falling back to a Pexels "
             "STOCK photo (not a unique generated image)", describe_exception(e),
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="stages.source_featured_image",
@@ -1147,7 +1147,7 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
         # The operator SET image_styles, so a silent [] hides a config typo and
         # falls back to the built-in styles with no signal. Surface it as a
         # non-paging finding rather than a debug log below the prod level.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.stages.source_featured_image",
             kind="image_styles_setting_malformed",
@@ -1244,7 +1244,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
         # history and the SAME style will recur across posts (the exact
         # regression this function's docstring records fixing once already).
         # Surface it instead of returning [] silently.
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
         emit_finding(
             source="modules.content.stages.source_featured_image",
             kind="recent_published_styles_read_failed",

@@ -18,8 +18,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.audio_gen_provider import AudioGenProvider, AudioGenResult, AudioKind
-from plugins.registry import get_audio_gen_providers, get_core_samples
+from poindexter.plugins.audio_gen_provider import AudioGenProvider, AudioGenResult, AudioKind
+from poindexter.plugins.registry import get_audio_gen_providers, get_core_samples
 
 logger = logging.getLogger(__name__)
 

@@ -33,8 +33,8 @@ import sys
 
 import pytest
 
-import modules.content.writer_core as writer_core
-from modules.content.writer_core import GenerateContentStage
+import poindexter.modules.content.writer_core as writer_core
+from poindexter.modules.content.writer_core import GenerateContentStage
 
 pytestmark = pytest.mark.unit
 
@@ -49,7 +49,7 @@ def _capture(monkeypatch) -> list[dict]:
     import time and this patch would never be seen.
     """
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls

@@ -31,7 +31,7 @@ from typing import Any
 
 from poindexter.services.llm_providers.thinking_models import strip_think_blocks
 from poindexter.services.site_config import SiteConfig
-from utils.text_utils import strip_title_label
+from poindexter.utils.text_utils import strip_title_label
 
 logger = logging.getLogger(__name__)
 
@@ -597,7 +597,7 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     leak-proof by construction (#1280/#1821): any deliberation a reasoning
     model emits *outside* the ``{...}`` is never seen by the caller.
     """
-    from utils.json_extract import extract_json_object
+    from poindexter.utils.json_extract import extract_json_object
 
     return extract_json_object(text)
 
@@ -651,7 +651,7 @@ async def generate_canonical_title(
         # rather than 404 against local Ollama.
         local_provider = None
         if pool is None:
-            from plugins.registry import get_all_llm_providers
+            from poindexter.plugins.registry import get_all_llm_providers
             providers = {p.name: p for p in get_all_llm_providers()}
             local_provider = providers.get("ollama_native")
             if local_provider is None:

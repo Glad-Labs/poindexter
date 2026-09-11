@@ -14,7 +14,7 @@ Verifies:
 
 import pytest
 
-from modules.content.atoms import content_republish_post as atom
+from poindexter.modules.content.atoms import content_republish_post as atom
 
 
 @pytest.mark.asyncio

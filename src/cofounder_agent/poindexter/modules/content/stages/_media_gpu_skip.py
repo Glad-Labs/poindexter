@@ -46,7 +46,7 @@ def surface_media_gpu_busy_skip(
     was actually lost.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         eta_raw = getattr(busy, "eta_seconds", None)
         eta = f"{eta_raw:.0f}s" if eta_raw is not None else "unknown"

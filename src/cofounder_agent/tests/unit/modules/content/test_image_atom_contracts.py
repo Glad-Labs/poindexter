@@ -20,7 +20,7 @@ from poindexter.services.site_config import SiteConfig
 
 @pytest.mark.unit
 def test_try_image_gen_signature_stable():
-    from modules.content.atoms._image_helpers import try_image_gen, try_pexels
+    from poindexter.modules.content.atoms._image_helpers import try_image_gen, try_pexels
 
     p = inspect.signature(try_image_gen).parameters
     assert list(p)[:2] == ["num", "search_query"]
@@ -36,7 +36,7 @@ def test_try_image_gen_signature_stable():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_plan_image_markers_contract_shape():
-    from modules.content.atoms import content_plan_image_markers
+    from poindexter.modules.content.atoms import content_plan_image_markers
 
     # model set so the marker-free fallback returns early offline (no pool, no
     # operator-notify); ImageRebuildService calls with exactly these state keys.
@@ -59,7 +59,7 @@ def test_generate_images_result_shape_documented():
     rebuild fail-loud gate keys on ``source == 'image_gen'``."""
     src = inspect.getsource(
         __import__(
-            "modules.content.atoms.content_generate_images", fromlist=["run"]
+            "poindexter.modules.content.atoms.content_generate_images", fromlist=["run"]
         ).run
     )
     assert '"source"' in src or "'source'" in src

@@ -6,7 +6,7 @@ Covers extract_keywords_from_text, extract_keywords_from_title,
 extract_title_from_content, normalize_seo_keywords.
 """
 
-from utils.text_utils import (
+from poindexter.utils.text_utils import (
     extract_keywords_from_text,
     extract_keywords_from_title,
     extract_title_from_content,

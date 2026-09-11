@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.logger_config import get_logger
 from poindexter.services.logs_read import read_logs
-from utils.route_utils import get_site_config_dependency
+from poindexter.utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 

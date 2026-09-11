@@ -35,7 +35,7 @@ from bs4 import BeautifulSoup
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
 from poindexter.services.url_scraper import URLScrapeError, _safe_get
-from utils.crawler_ua import build_crawler_ua
+from poindexter.utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)
 
@@ -122,7 +122,7 @@ class WebResearcher:
                 results.append(r)
 
         if extract_failures:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="web_research",

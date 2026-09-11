@@ -8,7 +8,11 @@ and SQLOperator enum.
 
 import pytest
 
-from utils.sql_safety import ParameterizedQueryBuilder, SQLIdentifierValidator, SQLOperator
+from poindexter.utils.sql_safety import (
+    ParameterizedQueryBuilder,
+    SQLIdentifierValidator,
+    SQLOperator,
+)
 
 # ---------------------------------------------------------------------------
 # SQLIdentifierValidator.validate

@@ -57,17 +57,17 @@ class TestBuildImageGenPromptDispatch:
 
     @pytest.mark.asyncio
     async def test_uses_platform_dispatch_when_set(self):
-        from modules.content.stages.source_featured_image import _build_image_gen_prompt
+        from poindexter.modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         result_obj = MagicMock(text=self._PROMPT_TEXT)
         platform = FakePlatform(dispatch_response=result_obj)
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
 
         with patch(
-            "modules.content.stages.source_featured_image._load_styles_from_settings",
+            "poindexter.modules.content.stages.source_featured_image._load_styles_from_settings",
             return_value=[("cyberpunk", "neon lights, dark city")],
         ), patch(
-            "modules.content.stages.source_featured_image._load_recent_published_styles",
+            "poindexter.modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
             text = await _build_image_gen_prompt(
@@ -86,15 +86,15 @@ class TestBuildImageGenPromptDispatch:
         """Wave 3f (#667): platform=None raises RuntimeError (caught by caller's
         except-block), so _build_image_gen_prompt returns the deterministic fallback
         string instead of calling dispatch_complete."""
-        from modules.content.stages.source_featured_image import _build_image_gen_prompt
+        from poindexter.modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
 
         with patch(
-            "modules.content.stages.source_featured_image._load_styles_from_settings",
+            "poindexter.modules.content.stages.source_featured_image._load_styles_from_settings",
             return_value=[("nature", "mist, mountain, soft light")],
         ), patch(
-            "modules.content.stages.source_featured_image._load_recent_published_styles",
+            "poindexter.modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
             text = await _build_image_gen_prompt(
@@ -113,16 +113,16 @@ class TestBuildImageGenPromptDispatch:
     @pytest.mark.asyncio
     async def test_no_pool_returns_fallback_without_dispatch(self):
         """No DB pool → deterministic style+tags fallback; neither path dispatches."""
-        from modules.content.stages.source_featured_image import _build_image_gen_prompt
+        from poindexter.modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         platform = FakePlatform()
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
 
         with patch(
-            "modules.content.stages.source_featured_image._load_styles_from_settings",
+            "poindexter.modules.content.stages.source_featured_image._load_styles_from_settings",
             return_value=[("minimal", "clean, geometric")],
         ), patch(
-            "modules.content.stages.source_featured_image._load_recent_published_styles",
+            "poindexter.modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
             text = await _build_image_gen_prompt(
@@ -154,7 +154,7 @@ class TestTryImageGenDispatch:
 
     @pytest.mark.asyncio
     async def test_uses_platform_dispatch_when_set(self):
-        from modules.content.atoms._image_helpers import _try_image_gen
+        from poindexter.modules.content.atoms._image_helpers import _try_image_gen
 
         # Short prompt → function returns None after dispatch; no image-gen HTTP call.
         result_obj = MagicMock(text="short")
@@ -163,7 +163,7 @@ class TestTryImageGenDispatch:
 
         # gpu is a local import inside _try_image_gen — create=True is required.
         with patch(
-            "modules.content.atoms._image_helpers.gpu",
+            "poindexter.modules.content.atoms._image_helpers.gpu",
             gpu_mock,
             create=True,
         ):
@@ -182,12 +182,12 @@ class TestTryImageGenDispatch:
     async def test_raises_when_no_platform(self):
         """Wave 3f (#667): platform=None raises RuntimeError; _try_image_gen catches
         it and returns None (non-critical path — image is skipped, not fatal)."""
-        from modules.content.atoms._image_helpers import _try_image_gen
+        from poindexter.modules.content.atoms._image_helpers import _try_image_gen
 
         gpu_mock = MagicMock(lock=_noop_gpu_lock)
 
         with patch(
-            "modules.content.atoms._image_helpers.gpu",
+            "poindexter.modules.content.atoms._image_helpers.gpu",
             gpu_mock,
             create=True,
         ):
@@ -206,7 +206,7 @@ class TestTryImageGenDispatch:
     @pytest.mark.asyncio
     async def test_no_pool_returns_none_without_dispatch(self):
         """No DB pool → returns None immediately; no dispatch on either path."""
-        from modules.content.atoms._image_helpers import _try_image_gen
+        from poindexter.modules.content.atoms._image_helpers import _try_image_gen
 
         platform = FakePlatform()
 

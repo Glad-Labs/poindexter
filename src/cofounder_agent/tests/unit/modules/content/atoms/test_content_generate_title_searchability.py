@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.atoms import content_generate_title as atom
+from poindexter.modules.content.atoms import content_generate_title as atom
 
 _ORIGINAL = {"is_original": True, "similar_titles": [], "max_similarity": 0.0}
 
@@ -59,7 +59,7 @@ async def _run(state: dict[str, Any], titles: list[str]):
     ), patch(
         "poindexter.services.title_avoidance.build_avoidance_block_for_pool",
         AsyncMock(return_value="AVOID-BLOCK"),
-    ), patch("utils.findings.emit_finding") as finding:
+    ), patch("poindexter.utils.findings.emit_finding") as finding:
         result = await atom.run(state)
     return result, gen, finding
 

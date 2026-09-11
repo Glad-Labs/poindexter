@@ -73,14 +73,14 @@ class TestDefault:
 
     def test_the_sample_tap_is_still_registered(self):
         """Disabling is not deleting — authors still need the reference."""
-        from plugins.registry import get_core_samples
+        from poindexter.plugins.registry import get_core_samples
 
         names = {t.name for t in get_core_samples().get("taps", [])}
         assert "hello" in names
 
     def test_the_config_key_matches_the_tap_name(self):
         """`plugin.tap.<name>` — a mismatch would silently do nothing."""
-        from plugins.samples.hello_tap import HelloTap
+        from poindexter.plugins.samples.hello_tap import HelloTap
 
         assert f"plugin.tap.{HelloTap().name}" in DEFAULTS
 

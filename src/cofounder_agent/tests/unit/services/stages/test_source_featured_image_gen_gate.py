@@ -79,7 +79,7 @@ async def test_image_gen_attempted_when_local_diffusers_missing() -> None:
 
     Verify the new gate calls ``_try_image_gen_featured`` regardless of
     local-diffusers state."""
-    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+    from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(
         gen_available=False, gen_initialized=True,
@@ -92,7 +92,7 @@ async def test_image_gen_attempted_when_local_diffusers_missing() -> None:
 
     gen_mock = AsyncMock(return_value=None)  # Skip the image-gen call's side-effects
     with patch(
-        "modules.content.stages.source_featured_image._try_image_gen_featured",
+        "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
         gen_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -111,7 +111,7 @@ async def test_image_gen_skipped_when_explicitly_disabled() -> None:
     """The new gate honours ``app_settings.image_gen_enabled=false`` so
     operators can disable image-gen during maintenance windows without
     code edits."""
-    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+    from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(gen_available=True, gen_initialized=True)
     site_config = _make_site_config({
@@ -122,7 +122,7 @@ async def test_image_gen_skipped_when_explicitly_disabled() -> None:
 
     gen_mock = AsyncMock(return_value=None)
     with patch(
-        "modules.content.stages.source_featured_image._try_image_gen_featured",
+        "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
         gen_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -138,7 +138,7 @@ async def test_image_gen_skipped_when_explicitly_disabled() -> None:
 async def test_image_gen_attempted_by_default_when_setting_unset() -> None:
     """No ``image_gen_enabled`` setting in app_settings — default to attempting
     image-gen. Fresh installs shouldn't have to set the flag to get image-gen working."""
-    from modules.content.stages.source_featured_image import SourceFeaturedImageStage
+    from poindexter.modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
     image_service = _make_image_service(gen_available=False, gen_initialized=True)
     site_config = _make_site_config({})  # no image_gen_enabled key
@@ -146,7 +146,7 @@ async def test_image_gen_attempted_by_default_when_setting_unset() -> None:
 
     gen_mock = AsyncMock(return_value=None)
     with patch(
-        "modules.content.stages.source_featured_image._try_image_gen_featured",
+        "poindexter.modules.content.stages.source_featured_image._try_image_gen_featured",
         gen_mock,
     ):
         stage = SourceFeaturedImageStage()
@@ -167,7 +167,7 @@ async def test_image_gen_failure_emits_routed_finding() -> None:
     logged at INFO with no finding. The finding is what makes the next
     outage page — see feedback_dont_silence_fix_dedup.
     """
-    from modules.content.stages import source_featured_image as sfi
+    from poindexter.modules.content.stages import source_featured_image as sfi
 
     site_config = _make_site_config({
         "image_gen_server_url": "http://image-gen-server:9836",
@@ -184,7 +184,7 @@ async def test_image_gen_failure_emits_routed_finding() -> None:
         side_effect=RuntimeError("Server disconnected without sending a response."),
     )
     with patch.object(sfi, "_render_image_gen", render_boom), \
-            patch("utils.findings.emit_finding", _capture):
+            patch("poindexter.utils.findings.emit_finding", _capture):
         result = await sfi._try_image_gen_featured(
             subject="Test article",
             existing_prompt="a concrete editorial prompt",

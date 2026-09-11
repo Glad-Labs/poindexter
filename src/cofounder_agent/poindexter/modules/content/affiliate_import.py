@@ -138,7 +138,7 @@ async def import_csv(
     pool: Any, csv_path: str, *, site_config: Any, force: bool = False,
 ) -> ImportReport:
     report = ImportReport()
-    from modules.content.affiliate_links import add_link, set_active
+    from poindexter.modules.content.affiliate_links import add_link, set_active
 
     with open(csv_path, newline="", encoding="utf-8") as f:
         for raw_row in csv.DictReader(f):

@@ -15,8 +15,8 @@ import asyncio
 
 import pytest
 
-from plugins.kernel_platform import KernelPlatform
-from plugins.platform import Capability, CapabilityError, Platform, ScopedPlatform
+from poindexter.plugins.kernel_platform import KernelPlatform
+from poindexter.plugins.platform import Capability, CapabilityError, Platform, ScopedPlatform
 from tests.unit._fake_platform import FakePlatform
 
 # --- stub kernel services for the KernelPlatform variant ----------------------

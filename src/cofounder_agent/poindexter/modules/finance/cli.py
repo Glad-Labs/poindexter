@@ -45,8 +45,8 @@ async def _read_token(dsn: str) -> str:
     ``POINDEXTER_SECRET_KEY`` from bootstrap.toml if it's not
     already in the CLI shell's env (the worker has it; bare
     ``poindexter`` invocations don't by default)."""
-    from plugins.secrets import get_secret
     from poindexter.cli._bootstrap import ensure_secret_key
+    from poindexter.plugins.secrets import get_secret
 
     ensure_secret_key()
     conn = await asyncpg.connect(dsn)
@@ -66,11 +66,11 @@ def finance_group() -> None:
 @click.option("--json", "json_output", is_flag=True, help="Emit raw JSON.")
 def finance_balance(json_output: bool) -> None:
     """List every Mercury account + current/available balance."""
-    from modules.finance.mercury_client import (
+    from poindexter.cli._bootstrap import resolve_dsn
+    from poindexter.modules.finance.mercury_client import (
         MercuryAuthError,
         MercuryClient,
     )
-    from poindexter.cli._bootstrap import resolve_dsn
 
     async def _go():
         dsn = resolve_dsn()
@@ -141,11 +141,11 @@ def finance_transactions(
     account_id: str, days: int, limit: int, json_output: bool,
 ) -> None:
     """List recent transactions for ``account_id``. Default 30-day window."""
-    from modules.finance.mercury_client import (
+    from poindexter.cli._bootstrap import resolve_dsn
+    from poindexter.modules.finance.mercury_client import (
         MercuryAuthError,
         MercuryClient,
     )
-    from poindexter.cli._bootstrap import resolve_dsn
 
     async def _go():
         dsn = resolve_dsn()

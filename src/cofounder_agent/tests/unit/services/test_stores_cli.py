@@ -29,7 +29,7 @@ from click.testing import CliRunner
 # Stub plugins.secrets so the CLI's late import works without dragging
 # in the full plugins/__init__.py side-effects (apscheduler, etc.).
 # Tests that need to assert call args grab the AsyncMocks back via
-# ``sys.modules['plugins.secrets'].<attr>`` from within the test.
+# ``sys.modules['poindexter.plugins.secrets'].<attr>`` from within the test.
 # ---------------------------------------------------------------------------
 
 
@@ -46,11 +46,11 @@ def _install_secrets_stub(monkeypatch: pytest.MonkeyPatch) -> tuple[AsyncMock, A
     set_secret_mock = AsyncMock(return_value=None)
     ensure_pgcrypto_mock = AsyncMock(return_value=None)
     fake_plugins = types.ModuleType("plugins")
-    fake_secrets = types.ModuleType("plugins.secrets")
+    fake_secrets = types.ModuleType("poindexter.plugins.secrets")
     fake_secrets.set_secret = set_secret_mock
     fake_secrets.ensure_pgcrypto = ensure_pgcrypto_mock
-    monkeypatch.setitem(sys.modules, "plugins", fake_plugins)
-    monkeypatch.setitem(sys.modules, "plugins.secrets", fake_secrets)
+    monkeypatch.setitem(sys.modules, "poindexter.plugins", fake_plugins)
+    monkeypatch.setitem(sys.modules, "poindexter.plugins.secrets", fake_secrets)
     return set_secret_mock, ensure_pgcrypto_mock
 
 

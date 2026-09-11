@@ -75,7 +75,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ async def _backfill_atom_run_outcome(
             "[auto_publish_gate] atom_runs outcome backfill failed: %s",
             exc,
         )
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="modules.content.auto_publish_gate",
@@ -504,7 +504,7 @@ async def _lookup_latest_capability_outcome(
             "prompt_template_version": row["prompt_template_version"],
         }
     except Exception as exc:  # noqa: BLE001
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="auto_publish_gate",

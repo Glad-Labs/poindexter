@@ -56,129 +56,129 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # content_validator (also used as a whole-module alias ``cv``)
 # ---------------------------------------------------------------------------
-from modules.content import content_validator  # noqa: F401 — whole-module alias
+from poindexter.modules.content import content_validator  # noqa: F401 — whole-module alias
 
 # ---------------------------------------------------------------------------
 # atoms.narrate_bundle (also used as a whole-module alias ``_narrate_atom``)
 # ---------------------------------------------------------------------------
-from modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
+from poindexter.modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
 
 # ---------------------------------------------------------------------------
 # atoms._scaffold_helpers — producer-side strip, paired with the detector above
 # ---------------------------------------------------------------------------
-from modules.content.atoms._scaffold_helpers import (
+from poindexter.modules.content.atoms._scaffold_helpers import (
     strip_leaked_planning_scaffold as strip_leaked_planning_scaffold,
 )
 
 # ---------------------------------------------------------------------------
 # atoms.social_generate_drafts
 # ---------------------------------------------------------------------------
-from modules.content.atoms.social_generate_drafts import (
+from poindexter.modules.content.atoms.social_generate_drafts import (
     run as generate_social_drafts,
 )
 
 # ---------------------------------------------------------------------------
 # auto_publish
 # ---------------------------------------------------------------------------
-from modules.content.auto_publish import (
+from poindexter.modules.content.auto_publish import (
     auto_publish_task as auto_publish_task,
 )
-from modules.content.auto_publish import (
+from poindexter.modules.content.auto_publish import (
     get_auto_publish_threshold as get_auto_publish_threshold,
 )
-from modules.content.auto_publish import (
+from poindexter.modules.content.auto_publish import (
     veto_auto_publish as veto_auto_publish,
 )
 
 # ---------------------------------------------------------------------------
 # auto_publish_gate
 # ---------------------------------------------------------------------------
-from modules.content.auto_publish_gate import (
+from poindexter.modules.content.auto_publish_gate import (
     AutoPublishDecision as AutoPublishDecision,
 )
-from modules.content.auto_publish_gate import (
+from poindexter.modules.content.auto_publish_gate import (
     evaluate as evaluate_auto_publish_gate,
 )
-from modules.content.auto_publish_gate import (
+from poindexter.modules.content.auto_publish_gate import (
     record_post_approve_metrics as record_post_approve_metrics,
 )
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     ValidationIssue as ValidationIssue,
 )
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     ValidationResult as ValidationResult,
 )
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     has_planning_dump as has_planning_dump,
 )
-from modules.content.content_validator import (
+from poindexter.modules.content.content_validator import (
     validate_content as validate_content,
 )
 
 # ---------------------------------------------------------------------------
 # image_rebuild_service
 # ---------------------------------------------------------------------------
-from modules.content.image_rebuild_service import (
+from poindexter.modules.content.image_rebuild_service import (
     enqueue_image_rebuild as enqueue_image_rebuild,
 )
 
 # ---------------------------------------------------------------------------
 # internal_link_coherence
 # ---------------------------------------------------------------------------
-from modules.content.internal_link_coherence import (
+from poindexter.modules.content.internal_link_coherence import (
     InternalLinkCoherenceFilter as InternalLinkCoherenceFilter,
 )
-from modules.content.internal_link_coherence import (
+from poindexter.modules.content.internal_link_coherence import (
     LinkCandidate as LinkCandidate,
 )
 
 # ---------------------------------------------------------------------------
 # multi_model_qa
 # ---------------------------------------------------------------------------
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     MultiModelQA as MultiModelQA,
 )
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     MultiModelResult as MultiModelResult,
 )
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     ReviewerResult as ReviewerResult,
 )
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     build_review_excerpt as build_review_excerpt,
 )
-from modules.content.multi_model_qa import (
+from poindexter.modules.content.multi_model_qa import (
     format_qa_feedback_from_reviews as format_qa_feedback_from_reviews,
 )
 
 # ---------------------------------------------------------------------------
 # post_edit_service
 # ---------------------------------------------------------------------------
-from modules.content.post_edit_service import (
+from poindexter.modules.content.post_edit_service import (
     EditResult as EditResult,
 )
-from modules.content.post_edit_service import (
+from poindexter.modules.content.post_edit_service import (
     PostEditService as PostEditService,
 )
 
 # ---------------------------------------------------------------------------
 # posts_service
 # ---------------------------------------------------------------------------
-from modules.content.posts_service import (
+from poindexter.modules.content.posts_service import (
     PostsService as PostsService,
 )
 
 # ---------------------------------------------------------------------------
 # quality_service
 # ---------------------------------------------------------------------------
-from modules.content.quality_service import (
+from poindexter.modules.content.quality_service import (
     UnifiedQualityService as UnifiedQualityService,
 )
 
 # ---------------------------------------------------------------------------
 # stages.topic_decision_gate
 # ---------------------------------------------------------------------------
-from modules.content.stages.topic_decision_gate import (
+from poindexter.modules.content.stages.topic_decision_gate import (
     build_topic_decision_artifact as build_topic_decision_artifact,
 )
 

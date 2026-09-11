@@ -14,8 +14,8 @@ Covers:
 """
 from unittest.mock import AsyncMock, MagicMock
 
-from modules.content.atoms import _seo_common as sc
-from modules.content.atoms import seo_generate_all_metadata as atom
+from poindexter.modules.content.atoms import _seo_common as sc
+from poindexter.modules.content.atoms import seo_generate_all_metadata as atom
 
 # asyncio_mode = "auto" in pyproject.toml auto-marks coroutine tests.
 

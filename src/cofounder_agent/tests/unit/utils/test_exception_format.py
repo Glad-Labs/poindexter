@@ -14,7 +14,7 @@ import asyncio
 import httpx
 import pytest
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 
 class TestDescribeException:

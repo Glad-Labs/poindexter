@@ -28,9 +28,9 @@ from typing import Any
 
 import httpx
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.grafana_alert_builder import build_current
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

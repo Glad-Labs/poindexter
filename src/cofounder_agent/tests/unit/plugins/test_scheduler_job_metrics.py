@@ -19,8 +19,8 @@ import json
 from datetime import timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from plugins.job import JobResult
-from plugins.scheduler import PluginScheduler
+from poindexter.plugins.job import JobResult
+from poindexter.plugins.scheduler import PluginScheduler
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests.

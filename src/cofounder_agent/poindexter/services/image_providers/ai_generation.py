@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from plugins.image_provider import ImageResult
+from poindexter.plugins.image_provider import ImageResult
 
 if TYPE_CHECKING:
     import httpx
@@ -77,7 +77,7 @@ class AIGenerationProvider:
 
         # Resolve the downstream provider. Stay inside the plugin registry
         # so swapping to flux/dalle/etc. later is a config change.
-        from plugins.registry import get_image_providers
+        from poindexter.plugins.registry import get_image_providers
         providers = {p.name: p for p in get_image_providers()}
         target = providers.get(generator_name)
         if target is None:

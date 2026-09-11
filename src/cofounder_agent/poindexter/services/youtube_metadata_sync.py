@@ -36,7 +36,7 @@ from poindexter.services.jobs.youtube_payload import (
     _parse_seo_keywords,
 )
 from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
-from utils.findings import emit_finding
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 

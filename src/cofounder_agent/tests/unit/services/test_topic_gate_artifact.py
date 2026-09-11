@@ -14,12 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.topic_decision_gate import (
+from poindexter.modules.content.stages.topic_decision_gate import (
     TopicDecisionGateStage,
     _summarize_research,
     build_topic_decision_artifact,
 )
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 # ---------------------------------------------------------------------------
 # build_topic_decision_artifact — shape contract
@@ -232,7 +232,7 @@ class TestStageExecution:
             }
 
         with patch(
-            "modules.content.stages.approval_gate.pause_at_gate",
+            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             result = await TopicDecisionGateStage().execute(ctx, {})
@@ -259,7 +259,7 @@ class TestStageExecution:
             return {"ok": True, "paused_at": "x", "notify": {"sent": False}}
 
         with patch(
-            "modules.content.stages.approval_gate.pause_at_gate",
+            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             await TopicDecisionGateStage().execute(
@@ -278,7 +278,7 @@ class TestStageExecution:
             return {"ok": True, "paused_at": "x", "notify": {"sent": False}}
 
         with patch(
-            "modules.content.stages.approval_gate.pause_at_gate",
+            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
             AsyncMock(side_effect=_fake_pause),
         ):
             result = await TopicDecisionGateStage().execute(

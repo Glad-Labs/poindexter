@@ -167,7 +167,7 @@ class TestMintGrafanaHappyPath:
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
-            "plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
+            "poindexter.plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
         ), patch(
             "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
@@ -219,7 +219,7 @@ class TestMintGrafanaHappyPath:
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
-            "plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
+            "poindexter.plugins.secrets.get_secret", new=AsyncMock(side_effect=_get_secret),
         ), patch(
             "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(
@@ -341,10 +341,10 @@ class TestMintGrafanaPersist:
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_get_secret),
         ), patch(
-            "plugins.secrets.set_secret",
+            "poindexter.plugins.secrets.set_secret",
             new=AsyncMock(side_effect=_capture_set_secret),
         ), patch(
             "poindexter.services.auth.oauth_issuer.issue_token",
@@ -404,10 +404,10 @@ class TestMintGrafanaPersist:
         ), patch.object(
             auth_mod, "_pool", side_effect=_fake_pool_factory,
         ), patch(
-            "plugins.secrets.get_secret",
+            "poindexter.plugins.secrets.get_secret",
             new=AsyncMock(side_effect=_get_secret),
         ), patch(
-            "plugins.secrets.set_secret", new=set_secret_mock,
+            "poindexter.plugins.secrets.set_secret", new=set_secret_mock,
         ), patch(
             "poindexter.services.auth.oauth_issuer.issue_token",
             return_value=(

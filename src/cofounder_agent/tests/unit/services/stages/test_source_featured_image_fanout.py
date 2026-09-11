@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.source_featured_image import _try_image_gen_featured
+from poindexter.modules.content.stages.source_featured_image import _try_image_gen_featured
 
 
 def _site_config(**overrides: Any) -> Any:
@@ -38,15 +38,15 @@ def _site_config(**overrides: Any) -> Any:
 async def _run(*, render_result, fanout_mock, sc, pool=None):
     with (
         patch(
-            "modules.content.stages.source_featured_image._render_image_gen",
+            "poindexter.modules.content.stages.source_featured_image._render_image_gen",
             new=AsyncMock(return_value=render_result),
         ),
         patch(
-            "modules.content.stages.source_featured_image._build_image_gen_prompt",
+            "poindexter.modules.content.stages.source_featured_image._build_image_gen_prompt",
             new=AsyncMock(return_value="a glowing server rack, flat vector"),
         ),
         patch(
-            "modules.content.stages.source_featured_image._upload_featured_to_r2",
+            "poindexter.modules.content.stages.source_featured_image._upload_featured_to_r2",
             new=AsyncMock(return_value="https://r2.example/img.webp"),
         ) as upload,
         patch("poindexter.services.image_fanout.run_featured_fanout", fanout_mock),

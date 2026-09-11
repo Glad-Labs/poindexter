@@ -85,7 +85,7 @@ def test_strips_everything_number_inline_markers_produces():
     new marker form added to _writer_markers fails here rather than shipping
     to a published post.
     """
-    from modules.content.atoms._writer_markers import number_inline_markers
+    from poindexter.modules.content.atoms._writer_markers import number_inline_markers
 
     body = "A\n[IMAGE: a rack]\nB\n[SCREENSHOT: qa-rails]\nC"
     planned = number_inline_markers(body, max_inline=5)
@@ -96,7 +96,7 @@ def test_strips_everything_number_inline_markers_produces():
 
 
 def test_strips_the_hero_marker_the_writer_places():
-    from modules.content.atoms._writer_markers import extract_hero_subject
+    from poindexter.modules.content.atoms._writer_markers import extract_hero_subject
 
     body = "[HERO-IMAGE: a token tree]\n\n## Intro\n\nText."
     # The hero is normally lifted out by the planner; when the graph has no

@@ -627,7 +627,7 @@ class TestInvalidFromSkipsCampaign:
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[])
 
-        with patch("utils.findings.emit_finding") as mock_finding:
+        with patch("poindexter.utils.findings.emit_finding") as mock_finding:
             result = await send_post_newsletter(
                 pool, "T", "E", "s", site_config=_resend_cfg_mock("garbage"),
             )
@@ -703,7 +703,7 @@ class TestTotalFailureFinding:
         pool.execute = AsyncMock()
 
         with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
-             patch("utils.findings.emit_finding") as mock_finding:
+             patch("poindexter.utils.findings.emit_finding") as mock_finding:
             mock_send.return_value = (False, "Invalid `from` field.")
             result = await send_post_newsletter(
                 pool, "T", "E", "dead-slug", site_config=_resend_cfg_mock(),
@@ -730,7 +730,7 @@ class TestTotalFailureFinding:
         pool.execute = AsyncMock()
 
         with patch("poindexter.services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send, \
-             patch("utils.findings.emit_finding") as mock_finding:
+             patch("poindexter.utils.findings.emit_finding") as mock_finding:
             mock_send.side_effect = [(True, None), (False, "bounce")]
             await send_post_newsletter(
                 pool, "T", "E", "s", site_config=_resend_cfg_mock(),

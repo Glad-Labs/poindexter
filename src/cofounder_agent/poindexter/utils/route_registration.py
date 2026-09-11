@@ -159,7 +159,7 @@ def register_all_routes(
     # here without editing this file. Failures log + continue so one
     # bad module can't take down the worker's HTTP surface.
     try:
-        from plugins.registry import get_modules
+        from poindexter.plugins.registry import get_modules
 
         modules = get_modules()
         if modules:

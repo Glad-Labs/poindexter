@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.media_regen import regen_video_scripts
+from poindexter.modules.content.media_regen import regen_video_scripts
 
 _TASK = "11111111-2222-3333-4444-555555555555"
 _SHOT_LIST = {"shots": [{"idx": 0}, {"idx": 1}], "total_duration_s": 30.0}
@@ -68,15 +68,15 @@ def _patch_stages(
     test can inspect the context it received."""
     scripts_stage = _stage(scripts_updates, "scripts detail")
     monkeypatch.setattr(
-        "modules.content.stages.generate_media_scripts.GenerateMediaScriptsStage",
+        "poindexter.modules.content.stages.generate_media_scripts.GenerateMediaScriptsStage",
         lambda: scripts_stage,
     )
     monkeypatch.setattr(
-        "modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
+        "poindexter.modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
         lambda: _stage(director_updates),
     )
     monkeypatch.setattr(
-        "modules.content.stages.review_video_shot_list.ReviewVideoShotListStage",
+        "poindexter.modules.content.stages.review_video_shot_list.ReviewVideoShotListStage",
         lambda: _stage(review_updates),
     )
     return scripts_stage

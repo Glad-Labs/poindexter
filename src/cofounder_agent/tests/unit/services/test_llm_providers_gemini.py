@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from plugins.llm_providers.gemini import (
+from poindexter.plugins.llm_providers.gemini import (
     CostGuardExhausted,
     GeminiProvider,
     GeminiProviderError,

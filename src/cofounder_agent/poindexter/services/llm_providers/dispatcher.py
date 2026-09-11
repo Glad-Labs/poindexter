@@ -53,11 +53,11 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from plugins.config import PluginConfig
-from plugins.registry import get_all_llm_providers
+from poindexter.plugins.config import PluginConfig
+from poindexter.plugins.registry import get_all_llm_providers
 from poindexter.services.gpu_scheduler import gpu
 from poindexter.services.task_context import current_task_id
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 if TYPE_CHECKING:
     from poindexter.services.vram_budget import ModelArch
@@ -251,7 +251,7 @@ async def _resolve_auto_total(container: Any) -> float:
     if detected is not None:
         return detected
     fallback = container.site_config.get_float("gpu_vram_autodetect_fallback_gb", 32.0)
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="vram_budget",
@@ -309,7 +309,7 @@ async def _clamp_num_ctx_to_budget(
     if ok:
         return num_ctx
     safe = max_safe_num_ctx(arch, total, reserve, kv)
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="vram_budget",
@@ -412,7 +412,7 @@ def _local_fallback_or_reraise(
     span.set_attribute("llm.cost_guard.downgraded", True)
     span.set_attribute("llm.cost_guard.original_model", model)
 
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="cost_guard",
@@ -1011,7 +1011,7 @@ async def _record_dispatch_cost(
         # (deduped, Findings board); mirrors cost_guard.record's own
         # cost_log_write_failed audit path (cost_guard.py, severity error).
         logger.debug("dispatcher: cost_logs auto-write skipped: %s", e)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.llm_providers.dispatcher",

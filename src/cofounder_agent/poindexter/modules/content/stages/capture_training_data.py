@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
 

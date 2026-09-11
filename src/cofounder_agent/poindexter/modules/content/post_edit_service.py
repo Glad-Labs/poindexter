@@ -723,7 +723,7 @@ class PostEditService:
         if self._site_config is None:
             return []
         try:
-            from modules.content.api import validate_content
+            from poindexter.modules.content.api import validate_content
 
             result = validate_content(
                 title="", content=body, site_config=self._site_config,

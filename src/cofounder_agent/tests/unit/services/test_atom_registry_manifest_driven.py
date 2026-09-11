@@ -2,7 +2,7 @@
 
 Verifies that ``atom_registry.discover()`` iterates module manifests and
 calls ``_walk_package`` for each non-None ``atoms_package`` field, rather
-than relying on a hardcoded ``"modules.content.atoms"`` path.
+than relying on a hardcoded ``"poindexter.modules.content.atoms"`` path.
 
 No real filesystem imports are needed — both ``get_modules`` and
 ``_walk_package`` are patched so the test is hermetic.
@@ -91,7 +91,7 @@ class TestManifestDrivenAtomDiscovery:
         walk_mock = MagicMock(side_effect=walk_side_effect)
 
         with (
-            patch("plugins.registry.get_modules", return_value=modules),
+            patch("poindexter.plugins.registry.get_modules", return_value=modules),
             patch.object(ar, "_walk_package", walk_mock),
             patch.object(ar, "_surface_stages_as_atoms"),  # keep tests fast
         ):
@@ -101,9 +101,9 @@ class TestManifestDrivenAtomDiscovery:
 
     def test_single_module_with_atoms_package(self):
         """A module with atoms_package set causes _walk_package to be called."""
-        mod = _make_module("modules.foo.atoms")
+        mod = _make_module("poindexter.modules.foo.atoms")
         walk = self._run_discover([mod])
-        walk.assert_called_once_with("modules.foo.atoms")
+        walk.assert_called_once_with("poindexter.modules.foo.atoms")
 
     def test_module_without_atoms_package_is_skipped(self):
         """A module with atoms_package=None does not trigger _walk_package."""
@@ -114,23 +114,23 @@ class TestManifestDrivenAtomDiscovery:
     def test_multiple_modules_each_walked(self):
         """Every module that declares atoms_package gets its own _walk_package call."""
         mods = [
-            _make_module("modules.content.atoms"),
+            _make_module("poindexter.modules.content.atoms"),
             _make_module(None),
-            _make_module("modules.hr.atoms"),
+            _make_module("poindexter.modules.hr.atoms"),
         ]
         walk = self._run_discover(mods)
         assert walk.call_count == 2
-        walk.assert_any_call("modules.content.atoms")
-        walk.assert_any_call("modules.hr.atoms")
+        walk.assert_any_call("poindexter.modules.content.atoms")
+        walk.assert_any_call("poindexter.modules.hr.atoms")
 
     def test_manifest_error_skips_module(self):
         """If manifest() raises, the module is skipped and discovery continues."""
         bad_mod = MagicMock()
         bad_mod.manifest.side_effect = RuntimeError("oops")
-        good_mod = _make_module("modules.good.atoms")
+        good_mod = _make_module("poindexter.modules.good.atoms")
 
         walk = self._run_discover([bad_mod, good_mod])
-        walk.assert_called_once_with("modules.good.atoms")
+        walk.assert_called_once_with("poindexter.modules.good.atoms")
 
     def test_fallback_when_get_modules_raises(self):
         """If get_modules() itself raises, discover() falls back to the hardcoded path."""
@@ -144,7 +144,7 @@ class TestManifestDrivenAtomDiscovery:
 
         with (
             patch(
-                "plugins.registry.get_modules",
+                "poindexter.plugins.registry.get_modules",
                 side_effect=ImportError("registry broken"),
             ),
             patch.object(ar, "_walk_package", walk_mock),
@@ -154,7 +154,7 @@ class TestManifestDrivenAtomDiscovery:
 
         # Fallback path must still walk the content atoms so existing prod
         # behaviour is preserved even when the module registry is broken.
-        walk_mock.assert_called_once_with("modules.content.atoms")
+        walk_mock.assert_called_once_with("poindexter.modules.content.atoms")
 
     @staticmethod
     def _walk_that_registers(name: str = "atoms.fake"):
@@ -179,11 +179,11 @@ class TestManifestDrivenAtomDiscovery:
         ar._ATOMS.clear()
         ar._RUNNERS.clear()
 
-        mod = _make_module("modules.content.atoms")
+        mod = _make_module("poindexter.modules.content.atoms")
         walk_mock = self._walk_that_registers()
 
         with (
-            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch("poindexter.plugins.registry.get_modules", return_value=[mod]),
             patch.object(ar, "_walk_package", walk_mock),
             patch.object(ar, "_surface_stages_as_atoms"),
         ):
@@ -205,11 +205,11 @@ class TestManifestDrivenAtomDiscovery:
         ar._ATOMS.clear()
         ar._RUNNERS.clear()
 
-        mod = _make_module("modules.content.atoms")
+        mod = _make_module("poindexter.modules.content.atoms")
         walk_mock = MagicMock()  # no-op: discovery yields nothing
 
         with (
-            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch("poindexter.plugins.registry.get_modules", return_value=[mod]),
             patch.object(ar, "_walk_package", walk_mock),
             patch.object(ar, "_surface_stages_as_atoms"),
         ):
@@ -228,10 +228,10 @@ class TestManifestDrivenAtomDiscovery:
         ar._ATOMS.clear()
         ar._RUNNERS.clear()
 
-        mod = _make_module("modules.content.atoms")
+        mod = _make_module("poindexter.modules.content.atoms")
 
         with (
-            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch("poindexter.plugins.registry.get_modules", return_value=[mod]),
             patch.object(ar, "_walk_package", MagicMock()),
             patch.object(ar, "_surface_stages_as_atoms"),
         ):
@@ -240,7 +240,7 @@ class TestManifestDrivenAtomDiscovery:
 
         walk_ok = self._walk_that_registers()
         with (
-            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch("poindexter.plugins.registry.get_modules", return_value=[mod]),
             patch.object(ar, "_walk_package", walk_ok),
             patch.object(ar, "_surface_stages_as_atoms"),
         ):

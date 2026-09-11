@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.atoms import qa_numeric_fidelity as atom
+from poindexter.modules.content.atoms import qa_numeric_fidelity as atom
 
 pytestmark = pytest.mark.unit
 
@@ -53,7 +53,7 @@ def _patch_gates(monkeypatch, required: bool = False):
 
     monkeypatch.setattr(atom, "resolve_gate_states", _states)
     monkeypatch.setattr(
-        "modules.content.multi_model_qa.MultiModelQA.__init__",
+        "poindexter.modules.content.multi_model_qa.MultiModelQA.__init__",
         lambda self, **kw: None,
     )
 
@@ -209,7 +209,7 @@ class TestAtomContract:
         import inspect
 
         src = inspect.getsource(atom)
-        assert "modules.content.stages" not in src
+        assert "poindexter.modules.content.stages" not in src
         for line in src.splitlines():
             if line.startswith(("import ", "from ")) and "atoms." in line:
                 assert "atoms._" in line, f"sibling-atom import: {line}"

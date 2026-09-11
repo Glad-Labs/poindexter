@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.platform import (
+from poindexter.plugins.platform import (
     Capability,
     CapabilityError,
     Platform,

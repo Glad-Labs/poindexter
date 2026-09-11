@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from modules.content.jobs.backfill_video_shot_lists import (
+from poindexter.modules.content.jobs.backfill_video_shot_lists import (
     BackfillVideoShotListsJob,
 )
 from poindexter.services.site_config import SiteConfig
@@ -84,7 +84,7 @@ def _patch_deps(monkeypatch, *, stage_result, platform=object()):
     stage = MagicMock()
     stage.execute = AsyncMock(return_value=stage_result)
     monkeypatch.setattr(
-        "modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
+        "poindexter.modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
         lambda: stage,
     )
     return stage
@@ -96,7 +96,7 @@ class TestBackfillVideoShotLists:
         """Both halves are required: without clearing the marker the piece
         stays retired no matter how good its new shot list is."""
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         _patch_deps(
             monkeypatch,
@@ -119,7 +119,7 @@ class TestBackfillVideoShotLists:
         """The director skipping again (busy GPU) must be a true no-op — not a
         cleared marker pointing at a piece that still cannot render."""
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         _patch_deps(
             monkeypatch,
@@ -136,7 +136,7 @@ class TestBackfillVideoShotLists:
         """`{}` and `{"shots": []}` are exactly the stranded state — writing
         either back would re-strand the piece with a cleared marker."""
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         _patch_deps(
             monkeypatch,
@@ -150,7 +150,7 @@ class TestBackfillVideoShotLists:
 
     async def test_one_bad_piece_does_not_abort_the_batch(self, monkeypatch):
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         monkeypatch.setattr(
             "poindexter.services.di_wiring.build_platform_for_subprocess", lambda *a, **k: object(),
@@ -161,7 +161,7 @@ class TestBackfillVideoShotLists:
             MagicMock(context_updates={"video_shot_list": _SHOT_LIST}, detail="ok"),
         ])
         monkeypatch.setattr(
-            "modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
+            "poindexter.modules.content.stages.generate_video_shot_list.GenerateVideoShotListStage",
             lambda: stage,
         )
         pool = _FakePool([_row("aaa"), _row("bbb")])
@@ -198,7 +198,7 @@ class TestBackfillVideoShotLists:
 
     async def test_batch_size_is_operator_tunable(self, monkeypatch):
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
         )
         _patch_deps(
             monkeypatch,
@@ -223,7 +223,7 @@ class TestBackfillVideoShotLists:
         shorts un-renderable.
         """
         monkeypatch.setattr(
-            "modules.content.jobs.backfill_video_shot_lists.emit_finding",
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding",
             lambda **kw: None,
         )
         stage = _patch_deps(

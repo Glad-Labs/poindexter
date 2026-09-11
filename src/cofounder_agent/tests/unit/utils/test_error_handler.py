@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from utils.error_handler import (
+from poindexter.utils.error_handler import (
     ErrorResponse,
     bad_request,
     create_error_response,
@@ -341,11 +341,11 @@ class TestConvenienceFunctions:
 
     def test_not_found_no_operation_no_error(self):
         # When operation=None, the function should not log
-        with patch("utils.error_handler.logger") as mock_logger:
+        with patch("poindexter.utils.error_handler.logger") as mock_logger:
             not_found("test")
             mock_logger.warning.assert_not_called()
 
     def test_not_found_with_operation_logs_warning(self):
-        with patch("utils.error_handler.logger") as mock_logger:
+        with patch("poindexter.utils.error_handler.logger") as mock_logger:
             not_found("test", operation="find_post")
             mock_logger.warning.assert_called_once()

@@ -36,7 +36,7 @@ import logging
 from typing import Any
 
 from poindexter.services.site_config import SiteConfig
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def setup_pyroscope(
             from poindexter.services.site_config import SiteConfig
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="profiling",

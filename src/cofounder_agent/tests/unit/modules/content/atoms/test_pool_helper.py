@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from modules.content.atoms import _pool
-from modules.content.atoms._pool import resolve_pool
+from poindexter.modules.content.atoms import _pool
+from poindexter.modules.content.atoms._pool import resolve_pool
 
 
 @pytest.mark.unit

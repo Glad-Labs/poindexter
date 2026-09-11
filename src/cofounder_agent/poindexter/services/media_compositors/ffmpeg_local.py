@@ -68,7 +68,7 @@ import tempfile
 import time
 from typing import Any, Literal
 
-from plugins.media_compositor import (
+from poindexter.plugins.media_compositor import (
     CompositionRequest,
     CompositionResult,
     CompositionScene,

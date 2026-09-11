@@ -145,7 +145,7 @@ def _emit_rejected_finding(model: str, reason: str) -> None:
     others, and neither outcome surfaced anywhere.
     """
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="services.self_review",
@@ -229,7 +229,7 @@ async def _prepare(
     # local Ollama.
     local_provider = None
     if pool is None:
-        from plugins.registry import get_all_llm_providers
+        from poindexter.plugins.registry import get_all_llm_providers
         providers = {p.name: p for p in get_all_llm_providers()}
         local_provider = providers.get("ollama_native")
         if local_provider is None:
@@ -459,7 +459,7 @@ async def revise_contradictions(
         if revised_text:
             # Substrate reaches content through the api adapter, never a deep
             # import (the modules/content/api.py boundary).
-            from modules.content.api import strip_leaked_planning_scaffold
+            from poindexter.modules.content.api import strip_leaked_planning_scaffold
             from poindexter.services.llm_providers.thinking_models import (
                 strip_reasoning_artifacts,
             )
@@ -491,7 +491,7 @@ async def revise_contradictions(
         elif ratio > max_ratio:
             reject_reason = f"too long (ratio {ratio:.2f} > {max_ratio})"
         else:
-            from modules.content.api import has_planning_dump
+            from poindexter.modules.content.api import has_planning_dump
 
             dump = has_planning_dump(revised_text)
             if dump:

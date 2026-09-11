@@ -406,7 +406,7 @@ class StartupManager:
             # Start connection pool health monitor if pool is available
             if self.database_service.pool is not None:
                 try:
-                    from utils.connection_health import ConnectionPoolHealth
+                    from poindexter.utils.connection_health import ConnectionPoolHealth
 
                     pool_monitor = ConnectionPoolHealth(self.database_service.pool)
                     import asyncio
@@ -572,7 +572,7 @@ class StartupManager:
         try:
             from pathlib import Path
 
-            from plugins.registry import get_modules
+            from poindexter.plugins.registry import get_modules
             from poindexter.services.module_runner import run_module_migrations
 
             modules = get_modules()
@@ -993,7 +993,7 @@ class StartupManager:
                     )
 
         if template_fetch_failures:
-            from utils.findings import emit_finding
+            from poindexter.utils.findings import emit_finding
 
             emit_finding(
                 source="startup_manager",

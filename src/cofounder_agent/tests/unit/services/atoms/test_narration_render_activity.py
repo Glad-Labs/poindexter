@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import _narration_render
+from poindexter.modules.content.atoms import _narration_render
 
 pytestmark = pytest.mark.asyncio
 

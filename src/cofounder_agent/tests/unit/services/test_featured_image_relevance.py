@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.multi_model_qa import _images_to_score
+from poindexter.modules.content.multi_model_qa import _images_to_score
 
 
 @pytest.mark.unit
@@ -70,7 +70,7 @@ class TestImagesToScore:
 @pytest.mark.unit
 def test_resolve_featured_subject_precedence():
     """Featured-image subject grounding: writer hero > decision plan > topic."""
-    from modules.content.stages.source_featured_image import _resolve_featured_subject
+    from poindexter.modules.content.stages.source_featured_image import _resolve_featured_subject
 
     # writer hero wins over decision plan and topic
     assert _resolve_featured_subject(

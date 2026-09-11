@@ -56,7 +56,7 @@ import httpx
 from poindexter.services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
-from utils.edge_challenge import is_edge_challenge
+from poindexter.utils.edge_challenge import is_edge_challenge
 
 logger = get_logger(__name__)
 

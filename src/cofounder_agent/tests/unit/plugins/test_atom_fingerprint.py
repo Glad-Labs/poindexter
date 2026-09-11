@@ -1,5 +1,5 @@
 """contract_fingerprint() — structural drift tripwire (poindexter#755)."""
-from plugins.atom import AtomMeta, FieldSpec
+from poindexter.plugins.atom import AtomMeta, FieldSpec
 
 
 def _meta(

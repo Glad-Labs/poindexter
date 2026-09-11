@@ -32,8 +32,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class WarmPinnedLlmEndpointsJob:
         from poindexter.services.llm_providers.dispatcher import get_provider_config
         from poindexter.services.llm_providers.litellm_provider import _coerce_override_map
         from poindexter.services.ollama_client import resolve_num_ctx
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         provider_config = await get_provider_config(pool, _PROVIDER)
         overrides = _coerce_override_map(

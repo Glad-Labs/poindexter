@@ -30,13 +30,13 @@ _PATCH_TARGET = "poindexter.services.prompt_manager.get_prompt_manager"
 
 
 def _qa_rewrite():
-    from modules.content.atoms import qa_rewrite as m
+    from poindexter.modules.content.atoms import qa_rewrite as m
 
     return m._resolve_revise_prompt(content="A draft body.", feedback="- name the GPU")
 
 
 def _narrate():
-    from modules.content.atoms import narrate_bundle as m
+    from poindexter.modules.content.atoms import narrate_bundle as m
 
     # _resolve_system_prompt returns a (text, key, version) tuple; run() applies
     # .format(site_name, site_url) after the call. Mirror that here so the
@@ -113,7 +113,7 @@ def _retention_summarize():
 
 
 def _affiliate_derive_keywords():
-    from modules.content import affiliate_import as m
+    from poindexter.modules.content import affiliate_import as m
 
     return m._resolve_prompt(title="Widget Pro 9000", description="A great widget.")
 

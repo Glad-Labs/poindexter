@@ -34,9 +34,9 @@ import json
 import logging
 from typing import Any
 
-from plugins.job import JobResult
-from utils.exception_format import describe_exception
-from utils.findings import emit_finding
+from poindexter.plugins.job import JobResult
+from poindexter.utils.exception_format import describe_exception
+from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class BackfillVideoShotListsJob:
                 metrics={"backfilled": 0, "attempted": 0},
             )
 
-        from modules.content.stages.generate_video_shot_list import (
+        from poindexter.modules.content.stages.generate_video_shot_list import (
             GenerateVideoShotListStage,
         )
         from poindexter.services.di_wiring import build_platform_for_subprocess

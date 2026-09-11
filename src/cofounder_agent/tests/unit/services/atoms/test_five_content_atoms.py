@@ -74,7 +74,7 @@ def _originality_result(
 @pytest.mark.unit
 class TestContentGenerateTitle:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_generate_title import ATOM_META
+        from poindexter.modules.content.atoms.content_generate_title import ATOM_META
         assert ATOM_META.name == "content.generate_title"
         assert "content" in ATOM_META.requires
         assert "task_id" in ATOM_META.requires
@@ -86,7 +86,7 @@ class TestContentGenerateTitle:
 
     async def test_generates_title_from_draft(self, monkeypatch):
         """Happy path: LLM returns a title, originality check passes."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         expected_title = "Python Async Concurrency Patterns"
         orig = _originality_result(is_original=True)
@@ -124,7 +124,7 @@ class TestContentGenerateTitle:
         writer routes through the dispatcher instead of the local Ollama
         provider. Without the threaded pool the title path can never reach a
         cloud writer (it falls back to the local ollama_native provider)."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         gen_mock = AsyncMock(return_value="Threaded Title")
         monkeypatch.setattr(
@@ -162,7 +162,7 @@ class TestContentGenerateTitle:
 
     async def test_empty_content_returns_empty(self, monkeypatch):
         """Empty content → atom is a no-op (no LLM call, empty return)."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         gen_mock = AsyncMock(return_value="Some Title")
         monkeypatch.setattr("poindexter.services.title_generation.generate_canonical_title", gen_mock)
@@ -175,7 +175,7 @@ class TestContentGenerateTitle:
 
     async def test_regenerates_when_title_not_original(self, monkeypatch):
         """If the first title is not original, a second title is generated."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         titles = ["Duplicate Title", "New Fresh Title"]
         title_iter = iter(titles)
@@ -213,7 +213,7 @@ class TestContentGenerateTitle:
 
     async def test_db_failure_does_not_raise(self, monkeypatch):
         """DB update failure is non-critical; atom still returns title."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         expected_title = "Test Title"
         orig = _originality_result()
@@ -241,7 +241,7 @@ class TestContentGenerateTitle:
 @pytest.mark.unit
 class TestContentCheckTitleOriginality:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_check_title_originality import ATOM_META
+        from poindexter.modules.content.atoms.content_check_title_originality import ATOM_META
         assert ATOM_META.name == "content.check_title_originality"
         assert "title" in ATOM_META.requires
         assert "title_originality" in ATOM_META.produces
@@ -250,7 +250,7 @@ class TestContentCheckTitleOriginality:
 
     async def test_returns_originality_for_unique_title(self, monkeypatch):
         """Unique title: originality check passes, result surfaced on state."""
-        from modules.content.atoms import content_check_title_originality as atom
+        from poindexter.modules.content.atoms import content_check_title_originality as atom
 
         orig = _originality_result(is_original=True)
         monkeypatch.setattr(
@@ -266,7 +266,7 @@ class TestContentCheckTitleOriginality:
 
     async def test_returns_duplicate_flag_for_similar_title(self, monkeypatch):
         """Duplicate title: is_original=False surfaced on state."""
-        from modules.content.atoms import content_check_title_originality as atom
+        from poindexter.modules.content.atoms import content_check_title_originality as atom
 
         orig = _originality_result(is_original=False, max_similarity=0.9, similar_titles=["Existing Post Title"])
         monkeypatch.setattr(
@@ -283,7 +283,7 @@ class TestContentCheckTitleOriginality:
 
     async def test_skips_when_title_originality_already_set(self, monkeypatch):
         """If title_originality already on state, skip the redundant check."""
-        from modules.content.atoms import content_check_title_originality as atom
+        from poindexter.modules.content.atoms import content_check_title_originality as atom
 
         check_mock = AsyncMock(return_value=_originality_result())
         monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", check_mock)
@@ -297,7 +297,7 @@ class TestContentCheckTitleOriginality:
 
     async def test_empty_title_returns_empty(self, monkeypatch):
         """Empty title → atom is a no-op."""
-        from modules.content.atoms import content_check_title_originality as atom
+        from poindexter.modules.content.atoms import content_check_title_originality as atom
 
         check_mock = AsyncMock(return_value=_originality_result())
         monkeypatch.setattr("poindexter.services.title_generation.check_title_originality", check_mock)
@@ -310,7 +310,7 @@ class TestContentCheckTitleOriginality:
 
     async def test_check_failure_returns_safe_default(self, monkeypatch):
         """Service exception → returns fail-open default (is_original=True)."""
-        from modules.content.atoms import content_check_title_originality as atom
+        from poindexter.modules.content.atoms import content_check_title_originality as atom
 
         async def _boom(title, *, site_config):
             raise RuntimeError("network error")
@@ -330,7 +330,7 @@ class TestContentCheckTitleOriginality:
 
 
 def _make_gate_decision(would_fire=False, dry_run=True, gate_state="disabled", reason="gate disabled"):
-    from modules.content.auto_publish_gate import AutoPublishDecision
+    from poindexter.modules.content.auto_publish_gate import AutoPublishDecision
     return AutoPublishDecision(
         would_fire=would_fire,
         dry_run=dry_run,
@@ -346,7 +346,7 @@ def _make_gate_decision(would_fire=False, dry_run=True, gate_state="disabled", r
 @pytest.mark.unit
 class TestContentEvaluateAutoPublish:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_evaluate_auto_publish import ATOM_META
+        from poindexter.modules.content.atoms.content_evaluate_auto_publish import ATOM_META
         assert ATOM_META.name == "content.evaluate_auto_publish"
         assert "task_id" in ATOM_META.requires
         assert "auto_publish_gate" in ATOM_META.produces
@@ -358,11 +358,11 @@ class TestContentEvaluateAutoPublish:
 
     async def test_returns_disabled_when_no_niche(self, monkeypatch):
         """Gate disabled when niche_slug absent → gate_state='disabled'."""
-        from modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
 
         gate_decision = _make_gate_decision(would_fire=False, gate_state="disabled", reason="no niche_slug")
         monkeypatch.setattr(
-            "modules.content.auto_publish_gate.evaluate",
+            "poindexter.modules.content.auto_publish_gate.evaluate",
             AsyncMock(return_value=gate_decision),
         )
 
@@ -374,8 +374,8 @@ class TestContentEvaluateAutoPublish:
 
     async def test_returns_would_fire_when_threshold_met(self, monkeypatch):
         """Gate fires when quality_score >= threshold and niche opted in."""
-        from modules.content.atoms import content_evaluate_auto_publish as atom
-        from modules.content.auto_publish_gate import AutoPublishDecision
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.auto_publish_gate import AutoPublishDecision
 
         gate_decision = AutoPublishDecision(
             would_fire=True,
@@ -388,7 +388,7 @@ class TestContentEvaluateAutoPublish:
             required_clean_runs=3,
         )
         monkeypatch.setattr(
-            "modules.content.auto_publish_gate.evaluate",
+            "poindexter.modules.content.auto_publish_gate.evaluate",
             AsyncMock(return_value=gate_decision),
         )
 
@@ -401,8 +401,8 @@ class TestContentEvaluateAutoPublish:
 
     async def test_awaiting_approval_when_score_below_threshold(self, monkeypatch):
         """Quality score below threshold → gate blocks."""
-        from modules.content.atoms import content_evaluate_auto_publish as atom
-        from modules.content.auto_publish_gate import AutoPublishDecision
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.auto_publish_gate import AutoPublishDecision
 
         gate_decision = AutoPublishDecision(
             would_fire=False,
@@ -415,7 +415,7 @@ class TestContentEvaluateAutoPublish:
             required_clean_runs=3,
         )
         monkeypatch.setattr(
-            "modules.content.auto_publish_gate.evaluate",
+            "poindexter.modules.content.auto_publish_gate.evaluate",
             AsyncMock(return_value=gate_decision),
         )
 
@@ -427,10 +427,10 @@ class TestContentEvaluateAutoPublish:
 
     async def test_missing_task_id_returns_empty(self, monkeypatch):
         """Missing task_id → atom returns empty without calling gate."""
-        from modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
 
         eval_mock = AsyncMock()
-        monkeypatch.setattr("modules.content.auto_publish_gate.evaluate", eval_mock)
+        monkeypatch.setattr("poindexter.modules.content.auto_publish_gate.evaluate", eval_mock)
 
         state = _base_state()
         state.pop("task_id")
@@ -444,16 +444,16 @@ class TestContentEvaluateAutoPublish:
         AND a warning-severity finding is emitted so the failure is visible to
         the operator instead of vanishing at DEBUG (silent-failure audit H2a).
         """
-        from modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
 
         async def _boom(*a, **kw):
             raise RuntimeError("db unreachable")
 
-        monkeypatch.setattr("modules.content.auto_publish_gate.evaluate", _boom)
+        monkeypatch.setattr("poindexter.modules.content.auto_publish_gate.evaluate", _boom)
 
         emit_calls: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding",
+            "poindexter.utils.findings.emit_finding",
             lambda **kw: emit_calls.append(kw),
         )
 
@@ -471,12 +471,12 @@ class TestContentEvaluateAutoPublish:
 
     async def test_platform_audit_written_on_success(self, monkeypatch):
         """When platform is provided, audit.write_bg is called with gate decision."""
-        from modules.content.atoms import content_evaluate_auto_publish as atom
+        from poindexter.modules.content.atoms import content_evaluate_auto_publish as atom
         from tests.unit._fake_platform import FakePlatform
 
         gate_decision = _make_gate_decision(would_fire=False, gate_state="disabled")
         monkeypatch.setattr(
-            "modules.content.auto_publish_gate.evaluate",
+            "poindexter.modules.content.auto_publish_gate.evaluate",
             AsyncMock(return_value=gate_decision),
         )
 
@@ -498,7 +498,7 @@ class TestContentEvaluateAutoPublish:
 @pytest.mark.unit
 class TestContentGenerateImages:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_generate_images import ATOM_META
+        from poindexter.modules.content.atoms.content_generate_images import ATOM_META
         assert ATOM_META.name == "content.generate_images"
         assert "image_plans" in ATOM_META.requires
         assert "image_results" in ATOM_META.produces
@@ -509,7 +509,7 @@ class TestContentGenerateImages:
 
     async def test_empty_plans_returns_empty_list(self):
         """No image plans → image_results=[] returned immediately."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         state = _base_state(image_plans=[])
         out = await atom.run(state)
@@ -518,20 +518,20 @@ class TestContentGenerateImages:
 
     async def test_image_gen_path_stores_result(self, monkeypatch):
         """image-gen succeeds → image_results contains image_gen source entry."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         image_gen_url = "https://r2.example.com/img-001.png"
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             AsyncMock(return_value=[image_gen_url]),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_pexels",
+            "poindexter.modules.content.atoms._image_helpers.try_pexels",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
@@ -558,21 +558,21 @@ class TestContentGenerateImages:
 
     async def test_pexels_fallback_when_image_gen_fails(self, monkeypatch):
         """image-gen returns None → Pexels fallback provides the image."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         pexels_url = "https://images.pexels.com/photo.jpg"
         photographer = "Jane Doe"
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             AsyncMock(return_value=[None]),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_pexels",
+            "poindexter.modules.content.atoms._image_helpers.try_pexels",
             AsyncMock(return_value=(pexels_url, photographer)),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
@@ -598,18 +598,18 @@ class TestContentGenerateImages:
 
     async def test_both_sources_fail_returns_none_url(self, monkeypatch):
         """Both image-gen and Pexels fail → entry has url=None, source='none'."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            "poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
             AsyncMock(return_value=[None]),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_pexels",
+            "poindexter.modules.content.atoms._image_helpers.try_pexels",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
@@ -634,16 +634,16 @@ class TestContentGenerateImages:
 
     async def test_multiple_plans_processed_independently(self, monkeypatch):
         """Each image plan produces a separate result entry."""
-        from modules.content.atoms import content_generate_images as atom
+        from poindexter.modules.content.atoms import content_generate_images as atom
 
         urls = ["https://r2.example.com/a.png", "https://r2.example.com/b.png"]
 
         async def _batch(placeholders, *, site_config, task_id, platform):
             return list(urls)
 
-        monkeypatch.setattr("modules.content.atoms._image_helpers.batch_generate_inline_image_urls", _batch)
-        monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", AsyncMock(return_value=None))
-        monkeypatch.setattr("modules.content.atoms._image_helpers.record_inline_image_asset", AsyncMock())
+        monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.batch_generate_inline_image_urls", _batch)
+        monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.try_pexels", AsyncMock(return_value=None))
+        monkeypatch.setattr("poindexter.modules.content.atoms._image_helpers.record_inline_image_asset", AsyncMock())
         monkeypatch.setattr("poindexter.services.image_service.get_image_service", MagicMock(return_value=MagicMock()))
         monkeypatch.setattr("poindexter.services.alt_text.sanitize_alt_text", lambda alt, budget, topic: alt)
 
@@ -670,7 +670,7 @@ class TestContentGenerateImages:
 @pytest.mark.unit
 class TestContentRecordPipelineVersionBehavior:
     def test_atom_meta_contract(self):
-        from modules.content.atoms.content_record_pipeline_version import ATOM_META
+        from poindexter.modules.content.atoms.content_record_pipeline_version import ATOM_META
         assert ATOM_META.name == "content.record_pipeline_version"
         assert "task_id" in ATOM_META.requires
         assert "content" in ATOM_META.requires
@@ -682,7 +682,7 @@ class TestContentRecordPipelineVersionBehavior:
 
     async def test_upserts_version_and_sets_stage_flag(self, monkeypatch):
         """Happy path: PipelineDB.upsert_version called, stages flag set."""
-        from modules.content.atoms import content_record_pipeline_version as atom
+        from poindexter.modules.content.atoms import content_record_pipeline_version as atom
 
         upsert_calls: list[tuple] = []
 
@@ -713,7 +713,7 @@ class TestContentRecordPipelineVersionBehavior:
 
     async def test_seo_keywords_list_joined_to_string(self, monkeypatch):
         """List seo_keywords are joined as CSV before being upserted."""
-        from modules.content.atoms import content_record_pipeline_version as atom
+        from poindexter.modules.content.atoms import content_record_pipeline_version as atom
 
         upsert_calls: list[tuple] = []
 
@@ -732,7 +732,7 @@ class TestContentRecordPipelineVersionBehavior:
 
     async def test_missing_task_id_returns_empty(self, monkeypatch):
         """Missing task_id → atom returns empty without DB writes."""
-        from modules.content.atoms import content_record_pipeline_version as atom
+        from poindexter.modules.content.atoms import content_record_pipeline_version as atom
 
         upsert_calls: list[tuple] = []
 
@@ -752,7 +752,7 @@ class TestContentRecordPipelineVersionBehavior:
 
     async def test_db_failure_swallowed_returns_empty(self, monkeypatch):
         """DB upsert failure is non-fatal; atom returns empty dict."""
-        from modules.content.atoms import content_record_pipeline_version as atom
+        from poindexter.modules.content.atoms import content_record_pipeline_version as atom
 
         class _BrokenPipelineDB:
             def __init__(self, pool): ...
@@ -768,7 +768,7 @@ class TestContentRecordPipelineVersionBehavior:
 
     async def test_merges_existing_stages_dict(self, monkeypatch):
         """Existing stages dict values are preserved alongside the new flag."""
-        from modules.content.atoms import content_record_pipeline_version as atom
+        from poindexter.modules.content.atoms import content_record_pipeline_version as atom
 
         class _FakePipelineDB:
             def __init__(self, pool): ...
@@ -826,11 +826,11 @@ class TestTitleInternalDuplicateVisibility:
         return _make_db(pool=pool)
 
     async def test_surviving_duplicate_emits_a_finding(self, monkeypatch):
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         # is_original=True so the regen loop does not run — this is the
         # "regeneration already happened and did not clear it" shape.
@@ -847,11 +847,11 @@ class TestTitleInternalDuplicateVisibility:
         assert "The Shift to a Native UI" in findings[0]["body"]
 
     async def test_clean_title_emits_nothing(self, monkeypatch):
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         self._patch_title_path(monkeypatch, _originality_result(is_original=True))
 
@@ -861,11 +861,11 @@ class TestTitleInternalDuplicateVisibility:
 
     async def test_finding_is_deduped_per_task(self, monkeypatch):
         """One noisy key per task, not one per pipeline re-run."""
-        from modules.content.atoms import content_generate_title as atom
+        from poindexter.modules.content.atoms import content_generate_title as atom
 
         findings: list[dict] = []
         monkeypatch.setattr(
-            "utils.findings.emit_finding", lambda **kw: findings.append(kw)
+            "poindexter.utils.findings.emit_finding", lambda **kw: findings.append(kw)
         )
         self._patch_title_path(monkeypatch, _originality_result(
             is_original=True, internal_duplicate=True,

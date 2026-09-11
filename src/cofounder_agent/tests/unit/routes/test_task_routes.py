@@ -23,12 +23,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
+from poindexter.utils.rate_limiter import limiter
+from poindexter.utils.route_utils import get_database_dependency
 
 # Import helpers under test directly (pure functions, no I/O)
 from routes.task_routes import _normalize_seo_keywords_in_task, router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
 
 
 def _set_pool(mock_db, fetch_rows):

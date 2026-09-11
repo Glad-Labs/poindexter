@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not image_plans:
         return {"image_results": []}
 
-    from modules.content.atoms._image_helpers import (
+    from poindexter.modules.content.atoms._image_helpers import (
         batch_generate_inline_image_urls,
         record_inline_image_asset,
         stock_fallback_enabled,
@@ -77,7 +77,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     image_service = state.get("image_service") or get_image_service(site_config=site_config)  # type: ignore[arg-type]
     # Charts are drawn from live rows, so this branch needs a pool. Resolved
     # once here rather than per-plan; None simply means no chart renders.
-    from modules.content.atoms._pool import resolve_pool
+    from poindexter.modules.content.atoms._pool import resolve_pool
 
     pool = resolve_pool(state, atom="content.generate_images")
     # Per-run override from `rebuild-images --allow-stock`; absent (False) on
@@ -219,7 +219,7 @@ def _emit_downgrade_finding(
     and nothing paged. Per the QA-rail convention, a degraded path announces
     itself rather than passing as a clean run.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     if source == "pexels":
         title = "Inline image fell back to stock — image-gen failed"
@@ -262,7 +262,7 @@ async def _capture_screenshot(
     rather than substituting a diffusion render that would misrepresent a real
     dashboard.
     """
-    from modules.content.atoms._image_helpers import record_inline_image_asset
+    from poindexter.modules.content.atoms._image_helpers import record_inline_image_asset
     from poindexter.services.image_providers.screenshot import ScreenshotProvider
 
     config: dict[str, Any] = {"_site_config": site_config}
@@ -327,7 +327,7 @@ def _emit_screenshot_finding(*, target: str, task_id: Any, num: str) -> None:
     simply empty. The usual cause is a target missing from the allowlist or a
     surface that was down when the pipeline ran.
     """
-    from utils.findings import emit_finding
+    from poindexter.utils.findings import emit_finding
 
     emit_finding(
         source="content.generate_images",
@@ -388,7 +388,7 @@ async def _render_chart(
     that returned nothing — resolves to the same empty slot the screenshot
     branch produces. A wrong chart is worse than no chart.
     """
-    from modules.content.atoms._image_helpers import record_inline_image_asset
+    from poindexter.modules.content.atoms._image_helpers import record_inline_image_asset
     from poindexter.services.chart_catalog import resolve as resolve_chart
 
     spec = await resolve_chart(key, pool=pool, site_config=site_config)
@@ -401,7 +401,7 @@ async def _render_chart(
 
     import json
 
-    from plugins.registry import get_image_providers
+    from poindexter.plugins.registry import get_image_providers
 
     provider = next(
         (p for p in get_image_providers() if getattr(p, "name", "") == "chart"),

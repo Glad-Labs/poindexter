@@ -14,7 +14,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from plugins.job import Job, JobResult
+from poindexter.plugins.job import Job, JobResult
 from poindexter.services.jobs import render_prometheus_rules as job_module
 from poindexter.services.jobs.render_prometheus_rules import (
     RenderPrometheusRulesJob,

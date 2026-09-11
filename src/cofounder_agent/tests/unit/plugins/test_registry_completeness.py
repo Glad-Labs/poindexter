@@ -68,12 +68,12 @@ KNOWN_UNREGISTERED: dict[str, str] = {
     # opt-in via ``app_settings.plugin.llm_provider.anthropic.enabled``.
     # Same shape as gemini (registered in #398). File a follow-up
     # issue + register identically.
-    "plugins.llm_providers.anthropic": "follow-up to Glad-Labs/poindexter#398",
+    "poindexter.plugins.llm_providers.anthropic": "follow-up to Glad-Labs/poindexter#398",
 }
 
 
 def _module_path_from_file(file_path: Path) -> str:
-    """Translate ``services/llm_providers/foo.py`` → ``services.llm_providers.foo``."""
+    """Translate ``poindexter/services/llm_providers/foo.py`` → ``poindexter.services.llm_providers.foo``."""
     rel = file_path.relative_to(_SRC_ROOT).with_suffix("")
     return ".".join(rel.parts)
 
@@ -148,7 +148,9 @@ def _discover_provider_modules() -> list[tuple[str, str]]:
     """
     discovered: list[tuple[str, str]] = []
     for plugin_type, rel_dir in _PROVIDER_DIRS:
-        dir_path = _SRC_ROOT / rel_dir
+        # provider directories live under poindexter/ since #1046 step 2; the dotted
+        # path is still taken relative to _SRC_ROOT, which yields the canonical spelling.
+        dir_path = _SRC_ROOT / "poindexter" / rel_dir
         if not dir_path.is_dir():
             continue
         for py_file in sorted(dir_path.glob("*.py")):
@@ -160,6 +162,17 @@ def _discover_provider_modules() -> list[tuple[str, str]]:
 
 
 _PROVIDER_MODULES = _discover_provider_modules()
+
+
+@pytest.mark.unit
+def test_provider_discovery_is_not_empty():
+    """A parametrised test over an empty set SKIPS -- pytest reports it green. This
+    is what happened when the provider directories moved under poindexter/ (PR A):
+    the walk found nothing and every provider-registration check silently vanished
+    until the skip count was read. Floor it."""
+    found = _discover_provider_modules()
+    assert len(found) >= 10, f"provider discovery found only {len(found)} module(s): {found}"
+    assert all(mp.startswith("poindexter.") for mp, _ in found), found[:5]
 
 
 @pytest.mark.parametrize(

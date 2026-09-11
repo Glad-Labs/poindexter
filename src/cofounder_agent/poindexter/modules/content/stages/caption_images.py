@@ -20,7 +20,7 @@ import logging
 import re
 from typing import Any
 
-from plugins.stage import StageResult
+from poindexter.plugins.stage import StageResult
 from poindexter.services.alt_text import _IMG_ALT_RE  # (<img...alt=")(value)(")
 from poindexter.services.image_captioner import caption_image
 

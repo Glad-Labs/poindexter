@@ -39,7 +39,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ async def get_tag_slugs_for_post(
         return {r["slug"] for r in rows if r.get("slug")}
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("[LINK_COHERENCE] tag lookup failed: %s", exc)
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="internal_link_coherence",
@@ -215,7 +215,7 @@ async def count_inbound_links_to_slug(pool, slug: str) -> int:
         count = sum(1 for r in rows if pattern.search(r.get("content") or ""))
         return count
     except Exception as exc:  # pragma: no cover - defensive
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
 
         emit_finding(
             source="internal_link_coherence",

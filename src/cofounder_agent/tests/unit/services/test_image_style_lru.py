@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 
-from modules.content.stages.source_featured_image import _select_style_lru
+from poindexter.modules.content.stages.source_featured_image import _select_style_lru
 
 STYLES = [("flat_vector", "t1"), ("pixel_art", "t2"), ("silhouette", "t3")]
 

@@ -32,8 +32,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from routes.oauth_routes import authorization_router
-from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # ---------------------------------------------------------------------------
 # Signing key — issue_token reads POINDEXTER_SECRET_KEY at call time.

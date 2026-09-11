@@ -20,9 +20,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from poindexter.utils.route_utils import get_database_dependency
 from routes.approval_routes import router as approval_router
 from tests.unit.routes.conftest import make_mock_db
-from utils.route_utils import get_database_dependency
 
 # task_status_routes imports from task_routes which in turn imports status_router
 # back — a circular that crashes if imported at module level.  Import lazily
@@ -121,7 +121,7 @@ def _build_status_validated_client(mock_db=None, mock_status_service=None):
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
 
     patcher = patch(
-        "utils.route_utils.get_enhanced_status_change_service",
+        "poindexter.utils.route_utils.get_enhanced_status_change_service",
         return_value=mock_status_service,
     )
     patcher.start()
@@ -150,7 +150,7 @@ def _build_publishing_app(mock_db=None) -> FastAPI:
     app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
     # Override site_config dep so no DB config reads happen
-    from utils.route_utils import get_site_config_dependency
+    from poindexter.utils.route_utils import get_site_config_dependency
     mock_cfg = MagicMock()
     mock_cfg.get = MagicMock(return_value=None)
     mock_cfg.require = MagicMock(return_value="http://localhost")

@@ -11,7 +11,7 @@ Import guide:
     - Routes: from services.error_handler import AppError, NotFoundError
     - Services (same package): from .error_handler import DatabaseError, ServiceError
     - For route/service error handling helpers (handle_route_error, handle_service_error):
-      from utils.error_handler import handle_route_error, handle_service_error
+      from poindexter.utils.error_handler import handle_route_error, handle_service_error
 """
 
 from enum import Enum

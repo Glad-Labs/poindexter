@@ -40,9 +40,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from plugins.job import JobResult
+from poindexter.plugins.job import JobResult
 from poindexter.services.integrations.operator_notify import notify_operator
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     """Read ``app_settings[key]``, decrypting when ``is_secret=true`` (routes
     through ``plugins.secrets.get_secret`` so encrypted rows like
     ``discord_ops_webhook_url`` return plaintext, not ``enc:v1:`` ciphertext)."""
-    from plugins.secrets import get_secret
+    from poindexter.plugins.secrets import get_secret
     try:
         val = await get_secret(pool, key)
     except Exception as exc:  # noqa: BLE001 — best-effort; degrade to default

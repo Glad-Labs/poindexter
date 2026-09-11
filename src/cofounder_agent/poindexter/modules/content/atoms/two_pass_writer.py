@@ -560,7 +560,7 @@ def _emit_degenerate_first_draft_kept_finding(*, task_id: str | None) -> None:
         "health if this recurs. Refs poindexter#806.",
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
         return
     try:
@@ -604,7 +604,7 @@ def _emit_degenerate_revise_kept_prior_finding(*, model: str) -> None:
         model,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
         return
     try:
@@ -656,7 +656,7 @@ def _emit_degenerate_expand_input_finding(
         word_count,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
         return
     try:
@@ -783,7 +783,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
 
 
 async def _draft_node(state: _State) -> _State:
-    from modules.content.ai_content_generator import generate_with_context
+    from poindexter.modules.content.ai_content_generator import generate_with_context
     instruction = (
         "Write a first-draft blog post drawing ONLY from the provided internal "
         "snippets. Do NOT make up external facts, statistics, or quotes you cannot "
@@ -1040,7 +1040,7 @@ def _emit_variant_fallback_finding(
         bad_model, reason, default_model,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; the finding import is optional belt-and-suspenders and must never block the writer fallback
         return
     try:
@@ -1090,7 +1090,7 @@ def _emit_empty_revise_kept_prior_finding(*, model: str) -> None:
         model,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; the finding import is optional belt-and-suspenders and must never block the writer recovery
         return
     try:
@@ -1775,7 +1775,7 @@ def _strip_planning_dump_preamble(draft: str) -> tuple[str, int]:
     """
     if not draft or not draft.strip():
         return draft, 0
-    from modules.content.content_validator import (
+    from poindexter.modules.content.content_validator import (
         _strip_code_spans,
         detect_planning_dump_preamble,
     )
@@ -1862,7 +1862,7 @@ def _emit_planning_dump_finding(*, stripped_lines: int, task_id: str | None) -> 
         stripped_lines,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the dump
         return
     try:
@@ -1906,7 +1906,7 @@ def _emit_prompt_echo_finding(*, stripped_lines: int, task_id: str | None) -> No
         stripped_lines,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the echo
         return
     try:
@@ -2006,7 +2006,7 @@ def _emit_dangling_tail_finding(*, trimmed: int, task_id: str | None) -> None:
         trimmed,
     )
     try:
-        from utils.findings import emit_finding
+        from poindexter.utils.findings import emit_finding
     except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the trim
         return
     try:

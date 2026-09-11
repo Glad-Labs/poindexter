@@ -48,7 +48,7 @@ import json
 import logging
 from typing import Any
 
-from utils.findings import emit_finding  # noqa: E402 — audit observability
+from poindexter.utils.findings import emit_finding  # noqa: E402 — audit observability
 
 logger = logging.getLogger(__name__)
 

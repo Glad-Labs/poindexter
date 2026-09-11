@@ -71,7 +71,7 @@ class TestWriterModelPartialResolveIsVisible:
 
     @pytest.mark.asyncio
     async def test_writer_pin_read_failure_warns(self, caplog):
-        from modules.content.ai_content_generator import AIContentGenerator
+        from poindexter.modules.content.ai_content_generator import AIContentGenerator
 
         sc = _RaisingOnKey(
             "pipeline_writer_model",
@@ -101,7 +101,7 @@ class TestWriterModelPartialResolveIsVisible:
 
     @pytest.mark.asyncio
     async def test_fallback_pin_read_failure_warns(self, caplog):
-        from modules.content.ai_content_generator import AIContentGenerator
+        from poindexter.modules.content.ai_content_generator import AIContentGenerator
 
         sc = _RaisingOnKey(
             "pipeline_fallback_model",
@@ -126,7 +126,7 @@ class TestWriterModelPartialResolveIsVisible:
     @pytest.mark.asyncio
     async def test_clean_reads_do_not_warn(self, caplog):
         """The happy path must stay quiet — no WARNING-level noise per post."""
-        from modules.content.ai_content_generator import AIContentGenerator
+        from poindexter.modules.content.ai_content_generator import AIContentGenerator
 
         sc = _RaisingOnKey(
             "__never__",
@@ -153,7 +153,7 @@ class TestR2UploadFallbackIsVisible:
     async def test_r2_failure_warns_with_public_reader_impact(
         self, caplog, monkeypatch,
     ):
-        from modules.content.atoms import _image_helpers
+        from poindexter.modules.content.atoms import _image_helpers
 
         class _BoomService:
             def __init__(self, **_kw: Any) -> None:
@@ -188,7 +188,7 @@ class TestR2UploadFallbackIsVisible:
 
     @pytest.mark.asyncio
     async def test_successful_upload_does_not_warn(self, caplog, monkeypatch):
-        from modules.content.atoms import _image_helpers
+        from poindexter.modules.content.atoms import _image_helpers
 
         class _OkService:
             def __init__(self, **_kw: Any) -> None:
@@ -222,7 +222,7 @@ def _capture(monkeypatch) -> list[dict]:
     site would bind a private copy at import time and this patch would miss it.
     """
     calls: list[dict] = []
-    import utils.findings as findings_module
+    import poindexter.utils.findings as findings_module
 
     monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
     return calls
@@ -249,7 +249,7 @@ class TestAtomSideTwinsOfWriterCoreGaps:
     @pytest.mark.asyncio
     async def test_normalize_draft_allowlist_failure_is_visible(self, monkeypatch):
         """An empty allowlist makes link-scrubbing maximally aggressive."""
-        from modules.content.atoms.content_normalize_draft import run
+        from poindexter.modules.content.atoms.content_normalize_draft import run
 
         findings = _capture(monkeypatch)
         await run({
@@ -302,7 +302,7 @@ class TestCompileMetaSilentLosses:
 
     @pytest.mark.asyncio
     async def test_sources_section_failure_is_visible(self, caplog, monkeypatch):
-        from modules.content.atoms import content_compile_meta
+        from poindexter.modules.content.atoms import content_compile_meta
 
         def _boom(*_a: Any, **_kw: Any):
             raise RuntimeError("citation verifier exploded")
@@ -327,7 +327,7 @@ class TestCompileMetaSilentLosses:
 
     @pytest.mark.asyncio
     async def test_preview_url_failure_is_visible(self, caplog):
-        from modules.content.atoms import content_compile_meta
+        from poindexter.modules.content.atoms import content_compile_meta
 
         class _BoomConfig:
             def get(self, *_a: Any, **_kw: Any):
@@ -354,7 +354,7 @@ class TestQaAggregateAuditVisibility:
 
     @pytest.mark.asyncio
     async def test_qa_pass_audit_write_failure_warns(self, caplog, monkeypatch):
-        from modules.content.atoms import qa_aggregate
+        from poindexter.modules.content.atoms import qa_aggregate
 
         class _BoomAudit:
             def write_bg(self, *_a: Any, **_kw: Any):
@@ -395,7 +395,7 @@ class TestQaAggregateAuditVisibility:
         showed every gate as ``last_run_at=NEVER``. A silent regression here
         reproduces that exact display with only a debug line to explain it.
         """
-        from modules.content.atoms import qa_aggregate
+        from poindexter.modules.content.atoms import qa_aggregate
 
         async def _boom(*_a: Any, **_kw: Any):
             raise RuntimeError("qa_gates counter write failed")
@@ -446,7 +446,7 @@ class TestPersistTaskRevisionVisibility:
 
     @pytest.mark.asyncio
     async def test_final_snapshot_failure_is_visible(self, monkeypatch):
-        from modules.content.atoms import content_persist_task
+        from poindexter.modules.content.atoms import content_persist_task
 
         findings = _capture(monkeypatch)
 
@@ -488,7 +488,7 @@ class TestQaPersistLearningSignalVisibility:
     async def test_model_performance_outcome_failure_is_visible(
         self, monkeypatch,
     ):
-        from modules.content.atoms import _qa_persist
+        from poindexter.modules.content.atoms import _qa_persist
 
         # NOTE the different patch target from every other test here.
         # ``_qa_persist`` imports ``emit_finding`` at MODULE level, so it binds

@@ -45,7 +45,7 @@ import time
 import httpx
 
 from poindexter.services.cost_guard import is_local_base_url
-from utils.exception_format import describe_exception
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 

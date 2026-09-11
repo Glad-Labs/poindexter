@@ -20,9 +20,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from modules.content.atoms import content_plan_image_markers
-from modules.content.atoms._image_helpers import _plan_and_inject_placeholders
-from modules.content.atoms._writer_markers import (
+from poindexter.modules.content.atoms import content_plan_image_markers
+from poindexter.modules.content.atoms._image_helpers import _plan_and_inject_placeholders
+from poindexter.modules.content.atoms._writer_markers import (
     is_evidence_desc,
     number_inline_markers,
     renumber_placeholders,
@@ -30,7 +30,7 @@ from modules.content.atoms._writer_markers import (
 from poindexter.services.site_config import SiteConfig
 
 _UNLOAD = "poindexter.services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen"
-_PLAN = "modules.content.atoms._image_helpers.plan_and_inject_placeholders"
+_PLAN = "poindexter.modules.content.atoms._image_helpers.plan_and_inject_placeholders"
 
 
 def _sc(**overrides: str) -> SiteConfig:
@@ -228,7 +228,7 @@ async def test_failed_topup_keeps_writer_markers_and_says_so():
         return content, {"agent_error": "Timeout: 300 s"}
 
     with patch(_UNLOAD, new=AsyncMock(return_value=[])), patch(_PLAN, new=fake_plan), patch(
-        "utils.findings.emit_finding", new=lambda **kw: findings.append(kw),
+        "poindexter.utils.findings.emit_finding", new=lambda **kw: findings.append(kw),
     ):
         out = await content_plan_image_markers.run({
             "content": "Intro.\n\n## A\n\n[SCREENSHOT: qa-rails]\n\ntext",

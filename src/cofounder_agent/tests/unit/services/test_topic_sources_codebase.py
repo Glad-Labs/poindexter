@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from plugins.topic_source import TopicSource
+from poindexter.plugins.topic_source import TopicSource
 from poindexter.services.topic_sources.codebase import (
     CodebaseSource,
     _extract_topic_from_row,

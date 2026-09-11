@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from plugins.scheduler import PluginScheduler
+from poindexter.plugins.scheduler import PluginScheduler
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
 # already auto-marks coroutine tests. An explicit mark wrongly tagged the
@@ -70,7 +70,7 @@ async def test_interval_next_run_seeds_short_delay_when_no_persisted_run():
     shortly after boot. Returning None let APScheduler re-anchor to
     boot+interval every restart, so a >restart-cadence interval (e.g. 7d
     run_newsletter) never fired."""
-    from plugins.scheduler import _FIRST_FIRE_BASE_DELAY_S, _FIRST_FIRE_STAGGER_S
+    from poindexter.plugins.scheduler import _FIRST_FIRE_BASE_DELAY_S, _FIRST_FIRE_STAGGER_S
 
     scheduler = PluginScheduler(_pool_with_fetchval(None))
     trigger = IntervalTrigger(days=7)

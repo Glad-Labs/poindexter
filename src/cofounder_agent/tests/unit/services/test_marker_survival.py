@@ -21,7 +21,7 @@ import pytest
 
 @pytest.mark.unit
 def test_strip_image_markers_removes_all_forms():
-    from modules.content.stages.quality_evaluation import _strip_image_markers
+    from poindexter.modules.content.stages.quality_evaluation import _strip_image_markers
 
     text = "[HERO-IMAGE: x]\n# H\nBody [IMAGE: a] and [IMAGE-2: b] end."
     out = _strip_image_markers(text)
@@ -31,7 +31,7 @@ def test_strip_image_markers_removes_all_forms():
 
 @pytest.mark.unit
 def test_writer_markers_survive_generate_content_strip():
-    from modules.content.stages.generate_content import _strip_leaked_image_prompts
+    from poindexter.modules.content.stages.generate_content import _strip_leaked_image_prompts
 
     body = (
         "# Title\n\nIntro [IMAGE: a GPU die shot] body.\n\n"
@@ -50,7 +50,7 @@ def test_writer_markers_survive_generate_content_strip():
 
 @pytest.mark.unit
 def test_writer_markers_survive_normalize_draft_strip():
-    from modules.content.atoms.content_normalize_draft import strip_leaked_image_prompts
+    from poindexter.modules.content.atoms.content_normalize_draft import strip_leaked_image_prompts
 
     body = (
         "Intro [IMAGE: a GPU die shot] and [IMAGE-3: a fan] plus "

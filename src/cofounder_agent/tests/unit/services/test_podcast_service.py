@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.tts_provider import TTSResult
+from poindexter.plugins.tts_provider import TTSResult
 from poindexter.services.podcast_service import (
     VOICE_POOL,
     EpisodeResult,
@@ -1496,7 +1496,7 @@ class TestScaffoldDumpGuard:
             new=AsyncMock(return_value=dump_result),
         ), patch(
             "poindexter.services.prompt_manager.get_prompt_manager", return_value=mock_pm,
-        ), patch("utils.findings.emit_finding") as mock_finding:
+        ), patch("poindexter.utils.findings.emit_finding") as mock_finding:
             script = await _build_script_with_llm(title, content, site_config=sc)
 
         # Fell back to the exact deterministic helper the guard calls.
@@ -1632,7 +1632,7 @@ class TestPronunciationsMalformedSurfaces:
     """
 
     def test_invalid_pronunciations_emits_finding(self, monkeypatch):
-        import utils.findings as findings
+        import poindexter.utils.findings as findings
         from poindexter.services.podcast_service import _get_tts_replacements
 
         calls: list[dict] = []
