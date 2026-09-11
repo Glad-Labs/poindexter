@@ -221,7 +221,7 @@ via the DB spinal cord**, not a direct container kill from the worker (the
 worker has no docker.sock — only `poindexter-brain-daemon` does): a click
 POSTs `/api/services/{container}/restart`, which queues a
 `service_restart_requests` row; brain's own poll loop
-(`brain/service_restart.py`, ~10s cadence) claims it and restarts the
+(`poindexter/brain/service_restart.py`, ~10s cadence) claims it and restarts the
 container via the same `docker_restart_container` primitive the self-healing
 firefighter uses. The console polls the request's status and reports the
 REAL outcome — done, failed (with the reason), or still-in-progress — never

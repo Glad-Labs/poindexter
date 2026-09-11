@@ -30,11 +30,11 @@ def _ensure_brain_importable() -> None:
     whether anything has imported it yet."""
     here = Path(__file__).resolve()
     for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
+        if (parent / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
             if str(parent) not in sys.path:
                 sys.path.insert(0, str(parent))
             return
-    pytest.skip("brain/bootstrap.py not found — cannot exercise DSN resolution seam")
+    pytest.skip("poindexter/brain/bootstrap.py not found — cannot exercise DSN resolution seam")
 
 
 class _FakeSiteConfigWithPool:

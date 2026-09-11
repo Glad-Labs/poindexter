@@ -96,7 +96,7 @@ The same day supplied the reverse-direction incident the ladder had never covere
 
 > **Measured, not computed.** CPU offload was evaluated as an alternative (`enable_model_cpu_offload`): it does work now that the old ~23 GB WSL RAM ceiling is gone, cutting wan's peak to **15.5 GiB** — but at **324.8s vs 144.1s**, a 2.25× penalty. Reclaiming the ghost buys more headroom for free, so offload stays unused. Keep it in mind only for a card that genuinely cannot be cleared.
 
-### The ghost's host-RAM twin (2026-08-26, `brain/comfyui_ram_watch.py`)
+### The ghost's host-RAM twin (2026-08-26, `poindexter/brain/comfyui_ram_watch.py`)
 
 The #999 lesson has a second axis. On 2026-08-26 the ComfyUI sidecar's main python had accumulated a **28.6 GB host-memory footprint (13.9 GB RSS + 14.8 GB swap)** across renders, filling the box's 47 GB swap. Every lever on the ladder was useless against it by construction: `_unload_comfyui`'s `POST /free` drops the model objects and empties the CUDA allocator — that returns **VRAM** — but the process's own heap and its swapped-out pages belong to the same "only a process exit returns it" class as the VRAM ghost. A queue-idle `docker restart poindexter-comfyui` returned ~30 GB instantly, and the sidecar lazy-reloads weights on the next render, so an idle recycle costs one cold load and nothing else.
 

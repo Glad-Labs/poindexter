@@ -49,7 +49,7 @@ migrations in Poindexter. If you are adding a migration, read sections
   the regen re-imported drift — **that is the guard working, not a bug in the
   squash.** Resolve each key toward the reference default (set the same value in
   both `settings_defaults.py` and `0000_baseline.seeds.sql`), or — only for a
-  `brain/seed_app_settings.json` value that is a deliberate free-tier choice —
+  `poindexter/brain/seed_app_settings.json` value that is a deliberate free-tier choice —
   add a `TIER_POLICY` entry with a reason. This is the CI check that would
   otherwise let the squash silently re-break the 30 keys reconciled in the
   2026-07-17 pass (and the single key of poindexter#819 before it).

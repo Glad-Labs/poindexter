@@ -94,7 +94,7 @@ docker-ce this needs `extra_hosts: host-gateway`; Docker Desktop provides it
 natively.)
 
 The original motivation was Docker Desktop's port-forward getting stuck — a
-**Windows/WSL2** failure mode that `brain/docker_port_forward_probe.py`
+**Windows/WSL2** failure mode that `poindexter/brain/docker_port_forward_probe.py`
 exists to self-heal. On bare-metal Linux there is no port-forwarding proxy
 in the path, so that wedge class cannot occur and the probe is dead weight:
 turn it off with `docker_port_forward_probe_enabled=false`. It ships enabled

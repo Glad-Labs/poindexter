@@ -112,7 +112,7 @@ services:
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
       # Uptime Kuma metrics API key (and any future scrape secrets)
-      # written by brain/prometheus_secret_writer.py from app_settings.
+      # written by poindexter/brain/prometheus_secret_writer.py from app_settings.
       # See brain-daemon's volumes block — same host dir, mounted rw
       # there and ro here.
       #
@@ -176,7 +176,7 @@ services:
       - ${USERPROFILE:-${HOME}}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
       # #524 — native-Telegram bot token for the dead-man's-switch receiver.
       # The whole prometheus secrets dir is mounted ro (same host dir the
-      # prometheus container mounts). brain/prometheus_secret_writer.py
+      # prometheus container mounts). poindexter/brain/prometheus_secret_writer.py
       # decrypts app_settings.telegram_bot_token (is_secret=true) and writes
       # it to `alertmanager-telegram-token` in this dir every brain cycle,
       # alongside the uptime-kuma key. alertmanager.yml.tmpl's
@@ -339,8 +339,11 @@ services:
   # ===========================================
   brain-daemon:
     build:
-      context: ./brain
-      dockerfile: Dockerfile
+      # brain is the poindexter.brain package (poindexter#1046 step 2): the image
+      # is built from the backend root so it can COPY poindexter/__init__.py +
+      # _flat_imports.py alongside poindexter/brain/.
+      context: ./src/cofounder_agent
+      dockerfile: poindexter/brain/Dockerfile
     container_name: poindexter-brain-daemon
     restart: unless-stopped
     # Explicit public resolvers for external lookups (stack#3161): the ISP /
@@ -391,7 +394,7 @@ services:
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
-      # Outlet guard (brain/outlet_guard_probe.py): the PC's own wall-plug
+      # Outlet guard (poindexter/brain/outlet_guard_probe.py): the PC's own wall-plug
       # address, from the same bootstrap `shelly_psu_url` key the gpu-exporter
       # reads. Unset = the guard no-ops.
       SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
@@ -404,20 +407,20 @@ services:
       # mount was decorative: brain_daemon imports use bare-name form
       # (e.g. `from operator_url_probe import ...`), which resolves
       # against `/app` (WORKDIR), not `/brain`. The bind-mount made it
-      # LOOK like host-side edits to brain/ were live, but Python always
+      # LOOK like host-side edits to poindexter/brain/ were live, but Python always
       # loaded the image-baked copy at /app/ — leading to 30+ min
       # debug-edit-restart cycles that never picked up the change. We
       # now require a `docker compose build brain-daemon` (or full
       # `up --build`) for every brain code edit, matching how every
-      # other container in the stack works. The same `./brain` directory
-      # is still mounted as `/opt/poindexter/brain:ro` in OTHER services
+      # other container in the stack works. The worker-side containers see
+      # brain through their /app bind mount (poindexter/brain) instead
       # (worker, voice agents, etc.) where it IS on PYTHONPATH and the
       # bind-mount is functional.
       # GH#213 — compose-spec drift probe needs to read the compose file
       # to compare against `docker inspect` for each service. Read-only —
       # the brain only inspects, it never edits the spec.
       - ./docker-compose.local.yml:/app/docker-compose.local.yml:ro
-      # glad-labs-stack#942 — read-only host .git so brain/branch_drift_probe.py
+      # glad-labs-stack#942 — read-only host .git so poindexter/brain/branch_drift_probe.py
       # can read the running checkout's HEAD SHA (the one fact nothing else in a
       # container can supply) and detect when prod has fallen behind origin/main.
       # Top-level mount — NOT the forbidden ./.git:/app/.git:ro WORKER mount
@@ -428,7 +431,7 @@ services:
       # and gets origin/main from the GitHub API.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/.git:/host-git:ro
       # Brain writes Prometheus scrape secrets here (uptime_kuma_api_key
-      # etc.) — see brain/prometheus_secret_writer.py. Same host dir is
+      # etc.) — see poindexter/brain/prometheus_secret_writer.py. Same host dir is
       # mounted into the prometheus container at /etc/prometheus/secrets/
       # (ro), so prometheus.yml's password_file: directives resolve to
       # whatever brain wrote on its last cycle. Rotating a secret is just
@@ -445,7 +448,7 @@ services:
       # Glad-Labs/poindexter#444 — sentinel files dropped by the
       # host-side dr-backup scripts at ~/.poindexter/scripts/dr-backup/
       # when the script's primary Telegram alert path failed (creds
-      # missing, postgres down, network broken). brain/backup_watcher.py
+      # missing, postgres down, network broken). poindexter/brain/backup_watcher.py
       # scans /host-backup-logs each cycle and surfaces any sentinels
       # via alert_events — second line of defense behind the in-stack
       # age check above. Pair with: app_settings.backup_watcher_sentinel_dir
@@ -460,7 +463,7 @@ services:
       # scaffold polluting the live checkout). RW because the probe resets it;
       # SAFE because nothing else ever touches this checkout (no human, no
       # scheduled agent), so reset --hard can never clobber uncommitted work.
-      # Ships DARK: auto_sync defaults false, and brain/migration_drift_probe.py
+      # Ships DARK: auto_sync defaults false, and poindexter/brain/migration_drift_probe.py
       # `_sync_deploy_checkout` guards with `git rev-parse --is-inside-work-tree`
       # — so until the operator runs scripts/setup-deploy-checkout.sh to clone
       # here, an empty auto-created dir simply makes sync a graceful no-op that
@@ -550,11 +553,9 @@ services:
       # shipper (Loki/Promtail later) can read from there.
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      # brain/ is a sibling package imported by config/__init__.py +
-      # services/* for the resolve_database_url() bootstrap-toml fallback.
-      # Mounted at /opt/poindexter/brain below; add /opt/poindexter to
-      # sys.path so `from brain.bootstrap import ...` resolves.
-      PYTHONPATH: "/app:/opt/poindexter"
+      # brain (poindexter/brain, imported as `brain.*`) rides in the /app bind
+      # mount with the rest of the backend since poindexter#1046 step 2.
+      PYTHONPATH: "/app"
       # Prefect 3 — content pipeline orchestration (#206). Worker
       # imports the @flow decorated entry point and submits flow runs
       # to the local Prefect server for observability + retry plumbing.
@@ -659,7 +660,7 @@ services:
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       #
       # POINDEXTER_DEPLOY_ROOT (Glad-Labs/poindexter#228) — the source root for
-      # ALL runtime code mounts (this :/app and the ./brain mounts below + in the
+      # ALL runtime code mounts (this :/app and the ones in the
       # other 4 src-mounting services). UNSET → '.' → the live dev checkout
       # (today's behavior, zero change, what fresh operators get). SET to the
       # dedicated deploy clone (~/.poindexter/deploy/glad-labs-stack) → the worker
@@ -670,10 +671,6 @@ services:
       # probe's restart works regardless. Build contexts intentionally stay on '.'
       # (you build from the dev tree). See docs/operations/migration-drift-self-heal.md.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      # Mount brain alongside /app (which is :ro and can't host a child
-      # mount) and tell voice_agent_*.py where to find it via
-      # POINDEXTER_BRAIN_PARENT below.
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # NOTE: The ``./.git:/app/.git:ro`` mount that #259/#348 added is
       # gone -- after the Docker Desktop upgrade ~2026-04-30 the
@@ -814,16 +811,12 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      # /app for ``services.*`` imports (plugins.secrets, etc.); /opt/poindexter
-      # for ``brain.bootstrap`` (resolve_database_url fallback).
-      PYTHONPATH: "/app:/opt/poindexter"
+      # /app for ``services.*`` and ``brain.*`` imports (brain lives under
+      # poindexter/ since poindexter#1046 step 2).
+      PYTHONPATH: "/app"
     volumes:
       - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      # Mount brain alongside /app (which is :ro and can't host a child
-      # mount) and tell voice_agent_*.py where to find it via
-      # POINDEXTER_BRAIN_PARENT below.
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -985,7 +978,7 @@ services:
       LOG_TO_FILE: "false"
       LOG_FORMAT: json
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPATH: "/app:/opt/poindexter"
+      PYTHONPATH: "/app"
       PYTHONUTF8: "1"
       # Talk to the Prefect API server on the docker network, NOT
       # localhost. The worker container's localhost is itself.
@@ -1032,7 +1025,6 @@ services:
     volumes:
       - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # This container runs as `appuser` (UID 1001), so ``~/.poindexter``
       # resolves to /home/appuser/.poindexter — and Stage-2 media flows
@@ -2240,9 +2232,6 @@ services:
       # Bot's POV of the LiveKit server is in-network (compose service
       # name); the human-facing URL goes to the SFU's exposed host port.
       LIVEKIT_URL: "ws://livekit:7880"
-      # Tell _ensure_brain_on_path() where brain/bootstrap.py lives,
-      # since /app:ro hides the parent-walk from finding it.
-      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
       # Voice tools call the worker's HTTP API (check_pipeline_health,
       # get_published_post_count, get_ai_spending_status). The default
       # in voice_agent_livekit.py is localhost:8002 — wrong from inside
@@ -2251,10 +2240,6 @@ services:
       POINDEXTER_API_URL: "http://worker:8002"
     volumes:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      # Mount brain alongside /app (which is :ro and can't host a child
-      # mount) and tell voice_agent_*.py where to find it via
-      # POINDEXTER_BRAIN_PARENT below.
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       # Persist Whisper / Silero / Kokoro model weights across rebuilds.
       # First boot downloads ~470 MB total; cached after that.
       # poindexter#488 — container now runs as the non-root `voiceagent`
@@ -2350,16 +2335,11 @@ services:
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:?Run 'poindexter setup' — value generated in bootstrap.toml}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:?Run 'poindexter setup' — value generated in bootstrap.toml}"
       LIVEKIT_URL: "ws://livekit:7880"
-      # Tell _ensure_brain_on_path() where brain/bootstrap.py lives, since
-      # /app:ro hides the parent-walk from finding it.
-      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
       # Voice tools call the worker's HTTP API; localhost would be this
       # container. Use the compose service name on the shared network.
       POINDEXTER_API_URL: "http://worker:8002"
     volumes:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      # Mount brain alongside /app (which is :ro and can't host a child mount).
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       # Share the model-weight cache with voice-agent-livekit (named volume,
       # so Whisper / Silero / Kokoro weights download once for both bots).
       - voice-agent-cache:/home/voiceagent/.cache

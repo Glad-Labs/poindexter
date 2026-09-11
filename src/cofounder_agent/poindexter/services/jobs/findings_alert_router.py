@@ -30,7 +30,7 @@ The brain's existing ``alert_dispatcher`` then handles delivery AND
 dedup — its ``alert_dedup_state`` table will collapse repeated fires
 of the same fingerprint into one operator page + suppressed counter,
 so a chronic finding (e.g. ``media_drift`` every 15 min) doesn't spam
-the operator. See ``brain/alert_dispatcher.py``.
+the operator. See ``poindexter/brain/alert_dispatcher.py``.
 
 Per-kind cooldown (Glad-Labs/poindexter#551)
 --------------------------------------------
@@ -606,12 +606,12 @@ async def _insert_alert_event(
     pool: Any, finding: dict[str, Any], force_channel: str | None = None
 ) -> None:
     """Insert one ``alert_events`` row mirroring the existing probe
-    patterns in ``brain/mcp_http_probe.py`` and friends. Dispatcher takes
+    patterns in ``poindexter/brain/mcp_http_probe.py`` and friends. Dispatcher takes
     over from here — picks channel by severity, dedup by fingerprint.
 
     ``force_channel`` (the per-kind ``findings.<kind>.delivery`` value when
     it names a channel — ``telegram`` / ``discord``) is stamped into the
-    ``labels`` JSON so ``brain/alert_dispatcher._channels_for`` can honor
+    ``labels`` JSON so ``poindexter/brain/alert_dispatcher._channels_for`` can honor
     the per-kind delivery policy instead of routing purely by severity.
     ``None`` (the 'route' / auto_fix-fallback default) leaves the label
     out, so the dispatcher's severity matrix decides — unchanged behavior
@@ -736,7 +736,7 @@ class FindingsAlertRouterJob:
                         suppressed += 1
                 else:  # 'route' / 'telegram' / 'discord'
                     # telegram/discord pin the channel via a force_channel
-                    # label honored by brain/alert_dispatcher; 'route' leaves
+                    # label honored by poindexter/brain/alert_dispatcher; 'route' leaves
                     # it None so the dispatcher's severity matrix decides.
                     force_channel = (
                         delivery if delivery in ("telegram", "discord") else None

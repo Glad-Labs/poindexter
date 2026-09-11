@@ -23,8 +23,8 @@ through the existing operator-alert path:
    the row), so the staleness check alone would miss it. This is a distinct,
    higher-signal page.
 
-Routing: like every other brain probe (``brain/prefect_stuck_flow_probe.py``,
-``brain/pr_staleness_probe.py``) the page goes through
+Routing: like every other brain probe (``poindexter/brain/prefect_stuck_flow_probe.py``,
+``poindexter/brain/pr_staleness_probe.py``) the page goes through
 ``notify_operator`` (Telegram for critical, Discord for warning) and leaves
 an ``audit_log`` row for the findings dashboard / daily roll-up. The probe is
 registered on the worker-side ``BrainProbeRegistry`` via
@@ -214,16 +214,6 @@ def _default_notify_fn() -> NotifyFn | None:
     worker-side unit run without the brain on sys.path) — the caller then
     only writes the audit row + logs, which is the safe degraded behaviour.
     """
-    try:  # flat import when brain/ is on sys.path (container runtime)
-        from operator_notifier import notify_operator  # type: ignore
-
-        return notify_operator
-    except ImportError:
-        # silent-ok: deliberate two-step import probe — a miss here is the
-        # EXPECTED path on the worker side and is answered by the
-        # package-qualified retry immediately below. The docstring bounds the
-        # both-miss consequence (audit row + logs, no notify).
-        pass
     try:  # pragma: no cover — package-qualified path for the worker side
         from brain.operator_notifier import notify_operator  # type: ignore
 

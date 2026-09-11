@@ -974,7 +974,6 @@ async def _build_default_database_service() -> Any:
     container, the host shell, or the Prefect worker pool.
     """
     from brain.bootstrap import resolve_database_url
-
     from services.database_service import DatabaseService
     from services.site_config import SiteConfig
 

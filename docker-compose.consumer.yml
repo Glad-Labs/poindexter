@@ -233,8 +233,11 @@ services:
   # ===========================================
   brain-daemon:
     build:
-      context: ./brain
-      dockerfile: Dockerfile
+      # brain is the poindexter.brain package (poindexter#1046 step 2): the image
+      # is built from the backend root so it can COPY poindexter/__init__.py +
+      # _flat_imports.py alongside poindexter/brain/.
+      context: ./src/cofounder_agent
+      dockerfile: poindexter/brain/Dockerfile
     container_name: poindexter-brain-daemon
     restart: unless-stopped
     # Root so the brain can read the host docker.sock (root-owned on
@@ -263,7 +266,7 @@ services:
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
-      # Outlet guard (brain/outlet_guard_probe.py): the PC's own wall-plug
+      # Outlet guard (poindexter/brain/outlet_guard_probe.py): the PC's own wall-plug
       # address, from the same bootstrap `shelly_psu_url` key the gpu-exporter
       # reads. Unset = the guard no-ops.
       SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
@@ -329,7 +332,7 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPATH: "/app:/opt/poindexter"
+      PYTHONPATH: "/app"
       PREFECT_API_URL: "http://prefect-server:4200/api"
       # Langfuse LLM tracing — disabled in the consumer stack since there
       # is no Langfuse server. Keys are kept optional (:-) so this compose
@@ -371,7 +374,6 @@ services:
       - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
       # Source code — read-only bind mount; restart picks up changes without rebuild.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # Shared volumes for dynamic Prometheus rules and AlertManager config
       # (written by the worker, read by prometheus/alertmanager).
@@ -415,11 +417,10 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPATH: "/app:/opt/poindexter"
+      PYTHONPATH: "/app"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -518,7 +519,7 @@ services:
       LOG_TO_FILE: "false"
       LOG_FORMAT: json
       PYTHONDONTWRITEBYTECODE: "1"
-      PYTHONPATH: "/app:/opt/poindexter"
+      PYTHONPATH: "/app"
       PYTHONUTF8: "1"
       PREFECT_API_URL: "http://prefect-server:4200/api"
       # Langfuse disabled — same rationale as the worker block above.
@@ -538,7 +539,6 @@ services:
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
-      - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # Runs as `appuser` (UID 1001): Stage-2 media flows resolve
       # ``~/.poindexter`` to /home/appuser/.poindexter, so media output

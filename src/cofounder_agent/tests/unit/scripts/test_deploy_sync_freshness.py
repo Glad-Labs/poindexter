@@ -102,7 +102,7 @@ def test_probe_knows_every_result_the_script_writes(sync_sh):
     unknown = written - set(_OK_RESULTS) - {"error"}
     assert not unknown, (
         f"deploy-checkout-sync.sh writes result(s) {sorted(unknown)} that "
-        f"brain/deploy_sync_probe.py does not classify. Add them to "
+        f"poindexter/brain/deploy_sync_probe.py does not classify. Add them to "
         f"_OK_RESULTS if they mean the sync did its job, or leave them out "
         f"deliberately — but decide, don't drift."
     )

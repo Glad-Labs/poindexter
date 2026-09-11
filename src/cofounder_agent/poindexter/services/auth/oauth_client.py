@@ -41,7 +41,7 @@ one as its underlying transport.
 
 The brain daemon container deliberately does NOT import PyJWT or the
 MCP SDK — its dep set is ``asyncpg + httpx + pyyaml`` only — so it
-ships its own minimal mirror at ``brain/oauth_client.py`` that follows
+ships its own minimal mirror at ``poindexter/brain/oauth_client.py`` that follows
 the same semantics over the same wire format.
 """
 
@@ -525,7 +525,7 @@ async def oauth_client_from_secret_reader(
 
     Useful for tests and for the brain daemon where ``site_config``
     isn't imported (the daemon stays out of the worker's import graph
-    on purpose). See ``brain/oauth_client.py`` for the brain's
+    on purpose). See ``poindexter/brain/oauth_client.py`` for the brain's
     asyncpg-backed reader implementation.
     """
     client_id = await reader(client_id_key)

@@ -311,7 +311,7 @@ async def main() -> None:
         )
         logger.info("Auto-Embed run complete.\n")
 
-        # Liveness heartbeat — brain/auto_embed_watch.py reads the newest
+        # Liveness heartbeat — poindexter/brain/auto_embed_watch.py reads the newest
         # auto_embed_succeeded audit_log row to detect a wedged/dead embedder
         # (a hung Tap, a stuck Ollama call, a crashed container). Stamped on
         # every completed run regardless of embedded count: "the embedder

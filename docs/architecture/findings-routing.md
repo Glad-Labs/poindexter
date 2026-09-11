@@ -13,7 +13,7 @@ job/probe ──emit_finding()──> audit_log            (the finding IS this 
                                   ▼
                              alert_events
                                   │
-                      brain/alert_dispatcher       (fingerprint dedup, channel pick)
+                      poindexter/brain/alert_dispatcher       (fingerprint dedup, channel pick)
                                   ▼
                         Telegram / Discord
 ```
@@ -67,7 +67,7 @@ the silent-drop this subsystem exists to prevent.
 
 This is the part worth understanding, because they fail in opposite directions.
 
-**Dispatcher dedup** (`brain/alert_dispatcher`, `alert_dedup_state`) is keyed by
+**Dispatcher dedup** (`poindexter/brain/alert_dispatcher`, `alert_dedup_state`) is keyed by
 **fingerprint**, which the router derives from the finding's `dedup_key`:
 
 ```
@@ -267,6 +267,6 @@ informational; both leave the finding queryable. See `feedback_dont_silence_fix_
 
 - `src/cofounder_agent/poindexter/services/jobs/findings_alert_router.py` — the router
 - `src/cofounder_agent/poindexter/utils/findings.py` — `emit_finding`, the emission contract
-- `brain/alert_dispatcher.py` — channel selection + fingerprint dedup
+- `poindexter/brain/alert_dispatcher.py` — channel selection + fingerprint dedup
 - [job-run-metrics.md](job-run-metrics.md) — how `JobResult.metrics` reaches Grafana
 - Glad-Labs/poindexter#461 (policy delivery), #551 (this cooldown)

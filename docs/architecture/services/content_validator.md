@@ -135,7 +135,7 @@ DB-backed (no app_settings keys, not refreshable without restart):
   with pgAdmin or the API; no redeploy needed for new entries to take
   effect.
 
-Disk-backed lists (under `brain/hallucination-check/`, located via
+Disk-backed lists (under `poindexter/brain/hallucination-check/`, located via
 ancestor walk + `/opt/poindexter/brain/hallucination-check` fallback):
 
 - `stdlib-python-312.txt` — Python 3.12 stdlib module names
@@ -153,7 +153,7 @@ Lists are loaded lazily and cached for the process lifetime.
   - `fact_overrides` table — DB-driven known-wrong-fact list.
   - `brain.bootstrap.resolve_database_url()` — DSN resolver for the
     fact_overrides loader (no `os.getenv` in services).
-  - Disk lists under `brain/hallucination-check/`.
+  - Disk lists under `poindexter/brain/hallucination-check/`.
   - `prometheus_client` (optional) for the warnings counter.
 - **Writes to:**
   - `CONTENT_VALIDATOR_WARNINGS_TOTAL` Prometheus counter (incremented
@@ -192,7 +192,7 @@ threshold of T)`. The original warning categories are still emitted
 - **Prometheus counter unavailable** — module-level shim
   (`_NoopCounter`) used at import time if `prometheus_client` is
   missing. Counter calls become no-ops; nothing else breaks.
-- **`brain/hallucination-check/*.txt` missing** —
+- **`poindexter/brain/hallucination-check/*.txt` missing** —
   `_load_known_list` logs warning, returns empty set.
   `_is_known_reference` then returns False for everything, which
   would normally flag every backticked identifier as hallucinated —
@@ -238,7 +238,7 @@ threshold of T)`. The original warning categories are still emitted
       print(issue.severity, issue.category, issue.description)
   ```
 - **Refresh hallucination-check lists** — edit the files under
-  `brain/hallucination-check/`, then restart the worker (the
+  `poindexter/brain/hallucination-check/`, then restart the worker (the
   in-process cache is module-level and never expires).
 
 ## See also
@@ -249,7 +249,7 @@ threshold of T)`. The original warning categories are still emitted
   feeds the adversarial aggregator.
 - `docs/architecture/services/quality_service.md` — companion scoring
   layer (heuristic + LLM, vs this validator's pure-regex hard rules).
-- `brain/hallucination-check/README.md` (if present) — manage the
+- `poindexter/brain/hallucination-check/README.md` (if present) — manage the
   stdlib/PyPI/Ollama and library-topics data files.
 - `feedback_no_silent_defaults` (operator design note)
   — why criticals must hard-block.

@@ -32,7 +32,7 @@ SVC = REPO / "src" / "cofounder_agent" / "poindexter" / "services"
 MIGRATIONS = SVC / "migrations"
 BASELINE_SEEDS = MIGRATIONS / "0000_baseline.seeds.sql"
 DEFAULTS_PY = SVC / "settings_defaults.py"
-BRAIN_SEED = REPO / "brain" / "seed_app_settings.json"
+BRAIN_SEED = REPO / "src" / "cofounder_agent" / "poindexter" / "brain" / "seed_app_settings.json"
 
 # Known-OK exceptions: a deleted key deliberately left in a seed file (rare).
 # Add a key here with a one-line reason if a flag is a confirmed false positive.

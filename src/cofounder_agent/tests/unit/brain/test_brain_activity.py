@@ -17,11 +17,9 @@ _REPO_ROOT = next(
     for p in Path(__file__).resolve().parents
     if (p / "pyproject.toml").exists() and (p / "src").exists()
 )
-_BRAIN_DIR = _REPO_ROOT / "brain"
+_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-if str(_BRAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BRAIN_DIR))
 
 from brain import brain_daemon as bd  # noqa: E402
 

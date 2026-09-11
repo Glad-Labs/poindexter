@@ -1,6 +1,6 @@
 """CRUD over the firefighter ``remediation_rules`` table.
 
-The self-healing firefighter (``brain/remediation/``) matches an about-to-page
+The self-healing firefighter (``poindexter/brain/remediation/``) matches an about-to-page
 alert against enabled ``remediation_rules`` rows and runs an allowlisted action.
 Those rows are **operational runtime state** — an operator adds, tunes, and
 retires them one alert at a time as they learn which alerts are safely
@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# Firefighter action executors registered in ``brain/remediation/registry.py``.
+# Firefighter action executors registered in ``poindexter/brain/remediation/registry.py``.
 # Prod code must not import the brain package (only tests may — the worker and
 # brain are decoupled), so this is a local copy kept honest by
 # ``test_known_actions_in_sync_with_brain_registry``: if the brain registry

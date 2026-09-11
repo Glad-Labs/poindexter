@@ -60,7 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib_scan_floor import require_dir, require_scanned  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BRAIN_DIR = REPO_ROOT / "brain"
+BRAIN_DIR = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 
 # subprocess methods that WAIT for the child (Popen is excluded — see docstring).
 _BLOCKING_SUBPROCESS = {"run", "call", "check_output", "check_call"}

@@ -14,7 +14,7 @@ Every 5 minutes (default), this job:
    instead of being masked green by the next unchanged pass (#842)
 
 The output path and the Prometheus URL are both plugin config — see
-``brain/seed_app_settings.json`` for the default seed. The rules file
+``poindexter/brain/seed_app_settings.json`` for the default seed. The rules file
 lives on a volume shared between the worker (writer) and Prometheus
 (reader); ``docker-compose.local.yml`` wires the volume.
 

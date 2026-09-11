@@ -175,7 +175,7 @@ PG_CONNECTIONS_MAX = Gauge(
 # Delivery-plane dead-man's switch heartbeat (Glad-Labs/poindexter#524).
 # Unix epoch (seconds) of the most recent ``brain.cycle_heartbeat`` row in
 # ``audit_log``. The brain daemon writes one such row at the end of every
-# cycle (CYCLE_SECONDS=300; see brain/brain_daemon.py). The static
+# cycle (CYCLE_SECONDS=300; see poindexter/brain/brain_daemon.py). The static
 # Prometheus rule ``BrainDeliveryDeadMansSwitch`` fires on BOTH:
 #   - ``absent(...)`` for 10m   (gauge never emitted → DB unreachable or
 #     no heartbeat row ever written), and

@@ -20,6 +20,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain.psu_power import (
     STATIC_DEFAULT_WATTS,
     fetch_icue_psu_watts,

@@ -154,7 +154,7 @@ whether _our own outlet was switched on_. Two fixes:
 1. **The plug's `initial_state` is now `on`** (`Switch.SetConfig`, config rev
    17), so a plug reboot (crash, firmware update, momentary outlet contact
    loss) brings the outlet straight back instead of parking it off.
-2. **`brain/outlet_guard_probe.py`** runs every brain cycle and issues
+2. **`poindexter/brain/outlet_guard_probe.py`** runs every brain cycle and issues
    `Switch.Set on` over the plug's local RPC when all three hold:
    - the relay is off (`Switch.GetStatus.output == false`);
    - mains is present on the plug's INPUT (`voltage >=

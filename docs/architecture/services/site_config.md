@@ -87,11 +87,11 @@ Three sources seed the table, all with `INSERT ... ON CONFLICT (key) DO
 NOTHING` — so **first writer wins**, and which one wins depends on the install
 path:
 
-| source                           | keys | when                                                                                                               |
-| -------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
-| `brain/seed_app_settings.json`   | 81   | brain daemon boot, if the table is empty or missing a `REQUIRED_KEYS` value (free-tier profile, `_meta.tier=free`) |
-| `0000_baseline.seeds.sql`        | ~692 | migration runner, every boot                                                                                       |
-| `settings_defaults.py::DEFAULTS` | ~734 | `seed_all_defaults`, every boot, after migrations                                                                  |
+| source                                    | keys | when                                                                                                               |
+| ----------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| `poindexter/brain/seed_app_settings.json` | 81   | brain daemon boot, if the table is empty or missing a `REQUIRED_KEYS` value (free-tier profile, `_meta.tier=free`) |
+| `0000_baseline.seeds.sql`                 | ~692 | migration runner, every boot                                                                                       |
+| `settings_defaults.py::DEFAULTS`          | ~734 | `seed_all_defaults`, every boot, after migrations                                                                  |
 
 On `docker compose up` against an empty DB the brain seeds first (`worker`
 declares `depends_on: brain-daemon: service_healthy`), giving the precedence
@@ -100,7 +100,7 @@ declares `depends_on: brain-daemon: service_healthy`), giving the precedence
 order is `baseline > DEFAULTS`. Either way, for a key the baseline also seeds,
 the `DEFAULTS` value is only reachable if it matches the baseline.
 `settings_defaults.py` and `0000_baseline.seeds.sql` must therefore agree on
-every overlapping key; `brain/seed_app_settings.json` may differ only via the
+every overlapping key; `poindexter/brain/seed_app_settings.json` may differ only via the
 declared `TIER_POLICY` allowlist. All three are held consistent by
 `scripts/ci/settings_seed_value_drift_lint.py` (in the `migrations-smoke`
 check).

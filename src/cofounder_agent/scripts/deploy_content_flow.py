@@ -38,10 +38,9 @@ import os
 import sys
 from pathlib import Path
 
-# Make the repo-root brain/ package importable. When poetry runs this
-# script from src/cofounder_agent/ the brain/ module — which lives one
-# level up at the repo root — isn't on sys.path. Mirror the pattern
-# from src/cofounder_agent/migrations/apply_migrations.py.
+# Put the repo root on sys.path: its `brain/` stub aliases `brain.*` onto
+# `poindexter.brain.*` (poindexter#1046 step 2) so `from brain.bootstrap import`
+# resolves when poetry runs this from src/cofounder_agent/.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -121,6 +120,7 @@ async def _resolve_setting(key: str, default: str) -> str:
     the heavier ``DatabaseService`` plumbing.
     """
     import asyncpg
+
     from brain.bootstrap import resolve_database_url
 
     try:

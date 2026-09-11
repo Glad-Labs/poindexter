@@ -14,7 +14,7 @@ import pytest
 # brain/ lives at the repo root; walk up until we find it.
 _HERE = Path(__file__).resolve()
 for _p in _HERE.parents:
-    if (_p / "brain" / "bootstrap.py").is_file():
+    if (_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
         if str(_p) not in sys.path:
             sys.path.insert(0, str(_p))
         break

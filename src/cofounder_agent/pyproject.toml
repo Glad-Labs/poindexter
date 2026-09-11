@@ -20,20 +20,9 @@ dynamic = ["dependencies", "classifiers"]
 packages = [
     { include = "cofounder_agent", from = ".." },
     { include = "poindexter", from = "." },
-    # brain/ lives at the repo root (a sibling of src/cofounder_agent), not under
-    # the package tree poetry auto-discovers. Declaring it here makes the editable
-    # install add the repo root to its .pth so the host `poindexter` CLI can
-    # `import brain.bootstrap` — reached via config.get_config() from
-    # DatabaseService.initialize() on the `pipeline resume` / `regen` paths.
-    # Without it those commands die with `ModuleNotFoundError: No module named
-    # 'brain'` when run from outside the repo root (the worker container is
-    # unaffected — it mounts the tree flat at /app, and both backend images
-    # install with --no-root so this entry is never evaluated at image-build
-    # time). `from = "../.."` resolves to the repo root, mirroring the existing
-    # `from = ".."` pattern one level up. Don't remove — guarded by
-    # tests/unit/poindexter/test_package_metadata.py::test_umbrella_pyproject_packages_include_brain.
-    { include = "brain", from = "../.." },
 ]
+# poindexter/brain carries its own container manifest; keep it out of the wheel.
+exclude = ["poindexter/brain/Dockerfile", "poindexter/brain/pyproject.toml", "poindexter/brain/poetry.lock"]
 
 [tool.poetry.dependencies]
 # Pinned to 3.13.x: litellm >=1.83.7 (which lands proxy-mode CVE
@@ -556,10 +545,9 @@ ignore = [
 # `src`, and since poindexter#1046 step 2 the flat roots are one-file stubs while
 # the code lives under poindexter/ -- declaring them keeps import sections
 # stable through the migration (steps 3-5 rewrite the spellings, not this list).
-# `brain` joins in PR B of step 2, when it moves under poindexter/.
 known-first-party = [
     "poindexter", "services", "plugins", "modules", "utils", "routes", "schemas",
-    "config", "tasks", "middleware", "main", "tests",
+    "config", "tasks", "brain", "middleware", "main", "tests",
 ]
 
 [tool.ruff.lint.per-file-ignores]

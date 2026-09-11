@@ -38,7 +38,7 @@ import pytest
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[4] / "poindexter" / "services" / "migrations"
 _REPO_ROOT = Path(__file__).resolve().parents[6]
-_BRAIN_SEED = _REPO_ROOT / "brain" / "seed_app_settings.json"
+_BRAIN_SEED = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain" / "seed_app_settings.json"
 _DEAD_KEYS = (
     "plugin.tts_provider.cosyvoice2.base_url",
     "plugin.tts_provider.cosyvoice2.model",

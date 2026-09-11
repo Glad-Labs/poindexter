@@ -2,7 +2,7 @@
 
 Thin adapter over :mod:`services.declarative_config_service` (surface
 ``"alerts"``, poindexter#848) — mirrors ``poindexter retention``'s shape.
-Rows here are read by ``brain/alert_sync.py`` (GH-28) and pushed to
+Rows here are read by ``poindexter/brain/alert_sync.py`` (GH-28) and pushed to
 Grafana's native alert-rule provisioning API every
 ``grafana_alert_sync_interval_cycles`` brain cycles (default 15 min).
 

@@ -12,7 +12,7 @@ What it does, idempotently:
 5. Create a "prometheus" API key (idempotent — deletes the existing one with
    that name first to ensure the returned secret is fresh).
 6. Persist the API key to app_settings.uptime_kuma_api_key (is_secret=true)
-   so brain/prometheus_secret_writer.py picks it up on the next cycle.
+   so poindexter/brain/prometheus_secret_writer.py picks it up on the next cycle.
 
 Re-running is safe — every step checks current state first.
 

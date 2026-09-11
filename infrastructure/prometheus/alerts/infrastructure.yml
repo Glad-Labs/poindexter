@@ -1,5 +1,5 @@
 # Infrastructure alerts — Prometheus + Alertmanager counterparts
-# of the legacy brain/health_probes.py probes.
+# of the legacy poindexter/brain/health_probes.py probes.
 #
 # Phase D additive-first migration (GitHub #68):
 # - These rules ship alongside the existing probe loop

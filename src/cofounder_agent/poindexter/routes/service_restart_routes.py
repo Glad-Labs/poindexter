@@ -6,7 +6,7 @@
 The worker has no docker.sock — only ``poindexter-brain-daemon`` does (the
 self-healing firefighter's ``docker_restart_container``). This route only
 writes/reads the intent queue (``services/service_restart_requests.py``);
-``brain/service_restart.py`` claims rows and does the actual restart.
+``poindexter/brain/service_restart.py`` claims rows and does the actual restart.
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@
 > host" below as "the Windows host you are running on".
 >
 > **The Linux equivalent** of the underlying concern — dormant GPU sidecars
-> holding memory — is `brain/`'s sidecar-recycle probe
+> holding memory — is `poindexter/brain/`'s sidecar-recycle probe
 > (glad-labs-stack#3398), not this script.
 
 **Status:** built (PR 2, 2026-07-12), **not yet activated**. Registration and

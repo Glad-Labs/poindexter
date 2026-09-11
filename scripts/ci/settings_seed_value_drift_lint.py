@@ -66,7 +66,7 @@ REPO = Path(__file__).resolve().parents[2]
 SVC = REPO / "src" / "cofounder_agent" / "poindexter" / "services"
 BASELINE_SEEDS = SVC / "migrations" / "0000_baseline.seeds.sql"
 DEFAULTS_PY = SVC / "settings_defaults.py"
-BRAIN_SEED = REPO / "brain" / "seed_app_settings.json"
+BRAIN_SEED = REPO / "src" / "cofounder_agent" / "poindexter" / "brain" / "seed_app_settings.json"
 
 # Keys where brain/seed_app_settings.json is ALLOWED to differ from the
 # baseline, because the brain seed is a deliberate free-tier profile

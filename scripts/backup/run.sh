@@ -88,7 +88,7 @@ emit_alert() {
     local description="$3"
     # Schema (alert_events): alertname/severity/status/labels/annotations/
     # starts_at/fingerprint. summary + description live inside annotations
-    # — that's where brain/alert_dispatcher.py reads them.
+    # — that's where poindexter/brain/alert_dispatcher.py reads them.
     PGPASSWORD="${PGPASSWORD}" psql -h "${PG_HOST}" -p "${PG_PORT}" \
         -U "${PG_USER}" -d "${PG_DATABASE}" -v ON_ERROR_STOP=1 -tAc \
         "INSERT INTO alert_events (

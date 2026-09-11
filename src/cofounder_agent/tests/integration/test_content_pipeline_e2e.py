@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 import httpx
 import pytest
+
 from brain.docker_utils import IN_DOCKER
 
 # ---------------------------------------------------------------------------
@@ -420,6 +421,7 @@ async def platform_stack():
     the only DB requirement in this module.
     """
     import asyncpg
+
     from brain.bootstrap import resolve_database_url
 
     dsn = resolve_database_url()

@@ -127,7 +127,7 @@ async def _resolve_livekit_creds_db_first() -> tuple[str, str, str]:
 # The MCP server gets started by ``uv run --directory mcp-server-voice``,
 # so ``import services.voice_pipecat`` won't resolve until we add the
 # repo root to ``sys.path``. Mirrors the exact technique
-# ``services/voice_agent_livekit.py::_ensure_brain_on_path`` uses.
+# the backend's retired ``_ensure_brain_on_path`` helpers used (poindexter#1046).
 # ---------------------------------------------------------------------------
 
 

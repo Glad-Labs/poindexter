@@ -24,7 +24,7 @@
   read-only into /app, so a restart - NOT a rebuild - is the deploy; only
   dependency / Dockerfile changes need `docker compose build`. The one
   image-baked app container, poindexter-brain-daemon, is the exception: when
-  the synced diff touches brain/ this script rebuilds its image so the
+  the synced diff touches poindexter/brain/ this script rebuilds its image so the
   compose-apply recreates it onto fresh code (a restart can't reload it -
   see the NOT-restarted note below). Syncing the files alone never reloads a
   long-lived process that already imported the old modules, which is why a
@@ -37,7 +37,7 @@
       without a bounce - and bouncing it would interrupt an in-flight post.
     - poindexter-brain-daemon: brain code is image-baked (its /app is the
       image, not a bind-mount - poindexter#456), so a restart can't reload
-      it. Instead, when the synced diff touches brain/ this script REBUILDS
+      it. Instead, when the synced diff touches poindexter/brain/ this script REBUILDS
       the brain image (`start-stack.sh build brain-daemon`) BEFORE the
       compose-apply below, which then recreates the container onto the fresh
       image - so brain code edits deploy on merge without a manual build.
@@ -304,9 +304,9 @@ function Invoke-SelfTest {
         Test-Case 'apply targets clone start-stack'    ($applyArgv[1] -eq 'C:\fake\clone/scripts/start-stack.sh')
         Test-Case 'apply passes up -d --no-build'      (($applyArgv[2..4] -join ' ') -eq 'up -d --no-build')
 
-        # 5) Brain-change detection: only brain/ paths trigger an image rebuild.
-        Test-Case 'brain/ path triggers rebuild'       (Test-PathListTouchesBrain @('brain/brain_daemon.py'))
-        Test-Case 'brain/ subdir triggers rebuild'     (Test-PathListTouchesBrain @('src/x.py', 'brain/sub/y.py'))
+        # 5) Brain-change detection: only poindexter/brain/ paths trigger an image rebuild.
+        Test-Case 'poindexter/brain/ path triggers rebuild'       (Test-PathListTouchesBrain @('src/cofounder_agent/poindexter/brain/brain_daemon.py'))
+        Test-Case 'poindexter/brain/ subdir triggers rebuild'     (Test-PathListTouchesBrain @('src/x.py', 'src/cofounder_agent/poindexter/brain/sub/y.py'))
         Test-Case 'backslash brain path triggers'      (Test-PathListTouchesBrain @('brain\health_probes.py'))
         Test-Case 'non-brain change does not trigger'  (-not (Test-PathListTouchesBrain @('src/cofounder_agent/main.py', 'docs/x.md')))
         Test-Case 'brainlike prefix does not trigger'  (-not (Test-PathListTouchesBrain @('brainstem/notes.md')))
@@ -438,7 +438,7 @@ function Get-ComposeApplyCommand {
 # (poindexter#456 - the brain's bare-name + `brain.`-package import duality plus
 # a build-time /app/brain mirror make a :ro /app bind-mount crashloop it, and it
 # already has a child mount under /app that overlayfs rejects under :ro, the #348
-# failure). So a plain `docker restart` reloads NOTHING for brain. When brain/
+# failure). So a plain `docker restart` reloads NOTHING for brain. When poindexter/brain/
 # source changed in the synced diff we rebuild its image here; the compose-apply
 # (`up -d --no-build`) that follows then recreates the container onto the fresh
 # image. Routed through the CLONE's start-stack.sh so bootstrap.toml secrets are
@@ -450,13 +450,13 @@ function Get-BrainBuildCommand {
     return @((Resolve-GitBash), "$DeployDir/scripts/start-stack.sh", 'build', 'brain-daemon')
 }
 
-# True if any synced path is under brain/ (forward- or back-slashed). Drives the
+# True if any synced path is under poindexter/brain/ (forward- or back-slashed). Drives the
 # brain image rebuild: brain is image-baked, so only a rebuild - never a restart
 # - ships its code. Pure function of the diff list so -SelfTest can exercise it.
 function Test-PathListTouchesBrain {
     param([string[]]$Paths)
     foreach ($p in $Paths) {
-        if ($p -and (($p -replace '\\', '/') -match '^brain/')) { return $true }
+        if ($p -and (($p -replace '\\', '/') -match '^src/cofounder_agent/poindexter/brain/')) { return $true }
     }
     return $false
 }
@@ -742,7 +742,7 @@ try {
     # ---- Brain image rebuild (image-baked container, poindexter#456) ------
     # brain-daemon's code is baked into its image (NOT bind-mounted like the
     # worker), so the restart loop below can't reload it - only a rebuild ships
-    # brain code. When brain/ source changed between the last deploy and now,
+    # brain code. When poindexter/brain/ source changed between the last deploy and now,
     # rebuild its image here; the compose-apply step that follows then recreates
     # the container onto the fresh image. If the diff can't be computed (e.g. a
     # pruned marker SHA), rebuild defensively rather than silently ship stale
@@ -760,7 +760,7 @@ try {
         $brainChanged = $true
     }
     if ($brainChanged) {
-        Write-Log "brain/ changed in ${lastShort}..${shortHead}; rebuilding brain-daemon image (image-baked)..."
+        Write-Log "poindexter/brain/ changed in ${lastShort}..${shortHead}; rebuilding brain-daemon image (image-baked)..."
         $brainArgv = Get-BrainBuildCommand -DeployDir $DeployDir
         $brainRc = Invoke-Logged $brainArgv[0] $brainArgv[1..($brainArgv.Length - 1)] 'brain-build'
         if ($brainRc -ne 0) {
@@ -836,7 +836,7 @@ try {
         $brainNote = if ($brainRebuilt) { ' brain-daemon rebuilt + recreated.' } else { '' }
         Write-Log "Pipeline now running $shortHead.$brainNote"
         $detailParts = @()
-        if ($brainRebuilt) { $detailParts += 'rebuilt brain-daemon image (brain/ changed)' }
+        if ($brainRebuilt) { $detailParts += 'rebuilt brain-daemon image (poindexter/brain/ changed)' }
         if ($alreadyFresh.Count -gt 0) { $detailParts += "skipped already-fresh: $($alreadyFresh -join ', ')" }
         $deployDetail = $detailParts -join '; '
         Write-DeployStatus -Result $outcome.Result -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $deployDetail

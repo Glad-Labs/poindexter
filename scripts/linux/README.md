@@ -44,7 +44,7 @@ external access with `ufw`.
 ### The deploy path watches itself (poindexter#977)
 
 `deploy-checkout-sync.sh` writes a `deploy_sync_run` heartbeat into
-`audit_log` on every pass, and `brain/deploy_sync_probe.py` reads it each
+`audit_log` on every pass, and `poindexter/brain/deploy_sync_probe.py` reads it each
 brain cycle. Two conditions, deliberately separated:
 
 | Condition                                                      | Finding               | Severity   |

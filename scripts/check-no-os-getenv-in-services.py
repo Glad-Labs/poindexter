@@ -119,8 +119,7 @@ ALLOWED_FILES: dict[str, str] = {
     ),
     "services/voice_agent_livekit.py": (
         "Standalone agent process: POINDEXTER_API_URL (worker address in the "
-        "compose net), POINDEXTER_BRAIN_PARENT (brain import-path for the "
-        "read-only /app overlay), and site_config-first CLAUDE_BOT_* invocation "
+        "compose net), and site_config-first CLAUDE_BOT_* invocation "
         "overrides — deployment/bootstrap signals, not tunable config."
     ),
     # --- one-shot legacy migrations ---

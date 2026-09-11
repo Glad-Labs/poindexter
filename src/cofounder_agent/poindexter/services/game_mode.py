@@ -2,7 +2,7 @@
 
 Matt's PC is simultaneously the gaming rig and the AI inference server, and
 the self-healing machinery is *designed* to keep the inference side up. A
-hand-run ``docker stop`` therefore does not hold: ``brain/compose_drift_probe``
+hand-run ``docker stop`` therefore does not hold: ``poindexter/brain/compose_drift_probe``
 sees the service missing and runs ``docker compose up -d`` on the next cycle.
 Game mode is the sanctioned way to say "these are down on purpose".
 
@@ -15,7 +15,7 @@ reads that one seam:
 
 - :func:`is_active` — sync, cache-backed. ``gpu_scheduler.lock()`` calls it on
   every acquire and blocks pipeline GPU work while the operator is playing.
-- ``brain/compose_drift_probe`` — folds :func:`parked_services` into its
+- ``poindexter/brain/compose_drift_probe`` — folds :func:`parked_services` into its
   on-demand set, so it stops re-launching the parked containers *and* takes
   them down if they are up.
 - The CLI adapter additionally fires a best-effort ``docker stop`` for instant

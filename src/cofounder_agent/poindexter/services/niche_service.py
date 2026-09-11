@@ -47,7 +47,7 @@ class Niche:
     # Per-niche override for the site-wide ``cadence_slo_expected_posts_per_day``
     # app_setting. NULL means "no override — rely on the global SLO only".
     # Set via ``poindexter topics niche set-cadence``; read by
-    # ``brain/health_probes.py::probe_cadence_slo`` (poindexter#538).
+    # ``poindexter/brain/health_probes.py::probe_cadence_slo`` (poindexter#538).
     cadence_target_posts_per_day: float | None = None
 
 
@@ -151,7 +151,7 @@ class NicheService:
     async def set_cadence_target(self, niche_id: UUID, target: float) -> Niche:
         """Set this niche's per-niche cadence override (poindexter#538).
 
-        Read by ``brain/health_probes.py::probe_cadence_slo``, which
+        Read by ``poindexter/brain/health_probes.py::probe_cadence_slo``, which
         otherwise only checks the site-wide ``cadence_slo_expected_posts_per_day``
         app_setting.
         """

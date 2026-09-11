@@ -98,7 +98,7 @@ def _bootstrap_resolve_dsn() -> str | None:
     resolver. Same trick the unit-tier + integration_db conftests use.
     """
     for p in Path(__file__).resolve().parents:
-        if (p / "brain" / "bootstrap.py").is_file():
+        if (p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
             if str(p) not in sys.path:
                 sys.path.insert(0, str(p))
             break

@@ -288,7 +288,6 @@ def stub_memory_client(monkeypatch):
     # Also short-circuit _ensure_brain_on_path (it tries to walk the
     # filesystem looking for brain/bootstrap.py and will fail under the
     # test runner's working directory).
-    monkeypatch.setattr(voice_agent_livekit, "_ensure_brain_on_path", lambda: None)
     return holder
 
 
@@ -391,8 +390,6 @@ def stub_pr_env(monkeypatch):
     fake_asyncpg.create_pool = _create_pool
     monkeypatch.setitem(sys.modules, "asyncpg", fake_asyncpg)
 
-    # Disable the brain-on-path walker (it would try to add a real path).
-    monkeypatch.setattr(voice_agent_livekit, "_ensure_brain_on_path", lambda: None)
 
     # ``responses`` is declared above (with ``__repos__`` slot) so the
     # fake conn and fake httpx share the same mapping.

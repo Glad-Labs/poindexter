@@ -13,7 +13,7 @@ measures a different node — see the chain below.)
 
 ## Source priority
 
-`brain/psu_power.py::select_power_source` picks, best → worst:
+`poindexter/brain/psu_power.py::select_power_source` picks, best → worst:
 
 1. **`psu_total_power_watts`** — real metered wall power from a Shelly outlet
    plug (`shelly_psu_url`). Primary. _(Before the HWiNFO64 retirement this metric
@@ -166,7 +166,7 @@ false "No real PSU data" alert:
    must persist for `psu_watchdog_degraded_cycles_before_page` **consecutive**
    brain cycles (default `3` ≈ 15 min) before it pages Telegram; a one-cycle
    miss self-heals silently. Logic is in
-   `brain/psu_power.py::psu_watchdog_transition`; the streak is persisted in
+   `poindexter/brain/psu_power.py::psu_watchdog_transition`; the streak is persisted in
    `brain_knowledge (entity='psu_watchdog', attribute='degraded_streak')` and
    the threshold is tunable via `app_settings`.
 
@@ -253,7 +253,7 @@ undervoltage", not "power is clean".
 
 ## Staleness watchdog
 
-`brain/data_freshness_probe.py` watches the feeds behind these panels and emits
+`poindexter/brain/data_freshness_probe.py` watches the feeds behind these panels and emits
 an edge-triggered `data_feed_stale` finding (→ Discord) when a producer goes
 dark, so a stale wall-power number can never silently masquerade as a live one.
 
@@ -286,6 +286,6 @@ feed via `app_settings.data_freshness_feeds`.
 
 The same Shelly relay that meters the PC can open with mains still present
 (it did, 2026-09-06 03:04 EDT — 12 hours dark). `psu_outlet_output_on` exposes
-the relay state, and `brain/outlet_guard_probe.py` turns the outlet back on when
+the relay state, and `poindexter/brain/outlet_guard_probe.py` turns the outlet back on when
 it is off, mains is present on its input, and the UPS is on battery. Details in
 [ups-monitoring.md § Outlet guard](ups-monitoring.md#outlet-guard--the-brain-turns-our-own-outlet-back-on).

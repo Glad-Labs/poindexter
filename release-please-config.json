@@ -86,7 +86,7 @@
         },
         {
           "type": "toml",
-          "path": "brain/pyproject.toml",
+          "path": "src/cofounder_agent/poindexter/brain/pyproject.toml",
           "jsonpath": "$.tool.poetry.version"
         },
         {

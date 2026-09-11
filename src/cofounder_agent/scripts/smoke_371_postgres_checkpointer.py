@@ -62,9 +62,8 @@ async def _smoke() -> None:
     from services.site_config import SiteConfig
     site_config = SiteConfig()
     # ---- 1. Resolve a base DSN from bootstrap.toml or DATABASE_URL ----
-    from brain.bootstrap import resolve_database_url
-
     import services.pipeline_templates as pt
+    from brain.bootstrap import resolve_database_url
     from services.template_runner import PipelineState, TemplateRunner
     base_dsn = resolve_database_url()
     if not base_dsn:

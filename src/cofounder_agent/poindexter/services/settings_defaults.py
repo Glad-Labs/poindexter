@@ -162,7 +162,7 @@ DEFAULTS: dict[str, str] = {
     "ops_firefighter_action_allowlist": "",
     # ADDITIONAL container names the firefighter must never restart (CSV).
     # Empty is the correct default and is NOT an empty denylist: this UNIONS
-    # onto a hardcoded floor in brain/remediation/registry.py::_NEVER_RESTART
+    # onto a hardcoded floor in poindexter/brain/remediation/registry.py::_NEVER_RESTART
     # (poindexter-postgres-local + poindexter-brain-daemon), which cannot be
     # switched off from here. Those two destroy the record of their own restart
     # — the brain runs the executor, postgres holds audit_log — and the console
@@ -246,7 +246,7 @@ DEFAULTS: dict[str, str] = {
     # Mercury and any other source-IP-allowlisted integration 401s from an
     # unrecognised address, indistinguishable from an expired token. This
     # host is on a residential WAN with no static guarantee.
-    # ----- Deploy-path dead-man's switch (brain/deploy_sync_probe.py, #977) --
+    # ----- Deploy-path dead-man's switch (poindexter/brain/deploy_sync_probe.py, #977) --
     # scripts/linux/deploy-checkout-sync.sh writes a `deploy_sync_run` audit_log
     # heartbeat each pass; the probe pages when that goes stale (the deploy path
     # stopped RUNNING) or when the last N runs all errored (it stopped
@@ -332,10 +332,10 @@ DEFAULTS: dict[str, str] = {
     # Below this the probe logs the lag but never pages; a genuinely stuck prod
     # accrues a bigger backlog fast (main advances several times/day). The other
     # branch_drift_* keys seed via baseline.seeds.sql; this go-forward key seeds
-    # here (the code default in brain/branch_drift_probe.py is the backstop).
+    # here (the code default in poindexter/brain/branch_drift_probe.py is the backstop).
     'branch_drift_min_commits_behind': '3',
 
-    # Postiz queue-wedge watch (brain/postiz_queue_watch.py) — detects posts
+    # Postiz queue-wedge watch (poindexter/brain/postiz_queue_watch.py) — detects posts
     # stuck in QUEUE/ERROR past their publishDate via the Postiz API (the
     # Temporal-restart wedge: our social_post_drafts rows read 'posted' but
     # nothing publishes) and `docker restart`s poindexter-postiz before
@@ -347,7 +347,7 @@ DEFAULTS: dict[str, str] = {
     'postiz_queue_watch_max_retries': '2',
     'postiz_queue_watch_retry_delay_seconds': '180',
 
-    # ComfyUI host-RAM recycle watch (brain/comfyui_ram_watch.py) — the render
+    # ComfyUI host-RAM recycle watch (poindexter/brain/comfyui_ram_watch.py) — the render
     # sidecar's main python accumulates RSS+swap across renders (28.6 GB
     # observed 2026-08-26, filling the box's swap; the host-RAM twin of the
     # #999 VRAM ghost — POST /free returns VRAM, only a process exit returns
@@ -384,7 +384,7 @@ DEFAULTS: dict[str, str] = {
     # (20-30 GB). Lowered 2026-08-27 — comfyui alone reached 29.4 GB, 63% of
     # the host's 47 GB swap, and stack#3409 removed ~10 spurious container
     # recreations/week that had been clearing it for free. Full histogram in
-    # brain/comfyui_ram_watch.py.
+    # poindexter/brain/comfyui_ram_watch.py.
     'comfyui_ram_recycle_watermark_gb': '16',
     'comfyui_ram_recycle_cooldown_minutes': '60',
 
@@ -484,7 +484,7 @@ DEFAULTS: dict[str, str] = {
     # cost fallen back to the software estimate / static floor — before it pages
     # Telegram. A single slow exporter scrape self-heals next cycle; only a
     # sustained outage (default 3 cycles ≈ 15 min) is a critical page. See
-    # brain/psu_power.py::psu_watchdog_transition. (incident 2026-07-12:
+    # poindexter/brain/psu_power.py::psu_watchdog_transition. (incident 2026-07-12:
     # per-request exporter slowness blew the brain's 3s scrape and paged
     # ~15×/day on 1-cycle blips.)
     'psu_watchdog_degraded_cycles_before_page': '3',
@@ -1091,7 +1091,7 @@ DEFAULTS: dict[str, str] = {
     # rather than a boolean so a forgotten game mode expires on its own instead
     # of silently starving the pipeline for days. Written by the CLI/MCP
     # adapters; read by gpu_scheduler (admission), the Prefect flow (claim
-    # guard) and brain/compose_drift_probe (keeps parked services down).
+    # guard) and poindexter/brain/compose_drift_probe (keeps parked services down).
     'game_mode_until': '',
     # Compose SERVICE names (the vocabulary compose_drift_probe speaks), not
     # container names — the docker prefix is applied separately below.
@@ -2610,7 +2610,7 @@ DEFAULTS: dict[str, str] = {
     'podcast_pipeline_max_per_cycle': '2',
     'podcast_distribute_max_per_cycle': '20',
     # How old the newest podcast media_asset may get before
-    # brain/health_probes.py::probe_podcast_health reports STALE. Podcasts are
+    # poindexter/brain/health_probes.py::probe_podcast_health reports STALE. Podcasts are
     # a side-effect of the canonical_blog graph, so arrival is bursty: over the
     # 90 days to 2026-08-15 the median gap between production days was 2d, p95
     # was 8.75d, and the largest NORMAL gap was 9d — which is why the probe's
@@ -3266,7 +3266,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # anyway. (2026-08-15)
     'brain_docker_restart_timeout_seconds': '90',
 
-    # ----- Migration-drift in-flight guard (brain/migration_drift_probe.py, #228) -----
+    # ----- Migration-drift in-flight guard (poindexter/brain/migration_drift_probe.py, #228) -----
     # When true, the migration-drift auto-recover path defers the worker
     # restart while a content task is mid-generation (pipeline_tasks.status
     # = 'in_progress'). A restart mid-run orphans a multi-minute
@@ -3917,7 +3917,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'operator_page_cooldown_minutes': '30',
 
     # ----- Data-feed freshness dead-man's switch (2026-07-01 audit) -----
-    # brain/data_freshness_probe.py watches each feed's newest row and emits
+    # poindexter/brain/data_freshness_probe.py watches each feed's newest row and emits
     # an edge-triggered `data_feed_stale` finding (warning → Discord via the
     # findings router) when it exceeds threshold_minutes — so a dead producer
     # can't leave dashboards silently serving stale data. table/column are
@@ -3942,7 +3942,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     ),
 
     # ----- Scheduled-CI dead-man's switch (2026-08-28) -----
-    # brain/scheduled_workflow_watch.py. A required check that goes red blocks
+    # poindexter/brain/scheduled_workflow_watch.py. A required check that goes red blocks
     # a merge; a SCHEDULED workflow that dies turns nothing red anywhere. The
     # 2026-08-25 sweep found `benchmarks` had never passed in 71 runs and the
     # weekly playwright job never in 11 — both silent for months.
@@ -3965,7 +3965,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'scheduled_workflow_watch_interval_minutes': '60',
 
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
-    # brain/clock_skew_probe.py compares postgres clock_timestamp() to an
+    # poindexter/brain/clock_skew_probe.py compares postgres clock_timestamp() to an
     # external UTC reference (the HTTP Date header from clock_skew_reference_url)
     # and emits an edge-triggered db_clock_skew finding (critical -> Telegram)
     # when |skew| exceeds the threshold. Catches transient WSL2 CLOCK_REALTIME
@@ -4238,7 +4238,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'shared_http_client_max_connections': '100',
     'shared_http_client_max_keepalive': '20',
 
-    # ----- MCP HTTP probe recovery (brain/mcp_http_probe.py) -----
+    # ----- MCP HTTP probe recovery (poindexter/brain/mcp_http_probe.py) -----
     # Empty = HTTP recovery disabled. Set to http://host.docker.internal:9841/recover
     # once the host Recovery Agent is running (systemd
     # poindexter-recovery-agent.service since the Pop!_OS migration).
@@ -4248,7 +4248,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
-    # ----- Outlet guard (brain/outlet_guard_probe.py, 2026-09-06) -----
+    # ----- Outlet guard (poindexter/brain/outlet_guard_probe.py, 2026-09-06) -----
     # The Shelly plug that meters the PC's wall power (bootstrap
     # `shelly_psu_url` → SHELLY_PSU_URL) opened its relay with mains present;
     # NUT shut the host down 18 minutes later and it sat dark for 12 hours.
@@ -4280,7 +4280,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Per-alertname repeat suppression.
     'outlet_guard_dedup_hours': '6',
 
-    # ----- Compose-drift host-routed recovery (brain/compose_drift_probe.py) -----
+    # ----- Compose-drift host-routed recovery (poindexter/brain/compose_drift_probe.py) -----
     # Docker Compose project name the brain pins (COMPOSE_PROJECT_NAME) during
     # compose-drift auto-recover, so the recreate joins the stack's real project
     # instead of inferring one from the brain's /app cwd (orphan networks).
@@ -4312,7 +4312,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # active profiles to restore crash-detection for their services.
     'compose_drift_active_profiles': '',
 
-    # ----- Docker port-forward adaptive recovery (brain/docker_port_forward_probe.py) -----
+    # ----- Docker port-forward adaptive recovery (poindexter/brain/docker_port_forward_probe.py) -----
     # The probe detects a stuck Docker Desktop / WSL2 NAT host-port forward
     # (internal-OK + external-FAIL) and recovers it. A `docker restart` fixes a
     # stuck PER-CONTAINER forward (the 2026-04-29 HTTP case) but CANNOT fix a

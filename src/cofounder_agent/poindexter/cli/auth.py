@@ -1046,7 +1046,7 @@ def _write_bootstrap_oauth_creds(client_id: str, client_secret: str) -> bool:
         # silent-ok: permission tightening only, and explicitly best-effort
         # ("no-op on Windows" above). The credential WRITE itself is already
         # handled loudly — the `except OSError` a few lines up echoes a yellow
-        # WARN and returns False. Same shape as brain/bootstrap.py.
+        # WARN and returns False. Same shape as poindexter/brain/bootstrap.py.
         pass
     return True
 

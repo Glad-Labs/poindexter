@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry (2.2.1 — matches brain/Dockerfile; 1.8.x rejects the PEP-621
+# Install Poetry (2.2.1 — matches poindexter/brain/Dockerfile; 1.8.x rejects the PEP-621
 # [project] table used in pyproject.toml since poetry-core>=2.0.0).
 RUN pip install --no-cache-dir 'poetry==2.2.1'
 

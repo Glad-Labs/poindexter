@@ -76,10 +76,10 @@ def test_noisy_alerts_query_gates_on_paged_not_raw_row_count():
 
 
 def test_parse_classification_valid_json():
-    raw = '{"classification": "probe_bug", "reason": "dedup broken", "suspect_file": "brain/x_probe.py"}'
+    raw = '{"classification": "probe_bug", "reason": "dedup broken", "suspect_file": "src/cofounder_agent/poindexter/brain/x_probe.py"}'
     out = at.parse_classification(raw)
     assert out["classification"] == "probe_bug"
-    assert out["suspect_file"] == "brain/x_probe.py"
+    assert out["suspect_file"] == "src/cofounder_agent/poindexter/brain/x_probe.py"
 
 
 def test_parse_classification_normalizes_and_defaults():

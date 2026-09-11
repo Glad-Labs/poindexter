@@ -1296,7 +1296,7 @@
       "id": 21,
       "type": "table",
       "title": "Data feed freshness — dead-man's switch",
-      "description": "Age of the newest row per data feed vs its staleness threshold. STALE means every panel reading that table is showing old data without looking broken. Alerting is handled by brain/data_freshness_probe.py (edge-triggered data_feed_stale finding, feeds configured in app_settings.data_freshness_feeds); this panel is the at-a-glance view. Thresholds here mirror the seeded defaults - keep in sync when tuning.",
+      "description": "Age of the newest row per data feed vs its staleness threshold. STALE means every panel reading that table is showing old data without looking broken. Alerting is handled by poindexter/brain/data_freshness_probe.py (edge-triggered data_feed_stale finding, feeds configured in app_settings.data_freshness_feeds); this panel is the at-a-glance view. Thresholds here mirror the seeded defaults - keep in sync when tuning.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"

@@ -7,7 +7,7 @@ here. Before this module, the 5 original declarative data-plane tables had
 CLI groups hand-rolled raw SQL straight to the tables, and there was no HTTP
 mirror. This module is the one place that owns that SQL. A 6th surface
 (``alerts`` / ``alert_rules``) joined 2026-07-13 (poindexter#848) — DB-driven
-Grafana alert rules, synced by ``brain/alert_sync.py``.
+Grafana alert rules, synced by ``poindexter/brain/alert_sync.py``.
 
 **One generic service, keyed on a registry** (not 5 near-identical CRUD
 modules — per #1522). Each :class:`SurfaceSpec` describes a table: its name,

@@ -102,7 +102,7 @@ class DoctorReport:
 # A node's failing/warning status is *suppressed* (reported under the root)
 # when ANY of its upstream deps is itself ``fail``.
 #
-# Names are the keys in ``brain/health_probes.py::PROBES``. Probes not listed
+# Names are the keys in ``poindexter/brain/health_probes.py::PROBES``. Probes not listed
 # here (and not roots) simply have no upstream dep and surface directly.
 # ---------------------------------------------------------------------------
 
@@ -242,7 +242,7 @@ async def load_check_results(pool: Any) -> list[CheckResult]:
     """
     # Imported lazily so the service module is importable without the brain
     # package on sys.path (e.g. in unit tests that feed a fake pool). The
-    # CLI process does have brain/ importable; tests patch this.
+    # CLI process does have poindexter/brain/ importable; tests patch this.
     remediation_keys = _load_remediation_keys()
 
     rows = await pool.fetch(

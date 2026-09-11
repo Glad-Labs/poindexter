@@ -29,14 +29,14 @@
 
 Poindexter keeps inventing "feature parent + sources as children" informally in config (`enabled_topic_sources`, `image_primary_source`, `qa_workflow_*`) but the code doesn't match. The result is god files that make every new integration a painful edit:
 
-| File                                            | Lines | What it does                      |
-| ----------------------------------------------- | ----- | --------------------------------- |
-| `services/content_router_service.py`            | 2776  | Pipeline orchestration            |
-| `services/idle_worker.py`                       | 2169  | 20+ housekeeping jobs, hardcoded  |
-| `scripts/auto-embed.py`                         | 1157  | 6 embedding phases, each bespoke  |
-| `services/image_service.py`                     | 1143  | Pexels + image-gen + AI-gen fused |
-| `services/topic_discovery.py`                   | 955   | Sources dispatched via if-chain   |
-| `brain/health_probes.py` + `business_probes.py` | ~1000 | Flat functions; Protocol unused   |
+| File                                                       | Lines | What it does                      |
+| ---------------------------------------------------------- | ----- | --------------------------------- |
+| `services/content_router_service.py`                       | 2776  | Pipeline orchestration            |
+| `services/idle_worker.py`                                  | 2169  | 20+ housekeeping jobs, hardcoded  |
+| `scripts/auto-embed.py`                                    | 1157  | 6 embedding phases, each bespoke  |
+| `services/image_service.py`                                | 1143  | Pexels + image-gen + AI-gen fused |
+| `services/topic_discovery.py`                              | 955   | Sources dispatched via if-chain   |
+| `poindexter/brain/health_probes.py` + `business_probes.py` | ~1000 | Flat functions; Protocol unused   |
 
 Every new Tap (Slack, Notion, Gmail), Provider (Midjourney, Flux), Reviewer (plagiarism check), or Adapter (new social platform) requires editing a 1000+ line file instead of dropping in a file. That blocks the plugin ecosystem vision and the Pro subscription overlay.
 

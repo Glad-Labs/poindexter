@@ -249,7 +249,7 @@ poindexter topics niche set-cadence <slug> <posts-per-day>
 ```
 
 Sets `niches.cadence_target_posts_per_day` — a per-niche override that
-`probe_cadence_slo` (`brain/health_probes.py`) checks _in addition to_ the
+`probe_cadence_slo` (`poindexter/brain/health_probes.py`) checks _in addition to_ the
 site-wide `cadence_slo_expected_posts_per_day` target. A niche without this
 set isn't checked individually; it's only covered by the site-wide check.
 

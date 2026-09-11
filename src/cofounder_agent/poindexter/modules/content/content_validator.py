@@ -346,18 +346,10 @@ def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, s
 
     try:
         import asyncio
-        import sys
-        from pathlib import Path
 
         # brain.bootstrap.resolve_database_url() is the canonical DSN
         # resolver — no os.getenv in services (project-wide rule).
         try:
-            _proj = Path(__file__).resolve()
-            for _p in _proj.parents:
-                if (_p / "brain" / "bootstrap.py").is_file():
-                    if str(_p) not in sys.path:
-                        sys.path.insert(0, str(_p))
-                    break
             from brain.bootstrap import resolve_database_url
             db_url = resolve_database_url() or ""
         except Exception:
@@ -488,7 +480,7 @@ ORPHANED_ATTRIBUTION_PATTERNS = [
 ]
 
 # Leaked internal path tokens (poindexter#532). Internal reference tokens
-# like ``[memory/...]`` (the auto-memory store) or ``[brain/...]`` sometimes
+# like ``[memory/...]`` (the auto-memory store) or ``[poindexter/brain/...]`` sometimes
 # bleed into reader-facing prose. Sibling rule to PLACEHOLDER_MARKER_PATTERNS
 # (which owns ``[posts/...]``). Anchored on a known set of internal-store
 # namespaces inside square brackets followed by a slash so genuine prose
@@ -1285,9 +1277,9 @@ def _check_patterns(
 #      backtick-quoted (`foo.bar`, `baz(args)`) or dotted CamelCase calls.
 #   2. Compare against a known-good list: Python 3.12 stdlib + top-500
 #      PyPI packages + common Ollama models. All three live as data files
-#      under brain/hallucination-check/ — update in one place, no redeploy.
+#      under poindexter/brain/hallucination-check/ — update in one place, no redeploy.
 #   3. For library names in the post that ARE recognized, optionally check
-#      topic coherence against brain/hallucination-check/library-topics.json.
+#      topic coherence against poindexter/brain/hallucination-check/library-topics.json.
 #
 # Files are loaded lazily + cached in-module; the caches are ephemeral
 # (no TTL) because the lists are static data, not DB state.
@@ -1295,30 +1287,24 @@ from pathlib import Path as _Path
 
 
 def _find_hc_dir() -> _Path:
-    """Locate ``brain/hallucination-check/`` regardless of host vs container layout.
+    """Locate ``poindexter/brain/hallucination-check/``.
 
-    On the host the directory lives at ``<repo-root>/brain/hallucination-check``.
-    In the worker container ``brain/`` is bind-mounted at
-    ``/opt/poindexter/brain`` (see docker-compose.local.yml), not as a
-    descendant of this file's path — so a fixed ``parents[N]`` from
-    /app/poindexter/modules/content overshoots the filesystem root and raises
-    IndexError.
-
-    Walk every ancestor of ``__file__`` looking for the directory, then
-    fall back to the container mount path. If neither exists the lazy
-    file loaders below will surface a clearer error at first use.
+    brain lives inside the poindexter package (Glad-Labs/poindexter#1046, step
+    2), so the directory is two levels up from this file on the host AND in the
+    worker container (``/app/poindexter/brain/hallucination-check``, via the
+    ``src/cofounder_agent:/app`` bind mount) -- the old ``/opt/poindexter/brain``
+    mount is gone. Walk the ancestors rather than pin a depth so a future move
+    of this file cannot silently point it at nothing; if it really is missing
+    the lazy file loaders below surface a clear error at first use.
     """
     here = _Path(__file__).resolve()
     for parent in here.parents:
         candidate = parent / "brain" / "hallucination-check"
         if candidate.is_dir():
             return candidate
-    container_hc = _Path("/opt/poindexter/brain/hallucination-check")
-    if container_hc.is_dir():
-        return container_hc
     # Best-effort guess for diagnostic output; file reads will fail
     # explicitly if the directory really is missing.
-    return here.parents[4] / "brain" / "hallucination-check"
+    return here.parents[2] / "brain" / "hallucination-check"
 
 
 _HC_DIR = _find_hc_dir()
@@ -1335,7 +1321,7 @@ def _normalize_pkg(name: str) -> str:
 
 
 def _load_known_list(filename: str) -> set[str]:
-    """Load a simple newline-delimited list file from brain/hallucination-check.
+    """Load a simple newline-delimited list file from poindexter/brain/hallucination-check.
 
     Ignores blank lines and `#` comments. Normalizes each entry.
     Returns an empty set if the file is missing — missing data should
@@ -2258,7 +2244,7 @@ def validate_content(
         ))
 
     # 7b-sexies. Leaked internal store tokens (poindexter#532) — bracketed
-    # internal reference tokens like [memory/...] / [brain/...] bleeding into
+    # internal reference tokens like [memory/...] / [poindexter/brain/...] bleeding into
     # reader-facing prose. Sibling of `unresolved_placeholder` (which owns
     # [posts/...]); distinct from `leaked_path_token` above (bare repo paths).
     if _enabled("internal_path_leak"):

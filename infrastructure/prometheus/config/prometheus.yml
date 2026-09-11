@@ -125,7 +125,7 @@ scrape_configs:
   # Auth via API key (password-only basic auth). The key lives in the
   # `uptime_kuma_api_key` row of `app_settings` (is_secret=true). Brain
   # writes the decrypted value to the password_file path on each cycle
-  # (see brain/prometheus_secret_writer.py). Prometheus reads the file
+  # (see poindexter/brain/prometheus_secret_writer.py). Prometheus reads the file
   # at scrape time — no Prometheus restart needed when the key rotates,
   # no plaintext credential ever lands in git, no env-var sprawl.
   #

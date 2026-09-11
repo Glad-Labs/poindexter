@@ -32,11 +32,9 @@ _REPO_ROOT = next(
     p for p in Path(__file__).resolve().parents
     if (p / "pyproject.toml").exists() and (p / "src").exists()
 )
-_BRAIN_DIR = _REPO_ROOT / "brain"
+_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-if str(_BRAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BRAIN_DIR))
 
 from brain import alert_dispatcher as ad  # noqa: E402
 
@@ -343,7 +341,8 @@ class TestBrainNotifyAdapter:
         # Stub a brain_daemon-shaped module with notify -> False.
         fake_module = MagicMock()
         fake_module.notify = MagicMock(return_value=False)
-        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "brain.brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
         # Force the worker-side notify_operator import to fail so the
         # resolver falls through to the brain.notify branch.
         monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
@@ -365,7 +364,8 @@ class TestBrainNotifyAdapter:
         """
         fake_module = MagicMock()
         fake_module.notify = MagicMock(return_value=True)
-        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "brain.brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
         monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
 
         adapter = await ad._resolve_notify_fn()
@@ -385,7 +385,8 @@ class TestBrainNotifyAdapter:
         fake_module = MagicMock()
         # Simulate the new async notify(message, *, pool=None).
         fake_module.notify = _AsyncMock(return_value=True)
-        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "brain.brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
         monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
 
         sentinel_pool = MagicMock(name="sentinel_pool")
@@ -405,7 +406,8 @@ class TestBrainNotifyAdapter:
 
         fake_module = MagicMock()
         fake_module.notify = _AsyncMock(return_value=False)
-        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "brain.brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
         monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
 
         adapter = await ad._resolve_notify_fn()
@@ -424,7 +426,8 @@ class TestBrainNotifyAdapter:
         """
         fake_module = MagicMock()
         fake_module.notify = MagicMock(return_value=None)
-        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "brain.brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "poindexter.brain.brain_daemon", fake_module)
         monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
 
         adapter = await ad._resolve_notify_fn()

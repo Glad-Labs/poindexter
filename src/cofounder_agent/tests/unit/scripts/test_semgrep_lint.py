@@ -197,7 +197,12 @@ def test_scan_targets_cover_the_overlay(mod) -> None:
     mirror-safety guard catches the same trap for scripts.
     """
     assert "src/cofounder_agent" in mod.SCAN_TARGETS
-    assert "brain" in mod.SCAN_TARGETS
+    # brain moved under poindexter/ (poindexter#1046 step 2): it must still be
+    # covered, by whichever target contains it.
+    repo = Path(mod.__file__).resolve().parents[2]
+    brain_dir = repo / "src" / "cofounder_agent" / "poindexter" / "brain"
+    assert brain_dir.is_dir(), brain_dir
+    assert any(brain_dir.is_relative_to(repo / t) for t in mod.SCAN_TARGETS), mod.SCAN_TARGETS
 
     overlay = Path(mod.REPO_ROOT) / "src" / "cofounder_agent" / "poindexter" / "modules" / "finance"
     if not overlay.exists():

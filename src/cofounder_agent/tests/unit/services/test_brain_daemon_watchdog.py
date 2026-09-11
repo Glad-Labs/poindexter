@@ -31,11 +31,9 @@ _REPO_ROOT = next(
     p for p in Path(__file__).resolve().parents
     if (p / "pyproject.toml").exists() and (p / "src").exists()
 )
-_BRAIN_DIR = _REPO_ROOT / "brain"
+_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-if str(_BRAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BRAIN_DIR))
 
 from brain import brain_daemon as bd  # noqa: E402
 
@@ -107,7 +105,7 @@ class TestAlertDispatchDied:
 class TestPageOperatorFailsafe:
     def test_invokes_notify_operator_with_kwargs(self, monkeypatch):
         mock = MagicMock(return_value={"telegram": "sent"})
-        monkeypatch.setattr("operator_notifier.notify_operator", mock)
+        monkeypatch.setattr("brain.operator_notifier.notify_operator", mock)
         ok = bd._page_operator_failsafe(
             title="t", detail="d", source="brain:test", severity="critical"
         )
@@ -121,7 +119,7 @@ class TestPageOperatorFailsafe:
     def test_swallows_notify_failure(self, monkeypatch):
         """The failsafe must never raise — a failed page can't crash the loop."""
         mock = MagicMock(side_effect=RuntimeError("network down"))
-        monkeypatch.setattr("operator_notifier.notify_operator", mock)
+        monkeypatch.setattr("brain.operator_notifier.notify_operator", mock)
         assert bd._page_operator_failsafe(title="t", detail="d", source="s") is False
 
 

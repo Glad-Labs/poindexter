@@ -372,7 +372,7 @@ seeded.
 
 ### Brain offsite-backup watch (auto-retry before paging)
 
-`brain/offsite_backup_watch.py` (poindexter#386) is the self-heal layer for
+`poindexter/brain/offsite_backup_watch.py` (poindexter#386) is the self-heal layer for
 the offsite tier — a sibling of `backup_watcher` with one difference: its
 freshness source is the `audit_log` heartbeat (`offsite_backup_succeeded`), a
 **creds-free** DB read, so the brain never touches the restic password. Each
@@ -400,7 +400,7 @@ not three. The alert description includes a truncated tail of restic's
 actual stderr, not just the exit code, so the real cause (credentials,
 network, a B2 cap) doesn't require digging through `docker logs
 poindexter-backup-offsite` to find. A subsequent successful backup
-auto-resolves the firing row via `brain/offsite_backup_watch.py`'s
+auto-resolves the firing row via `poindexter/brain/offsite_backup_watch.py`'s
 fresh-heartbeat check, the same way it already resolves `offsite_backup_stale`.
 
 If the failure is "postgres is unreachable", the alert insert itself
@@ -411,7 +411,7 @@ alert path.
 
 ### Brain backup-watcher (auto-retry before paging)
 
-`brain/backup_watcher.py` (Glad-Labs/poindexter#388) sits between a
+`poindexter/brain/backup_watcher.py` (Glad-Labs/poindexter#388) sits between a
 backup failure and the operator's phone. Every cycle it stats the
 newest dump in each tier; if either is past its threshold it
 `docker restart`s the relevant container, waits the configured delay,
@@ -447,7 +447,7 @@ The sentinel is the second line of defense — the assumption is that
 brain's backup-watcher will pick it up on its next sweep and surface
 the failure through whatever channel still works.
 
-`brain/backup_watcher.py` scans the configured `backup_watcher_sentinel_dir`
+`poindexter/brain/backup_watcher.py` scans the configured `backup_watcher_sentinel_dir`
 each cycle and inserts a firing `alert_events` row for every sentinel it
 finds, named `dr_backup_hourly_failed` or `dr_backup_daily_failed`. The
 fingerprint embeds the sentinel's `ts` field so re-scans of the same
@@ -499,7 +499,7 @@ replacement drive as owed work, not optional.
 
 ### Restore test (does the dump actually restore?)
 
-`brain/restore_test_probe.py` (Glad-Labs/poindexter#441) is the layer that
+`poindexter/brain/restore_test_probe.py` (Glad-Labs/poindexter#441) is the layer that
 proves a dump _restores_, not just that it's _fresh_. Once per
 `restore_test_interval_hours` (default 24h) the brain picks the newest dump
 under `/host-backups/auto/daily/`, spins a throwaway `pgvector/pgvector:pg16`

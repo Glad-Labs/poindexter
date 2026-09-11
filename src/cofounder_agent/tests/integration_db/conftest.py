@@ -57,7 +57,7 @@ def _bootstrap_resolve_dsn() -> str | None:
     DATABASE_URL reads.
     """
     for p in Path(__file__).resolve().parents:
-        if (p / "brain" / "bootstrap.py").is_file():
+        if (p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py").is_file():
             if str(p) not in sys.path:
                 sys.path.insert(0, str(p))
             break

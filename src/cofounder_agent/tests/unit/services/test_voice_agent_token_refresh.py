@@ -406,8 +406,6 @@ async def test_run_bot_starts_and_cancels_refresh_loop(monkeypatch):
     fake_site_config_module.SiteConfig = _SiteConfig
     monkeypatch.setitem(sys.modules, "services.site_config", fake_site_config_module)
 
-    # Avoid touching the real brain-path resolver / pyroscope / pipeline.
-    monkeypatch.setattr(voice_agent_livekit, "_ensure_brain_on_path", lambda: None)
     monkeypatch.setattr(
         voice_agent_livekit,
         "_resolve_livekit_creds",

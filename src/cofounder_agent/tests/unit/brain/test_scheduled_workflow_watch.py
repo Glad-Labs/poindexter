@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain import scheduled_workflow_watch as swf
 
 _WATCH = [{"repo": "acme/widgets", "workflow": "benchmarks.yml", "max_age_hours": 30}]

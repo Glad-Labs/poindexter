@@ -76,7 +76,7 @@ Full audit below. **File:** `docs/audits/2026-05-29-observability-doctor-audit.m
 
 ### 1.1 Health checks / probes
 
-**Brain DB-backed probes** — `brain/health_probes.py` (`PROBES` dict, ~25 probes, each on its own
+**Brain DB-backed probes** — `poindexter/brain/health_probes.py` (`PROBES` dict, ~25 probes, each on its own
 schedule via `PROBE_SCHEDULES`). Results write to `brain_knowledge`; 3 consecutive failures →
 `notify_operator`. Notable ones:
 
@@ -95,7 +95,7 @@ schedule via `PROBE_SCHEDULES`). Results write to `brain_knowledge`; 3 consecuti
 `prefect_stuck_flow_probe`, `compose_drift_probe`, `migration_drift_probe`, `backup_watcher`,
 `smart_monitor`, `docker_port_forward_probe`, `gate_auto_expire_probe`, `gate_pending_summary_probe`,
 `glitchtip_triage_probe`, `pr_staleness_probe`, `discord_bot_probe`, `mcp_http_probe`,
-`operator_url_probe`. Each wired in `brain/brain_daemon.py::run_cycle` behind a `_HAS_*` import flag;
+`operator_url_probe`. Each wired in `poindexter/brain/brain_daemon.py::run_cycle` behind a `_HAS_*` import flag;
 a boot-time audit (`_audit_brain_module_imports`, #504) pages if any expected module fails to import.
 
 **HTTP health endpoints:** worker `/api/health` (`src/cofounder_agent/main.py`), MCP HTTP server
@@ -125,7 +125,7 @@ absence-of-noise). Grafana rule #11 fires if `brain_decisions` goes stale >15 mi
   Wired into the dispatcher (#347): an alert can spawn an LLM "firefighter" that produces a
   diagnosis paragraph quote-replied under the original Telegram/Discord alert (`send_followup`).
   Coalescing + AI-assisted escalation added in PR #301.
-- **Meta-watchdog** — `brain/business_probes.py::probe_silent_alerter`: pages if no
+- **Meta-watchdog** — `poindexter/brain/business_probes.py::probe_silent_alerter`: pages if no
   `alert_events.received_at` AND no `operator_paged` in `silent_alerter_quiet_hours` (6h) **while**
   error/critical probe events are firing. Explicitly does NOT self-heal (human decides the fix).
 - **GlitchTip** (self-hosted Sentry, `:8080`) — SDK auto-init in `main.py` when `sentry_dsn` set;
@@ -300,7 +300,7 @@ where it must be reliable.
      matching `delivery_plane=dead_mans_switch` ABOVE the default. The config is a `.tmpl` (no real
      chat_id in the public mirror); `RenderAlertmanagerConfigJob` substitutes
      `app_settings.telegram_chat_id` and reloads Alertmanager via `/-/reload`. The bot token is
-     written to a bind-mounted file by `brain/prometheus_secret_writer.py` from
+     written to a bind-mounted file by `poindexter/brain/prometheus_secret_writer.py` from
      `app_settings.telegram_bot_token`.
 2. **(P0) Cadence SLO rule.** Compute expected posts/tasks from `prefect_content_flow_cron`; alert
    on shortfall within hours, not days. Closes the frequency-increase-then-slowdown gap.

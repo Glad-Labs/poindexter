@@ -127,7 +127,7 @@ decorators in `test_database_service.py` and
   shared-code refactor could merge a red mcp-server lane (PR #1663 did
   exactly that; the breakage sat latent on main until #1742). A
   `detect-changes` step gates the `uv` install + pytest on changes under
-  `mcp-server/**`, `src/cofounder_agent/**`, or `brain/**` while still
+  `mcp-server/**`, `src/cofounder_agent/**`, or `poindexter/brain/**` while still
   reporting green on unrelated PRs. Runs on the public mirror too (the
   tested code ships there), where it is non-required.
 - `.github/workflows/playwright-e2e.yml` — frontend E2E (Playwright),
@@ -321,7 +321,7 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
   `reference_nongating_ci_jobs_rot_invisibly` for the full taxonomy.
 
 - **Scheduled workflows have a dead-man's switch**
-  (`brain/scheduled_workflow_watch.py`, 2026-08-28). Nothing gates a
+  (`poindexter/brain/scheduled_workflow_watch.py`, 2026-08-28). Nothing gates a
   cron: when a scheduled workflow starts failing — or stops firing —
   no check anywhere changes colour. The 2026-08-25 sweep found
   `benchmarks` had never once passed in 71 runs and the weekly
@@ -518,7 +518,7 @@ whenever it advances the deploy clone, so a merged code change reaches the
 running worker within ~10 min on its own. `poindexter-brain-daemon` is
 image-baked rather than bind-mounted (poindexter#456), so a restart can't reload
 it — instead the same task **rebuilds the brain image** whenever the synced diff
-touches `brain/` (`start-stack.sh build brain-daemon`), and the compose-apply
+touches `poindexter/brain/` (`start-stack.sh build brain-daemon`), and the compose-apply
 step recreates the container onto the fresh image, so brain code edits
 auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
 (skip the wait) and is still required for dependency / base-image changes

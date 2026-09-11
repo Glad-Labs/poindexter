@@ -1,9 +1,9 @@
 """Operator-triggered container restart — the intent queue's SQL-owning seam.
 
 The worker has no docker.sock (only ``poindexter-brain-daemon`` does — see
-``brain/brain_daemon.py::docker_restart_container``), so a restart click can't
+``poindexter/brain/brain_daemon.py::docker_restart_container``), so a restart click can't
 act directly. This module writes/reads ``service_restart_requests`` rows;
-``brain/service_restart.py`` claims and executes them on its own poll loop.
+``poindexter/brain/service_restart.py`` claims and executes them on its own poll loop.
 Route: ``routes/service_restart_routes.py`` (poindexter#909).
 """
 

@@ -122,15 +122,7 @@ class DatabaseService:
             _require = None
             _resolve = None
             try:
-                import sys as _sys
-                from pathlib import Path as _Path
 
-                _here = _Path(__file__).resolve()
-                for _p in _here.parents:
-                    if (_p / "brain" / "bootstrap.py").is_file():
-                        if str(_p) not in _sys.path:
-                            _sys.path.insert(0, str(_p))
-                        break
                 from brain.bootstrap import (
                     require_database_url as _require,  # type: ignore[no-redef]
                 )

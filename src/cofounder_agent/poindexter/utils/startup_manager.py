@@ -211,12 +211,6 @@ class StartupManager:
         )
 
         try:
-            _here = Path(__file__).resolve()
-            for _candidate in list(_here.parents) + [Path("/opt/poindexter")]:
-                if (_candidate / "brain").is_dir():
-                    if str(_candidate) not in _sys.path:
-                        _sys.path.insert(0, str(_candidate))
-                    break
             from brain.operator_notifier import notify_operator
 
             notify_operator(
@@ -435,22 +429,9 @@ class StartupManager:
             # alerts.log, stderr) before exiting. Import locally so a broken
             # notifier doesn't prevent the logger output above. (#198)
             try:
-                # brain/ is either a sibling of the repo (host) or mounted at
-                # /opt/poindexter/brain (worker container). Walk up __file__
-                # for the host layout; fall back to /opt/poindexter for the
-                # container. Parents[3] from /app/utils/ overshoots the
-                # filesystem root and raises IndexError in the container —
-                # that was silently breaking the operator notifier exactly
-                # in the scenario it was meant to cover (DB down at startup).
-                import sys as _sys
-                from pathlib import Path as _Path
+                # brain is poindexter.brain (poindexter#1046 step 2) -- a sibling
+                # package, importable wherever this module is; no path walk.
 
-                _here = _Path(__file__).resolve()
-                for _candidate in list(_here.parents) + [_Path("/opt/poindexter")]:
-                    if (_candidate / "brain").is_dir():
-                        if str(_candidate) not in _sys.path:
-                            _sys.path.insert(0, str(_candidate))
-                        break
                 from brain.operator_notifier import notify_operator
 
                 notify_operator(
@@ -492,15 +473,7 @@ class StartupManager:
             startup_error = f"FATAL: Database migration failed: {e!s}"
             logger.error(f"  {startup_error}", exc_info=True)
             try:
-                import sys as _sys
-                from pathlib import Path as _Path
 
-                _here = _Path(__file__).resolve()
-                for _candidate in list(_here.parents) + [_Path("/opt/poindexter")]:
-                    if (_candidate / "brain").is_dir():
-                        if str(_candidate) not in _sys.path:
-                            _sys.path.insert(0, str(_candidate))
-                        break
                 from brain.operator_notifier import notify_operator
 
                 notify_operator(

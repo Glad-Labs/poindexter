@@ -732,7 +732,7 @@ defense-in-depth changes make this recover on its own — no restart:
    (`if _oauth is None or not _oauth.using_oauth`), so a transiently
    creds-less client self-heals on a later call once the env/creds are good.
 2. The secret readers (`mcp-server/oauth_client.py`,
-   `mcp-server-gladlabs/oauth_client.py`, `brain/secret_reader.py`) fall
+   `mcp-server-gladlabs/oauth_client.py`, `poindexter/brain/secret_reader.py`) fall
    back to reading `poindexter_secret_key` from `~/.poindexter/bootstrap.toml`
    (plaintext, where `poindexter setup` writes it) when
    `POINDEXTER_SECRET_KEY` is absent from the launch env — the same
@@ -1074,7 +1074,7 @@ LIMIT 5;
 
 **Real SMART failures still page.** Once smartctl is on PATH, reallocated/pending sectors and overall SMART self-test failures continue to write firing `alert_events` rows at warning or critical severity — the dispatcher routes those through the existing Telegram + Discord path. The skip-with-no-page behavior is scoped specifically to the "tool not installed" branch.
 
-**Related.** `brain/smart_monitor.py` (the `_smartctl_missing_notified` short-circuit at the top of `run_smart_monitor_probe`), `feedback_telegram_vs_discord` (channel discipline), `feedback_no_silent_defaults` (why we still emit an info log + audit row instead of fully silent skip).
+**Related.** `poindexter/brain/smart_monitor.py` (the `_smartctl_missing_notified` short-circuit at the top of `run_smart_monitor_probe`), `feedback_telegram_vs_discord` (channel discipline), `feedback_no_silent_defaults` (why we still emit an info log + audit row instead of fully silent skip).
 
 ---
 

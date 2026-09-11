@@ -1,7 +1,7 @@
 # Migration-drift genuine self-heal
 
 **Issue:** [Glad-Labs/poindexter#228](https://github.com/Glad-Labs/poindexter/issues/228)
-**Probe:** `brain/migration_drift_probe.py`
+**Probe:** `poindexter/brain/migration_drift_probe.py`
 **Status:** ships **dark** — `migration_drift_auto_sync_enabled` defaults to `false`.
 
 ## What this is
@@ -176,4 +176,4 @@ mount is inert when sync is off and can stay mounted.
 - `feedback_self_heal_not_suppress` (operator design note)
   — the principle this implements.
 - [`docs/operations/migrations.md`](migrations.md) — migration conventions.
-- `brain/migration_drift_probe.py` — the implementation + its docstring.
+- `poindexter/brain/migration_drift_probe.py` — the implementation + its docstring.

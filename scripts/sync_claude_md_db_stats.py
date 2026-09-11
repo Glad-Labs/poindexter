@@ -12,7 +12,7 @@ the live production database can answer:
 * total ``embeddings`` vectors
 
 Because those need a DB connection, this script runs **locally** (on the
-brain/worker box, where ``bootstrap.toml`` resolves a DSN) — never in CI,
+poindexter/brain/worker box, where ``bootstrap.toml`` resolves a DSN) — never in CI,
 which has no path to the operator's Postgres. The daily ``claude-md-sync``
 ops session (``scripts/ops_sessions/claude_md_sync.py``, fired by a systemd
 timer) invokes it, then opens the CLAUDE.md PR. (It used to name

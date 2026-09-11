@@ -4,7 +4,7 @@
 # Every other alert in this stack funnels through the brain's Python
 # dispatch loop (probe -> alert_events -> alert_dispatch_loop ->
 # Telegram/Discord) AND through the worker webhook receiver. If the
-# brain/dispatcher dies, ALL of those alerts go dark — which is exactly
+# poindexter/brain/dispatcher dies, ALL of those alerts go dark — which is exactly
 # what happened on 2026-05-28 (the content pipeline produced nothing for
 # a day and nothing paged). See
 # docs/audits/2026-05-29-observability-doctor-audit.md Finding #1.

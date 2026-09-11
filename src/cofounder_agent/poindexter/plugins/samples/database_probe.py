@@ -1,6 +1,6 @@
 """Sample Probe implementation — basic Postgres connectivity check.
 
-Real migration of the equivalent function from ``brain/health_probes.py``
+Real migration of the equivalent function from ``poindexter/brain/health_probes.py``
 happens in Phase D. This sample exists in Phase A to prove the Probe
 Protocol + entry_points + registry + PluginConfig flow works with a
 real Postgres connection.

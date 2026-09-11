@@ -9,7 +9,7 @@ own.
 
 The operator PC is simultaneously the gaming rig and the AI inference server,
 and the self-healing machinery is _designed_ to keep the inference side up. A
-hand-run `docker stop` therefore does not hold: `brain/compose_drift_probe`
+hand-run `docker stop` therefore does not hold: `poindexter/brain/compose_drift_probe`
 sees the service missing and runs `docker compose up -d` on its next cycle.
 
 That is not a bug in the drift probe — it is the probe doing its job. Game mode

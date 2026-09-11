@@ -6,11 +6,11 @@ One responsibility: **persist** every inbound alert to ``alert_events``
 so the brain daemon (the dispatcher), operator UI, and future audit
 queries have a historical record. Rows land with ``dispatched_at IS
 NULL`` and the brain's ``alert_dispatcher`` poll picks them up on its
-30s cadence (see ``brain/alert_dispatcher.py``).
+30s cadence (see ``poindexter/brain/alert_dispatcher.py``).
 
 Autonomous operational recovery (restart / re-run) is owned brain-side
 by the deterministic **firefighter** (rule-driven, keyed on the
-``remediation_rules`` table — see ``brain/remediation/`` and
+``remediation_rules`` table — see ``poindexter/brain/remediation/`` and
 ``docs/operations/self-healing.md``). The old webhook-side
 ``plugin.remediation.<alertname>`` intent-logging scaffold was retired
 once the firefighter shipped: it only ever logged an intended action
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS alert_events (
     ends_at TIMESTAMPTZ,
     fingerprint TEXT,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- Dispatch tracking (migration 0137). Set by brain/alert_dispatcher.py
+    -- Dispatch tracking (migration 0137). Set by poindexter/brain/alert_dispatcher.py
     -- after it polls + sends the row. NULL means "still queued for the
     -- brain to pick up". dispatch_result is 'sent' on success or
     -- 'error: <message>' on failure.
@@ -327,7 +327,7 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
 # moved to the brain daemon (see module docstring). The
 # ``_format_alert_message`` and ``_should_page_operator`` helpers above
 # are retained for the operator UI + tests; the brain daemon ships its
-# own copy of ``_format_alert_message`` (see ``brain/alert_dispatcher.py``)
+# own copy of ``_format_alert_message`` (see ``poindexter/brain/alert_dispatcher.py``)
 # so the brain image stays decoupled from the worker's source tree.
 
 
@@ -384,7 +384,7 @@ async def alertmanager_webhook(
                 alertname, e,
             )
 
-        # Dispatch is owned by the brain daemon (brain/alert_dispatcher.py)
+        # Dispatch is owned by the brain daemon (poindexter/brain/alert_dispatcher.py)
         # which polls undispatched alert_events rows on a 30s cadence.
         # We still count "would-page" alerts so the response carries an
         # observable signal for callers that want to verify routing —

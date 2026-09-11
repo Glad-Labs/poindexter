@@ -59,7 +59,6 @@ CODE_ROOTS = [
     REPO / "src" / "cofounder_agent",
     REPO / "mcp-server",
     REPO / "mcp-server-gladlabs",
-    REPO / "brain",
     REPO / "scripts",
     REPO / "web" / "public-site",
 ]

@@ -9,7 +9,7 @@ sections below are the v1 design as built.
 
 ## Problem
 
-Detection is dense — ~27 DB-backed probes (`brain/health_probes.py::PROBES`) plus
+Detection is dense — ~27 DB-backed probes (`poindexter/brain/health_probes.py::PROBES`) plus
 the watchdog `Probe` Protocol classes — but the signals are **scattered**: each
 probe writes its own `brain_knowledge` row and pages independently. Nothing
 computes a single health score, nobody notices "5 unrelated probes degraded at

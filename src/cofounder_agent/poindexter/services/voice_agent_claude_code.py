@@ -787,8 +787,8 @@ async def _transcript_discord_webhook() -> str | None:
         return _DISCORD_WEBHOOK_CACHE
 
     import asyncpg
-    from brain.bootstrap import resolve_database_url
 
+    from brain.bootstrap import resolve_database_url
     from services.site_config import SiteConfig
 
     db_url = resolve_database_url()

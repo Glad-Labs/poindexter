@@ -8,10 +8,10 @@ error tracker: a 364-issue list trains you to ignore the list.
 Noise is suppressed at **two** layers. Reach for the earlier one first — it is
 strictly better to never capture a non-error than to capture and then close it.
 
-| Layer            | Where                                                                                     | Use it for                                              |
-| ---------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| **Capture-side** | `services/sentry_integration.py::_before_send`                                            | Events that should never have been errors at all        |
-| **Triage-side**  | `brain/glitchtip_triage_probe.py` + `app_settings.glitchtip_triage_auto_resolve_patterns` | Real errors that are known/expected, and stale one-offs |
+| Layer            | Where                                                                                                | Use it for                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **Capture-side** | `services/sentry_integration.py::_before_send`                                                       | Events that should never have been errors at all        |
+| **Triage-side**  | `poindexter/brain/glitchtip_triage_probe.py` + `app_settings.glitchtip_triage_auto_resolve_patterns` | Real errors that are known/expected, and stale one-offs |
 
 ## Layer 1 — capture-side (`_before_send`)
 
@@ -180,7 +180,7 @@ Other traps worth knowing:
 
 ## Related
 
-- [`brain/glitchtip_triage_probe.py`](../../brain/glitchtip_triage_probe.py) — the probe
+- [`poindexter/brain/glitchtip_triage_probe.py`](../../src/cofounder_agent/poindexter/brain/glitchtip_triage_probe.py) — the probe
 - [`services/sentry_integration.py`](../../src/cofounder_agent/poindexter/services/sentry_integration.py) — capture-side filter
 - [Findings dashboard](http://localhost:3000/d/findings) — the _other_ signal
   path; a condition worth an operator's attention should be a

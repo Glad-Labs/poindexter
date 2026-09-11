@@ -9,7 +9,7 @@ The host (FastAPI lifespan) constructs one shared
 Why a worker-side registry when probes run in the brain daemon
 -----------------------------------------------------------------
 The brain daemon is a separate process. It cannot import worker-side
-modules directly (per ``brain/brain_daemon.py``'s "Standalone — no
+modules directly (per ``poindexter/brain/brain_daemon.py``'s "Standalone — no
 imports from the FastAPI codebase" contract).
 
 The cross-process bridge is HTTP: the worker exposes the registered
@@ -24,7 +24,7 @@ What this is NOT
 ----------------
 - **Not the probe execution loop.** The brain daemon runs probes on
   its own cadence. This registry only records what's available.
-- **Not a replacement for ``brain/probe_interface.py``.** That file
+- **Not a replacement for ``poindexter/brain/probe_interface.py``.** That file
   hosts the brain-internal ``Probe`` protocol and the brain-internal
   ``register_probe`` registry, which infrastructure probes (built into
   the brain) use directly. The Module v1 ``BrainProbeRegistry`` is

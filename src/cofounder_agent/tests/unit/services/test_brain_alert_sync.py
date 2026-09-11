@@ -33,11 +33,9 @@ _REPO_ROOT = next(
     p for p in Path(__file__).resolve().parents
     if (p / "pyproject.toml").exists() and (p / "src").exists()
 )
-_BRAIN_DIR = _REPO_ROOT / "brain"
+_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-if str(_BRAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BRAIN_DIR))
 
 from brain import alert_sync as asx  # noqa: E402
 
@@ -316,7 +314,7 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         import types
         fake_module = types.ModuleType("brain_daemon")
         fake_module.notify = fake_notify  # type: ignore[attr-defined]
-        with patch.dict(sys.modules, {"brain_daemon": fake_module}):
+        with patch.dict(sys.modules, {"brain.brain_daemon": fake_module, "poindexter.brain.brain_daemon": fake_module}):
             _mock_pool(settings={"grafana_api_token": ""})
             with patch("urllib.request.urlopen"):
                 summaries = []

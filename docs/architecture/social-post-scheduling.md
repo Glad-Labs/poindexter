@@ -219,7 +219,7 @@ or a missed am/pm, and posting immediately is the wrong recovery from a typo.
   `ERROR` → demote to `failed` + a `social_post_delivery_failed`
   finding (Discord); `PUBLISHED` → stamp the platform permalink into
   `platform_config.release_url` and stop re-checking.
-- `brain/postiz_queue_watch.py` — detects Postiz's own Temporal queue wedging
+- `poindexter/brain/postiz_queue_watch.py` — detects Postiz's own Temporal queue wedging
   after we hand a post off. **QUEUE-stuck only**: a restart heals a wedged
   queue, but a terminal `ERROR` (platform rejection) survives any restart —
   those belong to the sync job above. The pre-split probe counted ERROR too

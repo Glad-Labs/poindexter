@@ -6,6 +6,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain import outlet_guard_probe as og
 
 PLUG = "http://10.0.0.5"
@@ -383,8 +384,10 @@ class TestDefaultsWiring:
         from pathlib import Path
 
         repo = Path(__file__).resolve().parents[5]
-        dockerfile = (repo / "brain" / "Dockerfile").read_text()
-        assert "outlet_guard_probe.py" in dockerfile, (
-            "brain image is baked, not bind-mounted — a probe missing from the "
-            "COPY line imports fine in tests and is silently absent in prod"
+        dockerfile = (repo / "src" / "cofounder_agent" / "poindexter" / "brain" / "Dockerfile").read_text()
+        # The image COPYs the whole package directory (poindexter#1046 step 2), so
+        # presence is "the file exists in the package dir the Dockerfile copies".
+        assert "COPY poindexter/brain/ /app/poindexter/brain/" in dockerfile, (
+            "brain image is baked, not bind-mounted — the package directory COPY is gone"
         )
+        assert (repo / "src" / "cofounder_agent" / "poindexter" / "brain" / "outlet_guard_probe.py").is_file()

@@ -71,7 +71,6 @@ import asyncio
 import logging
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 from pipecat.pipeline.runner import PipelineRunner
@@ -240,7 +239,7 @@ async def _get_ai_spending_status_text() -> str:
 async def _spending_from_db() -> str:
     """Direct cost_logs query as a fallback when the API doesn't ship a summary."""
     import asyncpg
-    _ensure_brain_on_path()
+
     from brain.bootstrap import resolve_database_url
     dsn = resolve_database_url()
     conn = await asyncpg.connect(dsn, timeout=2.0)
@@ -274,7 +273,7 @@ async def _connect_db() -> Any:
     Caller is responsible for ``await conn.close()`` in a ``finally``.
     """
     import asyncpg
-    _ensure_brain_on_path()
+
     from brain.bootstrap import resolve_database_url
     dsn = resolve_database_url()
     return await asyncpg.connect(dsn, timeout=2.0)
@@ -459,7 +458,6 @@ async def _find_similar_posts_text(topic: str) -> str:
     # No /api/posts/similar endpoint — use MemoryClient.find_similar_posts
     # directly. Embedding lookup is fast (single Ollama call) and stays
     # within the 4s tool budget on the local stack.
-    _ensure_brain_on_path()
     try:
         from poindexter.memory.client import MemoryClient
     except Exception as e:  # noqa: BLE001
@@ -535,11 +533,10 @@ async def _read_voice_agent_pr_repos(conn: Any) -> list[str]:
 async def _get_recent_pull_requests_text() -> str:
     import httpx
 
-    _ensure_brain_on_path()
     try:
         import asyncpg
-        from brain.bootstrap import resolve_database_url
 
+        from brain.bootstrap import resolve_database_url
         from plugins.secrets import get_secret
         dsn = resolve_database_url()
         pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1, timeout=2.0)
@@ -740,7 +737,6 @@ async def store_memory(params: Any) -> None:
 async def _store_memory_text(text: str) -> str:
     if not text:
         return "I need something to remember. What should I save?"
-    _ensure_brain_on_path()
     try:
         from poindexter.memory.client import MemoryClient
     except Exception as e:  # noqa: BLE001
@@ -1026,37 +1022,6 @@ async def _token_refresh_loop(
 # ---------------------------------------------------------------------------
 
 
-def _ensure_brain_on_path() -> None:
-    """Add the repo root to sys.path so brain.bootstrap is importable.
-
-    Lookup order:
-      1. ``$POINDEXTER_BRAIN_PARENT`` env var (must contain
-         ``brain/bootstrap.py``). Used by the docker container, where
-         ``brain/`` is mounted under ``/opt/poindexter/`` and the
-         walk-up-parents heuristic can't reach it through the read-only
-         ``/app`` overlay.
-      2. Walk parents of this file until a ``brain/bootstrap.py``
-         neighbour appears. Standard local-dev path.
-    """
-    env_parent = os.environ.get("POINDEXTER_BRAIN_PARENT", "").strip()
-    if env_parent:
-        candidate = Path(env_parent)
-        if (candidate / "brain" / "bootstrap.py").is_file():
-            if str(candidate) not in sys.path:
-                sys.path.insert(0, str(candidate))
-            return
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
-            if str(parent) not in sys.path:
-                sys.path.insert(0, str(parent))
-            return
-    raise RuntimeError(
-        "Could not locate brain/bootstrap.py "
-        "(set POINDEXTER_BRAIN_PARENT or run from a checkout)"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Run loop
 # ---------------------------------------------------------------------------
@@ -1207,10 +1172,9 @@ async def run_bot(
             directory the Claude subprocess runs in. Determines which
             CLAUDE.md is loaded. Defaults to the bot process's cwd.
     """
-    _ensure_brain_on_path()
     import asyncpg
-    from brain.bootstrap import require_database_url
 
+    from brain.bootstrap import require_database_url
     from services.site_config import SiteConfig
 
     # Bootstrap a tiny pool just to read voice_agent_livekit_url before
@@ -1503,10 +1467,9 @@ async def run_service(profile: str = "default") -> int:
             f"Valid values: {', '.join(sorted(_SERVICE_PROFILES))}.",
         )
 
-    _ensure_brain_on_path()
     import asyncpg
-    from brain.bootstrap import require_database_url
 
+    from brain.bootstrap import require_database_url
     from services.site_config import SiteConfig
 
     dsn = require_database_url(source=f"voice_agent_livekit_service[{profile}]")

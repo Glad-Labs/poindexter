@@ -20,7 +20,7 @@
 #   Grafana ─► Poindexter Webhook ─► alert_events (persist, dispatched_at IS NULL)
 #                                     │
 #                                     ▼
-#                              brain/alert_dispatcher.py (30s poll)
+#                              poindexter/brain/alert_dispatcher.py (30s poll)
 #                                     │
 #                              ┌──────┴──────┐
 #                              ▼             ▼

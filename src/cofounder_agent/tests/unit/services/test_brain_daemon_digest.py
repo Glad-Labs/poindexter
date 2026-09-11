@@ -36,8 +36,6 @@ for _parent in Path(__file__).resolve().parents:
         _BRAIN_DIR = _candidate
         if str(_parent) not in sys.path:
             sys.path.insert(0, str(_parent))
-        if str(_BRAIN_DIR) not in sys.path:
-            sys.path.insert(0, str(_BRAIN_DIR))
         break
 
 pytestmark = pytest.mark.skipif(

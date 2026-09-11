@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from pathlib import Path
 
 import click
 
@@ -51,23 +50,6 @@ def _run(coro):
 # reads ``brain_knowledge`` + ``audit_log`` + ``app_settings`` directly; there
 # is no HTTP endpoint for it, so it talks to the DB like the migration CLI.
 # ---------------------------------------------------------------------------
-
-
-def _ensure_brain_on_path() -> None:
-    """Add the repo root to ``sys.path`` so the ``brain`` package resolves.
-
-    The CLI lives at ``src/cofounder_agent/poindexter/cli/doctor.py`` and the
-    ``brain/`` package is at the repo root. Mirrors
-    ``poindexter migrate``'s ``_ensure_brain_on_path``. Needed so ``--fix``
-    can reach ``brain.health_probes`` (REMEDIATIONS + the restart helper).
-    """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
-            p = str(parent)
-            if p not in sys.path:
-                sys.path.insert(0, p)
-            return
 
 
 async def _make_pool():
@@ -95,7 +77,6 @@ def _apply_fixes(report: DoctorReport) -> list[tuple[str, bool, str]]:
     ``suppressed`` / ``stale`` are left alone (a suppressed symptom is fixed
     by fixing its root; warns aren't urgent enough to auto-restart).
     """
-    _ensure_brain_on_path()
     try:
         from health_probes import REMEDIATIONS, _restart_container
     except Exception as e:  # noqa: BLE001

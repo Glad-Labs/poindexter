@@ -24,7 +24,7 @@ from pathlib import Path
 import _common as c
 
 REPO = "Glad-Labs/glad-labs-stack"
-RUFF_TARGETS = ["src/", "brain/", "scripts/"]
+RUFF_TARGETS = ["src/", "scripts/"]  # brain is under src/ since #1046 step 2
 
 
 def _repo_root() -> Path:

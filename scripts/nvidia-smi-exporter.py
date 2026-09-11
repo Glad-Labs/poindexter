@@ -20,7 +20,7 @@ Reliability:
     O(1), so a slow nvidia-smi/AIDA read can never become a scraper's timeout.
     (Before this, per-request collection intermittently took 2.5-6.7s+ and blew
     the brain's 3s electricity-cost scrape, paging a false 150W-floor alert
-    ~15×/day — see brain/psu_power.py. Scrapes now get data at most one interval
+    ~15×/day — see poindexter/brain/psu_power.py. Scrapes now get data at most one interval
     stale, which is fine for power/thermal gauges.)
   - ThreadingHTTPServer so concurrent scrapes never queue behind each other.
   - The #319 nvidia-smi watchdog (which killed the process on repeated nvidia-smi
@@ -840,7 +840,7 @@ def get_shelly_psu_metrics(base_url: str | None = None, *, _fetch=None) -> str:
         # Relay state. 2026-09-06: the plug opened with mains present and the
         # only trace was `apower` going to 0 — indistinguishable from "PC
         # idle-off" on the board. Exposing the relay makes "outlet off, line
-        # voltage present" a first-class series (brain/outlet_guard_probe.py
+        # voltage present" a first-class series (poindexter/brain/outlet_guard_probe.py
         # is the actor; this is the visibility).
         lines += [
             "# HELP psu_outlet_output_on Smart-plug relay state: 1 = outlet passing power, 0 = relay open",

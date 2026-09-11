@@ -27,9 +27,11 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 WORKDIR /app
 
 COPY scripts/discord-voice-bot.py /app/discord-voice-bot.py
-COPY brain/ /brain/
+COPY src/cofounder_agent/poindexter/__init__.py src/cofounder_agent/poindexter/_flat_imports.py /app/poindexter/
+COPY src/cofounder_agent/poindexter/brain /app/poindexter/brain
+COPY brain/__init__.py /app/brain/__init__.py
 
-ENV PYTHONPATH="/app:/:/brain"
+ENV PYTHONPATH="/app"
 
 # Drop privileges before running the bot. Trivy DS-0002 / CIS Docker
 # 4.1 — a container started without a USER directive runs as root,

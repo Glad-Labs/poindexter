@@ -59,7 +59,7 @@ RULES_DIR = REPO_ROOT / "infrastructure" / "semgrep"
 
 # Scan roots. The overlay lives under src/cofounder_agent/poindexter/modules/finance and
 # services/operator_*.py, so scanning src/ covers it — that is the point.
-SCAN_TARGETS = ("src/cofounder_agent", "brain", "scripts")
+SCAN_TARGETS = ("src/cofounder_agent", "scripts")  # brain is under src/ since #1046 step 2
 
 # Below this, assume the scan did not really happen. The tree scanned ~1,520
 # files when this was written; a collapse to a handful means a moved root or a

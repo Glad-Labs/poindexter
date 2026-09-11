@@ -202,7 +202,7 @@ def _string_module_paths(rel: str) -> list[tuple[int, str]]:
         if re.fullmatch(rf"{re.escape(mp.FUTURE_ROOT)}\.[a-z_]+", value):
             continue
         # A `/` operand is a filesystem path segment, never a module:
-        # `(_p / "brain" / "bootstrap.py")` in database_service's sys.path walk.
+        # `(_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "bootstrap.py")` in database_service's sys.path walk.
         parent = parents.get(node)
         if isinstance(parent, ast.BinOp) and isinstance(parent.op, ast.Div):
             continue

@@ -1,4 +1,4 @@
-"""brain/service_restart.py — the poller's claim/execute/record logic
+"""poindexter/brain/service_restart.py — the poller's claim/execute/record logic
 (poindexter#909). SKIP LOCKED concurrency-safety itself is proven against a
 real Postgres in tests/integration_db/test_service_restart_requests.py — a
 fake connection can't demonstrate real row-locking, so this file covers the
@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 import pytest
+
 from brain import service_restart as sr
 
 pytestmark = pytest.mark.asyncio

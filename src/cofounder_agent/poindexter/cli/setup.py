@@ -41,17 +41,12 @@ from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
 
 def _import_bootstrap():
-    """Ensure the repo root is on sys.path and return the bootstrap module.
+    """Return the bootstrap module.
 
-    The CLI lives at src/cofounder_agent/poindexter/cli/setup.py; the
-    brain/ package lives at the repo root, so walk up until we find it.
+    ``brain`` is ``poindexter.brain`` since poindexter#1046 step 2 -- a sibling
+    package of this CLI, importable wherever the CLI itself is. Kept as a
+    function because callers (and tests) patch it.
     """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
-            if str(parent) not in sys.path:
-                sys.path.insert(0, str(parent))
-            break
     from brain import bootstrap
 
     return bootstrap

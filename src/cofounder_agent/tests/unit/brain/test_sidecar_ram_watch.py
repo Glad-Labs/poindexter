@@ -15,6 +15,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain import sidecar_ram_watch as sw
 
 

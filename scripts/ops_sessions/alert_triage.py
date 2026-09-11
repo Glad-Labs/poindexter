@@ -65,7 +65,7 @@ def parse_classification(raw: str) -> dict:
 
 def _probe_source(root: Path, alertname: str) -> str:
     slug = alertname.lower().replace("-", "_")
-    for cand in root.glob("brain/*probe*.py"):
+    for cand in root.glob("src/cofounder_agent/poindexter/brain/*probe*.py"):
         if slug[:8] in cand.name.lower():
             return cand.read_text(encoding="utf-8")[:4000]
     return ""

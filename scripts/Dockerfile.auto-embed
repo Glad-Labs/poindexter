@@ -51,9 +51,11 @@ COPY src/cofounder_agent/schemas /app/schemas
 #     utils.findings pulls in only that module + services.audit_log — both
 #     already present. Nothing FastAPI-shaped is loaded.
 COPY src/cofounder_agent/utils /app/utils
-COPY brain/ /brain/
+# brain now ships inside poindexter/ (COPY above). The repo-root stub keeps
+# `import brain.x` working when it is the FIRST import in the process.
+COPY brain/__init__.py /app/brain/__init__.py
 
-ENV PYTHONPATH="/app:/"
+ENV PYTHONPATH="/app"
 
 # Drop privileges (Trivy DS-0002 / poindexter#488). auto-embed reads
 # pg via asyncpg and writes embeddings back to pg — no filesystem

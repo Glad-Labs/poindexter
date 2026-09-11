@@ -1599,11 +1599,11 @@
       );
     },
     // ── operator-triggered container restart (poindexter#909) ──
-    // Restart is a brain/docker.sock action — the worker container has NO
+    // Restart is a poindexter/brain/docker.sock action — the worker container has NO
     // docker.sock mount (only poindexter-brain-daemon does), so it can't
     // restart containers directly. POST queues an intent row; brain's own
     // poll loop (services/service_restart_requests.py ->
-    // brain/service_restart.py) claims + executes it via the SAME
+    // poindexter/brain/service_restart.py) claims + executes it via the SAME
     // docker_restart_container helper the self-healing firefighter uses.
     // The live branch polls GET /api/services/restart/{id} until the row
     // reaches a terminal status (or times out — the restart may still be

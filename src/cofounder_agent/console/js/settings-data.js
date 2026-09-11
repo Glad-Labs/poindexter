@@ -1,6 +1,6 @@
 /* ──────────────────────────────────────────────────────────────
    Poindexter Operator Console — app_settings dataset.
-   Mirrors brain/seed_app_settings.json (key, value, category,
+   Mirrors poindexter/brain/seed_app_settings.json (key, value, category,
    description) + inferred type/options for type-aware editing.
    In production this comes from GET /api/settings.
    ────────────────────────────────────────────────────────────── */

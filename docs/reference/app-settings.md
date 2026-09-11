@@ -116,7 +116,7 @@ The worker re-reads on every poll; no restart needed.
 | `backup_watcher_max_retries` | `2` |  | Consecutive `docker restart` attempts before the watcher gives up and lets the dispatcher page the operator. Cumulati... |
 | `backup_watcher_poll_interval_minutes` | `5` |  | Cadence at which the watcher re-checks backup freshness. Matches the brain cycle by default; bump higher only if the ... |
 | `backup_watcher_retry_delay_seconds` | `120` |  | How long the watcher waits after `docker restart` before re-stat-ing the dump directory. Long enough for postgres rec... |
-| `backup_watcher_sentinel_dir` | `/host-backup-logs` |  | Container path the brain bind-mounts ~/.poindexter/logs into (read-only). brain/backup_watcher.py scans this director... |
+| `backup_watcher_sentinel_dir` | `/host-backup-logs` |  | Container path the brain bind-mounts ~/.poindexter/logs into (read-only). poindexter/brain/backup_watcher.py scans this director... |
 | `offsite_backup_enabled` | `true` |  | Master switch for the off-machine (Tier 2) restic loop. The backup-offsite container stays running but idles when fal... |
 | `offsite_backup_interval` | `24h` |  | Cadence between offsite restic backups. Format <N>{s\|m\|h\|d}. Read fresh each tick. |
 | `offsite_backup_keep_daily` | `7` |  | restic forget --keep-daily (only consulted when offsite_backup_prune_enabled=true). |
@@ -140,13 +140,13 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `discord_bot_probe_dedup_hours` | `1` |  | Minimum hours between repeat alert_events writes while the Discord bot returns 401/403. Default 1h — one page per hou... |
-| `discord_bot_probe_enabled` | `true` |  | Master switch for brain/discord_bot_probe.py (poindexter#435). When false, the probe is skipped entirely. |
+| `discord_bot_probe_enabled` | `true` |  | Master switch for poindexter/brain/discord_bot_probe.py (poindexter#435). When false, the probe is skipped entirely. |
 | `discord_bot_probe_interval_minutes` | `5` |  | Minutes between real Discord /users/@me round-trips. Probe is dispatched every brain cycle but skips inside the inter... |
 | `discord_bot_probe_timeout_seconds` | `5` |  | httpx timeout for the Discord /users/@me round-trip. |
 | `mcp_http_probe_base_url` | `http://host.docker.internal:8004` |  | Base URL of the Poindexter MCP HTTP server. Probe appends the discovery path. Default http://127.0.0.1:8004. |
 | `mcp_http_probe_dedup_hours` | `1` |  | Minimum hours between repeat alert_events writes while the MCP server stays unreachable. Default 1h. |
 | `mcp_http_probe_discovery_path` | `/healthz` |  | Discovery endpoint path the probe GETs. Returns 200 when the MCP server is alive. |
-| `mcp_http_probe_enabled` | `true` |  | Master switch for brain/mcp_http_probe.py (poindexter#434). |
+| `mcp_http_probe_enabled` | `true` |  | Master switch for poindexter/brain/mcp_http_probe.py (poindexter#434). |
 | `mcp_http_probe_interval_minutes` | `5` |  | Minutes between real probe round-trips. Default 5. |
 | `mcp_http_probe_launcher_path` | `` |  | Absolute path to a launcher script (.cmd on Windows, .sh on POSIX) that restarts the MCP HTTP server. Empty (default)... |
 | `mcp_http_probe_restart_cap_per_window` | `3` |  | Max launcher invocations within the rolling restart window. Prevents busy-loop when the underlying problem is persist... |
@@ -161,7 +161,7 @@ The worker re-reads on every poll; no restart needed.
 | `prefect_stuck_flow_auto_crash` | `true` |  | When true, the probe force-CRASHED stuck flow runs via Prefect's /set_state API so subsequent scheduled dispatches re... |
 | `prefect_stuck_flow_flow_names` | `content_generation` |  | Comma-separated list of Prefect flow names the stuck-flow probe should watch. Add additional flow names if you spawn ... |
 | `prefect_stuck_flow_pending_threshold_minutes` | `5` |  | A flow run that has been PENDING/Submitting longer than this is considered stranded. Captured 2026-05-25: a PENDING r... |
-| `prefect_stuck_flow_probe_enabled` | `true` |  | Master kill switch for brain/prefect_stuck_flow_probe. Set to false to disable detection of stuck Prefect flow runs (... |
+| `prefect_stuck_flow_probe_enabled` | `true` |  | Master kill switch for poindexter/brain/prefect_stuck_flow_probe. Set to false to disable detection of stuck Prefect flow runs (... |
 | `prefect_stuck_flow_queue_depth_threshold` | `3` |  | Brain prefect_stuck_flow_probe: page with a distinct probe.prefect_queue_backlog_detected signal when MORE than this ... |
 | `prefect_stuck_flow_threshold_minutes` | `30` |  | A content_generation flow run RUNNING longer than this is considered stuck. Default 30m is ~5-6x the typical 5-min du... |
 

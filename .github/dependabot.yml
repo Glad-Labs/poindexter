@@ -223,7 +223,7 @@ updates:
   # Python — brain daemon (Poetry)
   # ────────────────────────────────────
   - package-ecosystem: 'pip'
-    directory: '/brain'
+    directory: '/src/cofounder_agent/poindexter/brain'
     target-branch: 'main'
     schedule:
       interval: 'weekly'

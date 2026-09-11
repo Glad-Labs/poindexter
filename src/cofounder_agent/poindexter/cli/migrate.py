@@ -38,23 +38,6 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _ensure_brain_on_path() -> None:
-    """Add the repo root to ``sys.path`` so ``brain.bootstrap`` resolves.
-
-    The CLI lives at ``src/cofounder_agent/poindexter/cli/migrate.py`` —
-    the ``brain/`` package is at the repo root. Same trick
-    ``setup.py`` uses (cf. ``_import_bootstrap``) so this CLI works
-    regardless of which directory the operator launches it from.
-    """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
-            p = str(parent)
-            if p not in sys.path:
-                sys.path.insert(0, p)
-            return
-
-
 async def _make_pool():
     """Build an asyncpg pool against the bootstrap-resolved DSN.
 
@@ -63,7 +46,6 @@ async def _make_pool():
     ``resolve_database_url`` but no new ones are introduced.
     """
 
-    _ensure_brain_on_path()
     from brain.bootstrap import require_database_url
 
     dsn = require_database_url(source="poindexter migrate")

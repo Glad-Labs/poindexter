@@ -160,22 +160,16 @@ def test_umbrella_pyproject_packages_include_brain() -> None:
         data = tomllib.load(fh)
 
     packages = data["tool"]["poetry"]["packages"]
-    brain_includes = [p for p in packages if p.get("include") == "brain"]
-    assert brain_includes, (
-        "[tool.poetry].packages must include the top-level 'brain' package so the "
-        "editable install puts the repo root on sys.path; without it "
-        "`poindexter pipeline resume`/`regen` raise ModuleNotFoundError: brain."
+    # brain lives INSIDE the poindexter package since poindexter#1046 step 2, so
+    # a separate repo-root include would be a second copy of the same modules.
+    assert not [p for p in packages if p.get("include") == "brain"], (
+        "[tool.poetry].packages must not include a top-level 'brain' any more -- "
+        "the package is poindexter/brain and rides in the 'poindexter' include."
     )
-
-    # The include must be rooted at the repo root, and that directory must
-    # actually hold the brain package (a stale `from` would silently re-break it).
-    brain = brain_includes[0]
-    assert brain.get("from") == "../..", (
-        "brain include should be rooted at the repo root via from='../..', "
-        f"got from={brain.get('from')!r}"
-    )
-    resolved = (UMBRELLA_PYPROJECT.parent / brain["from"] / "brain" / "__init__.py").resolve()
-    assert resolved.is_file(), f"brain include resolves to a missing package: {resolved}"
+    poindexter_includes = [p for p in packages if p.get("include") == "poindexter"]
+    assert poindexter_includes, "the 'poindexter' include is missing"
+    resolved = (UMBRELLA_PYPROJECT.parent / poindexter_includes[0].get("from", ".") / "poindexter" / "brain" / "__init__.py").resolve()
+    assert resolved.is_file(), f"poindexter/brain is not where the include says: {resolved}"
 
 
 def test_release_please_tracks_package_pyproject() -> None:

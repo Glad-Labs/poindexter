@@ -24,13 +24,13 @@ from pathlib import Path
 # Walk up from this test file to the repo root (the dir containing brain/).
 _HERE = Path(__file__).resolve()
 for _p in _HERE.parents:
-    if (_p / "brain" / "brain_daemon.py").is_file():
+    if (_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "brain_daemon.py").is_file():
         REPO_ROOT = _p
         break
 else:  # pragma: no cover
     raise AssertionError("could not locate repo root containing brain/brain_daemon.py")
 
-_BRAIN_DAEMON_PATH = REPO_ROOT / "brain" / "brain_daemon.py"
+_BRAIN_DAEMON_PATH = REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain" / "brain_daemon.py"
 
 
 def _has_flags_within(node: ast.AST) -> set[str]:

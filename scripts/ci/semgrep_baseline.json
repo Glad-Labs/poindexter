@@ -1,22 +1,4 @@
 {
-  "brain/alert_dispatcher.py": {
-    "python-logger-credential-disclosure": 1
-  },
-  "brain/alert_sync.py": {
-    "insecure-hash-algorithm-sha1": 1
-  },
-  "brain/brain_daemon.py": {
-    "python-logger-credential-disclosure": 1
-  },
-  "brain/oauth_client.py": {
-    "python-logger-credential-disclosure": 1
-  },
-  "brain/prometheus_secret_writer.py": {
-    "python-logger-credential-disclosure": 5
-  },
-  "brain/secret_reader.py": {
-    "python-logger-credential-disclosure": 2
-  },
   "scripts/_oauth_helper.py": {
     "python-logger-credential-disclosure": 2
   },
@@ -24,6 +6,24 @@
     "python-logger-credential-disclosure": 2
   },
   "src/cofounder_agent/middleware/token_validation.py": {
+    "python-logger-credential-disclosure": 2
+  },
+  "src/cofounder_agent/poindexter/brain/alert_dispatcher.py": {
+    "python-logger-credential-disclosure": 1
+  },
+  "src/cofounder_agent/poindexter/brain/alert_sync.py": {
+    "insecure-hash-algorithm-sha1": 1
+  },
+  "src/cofounder_agent/poindexter/brain/brain_daemon.py": {
+    "python-logger-credential-disclosure": 1
+  },
+  "src/cofounder_agent/poindexter/brain/oauth_client.py": {
+    "python-logger-credential-disclosure": 1
+  },
+  "src/cofounder_agent/poindexter/brain/prometheus_secret_writer.py": {
+    "python-logger-credential-disclosure": 5
+  },
+  "src/cofounder_agent/poindexter/brain/secret_reader.py": {
     "python-logger-credential-disclosure": 2
   },
   "src/cofounder_agent/poindexter/config/__init__.py": {

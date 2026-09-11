@@ -104,7 +104,7 @@ cgroups for killing, top candidates were:". **Remove the drop-in and restore
 ## The cause side: sidecar RAM recycle
 
 oomd is the floor, not the fix. What actually fills swap is four **dormant**
-model sidecars, so `brain/sidecar_ram_watch.py` recycles them before it gets
+model sidecars, so `poindexter/brain/sidecar_ram_watch.py` recycles them before it gets
 that far — the aim is that oomd never has to fire.
 
 A mechanism for this already existed and did not help: `comfyui_ram_watch.py`
@@ -290,7 +290,7 @@ kind of pressure on a tight box, separate from the leak.
 
 ### The recycle
 
-`brain/ollama_runner_ram_watch.py` closes the gap, and it is a **recycle, not a
+`poindexter/brain/ollama_runner_ram_watch.py` closes the gap, and it is a **recycle, not a
 fix** — the leak is upstream, so this keeps returning.
 
 It could not be an extension of `sidecar_ram_watch`, because _both_ halves of

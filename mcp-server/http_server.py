@@ -170,18 +170,6 @@ def _apply_tool_allowlist(mcp_instance, allowlist: frozenset[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _ensure_brain_on_path() -> None:
-    """Walk up parents until ``brain/bootstrap.py`` is reachable."""
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        if (parent / "brain" / "bootstrap.py").is_file():
-            p = str(parent)
-            if p not in sys.path:
-                sys.path.insert(0, p)
-            return
-    raise RuntimeError("Could not locate brain/bootstrap.py from this file's parents")
-
-
 def _seed_env_from_bootstrap() -> None:
     """Populate the env vars ``server.setup_runtime`` expects, sourcing
     from ``~/.poindexter/bootstrap.toml`` where appropriate.
@@ -196,7 +184,6 @@ def _seed_env_from_bootstrap() -> None:
     ``app_settings.mcp_oauth_client_*`` — no env var is required.
     Phase 3 (#249) removed the legacy static-Bearer path.
     """
-    _ensure_brain_on_path()
     from brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
 
     secret_key = (

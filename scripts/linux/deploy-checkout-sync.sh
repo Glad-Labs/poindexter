@@ -21,7 +21,7 @@
 #   5. rebuild map: diff (last-deployed..HEAD) -> image-baked services whose
 #      build inputs changed get `start-stack.sh build <svc>` (generalized from
 #      the ps1's brain-only rebuild — restarts/rebuilds are safe by design):
-#        brain/**                                   -> brain-daemon
+#        src/cofounder_agent/poindexter/brain/**    -> brain-daemon
 #        src/cofounder_agent/pyproject.toml|poetry.lock
 #          |scripts/Dockerfile.worker               -> worker prefect-worker
 #        scripts/Dockerfile.gpu-exporter
@@ -311,8 +311,10 @@ log "Code advanced $last_short -> $short_head; deploying."
 # expected set from the Dockerfiles themselves and fails when a baked service
 # has no entry, so the next sidecar cannot re-open this gap silently.
 declare -A REBUILD_MAP=(
-  # gpu-exporter COPYs brain/ too — found by the coverage test, not by hand.
-  ['^brain/']="brain-daemon auto-embed gpu-exporter"
+  # brain lives under poindexter/ (poindexter#1046 step 2). brain-daemon is the
+  # only image that bakes it: the worker bind-mounts src/cofounder_agent, and
+  # auto-embed's own entry below already covers poindexter/.
+  ['^src/cofounder_agent/poindexter/(brain/|__init__\.py$|_flat_imports\.py$)']="brain-daemon"
   ['^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^scripts/Dockerfile\.worker$']="worker prefect-worker"
   ['^scripts/Dockerfile\.gpu-exporter$|^scripts/nvidia-smi-exporter\.py$']="gpu-exporter"
   ['^scripts/Dockerfile\.voice-agent$']="voice-agent-livekit"
@@ -331,7 +333,7 @@ declare -A REBUILD_MAP=(
   # worker does: adding a single COPY once let three LLM providers register
   # whose SDKs the image lacks, and every embedding store failed. So it is
   # baked on purpose — and therefore must rebuild when that subset changes.
-  ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/(poindexter|plugins|services|modules|schemas|utils)/']="auto-embed"
+  ['^scripts/(Dockerfile\.auto-embed|auto-embed\.py)$|^src/cofounder_agent/(poindexter|plugins|services|modules|schemas|utils)/|^brain/__init__\.py$']="auto-embed"
 )
 rebuild_services=""; diff_ok=0
 if diff_paths="$(git -C "$DEPLOY_DIR" diff --name-only "$last_deployed" "$head_sha" 2>/dev/null)"; then

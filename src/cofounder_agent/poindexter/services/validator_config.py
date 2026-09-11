@@ -101,15 +101,7 @@ def _resolve_dsn() -> str:
     callers treat that as a fail-open signal.
     """
     try:
-        import sys
-        from pathlib import Path
 
-        proj = Path(__file__).resolve()
-        for parent in proj.parents:
-            if (parent / "brain" / "bootstrap.py").is_file():
-                if str(parent) not in sys.path:
-                    sys.path.insert(0, str(parent))
-                break
         from brain.bootstrap import resolve_database_url
         url = resolve_database_url()
         if url:

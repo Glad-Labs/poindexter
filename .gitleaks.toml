@@ -20,7 +20,7 @@ paths = [
   '''(?i).*\.lock$''',
   '''(?i).*\.min\.js$''',
   '''(?i)CHANGELOG\.md$''',
-  '''(?i)^brain/seed_app_settings\.json$''',
+  '''(?i)^src/cofounder_agent/poindexter/brain/seed_app_settings\.json$''',
   # Grafana-provisioned dashboard JSON is public config, not secrets.
   '''(?i)^infrastructure/grafana/dashboards/.*\.json$''',
   # Test fixtures intentionally embed secret-shaped strings to exercise the

@@ -71,7 +71,7 @@ import pytest
 _REPO = Path(__file__).resolve().parents[6]
 _MIGRATIONS_DIR = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
 _DEFAULTS_PY = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "settings_defaults.py"
-_BRAIN_SEED = _REPO / "brain" / "seed_app_settings.json"
+_BRAIN_SEED = _REPO / "src" / "cofounder_agent" / "poindexter" / "brain" / "seed_app_settings.json"
 
 _DEAD_KEYS = (
     # -> retention_policies rows embeddings.ttl_prune.* (ttl_days)

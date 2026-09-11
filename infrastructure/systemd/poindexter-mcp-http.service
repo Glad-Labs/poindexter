@@ -1,5 +1,5 @@
 # Poindexter MCP HTTP server (:8004) — the claude.ai-connector transport
-# (mcp-server/http_server.py, OAuth-protected; probed by brain/mcp_http_probe).
+# (mcp-server/http_server.py, OAuth-protected; probed by poindexter/brain/mcp_http_probe).
 # Linux port of the Windows logon-task launcher (Pop!_OS migration audit,
 # 2026-07-23). Binds 0.0.0.0 so the brain container's probe reaches it via
 # host-gateway; external exposure is via Tailscale serve/funnel, not the LAN.

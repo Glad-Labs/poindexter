@@ -17,6 +17,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain.deploy_sync_probe import (
     DEFAULT_ERROR_STREAK,
     DEFAULT_MAX_AGE_MINUTES,

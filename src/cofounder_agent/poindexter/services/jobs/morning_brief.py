@@ -166,7 +166,7 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     Routes through ``plugins.secrets.get_secret`` so callers reading
     encrypted rows (e.g. ``discord_ops_webhook_url``) get plaintext
     instead of ``enc:v1:`` ciphertext. Mirrors the brain-side fix in
-    ``brain/alert_dispatcher.py`` for the same bug class.
+    ``poindexter/brain/alert_dispatcher.py`` for the same bug class.
     """
     from plugins.secrets import get_secret
     try:

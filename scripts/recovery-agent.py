@@ -11,10 +11,10 @@ brain genuinely cannot do itself.
 Two action kinds, dispatched by the ``service`` field of the POST body:
 
   - ``"mcp-http"``        → restart the MCP HTTP Scheduled Task
-                            (consumer: ``brain/mcp_http_probe.py``).
+                            (consumer: ``poindexter/brain/mcp_http_probe.py``).
   - ``"compose-reapply"`` → run ``start-stack.sh up -d --no-build``, which
                             reconciles drifted containers back to the compose
-                            spec (consumer: ``brain/compose_drift_probe.py``).
+                            spec (consumer: ``poindexter/brain/compose_drift_probe.py``).
 
 Why compose-reapply lives HERE and not in the brain: a Linux brain container
 running ``docker compose up`` mangles Windows ``C:\\`` bind-mount sources into

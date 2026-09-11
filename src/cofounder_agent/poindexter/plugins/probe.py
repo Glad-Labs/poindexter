@@ -1,7 +1,7 @@
 """Probe — the state-checking Protocol.
 
 Re-exports the Probe Protocol originally defined in
-``brain/probe_interface.py`` (GitHub #207/#215) so it lives in one place
+``poindexter/brain/probe_interface.py`` (GitHub #207/#215) so it lives in one place
 under ``plugins/``. The brain module keeps a thin shim that re-exports
 from here to preserve existing imports during the migration.
 

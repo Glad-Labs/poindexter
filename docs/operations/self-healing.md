@@ -28,7 +28,7 @@ recovery for the surface it watches, on the 5-minute cycle. The **firefighter**
 is the generalization — a rule-driven `detect → act → verify → escalate` loop
 that runs on the **alert-dispatch path** (the brain's 30-second
 `alert_dispatcher.poll_and_dispatch`), so _any_ alert can earn an auto-recovery
-without a bespoke probe. It lives in `brain/remediation/` (`registry.py` /
+without a bespoke probe. It lives in `poindexter/brain/remediation/` (`registry.py` /
 `rules.py` / `engine.py`) and is wired into the dispatcher.
 
 The loop, when an alert is about to page:
@@ -62,7 +62,7 @@ is the "still firing?" oracle.
 
 ### The action registry
 
-`brain/remediation/registry.py` maps an `action_name` to an executor. Executors
+`poindexter/brain/remediation/registry.py` maps an `action_name` to an executor. Executors
 **must be idempotent, reversible, and blast-radius-bounded, and must never raise**
 into the loop (they return `ActionResult(status="failed", …)` instead). v1 ships
 two, each wrapping a primitive the brain already owns:
@@ -88,7 +88,7 @@ second-guessing). The worker has no docker.sock, so it can't act directly:
 1. `POST /api/services/{container}/restart` → `services/service_restart_requests.py`
    inserts a `pending` row in `service_restart_requests` (worker-side, after a
    `poindexter-*` shape check).
-2. `brain/service_restart.py`'s own poll loop (`service_restart_loop`, ~10s
+2. `poindexter/brain/service_restart.py`'s own poll loop (`service_restart_loop`, ~10s
    cadence, mirrors `alert_dispatch_loop`) claims pending rows with
    `FOR UPDATE SKIP LOCKED` and calls `docker_restart_container` — the same
    function the `restart_container` remediation action above uses.
@@ -135,7 +135,7 @@ the container on a guess is worse than reporting it.
   registered action allowed). Set it to shrink what can run without deleting rules.
 - **Restart denylist (blast radius).** `restart_container` refuses
   `poindexter-postgres-local` and `poindexter-brain-daemon` outright. These are
-  **hardcoded** in `brain/remediation/registry.py::_NEVER_RESTART` and are not
+  **hardcoded** in `poindexter/brain/remediation/registry.py::_NEVER_RESTART` and are not
   switchable from the DB, because each destroys the record of its own restart:
   the brain _runs_ the executor, and postgres _holds_ `audit_log` — so the
   outcome row can never be written. (The console's manual-restart path refuses
@@ -341,7 +341,7 @@ created by a worker-boot migration. After merging:
 1. Worker boots → the `remediation_rules` table is created (empty).
 2. Rebuild + recreate the brain so it has the firefighter code
    (`docker compose build brain-daemon && docker compose up -d brain-daemon`) —
-   the 10-min deploy-checkout-sync does this automatically on a `brain/` change.
+   the 10-min deploy-checkout-sync does this automatically on a `poindexter/brain/` change.
 3. _Then_ add your first rules with `poindexter firefighter rule add`, verified,
    one alert at a time.
 
@@ -352,7 +352,7 @@ actions once rules begin matching.
 
 ## The detector / actor split
 
-The brain daemon (`brain/`) runs as a Linux container. It can **detect**
+The brain daemon (`poindexter/brain/`) runs as a Linux container. It can **detect**
 almost anything (it has the Docker socket, the DB, and the network), but there
 are host-level recovery actions it **cannot** perform itself:
 
@@ -535,20 +535,20 @@ The brain runs these every 5-minute cycle. Two patterns:
 
 **HTTP/inspect probes** — actively check a surface, recover, cap, page:
 
-| Probe                                | Watches                                                                                       | Detect                                                                                                                                                                                                                                                                                                     | Recover                                                                                                                                         | Escalate                                                             |
-| ------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `brain/mcp_http_probe.py`            | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                                                                                                                                                                                                                   | launcher (host process) or host-recover (`mcp-http`)                                                                                            | page after cap                                                       |
-| `brain/outlet_guard_probe.py`        | the PC's own wall plug (Shelly, `SHELLY_PSU_URL`) + UPS on-battery flag                       | `Switch.GetStatus`: relay off + input voltage present + NUT `ups_status{flag="OB"}`                                                                                                                                                                                                                        | `Switch.Set on` via the plug's local RPC (pre-restore `source`/`errors` snapshot carried in the page)                                           | page critical after cap; fail-closed when the UPS can't be confirmed |
-| `brain/compose_drift_probe.py`       | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                                                                                                                                                                                                                   | host-recover (`compose-reapply`) — see below                                                                                                    | page after cap                                                       |
-| `brain/docker_port_forward_probe.py` | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries. Postgres entries ALSO get a real-auth tier (one `asyncpg.connect()`) once SSLRequest reports healthy, to catch SCRAM-corrupted proxies the SSLRequest round trip can't see — see below | HTTP entry: `docker restart` → re-probe. DB entry, restart proven ineffective, or scram-corrupted auth: **alert-only** (no restart) — see below | page after cap                                                       |
+| Probe                                           | Watches                                                                                       | Detect                                                                                                                                                                                                                                                                                                     | Recover                                                                                                                                         | Escalate                                                             |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `poindexter/brain/mcp_http_probe.py`            | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                                                                                                                                                                                                                   | launcher (host process) or host-recover (`mcp-http`)                                                                                            | page after cap                                                       |
+| `poindexter/brain/outlet_guard_probe.py`        | the PC's own wall plug (Shelly, `SHELLY_PSU_URL`) + UPS on-battery flag                       | `Switch.GetStatus`: relay off + input voltage present + NUT `ups_status{flag="OB"}`                                                                                                                                                                                                                        | `Switch.Set on` via the plug's local RPC (pre-restore `source`/`errors` snapshot carried in the page)                                           | page critical after cap; fail-closed when the UPS can't be confirmed |
+| `poindexter/brain/compose_drift_probe.py`       | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                                                                                                                                                                                                                   | host-recover (`compose-reapply`) — see below                                                                                                    | page after cap                                                       |
+| `poindexter/brain/docker_port_forward_probe.py` | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries. Postgres entries ALSO get a real-auth tier (one `asyncpg.connect()`) once SSLRequest reports healthy, to catch SCRAM-corrupted proxies the SSLRequest round trip can't see — see below | HTTP entry: `docker restart` → re-probe. DB entry, restart proven ineffective, or scram-corrupted auth: **alert-only** (no restart) — see below | page after cap                                                       |
 
 **Heartbeat/freshness probes** — read the newest success row a service stamps in
 `audit_log`; if it's too old, the service is wedged:
 
-| Probe                           | Heartbeat event            | Stale → recover             | Escalate severity         |
-| ------------------------------- | -------------------------- | --------------------------- | ------------------------- |
-| `brain/offsite_backup_watch.py` | `offsite_backup_succeeded` | `docker restart` → re-check | critical (data-loss risk) |
-| `brain/auto_embed_watch.py`     | `auto_embed_succeeded`     | `docker restart` → re-check | warning (search degrades) |
+| Probe                                      | Heartbeat event            | Stale → recover             | Escalate severity         |
+| ------------------------------------------ | -------------------------- | --------------------------- | ------------------------- |
+| `poindexter/brain/offsite_backup_watch.py` | `offsite_backup_succeeded` | `docker restart` → re-check | critical (data-loss risk) |
+| `poindexter/brain/auto_embed_watch.py`     | `auto_embed_succeeded`     | `docker restart` → re-check | warning (search degrades) |
 
 Minimal sidecar images (promtail, pyroscope) ship no shell or HTTP client, so an
 in-container Docker `HEALTHCHECK` is impossible. Their liveness is an **external**
@@ -798,7 +798,7 @@ the `C:\` binds (see the detector/actor split above).
 ## Host scheduled-work liveness (systemd)
 
 Two generations here. The first was a `scheduled_tasks` probe
-(`brain/health_probes.py`) that watched the host's **Windows** Task Scheduler
+(`poindexter/brain/health_probes.py`) that watched the host's **Windows** Task Scheduler
 entries by asking the Recovery Agent's `GET /tasks` endpoint, since the
 containerised brain could not see the host scheduler itself. It was retired
 2026-08-08: the host has run Pop!_OS since the July migration, **systemd timers
@@ -852,7 +852,7 @@ in a non-terminal state the pipeline **silently halts**: pending tasks exist,
 the worker is ONLINE and heartbeating, but nothing dispatches while cron-queued
 runs pile up SCHEDULED behind the held slot.
 
-`brain/prefect_stuck_flow_probe.py` is the working reclaim path. Every brain
+`poindexter/brain/prefect_stuck_flow_probe.py` is the working reclaim path. Every brain
 cycle it queries Prefect for `content_generation` runs in the watched states and
 force-terminalizes genuine zombies so the slot frees:
 
@@ -941,7 +941,7 @@ The agent is host-local. After changing `scripts/recovery-agent.py` / `.cmd`:
 The brain probes are image-baked, so a probe code change needs an image rebuild,
 not just a restart. The 10-min `deploy-checkout-sync.ps1` task does this
 automatically — it rebuilds `brain-daemon` whenever a synced merge touches
-`brain/`, then recreates the container onto the fresh image (see
+`poindexter/brain/`, then recreates the container onto the fresh image (see
 `docs/operations/ci-deploy-chain.md`). For an immediate manual deploy:
 `docker compose build brain-daemon && docker compose up -d brain-daemon`.
 
@@ -954,7 +954,7 @@ three known gaps are tracked here.
 
 ### Why most probe targets survive host changes
 
-- **`localize_url()`** (`brain/docker_utils.py`) rewrites
+- **`localize_url()`** (`poindexter/brain/docker_utils.py`) rewrites
   `localhost`/`127.0.0.1` → `host.docker.internal` at runtime, so a probe
   configured with a host-canonical URL reaches the host-published port from
   inside the container with no per-environment config.

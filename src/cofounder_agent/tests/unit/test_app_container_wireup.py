@@ -36,8 +36,8 @@ else:  # pragma: no cover — repo invariant
 
 _BRAIN_DAEMON = None
 for _p in _HERE.parents:
-    if (_p / "brain" / "brain_daemon.py").is_file():
-        _BRAIN_DAEMON = _p / "brain" / "brain_daemon.py"
+    if (_p / "src" / "cofounder_agent" / "poindexter" / "brain" / "brain_daemon.py").is_file():
+        _BRAIN_DAEMON = _p / "src" / "cofounder_agent" / "poindexter" / "brain" / "brain_daemon.py"
         break
 
 

@@ -38,7 +38,7 @@ import pytest
 _REPO = Path(__file__).resolve().parents[6]
 _MIGRATIONS_DIR = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "migrations"
 _DEFAULTS_PY = _REPO / "src" / "cofounder_agent" / "poindexter" / "services" / "settings_defaults.py"
-_BRAIN_SEED = _REPO / "brain" / "seed_app_settings.json"
+_BRAIN_SEED = _REPO / "src" / "cofounder_agent" / "poindexter" / "brain" / "seed_app_settings.json"
 _MIGRATION = (
     _MIGRATIONS_DIR
     / "20260828_005606_drop_the_orphaned_embedding_collapse_summary_model_setting.py"

@@ -21,6 +21,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from brain import branch_drift_probe as bdp
 
 _FIXED_NOW = datetime(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc)

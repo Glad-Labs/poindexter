@@ -20,7 +20,7 @@
 # Today EVERY alert funnels through the worker webhook
 # (/api/webhooks/alertmanager), which persists to alert_events and relies
 # on the brain's Python `alert_dispatch_loop` to actually page. If the
-# brain/dispatcher dies, all alerts go dark — exactly the 2026-05-28
+# poindexter/brain/dispatcher dies, all alerts go dark — exactly the 2026-05-28
 # silent-pipeline failure (docs/audits/2026-05-29-observability-doctor-
 # audit.md Finding #1).
 #

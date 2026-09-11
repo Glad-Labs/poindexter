@@ -55,13 +55,13 @@ def _finding(filename: str, test_id: str = "B608", line: int = 1) -> dict:
 class TestCountsFromFindings:
     def test_groups_by_file_and_rule(self):
         findings = [
-            _finding("brain/foo.py", "B608"),
-            _finding("brain/foo.py", "B608"),
-            _finding("brain/foo.py", "B310"),
+            _finding("src/cofounder_agent/poindexter/brain/foo.py", "B608"),
+            _finding("src/cofounder_agent/poindexter/brain/foo.py", "B608"),
+            _finding("src/cofounder_agent/poindexter/brain/foo.py", "B310"),
             _finding("scripts/bar.py", "B104"),
         ]
         assert LINT.counts_from_findings(findings) == {
-            "brain/foo.py": {"B310": 1, "B608": 2},
+            "src/cofounder_agent/poindexter/brain/foo.py": {"B310": 1, "B608": 2},
             "scripts/bar.py": {"B104": 1},
         }
 
@@ -86,8 +86,8 @@ class TestCountsFromFindings:
     def test_absolute_path_is_made_repo_relative(self):
         """Bandit reports absolute paths when handed absolute targets; the
         baseline must stay repo-relative to be portable across checkouts."""
-        abs_path = str(LINT.REPO_ROOT / "brain" / "foo.py")
-        assert LINT.counts_from_findings([_finding(abs_path)]) == {"brain/foo.py": {"B608": 1}}
+        abs_path = str(LINT.REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain" / "foo.py")
+        assert LINT.counts_from_findings([_finding(abs_path)]) == {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 1}}
 
 
 class TestPrivateOverlayExclusion:
@@ -114,11 +114,11 @@ class TestFindRegressions:
     def test_new_rule_in_baselined_file_is_a_regression(self):
         """The per-rule key earning its keep: B310 is fully baselined, but a
         brand-new B605 in the same file must NOT ride in free."""
-        counts = {"brain/foo.py": {"B310": 2, "B605": 1}}
-        baseline = {"brain/foo.py": {"B310": 2}}
+        counts = {"src/cofounder_agent/poindexter/brain/foo.py": {"B310": 2, "B605": 1}}
+        baseline = {"src/cofounder_agent/poindexter/brain/foo.py": {"B310": 2}}
         regressions = LINT.find_regressions(counts, baseline)
         assert len(regressions) == 1
-        assert regressions[0][:2] == ("brain/foo.py", "B605")
+        assert regressions[0][:2] == ("src/cofounder_agent/poindexter/brain/foo.py", "B605")
 
     def test_new_severe_rule_caught_even_when_file_total_is_unchanged(self):
         """THE case that justifies per-rule keys over a bare per-file count.
@@ -128,31 +128,31 @@ class TestFindRegressions:
         three ratchets use) would see 2 <= 2 and wave the B605 straight through.
         Keying on rule catches it.
         """
-        counts = {"brain/foo.py": {"B310": 1, "B605": 1}}  # total 2
-        baseline = {"brain/foo.py": {"B310": 2}}  # total 2
-        assert sum(counts["brain/foo.py"].values()) == sum(baseline["brain/foo.py"].values())
+        counts = {"src/cofounder_agent/poindexter/brain/foo.py": {"B310": 1, "B605": 1}}  # total 2
+        baseline = {"src/cofounder_agent/poindexter/brain/foo.py": {"B310": 2}}  # total 2
+        assert sum(counts["src/cofounder_agent/poindexter/brain/foo.py"].values()) == sum(baseline["src/cofounder_agent/poindexter/brain/foo.py"].values())
         regressions = LINT.find_regressions(counts, baseline)
         assert len(regressions) == 1
-        assert regressions[0][:2] == ("brain/foo.py", "B605")
+        assert regressions[0][:2] == ("src/cofounder_agent/poindexter/brain/foo.py", "B605")
 
     def test_count_increase_is_a_regression(self):
-        counts = {"brain/foo.py": {"B608": 3}}
-        baseline = {"brain/foo.py": {"B608": 2}}
+        counts = {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 3}}
+        baseline = {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 2}}
         assert len(LINT.find_regressions(counts, baseline)) == 1
 
     def test_new_file_is_a_regression(self):
-        assert len(LINT.find_regressions({"brain/new.py": {"B608": 1}}, {})) == 1
+        assert len(LINT.find_regressions({"src/cofounder_agent/poindexter/brain/new.py": {"B608": 1}}, {})) == 1
 
     def test_equal_counts_are_clean(self):
-        counts = {"brain/foo.py": {"B608": 2}}
-        assert LINT.find_regressions(counts, {"brain/foo.py": {"B608": 2}}) == []
+        counts = {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 2}}
+        assert LINT.find_regressions(counts, {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 2}}) == []
 
     def test_fewer_findings_are_clean_ratchet_only_shrinks(self):
-        counts = {"brain/foo.py": {"B608": 1}}
-        assert LINT.find_regressions(counts, {"brain/foo.py": {"B608": 5}}) == []
+        counts = {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 1}}
+        assert LINT.find_regressions(counts, {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 5}}) == []
 
     def test_removed_finding_entirely_is_clean(self):
-        assert LINT.find_regressions({}, {"brain/foo.py": {"B608": 5}}) == []
+        assert LINT.find_regressions({}, {"src/cofounder_agent/poindexter/brain/foo.py": {"B608": 5}}) == []
 
 
 class TestBaselineFile:

@@ -71,7 +71,7 @@ BASELINE_PATH = Path(__file__).resolve().parent / "bandit_baseline.json"
 # Scan roots — parity with the ops session's historical BANDIT_TARGETS so the
 # ratchet inherits exactly the surface that was being issue-filed.
 BANDIT_TARGETS = (
-    "brain/",
+    "src/cofounder_agent/poindexter/brain/",
     "scripts/",
     "src/cofounder_agent/poindexter/services/",
     "src/cofounder_agent/poindexter/routes/",

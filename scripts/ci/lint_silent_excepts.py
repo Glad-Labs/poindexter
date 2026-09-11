@@ -81,7 +81,6 @@ BASELINE_PATH = Path(__file__).resolve().parent / "silent_excepts_baseline.json"
 # exception in a test asserts nothing, it isn't an operator-visibility risk.
 SCAN_ROOTS = [
     (REPO_ROOT / "src" / "cofounder_agent", ("tests",)),
-    (REPO_ROOT / "brain", ()),
     # The public MCP server — operator phone-facing tools. A swallowed
     # exception here means an operator action silently no-ops. The private
     # ``mcp-server-gladlabs/`` overlay is intentionally NOT scanned: its paths

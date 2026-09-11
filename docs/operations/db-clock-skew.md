@@ -7,7 +7,7 @@
 ## How you'll notice
 
 - **A `db_clock_skew` finding pages Telegram** (critical) from
-  `brain/clock_skew_probe.py` — the intended path.
+  `poindexter/brain/clock_skew_probe.py` — the intended path.
 - Grafana time-series panels go **empty for "last 1h/6h"** even though the
   pipeline is active (future-stamped rows fall outside the window).
 - A real-time correlation during an investigation "doesn't line up" — DB event
@@ -79,7 +79,7 @@ Postgres or the app. The probe exists to make it **loud** instead of silent.
 
 ## The probe & its settings
 
-`brain/clock_skew_probe.py` runs every 5-min brain cycle: it compares
+`poindexter/brain/clock_skew_probe.py` runs every 5-min brain cycle: it compares
 `clock_timestamp()` to an **external** UTC reference (the HTTP `Date:` header
 from `clock_skew_reference_url`) — external because a probe inside the same
 WSL2 VM shares the skewing clock and would be blind to a VM-wide jump. On

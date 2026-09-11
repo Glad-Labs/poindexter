@@ -2294,7 +2294,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Turns that ended failed or interrupted in the last 24h. Nonzero = read the thread + worker logs; sustained = the brain/provider is misconfigured.",
+      "description": "Turns that ended failed or interrupted in the last 24h. Nonzero = read the thread + worker logs; sustained = the poindexter/brain/provider is misconfigured.",
       "fieldConfig": {
         "defaults": {
           "color": {

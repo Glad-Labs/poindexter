@@ -4,7 +4,7 @@ Phase D follow-up (GitHub #68). Alert thresholds and rule bodies live in
 ``app_settings`` so operators can tune without editing YAML or rebuilding
 the worker image. The repo still ships with sensible defaults — the
 brain seeds them into ``app_settings`` on first boot (see
-``brain/seed_app_settings.json``), but every value can be overridden
+``poindexter/brain/seed_app_settings.json``), but every value can be overridden
 with a single ``UPDATE app_settings ...``.
 
 ## Key scheme
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Defaults — also used as the seed in brain/seed_app_settings.json.
+# Defaults — also used as the seed in poindexter/brain/seed_app_settings.json.
 # ---------------------------------------------------------------------------
 
 DEFAULT_THRESHOLDS: dict[str, str] = {

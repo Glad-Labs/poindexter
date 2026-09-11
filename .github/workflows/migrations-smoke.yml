@@ -86,7 +86,7 @@ jobs:
         run: python scripts/ci/migrations_lint.py
 
       # Catches a key DELETEd by a migration but still present in a seed file
-      # (baseline.seeds.sql / brain/seed_app_settings.json) — the every-boot
+      # (baseline.seeds.sql / poindexter/brain/seed_app_settings.json) — the every-boot
       # reseed would resurrect it. Static, no DB needed. (2026-06-21)
       - name: Lint settings seed/migration drift
         run: python scripts/ci/settings_seed_drift_lint.py
@@ -95,7 +95,7 @@ jobs:
       # VALUE — the gap poindexter#819 named and didn't close. First-writer-wins
       # (all three are ON CONFLICT DO NOTHING), so a disagreement silently makes
       # one value unreachable on a fresh install. settings_defaults.py and
-      # baseline.seeds.sql must agree exactly; brain/seed_app_settings.json is
+      # baseline.seeds.sql must agree exactly; poindexter/brain/seed_app_settings.json is
       # the free tier and may diverge only via a declared TIER_POLICY entry.
       # NOTE: a fold-forward baseline squash re-imports live operator values and
       # WILL red this — that's the guard working. See docs/operations/migrations.md.

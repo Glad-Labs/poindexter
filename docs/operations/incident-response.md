@@ -680,4 +680,4 @@ This is a single-operator system. There is no on-call rotation.
 - [`disaster-recovery.md`](./disaster-recovery) — catastrophic-loss playbooks
 - [`secret-rotation.md`](./secret-rotation) — secret rotation procedures
 - `infrastructure/grafana/provisioning/alerting/alert-rules.yml` — the alert rule source of truth
-- `brain/` — brain daemon source (synthetic alerts fired directly from here)
+- `poindexter/brain/` — brain daemon source (synthetic alerts fired directly from here)

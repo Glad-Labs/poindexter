@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+
 from brain.remediation.registry import (
     ACTION_REGISTRY,
     ActionResult,

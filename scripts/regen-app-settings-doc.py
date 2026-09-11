@@ -38,10 +38,9 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 
-# brain/ lives at the repo root (not under src/cofounder_agent). Prepend the
-# repo root so `from brain.bootstrap import ...` resolves regardless of the
-# caller's CWD — lets `python scripts/regen-app-settings-doc.py` run cleanly
-# from anywhere, including a CI workflow that checks for doc drift.
+# Prepend the repo root: its `brain/` stub puts the backend root on sys.path and
+# aliases `brain.*` onto `poindexter.brain.*` (poindexter#1046 step 2), so
+# `from brain.bootstrap import ...` resolves regardless of the caller's CWD.
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest
+
 from brain import seed_loader as sl
 
 

@@ -64,7 +64,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 # landed in the image. services/voice_agent_livekit.py and
 # services/voice_agent_webrtc.py both call services.profiling.setup_pyroscope()
 # at startup; without the wheel the import silently fails and the voice
-# agents never show up in Pyroscope. Mirrors brain/Dockerfile and
+# agents never show up in Pyroscope. Mirrors poindexter/brain/Dockerfile and
 # src/cofounder_agent/Dockerfile.worker. Closes Glad-Labs/poindexter#418.
 RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')"
 

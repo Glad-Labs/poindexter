@@ -45,7 +45,7 @@ module 2:
 
 1. **Fuzzy module boundaries.** The content pipeline calls into
    `ai_content_generator.py` (1,331 LOC) which calls back into the
-   stages tree; `brain/` has its own embeddings outside the main
+   stages tree; `poindexter/brain/` has its own embeddings outside the main
    migration system (Glad-Labs/poindexter#328); the "Content Module"
    isn't a thing you can install or describe in one sentence.
 2. **OSS / business mix is informal.** `scripts/sync-to-github.sh`
@@ -90,7 +90,7 @@ media_compositor,publish_adapter,topic_source}.py`. Each has a
   `services/cost_guard.py`, `services/prompt_manager.py`
   (UnifiedPromptManager + Langfuse), `services/site_config.py`
   DI seam, `services/audit_log.py`, `services/memory_client.py`,
-  the brain daemon (`brain/`).
+  the brain daemon (`poindexter/brain/`).
 - **Operator surface** is in place: a single Telegram bot
   (`poindexter-pipeline-bot` container, 24/7), the MCP server
   (25 tools), the FastAPI worker, the `poindexter` CLI.

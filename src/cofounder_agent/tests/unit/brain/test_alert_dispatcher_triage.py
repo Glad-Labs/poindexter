@@ -25,6 +25,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from brain import alert_dispatcher as ad
 
 # ---------------------------------------------------------------------------
@@ -198,7 +199,7 @@ class TestRetries:
         fake_mod.send_followup = _spy_followup
 
         with patch.object(ad, "_post_triage_sync", side_effect=_fake_post), \
-             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
             result = await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -291,7 +292,7 @@ class TestNoRetryStatuses:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_402), \
-             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
             result = await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -340,7 +341,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_ok), \
-             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )
@@ -407,7 +408,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_ok), \
-             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(pool, row, notify_result, sleep_fn=_spy_sleep)
 
         text = captured["text"]
@@ -450,7 +451,7 @@ class TestFollowupThreading:
             return None
 
         with patch.object(ad, "_post_triage_sync", side_effect=_empty), \
-             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+             patch.dict(sys.modules, {"brain.brain_daemon": fake_mod, "poindexter.brain.brain_daemon": fake_mod}):
             await ad._triage_one(
                 pool, row, notify_result, sleep_fn=_spy_sleep,
             )

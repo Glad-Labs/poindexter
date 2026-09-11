@@ -7,6 +7,7 @@ here with the parser it covers.
 from __future__ import annotations
 
 import pytest
+
 from brain import ram_recycle_common as rc
 
 

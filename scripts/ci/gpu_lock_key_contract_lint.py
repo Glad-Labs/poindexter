@@ -48,16 +48,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib_scan_floor import require_dir, require_scanned  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-SCAN_ROOTS = ("src/cofounder_agent", "brain", "scripts", "mcp-server")
+SCAN_ROOTS = ("src/cofounder_agent", "scripts", "mcp-server")  # brain is under src/ since #1046 step 2
 
 #: Files allowed to spell the key literally. Each duplicate outside
 #: gpu_scheduler exists because the brain cannot import the worker package,
 #: and each is pinned to the worker constant by a test.
 SANCTIONED = {
     "src/cofounder_agent/poindexter/services/gpu_scheduler.py",   # the definition
-    "brain/health_probes.py",                          # takes the lock
-    "brain/sidecar_ram_watch.py",                      # reads the lock
-    "brain/ollama_runner_ram_watch.py",                # reads the lock (#3441)
+    "src/cofounder_agent/poindexter/brain/health_probes.py",                          # takes the lock
+    "src/cofounder_agent/poindexter/brain/sidecar_ram_watch.py",                      # reads the lock
+    "src/cofounder_agent/poindexter/brain/ollama_runner_ram_watch.py",                # reads the lock (#3441)
     "scripts/ci/gpu_lock_key_contract_lint.py",        # this file
 }
 

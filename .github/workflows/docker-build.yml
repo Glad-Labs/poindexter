@@ -37,7 +37,9 @@ on:
       - '**/.dockerignore'
       - 'src/cofounder_agent/pyproject.toml'
       - 'src/cofounder_agent/poetry.lock'
-      - 'brain/requirements*.txt'
+      - 'src/cofounder_agent/poindexter/brain/pyproject.toml'
+      - 'src/cofounder_agent/poindexter/brain/poetry.lock'
+      - 'src/cofounder_agent/poindexter/brain/Dockerfile'
       - 'docker-compose*.yml'
       - '.github/workflows/docker-build.yml'
   push:
@@ -48,7 +50,9 @@ on:
       - '**/.dockerignore'
       - 'src/cofounder_agent/pyproject.toml'
       - 'src/cofounder_agent/poetry.lock'
-      - 'brain/requirements*.txt'
+      - 'src/cofounder_agent/poindexter/brain/pyproject.toml'
+      - 'src/cofounder_agent/poindexter/brain/poetry.lock'
+      - 'src/cofounder_agent/poindexter/brain/Dockerfile'
       - 'docker-compose*.yml'
       - '.github/workflows/docker-build.yml'
   workflow_dispatch:
@@ -72,7 +76,7 @@ jobs:
         with:
           fetch-depth: 1
       - name: Build brain image
-        run: docker build -f brain/Dockerfile -t poindexter-brain:ci ./brain
+        run: docker build -f src/cofounder_agent/poindexter/brain/Dockerfile -t poindexter-brain:ci ./src/cofounder_agent
       - name: Report size
         run: |
           docker images poindexter-brain:ci --format 'brain image size: {{.Size}}'

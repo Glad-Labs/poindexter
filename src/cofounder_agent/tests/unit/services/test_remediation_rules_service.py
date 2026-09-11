@@ -260,7 +260,7 @@ def test_known_actions_in_sync_with_brain_registry():
 
     assert set(svc._KNOWN_ACTIONS) == set(ACTION_REGISTRY), (
         "services.remediation_rules_service._KNOWN_ACTIONS drifted from "
-        "brain/remediation/registry.py ACTION_REGISTRY — sync them (a new brain "
+        "poindexter/brain/remediation/registry.py ACTION_REGISTRY — sync them (a new brain "
         "action must be added to _KNOWN_ACTIONS or the CLI rejects valid rules)."
     )
 

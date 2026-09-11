@@ -486,7 +486,7 @@ def niche_show(slug: str) -> None:
 def niche_set_cadence(niche: str, target: float) -> None:
     """Set a niche's cadence target (posts/day).
 
-    Read by ``probe_cadence_slo`` (brain/health_probes.py) as a per-niche
+    Read by ``probe_cadence_slo`` (poindexter/brain/health_probes.py) as a per-niche
     override of the site-wide ``cadence_slo_expected_posts_per_day``
     app_setting.
     """

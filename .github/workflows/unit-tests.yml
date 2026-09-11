@@ -205,7 +205,7 @@ jobs:
 
           # `src/cofounder_agent/**` covers all Python code, tests,
           # pyproject.toml, and poetry.lock — the whole testable surface.
-          # `brain/**` is tested by tests/unit/brain/ — brain/-only PRs
+          # `poindexter/brain/**` is tested by tests/unit/brain/ — poindexter/brain/-only PRs
           # were silently skipping pytest because the pattern below only
           # matched src/cofounder_agent (Glad-Labs/glad-labs-stack#1293).
           # `scripts/**` is tested by tests/unit/scripts/ — same gap.
@@ -413,7 +413,7 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/uv_lock_version_lint.py
 
-      # Brain async-safety guard (sync-CLI-in-async fix): brain/ is a
+      # Brain async-safety guard (sync-CLI-in-async fix): poindexter/brain/ is a
       # single-event-loop asyncio daemon that awaits every probe sequentially,
       # so a blocking subprocess.run / time.sleep / os.system directly in an
       # `async def` freezes the whole watchdog (a docker restart or a
