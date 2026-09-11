@@ -33,7 +33,7 @@ email-validator = ">=2.0.0"
 # cryptography is only a transitive dependency here, but pin a security floor
 # so the lock can't sit on a vulnerable build — >=48.0.1 clears the bundled-
 # OpenSSL advisory GHSA-537c-gmf6-5ccf (Trivy HIGH; fixed in 48.0.1).
-cryptography = ">=48.0.1"
+cryptography = ">=50.0.1"
 sentry-sdk = { version = ">=1.40.0", extras = ["fastapi"] }
 pytest = ">=9.0.3,<10.0"  # Testing framework — bumped to 9.x for the tmpdir CVE fix
 pytest-asyncio = ">=1.0,<2.0"  # Async test support — 1.0+ supports pytest 9.x
